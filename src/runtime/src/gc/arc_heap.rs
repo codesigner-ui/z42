@@ -1406,7 +1406,7 @@ impl MagrGC for ArcMagrGC {
         // **add-custom-allocator P1 (2026-05-22)**: alloc into region.
         // Region::alloc returns a stable handle; resolve gives us the
         // entry pointer for GcRef construction.
-        let (entry_ptr, gen, handle) = {
+        let (entry_ptr, generation, handle) = {
             let mut region = self.region_object.lock();
             let handle = region.alloc(obj);
             let entry: std::ptr::NonNull<super::region::RegionEntry<ScriptObject>> =
@@ -1415,7 +1415,7 @@ impl MagrGC for ArcMagrGC {
         };
         // SAFETY: handle was just produced by region.alloc; entry ptr
         // is stable for entry lifetime; generation matches.
-        let gc = unsafe { GcRef::from_region_entry(entry_ptr, gen) };
+        let gc = unsafe { GcRef::from_region_entry(entry_ptr, generation) };
         let value = Value::Object(gc);
 
         let size = self.object_size_bytes(&value);
@@ -1438,14 +1438,14 @@ impl MagrGC for ArcMagrGC {
 
     fn alloc_array(&self, elems: Vec<Value>) -> Value {
         let elem_count = elems.len();
-        let (entry_ptr, gen, handle) = {
+        let (entry_ptr, generation, handle) = {
             let mut region = self.region_array.lock();
             let handle = region.alloc(elems);
             let entry: std::ptr::NonNull<super::region::RegionEntry<Vec<Value>>> =
                 std::ptr::NonNull::from(region.resolve(handle));
             (entry, handle.generation, handle)
         };
-        let gc = unsafe { GcRef::from_region_entry(entry_ptr, gen) };
+        let gc = unsafe { GcRef::from_region_entry(entry_ptr, generation) };
         let value = Value::Array(gc);
 
         let size = self.object_size_bytes(&value);
@@ -1596,7 +1596,7 @@ impl MagrGC for ArcMagrGC {
         match value {
             Value::Null | Value::Bool(_) | Value::Char(_)
             | Value::I64(_) | Value::F64(_) => size_of::<Value>(),
-            Value::Str(s) => size_of::<Value>() + s.capacity(),
+            Value::Str(s) => size_of::<Value>() + s.len(),
             Value::Array(rc) => {
                 size_of::<Value>() + size_of::<Vec<Value>>()
                     + rc.borrow().capacity() * size_of::<Value>()
@@ -1982,20 +1982,20 @@ impl MagrGC for ArcMagrGC {
         let (entry, key) = match value {
             Value::Object(gc) => {
                 let ptr = gc.entry_ptr();
-                let gen = {
+                let generation = {
                     // SAFETY: entry pointer stable; we only read the generation atomic.
                     unsafe { ptr.as_ref() }.generation.load(std::sync::atomic::Ordering::Acquire)
                 };
                 unsafe { ptr.as_ref() }.inc_soft_ref_count();
                 let key = ptr.as_ptr() as u64;
-                (ErasedSoftEntry::from_object(ptr, gen), key)
+                (ErasedSoftEntry::from_object(ptr, generation), key)
             }
             Value::Array(gc) => {
                 let ptr = gc.entry_ptr();
-                let gen = unsafe { ptr.as_ref() }.generation.load(std::sync::atomic::Ordering::Acquire);
+                let generation = unsafe { ptr.as_ref() }.generation.load(std::sync::atomic::Ordering::Acquire);
                 unsafe { ptr.as_ref() }.inc_soft_ref_count();
                 let key = ptr.as_ptr() as u64;
-                (ErasedSoftEntry::from_array(ptr, gen), key)
+                (ErasedSoftEntry::from_array(ptr, generation), key)
             }
             _ => return 0,
         };

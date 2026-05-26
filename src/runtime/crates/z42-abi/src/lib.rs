@@ -192,7 +192,7 @@ unsafe impl Sync for Z42TraitImpl {}
 
 // ── VM-exposed API (resolved at link time against z42_vm) ───────────────────
 
-extern "C" {
+unsafe extern "C" {
     pub fn z42_register_type(desc: *const Z42TypeDescriptor_v1) -> Z42TypeRef;
 
     pub fn z42_resolve_type(

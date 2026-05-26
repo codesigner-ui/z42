@@ -119,7 +119,7 @@ fn is_heap_ref_false_for_primitives() {
     assert!(!Value::F64(0.0).is_heap_ref());
     assert!(!Value::Bool(true).is_heap_ref());
     assert!(!Value::Char('a').is_heap_ref());
-    assert!(!Value::Str("hello".to_string()).is_heap_ref());
+    assert!(!Value::Str("hello".to_string().into()).is_heap_ref());
     assert!(!Value::Null.is_heap_ref());
 }
 

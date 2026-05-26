@@ -217,7 +217,7 @@ fn load_one(ctx: &VmContext, path: &std::path::Path, name: &str) -> Result<()> {
 // ── compression symbol table (dlopen path) ───────────────────────────────────
 
 /// Raw C ABI signatures matching `src/runtime/crates/z42-compression/src/lib.rs`.
-/// These must stay in sync byte-for-byte with the cdylib's `#[no_mangle]`
+/// These must stay in sync byte-for-byte with the cdylib's `#[unsafe(no_mangle)]`
 /// exports. Because we ship z42vm and z42-compression version-locked from
 /// the same source tree, mismatches surface at link time when packaging.
 type CDeflateCompressFn = unsafe extern "C" fn(

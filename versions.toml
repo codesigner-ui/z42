@@ -46,7 +46,7 @@ version = "0.1.0"                       # → Cargo.toml [workspace.package].ver
 
 [toolchain.rust]
 channel     = "stable"
-min_version = "1.78"                    # MSRV；scripts/_lib/versions.sh::versions_check_rust 校它
+min_version = "1.87"                    # MSRV；edition 2024 requires 1.85+; 1.87 is stable as of 2026-05; scripts/_lib/versions.sh::versions_check_rust 校它
 components  = ["rustfmt", "clippy"]
 # rust_targets 由各 [platform.*] 汇总（cross-compile 时各 build.sh 单装单平台）
 

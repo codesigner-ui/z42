@@ -54,7 +54,7 @@ fn ok_listen(v: &Value) -> (i64, i64) {
 #[test]
 fn slot_id_monotonic_increasing() {
     let ctx = ctx();
-    let args1 = vec![Value::Str("127.0.0.1".to_string()), Value::I64(0)];
+    let args1 = vec![Value::Str("127.0.0.1".to_string().into()), Value::I64(0)];
     let r1 = builtin_net_tcp_listen(&ctx, &args1).expect("listen 1 ok");
     let r2 = builtin_net_tcp_listen(&ctx, &args1).expect("listen 2 ok");
     let (s1, _p1) = ok_listen(&r1);
@@ -75,7 +75,7 @@ fn slot_id_monotonic_increasing() {
 #[test]
 fn connect_to_unbound_port_returns_socket_err() {
     let ctx = ctx();
-    let args = vec![Value::Str("127.0.0.1".to_string()), Value::I64(1)];
+    let args = vec![Value::Str("127.0.0.1".to_string().into()), Value::I64(1)];
     let r = builtin_net_tcp_connect(&ctx, &args).expect("call ok");
     assert_eq!(kind_of(&r), Some(KIND_SOCKET_ERR), "got {:?}", r);
 }
@@ -131,7 +131,7 @@ fn loopback_listener_accepts_and_round_trips_bytes() {
     use std::net::TcpStream;
 
     let ctx = ctx();
-    let listen_args = vec![Value::Str("127.0.0.1".to_string()), Value::I64(0)];
+    let listen_args = vec![Value::Str("127.0.0.1".to_string().into()), Value::I64(0)];
     let listen_result = builtin_net_tcp_listen(&ctx, &listen_args).expect("listen ok");
     let (listener_slot, actual_port) = ok_listen(&listen_result);
     assert!(actual_port > 0, "OS should assign a real port");
@@ -203,7 +203,7 @@ fn ok_udp_bind(v: &Value) -> (i64, i64) {
 #[test]
 fn udp_slot_id_monotonic() {
     let ctx = ctx();
-    let args = vec![Value::Str("127.0.0.1".to_string()), Value::I64(0)];
+    let args = vec![Value::Str("127.0.0.1".to_string().into()), Value::I64(0)];
     let r1 = builtin_net_udp_bind(&ctx, &args).expect("bind 1");
     let r2 = builtin_net_udp_bind(&ctx, &args).expect("bind 2");
     let (s1, _) = ok_udp_bind(&r1);
@@ -218,7 +218,7 @@ fn udp_send_on_unknown_slot_returns_handle_invalid() {
     let buf = arr(vec![Value::I64(0xAB)], &ctx);
     let args = vec![
         Value::I64(999_999), buf, Value::I64(0), Value::I64(1),
-        Value::Str("127.0.0.1".to_string()), Value::I64(1),
+        Value::Str("127.0.0.1".to_string().into()), Value::I64(1),
     ];
     let r = builtin_net_udp_send(&ctx, &args).expect("call");
     assert_eq!(kind_of(&r), Some(KIND_HANDLE_INVALID));
@@ -247,7 +247,7 @@ fn udp_drop_unknown_slot_is_silent_null() {
 fn udp_loopback_send_recv_round_trip() {
     let ctx = ctx();
     // Bind two sockets on loopback with OS-assigned ports.
-    let bind_args = vec![Value::Str("127.0.0.1".to_string()), Value::I64(0)];
+    let bind_args = vec![Value::Str("127.0.0.1".to_string().into()), Value::I64(0)];
     let (slot_a, port_a) = ok_udp_bind(&builtin_net_udp_bind(&ctx, &bind_args).expect("bind A"));
     let (slot_b, port_b) = ok_udp_bind(&builtin_net_udp_bind(&ctx, &bind_args).expect("bind B"));
     assert!(port_a > 0 && port_b > 0);
@@ -256,7 +256,7 @@ fn udp_loopback_send_recv_round_trip() {
     let payload = arr(b"hi".iter().map(|b| Value::I64(*b as i64)).collect(), &ctx);
     let send_args = vec![
         Value::I64(slot_b), payload, Value::I64(0), Value::I64(2),
-        Value::Str("127.0.0.1".to_string()), Value::I64(port_a),
+        Value::Str("127.0.0.1".to_string().into()), Value::I64(port_a),
     ];
     let send_result = builtin_net_udp_send(&ctx, &send_args).expect("send");
     assert_eq!(ok_slot(&send_result), 2);  // 2 bytes sent
@@ -277,7 +277,7 @@ fn udp_loopback_send_recv_round_trip() {
                 }
                 other => panic!("expected byte[] buffer, got {:?}", other),
             }
-            assert!(matches!(&b[2], Value::Str(s) if s == "127.0.0.1"));
+            assert!(matches!(&b[2], Value::Str(s) if **s == *"127.0.0.1"));
             assert_eq!(b[3], Value::I64(port_b));
         }
         other => panic!("expected ok-tuple Array, got {:?}", other),

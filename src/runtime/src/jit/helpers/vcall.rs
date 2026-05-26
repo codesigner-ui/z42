@@ -18,7 +18,7 @@ use super::{set_exception, vm_ctx_ref, JitFn};
 ///
 /// `ic_ptr` may be null when the resolver hasn't run (only happens in
 /// tests bypassing `Vm::run`); helper degrades gracefully to slow path.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_vcall(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, obj: u32, method_ptr: *const u8, method_len: usize,
@@ -124,7 +124,7 @@ pub unsafe extern "C" fn jit_vcall(
                             return 1;
                         }
                     },
-                    Err(e) => { set_exception(vm_ctx, Value::Str(e.to_string())); return 1; }
+                    Err(e) => { set_exception(vm_ctx, Value::Str(e.to_string().into())); return 1; }
                 }
             }
         }
@@ -138,14 +138,14 @@ pub unsafe extern "C" fn jit_vcall(
             (b.type_desc.name.clone(), b.type_desc.id.0)
         }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: expected object, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: expected object, got {:?}", other).into()));
             return 1;
         }
     };
 
     let func_name = match resolve_virtual(module, &class_name, method) {
         Ok(n)  => n,
-        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string())); return 1; }
+        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); return 1; }
     };
 
     // IC update: cache (recv_type_id, fn_idx) for next time this site sees
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn jit_vcall(
     let entry = match ctx_ref.fn_entries.get(&func_name) {
         Some(e) => e.clone(),
         None => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: compiled entry for `{}` not found", func_name)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: compiled entry for `{}` not found", func_name).into()));
             return 1;
         }
     };

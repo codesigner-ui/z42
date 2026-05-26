@@ -9,7 +9,7 @@ fn os_returns_consts_value() {
     let ctx = VmContext::new();
     let Value::Str(os) = builtin_platform_os(&ctx, &[]).unwrap()
         else { panic!("expected Str"); };
-    assert_eq!(os, std::env::consts::OS);
+    assert_eq!(os, std::env::consts::OS.into());
     assert!(!os.is_empty(), "os string must not be empty");
 }
 
@@ -18,7 +18,7 @@ fn arch_returns_consts_value() {
     let ctx = VmContext::new();
     let Value::Str(arch) = builtin_platform_arch(&ctx, &[]).unwrap()
         else { panic!("expected Str"); };
-    assert_eq!(arch, std::env::consts::ARCH);
+    assert_eq!(arch, std::env::consts::ARCH.into());
     assert!(!arch.is_empty());
 }
 
@@ -27,7 +27,7 @@ fn family_returns_consts_value() {
     let ctx = VmContext::new();
     let Value::Str(family) = builtin_platform_family(&ctx, &[]).unwrap()
         else { panic!("expected Str"); };
-    assert_eq!(family, std::env::consts::FAMILY);
+    assert_eq!(family, std::env::consts::FAMILY.into());
 }
 
 #[test]

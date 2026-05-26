@@ -48,7 +48,7 @@ fn pending_exception_set_then_take_consumes() {
     let ctx = VmContext::new();
     ctx.set_exception(Value::Str("oops".into()));
     let v = ctx.take_exception();
-    assert!(matches!(v, Some(Value::Str(ref s)) if s == "oops"));
+    assert!(matches!(v, Some(Value::Str(ref s)) if **s == *"oops"));
     // Subsequent take returns None (consumed).
     assert!(ctx.take_exception().is_none());
 }
@@ -61,7 +61,7 @@ fn two_contexts_exception_isolated() {
     // ctx2 stays empty.
     assert!(ctx2.take_exception().is_none());
     let v = ctx1.take_exception();
-    assert!(matches!(v, Some(Value::Str(ref s)) if s == "ctx1"));
+    assert!(matches!(v, Some(Value::Str(ref s)) if **s == *"ctx1"));
 }
 
 // ── GC heap ───────────────────────────────────────────────────────────────────

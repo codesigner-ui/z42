@@ -282,17 +282,17 @@ impl<T> Region<T> {
             // overwriting in place. Dropping a `RegionEntry<T>` runs
             // its Mutex / AtomicU8 / etc. Drop impls — all safe.
             let slot = unsafe { chunk[ei as usize].assume_init_mut() };
-            let gen = slot.generation.load(Ordering::Acquire);
+            let generation = slot.generation.load(Ordering::Acquire);
             // Replace the entry in place. Drop the old, write new.
             let new_entry = RegionEntry::new(value, (ci, ei));
             // Manually preserve the generation across the replacement.
-            new_entry.generation.store(gen, Ordering::Release);
+            new_entry.generation.store(generation, Ordering::Release);
             // SAFETY: ptr-write replaces the old entry with new.
             // The old's Drop runs as part of the assignment.
             *slot = new_entry;
             // add-generational-gc P0: reused slot starts at gen_age=0 (young).
             self.young_list.push((ci, ei));
-            return RegionHandle { chunk_idx: ci, entry_idx: ei, generation: gen };
+            return RegionHandle { chunk_idx: ci, entry_idx: ei, generation: generation };
         }
 
         // Bump pointer.

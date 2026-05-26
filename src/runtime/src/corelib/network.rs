@@ -42,7 +42,7 @@ fn ok_two(ctx: &VmContext, a: i64, b: i64) -> Value {
 }
 
 fn socket_err(ctx: &VmContext, msg: String) -> Value {
-    ctx.heap().alloc_array(vec![Value::I64(KIND_SOCKET_ERR), Value::Str(msg)])
+    ctx.heap().alloc_array(vec![Value::I64(KIND_SOCKET_ERR), Value::Str(msg.into())])
 }
 
 fn handle_invalid(ctx: &VmContext) -> Value {
@@ -346,7 +346,7 @@ mod imp {
                 Ok(ctx.heap().alloc_array(vec![
                     Value::I64(KIND_OK),
                     buf_array,
-                    Value::Str(host_str),
+                    Value::Str(host_str.into()),
                     Value::I64(port_i64),
                 ]))
             }

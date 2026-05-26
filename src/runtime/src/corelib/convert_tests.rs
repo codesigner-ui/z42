@@ -7,7 +7,7 @@ fn ctx() -> std::pin::Pin<Box<VmContext>> { VmContext::new() }
 fn parse(builtin: fn(&VmContext, &[Value]) -> anyhow::Result<Value>, s: &str)
     -> anyhow::Result<i64>
 {
-    match builtin(&ctx(), &[Value::Str(s.to_string())])? {
+    match builtin(&ctx(), &[Value::Str(s.to_string().into())])? {
         Value::I64(n) => Ok(n),
         other => panic!("expected I64, got {:?}", other),
     }

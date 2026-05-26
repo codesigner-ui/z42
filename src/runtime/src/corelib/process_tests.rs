@@ -84,7 +84,7 @@ fn run_echo_captures_stdout_and_exit_zero() {
     assert_eq!(result_kind(&r), KIND_OK);
     assert_eq!(result_at(&r, 1), i(0));                       // ExitCode
     let Value::Str(out) = result_at(&r, 2) else { panic!() }; // Stdout
-    assert_eq!(out, "hello\n");
+    assert_eq!(out, "hello\n".into());
     assert_eq!(result_at(&r, 3), s(""));                      // Stderr empty
 }
 
@@ -97,7 +97,7 @@ fn run_argv_array_passes_args_literally() {
     let args = run_args(&ctx, "printf", &["%s\n", "a b c"]);
     let r = builtin_process_run(&ctx, &args).unwrap();
     let Value::Str(out) = result_at(&r, 2) else { panic!() };
-    assert_eq!(out, "a b c\n");
+    assert_eq!(out, "a b c\n".into());
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn run_nonexistent_program_returns_start_err() {
     let r = builtin_process_run(&ctx, &args).unwrap();
     assert_eq!(result_kind(&r), KIND_START_ERR);
     let Value::Str(prog) = result_at(&r, 1) else { panic!() };
-    assert_eq!(prog, "definitely-not-a-real-binary-xyzzy-42");
+    assert_eq!(prog, "definitely-not-a-real-binary-xyzzy-42".into());
     let Value::Str(msg) = result_at(&r, 2) else { panic!() };
     assert!(msg.contains("NotFound") || msg.to_lowercase().contains("no such"));
 }
@@ -134,7 +134,7 @@ fn run_env_override_visible_to_child() {
     args[3] = str_arr(&ctx, &["hello-from-test"]);
     let r = builtin_process_run(&ctx, &args).unwrap();
     let Value::Str(out) = result_at(&r, 2) else { panic!() };
-    assert_eq!(out, "hello-from-test\n");
+    assert_eq!(out, "hello-from-test\n".into());
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn run_env_clear_strips_parent_env() {
     args[5] = b(true); // env_clear
     let r = builtin_process_run(&ctx, &args).unwrap();
     let Value::Str(out) = result_at(&r, 2) else { panic!() };
-    assert_eq!(out, "empty\n");
+    assert_eq!(out, "empty\n".into());
 }
 
 // ── cwd ─────────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ fn run_stdin_bytes_feeds_child() {
     args[8] = bytes;
     let r = builtin_process_run(&ctx, &args).unwrap();
     let Value::Str(out) = result_at(&r, 2) else { panic!() };
-    assert_eq!(out, "hello\n");
+    assert_eq!(out, "hello\n".into());
 }
 
 // ── stdio modes ─────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ fn run_stdout_null_drops_output() {
     args[9] = i(STDIO_NULL); // stdout_mode
     let r = builtin_process_run(&ctx, &args).unwrap();
     let Value::Str(out) = result_at(&r, 2) else { panic!() };
-    assert_eq!(out, "");
+    assert_eq!(out, "".into());
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn run_stdout_to_file() {
     let r = builtin_process_run(&ctx, &args).unwrap();
     assert_eq!(result_kind(&r), KIND_OK);
     let Value::Str(captured) = result_at(&r, 2) else { panic!() };
-    assert_eq!(captured, ""); // not captured — redirected
+    assert_eq!(captured, "".into()); // not captured — redirected
 
     let on_disk = std::fs::read_to_string(&path).unwrap();
     assert_eq!(on_disk, "redirected\n");
@@ -262,7 +262,7 @@ fn spawn_then_wait_returns_ok_result() {
     assert_eq!(result_kind(&wait_r), KIND_OK);
     assert_eq!(result_at(&wait_r, 1), i(0));
     let Value::Str(out) = result_at(&wait_r, 2) else { panic!() };
-    assert_eq!(out, "spawned\n");
+    assert_eq!(out, "spawned\n".into());
 
     // Slot consumed after wait.
     assert_eq!(ctx.process_slot_count(), 0);
@@ -295,7 +295,7 @@ fn try_wait_returns_null_while_running_then_result_after() {
     let second = builtin_process_handle_try_wait(&ctx, &[i(slot as i64)]).unwrap();
     assert_eq!(result_kind(&second), KIND_OK);
     let Value::Str(out) = result_at(&second, 2) else { panic!() };
-    assert_eq!(out, "done\n");
+    assert_eq!(out, "done\n".into());
     assert_eq!(ctx.process_slot_count(), 0);
 }
 
@@ -331,7 +331,7 @@ fn write_stdin_then_close_then_wait() {
 
     let wait_r = builtin_process_handle_wait(&ctx, &[i(slot as i64)]).unwrap();
     let Value::Str(out) = result_at(&wait_r, 2) else { panic!() };
-    assert_eq!(out, "hi\n");
+    assert_eq!(out, "hi\n".into());
 }
 
 #[test]
@@ -378,7 +378,7 @@ fn run_timeout_fires_for_long_running_child() {
 
     assert_eq!(result_kind(&r), KIND_TIMEOUT);
     let Value::Str(prog) = result_at(&r, 1) else { panic!() };
-    assert_eq!(prog, "sh");
+    assert_eq!(prog, "sh".into());
     let Value::I64(ms) = result_at(&r, 2) else { panic!() };
     assert_eq!(ms, 150);
     // Should return well before the 5-second sleep would have finished.
@@ -393,7 +393,7 @@ fn run_timeout_does_not_fire_if_child_exits_quickly() {
     let r = builtin_process_run(&ctx, &args).unwrap();
     assert_eq!(result_kind(&r), KIND_OK);
     let Value::Str(out) = result_at(&r, 2) else { panic!() };
-    assert_eq!(out, "fast\n");
+    assert_eq!(out, "fast\n".into());
 }
 
 #[test]
@@ -445,7 +445,7 @@ fn which_finds_in_custom_path() {
     if let Some(p) = prev { std::env::set_var("PATH", p); } else { std::env::remove_var("PATH"); }
 
     let Value::Str(found) = r else { panic!("expected Str, got {r:?}") };
-    assert_eq!(found, stub.to_string_lossy());
+    assert_eq!(found, stub.to_string_lossy().into());
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
@@ -475,7 +475,7 @@ fn which_passthrough_for_path_with_separator() {
     // /bin/sh is POSIX-mandated and executable.
     let r = builtin_process_which(&ctx, &[s("/bin/sh")]).unwrap();
     let Value::Str(found) = r else { panic!("expected Str, got {r:?}") };
-    assert_eq!(found, "/bin/sh");
+    assert_eq!(found, "/bin/sh".into());
 }
 
 #[cfg(unix)]

@@ -24,7 +24,7 @@ pub(super) fn const_str(
     } else {
         bail!("string pool index {idx} out of range");
     };
-    frame.set(dst, Value::Str(s));
+    frame.set(dst, Value::Str(s.into()));
     Ok(())
 }
 
@@ -45,9 +45,9 @@ pub(super) fn copy(frame: &mut Frame, dst: u32, src: u32) -> Result<()> {
 
 pub(super) fn add(frame: &mut Frame, dst: u32, a: u32, b: u32) -> Result<()> {
     let result = match (frame.get(a)?, frame.get(b)?) {
-        (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
-        (Value::Str(sa), vb)             => Value::Str(format!("{}{}", sa, value_to_str(vb))),
-        (va, Value::Str(sb))             => Value::Str(format!("{}{}", value_to_str(va), sb)),
+        (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb).into()),
+        (Value::Str(sa), vb)             => Value::Str(format!("{}{}", sa, value_to_str(vb)).into()),
+        (va, Value::Str(sb))             => Value::Str(format!("{}{}", value_to_str(va), sb).into()),
         // 2026-04-28 vm-wrapping-int-arith: wrapping_add（与 Rust release build /
         // C# unchecked int / Java int 一致），解锁 hash / PRNG / 校验和算法
         _ => int_binop(&frame.regs, a, b, i64::wrapping_add, |x, y| x + y)?,
@@ -216,7 +216,7 @@ pub(super) fn shr(frame: &mut Frame, dst: u32, a: u32, b: u32) -> Result<()> {
 pub(super) fn str_concat(frame: &mut Frame, dst: u32, a: u32, b: u32) -> Result<()> {
     let sa = str_val(&frame.regs, a)?;
     let sb = str_val(&frame.regs, b)?;
-    frame.set(dst, Value::Str(format!("{}{}", sa, sb)));
+    frame.set(dst, Value::Str(format!("{}{}", sa, sb).into()));
     Ok(())
 }
 
@@ -224,7 +224,7 @@ pub(super) fn to_str(
     ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, src: u32,
 ) -> Result<()> {
     let s = obj_to_string(ctx, module, frame.get(src)?)?;
-    frame.set(dst, Value::Str(s));
+    frame.set(dst, Value::Str(s.into()));
     Ok(())
 }
 

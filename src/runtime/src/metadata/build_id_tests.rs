@@ -9,7 +9,7 @@ fn compute_is_stable() {
 
 #[test]
 fn compute_differs_on_any_byte_change() {
-    let mut a = vec![0xAB; 64];
+    let a = vec![0xAB; 64];
     let mut b = vec![0xAB; 64];
     b[10] ^= 1; // perturb a non-trailing byte
     assert_ne!(compute(&a), compute(&b));

@@ -57,7 +57,7 @@ pub fn obj_to_string(ctx: &VmContext, module: &Module, val: &Value) -> Result<St
             if let Some(callee) = callee {
                 let outcome = super::exec_function(ctx, module, callee, &[val.clone()])?;
                 return match outcome {
-                    super::ExecOutcome::Returned(Some(Value::Str(s))) => Ok(s),
+                    super::ExecOutcome::Returned(Some(Value::Str(s))) => Ok(s.to_string()),
                     super::ExecOutcome::Returned(Some(other))         => Ok(value_to_str(&other)),
                     super::ExecOutcome::Returned(None)                => Ok(String::new()),
                     super::ExecOutcome::Thrown(v)                     => Ok(format!("<exception: {}>", value_to_str(&v))),
@@ -69,7 +69,7 @@ pub fn obj_to_string(ctx: &VmContext, module: &Module, val: &Value) -> Result<St
                 ctx,
                 crate::metadata::well_known_names::BUILTIN_OBJ_TO_STR,
                 &[val.clone()])
-            .map(|v| match v { Value::Str(s) => s, other => value_to_str(&other) });
+            .map(|v| match v { Value::Str(s) => s.to_string(), other => value_to_str(&other) });
     }
     Ok(value_to_str(val))
 }

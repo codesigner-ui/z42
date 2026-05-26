@@ -43,7 +43,7 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     });
     Ok(ctx.heap().alloc_object(
         type_desc,
-        vec![Value::Str(simple_name), Value::Str(class_name)],
+        vec![Value::Str(simple_name.into()), Value::Str(class_name.into())],
         NativeData::None,
     ))
 }
@@ -114,9 +114,9 @@ pub fn builtin_delegate_target(_ctx: &VmContext, args: &[Value]) -> Result<Value
 /// - 其他 → Null
 pub fn builtin_delegate_fn_name(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
-        Some(Value::Closure { fn_name, .. }) => Ok(Value::Str(fn_name.clone())),
-        Some(Value::StackClosure { fn_name, .. }) => Ok(Value::Str(fn_name.clone())),
-        Some(Value::FuncRef(name)) => Ok(Value::Str(name.clone())),
+        Some(Value::Closure { fn_name, .. }) => Ok(Value::Str(fn_name.clone().into())),
+        Some(Value::StackClosure { fn_name, .. }) => Ok(Value::Str(fn_name.clone().into())),
+        Some(Value::FuncRef(name)) => Ok(Value::Str(name.clone().into())),
         _ => Ok(Value::Null),
     }
 }
@@ -146,7 +146,7 @@ pub fn builtin_make_closure(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         Value::Array(rc) => rc,
         _ => return Ok(Value::Null),  // unreachable but lenient
     };
-    Ok(Value::Closure { env, fn_name })
+    Ok(Value::Closure { env, fn_name: fn_name.to_string() })
 }
 
 /// 2026-05-04 expose-weak-ref-builtin (D-1a)：升格 WeakHandle 弱引用。
@@ -251,7 +251,7 @@ pub fn builtin_obj_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
         Some(Value::Object(rc)) => {
             let class_name = rc.borrow().type_desc.name.clone();
             let simple = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
-            Ok(Value::Str(simple))
+            Ok(Value::Str(simple.into()))
         }
         // 2026-05-07 add-array-base-class: arrays ToString returns simple class name
         // ("Array"), matching Object protocol default. Element-typed ToString

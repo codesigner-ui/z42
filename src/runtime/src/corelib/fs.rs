@@ -8,7 +8,7 @@ use super::convert::arg_str;
 pub fn builtin_file_read_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path = arg_str(args, 0, "__file_read_text")?;
     let text = std::fs::read_to_string(path)?;
-    Ok(Value::Str(text))
+    Ok(Value::Str(text.into()))
 }
 pub fn builtin_file_write_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path    = arg_str(args, 0, "__file_write_text")?;
@@ -111,7 +111,7 @@ pub fn builtin_dir_enumerate(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         }
     }
     names.sort();
-    let list: Vec<Value> = names.into_iter().map(Value::Str).collect();
+    let list: Vec<Value> = names.into_iter().map(|s| Value::Str(s.into())).collect();
     Ok(ctx.heap().alloc_array(list))
 }
 
@@ -121,7 +121,7 @@ pub fn builtin_dir_enumerate_recursive(ctx: &VmContext, args: &[Value]) -> Resul
     let mut out: Vec<String> = Vec::new();
     walk_dir(&root_path, &root_path, &mut out)?;
     out.sort();
-    let list: Vec<Value> = out.into_iter().map(Value::Str).collect();
+    let list: Vec<Value> = out.into_iter().map(|s| Value::Str(s.into())).collect();
     Ok(ctx.heap().alloc_array(list))
 }
 
@@ -152,8 +152,8 @@ pub fn builtin_env_set(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.get(1).unwrap_or(&Value::Null) {
         Value::Null => unsafe { std::env::remove_var(name) },
         v => {
-            let s = match v {
-                Value::Str(s) => s.as_str(),
+            let s: &str = match v {
+                Value::Str(s) => s,
                 _ => anyhow::bail!("__env_set: arg 1 expected string or null, got {:?}", v),
             };
             // Safety: z42 is single-threaded; no concurrent env reads during this call.
@@ -165,12 +165,12 @@ pub fn builtin_env_set(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let key = arg_str(args, 0, "__env_get")?;
     Ok(match std::env::var(key) {
-        Ok(v)  => Value::Str(v),
+        Ok(v)  => Value::Str(v.into()),
         Err(_) => Value::Null,
     })
 }
 pub fn builtin_env_args(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
-    let list: Vec<Value> = std::env::args().map(Value::Str).collect();
+    let list: Vec<Value> = std::env::args().map(|s| Value::Str(s.into())).collect();
     Ok(ctx.heap().alloc_array(list))
 }
 pub fn builtin_process_exit(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
@@ -187,7 +187,7 @@ pub fn builtin_env_unset(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 }
 pub fn builtin_env_vars(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let list: Vec<Value> = std::env::vars()
-        .map(|(k, v)| Value::Str(format!("{k}={v}")))
+        .map(|(k, v)| Value::Str(format!("{k}={v}").into()))
         .collect();
     Ok(ctx.heap().alloc_array(list))
 }
@@ -225,7 +225,7 @@ pub fn builtin_path_glob(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         }
     }
     hits.sort();
-    let list: Vec<Value> = hits.into_iter().map(Value::Str).collect();
+    let list: Vec<Value> = hits.into_iter().map(|s| Value::Str(s.into())).collect();
     Ok(ctx.heap().alloc_array(list))
 }
 
@@ -264,7 +264,7 @@ pub fn builtin_file_create_temp_dir(_ctx: &VmContext, args: &[Value]) -> Result<
     let prefix = arg_str(args, 0, "__file_create_temp_dir")?;
     let path   = unique_temp_path(prefix, "");
     std::fs::create_dir_all(&path)?;
-    Ok(Value::Str(path))
+    Ok(Value::Str(path.into()))
 }
 
 /// 创建唯一临时文件（touched，0 bytes）在 system temp root，返回全路径。
@@ -274,7 +274,7 @@ pub fn builtin_file_create_temp_file(_ctx: &VmContext, args: &[Value]) -> Result
     let suffix = arg_str(args, 1, "__file_create_temp_file")?;
     let path   = unique_temp_path(prefix, suffix);
     std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&path)?;
-    Ok(Value::Str(path))
+    Ok(Value::Str(path.into()))
 }
 
 fn unique_temp_path(prefix: &str, suffix: &str) -> String {
@@ -353,7 +353,7 @@ pub fn builtin_console_error_is_terminal(_ctx: &VmContext, _args: &[Value]) -> R
 /// `pwd` / `$PWD`。
 pub fn builtin_env_get_cwd(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let p = std::env::current_dir()?;
-    Ok(Value::Str(p.to_string_lossy().into_owned()))
+    Ok(Value::Str(p.to_string_lossy().into_owned().into()))
 }
 
 /// `cd path`（路径不存在 / 无权限会抛）。

@@ -1,7 +1,7 @@
 [package]
 name        = "z42-compression"
 version     = "0.1.0"
-edition     = "2021"
+edition     = "2024"
 description = "z42 stdlib native extension — compression (gzip / zlib / deflate / zstd). Built as cdylib + staticlib + rlib. z42vm loads via dlopen on desktop/mobile, statically links via the bundled-compression feature on wasm. Pure C ABI surface — no z42-type dependency, so this crate has no cycle with the z42 main crate."
 publish     = false
 

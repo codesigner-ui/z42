@@ -314,7 +314,7 @@ pub fn builtin_gc_write_heap_snapshot(ctx: &VmContext, args: &[Value]) -> Result
     // a BufWriter<File> via the streaming serializer — avoids the
     // ~30 MB intermediate String for large heaps.
     let snap = crate::gc::snapshot::build_graph_snapshot(ctx.heap());
-    let file = std::fs::File::create(path.as_str())
+    let file = std::fs::File::create(&*path)
         .map_err(|e| anyhow!("__gc_write_heap_snapshot: create {}: {}", path, e))?;
     let mut writer = std::io::BufWriter::new(file);
     let n_bytes = crate::gc::snapshot::serialize_v8_heapsnapshot_to(&snap, &mut writer)

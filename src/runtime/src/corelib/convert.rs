@@ -19,7 +19,7 @@ use anyhow::{bail, Result};
 #[inline]
 pub fn arg_str<'a>(args: &'a [Value], idx: usize, ctx: &str) -> Result<&'a str> {
     match args.get(idx) {
-        Some(Value::Str(s)) => Ok(s.as_str()),
+        Some(Value::Str(s)) => Ok(&s),
         Some(other) => bail!("{}: arg {} expected string, got {:?}", ctx, idx, other),
         None => bail!("{}: missing arg {}", ctx, idx),
     }
@@ -81,7 +81,7 @@ pub fn value_to_str(v: &Value) -> String {
         Value::F64(f)  => f.to_string(),
         Value::Bool(b) => b.to_string(),
         Value::Char(c) => c.to_string(),
-        Value::Str(s)  => s.clone(),
+        Value::Str(s)  => s.to_string(),
         Value::Null    => "null".to_string(),
         Value::Array(rc) => {
             let inner: Vec<String> = rc.borrow().iter().map(value_to_str).collect();
@@ -167,7 +167,7 @@ pub fn builtin_double_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
         .map_err(|_| anyhow::anyhow!("Double.Parse: could not parse {:?} as Double", s))
 }
 pub fn builtin_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    Ok(Value::Str(args.first().map(value_to_str).unwrap_or_default()))
+    Ok(Value::Str(args.first().map(value_to_str).unwrap_or_default().into()))
 }
 
 // ── L3-G4b primitive interface implementations ──────────────────────────────
@@ -190,7 +190,7 @@ pub fn builtin_int32_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value
 }
 pub fn builtin_int32_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = arg_i64(args, 0, "Int32.ToString")?;
-    Ok(Value::Str(a.to_string()))
+    Ok(Value::Str(a.to_string().into()))
 }
 
 // 2026-04-27 wave2-compare-to-script: builtin_double_compare_to removed.
@@ -207,7 +207,7 @@ pub fn builtin_double_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Valu
 }
 pub fn builtin_double_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = arg_f64(args, 0, "Double.ToString")?;
-    Ok(Value::Str(a.to_string()))
+    Ok(Value::Str(a.to_string().into()))
 }
 
 // 2026-04-27 wave1-bool-script: 3 `builtin_bool_*` removed.
@@ -227,7 +227,7 @@ pub fn builtin_char_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value>
 }
 pub fn builtin_char_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = arg_char(args, 0, "Char.ToString")?;
-    Ok(Value::Str(a.to_string()))
+    Ok(Value::Str(a.to_string().into()))
 }
 
 pub fn builtin_str_compare_to(_ctx: &VmContext, args: &[Value]) -> Result<Value> {

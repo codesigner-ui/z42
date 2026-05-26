@@ -17,7 +17,7 @@ pub(super) fn collect_args(regs: &[Value], reg_indices: &[u32]) -> Result<Vec<Va
 /// Extract a string value from a register slice.
 pub(super) fn str_val(regs: &[Value], reg: u32) -> Result<String> {
     match regs.get(reg as usize) {
-        Some(Value::Str(s)) => Ok(s.clone()),
+        Some(Value::Str(s)) => Ok(s.to_string()),
         Some(other) => bail!("expected str in register %{reg}, got {:?}", other),
         None => bail!("undefined register %{reg}"),
     }

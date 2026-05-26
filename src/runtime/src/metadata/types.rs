@@ -202,7 +202,14 @@ pub enum Value {
     Bool(bool),
     Char(char),
     /// Immutable string primitive.  `s.Length` → virtual field dispatch in FieldGet.
-    Str(String),
+    ///
+    /// review.md C1+C3 (2026-05-27): `Arc<str>` instead of `String`. Saves
+    /// 8 B/instance (Arc<str> = 16 B vs String = 24 B; no `cap` word) AND
+    /// turns clone from O(n) byte copy into O(1) atomic refcount — the
+    /// hot-path win for string-heavy interp / format / concat loops.
+    /// Arc not Rc because `Value: Send + Sync` (see
+    /// `gc/arc_heap_tests/send_sync.rs::assert_send_sync::<Value>()`).
+    Str(Arc<str>),
     Null,
     /// Heap-allocated dynamic array with reference semantics.
     Array(GcRef<Vec<Value>>),

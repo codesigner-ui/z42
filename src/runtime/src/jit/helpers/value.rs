@@ -9,7 +9,7 @@ use super::{set_exception, vm_ctx_ref, JitFn};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_i32(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, val: i32,
@@ -17,7 +17,7 @@ pub unsafe extern "C" fn jit_const_i32(
     (*frame).regs[dst as usize] = Value::I64(val as i64);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_i64(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, val: i64,
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn jit_const_i64(
     (*frame).regs[dst as usize] = Value::I64(val);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_f64(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, val: f64,
@@ -33,7 +33,7 @@ pub unsafe extern "C" fn jit_const_f64(
     (*frame).regs[dst as usize] = Value::F64(val);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_bool(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, val: u8,
@@ -41,7 +41,7 @@ pub unsafe extern "C" fn jit_const_bool(
     (*frame).regs[dst as usize] = Value::Bool(val != 0);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_char(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, val: i32,
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn jit_const_char(
     (*frame).regs[dst as usize] = Value::Char(char::from_u32(val as u32).unwrap_or('\0'));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_null(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32,
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn jit_const_null(
     (*frame).regs[dst as usize] = Value::Null;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_const_str(
     frame: *mut JitFrame,
     ctx:   *const JitModuleCtx,
@@ -66,9 +66,9 @@ pub unsafe extern "C" fn jit_const_str(
 ) -> u8 {
     let ctx_ref = &*ctx;
     match ctx_ref.string_pool.get(idx as usize) {
-        Some(s) => { (*frame).regs[dst as usize] = Value::Str(s.clone()); 0 }
+        Some(s) => { (*frame).regs[dst as usize] = Value::Str(s.clone().into()); 0 }
         None => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("string pool index {} out of range", idx)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("string pool index {} out of range", idx).into()));
             1
         }
     }
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn jit_const_str(
 
 // ── Copy ─────────────────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_copy(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, src: u32,
@@ -87,24 +87,24 @@ pub unsafe extern "C" fn jit_copy(
 
 // ── String ───────────────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_str_concat(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, a: u32, b: u32,
 ) -> u8 {
     match (&(*frame).regs[a as usize], &(*frame).regs[b as usize]) {
         (Value::Str(sa), Value::Str(sb)) => {
-            (*frame).regs[dst as usize] = Value::Str(format!("{}{}", sa, sb));
+            (*frame).regs[dst as usize] = Value::Str(format!("{}{}", sa, sb).into());
             0
         }
         (va, vb) => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("StrConcat: expected two strings, got {:?} and {:?}", va, vb)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("StrConcat: expected two strings, got {:?} and {:?}", va, vb).into()));
             1
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_to_str(
     frame: *mut JitFrame, ctx: *const JitModuleCtx, dst: u32, src: u32,
 ) -> u8 {
@@ -125,10 +125,10 @@ pub unsafe extern "C" fn jit_to_str(
                 let r = jit_fn(&mut callee, ctx);
                 vm_ctx.pop_frame();
                 if r != 0 { callee.recycle(); return 1; }
-                let s = match callee.ret.take() {
+                let s: std::sync::Arc<str> = match callee.ret.take() {
                     Some(Value::Str(s)) => s,
-                    Some(ref other)     => value_to_str(other),
-                    None                => String::new(),
+                    Some(ref other)     => value_to_str(other).into(),
+                    None                => std::sync::Arc::from(""),
                 };
                 callee.recycle();
                 (*frame).regs[dst as usize] = Value::Str(s);
@@ -139,21 +139,21 @@ pub unsafe extern "C" fn jit_to_str(
                 vm_ctx_ref(ctx),
                 crate::metadata::well_known_names::BUILTIN_OBJ_TO_STR,
                 &[val.clone()]) {
-            Ok(v) => { (*frame).regs[dst as usize] = Value::Str(match v { Value::Str(s) => s, ref o => value_to_str(o) }); }
+            Ok(v) => { (*frame).regs[dst as usize] = Value::Str(match v { Value::Str(s) => s, ref o => value_to_str(o).into() }); }
             Err(e) => {
-                set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string()));
+                set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into()));
                 return 1;
             }
         }
     } else {
-        (*frame).regs[dst as usize] = Value::Str(value_to_str(val));
+        (*frame).regs[dst as usize] = Value::Str(value_to_str(val).into());
     }
     0
 }
 
 // ── Branch / return glue ─────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_get_bool(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     reg: u32,
@@ -161,13 +161,13 @@ pub unsafe extern "C" fn jit_get_bool(
     match &(*frame).regs[reg as usize] {
         Value::Bool(b) => if *b { 1 } else { 0 },
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("BrCond: expected bool, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("BrCond: expected bool, got {:?}", other).into()));
             255
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_set_ret(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     reg: u32,

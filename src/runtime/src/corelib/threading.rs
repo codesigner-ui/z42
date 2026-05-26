@@ -168,7 +168,7 @@ fn ok_result(ctx: &VmContext) -> Value {
 fn action_err_result(ctx: &VmContext, msg: &str) -> Value {
     ctx.heap().alloc_array(vec![
         Value::I64(JOIN_ACTION_ERR),
-        Value::Str(msg.to_string()),
+        Value::Str(msg.to_string().into()),
     ])
 }
 

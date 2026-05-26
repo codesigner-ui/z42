@@ -71,12 +71,12 @@ unsafe impl Send for ErasedSoftEntry {}
 unsafe impl Sync for ErasedSoftEntry {}
 
 impl ErasedSoftEntry {
-    pub(crate) fn from_object(ptr: NonNull<RegionEntry<crate::metadata::ScriptObject>>, gen: u32) -> Self {
-        Self { ptr: ptr.cast(), generation: gen, kind: ErasedKind::Object }
+    pub(crate) fn from_object(ptr: NonNull<RegionEntry<crate::metadata::ScriptObject>>, generation: u32) -> Self {
+        Self { ptr: ptr.cast(), generation, kind: ErasedKind::Object }
     }
 
-    pub(crate) fn from_array(ptr: NonNull<RegionEntry<Vec<crate::metadata::Value>>>, gen: u32) -> Self {
-        Self { ptr: ptr.cast(), generation: gen, kind: ErasedKind::Array }
+    pub(crate) fn from_array(ptr: NonNull<RegionEntry<Vec<crate::metadata::Value>>>, generation: u32) -> Self {
+        Self { ptr: ptr.cast(), generation, kind: ErasedKind::Array }
     }
 
     /// Pointer as usize — used as lookup / removal key.

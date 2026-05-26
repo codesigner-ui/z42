@@ -73,7 +73,7 @@ pub struct ProcessSlot {
 /// Accept `Value::Str` or `Value::Null` — null means "not set, fall through".
 fn optional_str(args: &[Value], idx: usize, ctx: &str) -> Result<Option<String>> {
     match args.get(idx) {
-        Some(Value::Str(s)) => Ok(Some(s.clone())),
+        Some(Value::Str(s)) => Ok(Some(s.to_string())),
         Some(Value::Null)   => Ok(None),
         Some(other) => bail!("{}: arg {} expected string or null, got {:?}", ctx, idx, other),
         None        => bail!("{}: missing arg {}", ctx, idx),
@@ -87,7 +87,7 @@ fn require_str_array(args: &[Value], idx: usize, ctx: &str) -> Result<Vec<String
             let mut out = Vec::with_capacity(borrowed.len());
             for (i, v) in borrowed.iter().enumerate() {
                 match v {
-                    Value::Str(s) => out.push(s.clone()),
+                    Value::Str(s) => out.push(s.to_string()),
                     other => bail!("{}: arg {} element {} expected string, got {:?}", ctx, idx, i, other),
                 }
             }
@@ -179,8 +179,8 @@ fn ok_result(ctx: &VmContext, status: std::process::ExitStatus,
     ctx.heap().alloc_array(vec![
         Value::I64(KIND_OK),
         Value::I64(exit_code),
-        Value::Str(stdout_str),
-        Value::Str(stderr_str),
+        Value::Str(stdout_str.into()),
+        Value::Str(stderr_str.into()),
         stdout_arr,
         stderr_arr,
     ])
@@ -189,15 +189,15 @@ fn ok_result(ctx: &VmContext, status: std::process::ExitStatus,
 fn start_err_result(ctx: &VmContext, program: &str, err: &std::io::Error) -> Value {
     ctx.heap().alloc_array(vec![
         Value::I64(KIND_START_ERR),
-        Value::Str(program.to_string()),
-        Value::Str(format!("{} (kind: {:?})", err, err.kind())),
+        Value::Str(program.to_string().into()),
+        Value::Str(format!("{} (kind: {:?})", err, err.kind()).into()),
     ])
 }
 
 fn timeout_result(ctx: &VmContext, program: &str, timeout_ms: i64) -> Value {
     ctx.heap().alloc_array(vec![
         Value::I64(KIND_TIMEOUT),
-        Value::Str(program.to_string()),
+        Value::Str(program.to_string().into()),
         Value::I64(timeout_ms),
     ])
 }
@@ -712,7 +712,7 @@ pub fn builtin_process_which(_ctx: &VmContext, args: &[Value]) -> Result<Value> 
     const NAME: &str = "__process_which";
     let name = arg_str(args, 0, NAME)?;
     Ok(match resolve_executable(&name) {
-        Some(path) => Value::Str(path),
+        Some(path) => Value::Str(path.into()),
         None       => Value::Null,
     })
 }

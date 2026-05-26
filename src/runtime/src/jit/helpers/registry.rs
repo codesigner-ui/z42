@@ -4,7 +4,7 @@
 //!
 //! 1. **`register_symbols`** — called by `jit/mod.rs::compile_module` against
 //!    the `JITBuilder` *before* JITModule construction; binds every helper's
-//!    `#[no_mangle]` symbol name to its function pointer so Cranelift's
+//!    `#[unsafe(no_mangle)]` symbol name to its function pointer so Cranelift's
 //!    linker can resolve calls.
 //!
 //! 2. **`declare_imports`** — called by `jit/translate.rs` against the
@@ -109,7 +109,7 @@ pub struct HelperIds {
 
 // ─── register_symbols ───────────────────────────────────────────────────────
 
-/// Bind every helper's `#[no_mangle]` symbol name to its function pointer
+/// Bind every helper's `#[unsafe(no_mangle)]` symbol name to its function pointer
 /// in the given `JITBuilder`. Must be called once during `compile_module`
 /// before constructing the `JITModule`.
 pub fn register_symbols(builder: &mut JITBuilder) {

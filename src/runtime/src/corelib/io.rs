@@ -184,7 +184,7 @@ pub fn builtin_test_io_install_stdout_sink(_ctx: &VmContext, _: &[Value]) -> Res
 
 pub fn builtin_test_io_take_stdout_buffer(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
     let bytes = STDOUT_SINKS.with(|s| s.borrow_mut().pop().unwrap_or_default());
-    Ok(Value::Str(String::from_utf8_lossy(&bytes).into_owned()))
+    Ok(Value::Str(String::from_utf8_lossy(&bytes).into_owned().into()))
 }
 
 pub fn builtin_test_io_install_stderr_sink(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
@@ -194,19 +194,19 @@ pub fn builtin_test_io_install_stderr_sink(_ctx: &VmContext, _: &[Value]) -> Res
 
 pub fn builtin_test_io_take_stderr_buffer(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
     let bytes = STDERR_SINKS.with(|s| s.borrow_mut().pop().unwrap_or_default());
-    Ok(Value::Str(String::from_utf8_lossy(&bytes).into_owned()))
+    Ok(Value::Str(String::from_utf8_lossy(&bytes).into_owned().into()))
 }
 
 pub fn builtin_readline(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let mut line = String::new();
     std::io::stdin().read_line(&mut line)?;
-    Ok(Value::Str(line.trim_end_matches(['\n', '\r']).to_string()))
+    Ok(Value::Str(line.trim_end_matches(['\n', '\r']).to_string().into()))
 }
 
 pub fn builtin_concat(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = args.first().map(value_to_str).unwrap_or_default();
     let b = args.get(1).map(value_to_str).unwrap_or_default();
-    Ok(Value::Str(format!("{}{}", a, b)))
+    Ok(Value::Str(format!("{}{}", a, b).into()))
 }
 
 pub fn builtin_len(_ctx: &VmContext, args: &[Value]) -> Result<Value> {

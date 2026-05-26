@@ -10,7 +10,7 @@ use super::{set_exception, take_exception, vm_ctx_ref};
 /// receives the source `(line, col)` of the `throw` site so it can stamp
 /// the throwing frame's FrameInfo before snapshotting the stack into
 /// `Std.Exception.StackTrace`. `throw_col == 0` means unknown (zbc < 1.1).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_throw(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     reg: u32,
@@ -25,7 +25,7 @@ pub unsafe extern "C" fn jit_throw(
     set_exception(vm_ctx, v);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_install_catch(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     catch_reg: u32,
@@ -39,7 +39,7 @@ pub unsafe extern "C" fn jit_install_catch(
 /// `catch (target e)` clause. Returns 0 otherwise (or if there is no pending
 /// exception / it is not an Object). The exception is left in place for a
 /// later `jit_install_catch` call once a matching handler is selected.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_match_catch_type(
     _frame: *mut JitFrame, ctx: *const JitModuleCtx,
     target_ptr: *const u8, target_len: i64,
@@ -79,7 +79,7 @@ pub unsafe extern "C" fn jit_match_catch_type(
 /// Safety: `ctx` must point to a valid `JitModuleCtx` whose `vm_ctx`
 /// dereferences to a live `VmContext`. The JIT entry path (`JitModule::run`)
 /// guarantees this for the duration of any compiled function call.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_check_safepoint(
     _frame: *mut JitFrame,
     ctx:    *const JitModuleCtx,

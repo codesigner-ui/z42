@@ -180,14 +180,16 @@ pub fn resolve_module(module: &crate::metadata::Module, ctx: &crate::vm_context:
                 // `native::ext::load_all` at VM startup). add-z42-compression
                 // (2026-05-22): facade `[Native(lib="z42_compression", entry=...)]`
                 // names resolve through the ext path.
-                crate::corelib::builtin_id_of(name)
-                    .or_else(|| crate::corelib::ext_builtin_id_of(ctx, name))
-                    .unwrap_or_else(|| panic!(
+                {
+                    let bid = crate::corelib::builtin_id_of(name);
+                    #[cfg(feature = "native-interop")]
+                    let bid = bid.or_else(|| crate::corelib::ext_builtin_id_of(ctx, name));
+                    bid.unwrap_or_else(|| panic!(
                         "unknown builtin `{}` (typo? not in BUILTINS table or any \
                          dlopened native extension?)",
                         name
                     ))
-                    .0
+                }.0
             })
             .collect();
 

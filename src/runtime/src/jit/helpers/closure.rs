@@ -19,7 +19,7 @@ use super::{set_exception, vm_ctx_ref, JitFn};
 
 /// Push `Value::FuncRef(name)` into `frame.regs[dst]`. No-capture lambdas /
 /// local fns lower to this. See closure.md §6 + L3-C-2.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_load_fn(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32,
@@ -37,7 +37,7 @@ pub unsafe extern "C" fn jit_load_fn(
 /// `Value::FuncRef(name)` and stores it into `vm_ctx.func_ref_slots[slot_id]`;
 /// subsequent hits read from slot. Slot allocation guaranteed by `Vm::run`
 /// calling `alloc_func_ref_slots` before entry.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_load_fn_cached(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32,
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn jit_load_fn_cached(
 /// to `frame.regs[dst]`. `stack_alloc` 决定走 frame-local arena
 /// (`Value::StackClosure`) 还是 heap (`Value::Closure`)。详见 closure.md §6
 /// + impl-closure-l3-escape-stack。
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_mk_clos(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32,
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn jit_mk_clos(
 ///   • `Value::FuncRef(name)` → static call (parameters as-is)
 ///   • `Value::Closure { env, fn_name }` → prepend env as implicit first arg
 /// Anything else → exception. See closure.md §6 + L3-C-6.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_call_indirect(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, callee: u32,
@@ -129,14 +129,14 @@ pub unsafe extern "C" fn jit_call_indirect(
             if idx >= frame_ref.env_arena.len() {
                 set_exception(vm_ctx, Value::Str(format!(
                     "CallIndirect: stack closure env_idx {} out of bounds (arena_len={})",
-                    idx, frame_ref.env_arena.len())));
+                    idx, frame_ref.env_arena.len()).into()));
                 return 1;
             }
             (fn_name.clone(), Some(frame_ref.env_arena[idx].clone()))
         }
         other => {
             set_exception(vm_ctx, Value::Str(format!(
-                "CallIndirect: expected FuncRef / Closure / StackClosure, got {:?}", other)));
+                "CallIndirect: expected FuncRef / Closure / StackClosure, got {:?}", other).into()));
             return 1;
         }
     };
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn jit_call_indirect(
         Some(e) => e,
         None => {
             set_exception(vm_ctx,
-                Value::Str(format!("CallIndirect: undefined function `{}`", fn_name)));
+                Value::Str(format!("CallIndirect: undefined function `{}`", fn_name).into()));
             return 1;
         }
     };

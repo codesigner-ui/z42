@@ -119,7 +119,7 @@ pub fn value_to_z42(v: &Value, target: &SigType, arena: &mut Arena) -> Result<Z4
         // formerly Z0908) — the C consumer cannot disambiguate them from
         // the terminator.
         (Value::Str(s), SigType::CStr | SigType::Ptr) => {
-            let cs = CString::new(s.as_str()).map_err(|_| MarshalErr::InvalidMarshal(format!(
+            let cs = CString::new(&**s).map_err(|_| MarshalErr::InvalidMarshal(format!(
                 "cannot pass z42 string {:?} as `*const c_char`: contains interior NUL",
                 truncate_for_msg(s)
             )))?;

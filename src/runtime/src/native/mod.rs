@@ -8,7 +8,7 @@
 //! - [`dispatch`] — libffi cif construction + `extern "C"` invocation
 //! - [`loader`] — `dlopen` + library-handle lifetime management
 //! - [`error`] — thread-local last-error slot for `z42_last_error()`
-//! - [`exports`] — `#[no_mangle]` `z42_*` ABI entry points
+//! - [`exports`] — `#[unsafe(no_mangle)]` `z42_*` ABI entry points
 //!
 //! Only `CallNative` (0x53) is wired to real dispatch in this spec; the
 //! other three C1-scaffold opcodes (`CallNativeVtable`, `PinPtr`,

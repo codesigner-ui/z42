@@ -13,15 +13,15 @@ use crate::vm_context::VmContext;
 use anyhow::Result;
 
 pub fn builtin_platform_os(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(std::env::consts::OS.to_string()))
+    Ok(Value::Str(std::env::consts::OS.to_string().into()))
 }
 
 pub fn builtin_platform_arch(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(std::env::consts::ARCH.to_string()))
+    Ok(Value::Str(std::env::consts::ARCH.to_string().into()))
 }
 
 pub fn builtin_platform_family(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(std::env::consts::FAMILY.to_string()))
+    Ok(Value::Str(std::env::consts::FAMILY.to_string().into()))
 }
 
 /// Keep in sync with `Std.OSKind` in

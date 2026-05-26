@@ -37,12 +37,12 @@ fn set_cwd_then_cwd_reflects() {
 
     let tmp = std::env::temp_dir();
     let tmp_str = tmp.to_string_lossy().into_owned();
-    builtin_system_set_cwd(&ctx, &[Value::Str(tmp_str.clone())]).unwrap();
+    builtin_system_set_cwd(&ctx, &[Value::Str(tmp_str.clone().into())]).unwrap();
 
     let Value::Str(after) = builtin_system_cwd(&ctx, &[]).unwrap()
         else { panic!() };
     // macOS resolves /tmp → /private/tmp via symlink; accept either.
-    assert!(after == tmp_str || after.ends_with(tmp.file_name().unwrap().to_str().unwrap()),
+    assert!(after == tmp_str.into() || after.ends_with(tmp.file_name().unwrap().to_str().unwrap()),
         "after={after}, expected to end with tmp dir name");
 
     // Restore original cwd so other tests aren't affected.

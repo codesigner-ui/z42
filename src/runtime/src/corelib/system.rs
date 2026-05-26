@@ -19,15 +19,15 @@ pub fn builtin_system_pid(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
 
 pub fn builtin_system_exe_path(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
     match std::env::current_exe() {
-        Ok(p)  => Ok(Value::Str(p.to_string_lossy().into_owned())),
-        Err(_) => Ok(Value::Str(String::new())),
+        Ok(p)  => Ok(Value::Str(p.to_string_lossy().into_owned().into())),
+        Err(_) => Ok(Value::Str(String::new().into())),
     }
 }
 
 pub fn builtin_system_cwd(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
     match std::env::current_dir() {
-        Ok(p)  => Ok(Value::Str(p.to_string_lossy().into_owned())),
-        Err(_) => Ok(Value::Str(String::new())),
+        Ok(p)  => Ok(Value::Str(p.to_string_lossy().into_owned().into())),
+        Err(_) => Ok(Value::Str(String::new().into())),
     }
 }
 
@@ -38,7 +38,7 @@ pub fn builtin_system_set_cwd(_ctx: &VmContext, args: &[Value]) -> Result<Value>
 }
 
 pub fn builtin_system_hostname(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(get_hostname().unwrap_or_default()))
+    Ok(Value::Str(get_hostname().unwrap_or_default().into()))
 }
 
 pub fn builtin_system_cpu_count(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
@@ -49,7 +49,7 @@ pub fn builtin_system_cpu_count(_ctx: &VmContext, _: &[Value]) -> Result<Value> 
 }
 
 pub fn builtin_system_os_version(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(get_os_version()))
+    Ok(Value::Str(get_os_version().into()))
 }
 
 // ── platform-specific helpers ────────────────────────────────────────────

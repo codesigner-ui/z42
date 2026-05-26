@@ -17,7 +17,7 @@ fn object_size_bytes_atomic_returns_value_size() {
 #[test]
 fn object_size_bytes_string_includes_capacity() {
     let heap = ArcMagrGC::new();
-    let s = Value::Str("hello".to_string());
+    let s = Value::Str("hello".to_string().into());
     assert!(heap.object_size_bytes(&s) > std::mem::size_of::<Value>());
 }
 

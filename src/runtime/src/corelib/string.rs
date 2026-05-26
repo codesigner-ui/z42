@@ -47,7 +47,7 @@ pub fn builtin_str_from_chars(_ctx: &VmContext, args: &[Value]) -> Result<Value>
             other => Err(anyhow!("__str_from_chars: array element must be char, got {:?}", other)),
         })
         .collect::<Result<String>>()?;
-    Ok(Value::Str(out))
+    Ok(Value::Str(out.into()))
 }
 
 // 2026-04-27 wave1-string-script: builtin_str_split + builtin_str_join removed.
@@ -67,7 +67,7 @@ pub fn builtin_str_from_chars(_ctx: &VmContext, args: &[Value]) -> Result<Value>
 /// 一次 + Value::Str(s) 再持有一次）。
 pub fn builtin_str_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = arg_str(args, 0, "__str_to_string")?;
-    Ok(Value::Str(s.to_owned()))
+    Ok(Value::Str(s.to_owned().into()))
 }
 
 /// string.Equals(other) — value equality.
@@ -75,7 +75,7 @@ pub fn builtin_str_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> 
 pub fn builtin_str_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = arg_str(args, 0, "__str_equals")?;
     let result = match args.get(1) {
-        Some(Value::Str(b)) => a == b.as_str(),
+        Some(Value::Str(b)) => a == &**b,
         Some(Value::Null) | None => false,
         _ => false,
     };

@@ -6,7 +6,7 @@ use crate::metadata::Value;
 use super::super::frame::{JitFrame, JitModuleCtx};
 use super::{set_exception, vm_ctx_ref};
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_array_new(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, size: u32, elem_tag: u8,
@@ -14,7 +14,7 @@ pub unsafe extern "C" fn jit_array_new(
     let n = match &(*frame).regs[size as usize] {
         Value::I64(n) if *n >= 0 => *n as usize,
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayNew: expected non-negative int, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayNew: expected non-negative int, got {:?}", other).into()));
             return 1;
         }
     };
@@ -23,7 +23,7 @@ pub unsafe extern "C" fn jit_array_new(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_array_new_lit(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, elems_ptr: *const u32, elem_cnt: usize,
@@ -33,7 +33,7 @@ pub unsafe extern "C" fn jit_array_new_lit(
     (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vals);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_array_get(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, arr: u32, idx: u32,
@@ -46,19 +46,19 @@ pub unsafe extern "C" fn jit_array_get(
                 Value::I64(n) if *n >= 0 => *n as usize,
                 Value::I64(n) if *n >= 0 => *n as usize,
                 other => {
-                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: bad index {:?}", other)));
+                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: bad index {:?}", other).into()));
                     return 1;
                 }
             };
             let borrowed = rc.borrow();
             if i >= borrowed.len() {
-                set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
+                set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len()).into()));
                 return 1;
             }
             borrowed[i].clone()
         }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: expected array, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: expected array, got {:?}", other).into()));
             return 1;
         }
     };
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn jit_array_get(
 /// **add-write-barriers (2026-05-21)**: dispatches `write_barrier_array_elem`
 /// after a successful element write *iff* `v.is_heap_ref()`.
 /// Mirrors `interp::exec_array::array_set`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_array_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     arr: u32, idx: u32, val: u32,
@@ -85,13 +85,13 @@ pub unsafe extern "C" fn jit_array_set(
                 Value::I64(n) if *n >= 0 => *n as usize,
                 Value::I64(n) if *n >= 0 => *n as usize,
                 other => {
-                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: bad index {:?}", other)));
+                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: bad index {:?}", other).into()));
                     return 1;
                 }
             };
             let mut borrowed = rc.borrow_mut();
             if i >= borrowed.len() {
-                set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
+                set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len()).into()));
                 return 1;
             }
             borrowed[i] = v.clone();
@@ -101,14 +101,14 @@ pub unsafe extern "C" fn jit_array_set(
             }
         }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: expected array, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: expected array, got {:?}", other).into()));
             return 1;
         }
     }
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_array_len(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, arr: u32,
@@ -116,7 +116,7 @@ pub unsafe extern "C" fn jit_array_len(
     match &(*frame).regs[arr as usize] {
         Value::Array(rc) => { (*frame).regs[dst as usize] = Value::I64(rc.borrow().len() as i64); 0 }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayLen: expected array, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayLen: expected array, got {:?}", other).into()));
             1
         }
     }

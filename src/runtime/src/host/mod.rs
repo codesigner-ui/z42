@@ -92,7 +92,7 @@ fn idx_to_entry_handle(idx: usize) -> *mut Z42Entry {
 
 // ── Lifecycle ────────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_initialize(
     cfg: *const Z42HostConfig,
     out_host: *mut *mut Z42Host,
@@ -158,7 +158,7 @@ pub unsafe extern "C" fn z42_host_initialize(
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_shutdown(host: *mut Z42Host) -> Z42HostStatus {
     guard(|| {
         if host.is_null() {
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn z42_host_shutdown(host: *mut Z42Host) -> Z42HostStatus 
 
 // ── Module / entry / invoke ─────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_load_zbc(
     host: *mut Z42Host,
     bytes: *const u8,
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn z42_host_load_zbc(
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_resolve_entry(
     host: *mut Z42Host,
     module: *mut Z42Module,
@@ -351,7 +351,7 @@ pub unsafe extern "C" fn z42_host_resolve_entry(
     })
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_invoke(
     entry: *mut Z42Entry,
     args: *const Z42Value,
@@ -442,7 +442,7 @@ pub unsafe extern "C" fn z42_host_invoke(
 
 // ── Sinks ───────────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_set_stdout_sink(
     host: *mut Z42Host,
     sink: config::Z42WriteSink,
@@ -451,7 +451,7 @@ pub unsafe extern "C" fn z42_host_set_stdout_sink(
     guard(|| set_sink(host, sink, user_data, SinkSlot::Stdout))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_set_stderr_sink(
     host: *mut Z42Host,
     sink: config::Z42WriteSink,
@@ -503,7 +503,7 @@ fn build_host_sink(sink: config::Z42WriteSink, user_data: usize) -> Option<io::H
 
 // ── Last error ──────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_host_last_error(_host: *mut Z42Host) -> Z42Error {
     snapshot_last_error()
 }

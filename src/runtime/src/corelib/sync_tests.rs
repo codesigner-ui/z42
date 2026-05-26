@@ -184,7 +184,7 @@ fn channel_try_recv_ok_returns_value() {
     assert!(matches!(borrowed[0], Value::I64(0)),
         "ok try_recv should be discriminator 0, got {:?}", borrowed[0]);
     match &borrowed[1] {
-        Value::Str(s) => assert_eq!(s, "hi"),
+        Value::Str(s) => assert_eq!(&**s, "hi"),
         other => panic!("expected Str, got {other:?}"),
     }
 }

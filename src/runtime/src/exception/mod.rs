@@ -218,7 +218,7 @@ pub fn populate_stack_trace(value: &Value, ctx: &VmContext, module: &Module) {
     let mut bm = rc.borrow_mut();
     if let Some(slot_val) = bm.slots.get_mut(slot) {
         if matches!(slot_val, Value::Null) {
-            *slot_val = Value::Str(trace);
+            *slot_val = Value::Str(trace.into());
         }
     }
 }
@@ -234,7 +234,7 @@ pub fn read_stack_trace(value: &Value, module: &Module) -> Option<String> {
     if !is_exception_subclass(&borrowed.type_desc, module) { return None; }
     let slot = borrowed.type_desc.field_index.get("StackTrace").copied()?;
     match borrowed.slots.get(slot) {
-        Some(Value::Str(s)) if !s.is_empty() => Some(s.clone()),
+        Some(Value::Str(s)) if !s.is_empty() => Some(s.to_string()),
         _ => None,
     }
 }
@@ -268,7 +268,7 @@ pub fn read_message(value: &Value, module: &Module) -> Option<String> {
     if !is_exception_subclass(&borrowed.type_desc, module) { return None; }
     let slot = borrowed.type_desc.field_index.get("Message").copied()?;
     match borrowed.slots.get(slot) {
-        Some(Value::Str(s)) => Some(s.clone()),
+        Some(Value::Str(s)) => Some(s.to_string()),
         _ => None,
     }
 }
@@ -309,7 +309,7 @@ pub fn make_stdlib_exception(
         .copied()
         .ok_or_else(|| anyhow!("stdlib type `{type_fq}` has no `Message` field"))?;
     if let Some(slot) = slots.get_mut(msg_slot) {
-        *slot = Value::Str(message);
+        *slot = Value::Str(message.into());
     }
 
     Ok(ctx.heap().alloc_object(type_desc, slots, NativeData::None))

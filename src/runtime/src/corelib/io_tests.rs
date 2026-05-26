@@ -18,7 +18,7 @@ fn ctx() -> std::pin::Pin<Box<VmContext>> {
 }
 
 fn s(text: &str) -> Value {
-    Value::Str(text.to_string())
+    Value::Str(text.to_string().into())
 }
 
 fn install_stdout() {
@@ -27,7 +27,7 @@ fn install_stdout() {
 
 fn take_stdout() -> String {
     match builtin_test_io_take_stdout_buffer(&ctx(), &[]).unwrap() {
-        Value::Str(s) => s,
+        Value::Str(s) => s.to_string(),
         other => panic!("expected Str, got {:?}", other),
     }
 }
@@ -38,7 +38,7 @@ fn install_stderr() {
 
 fn take_stderr() -> String {
     match builtin_test_io_take_stderr_buffer(&ctx(), &[]).unwrap() {
-        Value::Str(s) => s,
+        Value::Str(s) => s.to_string(),
         other => panic!("expected Str, got {:?}", other),
     }
 }

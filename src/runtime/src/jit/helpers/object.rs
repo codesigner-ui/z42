@@ -10,7 +10,7 @@ use super::{set_exception, vm_ctx_ref, JitFn};
 
 // ── Object allocation ────────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_obj_new(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32,
@@ -87,7 +87,7 @@ pub unsafe extern "C" fn jit_obj_new(
 // (jit_obj_new doesn't propagate them from the IR ObjNew yet), so this returns
 // Null in JIT-only data-flow; interp path is the source of truth for full
 // generic-T zero-value resolution.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_default_of(
     _frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, param_index: u32,
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn jit_default_of(
 ///   - `to_tag` (u32 from JIT calling convention; really TypeTag byte) gives target
 ///   - On conversion failure (e.g. invalid Unicode scalar) sets pending
 ///     exception via `set_exception` and returns 1
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_convert(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, src: u32, to_tag: u32,
@@ -122,14 +122,14 @@ pub unsafe extern "C" fn jit_convert(
         Some(v) => v.clone(),
         None => {
             set_exception(vm_ctx_ref(ctx),
-                Value::Str(format!("jit_convert: undefined register %{}", src)));
+                Value::Str(format!("jit_convert: undefined register %{}", src).into()));
             return 1;
         }
     };
     let result = match crate::interp::exec_value::convert_value(src_val, to_tag as u8) {
         Ok(v) => v,
         Err(e) => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("{:#}", e)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("{:#}", e).into()));
             return 1;
         }
     };
@@ -144,7 +144,7 @@ pub unsafe extern "C" fn jit_convert(
 /// Mirrors interp `field_get` — IC hit fetches `slots[cached_slot]` directly;
 /// miss walks `field_index` and writes (TypeId, slot) to IC. Non-Object
 /// receivers (Str / Array) bypass the IC since their field set is hardcoded.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_field_get(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, obj: u32,
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn jit_field_get(
         Value::Str(s) if field_name == "Length" => Value::I64(s.chars().count() as i64),
         Value::Array(rc) if field_name == "Length" || field_name == "Count" => Value::I64(rc.borrow().len() as i64),
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldGet: expected object, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldGet: expected object, got {:?}", other).into()));
             return 1;
         }
     };
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn jit_field_get(
 /// after a successful slot write *iff* `v.is_heap_ref()`. Mirrors
 /// `interp::exec_object::field_set` — primitive writes skip dispatch
 /// (Decision 1); both IC fast and slow paths fire (Decision 5).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_field_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     obj: u32,
@@ -256,7 +256,7 @@ pub unsafe extern "C" fn jit_field_set(
             0
         }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldSet: expected object, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldSet: expected object, got {:?}", other).into()));
             1
         }
     }
@@ -284,7 +284,7 @@ pub(super) fn is_array_isa(class_name: &str) -> bool {
     matches!(class_name, "Array" | "Object" | "Std.Array" | "Std.Object")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_is_instance(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, obj: u32, cls_ptr: *const u8, cls_len: usize,
@@ -300,7 +300,7 @@ pub unsafe extern "C" fn jit_is_instance(
     (*frame).regs[dst as usize] = Value::Bool(result);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_as_cast(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, obj: u32, cls_ptr: *const u8, cls_len: usize,
@@ -324,7 +324,7 @@ pub unsafe extern "C" fn jit_as_cast(
 /// receives pre-resolved `StaticFieldId` directly. Resolver populates
 /// `Function.resolved.static_field_tokens` at load via lazy ID allocation
 /// (always succeeds), so JIT codegen embeds the id as i32 const.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_static_get(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, field_id: u32,
@@ -333,7 +333,7 @@ pub unsafe extern "C" fn jit_static_get(
     (*frame).regs[dst as usize] = vm_ctx_ref(_ctx).static_get_by_id(id);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn jit_static_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     field_id: u32, val: u32,

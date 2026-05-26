@@ -1,4 +1,4 @@
-//! `#[no_mangle]` `z42_*` ABI entry points called by native libraries.
+//! `#[unsafe(no_mangle)]` `z42_*` ABI entry points called by native libraries.
 //!
 //! These functions are the C-side surface of Tier 1: native code dlopens
 //! the z42 host (or links statically against the test binary) and calls
@@ -88,7 +88,7 @@ fn type_ref_from_rc(ty: &Arc<RegisteredType>) -> Z42TypeRef {
 /// # Safety
 /// Caller must guarantee `desc` is a valid pointer to a
 /// `Z42TypeDescriptor_v1` whose strings live for the VM's lifetime.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_register_type(
     desc: *const Z42TypeDescriptor_v1,
 ) -> Z42TypeRef {
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn z42_register_type(
 
 // ── z42_resolve_type ─────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_resolve_type(
     module: *const c_char,
     type_name: *const c_char,
@@ -161,7 +161,7 @@ pub unsafe extern "C" fn z42_resolve_type(
 
 // ── z42_invoke (C2 stub: full method dispatch lands when used) ──────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_invoke(
     _ty: Z42TypeRef,
     _method: *const c_char,
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn z42_invoke(
     super::dispatch::z42_null()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_invoke_method(
     _receiver: Z42Value,
     _method: *const c_char,
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn z42_invoke_method(
 
 // ── z42_last_error ───────────────────────────────────────────────────────
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn z42_last_error() -> Z42Error {
     error::last()
 }
@@ -202,7 +202,7 @@ pub extern "C" fn z42_last_error() -> Z42Error {
 /// `msg` must be either NULL or a NUL-terminated string valid for the
 /// duration of this call. The function copies the message; the caller
 /// retains ownership of `msg`.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn z42_set_panic_message(msg: *const c_char) {
     if msg.is_null() {
         error::set(TYPE_REGISTRATION_FAILURE, "native shim panic (no message)");
