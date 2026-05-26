@@ -347,6 +347,70 @@ pub fn builtin_gc_set_strict_oom(ctx: &VmContext, args: &[Value]) -> Result<Valu
     Ok(Value::Null)
 }
 
+// ── Soft reference builtins (add-gc-softref, 2026-05-26) ─────────────────────
+
+/// `Std.SoftHandle` TypeDesc — single `_key: long` field holding the soft-ref key.
+fn soft_handle_type_desc() -> Arc<TypeDesc> {
+    static CACHE: OnceLock<Arc<TypeDesc>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let mut field_index = HashMap::new();
+        field_index.insert("_key".to_string(), 0usize);
+        let fields = vec![FieldSlot { name: "_key".to_string(), type_tag: "long".to_string() }];
+        Arc::new(TypeDesc {
+            name: "Std.SoftHandle".to_string(),
+            base_name: None,
+            own_fields: fields.clone(),
+            own_methods: vec![],
+            fields,
+            field_index,
+            vtable: Vec::new(),
+            vtable_index: HashMap::new(),
+            type_params: vec![],
+            type_args: vec![],
+            type_param_constraints: vec![],
+            id: crate::metadata::tokens::TypeId::UNRESOLVED,
+        })
+    }).clone()
+}
+
+/// Read the `_key: long` field from a `Std.SoftHandle` receiver.
+fn soft_handle_key(handle: &Value) -> Result<u64> {
+    match handle {
+        Value::Object(gc) => {
+            let obj = gc.borrow();
+            match obj.slots.first() {
+                Some(Value::I64(k)) => Ok(*k as u64),
+                _ => Err(anyhow!("SoftHandle._key: expected long slot")),
+            }
+        }
+        Value::Null => Err(anyhow!("SoftHandle._key: null receiver")),
+        _ => Err(anyhow!("SoftHandle._key: not an object")),
+    }
+}
+
+/// `Std.SoftHandle.Create(object target)` — **add-gc-softref (2026-05-26)**.
+/// Registers a soft reference to `target` and returns a new `Std.SoftHandle`
+/// object whose `_key` field holds the opaque registry key.
+/// Returns a SoftHandle with `_key = 0` if `target` is null or atomic.
+pub fn builtin_soft_handle_create(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let target = args.first().unwrap_or(&Value::Null);
+    let key = ctx.heap().register_soft_ref(target);
+    Ok(ctx.heap().alloc_object(
+        soft_handle_type_desc(),
+        vec![Value::I64(key as i64)],
+        NativeData::None,
+    ))
+}
+
+/// `Std.SoftHandle.Get()` — **add-gc-softref (2026-05-26)**.
+/// Returns the soft-ref target, or `Value::Null` if it was cleared by GC.
+pub fn builtin_soft_handle_get(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let receiver = args.first().unwrap_or(&Value::Null);
+    let key = soft_handle_key(receiver)?;
+    if key == 0 { return Ok(Value::Null); }
+    Ok(ctx.heap().soft_ref_get(key))
+}
+
 /// `Std.GC.GetStats()` — projects Rust `HeapStats` into a `Std.HeapStats` instance.
 /// `MaxBytes` uses `-1` as the unlimited sentinel (z42 has no `Optional<T>`).
 pub fn builtin_gc_stats(ctx: &VmContext, _args: &[Value]) -> Result<Value> {

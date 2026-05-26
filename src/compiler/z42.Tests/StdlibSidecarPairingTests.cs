@@ -8,10 +8,13 @@ namespace Z42.Tests;
 /// <summary>
 /// End-to-end gate: every stdlib zpkg under <c>artifacts/libraries/&lt;name&gt;/dist/</c>
 /// must have a matching <c>.zsym</c> sidecar whose BLID byte-equals the main zpkg's BLID.
+/// Sequential collection: must not overlap with IncrementalBuildIntegrationTests which
+/// deletes and rebuilds the same artifacts directory.
 /// This is the strongest "the whole pipeline ships consistently" check —
 /// covers ZbcWriter, ZpkgWriter, ZpkgBuilder.WriteZpkgWithSidecar, and the
 /// driver's `--release` strip wiring in one shot.
 /// </summary>
+[Collection("StdlibArtifacts")]
 public sealed class StdlibSidecarPairingTests
 {
     static string RepoRoot

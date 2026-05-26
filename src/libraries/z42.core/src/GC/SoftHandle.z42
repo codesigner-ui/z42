@@ -1,0 +1,27 @@
+namespace Std;
+
+// add-gc-softref (2026-05-26): GC-clearable reference — kept alive when
+// heap pressure < Z42_GC_SOFT_THRESHOLD (default 80%), cleared under pressure.
+//
+// Usage:
+//     var handle = SoftHandle.Create(target);
+//     // ... later ...
+//     var obj = handle.Get();
+//     if (obj != null) {
+//         // target still alive
+//     }
+//
+// When max_heap_bytes is unlimited (0), soft handles are never cleared.
+// When the heap is stressed (used >= threshold * max), the GC may clear them.
+//
+// Atomic values (int, string, bool, etc.) cannot be soft-referenced;
+// Create() returns a handle whose Get() always returns null.
+public class SoftHandle {
+    private long _key;
+
+    [Native("__soft_handle_create")]
+    public static extern SoftHandle Create(object target);
+
+    [Native("__soft_handle_get")]
+    public extern object Get();
+}

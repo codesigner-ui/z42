@@ -643,6 +643,7 @@ Write>` 流式直写 `BufWriter<File>`，无中间 `String` 内存分配。
 | **add-gc-pause-window** | PauseHistogram 加 `recent_pauses: VecDeque<u64>` rolling FIFO 窗口（默认 1024 容量，`Z42_GC_PAUSE_WINDOW` clamp 到 `[1, 65536]`）+ 2 个新 builtins `Std.GC.RecentPauses()` / `PauseWindowCapacity()`。补 B5 "cumulative 不滚动" 局限。`PauseHistogram` / `HeapStats` 同时 drop `Copy` derive（VecDeque 不 Copy）| ✅ 2026-05-24 add-gc-pause-window |
 | **add-gc-snapshot-streaming** | `gc/snapshot.rs` 新增 `serialize_v8_heapsnapshot_to<W: Write>` 流式直写 + `escape_json_str_to<W: Write>`；`serialize_v8_heapsnapshot` 改为薄包装（byte-identical）；`builtin_gc_write_heap_snapshot` 改用 `BufWriter<File>` + `flush()`，消除中间 `String`。Pure perf，无行为变化 | ✅ 2026-05-24 add-gc-snapshot-streaming |
 | **B1 OOM exception** | `Std.OutOfMemoryException` 新类型 + interp `obj_new`/`array_new`/`mk_clos` alloc 后 Null 检测 → throw OOM；double-OOM 防卫（disable strict 再 alloc exception 对象）；`GC.SetMaxHeapBytes` / `GC.SetStrictOOM` 两个新 builtin | ✅ 2026-05-25 add-gc-oom-exception |
+| **B2 soft handles** | `SoftRegistry`（`gc/soft_registry.rs`）+ 压力阈值判定（`Z42_GC_SOFT_THRESHOLD` 默认 0.80）+ `__soft_handle_create` / `__soft_handle_get` builtins + `Std.SoftHandle` 类（z42.core）。原子值 Create → Get 始终 null | ✅ 2026-05-26 add-gc-softref |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -759,11 +760,17 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
   - `GC.SetMaxHeapBytes(n)` / `GC.SetStrictOOM(b)` 两个新 builtin 暴露给脚本
 - **延后**：JIT 路径 `jit_obj_new` / `jit_array_new` 暂不注入 OOM 检测；详见下文 Deferred 段
 
-#### B2. 软引用（SoftGcRef）
+#### B2. 软引用（SoftHandle）
+- **状态**：✅ 完成，spec `add-gc-softref`（2026-05-26）
 - **What**：内存压力下 GC 可主动回收的引用，介于 strong 与 weak 之间
 - **Why**：缓存场景（"内存够则保留，紧张则丢弃"）现在只能手动 weak + 重建
-- **Deps**：A2 mark phase 决策接口（区分软引用与强引用，A2 已就位可扩展）
-- **Size**：~200 LOC，2 天
+- **实现要点**：
+  - `SoftRegistry`（`gc/soft_registry.rs`）：`Vec<SoftEntry { id: u64, target: Option<GcRef<Object>> }>`；`clear_entries` 在 sweep 压力路径批量置 `None`
+  - 压力判定：`used_bytes >= (soft_threshold * max_heap_bytes) as u64`，`Z42_GC_SOFT_THRESHOLD` 环境变量控制阈值（默认 0.80）；`max_heap_bytes == 0`（无限）时软引用永不清除
+  - 2 个新 builtin：`__soft_handle_create(target: object) -> SoftHandle`；`__soft_handle_get(self) -> object`
+  - `Std.SoftHandle` 类（`z42.core/GC/SoftHandle.z42`）暴露给 z42 脚本
+  - 原子值（int / string / bool）无法被软引用；`Create(atomicVal)` 返回 `Get()` 始终 null 的句柄
+- **延后**：泛型 `SoftRef<T>`（待 L2 泛型落地）—— 详见 [Deferred 段](#softref-generic-upgrade)
 
 #### B3. Heap snapshot 导出（已落地，2026-05-24）
 - **状态**：✅ 完成，spec `add-gc-heap-snapshot-export`
@@ -911,6 +918,14 @@ MMTk porting contract，集成成本主要在 ABI shim + 调优。
 ---
 
 ## Deferred / Future Work
+
+### softref-generic-upgrade: 泛型 `SoftRef<T>` 升级
+
+- **来源**：add-gc-softref 实施期，2026-05-26
+- **触发原因**：L1 无泛型；当前 `SoftHandle.Get()` 返回 `object`，调用方需手动向下转型
+- **前置依赖**：L2 泛型落地（`SoftRef<T>` 才能类型安全地返回 `T?`）
+- **触发条件**：L2 泛型稳定后
+- **当前 workaround**：`SoftHandle.Get()` 返回 `object`，调用方 `as T` 向下转型
 
 ### gc-oom-jit-path: JIT 路径 OOM 检测
 

@@ -1,9 +1,13 @@
 using FluentAssertions;
 using System.Diagnostics;
+using Xunit;
 
 namespace Z42.Tests;
 
 /// 端到端：跑两次 z42c build 验证第二次命中 cache。
+/// Sequential collection: this test deletes artifacts/build/libraries/ and
+/// rebuilds it — must not run concurrently with StdlibSidecarPairingTests.
+[Collection("StdlibArtifacts")]
 public sealed class IncrementalBuildIntegrationTests
 {
     static string RepoRoot
@@ -82,10 +86,11 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-24 add-overflow-divide-by-zero-exceptions 新增 Exceptions/OverflowException.z42 +
         //   Exceptions/DivideByZeroException.z42，z42.core 57 → 59。
         // 2026-05-25 add-gc-oom-exception 新增 Exceptions/OutOfMemoryException.z42，59 → 60。
+        // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，z42.core 60 → 61。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 60/60");
+        err2.Should().Contain("cached: 61/61");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 5/5");
         err2.Should().Contain("cached: 3/3");  // z42.time: TimeSpan + DateTime + Stopwatch
@@ -111,9 +116,10 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-15 add-narrow-int-primitives 新增 I8/I16/U8/U16/U32/U64.z42，51 → 57；
         // 2026-05-24 add-overflow-divide-by-zero-exceptions 新增 OverflowException +
         //   DivideByZeroException，57 → 59；
-        // 2026-05-25 add-gc-oom-exception 新增 OutOfMemoryException.z42，59 → 60）
+        // 2026-05-25 add-gc-oom-exception 新增 OutOfMemoryException.z42，59 → 60；
+        // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，60 → 61）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/60");
+        err2.Should().Contain("cached: 0/61");
     }
 }

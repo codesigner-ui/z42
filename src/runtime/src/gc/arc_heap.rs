@@ -171,6 +171,13 @@ struct RcHeapInner {
     // finalizer Cell 上。Drop 时自动 take + fire（含 cycle 断环后 alive_vec
     // drop 链）。register_finalizer / cancel_finalizer 走 GcRef 方法。
     // finalizers_pending 由 stats() 即时遍历 registry 重算。
+
+    /// **add-gc-softref (2026-05-26)**: registry of all active soft
+    /// references. Populated by `register_soft_ref`; entries are removed
+    /// on `unregister_soft_ref`. The revive pass (between mark + sweep)
+    /// iterates this to re-mark alive targets when heap pressure is below
+    /// the soft threshold.
+    soft_registry: super::soft_registry::SoftRegistry,
 }
 
 impl std::fmt::Debug for RcHeapInner {
@@ -1207,7 +1214,30 @@ impl ArcMagrGC {
         self.reset_all_marks_in_regions();
         self.mark_queue.lock().clear();
         let _newly_marked = self.mark_phase();
-        self.sweep_phase()
+        // **add-gc-softref (2026-05-26)**: revive soft-ref targets that
+        // are unmarked but below the pressure threshold.
+        self.revive_soft_refs();
+        let freed = self.sweep_phase();
+        // Prune dead soft-ref entries after sweep.
+        self.inner.lock().soft_registry.prune_dead();
+        freed
+    }
+
+    /// **add-gc-softref (2026-05-26)**: after mark_phase, re-mark alive
+    /// soft-ref targets when heap pressure < `Z42_GC_SOFT_THRESHOLD`.
+    /// Snapshots the registry entries under the lock, then calls
+    /// `revive_if_unmarked` outside the lock (only touches RegionEntry
+    /// atomics — no heap lock required).
+    fn revive_soft_refs(&self) {
+        let (entries, used_bytes, max_bytes) = {
+            let inner = self.inner.lock();
+            let entries = inner.soft_registry.snapshot_entries();
+            let used = inner.stats.used_bytes;
+            let max  = inner.stats.max_bytes.unwrap_or(0);
+            (entries, used, max)
+        };
+        // revive_pass on snapshot — no lock held; only atomic field access.
+        let _ = super::soft_registry::SoftRegistry::revive_snapshot(&entries, used_bytes, max_bytes);
     }
 
     /// **add-gc-stress-test (2026-05-22)**: clear `marked` on every
@@ -1942,6 +1972,87 @@ impl MagrGC for ArcMagrGC {
         match &weak.inner {
             WeakRefInner::Object(w) => w.upgrade().map(Value::Object),
             WeakRefInner::Array (w) => w.upgrade().map(Value::Array),
+        }
+    }
+
+    // ── 8.6 Soft references ──────────────────────────────────────────────────
+
+    fn register_soft_ref(&self, value: &Value) -> u64 {
+        use super::soft_registry::ErasedSoftEntry;
+        let (entry, key) = match value {
+            Value::Object(gc) => {
+                let ptr = gc.entry_ptr();
+                let gen = {
+                    // SAFETY: entry pointer stable; we only read the generation atomic.
+                    unsafe { ptr.as_ref() }.generation.load(std::sync::atomic::Ordering::Acquire)
+                };
+                unsafe { ptr.as_ref() }.inc_soft_ref_count();
+                let key = ptr.as_ptr() as u64;
+                (ErasedSoftEntry::from_object(ptr, gen), key)
+            }
+            Value::Array(gc) => {
+                let ptr = gc.entry_ptr();
+                let gen = unsafe { ptr.as_ref() }.generation.load(std::sync::atomic::Ordering::Acquire);
+                unsafe { ptr.as_ref() }.inc_soft_ref_count();
+                let key = ptr.as_ptr() as u64;
+                (ErasedSoftEntry::from_array(ptr, gen), key)
+            }
+            _ => return 0,
+        };
+        self.inner.lock().soft_registry.insert(entry);
+        key
+    }
+
+    fn soft_ref_get(&self, key: u64) -> Value {
+        // Snapshot under lock, then work outside.
+        let entries = self.inner.lock().soft_registry.snapshot_entries();
+        let key_usize = key as usize;
+        for e in &entries {
+            if e.ptr_key() != key_usize { continue; }
+            if !e.is_alive() { return Value::Null; }
+            // e.is_alive() confirmed: alive=true AND generation == snapshot.
+            // Reconstruct GcRef using the snapshot generation (safe against slot reuse).
+            return match e.kind {
+                super::soft_registry::ErasedKind::Object => {
+                    let ptr = key_usize as *mut super::region::RegionEntry<crate::metadata::ScriptObject>;
+                    let nn = unsafe { std::ptr::NonNull::new_unchecked(ptr) };
+                    Value::Object(unsafe { GcRef::from_region_entry(nn, e.generation_snapshot()) })
+                }
+                super::soft_registry::ErasedKind::Array => {
+                    let ptr = key_usize as *mut super::region::RegionEntry<Vec<Value>>;
+                    let nn = unsafe { std::ptr::NonNull::new_unchecked(ptr) };
+                    Value::Array(unsafe { GcRef::from_region_entry(nn, e.generation_snapshot()) })
+                }
+            };
+        }
+        Value::Null
+    }
+
+    fn unregister_soft_ref(&self, key: u64) {
+        let key_usize = key as usize;
+        // Find the entry kind before removing (need it to decrement the right type).
+        let kind = {
+            let inner = self.inner.lock();
+            inner.soft_registry.snapshot_entries()
+                .into_iter()
+                .find(|e| e.ptr_key() == key_usize)
+                .map(|e| e.kind)
+        };
+        self.inner.lock().soft_registry.remove_one(key_usize);
+        // Decrement soft_ref_count on the backing RegionEntry.
+        if let Some(kind) = kind {
+            match kind {
+                super::soft_registry::ErasedKind::Object => {
+                    // SAFETY: pointer came from a live RegionEntry; we only
+                    // touch the atomic soft_ref_count field.
+                    let ptr = key_usize as *mut super::region::RegionEntry<crate::metadata::ScriptObject>;
+                    unsafe { (*ptr).dec_soft_ref_count(); }
+                }
+                super::soft_registry::ErasedKind::Array => {
+                    let ptr = key_usize as *mut super::region::RegionEntry<Vec<Value>>;
+                    unsafe { (*ptr).dec_soft_ref_count(); }
+                }
+            }
         }
     }
 

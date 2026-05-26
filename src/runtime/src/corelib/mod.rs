@@ -327,6 +327,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__net_udp_send", network::builtin_net_udp_send),
     ("__net_udp_recv", network::builtin_net_udp_recv),
     ("__net_udp_drop", network::builtin_net_udp_drop),
+
+    // ── add-gc-softref (2026-05-26) ──────────────────────────────────────────
+    ("__soft_handle_create", gc::builtin_soft_handle_create),
+    ("__soft_handle_get",    gc::builtin_soft_handle_get),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

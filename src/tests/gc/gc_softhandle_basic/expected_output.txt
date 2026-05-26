@@ -1,0 +1,3 @@
+before gc: alive
+after gc: alive
+null target: null

@@ -262,6 +262,34 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
     /// 创建对 `value` 的弱引用。原子值（I64/Str/Null/...）返回 `None`。
     fn make_weak(&self, value: &Value) -> Option<WeakRef>;
 
+    // ── 8.6 Soft references（add-gc-softref，2026-05-26）────────────────────
+    //
+    // Soft references keep their target alive when heap pressure is below
+    // `Z42_GC_SOFT_THRESHOLD` (default 0.80). Above the threshold the
+    // target is treated as unreachable and may be swept.
+    //
+    // The registry key returned by `register_soft_ref` is an opaque `u64`
+    // that the `Std.SoftHandle` script object stores in its `_key: long`
+    // field. `soft_ref_get(key)` re-upgrades the target; `unregister_soft_ref`
+    // must be called when the `SoftHandle` object is finalized.
+
+    /// Register a soft reference to `value`. Returns an opaque key (`>= 1`)
+    /// on success. Returns 0 for non-heap values (atomics / Null).
+    ///
+    /// Default: returns 0 (unsupported by non-ArcMagrGC backends).
+    fn register_soft_ref(&self, _value: &Value) -> u64 { 0 }
+
+    /// Try to upgrade the soft reference identified by `key`. Returns
+    /// `Value::Null` if the target was collected or `key` is unknown.
+    ///
+    /// Default: always returns `Value::Null`.
+    fn soft_ref_get(&self, _key: u64) -> Value { Value::Null }
+
+    /// Release the soft-ref slot identified by `key`. Idempotent.
+    ///
+    /// Default: no-op.
+    fn unregister_soft_ref(&self, _key: u64) {}
+
     /// 尝试从弱引用恢复强引用。若目标已被回收（无强引用持有）返回 `None`。
     fn upgrade_weak(&self, weak: &WeakRef) -> Option<Value>;
 

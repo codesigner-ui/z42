@@ -42,6 +42,7 @@ pub mod refs;
 pub mod region;
 pub mod safepoint;
 pub mod snapshot;
+pub mod soft_registry;
 pub mod types;
 
 pub use heap::MagrGC;

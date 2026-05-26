@@ -1,0 +1,56 @@
+namespace Demo;
+using Std;
+
+// add-gc-softref: soft handle cleared when heap pressure >= threshold (80%).
+// Strategy: create soft ref, let strong ref go out of scope, then set
+// max_heap_bytes = current_used_bytes (ratio = 1.0 >= 0.80) and force GC.
+
+class Box {
+    public int Value;
+    public Box(int v) { this.Value = v; }
+}
+
+// Returns a SoftHandle to a freshly allocated Box.
+// The Box local exits scope when this function returns.
+SoftHandle MakeHandle(int v) {
+    Box b = new Box(v);
+    SoftHandle h = SoftHandle.Create(b);
+    return h;
+}
+
+// Checks liveness in its own frame so the Box object doesn't leak as a
+// strong ref into Main's frame registers when ForceCollect runs.
+bool IsAlive(SoftHandle h) {
+    object v = h.Get();
+    return v != null;
+}
+
+void Main() {
+    // Create soft ref; strong ref is gone after MakeHandle() returns.
+    SoftHandle h = MakeHandle(7);
+
+    // Confirm alive before GC. Use IsAlive so no Box ref stays in Main's regs.
+    if (IsAlive(h)) {
+        Console.WriteLine("before gc: alive");
+    } else {
+        Console.WriteLine("before gc: null");
+    }
+
+    // Set max_heap_bytes = current usage so pressure ratio = 1.0 >= 0.80.
+    long used = GC.UsedBytes();
+    GC.SetMaxHeapBytes(used);
+
+    // Force GC — revive pass should not rescue the soft ref.
+    GC.ForceCollect();
+
+    object after = h.Get();
+    if (after == null) {
+        Console.WriteLine("after gc: cleared");
+    } else {
+        Console.WriteLine("after gc: alive");
+    }
+
+    // Restore unlimited heap.
+    GC.SetMaxHeapBytes(0);
+    Console.WriteLine("done");
+}

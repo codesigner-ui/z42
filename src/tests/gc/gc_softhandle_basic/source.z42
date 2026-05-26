@@ -1,0 +1,42 @@
+namespace Demo;
+using Std;
+
+// add-gc-softref: basic soft handle — unlimited heap keeps target alive.
+
+class Box {
+    public int Value;
+    public Box(int v) { this.Value = v; }
+}
+
+void Main() {
+    // Create object + soft handle.
+    Box b = new Box(42);
+    SoftHandle h = SoftHandle.Create(b);
+
+    // Before GC — target should be alive.
+    object got1 = h.Get();
+    if (got1 != null) {
+        Console.WriteLine("before gc: alive");
+    } else {
+        Console.WriteLine("before gc: null");
+    }
+
+    // Force GC on unlimited heap — soft ref must survive.
+    GC.ForceCollect();
+
+    object got2 = h.Get();
+    if (got2 != null) {
+        Console.WriteLine("after gc: alive");
+    } else {
+        Console.WriteLine("after gc: null");
+    }
+
+    // Create null soft handle.
+    SoftHandle hn = SoftHandle.Create(null);
+    object gotn = hn.Get();
+    if (gotn == null) {
+        Console.WriteLine("null target: null");
+    } else {
+        Console.WriteLine("null target: alive");
+    }
+}

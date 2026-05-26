@@ -328,3 +328,4 @@ impl<T> std::fmt::Debug for WeakGcRef<T> {
         f.debug_struct("WeakGcRef").field("dropped", &dropped).finish()
     }
 }
+

@@ -97,6 +97,15 @@ pub struct RegionEntry<T> {
     /// Set by `Region::alloc`; immutable thereafter for the entry's
     /// lifetime (a single slot keeps its location across reuse).
     pub(crate) location: (u16, u16),
+
+    /// **add-gc-softref (2026-05-26)**: count of live `SoftGcRef<T>`
+    /// handles pointing at this entry. > 0 means the entry is
+    /// soft-referenced; the GC revive pass may re-mark it before sweep
+    /// when heap pressure is below the soft threshold. Incremented by
+    /// `SoftGcRef::new`, decremented by `SoftGcRef::drop`. Uses
+    /// `SeqCst` ordering to keep soft-ref count visible across threads
+    /// (GC and mutator run concurrently in `ConcurrentMarkSweep`).
+    pub(crate) soft_ref_count: AtomicU32,
 }
 
 /// **add-generational-gc P0 (2026-05-22)**: number of minor GCs an
@@ -119,13 +128,14 @@ impl<T> RegionEntry<T> {
 
     fn new(value: T, location: (u16, u16)) -> Self {
         Self {
-            value:      Mutex::new(value),
-            marked:     AtomicU8::new(0),
-            alive:      AtomicBool::new(true),
-            gen_age:    AtomicU8::new(0),
-            generation: AtomicU32::new(0),
-            finalizer:  Mutex::new(None),
+            value:          Mutex::new(value),
+            marked:         AtomicU8::new(0),
+            alive:          AtomicBool::new(true),
+            gen_age:        AtomicU8::new(0),
+            generation:     AtomicU32::new(0),
+            finalizer:      Mutex::new(None),
             location,
+            soft_ref_count: AtomicU32::new(0),
         }
     }
 
@@ -154,6 +164,24 @@ impl<T> RegionEntry<T> {
     /// Reset mark to 0. Used by sweep on survivors to prep next cycle.
     pub fn clear_mark(&self) {
         self.marked.store(0, Ordering::Relaxed);
+    }
+
+    /// Increment the soft-ref count for this entry. Called by `SoftGcRef::new`.
+    #[inline]
+    pub fn inc_soft_ref_count(&self) {
+        self.soft_ref_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// Decrement the soft-ref count. Called by `SoftGcRef::drop`.
+    #[inline]
+    pub fn dec_soft_ref_count(&self) {
+        self.soft_ref_count.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// True when at least one `SoftGcRef` points to this entry.
+    #[inline]
+    pub fn has_soft_ref(&self) -> bool {
+        self.soft_ref_count.load(Ordering::SeqCst) > 0
     }
 }
 
