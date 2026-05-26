@@ -199,6 +199,11 @@ wrapper overhead is < 0.5%.
 - **触发条件**：first concrete use case that breaks the v0 assumption
   ("compressed payload < 100 MB"). Examples: gzip log tailing,
   multi-GB `.tar.gz` extraction in `setup-tools.sh`-style scripts.
+- **配套缺口**：`Tar.ExtractTo` (add-tar-extract-to 2026-05-26) 当前也是
+  `byte[]` 入参 + in-memory entries 数组；真流式 = streaming Tar reader
+  接 streaming Gzip decoder。一旦 cdylib 升级，Tar 应同步加
+  `ExtractStream(Stream src, string dir)`，避开 30 MB+ tarball 解压时
+  ~250 MB 峰值内存。两者一起做。
 
 ### `compression-future-brotli`
 

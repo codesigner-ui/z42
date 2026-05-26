@@ -1,6 +1,7 @@
 namespace Std.Archive;
 
 using Std;
+using Std.IO;
 
 // add-z42-compression (2026-05-22): ustar archive (POSIX 1003.1-1988).
 // Pure z42 — no FFI dependency. Tar is an archive format only (no
@@ -151,6 +152,71 @@ public static class Tar {
         return result;
     }
 
+    // ── Extract (add-tar-extract-to 2026-05-26) ─────────────────────
+    //
+    // Decode `tarBytes`, write every regular-file entry to `destDir`
+    // (creating intermediate directories as needed), and set the
+    // executable bit when any of u/g/o exec bits are set in the entry
+    // mode. Returns the number of entries extracted.
+    //
+    // 用于把 bash `tar -xzf foo.tar.gz -C dest` 移植成 z42：
+    //   byte[] tarBytes = Gzip.Decompress(File.ReadAllBytes(tgzPath));
+    //   int n = Tar.ExtractTo(tarBytes, destDir);
+    //
+    // 安全：拒绝 entry name 含 `..` segment 或绝对路径（Zip Slip CVE
+    // 防御）。不安全模式留 backlog；当前所有调用都走严格路径。
+
+    public static int ExtractTo(byte[] tarBytes, string destDir) {
+        Directory.Create(destDir);
+        TarEntry[] entries = Tar.Read(tarBytes);
+        int written = 0;
+        int i = 0;
+        while (i < entries.Length) {
+            TarEntry e = entries[i];
+            _EnsureSafeEntryName(e.Name);
+            string targetPath = Path.Join(destDir, e.Name);
+            string parent     = Path.GetDirectoryName(targetPath);
+            if (parent.Length > 0) {
+                Directory.Create(parent);
+            }
+            _WriteBytesToFile(targetPath, e.Content);
+            if ((e.Mode & 0x49) != 0) {  // 0o111 = 0x49 — any of u/g/o exec bit
+                File.MakeExecutable(targetPath);
+            }
+            written = written + 1;
+            i = i + 1;
+        }
+        return written;
+    }
+
+    private static void _WriteBytesToFile(string path, byte[] content) {
+        FileStream fs = new FileStream(path, FileMode.Write);
+        try {
+            fs.WriteAllBytes(content);
+        } finally {
+            fs.Close();
+        }
+    }
+
+    // Zip-Slip 防御：entry name 不允许绝对路径 / `..` segment。
+    // 通过把 path 按 `/` 拆开逐段检查，避免 `..` 偷出 destDir。
+    private static void _EnsureSafeEntryName(string name) {
+        if (name.Length == 0) {
+            throw new ArchiveException("tar entry has empty name");
+        }
+        if (name.CharAt(0) == '/') {
+            throw new ArchiveException("tar entry name is absolute path: " + name);
+        }
+        string[] segs = name.Split("/");
+        int i = 0;
+        while (i < segs.Length) {
+            if (segs[i] == "..") {
+                throw new ArchiveException("tar entry name contains '..' segment: " + name);
+            }
+            i = i + 1;
+        }
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     private static bool _IsZeroBlock(byte[] bytes, int offset) {
@@ -173,13 +239,16 @@ public static class Tar {
             }
             end = end + 1;
         }
+        // add-tar-extract-to (2026-05-26): `new string(chars)` returned Null
+        // for empty char arrays in z42; switch to documented `String.FromChars`
+        // intrinsic. Affected all-NUL prefix fields (typical ustar headers).
         char[] chars = new char[end];
         int i = 0;
         while (i < end) {
             chars[i] = (char)bytes[offset + i];
             i = i + 1;
         }
-        return new string(chars);
+        return String.FromChars(chars);
     }
 
     private static int _ReadOctal(byte[] bytes, int offset, int len) {

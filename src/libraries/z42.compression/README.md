@@ -54,6 +54,13 @@ TarEntry[] entries = new TarEntry[] {
     new TarEntry("readme.txt", contentBytes, 0644),
 };
 byte[] tarBytes = Tar.Write(entries);
+
+// Tar extract to filesystem (add-tar-extract-to 2026-05-26):
+//   tar -xzf foo.tar.gz -C dest 等价 z42 流程
+byte[] tarBytes = Gzip.Decompress(File.ReadAllBytes("foo.tar.gz"));
+int n = Tar.ExtractTo(tarBytes, "dest");
+// 自动 mkdir-p 父目录、设置可执行位、防御 ../ 路径穿越（Zip Slip）。
+// v0 是 in-memory buffered；真流式 pipeline 仍 deferred。
 ```
 
 See [docs/design/stdlib/compression.md](../../../docs/design/stdlib/compression.md)

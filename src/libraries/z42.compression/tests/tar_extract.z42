@@ -1,0 +1,153 @@
+// add-tar-extract-to (2026-05-26): Tar.ExtractTo end-to-end tests.
+//
+// Each [Test] uses a unique temp dir under the OS temp root; cleanup is
+// best-effort (z42 has no automatic teardown — manual Directory.Delete
+// in test body where it matters).
+namespace Z42TarExtractTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Archive;
+using Std.Encoding;
+
+[Test]
+void test_extract_single_file_round_trip() {
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        byte[] payload = Utf8.GetBytes("hello world\n");
+        TarEntry[] entries = new TarEntry[1];
+        entries[0] = new TarEntry("readme.txt", payload, 0x1A4);  // 0o644 = 0x1A4
+        byte[] tarBytes = Tar.Write(entries);
+
+        int n = Tar.ExtractTo(tarBytes, tmp);
+        Assert.Equal(1, n);
+
+        string outPath = Path.Join(tmp, "readme.txt");
+        Assert.True(File.Exists(outPath));
+        Assert.Equal("hello world\n", File.ReadAllText(outPath));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_creates_nested_directories() {
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        byte[] body = Utf8.GetBytes("deep\n");
+        TarEntry[] entries = new TarEntry[1];
+        entries[0] = new TarEntry("a/b/c/x.txt", body, 0x1A4);  // 0o644
+        byte[] tarBytes = Tar.Write(entries);
+
+        Tar.ExtractTo(tarBytes, tmp);
+
+        string outPath = Path.Join(tmp, "a/b/c/x.txt");
+        Assert.True(File.Exists(outPath));
+        Assert.Equal("deep\n", File.ReadAllText(outPath));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_sets_executable_bit() {
+    if (Platform.IsWindows()) {
+        // chmod is no-op on Windows; skip — semantics intentional.
+        return;
+    }
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        byte[] body = Utf8.GetBytes("#!/bin/sh\necho hi\n");
+        TarEntry[] entries = new TarEntry[1];
+        entries[0] = new TarEntry("run.sh", body, 0x1ED);  // 0o755 = 0x1ED
+        byte[] tarBytes = Tar.Write(entries);
+
+        Tar.ExtractTo(tarBytes, tmp);
+
+        string outPath = Path.Join(tmp, "run.sh");
+        Assert.True(File.Exists(outPath));
+        // Verify exec bit by actually running it.
+        var r = new Process(outPath).Run();
+        Assert.Equal(0, r.ExitCode);
+        Assert.Equal("hi\n", r.Stdout);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_empty_archive() {
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        TarEntry[] entries = new TarEntry[0];
+        byte[] tarBytes = Tar.Write(entries);
+        int n = Tar.ExtractTo(tarBytes, tmp);
+        Assert.Equal(0, n);
+        // destDir was created.
+        Assert.True(Directory.Exists(tmp));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_overwrites_existing_file() {
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        string target = Path.Join(tmp, "x.txt");
+        File.WriteAllText(target, "OLD\n");
+        Assert.Equal("OLD\n", File.ReadAllText(target));
+
+        TarEntry[] entries = new TarEntry[1];
+        entries[0] = new TarEntry("x.txt", Utf8.GetBytes("NEW\n"), 0x1A4);
+        byte[] tarBytes = Tar.Write(entries);
+
+        Tar.ExtractTo(tarBytes, tmp);
+        Assert.Equal("NEW\n", File.ReadAllText(target));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_rejects_dotdot_traversal() {
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        TarEntry[] entries = new TarEntry[1];
+        entries[0] = new TarEntry("../evil.txt", Utf8.GetBytes("PWN"), 0x1A4);
+        byte[] tarBytes = Tar.Write(entries);
+
+        bool caught = false;
+        try {
+            Tar.ExtractTo(tarBytes, tmp);
+        } catch (ArchiveException e) {
+            caught = true;
+            Assert.Contains("..", e.Message);
+        }
+        Assert.True(caught);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_rejects_absolute_path() {
+    string tmp = File.CreateTempDir("z42-tar-extract");
+    try {
+        TarEntry[] entries = new TarEntry[1];
+        entries[0] = new TarEntry("/etc/passwd", Utf8.GetBytes("PWN"), 0x1A4);
+        byte[] tarBytes = Tar.Write(entries);
+
+        bool caught = false;
+        try {
+            Tar.ExtractTo(tarBytes, tmp);
+        } catch (ArchiveException e) {
+            caught = true;
+            Assert.Contains("absolute", e.Message);
+        }
+        Assert.True(caught);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
