@@ -1,0 +1,31 @@
+// add-z42-io-ergonomics-bytes-glob (2026-05-27): Directory.CreateTempDir alias.
+namespace Z42IoDirectoryTempTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_directory_create_temp_dir_returns_existing_path() {
+    string tmp = Directory.CreateTempDir("z42-dir-temp-test");
+    try {
+        Assert.True(Directory.Exists(tmp));
+        Assert.True(tmp.Length > 0);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_directory_create_temp_dir_is_alias_for_file() {
+    string a = Directory.CreateTempDir("z42-alias-a");
+    string b = File.CreateTempDir("z42-alias-b");
+    try {
+        Assert.True(Directory.Exists(a));
+        Assert.True(Directory.Exists(b));
+        Assert.False(a == b);  // different temp dirs each call
+    } finally {
+        Directory.Delete(a, true);
+        Directory.Delete(b, true);
+    }
+}

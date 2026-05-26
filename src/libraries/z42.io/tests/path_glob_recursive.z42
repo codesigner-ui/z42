@@ -1,0 +1,87 @@
+// add-z42-io-ergonomics-bytes-glob (2026-05-27): Path.GlobRecursive.
+namespace Z42IoPathGlobRecursiveTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_glob_recursive_finds_in_single_layer() {
+    string tmp = File.CreateTempDir("z42-glob-rec");
+    try {
+        File.WriteAllText(Path.Join(tmp, "a.txt"), "x");
+        File.WriteAllText(Path.Join(tmp, "b.txt"), "x");
+        File.WriteAllText(Path.Join(tmp, "c.dat"), "x");
+        string[] hits = Path.GlobRecursive(tmp, "*.txt");
+        Assert.Equal(2, hits.Length);
+        Assert.Equal(Path.Join(tmp, "a.txt"), hits[0]);
+        Assert.Equal(Path.Join(tmp, "b.txt"), hits[1]);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_glob_recursive_descends_two_levels() {
+    string tmp = File.CreateTempDir("z42-glob-rec");
+    try {
+        Directory.Create(Path.Join(tmp, "sub"));
+        File.WriteAllText(Path.Join(tmp, "top.z42"), "x");
+        File.WriteAllText(Path.Join(tmp, "sub/inner.z42"), "x");
+        string[] hits = Path.GlobRecursive(tmp, "*.z42");
+        Assert.Equal(2, hits.Length);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_glob_recursive_descends_three_levels() {
+    string tmp = File.CreateTempDir("z42-glob-rec");
+    try {
+        Directory.Create(Path.Join(tmp, "a/b/c"));
+        File.WriteAllText(Path.Join(tmp, "a/x.z42"), "x");
+        File.WriteAllText(Path.Join(tmp, "a/b/y.z42"), "x");
+        File.WriteAllText(Path.Join(tmp, "a/b/c/z.z42"), "x");
+        string[] hits = Path.GlobRecursive(tmp, "*.z42");
+        Assert.Equal(3, hits.Length);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_glob_recursive_pattern_with_slash_matches_relative_path() {
+    string tmp = File.CreateTempDir("z42-glob-rec");
+    try {
+        Directory.Create(Path.Join(tmp, "tests"));
+        Directory.Create(Path.Join(tmp, "src"));
+        File.WriteAllText(Path.Join(tmp, "tests/foo.z42"), "x");
+        File.WriteAllText(Path.Join(tmp, "src/foo.z42"), "x");
+        // pattern with `/` matches relative path; basename-only pattern would
+        // catch both. With `tests/*.z42` only the tests/ subdir hits.
+        string[] hits = Path.GlobRecursive(tmp, "tests/*.z42");
+        Assert.Equal(1, hits.Length);
+        Assert.Equal(Path.Join(tmp, "tests/foo.z42"), hits[0]);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_glob_recursive_pattern_miss_returns_empty() {
+    string tmp = File.CreateTempDir("z42-glob-rec");
+    try {
+        File.WriteAllText(Path.Join(tmp, "x.txt"), "x");
+        string[] hits = Path.GlobRecursive(tmp, "*.rs");
+        Assert.Equal(0, hits.Length);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_glob_recursive_nonexistent_dir_returns_empty() {
+    string[] hits = Path.GlobRecursive("/no/such/path/xyz", "*");
+    Assert.Equal(0, hits.Length);
+}

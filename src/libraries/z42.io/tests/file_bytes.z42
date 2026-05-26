@@ -1,0 +1,117 @@
+// add-z42-io-ergonomics-bytes-glob (2026-05-27): File.ReadAllBytes / WriteAllBytes.
+namespace Z42IoFileBytesTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Encoding;
+
+[Test]
+void test_round_trip_short_payload() {
+    string tmp = File.CreateTempDir("z42-file-bytes");
+    try {
+        string path = Path.Join(tmp, "hello.bin");
+        byte[] payload = Utf8.GetBytes("hello world");
+        File.WriteAllBytes(path, payload);
+        byte[] readback = File.ReadAllBytes(path);
+        Assert.Equal(payload.Length, readback.Length);
+        int i = 0;
+        while (i < payload.Length) {
+            Assert.Equal((int)payload[i], (int)readback[i]);
+            i = i + 1;
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_round_trip_empty_array() {
+    string tmp = File.CreateTempDir("z42-file-bytes");
+    try {
+        string path = Path.Join(tmp, "empty.bin");
+        File.WriteAllBytes(path, new byte[0]);
+        byte[] readback = File.ReadAllBytes(path);
+        Assert.Equal(0, readback.Length);
+        Assert.Equal(0L, File.GetSize(path));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_round_trip_binary_non_utf8() {
+    string tmp = File.CreateTempDir("z42-file-bytes");
+    try {
+        string path = Path.Join(tmp, "raw.bin");
+        // Non-UTF8 sequence: 0xFF 0xFE 0xFD 0x00 0x80
+        byte[] payload = new byte[5];
+        payload[0] = (byte)0xFF;
+        payload[1] = (byte)0xFE;
+        payload[2] = (byte)0xFD;
+        payload[3] = (byte)0x00;
+        payload[4] = (byte)0x80;
+        File.WriteAllBytes(path, payload);
+        byte[] readback = File.ReadAllBytes(path);
+        Assert.Equal(5, readback.Length);
+        Assert.Equal(0xFF, (int)readback[0] & 0xFF);
+        Assert.Equal(0xFE, (int)readback[1] & 0xFF);
+        Assert.Equal(0xFD, (int)readback[2] & 0xFF);
+        Assert.Equal(0x00, (int)readback[3] & 0xFF);
+        Assert.Equal(0x80, (int)readback[4] & 0xFF);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_round_trip_larger_payload() {
+    string tmp = File.CreateTempDir("z42-file-bytes");
+    try {
+        string path = Path.Join(tmp, "big.bin");
+        // 10 KB, byte i mod 256
+        int n = 10240;
+        byte[] payload = new byte[n];
+        int i = 0;
+        while (i < n) {
+            payload[i] = (byte)(i & 0xFF);
+            i = i + 1;
+        }
+        File.WriteAllBytes(path, payload);
+        byte[] readback = File.ReadAllBytes(path);
+        Assert.Equal(n, readback.Length);
+        Assert.Equal(0, (int)readback[0]);
+        Assert.Equal(255, (int)readback[255] & 0xFF);
+        Assert.Equal(0, (int)readback[256]);
+        Assert.Equal(0xFF, (int)readback[n - 1] & 0xFF);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_overwrites_existing_file() {
+    string tmp = File.CreateTempDir("z42-file-bytes");
+    try {
+        string path = Path.Join(tmp, "x.bin");
+        File.WriteAllBytes(path, Utf8.GetBytes("OLD"));
+        Assert.Equal(3L, File.GetSize(path));
+        File.WriteAllBytes(path, Utf8.GetBytes("NEW_CONTENT"));
+        Assert.Equal(11L, File.GetSize(path));
+        byte[] readback = File.ReadAllBytes(path);
+        Assert.Equal("NEW_CONTENT", Utf8.GetString(readback));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_read_nonexistent_throws() {
+    bool caught = false;
+    try {
+        File.ReadAllBytes("/nonexistent/dir/no_such_file.bin");
+    } catch (Exception e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

@@ -338,6 +338,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-csprng-to-crypto (2026-05-27) — OS-CSPRNG backing Std.Crypto.SecureRandom ──
     ("__crypto_random_bytes", crypto::builtin_crypto_random_bytes),
+
+    // ── add-z42-io-ergonomics-bytes-glob (2026-05-27) — one-shot binary IO ──
+    ("__file_read_bytes",  fs::builtin_file_read_bytes),
+    ("__file_write_bytes", fs::builtin_file_write_bytes),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

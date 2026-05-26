@@ -10,6 +10,19 @@ public static class File {
     [Native("__file_append_text")]
     public static extern void AppendAllText(string path, string content);
 
+    // add-z42-io-ergonomics-bytes-glob (2026-05-27): one-shot binary IO
+    // mirroring `ReadAllText / WriteAllText`. Use these instead of
+    // `new FileStream(...)` + `try/finally` when the entire payload fits
+    // in memory — they avoid slot-table allocation overhead.
+
+    /// 一次性读取整个文件为 byte 数组。文件不存在 / 无权限抛 `Std.Exception`。
+    [Native("__file_read_bytes")]
+    public static extern byte[] ReadAllBytes(string path);
+
+    /// 一次性写入 byte 数组到文件（已存在则覆盖；不存在则创建）。
+    [Native("__file_write_bytes")]
+    public static extern void WriteAllBytes(string path, byte[] data);
+
     [Native("__file_exists")]
     public static extern bool Exists(string path);
 

@@ -46,6 +46,26 @@ pub fn builtin_file_move(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Null)
 }
 
+// add-z42-io-ergonomics-bytes-glob (2026-05-27): one-shot binary IO.
+// Slot-based FileStream covers streaming; these natives are the
+// `byte[]`-in/out fast path matching BCL `File.ReadAllBytes` /
+// `WriteAllBytes`. Used by every script that pipes a file into a
+// compressor / hasher / archive without needing slot-table bookkeeping.
+
+pub fn builtin_file_read_bytes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = arg_str(args, 0, "__file_read_bytes")?;
+    let bytes = std::fs::read(path)?;
+    let elems: Vec<Value> = bytes.into_iter().map(|b| Value::I64(b as i64)).collect();
+    Ok(ctx.heap().alloc_array(elems))
+}
+
+pub fn builtin_file_write_bytes(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = arg_str(args, 0, "__file_write_bytes")?;
+    let data = require_byte_array(args, 1, "__file_write_bytes")?;
+    std::fs::write(path, data)?;
+    Ok(Value::Null)
+}
+
 // 2026-04-27 wave1-path-script: 5 builtin_path_* removed.
 // `Std.IO.Path` 现在是 z42 脚本（Unix `/` 语义），见
 // src/libraries/z42.io/src/Path.z42。

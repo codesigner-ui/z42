@@ -118,6 +118,122 @@ public static class Path {
     [Native("__path_glob")]
     public static extern string[] Glob(string dir, string pattern);
 
+    // add-z42-io-ergonomics-bytes-glob (2026-05-27): 递归 glob 便利方法。
+    //
+    // 在 `dir` 下递归找所有匹配 `pattern` 的文件，返回**绝对路径**排序数组。
+    // pattern 支持：
+    //   - `*` 匹配除 `/` 外任意字符序列
+    //   - `?` 匹配单字符
+    //   - 不带 `/` 时只匹配 basename（如 `*.z42` = 所有 .z42 文件）
+    //   - 带 `/` 时匹配相对 dir 的完整子路径（如 `tests/*.z42` = 名为
+    //     tests 的子目录下的 .z42 文件）
+    //
+    // 示例：
+    //   GlobRecursive("src/libraries", "*.z42") → 所有 stdlib 源文件
+    //   GlobRecursive("src/tests", "source.z42") → 所有 golden test 入口
+    //
+    // 不支持 `**` 显式 wildcard —— 递归本身就是"全展开"，再加 `**` 语义重复。
+    public static string[] GlobRecursive(string dir, string pattern) {
+        if (!Directory.Exists(dir)) return new string[0];
+        string[] rels = Directory.EnumerateRecursive(dir);
+        // First pass: count matches
+        int n = 0;
+        bool patternHasSlash = _containsChar(pattern, '/');
+        int i = 0;
+        while (i < rels.Length) {
+            if (_matchesGlob(rels[i], pattern, patternHasSlash)) {
+                n = n + 1;
+            }
+            i = i + 1;
+        }
+        // Second pass: collect absolute paths
+        string[] hits = new string[n];
+        int j = 0;
+        i = 0;
+        while (i < rels.Length) {
+            if (_matchesGlob(rels[i], pattern, patternHasSlash)) {
+                hits[j] = Path.Join(dir, rels[i]);
+                j = j + 1;
+            }
+            i = i + 1;
+        }
+        // Sort for determinism (EnumerateRecursive order is OS-dependent
+        // per .claude/rules/common-pitfalls.md §1).
+        _sortStrings(hits);
+        return hits;
+    }
+
+    // Glob matcher: pattern over either full relative path or just basename.
+    static bool _matchesGlob(string rel, string pattern, bool patternHasSlash) {
+        string target;
+        if (patternHasSlash) {
+            target = rel;
+        } else {
+            target = Path.GetFileName(rel);
+        }
+        return _globMatch(target, 0, pattern, 0);
+    }
+
+    // Recursive glob match — `*` matches any (except `/` would, but we
+    // already split). `?` matches one char. Simple backtracking suffices
+    // for stdlib script-level use; not a hot path.
+    static bool _globMatch(string s, int si, string p, int pi) {
+        while (pi < p.Length) {
+            char pc = p.CharAt(pi);
+            if (pc == '*') {
+                // Skip consecutive *s
+                while (pi < p.Length && p.CharAt(pi) == '*') {
+                    pi = pi + 1;
+                }
+                if (pi == p.Length) return true;  // trailing * matches anything
+                // Try every possible position for `s[si..]` to start the
+                // remaining pattern.
+                while (si <= s.Length) {
+                    if (_globMatch(s, si, p, pi)) return true;
+                    si = si + 1;
+                }
+                return false;
+            }
+            if (si >= s.Length) return false;
+            char sc = s.CharAt(si);
+            if (pc == '?') {
+                si = si + 1; pi = pi + 1; continue;
+            }
+            if (pc != sc) return false;
+            si = si + 1; pi = pi + 1;
+        }
+        return si == s.Length;
+    }
+
+    static bool _containsChar(string s, char c) {
+        int i = 0;
+        while (i < s.Length) {
+            if (s.CharAt(i) == c) return true;
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // Simple insertion sort (z42.collections has no public Sort yet;
+    // glob result sets are small — typical < 200 paths).
+    static void _sortStrings(string[] arr) {
+        int i = 1;
+        while (i < arr.Length) {
+            string key = arr[i];
+            int j = i - 1;
+            while (j >= 0 && _strLess(key, arr[j])) {
+                arr[j + 1] = arr[j];
+                j = j - 1;
+            }
+            arr[j + 1] = key;
+            i = i + 1;
+        }
+    }
+
+    static bool _strLess(string a, string b) {
+        return a.CompareTo(b) < 0;
+    }
+
     // 内部 helper：切片 [start, end)。
     static string Slice(string s, int start, int end) {
         int len = end - start;

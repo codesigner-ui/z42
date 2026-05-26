@@ -31,4 +31,11 @@ public static class Directory {
 
     [Native("__dir_enumerate_recursive")]
     public static extern string[] EnumerateRecursive(string path);
+
+    // add-z42-io-ergonomics-bytes-glob (2026-05-27): "目录操作在 Directory"
+    // 的直觉别名 —— 实现侧仍走 `File.CreateTempDir` 的 Native binding，
+    // 命名归属对齐 BCL `Directory.CreateTempSubdirectory`。
+    public static string CreateTempDir(string prefix) {
+        return File.CreateTempDir(prefix);
+    }
 }
