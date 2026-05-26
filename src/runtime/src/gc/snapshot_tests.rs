@@ -26,11 +26,11 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         field_index,
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
-        own_fields: fields,
-        own_methods: Vec::new(),
-        type_params: vec![],
-        type_args: vec![],
-        type_param_constraints: vec![],
+        own_fields: fields.into(),
+        own_methods: Vec::new().into(),
+        type_params: vec![].into(),
+        type_args: vec![].into(),
+        type_param_constraints: vec![].into(),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })
 }

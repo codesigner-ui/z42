@@ -113,21 +113,29 @@ pub struct TypeDesc {
     /// itself declares** (excluding inherited). Preserved so the cross-zpkg
     /// fixup pass can rebuild `fields` = base.fields ++ own_fields once the
     /// base class becomes resolvable via the global type registry.
-    pub own_fields: Vec<FieldSlot>,
+    ///
+    /// review.md E5.3 follow-up (2026-05-27): these five fields are
+    /// immutable after `build_type_registry` / `try_fixup_inheritance`
+    /// finishes (the latter rewrites `fields` / `vtable` from `own_*` +
+    /// base, not these). Stored as `Box<[T]>` (16 B) instead of `Vec<T>`
+    /// (24 B) — saves 8 B/field × 5 ≈ 40 B per TypeDesc. `fields`,
+    /// `field_index`, `vtable`, `vtable_index` stay growable since fixup
+    /// reassigns them.
+    pub own_fields: Box<[FieldSlot]>,
     /// fix-cross-pkg-subclass-fields (2026-05-14): the (simple_method_name,
     /// qualified_func_name) pairs **this class itself defines**, in the
     /// order they were discovered by `build_type_registry`. Used by fixup
     /// to rebuild `vtable` (preserving override-vs-append semantics) once
     /// the base class becomes resolvable.
-    pub own_methods: Vec<(String, String)>,
+    pub own_methods: Box<[(String, String)]>,
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
-    pub type_params: Vec<String>,
+    pub type_params: Box<[String]>,
     /// Concrete type arguments for an instantiated generic class: ["int"], ["string", "int"].
     /// Empty for non-generic classes and uninstantiated generic definitions.
-    pub type_args: Vec<String>,
+    pub type_args: Box<[String]>,
     /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
     /// Empty for non-generic classes; inner bundle may be empty for unconstrained params.
-    pub type_param_constraints: Vec<super::bytecode::ConstraintBundle>,
+    pub type_param_constraints: Box<[super::bytecode::ConstraintBundle]>,
 }
 
 // ── NativeData — native backing for built-in class types ────────────────────

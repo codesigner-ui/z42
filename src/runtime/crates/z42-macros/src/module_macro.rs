@@ -83,7 +83,7 @@ pub fn expand(input: TokenStream) -> TokenStream {
     });
 
     let expanded = quote! {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub extern "C" fn #register_ident() {
             #(#calls)*
         }

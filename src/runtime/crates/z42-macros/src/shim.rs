@@ -106,7 +106,7 @@ pub(crate) fn render_shim(
     };
 
     quote! {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         #[allow(non_snake_case)]
         unsafe extern "C" fn #shim_ident(#(#shim_params),*) #return_clause {
             let __r = ::std::panic::catch_unwind(::std::panic::AssertUnwindSafe(|| {

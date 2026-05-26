@@ -330,11 +330,11 @@ fn register_lazy_type_appends_with_next_id() {
         field_index: std::collections::HashMap::new(),
         vtable: vec![],
         vtable_index: std::collections::HashMap::new(),
-        own_fields: vec![],
-        own_methods: vec![],
-        type_params: vec![],
-        type_args: vec![],
-        type_param_constraints: vec![],
+        own_fields: vec![].into(),
+        own_methods: vec![].into(),
+        type_params: vec![].into(),
+        type_args: vec![].into(),
+        type_param_constraints: vec![].into(),
     });
 
     let assigned = module.register_lazy_type(foreign);
@@ -352,8 +352,8 @@ fn register_lazy_type_appends_with_next_id() {
         id: crate::metadata::tokens::TypeId(99),
         base_name: None, fields: vec![], field_index: std::collections::HashMap::new(),
         vtable: vec![], vtable_index: std::collections::HashMap::new(),
-        own_fields: vec![], own_methods: vec![],
-        type_params: vec![], type_args: vec![], type_param_constraints: vec![],
+        own_fields: vec![].into(), own_methods: vec![].into(),
+        type_params: vec![].into(), type_args: vec![].into(), type_param_constraints: vec![].into(),
     });
     let dup_id = module.register_lazy_type(dup);
     assert_eq!(dup_id, assigned, "re-register returns existing id");

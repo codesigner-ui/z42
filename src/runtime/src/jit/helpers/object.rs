@@ -36,9 +36,9 @@ pub unsafe extern "C" fn jit_obj_new(
             name: class_name.clone(), base_name: None,
             fields: Vec::new(), field_index: HashMap::new(),
             vtable: Vec::new(), vtable_index: HashMap::new(),
-            own_fields: Vec::new(), own_methods: Vec::new(),
-            type_params: vec![], type_args: vec![],
-            type_param_constraints: vec![],
+            own_fields: Vec::new().into(), own_methods: Vec::new().into(),
+            type_params: vec![].into(), type_args: vec![].into(),
+            type_param_constraints: vec![].into(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         }));
     // 2026-05-02 fix-class-field-default-init: 按字段类型选默认值（与 interp

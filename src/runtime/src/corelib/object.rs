@@ -32,13 +32,13 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let type_desc = Arc::new(TypeDesc {
         name: crate::metadata::well_known_names::STD_TYPE.to_string(),
         base_name: None,
-        own_fields: fields.clone(),
-        own_methods: vec![],
+        own_fields: fields.clone().into(),
+        own_methods: vec![].into(),
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
-        type_param_constraints: vec![],
+        vtable_index: HashMap::new(), type_params: vec![].into(), type_args: vec![].into(),
+        type_param_constraints: vec![].into(),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });
     Ok(ctx.heap().alloc_object(
@@ -178,11 +178,11 @@ fn weak_handle_type_desc() -> Arc<TypeDesc> {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
-        own_fields: Vec::new(),
-        own_methods: Vec::new(),
-        type_params: vec![],
-        type_args: vec![],
-        type_param_constraints: vec![],
+        own_fields: Vec::new().into(),
+        own_methods: Vec::new().into(),
+        type_params: vec![].into(),
+        type_args: vec![].into(),
+        type_param_constraints: vec![].into(),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })).clone()
 }
