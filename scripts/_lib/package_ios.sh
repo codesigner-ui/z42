@@ -31,6 +31,13 @@ HOST_RID="$5"
 
 CARGO_TARGET=$(rid_to_cargo "$RID")
 
+# fix-ios-deployment-target (2026-05-27): IPHONEOS_DEPLOYMENT_TARGET must be
+# exported so cargo passes it to the clang linker; without it the linker
+# defaults to iOS 10.0 and libz-ng-sys's crc32_chorba references
+# ___chkstk_darwin (available since iOS 13.0) become undefined.
+IOS_DEPLOY="16.0"
+export IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOY"
+
 # ── 1. bin/ placeholder ─────────────────────────────────────────────────
 
 echo "[1/7] bin/ placeholder"

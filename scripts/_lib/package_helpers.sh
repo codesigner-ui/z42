@@ -465,7 +465,7 @@ PSEC
 )
             compat_section=$(cat <<CSEC
 host-min-version      = "${version}"
-ios-deployment-target = "14.0"
+ios-deployment-target = "16.0"
 CSEC
 )
             ;;
