@@ -67,17 +67,19 @@ build-feature-matrix: build-interp-only build-wasm-feature build-ios-feature bui
 # ──────────── Test ────────────
 
 # Run all tests through the unified GREEN gate (compiler + VM + cross-zpkg
-# + stdlib). Composes with --scope / --parallel / --quick from test-all.sh.
+# + stdlib). Composes with --scope / --parallel / --quick / --jobs from test-all.sh.
 # 2026-05-21 fix-just-test-coverage: previously this target ran only 3 of
 # the 4 layers — `test-stdlib` was a separate target, leading to the
 # add-stdlib-not-in-default-green gap that hid the cross-zpkg subclass
 # catch bug. Routing through test-all.sh closes the gap by default.
 #
 # Examples:
-#   just test                     # full GREEN gate, sequential
-#   just test --parallel          # ~38% faster via wave-based parallel
-#   just test --scope=runtime     # skip dotnet stages
-#   just test --scope=auto --parallel  # auto-narrow + parallel
+#   just test                              # full GREEN gate, sequential
+#   just test --parallel                   # wave-based parallel stages
+#   just test --parallel --jobs=4          # stages + intra-stage parallel
+#   just test --parallel --jobs=auto       # use all logical CPUs
+#   just test --scope=runtime --jobs=auto  # skip dotnet, parallel VM tests
+#   just test --scope=auto --parallel      # auto-narrow + parallel
 test *args:
     ./scripts/test-all.sh {{args}}
 
@@ -85,9 +87,13 @@ test *args:
 test-compiler:
     dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
-# Run VM golden tests (mode: interp | jit, default interp)
-test-vm mode="interp":
-    ./scripts/test-vm.sh {{mode}}
+# Run VM golden tests (mode: interp | jit, default interp).
+# Extra args forwarded to test-vm.sh (e.g. --jobs=4, --no-rebuild).
+#   just test-vm                     # interp, sequential
+#   just test-vm jit                 # jit mode
+#   just test-vm interp --jobs=auto  # parallel on all CPUs
+test-vm mode="interp" *args:
+    ./scripts/test-vm.sh {{mode}} {{args}}
 
 # Run cross-zpkg integration tests (mode: interp | jit, default interp)
 test-cross-zpkg mode="interp":
@@ -102,16 +108,21 @@ test-cross-zpkg mode="interp":
 test-changed *args:
     ./scripts/test-changed.sh {{args}}
 
-# Run stdlib library [Test] tests via z42-test-runner. (R3 minimal v0.2 + R5)
-#
-#   just test-stdlib                # run every stdlib lib's tests
-#   just test-stdlib z42.math       # run only z42.math's tests
-#
-# Each test file `src/libraries/<lib>/tests/*.z42` is compiled to .zbc then
-# fed to z42-test-runner, which subprocesses to z42vm with --entry per [Test]
-# method. Setup/Teardown not yet supported (R3 full version).
-test-stdlib lib="":
-    ./scripts/test-stdlib.sh {{lib}}
+# Run [Test] tests for one or more stdlib libraries (delegates to test-lib.sh).
+#   just test-lib                     # all libs
+#   just test-lib z42.io              # single lib
+#   just test-lib z42.io z42.net      # multiple libs
+#   just test-lib z42.io --jobs=4     # parallel (N concurrent test files)
+#   just test-lib z42.io -k process   # filter by file name
+test-lib *args:
+    ./scripts/test-lib.sh {{args}}
+
+# Backward-compatible alias: run stdlib [Test] tests (delegates to test-lib.sh).
+#   just test-stdlib                  # all libs
+#   just test-stdlib z42.math         # single lib
+#   just test-stdlib --jobs=4         # parallel
+test-stdlib *args:
+    ./scripts/test-lib.sh {{args}}
 
 # (P3 placeholder) Run cross-stdlib integration tests
 test-integration:

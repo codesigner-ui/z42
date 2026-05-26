@@ -27,6 +27,9 @@
 #   ./scripts/test-all.sh --parallel          # run independent stages in parallel waves
 #   ./scripts/test-all.sh --with-dist         # also run packaged binary check
 #   ./scripts/test-all.sh --quick             # skip rebuild inside test-vm.sh
+#   ./scripts/test-all.sh --jobs 4            # run N tests in parallel within each stage
+#   ./scripts/test-all.sh --jobs auto         # use all logical CPUs (nproc / sysctl)
+#   ./scripts/test-all.sh --parallel --jobs 4 # stage-level + intra-stage parallelism
 #
 # Scope semantics (add-test-split-by-area, 2026-05-21):
 #   - full      — all 6 stages (default). Use before commit / for PR gate.
@@ -70,18 +73,26 @@ SCOPE="full"
 WITH_DIST=false
 QUICK=false
 PARALLEL=false
+JOBS=1
 for arg in "$@"; do
     case "$arg" in
         --with-dist)  WITH_DIST=true ;;
         --quick)      QUICK=true ;;
         --parallel)   PARALLEL=true ;;
         --scope=*)    SCOPE="${arg#--scope=}" ;;
+        --jobs=*)     JOBS="${arg#--jobs=}" ;;
+        --jobs)       echo "error: --jobs requires a value (e.g. --jobs=4 or --jobs=auto)" >&2; exit 2 ;;
         -h|--help)
             sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//;s/^#$//;/^set -euo/d'
             exit 0 ;;
         *) echo "unknown arg: $arg (try --help)" >&2; exit 2 ;;
     esac
 done
+
+# Resolve --jobs auto → logical CPU count (cross-platform).
+if [[ "$JOBS" == "auto" ]]; then
+    JOBS=$(nproc 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 4)
+fi
 
 # add-test-split-by-area (2026-05-21): auto-detect scope from uncommitted
 # git changes. Path classification follows Decision 4 in design.md.
@@ -124,12 +135,13 @@ fi
 STAGE_DOTNET_BUILD="dotnet build|dotnet build src/compiler/z42.slnx --nologo -v quiet"
 STAGE_CARGO_BUILD="cargo build (release)|cargo build --manifest-path src/runtime/Cargo.toml --release --quiet"
 STAGE_DOTNET_TEST="dotnet test|dotnet test src/compiler/z42.Tests/z42.Tests.csproj --nologo"
-STAGE_VM_GOLDENS="VM goldens|./scripts/test-vm.sh $($QUICK && echo '--no-rebuild' || true)"
+_VM_QUICK_FLAG=$($QUICK && echo '--no-rebuild' || true)
+STAGE_VM_GOLDENS="VM goldens|./scripts/test-vm.sh ${_VM_QUICK_FLAG} --jobs=${JOBS}"
 # add-test-parallel-stages (2026-05-21): in parallel mode, force --no-rebuild
 # on test-vm to avoid racing W2's stdlib build path.
-STAGE_VM_GOLDENS_NOREBUILD="VM goldens|./scripts/test-vm.sh --no-rebuild"
+STAGE_VM_GOLDENS_NOREBUILD="VM goldens|./scripts/test-vm.sh --no-rebuild --jobs=${JOBS}"
 STAGE_CROSS_ZPKG="cross-zpkg|./scripts/test-cross-zpkg.sh"
-STAGE_STDLIB="stdlib [Test]|./scripts/test-lib.sh"
+STAGE_STDLIB="stdlib [Test]|./scripts/test-lib.sh --jobs=${JOBS}"
 STAGE_DIST="packaged binary|./scripts/test-dist.sh"
 
 # ── Sequential mode (existing behavior) ──────────────────────────────────────

@@ -66,13 +66,13 @@ jobs:
         shell: bash
 
       # Test on Unix runners (existing scripts are bash).
-      # 2026-05-21 fix-just-test-coverage + add-test-parallel-stages:
-      # route through test-all.sh --parallel for full coverage (compiler
-      # + VM + cross-zpkg + stdlib) at ~38% faster than serial. Previous
-      # `just test` ran 3 of 4 layers, missing stdlib.
-      - name: Test (test-all.sh --parallel)
+      # --parallel: wave-based stage-level concurrency (W1/W2/W3).
+      # --jobs=4: intra-stage parallelism for test-lib.sh and test-vm.sh;
+      #   capped at 4 to stay within the runner's vCPU budget (ubuntu=4,
+      #   macos-15=3) even when two stages run concurrently in a wave.
+      - name: Test (test-all.sh --parallel --jobs=4)
         if: matrix.os != 'windows-latest'
-        run: ./scripts/test-all.sh --parallel
+        run: ./scripts/test-all.sh --parallel --jobs=4
         shell: bash
 
       # Windows pre-test: regenerate golden source.zbc fixtures the same way
@@ -218,7 +218,8 @@ jobs:
         run: ./scripts/build-stdlib.sh
 
       - name: VM golden — JIT mode
-        run: just test-vm jit
+        run: ./scripts/test-vm.sh jit --jobs=4
+        shell: bash
 
       - name: Cross-zpkg — JIT mode
         run: just test-cross-zpkg jit
