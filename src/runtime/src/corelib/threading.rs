@@ -92,6 +92,21 @@ pub fn builtin_thread_spawn(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::I64(id as i64))
 }
 
+/// `__thread_sleep(millis: i64)` — block the current thread for the given
+/// duration. add-thread-sleep (2026-05-27). Negative values saturate to 0
+/// (matches BCL `Thread.Sleep`). Backed by `std::thread::sleep` (POSIX
+/// `nanosleep`); ms precision is sufficient for the scripting use case.
+pub fn builtin_thread_sleep(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let millis = match args.first() {
+        Some(Value::I64(n)) => *n,
+        Some(other) => bail!("__thread_sleep: expected i64 millis, got {:?}", other),
+        None        => bail!("__thread_sleep: missing millis argument"),
+    };
+    let clamped = if millis < 0 { 0u64 } else { millis as u64 };
+    std::thread::sleep(std::time::Duration::from_millis(clamped));
+    Ok(Value::Null)
+}
+
 /// `__thread_join(slot_id) -> Value::Array` — wait for the spawned thread and
 /// return a discriminated outcome (see module-level docs for the shape).
 pub fn builtin_thread_join(ctx: &VmContext, args: &[Value]) -> Result<Value> {

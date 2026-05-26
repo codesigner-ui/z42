@@ -10,7 +10,7 @@ slot table。
 
 | 文件 | 类型 | 说明 |
 |------|------|------|
-| `Thread.z42` | `Std.Threading.Thread` | OS 线程句柄；`Start(Action)` 工厂 + `Join()` 同步等待 |
+| `Thread.z42` | `Std.Threading.Thread` | OS 线程句柄；`Start(Action)` 工厂 + `Join()` 同步等待 + 静态 `Sleep(long millis)` 阻塞当前线程 |
 | `ThreadException.z42` | `Std.ThreadException` | 跨线程异常封装（worker `throw` 或 Rust panic 经由 Join 透传） |
 | `Mutex.z42` | `Std.Threading.Mutex<T>` | 排他互斥；RAII callback `Lock(Func<T,T>)`（add-sync-primitives 2026-05-20） |
 | `RwLock.z42` | `Std.Threading.RwLock<T>` | 多读单写 lock；`Read(Action<T>)` 多 reader 并发 + `Write(Func<T,T>)` 单 writer 排他（add-sync-primitives-rwlock 2026-05-20） |

@@ -62,6 +62,14 @@ public class Thread {
     public long SlotId() {
         return this._slot;
     }
+
+    // add-thread-sleep (2026-05-27): block the current thread for `millis`
+    // milliseconds. Negative values saturate to 0 (BCL convention). For
+    // CPU-friendly polling / simple delays. POSIX `nanosleep` underneath,
+    // ms precision.
+    public static void Sleep(long millis) {
+        ThreadNative.Sleep(millis);
+    }
 }
 
 // Native binding sink. Keeps the [Native] extern signatures isolated so
@@ -71,6 +79,10 @@ public class Thread {
 public static class ThreadNative {
     [Native("__thread_spawn")]
     public static extern long Spawn(object action);
+
+    // add-thread-sleep (2026-05-27)
+    [Native("__thread_sleep")]
+    public static extern void Sleep(long millis);
 
     [Native("__thread_join")]
     public static extern object[] Join(long slotId);

@@ -1,0 +1,34 @@
+// add-thread-sleep (2026-05-27): Thread.Sleep(ms) coverage.
+namespace Z42ThreadingThreadSleepTests;
+
+using Std;
+using Std.Test;
+using Std.Time;
+using Std.Threading;
+
+[Test]
+void test_sleep_actually_blocks() {
+    long t0 = DateTime.UtcNow().UnixMs();
+    Thread.Sleep(100);
+    long elapsed = DateTime.UtcNow().UnixMs() - t0;
+    // Generous tolerance for OS scheduling jitter — should be near 100,
+    // not below 80 (under-sleep would indicate broken impl).
+    Assert.True(elapsed >= 80L);
+    Assert.True(elapsed < 1000L);
+}
+
+[Test]
+void test_sleep_zero_returns_immediately() {
+    long t0 = DateTime.UtcNow().UnixMs();
+    Thread.Sleep(0);
+    long elapsed = DateTime.UtcNow().UnixMs() - t0;
+    Assert.True(elapsed < 50L);
+}
+
+[Test]
+void test_sleep_negative_saturates_to_zero() {
+    long t0 = DateTime.UtcNow().UnixMs();
+    Thread.Sleep(-100);
+    long elapsed = DateTime.UtcNow().UnixMs() - t0;
+    Assert.True(elapsed < 50L);
+}

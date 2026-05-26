@@ -350,6 +350,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-httpclient-timeout (2026-05-27) — TCP socket read/write deadlines ──
     ("__net_tcp_socket_set_read_timeout",  network::builtin_net_tcp_socket_set_read_timeout),
     ("__net_tcp_socket_set_write_timeout", network::builtin_net_tcp_socket_set_write_timeout),
+
+    // ── add-thread-sleep (2026-05-27) — blocking sleep ──
+    ("__thread_sleep", threading::builtin_thread_sleep),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
