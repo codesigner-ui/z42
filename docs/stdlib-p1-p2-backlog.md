@@ -10,7 +10,7 @@
 | `Json.SelectPath("$.user.name")` 嵌套访问 | 2h | ✅ | `726309de` | `JsonPath.Select(root, path)` — 支持 `.name` / `[N]` / `["key"]`；missing/oor/wrong-kind 返 null |
 | `Zip.ExtractAllTo(bytes, dir)` | 2h | ✅ | `a9c5f2a7` | 纯 z42 atop `Zip.Read`；Zip-Slip 防御 + 目录条目处理；附带修了 Zip `new string(chars)` 同 B2 latent bug。`CreateFromDirectory` 等 `Zip.Write` deferred 解锁后再做 |
 | `Collections.PriorityQueue<T>` 二叉堆 | 1.5h | ✅ | `e7289743` | 纯 z42 + `where T : IComparable<T>`，最小堆（O(log n) Enqueue/Dequeue） |
-| `Diagnostics` 结构化日志（`Log.Info(msg, fields)`） | 2h | ✅ | _pending_ | `LogFields` builder + 5 个 level `(msg, fields)` 重载；logfmt 格式带 `\` `"` escape |
+| `Diagnostics` 结构化日志（`Log.Info(msg, fields)`） | 2h | ✅ | `1ea35472` | `LogFields` builder + 5 个 level `(msg, fields)` 重载；logfmt 格式带 `\` `"` escape |
 
 ## P2 — nice-to-have
 
