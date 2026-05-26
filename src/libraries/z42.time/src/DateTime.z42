@@ -65,6 +65,30 @@ public sealed class DateTime {
         return this._formatIsoDate() + "T" + this._formatIsoTimeOfDay(false);
     }
 
+    // add-timezone-basics (2026-05-27): render this UTC moment in the
+    // given timezone's local clock. Suffix is `±HH:MM` (or `Z` for UTC).
+    //
+    //   var jst = TimeZone.FromName("JST");
+    //   DateTime.FromUnixMs(1700000000000).ToIso8601With(jst)
+    //   → "2023-11-15T07:13:20.000+09:00"
+    //
+    // Always emits milliseconds — symmetric with `ToIso8601`. Pass a
+    // `TimeZone.Utc()` to get the same output as `ToIso8601()` modulo the
+    // offset rendering (`+00:00` vs `Z`).
+    public string ToIso8601With(TimeZone tz) {
+        long shifted = _unixMs + (long)tz.OffsetMinutes() * 60000L;
+        long days = _floorDiv(shifted, 86400000L);
+        long[] ymd = _civilFromDays(days);
+        long msInDay = _floorMod(shifted, 86400000L);
+        long hour = msInDay / 3600000L;
+        long min  = (msInDay / 60000L) % 60L;
+        long sec  = (msInDay / 1000L) % 60L;
+        long ms   = msInDay % 1000L;
+        return _pad4(ymd[0]) + "-" + _pad2(ymd[1]) + "-" + _pad2(ymd[2])
+            + "T" + _pad2(hour) + ":" + _pad2(min) + ":" + _pad2(sec)
+            + "." + _pad3(ms) + tz.ToOffsetString();
+    }
+
     // ── 内部实现 ─────────────────────────────────────────────────────────────
 
     private string _formatIsoDate() {

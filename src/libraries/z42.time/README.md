@@ -9,9 +9,9 @@ builtin 拿 OS 时钟，业务逻辑全部脚本化。
 本包**不含**以下内容（见 Deferred 段）：
 - 用户可调用的日历分解（年月日 getter；内部 `_civilFromDays` 算法已落地，仅用于 ISO 格式化）
 - ISO-8601 之外的格式化（`strftime` / C# format string）、ISO 解析
-- `Sleep` / `Timer` / `Delay`（阻塞 / 异步定时器）
-- `DateTimeOffset`（带时区的时刻）
-- Timezone database（IANA tzdata）
+- `Sleep`（已落地 z42.threading.Thread.Sleep）/ `Timer` / `Delay`（异步定时器）
+- `DateTimeOffset`（封装 DateTime + TimeZone 的便利类型；当前用户手写 `dt.ToIso8601With(tz)` 凑合）
+- Timezone database（IANA tzdata；当前只有手维护的 ~22 个短代码 + 任意 fixed offset）
 
 设计参考：详见 [`docs/design/stdlib/time.md`](../../../docs/design/stdlib/time.md)
 （如不存在等待 spec 落地）。
@@ -21,7 +21,8 @@ builtin 拿 OS 时钟，业务逻辑全部脚本化。
 | 文件 | 类型 | 说明 |
 |------|------|------|
 | `TimeSpan.z42`  | `struct TimeSpan`  | 时间段值，内部 i64 ns；factory + 总量访问器 |
-| `DateTime.z42`  | `struct DateTime`  | UTC 时刻值，内部 i64 Unix epoch ms；factory + 解构访问器 |
+| `DateTime.z42`  | `struct DateTime`  | UTC 时刻值，内部 i64 Unix epoch ms；factory + 解构访问器 + `ToIso8601()` / `ToIso8601Basic()` / `ToIso8601With(tz)` |
+| `TimeZone.z42`  | `class TimeZone`   | 固定 offset 时区 + 短代码查表（UTC/GMT/EST/PST/JST/IST/...）；`FromName` / `FromOffsetMinutes` / `Utc` factory。**无 DST、无 IANA tzdata**（详 Deferred） |
 | `Stopwatch.z42` | `class Stopwatch`  | 单调高精度计时器（不受系统时钟跳变影响），基于 `__bench_now_ns` |
 
 ## 入口点

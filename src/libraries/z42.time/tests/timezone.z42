@@ -1,0 +1,132 @@
+// add-timezone-basics (2026-05-27): TimeZone + DateTime.ToIso8601With.
+namespace Z42TimeTimeZoneTests;
+
+using Std;
+using Std.Test;
+using Std.Time;
+
+[Test]
+void test_utc_factory_zero_offset() {
+    var z = TimeZone.Utc();
+    Assert.Equal(0, z.OffsetMinutes());
+    Assert.Equal("UTC", z.Name());
+    Assert.Equal("Z", z.ToOffsetString());
+}
+
+[Test]
+void test_fromname_jst() {
+    var z = TimeZone.FromName("JST");
+    Assert.NotNull(z);
+    Assert.Equal(540, z.OffsetMinutes());
+    Assert.Equal("JST", z.Name());
+    Assert.Equal("+09:00", z.ToOffsetString());
+}
+
+[Test]
+void test_fromname_case_insensitive() {
+    var lower = TimeZone.FromName("jst");
+    var mixed = TimeZone.FromName("JsT");
+    Assert.Equal(540, lower.OffsetMinutes());
+    Assert.Equal(540, mixed.OffsetMinutes());
+}
+
+[Test]
+void test_fromname_pst_negative_offset() {
+    var z = TimeZone.FromName("PST");
+    Assert.Equal(-480, z.OffsetMinutes());
+    Assert.Equal("-08:00", z.ToOffsetString());
+}
+
+[Test]
+void test_fromname_ist_half_hour_offset() {
+    var z = TimeZone.FromName("IST");
+    Assert.Equal(330, z.OffsetMinutes());
+    Assert.Equal("+05:30", z.ToOffsetString());
+}
+
+[Test]
+void test_fromname_unknown_returns_null() {
+    Assert.Null(TimeZone.FromName("XYZ"));
+    Assert.Null(TimeZone.FromName(""));
+    Assert.Null(TimeZone.FromName("America/New_York"));   // IANA form not supported v0
+}
+
+[Test]
+void test_fromoffsetminutes_custom() {
+    var z = TimeZone.FromOffsetMinutes(-90);
+    Assert.Equal(-90, z.OffsetMinutes());
+    Assert.Equal("-01:30", z.Name());
+    Assert.Equal("-01:30", z.ToOffsetString());
+}
+
+[Test]
+void test_fromoffsetminutes_zero_renders_z() {
+    var z = TimeZone.FromOffsetMinutes(0);
+    Assert.Equal(0, z.OffsetMinutes());
+    Assert.Equal("Z", z.ToOffsetString());
+}
+
+[Test]
+void test_fromoffsetminutes_out_of_range_throws() {
+    bool caught_high = false;
+    try { TimeZone.FromOffsetMinutes(900); } catch (ArgumentException e) { caught_high = true; }
+    Assert.True(caught_high);
+
+    bool caught_low = false;
+    try { TimeZone.FromOffsetMinutes(-900); } catch (ArgumentException e) { caught_low = true; }
+    Assert.True(caught_low);
+}
+
+// 1700000000000 ms UTC = 2023-11-14T22:13:20.000Z (known modern fixture).
+[Test]
+void test_iso8601_with_utc() {
+    var dt = DateTime.FromUnixMs(1700000000000L);
+    Assert.Equal("2023-11-14T22:13:20.000Z", dt.ToIso8601With(TimeZone.Utc()));
+}
+
+[Test]
+void test_iso8601_with_jst_advances_nine_hours() {
+    var dt = DateTime.FromUnixMs(1700000000000L);
+    Assert.Equal("2023-11-15T07:13:20.000+09:00", dt.ToIso8601With(TimeZone.FromName("JST")));
+}
+
+[Test]
+void test_iso8601_with_pst_retreats_eight_hours() {
+    var dt = DateTime.FromUnixMs(1700000000000L);
+    Assert.Equal("2023-11-14T14:13:20.000-08:00", dt.ToIso8601With(TimeZone.FromName("PST")));
+}
+
+[Test]
+void test_iso8601_with_ist_handles_half_hour_offset() {
+    var dt = DateTime.FromUnixMs(1700000000000L);
+    Assert.Equal("2023-11-15T03:43:20.000+05:30", dt.ToIso8601With(TimeZone.FromName("IST")));
+}
+
+[Test]
+void test_iso8601_with_custom_offset_renders_signed_hhmm() {
+    var dt = DateTime.FromUnixMs(1700000000000L);
+    var z = TimeZone.FromOffsetMinutes(-90);
+    Assert.Equal("2023-11-14T20:43:20.000-01:30", dt.ToIso8601With(z));
+}
+
+[Test]
+void test_iso8601_with_crosses_day_boundary() {
+    // Just before midnight UTC + JST = next day morning.
+    // 2024-01-01T00:00:00.000Z = 1704067200000 ms.
+    var dt = DateTime.FromUnixMs(1704067200000L);
+    Assert.Equal("2024-01-01T09:00:00.000+09:00", dt.ToIso8601With(TimeZone.FromName("JST")));
+}
+
+[Test]
+void test_iso8601_with_negative_offset_crosses_back_a_day() {
+    // 2024-01-01T05:00:00.000Z + PST (-8h) = 2023-12-31T21:00:00 PST.
+    // ms = 1704085200000.
+    var dt = DateTime.FromUnixMs(1704085200000L);
+    Assert.Equal("2023-12-31T21:00:00.000-08:00", dt.ToIso8601With(TimeZone.FromName("PST")));
+}
+
+[Test]
+void test_iso8601_with_zero_offset_renders_z_suffix() {
+    var dt = DateTime.FromUnixMs(0L);
+    Assert.Equal("1970-01-01T00:00:00.000Z", dt.ToIso8601With(TimeZone.Utc()));
+}

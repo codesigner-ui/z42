@@ -16,7 +16,7 @@
 
 | 项 | 估时 | 状态 | Commit | 简述 |
 |----|:----:|:----:|:------:|------|
-| `Time.TimeZone` 基础 + IANA → UTC offset 表 | 3h+ | ⏳ | — | 纯 z42；跨时区业务最低限度支持 |
+| `Time.TimeZone` 基础 + 短代码 → UTC offset 表 | 3h+ | ✅ | _pending_ | 固定 offset + ~22 短代码（UTC/GMT/EST/PST/JST/IST/...）；`DateTime.ToIso8601With(tz)` 配套渲染。无 DST、无 IANA 完整库（仍 Deferred） |
 | `Cli.Subcommand`（ArgParser 树形） | 2h | ⏳ | — | git/cargo 风格 multi-command CLI 工具 |
 | `Text.Levenshtein(a, b)` / `SimilarityRatio` | 1h | ⏳ | — | 纯 z42；fuzzy search / 自动补全 |
 | `Encoding.UTF16/UTF32` | 3h | ⏳ | — | 纯 z42；Windows PE 字符串 + .NET native interop |
