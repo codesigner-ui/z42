@@ -49,10 +49,9 @@ blake3 = "1"
 
 # OS-CSPRNG (Std.Crypto.SecureRandom) — add-csprng-to-crypto (2026-05-26).
 # Wraps Linux getrandom(2) / macOS getentropy / Windows BCryptGenRandom.
-# wasm32 builds cfg-gate the corelib/crypto.rs entry to throw NotSupported
-# (no getrandom `js` feature here; wasm CSPRNG is add-csprng-wasm-bridge
-# follow-up).
-getrandom = "0.2"
+# wasm32 excluded: getrandom requires `js` feature for wasm32-unknown-unknown
+# but we cfg-gate crypto.rs to throw NotSupported there instead.
+# (wasm bridge is add-csprng-wasm-bridge follow-up).
 
 # Compression cdylib — add-z42-compression (2026-05-22).
 # Optional dep, enabled by the `bundled-compression` feature (wasm-only by
@@ -124,6 +123,12 @@ android              = ["interp-only", "aot", "native-interop", "bundled-compres
 # Platform / system info (Std.Platform / Std.OperatingSystem stdlib, 2026-05-14).
 # Only needed on unix-like for gethostname / uname; windows uses winapi via direct
 # FFI binding (no extra crate); wasm falls through to graceful "" returns.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# getrandom excluded from wasm32: requires the `js` feature for
+# wasm32-unknown-unknown; our crypto.rs cfg-gates that path to throw
+# NotSupportedException instead (add-csprng-wasm-bridge follow-up).
+getrandom = "0.2"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 # POSIX signal handling — low-level register API (no monitor thread).
