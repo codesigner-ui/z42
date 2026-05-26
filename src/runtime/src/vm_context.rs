@@ -1075,17 +1075,40 @@ impl VmContext {
     }
 
     /// Look up a function by FQ name; triggers lazy load if needed.
+    ///
+    /// review.md D3 Phase 2 (2026-05-27): emits `RuntimeEvent::ModuleLoaded`
+    /// for every zpkg the resolver pulled in transitively, so observers
+    /// see lazy-load activity (not just boot-time eager loads).
     pub fn try_lookup_function(&self, func_name: &str) -> Option<Arc<Function>> {
-        let mut state = self.core.lazy_loader.lock();
-        let loader = state.as_mut()?;
-        loader.resolve_function(func_name)
+        let (result, newly_loaded) = {
+            let mut state = self.core.lazy_loader.lock();
+            let loader = state.as_mut()?;
+            let before: std::collections::HashSet<String> = loader.loaded_zpkgs.clone();
+            let result = loader.resolve_function(func_name);
+            let newly: Vec<String> = loader.loaded_zpkgs.difference(&before).cloned().collect();
+            (result, newly)
+        };
+        for name in newly_loaded {
+            self.fire_runtime_event(&crate::observer::RuntimeEvent::ModuleLoaded { name, byte_size: None });
+        }
+        result
     }
 
     /// Look up a class TypeDesc by FQ name; triggers lazy load if needed.
+    /// Same `ModuleLoaded` emit semantics as `try_lookup_function`.
     pub fn try_lookup_type(&self, class_name: &str) -> Option<Arc<TypeDesc>> {
-        let mut state = self.core.lazy_loader.lock();
-        let loader = state.as_mut()?;
-        loader.resolve_type(class_name)
+        let (result, newly_loaded) = {
+            let mut state = self.core.lazy_loader.lock();
+            let loader = state.as_mut()?;
+            let before: std::collections::HashSet<String> = loader.loaded_zpkgs.clone();
+            let result = loader.resolve_type(class_name);
+            let newly: Vec<String> = loader.loaded_zpkgs.difference(&before).cloned().collect();
+            (result, newly)
+        };
+        for name in newly_loaded {
+            self.fire_runtime_event(&crate::observer::RuntimeEvent::ModuleLoaded { name, byte_size: None });
+        }
+        result
     }
 
     /// Resolve an "overflow" ConstStr index past the main module's pool.

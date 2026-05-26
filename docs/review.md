@@ -936,7 +936,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
-| ✅ | ~~`RuntimeObserver` (D3 Phase 1)~~ — add-runtime-observer (2026-05-26); ModuleLoaded + Custom variants live; JIT/exception/native emit sites are Phase 2 follow-ups | 4 | done | ops |
+| ✅ | ~~`RuntimeObserver` (D3 Phase 1 + 2)~~ — add-runtime-observer (2026-05-26) + Phase 2 emit sites (JitModuleCompiled / ExceptionThrown / ExceptionCaught / NativeCallEntered) + lazy-load ModuleLoaded (2026-05-27) | 4 | done | ops |
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
 | **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
@@ -1365,7 +1365,7 @@ pub struct ScriptObject {
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
-| ✅ | ~~`RuntimeObserver` (D3 Phase 1)~~ — add-runtime-observer (2026-05-26); ModuleLoaded + Custom variants live; JIT/exception/native emit sites are Phase 2 follow-ups | 4 | done | ops |
+| ✅ | ~~`RuntimeObserver` (D3 Phase 1 + 2)~~ — add-runtime-observer (2026-05-26) + Phase 2 emit sites (JitModuleCompiled / ExceptionThrown / ExceptionCaught / NativeCallEntered) + lazy-load ModuleLoaded (2026-05-27) | 4 | done | ops |
 | **P2** | **VmContext trait 拆分**（E1.P1）— GcAccess / ExceptionAccess 等 | 5 | 5-7 天 | arch |
 | **P2** | **`interfaces/` 契约层**（E1.P3）— 对齐 CoreCLR `inc/` | 5 | 7-10 天 | arch |
 | **P2** | **Function 热 / 冷拆分**（E2.P5）— 200B → 80B + 间接 cold | 5 | 3-5 天 | data |
