@@ -10,6 +10,7 @@ JSON RFC 8259 reader / writer。覆盖 7 个 value 类型（null / bool / number
 | `src/JsonException.z42` | `JsonException : Std.Exception`，带 1-based line / column |
 | `src/JsonParser.z42` | 内部 recursive-descent parser + tokenizer，含 surrogate-pair 处理 |
 | `src/JsonWriter.z42` | 内部 stringifier（compact + pretty 两模式） |
+| `src/JsonPath.z42` | `static class JsonPath` — `Select(root, "$.api.users[0].name")` 嵌套访问；支持 `.name` / `[N]` / `["key"]` |
 
 ## 入口点
 - `Std.Json.JsonValue.Parse(text)` → `JsonValue` (any root value)

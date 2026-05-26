@@ -1,0 +1,128 @@
+namespace Std.Json;
+
+using Std;
+
+// add-json-selectpath (2026-05-27): minimal JSONPath subset for nested
+// access. Use case: scripts pulling deep config (`obj["api"]["users"][3]
+// ["name"]` becomes `obj.SelectPath("$.api.users[3].name")`).
+//
+// **Supported syntax**:
+//   `$`            — root anchor (optional; omitted same as starting at root)
+//   `.<name>`      — object key access; `<name>` is ASCII identifier
+//                    (`[A-Za-z_][A-Za-z0-9_]*`)
+//   `["<name>"]`   — object key with arbitrary string (handles keys
+//                    containing `.`, brackets, unicode)
+//   `[<n>]`        — array index (non-negative integer)
+//
+// **Not supported (return null / throw on encounter)**:
+//   `..` recursive descent, `*` wildcard, `?(...)` filter, `[start:end]`
+//   slice, function calls. These are JSONPath spec extensions; v0 keeps
+//   surface minimal. Future spec can add as `JsonPathStrict.Select`
+//   without breaking this method.
+//
+// **Return semantics**: returns the addressed `JsonValue` or `null` if any
+// step of the path doesn't resolve (missing key, out-of-range index,
+// wrong kind). Throws `JsonException` only on malformed path syntax.
+public static class JsonPath {
+
+    /// Walk `root` per `path` and return the value at the path, or null
+    /// if the path doesn't resolve.
+    public static JsonValue Select(JsonValue root, string path) {
+        if (root == null) return null;
+        JsonValue cur = root;
+        int n = path.Length;
+        int i = 0;
+        // Skip leading "$" anchor.
+        if (i < n && path.CharAt(i) == '$') { i = i + 1; }
+        while (i < n) {
+            char c = path.CharAt(i);
+            if (c == '.') {
+                // .name
+                i = i + 1;
+                int start = i;
+                while (i < n) {
+                    char nc = path.CharAt(i);
+                    if (nc == '.' || nc == '[') break;
+                    i = i + 1;
+                }
+                if (i == start) {
+                    throw new JsonException("JsonPath: empty segment after '.' at pos " + Int32.ToString(start));
+                }
+                string key = path.Substring(start, i - start);
+                cur = _stepObject(cur, key);
+                if (cur == null) return null;
+            } else if (c == '[') {
+                // [N] or ["name"]
+                i = i + 1;
+                if (i >= n) {
+                    throw new JsonException("JsonPath: unterminated '['");
+                }
+                char first = path.CharAt(i);
+                if (first == '"' || first == '\'') {
+                    // ["name"] form — find matching close quote
+                    char quote = first;
+                    i = i + 1;
+                    int kstart = i;
+                    while (i < n && path.CharAt(i) != quote) {
+                        i = i + 1;
+                    }
+                    if (i >= n) {
+                        throw new JsonException("JsonPath: unterminated quoted key in '['");
+                    }
+                    string key = path.Substring(kstart, i - kstart);
+                    i = i + 1;   // skip closing quote
+                    if (i >= n || path.CharAt(i) != ']') {
+                        throw new JsonException("JsonPath: expected ']' after quoted key at pos " + Int32.ToString(i));
+                    }
+                    i = i + 1;
+                    cur = _stepObject(cur, key);
+                    if (cur == null) return null;
+                } else {
+                    // [N] form
+                    int kstart = i;
+                    while (i < n) {
+                        char nc = path.CharAt(i);
+                        if (nc < '0' || nc > '9') break;
+                        i = i + 1;
+                    }
+                    if (i == kstart) {
+                        throw new JsonException("JsonPath: expected digit or quote after '[' at pos " + Int32.ToString(kstart));
+                    }
+                    if (i >= n || path.CharAt(i) != ']') {
+                        throw new JsonException("JsonPath: expected ']' after index at pos " + Int32.ToString(i));
+                    }
+                    string idxStr = path.Substring(kstart, i - kstart);
+                    i = i + 1;
+                    int idx = Int32.Parse(idxStr);
+                    cur = _stepArray(cur, idx);
+                    if (cur == null) return null;
+                }
+            } else if (c == ' ' || c == '\t') {
+                // tolerate whitespace between segments
+                i = i + 1;
+            } else {
+                throw new JsonException(
+                    "JsonPath: unexpected character '" + c.ToString()
+                    + "' at pos " + Int32.ToString(i)
+                    + " (expected '.', '[', or end)");
+            }
+        }
+        return cur;
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    static JsonValue _stepObject(JsonValue v, string key) {
+        if (v == null) return null;
+        if (!v.IsObject()) return null;
+        if (!v.ContainsKey(key)) return null;
+        return v.Get(key);
+    }
+
+    static JsonValue _stepArray(JsonValue v, int idx) {
+        if (v == null) return null;
+        if (!v.IsArray()) return null;
+        if (idx < 0 || idx >= v.Length()) return null;
+        return v.At(idx);
+    }
+}

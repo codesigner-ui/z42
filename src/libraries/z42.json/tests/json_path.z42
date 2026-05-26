@@ -1,0 +1,133 @@
+// add-json-selectpath (2026-05-27): JsonPath.Select coverage.
+namespace Z42JsonPathTests;
+
+using Std;
+using Std.Test;
+using Std.Json;
+
+static JsonValue _sample() {
+    return JsonValue.Parse(
+        "{\"api\":{\"users\":[" +
+            "{\"name\":\"alice\",\"age\":30}," +
+            "{\"name\":\"bob\",\"age\":25}" +
+        "],\"version\":\"1.2\"}," +
+        "\"flag\":true,\"count\":42}");
+}
+
+[Test]
+void test_select_simple_key() {
+    JsonValue v = JsonPath.Select(_sample(), "$.flag");
+    Assert.NotNull(v);
+    Assert.Equal(true, v.AsBool());
+}
+
+[Test]
+void test_select_long_value() {
+    JsonValue v = JsonPath.Select(_sample(), "$.count");
+    Assert.Equal(42L, v.AsLong());
+}
+
+[Test]
+void test_select_nested_object_key() {
+    JsonValue v = JsonPath.Select(_sample(), "$.api.version");
+    Assert.Equal("1.2", v.AsString());
+}
+
+[Test]
+void test_select_array_index() {
+    JsonValue v = JsonPath.Select(_sample(), "$.api.users[0].name");
+    Assert.Equal("alice", v.AsString());
+}
+
+[Test]
+void test_select_second_array_element() {
+    JsonValue v = JsonPath.Select(_sample(), "$.api.users[1].age");
+    Assert.Equal(25L, v.AsLong());
+}
+
+[Test]
+void test_select_without_dollar_anchor() {
+    JsonValue v = JsonPath.Select(_sample(), ".api.version");
+    Assert.Equal("1.2", v.AsString());
+}
+
+[Test]
+void test_select_missing_key_returns_null() {
+    JsonValue v = JsonPath.Select(_sample(), "$.api.nonexistent");
+    Assert.Null(v);
+}
+
+[Test]
+void test_select_oor_index_returns_null() {
+    JsonValue v = JsonPath.Select(_sample(), "$.api.users[99]");
+    Assert.Null(v);
+}
+
+[Test]
+void test_select_wrong_kind_step_returns_null() {
+    // .flag is a bool — stepping into it via .x must return null, not throw.
+    JsonValue v = JsonPath.Select(_sample(), "$.flag.x");
+    Assert.Null(v);
+}
+
+[Test]
+void test_select_bracket_quoted_key_with_special_char() {
+    JsonValue root = JsonValue.Parse("{\"a.b\":42,\"normal\":1}");
+    JsonValue v = JsonPath.Select(root, "$[\"a.b\"]");
+    Assert.Equal(42L, v.AsLong());
+}
+
+[Test]
+void test_select_bracket_index_only() {
+    JsonValue root = JsonValue.Parse("[10,20,30]");
+    JsonValue v = JsonPath.Select(root, "$[1]");
+    Assert.Equal(20L, v.AsLong());
+}
+
+[Test]
+void test_select_root_only_returns_full_value() {
+    JsonValue root = JsonValue.Parse("{\"x\":1}");
+    JsonValue v = JsonPath.Select(root, "$");
+    Assert.NotNull(v);
+    Assert.True(v.IsObject());
+    Assert.True(v.ContainsKey("x"));
+}
+
+[Test]
+void test_select_null_root_returns_null() {
+    JsonValue v = JsonPath.Select(null, "$.x");
+    Assert.Null(v);
+}
+
+[Test]
+void test_select_malformed_double_dot_throws() {
+    bool caught = false;
+    try {
+        JsonPath.Select(_sample(), "$..x");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_select_unterminated_bracket_throws() {
+    bool caught = false;
+    try {
+        JsonPath.Select(_sample(), "$[5");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_select_unsupported_wildcard_throws() {
+    bool caught = false;
+    try {
+        JsonPath.Select(_sample(), "$.*");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
