@@ -87,14 +87,11 @@ public class FormatGoldenTests
             because: $"fixture `{fixture}`: ZbcWriter not deterministic — likely hash-set / dict iteration leak");
     }
 
-    // Note: a `ReadWriteRoundTrip` (read bytes → IrModule → re-write → byte-equal)
-    // test would currently fail for 3/6 fixtures (`strp-func-minimal` / `multi-method`
-    // / `with-frcs`) — `ZbcReader` loses some encoder state (likely SIGS / EXPT /
-    // certain string-pool ordering) that the second `ZbcWriter.Write` re-fills
-    // with defaults. This is genuine reader-writer asymmetry, tracked separately
-    // (see `docs/spec/archive/<date>-freeze-zbc-v1/tasks.md` 备注). The strict-pin
-    // freeze scenarios don't require Read-Write round-trip; `WriterDeterministic`
-    // + `ByteEqual` already pin "same input → stable bytes".
+    // Note: `ReadWriteRoundTrip` (read bytes → IrModule → re-write → byte-equal)
+    // was originally dropped here due to lossy `retType` / `IrFieldDesc.Type`
+    // TypeTag encoding. Re-enabled 2026-05-27 in a dedicated harness
+    // (`ReadWriteRoundTripTests.cs`) after `align-zbc-reader-writer-asymmetry`
+    // (zbc 1.7) added u32 type_str_idx alongside the tag.
 
     // ── Helpers ────────────────────────────────────────────────────────────
 

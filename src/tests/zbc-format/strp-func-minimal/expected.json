@@ -1,7 +1,7 @@
 {
   "header": {
     "major": 1,
-    "minor": 6,
+    "minor": 7,
     "flags": [
       "HasDebug"
     ],
@@ -34,7 +34,7 @@
       "param_types": [
         "Greeter"
       ],
-      "return_type": "object",
+      "return_type": "string",
       "exec_mode": "Interp",
       "is_static": false,
       "block_count": 1,

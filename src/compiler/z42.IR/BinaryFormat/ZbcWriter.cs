@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 6;   // 2026-05-18 fix-array-default-init: ArrayNew opcode appends element type tag byte (drives per-type default value). Pre-1.6 not readable.
+    public const ushort VersionMinor = 7;   // 2026-05-27 align-zbc-reader-writer-asymmetry: SIGS/TYPE 在 u8 type_tag 之后追加 u32 type_str_idx（read→write byte parity；string 是权威，tag 留作 hint）. Pre-1.7 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -365,6 +365,10 @@ public static partial class ZbcWriter
             {
                 w.Write((uint)pool.Idx(fld.Name));
                 w.Write(TypeTags.FromString(fld.Type));
+                // 1.7 align-zbc-reader-writer-asymmetry: explicit field type
+                // string (u32 str idx). Reader treats this as authoritative;
+                // type_tag above is a hint only (kept for disasm + future JIT).
+                w.Write((uint)pool.Idx(fld.Type));
             }
             // Generic type parameters for this class (L3-G1) + per-tp constraints (L3-G3a)
             var tpCount = (byte)(cls.TypeParams?.Count ?? 0);
@@ -395,6 +399,10 @@ public static partial class ZbcWriter
             w.Write((uint)pool.Idx(fn.Name));
             w.Write((ushort)fn.ParamCount);
             w.Write(TypeTags.FromString(fn.RetType));
+            // 1.7 align-zbc-reader-writer-asymmetry: explicit ret type string
+            // (u32 str idx). Reader treats this as authoritative; ret_tag
+            // above is a hint only (kept for disasm + future JIT).
+            w.Write((uint)pool.Idx(fn.RetType));
             w.Write(ExecModes.FromString(fn.ExecMode));
             w.Write((byte)(fn.IsStatic ? 1 : 0));  // is_static flag
 

@@ -189,6 +189,9 @@ public static partial class ZpkgWriter
                 w.Write((uint)pool.Idx(fn.Name));
                 w.Write((ushort)fn.ParamCount);
                 w.Write(TypeTags.FromString(fn.RetType));
+                // 1.7 align-zbc-reader-writer-asymmetry: explicit ret type
+                // string (u32 str idx). Mirror ZbcWriter.BuildSigsSection.
+                w.Write((uint)pool.Idx(fn.RetType));
                 w.Write(ExecModes.FromString(fn.ExecMode));
                 w.Write((byte)(fn.IsStatic ? 1 : 0));
 

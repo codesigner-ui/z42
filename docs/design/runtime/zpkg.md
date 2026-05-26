@@ -183,7 +183,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 
 **Strict-pin 政策**：reader 仅接受 `major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor`。pre-1.0 z42 阶段不为旧 zpkg minor 提供兼容；每次 minor bump = 所有现存 zpkg artifacts 必须 regen（`./scripts/build-stdlib.sh`）。
 
-- **当前版本**：`major=0, minor=7`（详见下方 Minor changelog）
+- **当前版本**：`major=0, minor=8`（详见下方 Minor changelog）
 - **触发 minor bump** 的事项：新增 section id / 已定义 section 字段语义变化 / **任意 zbc minor bump（强耦合）**
 - **触发 major bump** 的事项（迄今未发生）：改 magic / 改 16B header layout / 改 section directory 12B 条目格式 / 弃用 packed 或 indexed 模式之一
 - **zbc inner 与 zpkg outer minor 强耦合**：zbc minor 任意 bump → zpkg minor 必须同步 +1。历史唯一例外是 zbc 1.4 → 1.5（漏 bump），freeze-zpkg-v0 通过 0.5 → 0.6 catch-up 修正。
@@ -199,6 +199,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.5 | 2026-05-11 | [add-generic-func-constraint](../../spec/archive/2026-05-11-add-generic-func-constraint/) | inner zbc 1.4（func constraint bundle flag 0x40 + signature）|
 | 0.6 | 2026-05-14 | [freeze-zpkg-v0](../../spec/archive/2026-05-14-freeze-zpkg-v0/) catch-up | inner zbc 1.5（Convert opcode；zbc 1.5 在 2026-05-13 fix-numeric-cast-lowering 落地，zpkg 当时漏 bump）|
 | 0.7 | 2026-05-19 | [fix-array-default-init](../../spec/archive/2026-05-19-fix-array-default-init/) | inner zbc 1.6（`ArrayNew` opcode 追加 element type tag byte，驱动 per-type 默认值）|
+| 0.8 | 2026-05-27 | [align-zbc-reader-writer-asymmetry](../../spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) | inner zbc 1.7（SIGS / TYPE 在 u8 TypeTag 之后追加 u32 type_str_idx）+ zpkg outer SIGS 同步加 ret_type str_idx。修 Read→Write byte parity |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 
@@ -206,13 +207,5 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 
 ## Deferred / Future Work
 
-### reader-writer-asymmetry: Read→Write byte 对账（2026-05-14 调查）
-
-**现状**：`ZpkgReader.ReadModules(bytes) → ZpkgWriter.Write(ZpkgFile)` 在 4/4 freeze-zpkg-v0 fixture 中，packed-multi-module 等含本地类的 fixture 经过 round-trip 后 STRS 池有微小偏移。
-
-**Root cause**：与 [zbc.md "reader-writer-asymmetry"](zbc.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) 同源 —— packed-mode zpkg 内嵌 zbc module bodies；继承 zbc 的 SIGS/TYPE TypeTag 单向 lossy 问题。zpkg outer 各 section 本身没有这种漂移。
-
-**修复选项**：与 zbc 同步处理。zbc 走 Option A → zpkg outer 不变（继承收益）。
-
-**触发条件**：与 zbc reader-writer-asymmetry 同步触发。
+> **reader-writer asymmetry**（2026-05-14 调查 / 2026-05-27 修复落地）：原 inner zbc SIGS / TYPE TypeTag 1 byte 编码 lossy（`"int"` → `I32` → canonical `"i32"`），导致 Read→Write 字节不对账。**已通过 [align-zbc-reader-writer-asymmetry](../../spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) (zpkg 0.8 / zbc 1.7) 落地 Option A**：SIGS / TYPE 在 u8 TypeTag 之后追加 u32 type_str_idx；zpkg outer SIGS 同步加。ReadWriteRoundTrip CI 防线启用。
 

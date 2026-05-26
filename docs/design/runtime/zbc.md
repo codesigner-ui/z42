@@ -248,7 +248,7 @@ Byte 4+:  ...    — 按操作码定义的额外操作数字（u8 / u16 / u32 / 
 ```
 [4]  magic:         0x5A 0x42 0x43 0x00   ("ZBC\0")
 [2]  version_major  当前 1
-[2]  version_minor  当前 6 (详见 minor changelog 表)
+[2]  version_minor  当前 7 (详见 minor changelog 表)
 [2]  flags          bit0=Stripped, bit1=HasDebug, bit2=SymOnly
 [2]  section_count
 [4]  reserved
@@ -445,6 +445,7 @@ z42c --assemble foo.zasm -o foo.zbc
 | 1.4 | 2026-05-11 | [add-generic-func-constraint](../../spec/archive/2026-05-11-add-generic-func-constraint/) | Constraint bundle flag 0x40 + per-param/return type-name strings (Z42FuncType signature) |
 | 1.5 | 2026-05-13 | [fix-numeric-cast-lowering](../../spec/archive/2026-05-13-fix-numeric-cast-lowering/) | 新 opcode `Convert` (0xB1) 表达显式数值类型转换（替换之前 cast 为 IR no-op 的语义） |
 | 1.6 | 2026-05-19 | [fix-array-default-init](../../spec/archive/2026-05-19-fix-array-default-init/) | `ArrayNew` opcode 在 `size` 之后追加 1 byte element type tag（`TypeTags::*`），驱动数组元素的 per-type 默认值（int→0 / bool→false / char→'\0' / ref→null） |
+| 1.7 | 2026-05-27 | [align-zbc-reader-writer-asymmetry](../../spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) | SIGS / TYPE 在 u8 TypeTag 之后追加 u32 type_str_idx（ret_type / field type）。Reader 优先 string 作权威类型名；tag 留作 hint。修 Read→Write byte parity；启用 ReadWriteRoundTrip CI 防线 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)。简而言之 — 写 `ZbcWriter.VersionMinor++` + 同步 `zbc_reader.rs` 常量 + 本表加一行 + `generate-fixtures.sh` regen + commit。Invariant CI 校验三方常量一致。
 
@@ -480,31 +481,4 @@ v0.x 的 namespace 提取语义（用于 lazy zpkg 路由）。
 
 ## Deferred / Future Work
 
-### reader-writer-asymmetry: Read→Write byte 对账（2026-05-14 调查）
-
-**现状**：`ZbcReader.Read(bytes) → ZbcWriter.Write(IrModule)` 对 6/6 freeze-zbc-v1 fixture 中 3 个产生不同字节（empty / with-tidx / cross-import-token 字节等；strp-func-minimal / multi-method / with-frcs 不等）。
-
-**Root cause**：
-
-- SIGS 段 `retType` 用 1 byte `TypeTag` 编码（`Opcodes.cs::TypeTags.FromString` / `ToIrString`）
-- `FromString` lossy：`"int"` / `"i32"` 都映射到 `I32 (0x04)`；`ToIrString(I32)` 始终返回 canonical `"i32"`
-- 原 IR `fn.RetType = "int"`（C# 风格用户名） → 写 SIGS 字节 I32 + 池 intern `"int"`
-- 读 SIGS 字节 → `fn.RetType = "i32"`（canonical）→ 重写池 intern `"i32"`；paramTypes 通过 STRS 索引保留原 `"int"` → 池**额外 +1 entry**（`"i32"` 之外仍带 `"int"`）
-- 同问题也存在于 TYPE 段 `IrFieldDesc.Type`（`tag` 字节单向）
-
-**为什么不影响 strict-pin 契约**：
-
-- Writer 生产的 zbc → reader 解出 IrModule，VM 跑得通（fn.RetType="i32" 等价于 fn.RetType="int" 对运行时无区别）
-- 唯一观察点：fixture-based byte round-trip 测试（freeze-zbc-v1 的 `ReadWriteRoundTrip` 因此被 drop）
-
-**修复选项**（不属本 spec 范围；触发条件 = 用户主动决定走 round-trip CI 防线）：
-
-| 选项 | 描述 | 代价 |
-|------|------|------|
-| A | SIGS / TYPE 加 `retType_str_idx` / `field_type_str_idx`（既 TypeTag 又字符串）| zbc 1.5 → 1.6 minor bump；每函数 +4B、每 field +4B；stdlib + 6 fixture regen |
-| B | 编译期 normalize 用户类型名到 canonical（`"int"` → `"i32"` 在 Compile 时统一）| 编译器行为变化；错误消息 / disasm 输出从 `"int"` 变 `"i32"`（用户体感倒退）；零 wire 变化 |
-| C | 接受 asymmetry，永久不修 | 0 代价；Round-Write CI 防线缺失（writer-deterministic + golden byte 已覆盖 95% 漂移场景）|
-
-**当前**：选 C（observed, not blocking）。如未来 hot-reload / 增量编译 出现 round-trip 漂移累积，触发 A（B 因 UX 倒退被排除）。
-
-**触发条件**：观察到 round-trip drift 影响线上 / hot-reload 行为 → 启动独立 spec `align-zbc-reader-writer-asymmetry`，按 Option A 走 wire format 升级。
+> **reader-writer asymmetry**（2026-05-14 调查 / 2026-05-27 修复落地）：原 SIGS / TYPE TypeTag 1 byte 编码是 lossy（`"int"` → `I32` → canonical `"i32"`），导致 Read→Write 字节不对账。**已通过 [align-zbc-reader-writer-asymmetry](../../spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) (zbc 1.7) 落地 Option A**：SIGS / TYPE 在 u8 TypeTag 之后追加 u32 type_str_idx 作权威类型名；tag 留作 hint。ReadWriteRoundTrip CI 防线启用。

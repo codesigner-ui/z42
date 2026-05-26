@@ -30,7 +30,7 @@ use super::types::ExecMode;
 // See docs/design/runtime/zbc.md + .claude/rules/workflow.md for the full procedure.
 
 pub const ZBC_VERSION_MAJOR: u16 = 1;
-pub const ZBC_VERSION_MINOR: u16 = 6;
+pub const ZBC_VERSION_MINOR: u16 = 7;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -41,7 +41,7 @@ pub const ZBC_VERSION_MINOR: u16 = 6;
 // procedure (zbc bump → 4 zbc steps + 4 zpkg steps in the same commit).
 
 pub const ZPKG_VERSION_MAJOR: u16 = 0;
-pub const ZPKG_VERSION_MINOR: u16 = 7;
+pub const ZPKG_VERSION_MINOR: u16 = 8;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -276,10 +276,11 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
         let mut fields = Vec::with_capacity(fld_count);
         for _ in 0..fld_count {
             let fnam_idx = c.read_u32()?;
-            let type_tag = c.read_u8()?;
+            let _type_tag_hint = c.read_u8()?;       // 1.7: tag retained as hint only
+            let type_str_idx = c.read_u32()?;        // 1.7 align-zbc-reader-writer-asymmetry: authoritative
             fields.push(FieldDesc {
                 name: c.pool_str(pool, fnam_idx)?.to_owned(),
-                type_tag: type_tag_to_str(type_tag).to_owned(),
+                type_tag: c.pool_str(pool, type_str_idx)?.to_owned(),
             });
         }
         // Generic type parameters + per-tp constraints (L3-G3a)
@@ -365,7 +366,8 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
     for _ in 0..count {
         let name_idx    = c.read_u32()?;
         let param_count = c.read_u16()? as usize;
-        let ret_tag     = c.read_u8()?;
+        let _ret_tag_hint = c.read_u8()?;            // 1.7: tag retained as hint only
+        let ret_type_idx = c.read_u32()?;            // 1.7 align-zbc-reader-writer-asymmetry: authoritative
         let mode_byte   = c.read_u8()?;
         let is_static   = if has_is_static { c.read_u8()? != 0 } else { false };
 
@@ -388,7 +390,7 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
         sigs.push(FuncSig {
             name: c.pool_str(pool, name_idx)?.to_owned(),
             param_count,
-            ret_type: type_tag_to_str(ret_tag).to_owned(),
+            ret_type: c.pool_str(pool, ret_type_idx)?.to_owned(),
             exec_mode: exec_mode_from_byte(mode_byte),
             is_static,
             param_types,
@@ -1417,6 +1419,11 @@ pub fn read_zpkg_namespaces(data: &[u8]) -> Result<Vec<String>> {
 
 // ── Conversion helpers ────────────────────────────────────────────────────────
 
+/// Decode a u8 TypeTag to its canonical string. Kept as a debug / disasm
+/// helper after 1.7 align-zbc-reader-writer-asymmetry made SIGS/TYPE carry
+/// the authoritative string via str_idx. Reader no longer calls it on the
+/// hot path; future linter / disasm tooling may.
+#[allow(dead_code)]
 fn type_tag_to_str(tag: u8) -> &'static str {
     match tag {
         0x01 => "bool",

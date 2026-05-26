@@ -485,7 +485,7 @@ fn main() -> Result<()> {
                     loaded_paths.insert(core_canonical);
                     initially_loaded_zpkgs.push("z42.core.zpkg".to_string());
                 }
-                Err(e) => tracing::warn!("failed to load z42.core: {e}"),
+                Err(e) => tracing::warn!("failed to load z42.core: {e:#}"),
             }
         } else {
             tracing::debug!("z42.core.zpkg not found in {}", dir.display());

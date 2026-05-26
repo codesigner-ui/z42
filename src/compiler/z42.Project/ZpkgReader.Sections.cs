@@ -165,7 +165,8 @@ public static partial class ZpkgReader
         {
             string name       = P(pool, r.ReadUInt32());
             ushort paramCount = r.ReadUInt16();
-            string retType    = TypeTags.ToIrString(r.ReadByte());
+            r.ReadByte();                                       // ret_tag (hint; ignored since 1.7)
+            string retType    = P(pool, r.ReadUInt32());        // 1.7 align-zbc-reader-writer-asymmetry
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
             // 1.3 split-debug-symbols Phase 4: skip per-param type names

@@ -380,7 +380,12 @@ public static partial class ZbcReader
             ushort fldCount = r.ReadUInt16();
             var fields      = new List<IrFieldDesc>(fldCount);
             for (int f = 0; f < fldCount; f++)
-                fields.Add(new IrFieldDesc(P(pool, r.ReadUInt32()), TypeTags.ToIrString(r.ReadByte())));
+            {
+                string fldName = P(pool, r.ReadUInt32());
+                r.ReadByte();                                      // type_tag (hint; ignored — string is authoritative since 1.7)
+                string fldType = P(pool, r.ReadUInt32());          // 1.7 align-zbc-reader-writer-asymmetry
+                fields.Add(new IrFieldDesc(fldName, fldType));
+            }
             // Generic type parameters (L3-G1) + per-tp constraints (L3-G3a)
             byte tpCount = r.ReadByte();
             List<string>? typeParams = tpCount > 0 ? new(tpCount) : null;
@@ -447,7 +452,8 @@ public static partial class ZbcReader
         {
             string name       = P(pool, r.ReadUInt32());
             ushort paramCount = r.ReadUInt16();
-            string retType    = TypeTags.ToIrString(r.ReadByte());
+            r.ReadByte();                                          // ret_tag (hint; ignored — string is authoritative since 1.7)
+            string retType    = P(pool, r.ReadUInt32());           // 1.7 align-zbc-reader-writer-asymmetry
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
 
