@@ -951,10 +951,10 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 ### 立即可上（≤1 天，5 个独立 commit）
 
-1. ⚡ **删除 z42.text/src/Regex.z42 stub** (S2.2)
-2. ⚡ **z42.crypto 补 README** (S2.1)
-3. ⚡ **`tracing` EnvFilter**（D2）—— `Z42_LOG=...` 即时生效
-4. ⚡ **Rust panic hook + Z42_CRASH_DIR**（D4 的第一步）
+1. ✅ ~~**删除 z42.text/src/Regex.z42 stub**~~ (S2.2) — z42.text/src/ only has StringBuilder.z42 now
+2. ✅ ~~**z42.crypto 补 README**~~ (S2.1) — README.md present
+3. ✅ ~~**`tracing` EnvFilter**~~ (D2) — `Z42_LOG=...` wired in `init_tracing` (2026-05-25)
+4. ✅ ~~**Rust panic hook + Z42_CRASH_DIR**~~ (D4 的第一步) — Phase 1 `12cf7ef8` + Phase 2 signal-handler done
 5. ⚡ **`String.Length` 加 cache** 或改 byte semantics（C11.1）
 
 ## D12. 不做 / 后置的部分
@@ -1868,13 +1868,13 @@ Phase 2（远期）：
 
 不依赖大改造，今晚就能写：
 
-1. ⚡ **把 `Z42Type` 的 well-known singletons 移到 `WellKnownTypes` 类集中** ── 现在散落在 `Z42Type.cs`；对齐 Roslyn `WellKnownMembers` / `WellKnownTypes`
-2. ⚡ **`DiagnosticCodes` 加 `Category` 字段** ── 让 catalog 按"Lexer / Parser / TypeCheck / IrGen"分组，便于 `z42c explain --category=parser` 列同类
-3. ⚡ **`Diagnostic` 加 `Properties: ImmutableDictionary<string, string>` 字段** ── Roslyn analyzer 用 properties 传给 CodeFix；未来扩展接口前置
+1. ✅ ~~**把 `Z42Type` 的 well-known singletons 移到 `WellKnownTypes` 类集中**~~ — `WellKnownTypes` (2026-05-25) exposes `ByName` alias map + `AllPrimitives` list; `Z42Type` singletons stay as identity targets
+2. ✅ ~~**`DiagnosticCodes` 加 `Category` 字段**~~ — `DiagnosticCategory` enum + `DiagnosticCategories.Of(code)` classifier (2026-05-25)
+3. ✅ ~~**`Diagnostic` 加 `Properties: ImmutableDictionary<string, string>` 字段**~~ — `Diagnostic.Properties` + `Props` + `WithProperty` shipped
 4. ⚡ **Parser error message 加 `expected: <list>`** ── Roslyn 错误是 "expected `(`, identifier, or `default`"；z42 当前是单 token
 5. ⚡ **TypeChecker `_funcConstraints` 等 mutable stack 改 `ImmutableStack<T>`** ── 配合未来 Binder hierarchy 演进；现在改不破任何东西
-6. ⚡ **BoundDumper 加 `--dump-bound-with-types` 选项** ── 当前已有 type 注解，再加 symbol id（如果 F2.2 落地后）方便 LSP 调试
-7. ⚡ **`IrPassManager` 框架未用，加一个 no-op `IIrPass` 实现作为占位** ── 让框架"活着"被测试覆盖
+6. ⚡ **BoundDumper 加 `--dump-bound-with-types` 选项** ── 当前已有 type 注解，再加 symbol id（依赖 F2.2 落地后）方便 LSP 调试
+7. ✅ ~~**`IrPassManager` 框架未用，加一个 no-op `IIrPass` 实现作为占位**~~ — `z42.IR/NoOpPass.cs` + IrPassManager pipeline
 
 ## F6. 不抄的部分
 
