@@ -257,6 +257,40 @@ public static class String : IComparable<string>, IEquatable<string> {
         return result;
     }
 
+    // add-string-split-options (2026-05-27): 带 options 的重载。
+    // options 是 `Std.SplitOptions.*` 的 bitwise OR。
+    //
+    // 实现：先复用单参 Split 拿原始段，再按 options 后处理（trim / 滤空）。
+    // 两阶段比"在 split 主循环里嵌入分支"代码量大致相等且更易读 + 易测。
+    public string[] Split(string separator, int options) {
+        string[] raw = this.Split(separator);
+        bool trim   = (options & SplitOptions.TrimEntries) != 0;
+        bool dropEmpty = (options & SplitOptions.RemoveEmptyEntries) != 0;
+        if (!trim && !dropEmpty) return raw;
+
+        // Pass 1: trim (if requested) + count keeps
+        string[] processed = new string[raw.Length];
+        int keep = 0;
+        int i = 0;
+        while (i < raw.Length) {
+            string s = raw[i];
+            if (trim) s = s.Trim();
+            if (dropEmpty && s.Length == 0) { i = i + 1; continue; }
+            processed[keep] = s;
+            keep = keep + 1;
+            i = i + 1;
+        }
+        // Pass 2: compact to keep-sized array
+        if (keep == raw.Length) return processed;
+        string[] result = new string[keep];
+        int j = 0;
+        while (j < keep) {
+            result[j] = processed[j];
+            j = j + 1;
+        }
+        return result;
+    }
+
     // Static: namespaced as String.Join.
     public static string Join(string separator, string[] values) {
         int n = values.Length;

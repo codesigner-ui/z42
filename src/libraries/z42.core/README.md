@@ -9,7 +9,8 @@
 | 文件 | 内容 |
 |------|------|
 | `Object.z42` | 所有类型的基类，`ToString()`、`Equals()` 等协议方法 |
-| `String.z42` | 字符串类型；最小 intrinsic 核（`Length` / `CharAt` / `FromChars` / `Equals` / `CompareTo` / `GetHashCode` / `ToString` / `Split` / `Join` / `Concat` / `Format`），其余方法（`Contains` / `StartsWith` / `EndsWith` / `IndexOf` / `Replace` / `Substring` / `ToLower` / `ToUpper` / `Trim*` / `IsNullOr*`）为纯脚本实现 |
+| `String.z42` | 字符串类型；最小 intrinsic 核（`Length` / `CharAt` / `FromChars` / `Equals` / `CompareTo` / `GetHashCode` / `ToString` / `Split(sep)` + `Split(sep, options)` / `Join` / `Concat` / `Format`），其余方法（`Contains` / `StartsWith` / `EndsWith` / `IndexOf` / `Replace` / `Substring` / `ToLower` / `ToUpper` / `Trim*` / `IsNullOr*`）为纯脚本实现 |
+| `SplitOptions.z42` | bitwise 标志位 `Std.SplitOptions.{None, RemoveEmptyEntries, TrimEntries}`（int 常量，OR 组合）— `String.Split(sep, options)` 参数 |
 | `Int.z42` | `struct int` — 整数基元（`Parse` / `CompareTo` / `Equals` / `GetHashCode` / `ToString` + INumber op_* 纯脚本实现）|
 | `Long.z42` | `struct long` — 64-bit 整数（同 Int）|
 | `Double.z42` | `struct double` — 双精度浮点（同 Int）|

@@ -1,0 +1,22 @@
+namespace Std;
+
+// add-string-split-options (2026-05-27): bitwise option flags for
+// `String.Split(separator, options)` — mirrors BCL `StringSplitOptions`.
+//
+// z42 has no `enum` keyword yet; following the `SeekOrigin` / `FileMode`
+// / `AlgoId` pattern, the values are exposed as int constants so callers
+// can write `String.Split(sep, SplitOptions.RemoveEmptyEntries | SplitOptions.TrimEntries)`.
+public static class SplitOptions {
+    /// No post-processing (equivalent to single-arg `Split(separator)`).
+    public static int None = 0;
+
+    /// Drop segments whose length is 0 after splitting.
+    /// Useful for tokenising lines / fields where leading / trailing /
+    /// consecutive separators would otherwise produce empty entries.
+    public static int RemoveEmptyEntries = 1;
+
+    /// Apply `Trim()` to each segment (leading + trailing whitespace).
+    /// Combine with `RemoveEmptyEntries` to also drop segments that
+    /// become empty after trimming.
+    public static int TrimEntries = 2;
+}

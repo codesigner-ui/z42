@@ -1,0 +1,69 @@
+// add-string-split-options (2026-05-27): String.Split(sep, options) coverage.
+namespace Z42CoreStringSplitOptionsTests;
+
+using Std;
+using Std.Test;
+
+[Test]
+void test_split_none_equals_single_arg() {
+    string[] a = "a,b,c".Split(",", SplitOptions.None);
+    string[] b = "a,b,c".Split(",");
+    Assert.Equal(3, a.Length);
+    Assert.Equal(b.Length, a.Length);
+    Assert.Equal(b[0], a[0]);
+    Assert.Equal(b[1], a[1]);
+    Assert.Equal(b[2], a[2]);
+}
+
+[Test]
+void test_split_remove_empty_entries_drops_blanks() {
+    // 4 commas → 5 raw segments: ["a","","b","","c"]; after drop → 3
+    string[] hits = "a,,b,,c".Split(",", SplitOptions.RemoveEmptyEntries);
+    Assert.Equal(3, hits.Length);
+    Assert.Equal("a", hits[0]);
+    Assert.Equal("b", hits[1]);
+    Assert.Equal("c", hits[2]);
+}
+
+[Test]
+void test_split_trim_entries_trims_each() {
+    string[] hits = "  a ,b , c  ".Split(",", SplitOptions.TrimEntries);
+    Assert.Equal(3, hits.Length);
+    Assert.Equal("a", hits[0]);
+    Assert.Equal("b", hits[1]);
+    Assert.Equal("c", hits[2]);
+}
+
+[Test]
+void test_split_trim_plus_remove_empty_handles_whitespace_only_segments() {
+    // raw: ["", "  ", "a", "  b  ", "  "]; trim then drop empty → ["a","b"]
+    int opts = SplitOptions.TrimEntries | SplitOptions.RemoveEmptyEntries;
+    string[] hits = ",  ,a,  b  ,  ".Split(",", opts);
+    Assert.Equal(2, hits.Length);
+    Assert.Equal("a", hits[0]);
+    Assert.Equal("b", hits[1]);
+}
+
+[Test]
+void test_split_remove_empty_on_all_empty_yields_empty_array() {
+    // 3 commas → 4 raw segments all "" → drop all → length 0
+    string[] hits = ",,,".Split(",", SplitOptions.RemoveEmptyEntries);
+    Assert.Equal(0, hits.Length);
+}
+
+[Test]
+void test_split_multi_char_separator_with_trim() {
+    // ", and " as separator; trim leftover whitespace on each side
+    string[] hits = "apple, and  banana, and cherry".Split(", and ", SplitOptions.TrimEntries);
+    Assert.Equal(3, hits.Length);
+    Assert.Equal("apple", hits[0]);
+    Assert.Equal("banana", hits[1]);
+    Assert.Equal("cherry", hits[2]);
+}
+
+[Test]
+void test_split_remove_empty_keeps_single_nonempty_segment() {
+    string[] hits = "lonely".Split(",", SplitOptions.RemoveEmptyEntries);
+    Assert.Equal(1, hits.Length);
+    Assert.Equal("lonely", hits[0]);
+}
