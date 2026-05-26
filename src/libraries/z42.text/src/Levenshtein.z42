@@ -1,0 +1,74 @@
+namespace Std.Text;
+
+using Std;
+
+// add-text-levenshtein (2026-05-27): Levenshtein edit distance + ratio.
+//
+// `Distance(a, b)` counts the minimum number of single-character insertions,
+// deletions, or substitutions to transform `a` into `b`. O(|a|·|b|) time,
+// O(min(|a|,|b|)) space via the two-row dynamic programming trick.
+//
+// `SimilarityRatio(a, b)` normalises to [0.0, 1.0] — `1.0 - distance / max(|a|,|b|)`.
+// Two empty strings produce 1.0 (defined; matches Python `difflib` ratio
+// convention for empty inputs).
+//
+// Use cases: fuzzy command suggestion ("did you mean: status?"), spell-
+// check, typo-tolerant config-key lookup.
+public static class Levenshtein {
+    /// Minimum edit distance between `a` and `b`. Symmetric. Returns 0 on
+    /// equal strings, `max(|a|,|b|)` on completely different.
+    public static int Distance(string a, string b) {
+        int la = a.Length;
+        int lb = b.Length;
+        if (la == 0) return lb;
+        if (lb == 0) return la;
+        // Ensure the SHORTER string drives the row width to minimise allocation.
+        string s; string t;
+        if (la <= lb) { s = a; t = b; } else { s = b; t = a; }
+        int ls = s.Length;     // smaller
+        int lt = t.Length;     // larger
+
+        // Two rows: previous and current. Indexes 0..ls.
+        int[] prev = new int[ls + 1];
+        int[] cur  = new int[ls + 1];
+        int j = 0;
+        while (j <= ls) { prev[j] = j; j = j + 1; }
+
+        int i = 1;
+        while (i <= lt) {
+            cur[0] = i;
+            char tc = t.CharAt(i - 1);
+            int k = 1;
+            while (k <= ls) {
+                char sc = s.CharAt(k - 1);
+                int subCost = (sc == tc) ? 0 : 1;
+                int del = prev[k] + 1;
+                int ins = cur[k - 1] + 1;
+                int sub = prev[k - 1] + subCost;
+                int best = del;
+                if (ins < best) best = ins;
+                if (sub < best) best = sub;
+                cur[k] = best;
+                k = k + 1;
+            }
+            // swap prev <-> cur for next iteration
+            int[] tmp = prev;
+            prev = cur;
+            cur = tmp;
+            i = i + 1;
+        }
+        return prev[ls];
+    }
+
+    /// Similarity in [0.0, 1.0]: 1.0 means identical, 0.0 means
+    /// every character must change (or one string is empty + the other
+    /// fully populated). Two empty strings → 1.0.
+    public static double SimilarityRatio(string a, string b) {
+        int la = a.Length;
+        int lb = b.Length;
+        int max = la > lb ? la : lb;
+        if (max == 0) return 1.0;
+        int d = Distance(a, b);
+        return 1.0 - (double)d / (double)max;
+    }
+}

@@ -1,0 +1,106 @@
+// add-text-levenshtein (2026-05-27): Levenshtein.Distance / SimilarityRatio.
+namespace Z42TextLevenshteinTests;
+
+using Std;
+using Std.Test;
+using Std.Text;
+
+[Test]
+void test_distance_identical_is_zero() {
+    Assert.Equal(0, Levenshtein.Distance("abc", "abc"));
+    Assert.Equal(0, Levenshtein.Distance("", ""));
+}
+
+[Test]
+void test_distance_kitten_sitting_is_three() {
+    // The textbook example: kitten → sitting via 3 edits
+    //   k→s, e→i, append g
+    Assert.Equal(3, Levenshtein.Distance("kitten", "sitting"));
+}
+
+[Test]
+void test_distance_flaw_lawn_is_two() {
+    // flaw → lawn: f→l + w→n (substitutions, no insert/delete)
+    Assert.Equal(2, Levenshtein.Distance("flaw", "lawn"));
+}
+
+[Test]
+void test_distance_is_symmetric() {
+    Assert.Equal(Levenshtein.Distance("kitten", "sitting"),
+                 Levenshtein.Distance("sitting", "kitten"));
+    Assert.Equal(Levenshtein.Distance("hello", "world"),
+                 Levenshtein.Distance("world", "hello"));
+}
+
+[Test]
+void test_distance_empty_to_nonempty_is_length() {
+    Assert.Equal(5, Levenshtein.Distance("", "hello"));
+    Assert.Equal(5, Levenshtein.Distance("hello", ""));
+    Assert.Equal(1, Levenshtein.Distance("a", ""));
+}
+
+[Test]
+void test_distance_single_substitution() {
+    Assert.Equal(1, Levenshtein.Distance("cat", "bat"));
+    Assert.Equal(1, Levenshtein.Distance("cat", "car"));
+}
+
+[Test]
+void test_distance_single_insertion() {
+    Assert.Equal(1, Levenshtein.Distance("cat", "cats"));
+    Assert.Equal(1, Levenshtein.Distance("at", "cat"));
+}
+
+[Test]
+void test_distance_single_deletion() {
+    Assert.Equal(1, Levenshtein.Distance("cats", "cat"));
+}
+
+[Test]
+void test_distance_completely_different_is_max_length() {
+    // "abc" vs "xyz": 3 substitutions
+    Assert.Equal(3, Levenshtein.Distance("abc", "xyz"));
+}
+
+[Test]
+void test_distance_longer_a_works_too() {
+    // Internal optimisation picks the shorter as inner loop; verify both
+    // orderings give the same answer.
+    Assert.Equal(7, Levenshtein.Distance("abcdefghij", "xyz"));
+    Assert.Equal(7, Levenshtein.Distance("xyz", "abcdefghij"));
+}
+
+[Test]
+void test_similarity_ratio_identical_is_one() {
+    Assert.Equal(1.0, Levenshtein.SimilarityRatio("hello", "hello"));
+}
+
+[Test]
+void test_similarity_ratio_empty_pair_is_one() {
+    Assert.Equal(1.0, Levenshtein.SimilarityRatio("", ""));
+}
+
+[Test]
+void test_similarity_ratio_one_subst_in_four_is_three_quarters() {
+    // distance 1, max length 4 → 1 - 1/4 = 0.75
+    Assert.Equal(0.75, Levenshtein.SimilarityRatio("abcd", "abxd"));
+}
+
+[Test]
+void test_similarity_ratio_completely_different_is_zero() {
+    // distance 3, max length 3 → 0.0
+    Assert.Equal(0.0, Levenshtein.SimilarityRatio("abc", "xyz"));
+}
+
+[Test]
+void test_similarity_ratio_empty_vs_nonempty_is_zero() {
+    Assert.Equal(0.0, Levenshtein.SimilarityRatio("", "abc"));
+    Assert.Equal(0.0, Levenshtein.SimilarityRatio("abc", ""));
+}
+
+[Test]
+void test_distance_unicode_treated_per_codepoint() {
+    // Both strings are 3 code units (z42 String.Length is scalar count).
+    Assert.Equal(0, Levenshtein.Distance("你好啊", "你好啊"));
+    Assert.Equal(1, Levenshtein.Distance("你好啊", "你好嗯"));
+}
