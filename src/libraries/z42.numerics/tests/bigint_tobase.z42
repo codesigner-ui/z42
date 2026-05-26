@@ -1,0 +1,87 @@
+// add-bigint-tobase (2026-05-27): BigInt.ToBase(radix) coverage.
+namespace Z42NumericsBigIntToBaseTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_base2_known_values() {
+    Assert.Equal("0",        new BigInt(0).ToBase(2));
+    Assert.Equal("1",        new BigInt(1).ToBase(2));
+    Assert.Equal("10",       new BigInt(2).ToBase(2));
+    Assert.Equal("11111111", new BigInt(255).ToBase(2));
+}
+
+[Test]
+void test_base8_known_values() {
+    Assert.Equal("0",   new BigInt(0).ToBase(8));
+    Assert.Equal("7",   new BigInt(7).ToBase(8));
+    Assert.Equal("10",  new BigInt(8).ToBase(8));
+    Assert.Equal("377", new BigInt(255).ToBase(8));
+}
+
+[Test]
+void test_base16_matches_existing_tohex() {
+    BigInt n = new BigInt(0xCAFE);
+    Assert.Equal(n.ToHex(), n.ToBase(16));
+}
+
+[Test]
+void test_base10_matches_existing_tostring() {
+    BigInt n = new BigInt(123456789);
+    Assert.Equal(n.ToString(), n.ToBase(10));
+}
+
+[Test]
+void test_base36_uses_full_alphabet() {
+    Assert.Equal("z",  new BigInt(35).ToBase(36));
+    Assert.Equal("10", new BigInt(36).ToBase(36));
+    Assert.Equal("zz", new BigInt(1295).ToBase(36));   // 35*36 + 35 = 1295
+}
+
+[Test]
+void test_negative_numbers_prefix_minus() {
+    Assert.Equal("-101010", new BigInt(-42).ToBase(2));
+    Assert.Equal("-2a",     new BigInt(-42).ToBase(16));
+    Assert.Equal("-42",     new BigInt(-42).ToBase(10));
+}
+
+[Test]
+void test_base3_arbitrary_value() {
+    // 100 in base 3: 100 = 1*81 + 0*27 + 2*9 + 0*3 + 1 = 10201
+    Assert.Equal("10201", new BigInt(100).ToBase(3));
+}
+
+[Test]
+void test_invalid_radix_too_small_throws() {
+    bool caught = false;
+    try {
+        new BigInt(10).ToBase(1);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_invalid_radix_too_large_throws() {
+    bool caught = false;
+    try {
+        new BigInt(10).ToBase(37);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_radix_zero_throws() {
+    bool caught = false;
+    try {
+        new BigInt(10).ToBase(0);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

@@ -272,6 +272,60 @@ public class BigInt {
         return s;
     }
 
+    // add-bigint-tobase (2026-05-27): arbitrary-radix string output.
+    //
+    // `radix ∈ [2, 36]` — digits are `0`–`9`, `a`–`z` (lowercase). Mirrors
+    // BCL `Convert.ToString(int, base)` (which only supports 2/8/10/16) but
+    // generalised. Negative numbers prefix `-`. Implementation is the same
+    // divmod-by-radix loop as `ToString()` / `ToHex()`; just emits one digit
+    // per limb step. For radix 16 the dedicated `ToHex()` is ~7× faster
+    // (it amortises divisor cost over 7 hex chars at a time) — prefer it.
+    //
+    // Named `ToBase` rather than `ToString(int)` because z42 doesn't yet
+    // permit overloading a `override` method by arity (see
+    // `compiler-future-typed-overload-resolution` deferred entry).
+    public string ToBase(int radix) {
+        if (radix < 2 || radix > 36) {
+            throw new ArgumentException(
+                "BigInt.ToBase: radix must be in [2, 36], got " + Int32.ToString(radix));
+        }
+        if (this._sign == 0) return "0";
+        BigInt acc = this.Abs();
+        BigInt r = new BigInt(radix);
+        // Worst case base-2 of i64 max: 63 digits + sign ≈ 64; for larger
+        // BigInts we grow on demand. Pre-size 64 to skip the first grow.
+        char[] digits = new char[64];
+        int n = 0;
+        while (!acc.IsZero()) {
+            BigInt[] dm = acc._divMod(r);
+            int d = dm[1].ToInt32();
+            if (n == digits.Length) {
+                char[] grown = new char[digits.Length * 2];
+                int k = 0;
+                while (k < digits.Length) { grown[k] = digits[k]; k = k + 1; }
+                digits = grown;
+            }
+            char c;
+            if (d < 10) {
+                c = (char)(48 + d);          // '0' = 48
+            } else {
+                c = (char)(87 + d);          // 'a' = 97; 97 + (d-10) = 87 + d
+            }
+            digits[n] = c;
+            n = n + 1;
+            acc = dm[0];
+        }
+        // Digits accumulated little-endian; reverse + prefix sign.
+        string s = "";
+        if (this._sign < 0) s = "-";
+        int idx = n - 1;
+        while (idx >= 0) {
+            s = s + digits[idx].ToString();
+            idx = idx - 1;
+        }
+        return s;
+    }
+
     /// Lowercase hex, no "0x" prefix. "0" for Zero, "-..." for negative.
     ///
     /// 31-bit limbs don't align with hex 4-bit boundaries, so we can't simply

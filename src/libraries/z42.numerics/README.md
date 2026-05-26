@@ -9,7 +9,7 @@ z42 任意精度 + 扩展数值类型。v0 仅 BigInt（arbitrary-precision inte
 
 | 文件 | 类型 | 说明 |
 |------|------|------|
-| `BigInt.z42` | `BigInt` | 任意精度整数；construct / Parse(decimal+hex) / Add/Sub/Mul/Div/Mod / Pow / CompareTo / ToString |
+| `BigInt.z42` | `BigInt` | 任意精度整数；construct / Parse(decimal+hex) / Add/Sub/Mul/Div/Mod / Pow / CompareTo / ToString (decimal) / ToHex / `ToBase(radix 2–36)` |
 
 ## 入口点
 
