@@ -89,6 +89,38 @@ public class TcpClient {
         return this._remotePort;
     }
 
+    // add-httpclient-timeout (2026-05-27): per-socket read/write deadlines.
+    // `millis <= 0` clears the deadline (back to blocking). Throws
+    // `SocketException` if the OS rejects (rare; e.g. bad ms value).
+
+    public void SetReadTimeout(int millis) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        object[] raw = NetTcpNative.SocketSetReadTimeout(this._slotId, millis);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            NetTcpDecode.Throw(raw, kind);
+        }
+    }
+
+    public void SetWriteTimeout(int millis) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        object[] raw = NetTcpNative.SocketSetWriteTimeout(this._slotId, millis);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            NetTcpDecode.Throw(raw, kind);
+        }
+    }
+
     /// Close the socket and release the underlying fd. Idempotent.
     /// Subsequent operations throw `SocketClosedException`.
     public void Dispose() {

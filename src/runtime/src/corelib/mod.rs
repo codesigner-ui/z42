@@ -346,6 +346,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-file-atomic-write (2026-05-27) — write-fsync-rename for durable config ──
     ("__file_write_text_atomic",  fs::builtin_file_write_text_atomic),
     ("__file_write_bytes_atomic", fs::builtin_file_write_bytes_atomic),
+
+    // ── add-httpclient-timeout (2026-05-27) — TCP socket read/write deadlines ──
+    ("__net_tcp_socket_set_read_timeout",  network::builtin_net_tcp_socket_set_read_timeout),
+    ("__net_tcp_socket_set_write_timeout", network::builtin_net_tcp_socket_set_write_timeout),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

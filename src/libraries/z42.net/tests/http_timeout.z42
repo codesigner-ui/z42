@@ -1,0 +1,70 @@
+// add-httpclient-timeout (2026-05-27): HttpClient.SetTimeout + TcpClient
+// read/write timeout pipeline.
+namespace Z42NetHttpTimeoutTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Net.Sockets;
+using Std.Net.Http;
+using Std.Time;
+using Std.Threading;
+
+[Test]
+void test_timeout_default_is_zero() {
+    var c = new HttpClient();
+    Assert.Equal(0, c.GetTimeout());
+}
+
+[Test]
+void test_set_timeout_round_trip() {
+    var c = new HttpClient();
+    c.SetTimeout(5000);
+    Assert.Equal(5000, c.GetTimeout());
+    c.SetTimeout(0);
+    Assert.Equal(0, c.GetTimeout());
+    c.SetTimeout(-1);  // negative treated same as 0 (disabled)
+    Assert.Equal(-1, c.GetTimeout());  // getter returns whatever was set
+}
+
+// Background helper: accept the connection, hold it without writing
+// anything, busy-wait ~3s, then close. Lets the main thread time out.
+// Top-level fn (not inline lambda) — z42 has a known IR-verify bug with
+// try/catch inside a lambda body (CopyInstr register-before-define).
+void _SilentAccept(TcpListener listener) {
+    try {
+        var conn = listener.AcceptTcpClient();
+        int i = 0;
+        while (i < 30000000) { i = i + 1; }
+        conn.Dispose();
+    } catch (Exception e) {
+        // listener disposed
+    }
+}
+
+[Test]
+void test_timeout_fires_on_silent_server() {
+    var listener = new TcpListener();
+    listener.Bind("127.0.0.1", 0);
+    int port = listener.LocalPort();
+
+    var worker = Thread.Start(() => _SilentAccept(listener));
+
+    var c = new HttpClient();
+    c.SetTimeout(150);
+
+    long t0 = DateTime.UtcNow().UnixMs();
+    bool caught = false;
+    try {
+        c.Get("http://127.0.0.1:" + port.ToString() + "/");
+    } catch (Exception e) {
+        caught = true;
+    }
+    long elapsed = DateTime.UtcNow().UnixMs() - t0;
+
+    listener.Dispose();
+
+    Assert.True(caught);
+    // Should fire within ~150ms; allow generous 2s budget for CI noise.
+    Assert.True(elapsed < 2000L);
+}

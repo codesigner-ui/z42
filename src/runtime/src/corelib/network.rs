@@ -236,6 +236,58 @@ mod imp {
         Ok(Value::Null)
     }
 
+    // add-httpclient-timeout (2026-05-27): apply read / write deadlines so
+    // a misbehaving peer can't hang the script. `millis <= 0` clears the
+    // timeout (blocking I/O). On error returns socket_err; on missing slot
+    // returns handle_invalid (caller treats as already-disposed).
+
+    fn apply_timeout(
+        ctx: &VmContext,
+        slot_id: u64,
+        millis: i64,
+        which: &'static str,
+    ) -> Result<Value> {
+        let dur = if millis > 0 {
+            Some(std::time::Duration::from_millis(millis as u64))
+        } else {
+            None
+        };
+        let stream = {
+            let map = ctx.core.tcp_sockets.lock();
+            match map.get(&slot_id) {
+                Some(s) => s.try_clone(),
+                None => return Ok(handle_invalid(ctx)),
+            }
+        };
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => return Ok(socket_err(ctx, format!("{}: try_clone: {}", which, e))),
+        };
+        let result = if which == "set_read_timeout" {
+            stream.set_read_timeout(dur)
+        } else {
+            stream.set_write_timeout(dur)
+        };
+        match result {
+            Ok(()) => Ok(ok_value(ctx, 0)),
+            Err(e) => Ok(socket_err(ctx, format!("{}: {}", which, e))),
+        }
+    }
+
+    pub fn builtin_net_tcp_socket_set_read_timeout(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_set_read_timeout";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let millis = arg_i64(args, 1, NAME)?;
+        apply_timeout(ctx, slot_id, millis, "set_read_timeout")
+    }
+
+    pub fn builtin_net_tcp_socket_set_write_timeout(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_set_write_timeout";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let millis = arg_i64(args, 1, NAME)?;
+        apply_timeout(ctx, slot_id, millis, "set_write_timeout")
+    }
+
     pub fn builtin_net_tcp_listener_drop(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         const NAME: &str = "__net_tcp_listener_drop";
         let slot_id = require_slot_id(args, 0, NAME)?;

@@ -28,6 +28,14 @@ public static class NetTcpNative {
 
     [Native("__net_tcp_listener_drop")]
     public static extern void ListenerDrop(long slotId);
+
+    // add-httpclient-timeout (2026-05-27): socket read/write deadlines.
+    // millis <= 0 clears the timeout (back to blocking).
+    [Native("__net_tcp_socket_set_read_timeout")]
+    public static extern object[] SocketSetReadTimeout(long slotId, int millis);
+
+    [Native("__net_tcp_socket_set_write_timeout")]
+    public static extern object[] SocketSetWriteTimeout(long slotId, int millis);
 }
 
 // add-z42-net K1 (2026-05-24): decode helpers for the kind-tagged tuple

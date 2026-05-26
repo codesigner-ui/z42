@@ -8,7 +8,7 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 
 | 文件 | 类型 | 说明 |
 |------|------|------|
-| `TcpClient.z42` | `TcpClient` | sync blocking TCP client (`Connect` / `GetStream` / `Close` / `Dispose`) |
+| `TcpClient.z42` | `TcpClient` | sync blocking TCP client (`Connect` / `GetStream` / `SetReadTimeout(ms)` / `SetWriteTimeout(ms)` / `Close` / `Dispose`) |
 | `TcpListener.z42` | `TcpListener` | sync blocking TCP server (`Bind` / `LocalPort` / `Start` / `AcceptTcpClient` / `Stop` / `Dispose`) |
 | `NetworkStream.z42` | `NetworkStream` | extends `Std.IO.Stream`；read/write 字节经由 socket fd |
 | `UdpClient.z42` | `UdpClient` | sync blocking UDP socket (`Bind` / `Send` / `Receive` / `LocalPort` / `Close` / `Dispose`); auto-bind on first Send |
@@ -43,7 +43,7 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 
 | 文件 | 类型 | 说明 |
 |------|------|------|
-| `HttpClient.z42` | `HttpClient` | top-level facade: Get / Post / PostString / Send. Pure-script over K1 `TcpClient`. http:// only — https:// throws `NotSupportedException` pending `add-z42-net-tls` |
+| `HttpClient.z42` | `HttpClient` | top-level facade: Get / Post / PostString / Send + `SetTimeout(ms)` 读写超时 + `SetMaxRedirects` + `SetCookieJar`. Pure-script over K1 `TcpClient`. http:// only — https:// throws `NotSupportedException` pending `add-z42-net-tls` |
 | `HttpRequest.z42` | `HttpRequest` | method + url + headers + body 容器 (builder pattern via `SetHeader` / `SetBody`) |
 | `HttpResponse.z42` | `HttpResponse` | parsed status + reason + headers + body; `IsSuccess()` / `BodyAsString()` |
 | `HttpHeaders.z42` | `HttpHeaders` | case-insensitive header dict (raw `string[]`+count; z42 不支持 generic field types) |

@@ -21,11 +21,27 @@ public class HttpClient {
     private string    _userAgent;
     private CookieJar _cookieJar;     // null → no cookie handling (default)
     private int       _maxRedirects;  // 0 → no auto-follow (default); recommended: 10
+    private int       _timeoutMs;     // 0 → no timeout (default); >0 applied to read+write
 
     public HttpClient() {
         this._userAgent    = "z42-http/0.1";
         this._cookieJar    = null;
         this._maxRedirects = 0;
+        this._timeoutMs    = 0;
+    }
+
+    // add-httpclient-timeout (2026-05-27): per-request read + write timeout.
+    // `millis <= 0` disables (default — BCL ships 100s default but z42 keeps
+    // existing zero-timeout behaviour so opt-in is required). Applied at the
+    // TCP layer after `Connect` returns; covers all bytes of request write
+    // and response read. Connect-phase timeout is the OS default (macOS 75s
+    // / Linux ~127s) — non-blocking connect is future spec.
+    public void SetTimeout(int millis) {
+        this._timeoutMs = millis;
+    }
+
+    public int GetTimeout() {
+        return this._timeoutMs;
     }
 
     /// Enable auto-follow of 3xx responses. `maxRedirects` is the hop limit
@@ -243,6 +259,12 @@ public class HttpClient {
 
         var client = new TcpClient();
         client.Connect(url.Host, url.Port);
+        // add-httpclient-timeout (2026-05-27): apply read+write deadline
+        // before any IO so a silent / dead peer can't hang the script.
+        if (this._timeoutMs > 0) {
+            client.SetReadTimeout(this._timeoutMs);
+            client.SetWriteTimeout(this._timeoutMs);
+        }
         var stream = client.GetStream();
         // `var` to avoid z42 cross-file class-token mismatch on HttpResponse:
         // declaring `HttpResponse resp` while the constructor lives in
