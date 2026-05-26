@@ -16,8 +16,17 @@ namespace Std;
 public static class String : IComparable<string>, IEquatable<string> {
     // ── Intrinsic core (extern) ──────────────────────────────────────────────
 
-    // Number of Unicode scalar values (characters) in this string.
-    [Native("__str_length")]    public extern int Length { get; }
+    // Number of Unicode scalar values (characters) in this string. O(n) —
+    // walks UTF-8 bytes. Use `ByteLength` when you need O(1) and byte
+    // semantics suffice. review.md C11.1 (2026-05-27).
+    [Native("__str_length")]      public extern int Length     { get; }
+
+    // Number of UTF-8 bytes in this string. O(1). Differs from `Length`
+    // for non-ASCII strings (`"你好".Length == 2`, `"你好".ByteLength == 6`).
+    // Pick `ByteLength` for hot-path size queries (allocation sizing,
+    // network framing, hashing); pick `Length` when the count must match
+    // user-visible character grouping.
+    [Native("__str_byte_length")] public extern int ByteLength { get; }
 
     // Returns the char at the given scalar index. Traps on out-of-range.
     [Native("__str_char_at")]   public extern char CharAt(int index);

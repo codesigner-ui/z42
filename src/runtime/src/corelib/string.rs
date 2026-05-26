@@ -4,10 +4,25 @@ use anyhow::{anyhow, bail, Result};
 use super::convert::{arg_str, arg_usize};
 
 /// Returns the number of Unicode scalar values (characters) in the string.
+/// O(n) — walks the UTF-8 bytes to count chars. For an O(1) byte count
+/// see [`builtin_str_byte_length`] / `Std.String.ByteLength`.
 /// args: [this: str]
 pub fn builtin_str_length(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = arg_str(args, 0, "__str_length")?;
     Ok(Value::I64(s.chars().count() as i64))
+}
+
+/// Returns the number of UTF-8 bytes in the string. O(1).
+///
+/// review.md C11.1 (2026-05-27, option 4): non-breaking sibling to
+/// `Length`. `Length` keeps the existing char-count (Unicode scalar)
+/// semantics — `"你好".Length == 2`. `ByteLength` reports the underlying
+/// UTF-8 byte storage — `"你好".ByteLength == 6` — for hot paths that
+/// need O(1) size queries (allocation sizing, network framing, hashing).
+/// args: [this: str]
+pub fn builtin_str_byte_length(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let s = arg_str(args, 0, "__str_byte_length")?;
+    Ok(Value::I64(s.len() as i64))
 }
 
 /// Returns the char at the given scalar index.

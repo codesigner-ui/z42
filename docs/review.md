@@ -458,7 +458,7 @@ ee_alloc_context {
 
 这些是"看了就能动手"的局部优化，建议穿插在 spec 间隙做：
 
-1. ⚡ **`String.Length` 加 cache** 或改 byte semantics —— [`exec_object.rs:134`](../src/runtime/src/interp/exec_object.rs#L134)、[`corelib/string.rs:10`](../src/runtime/src/corelib/string.rs#L10)
+1. ✅ ~~**`String.Length` 加 cache** 或改 byte semantics~~ — adopted option 4 (2026-05-27): non-breaking sibling `Std.String.ByteLength` (extern `__str_byte_length`, O(1) UTF-8 byte count) added; `Length` keeps existing O(n) char-count (Unicode scalar) semantics. Golden test `src/tests/strings/string_byte_length/` covers ASCII / 2-byte / 3-byte / 4-byte / mixed boundaries.
 2. ✅ ~~**`__str_char_at` 错误路径减少一次 `chars().count()`**~~ — single-pass impl (2026-05-25), [`corelib/string.rs:21`](../src/runtime/src/corelib/string.rs#L21)
 3. ⚡ **JIT bool 类 helper（jit_and / jit_or / jit_not）走 Cranelift native** —— Bool 类型 IR 已知，不需要 helper
 4. ⚡ **`jit_const_*` 完全 inline emit** —— Cranelift 原生支持 const，不需要 helper call

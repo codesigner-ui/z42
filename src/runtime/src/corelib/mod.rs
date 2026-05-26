@@ -90,8 +90,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__bench_black_box",  bench::builtin_bench_black_box),
 
     // ── String (minimal intrinsic core; most methods are script-side now) ────
-    ("__str_length",     string::builtin_str_length),
-    ("__str_char_at",    string::builtin_str_char_at),
+    ("__str_length",      string::builtin_str_length),
+    ("__str_byte_length", string::builtin_str_byte_length),
+    ("__str_char_at",     string::builtin_str_char_at),
     ("__str_from_chars", string::builtin_str_from_chars),
     ("__str_to_string",  string::builtin_str_to_string),
     ("__str_equals",     string::builtin_str_equals),
