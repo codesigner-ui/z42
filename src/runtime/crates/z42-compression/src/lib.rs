@@ -71,7 +71,7 @@ pub(crate) fn set_last_error(msg: impl Into<String>) {
 /// Returns a pointer to the current thread's last error message as a
 /// NUL-terminated UTF-8 string. Empty string when no error pending. The
 /// pointer is valid until the next entry call on the same thread.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn z42_compression_last_error() -> *const c_char {
     LAST_ERROR.with(|e| {
         let s = e.borrow();
@@ -102,33 +102,37 @@ pub extern "C" fn z42_compression_last_error() -> *const c_char {
 /// All pointers must be valid; `input_ptr` for `input_len` bytes,
 /// `out_ptr` / `out_len` for 1 element each. `out_ptr` is overwritten
 /// regardless of return code (NULL on error).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_deflate_compress(
     input_ptr: *const u8, input_len: usize,
     level: i32, mode: i32,
     out_ptr: *mut *mut u8, out_len: *mut usize,
 ) -> i32 {
-    *out_ptr = std::ptr::null_mut();
-    *out_len = 0;
-    let input = std::slice::from_raw_parts(input_ptr, input_len);
-    match compression::deflate_compress(input, level, mode) {
-        Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        let input = std::slice::from_raw_parts(input_ptr, input_len);
+        match compression::deflate_compress(input, level, mode) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_deflate_decompress(
     input_ptr: *const u8, input_len: usize,
     mode: i32,
     out_ptr: *mut *mut u8, out_len: *mut usize,
 ) -> i32 {
-    *out_ptr = std::ptr::null_mut();
-    *out_len = 0;
-    let input = std::slice::from_raw_parts(input_ptr, input_len);
-    match compression::deflate_decompress(input, mode) {
-        Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        let input = std::slice::from_raw_parts(input_ptr, input_len);
+        match compression::deflate_decompress(input, mode) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 
@@ -139,49 +143,53 @@ pub unsafe extern "C" fn z42_compression_deflate_decompress(
 // wasm32" message via z42_compression_last_error. Tracked in
 // compression.md Deferred → `compression-future-wasm-zstd`.
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_zstd_compress(
     input_ptr: *const u8, input_len: usize,
     level: i32,
     out_ptr: *mut *mut u8, out_len: *mut usize,
 ) -> i32 {
-    *out_ptr = std::ptr::null_mut();
-    *out_len = 0;
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = (input_ptr, input_len, level);
-        set_last_error("zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd\0");
-        return Z42_COMPRESSION_ERR_INVALID_MODE;
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let input = std::slice::from_raw_parts(input_ptr, input_len);
-        match compression::zstd_compress(input, level) {
-            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (input_ptr, input_len, level);
+            set_last_error("zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd\0");
+            return Z42_COMPRESSION_ERR_INVALID_MODE;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let input = std::slice::from_raw_parts(input_ptr, input_len);
+            match compression::zstd_compress(input, level) {
+                Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+                Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+            }
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_zstd_decompress(
     input_ptr: *const u8, input_len: usize,
     out_ptr: *mut *mut u8, out_len: *mut usize,
 ) -> i32 {
-    *out_ptr = std::ptr::null_mut();
-    *out_len = 0;
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = (input_ptr, input_len);
-        set_last_error("zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd\0");
-        return Z42_COMPRESSION_ERR_INVALID_MODE;
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let input = std::slice::from_raw_parts(input_ptr, input_len);
-        match compression::zstd_decompress(input) {
-            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (input_ptr, input_len);
+            set_last_error("zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd\0");
+            return Z42_COMPRESSION_ERR_INVALID_MODE;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let input = std::slice::from_raw_parts(input_ptr, input_len);
+            match compression::zstd_decompress(input) {
+                Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+                Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+            }
         }
     }
 }
@@ -198,47 +206,53 @@ pub unsafe extern "C" fn z42_compression_zstd_decompress(
 ///
 /// `algo`: 0 = raw deflate, 1 = zlib, 2 = gzip, 10 = zstd.
 /// `level`: ignored for decompress; 1..=9 for deflate family, 1..=22 for zstd.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_compressor_begin(
     algo: i32, level: i32, is_decompress: i32,
     out_slot_id: *mut u64,
 ) -> i32 {
-    *out_slot_id = 0;
-    match compression::compressor_begin(algo, level, is_decompress != 0) {
-        Ok(id) => { *out_slot_id = id; Z42_COMPRESSION_OK }
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_slot_id = 0;
+        match compression::compressor_begin(algo, level, is_decompress != 0) {
+            Ok(id) => { *out_slot_id = id; Z42_COMPRESSION_OK }
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_compressor_feed(
     slot_id: u64,
     chunk_ptr: *const u8, chunk_len: usize,
     out_ptr: *mut *mut u8, out_len: *mut usize,
 ) -> i32 {
-    *out_ptr = std::ptr::null_mut();
-    *out_len = 0;
-    let chunk = std::slice::from_raw_parts(chunk_ptr, chunk_len);
-    match compression::compressor_feed(slot_id, chunk) {
-        Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        let chunk = std::slice::from_raw_parts(chunk_ptr, chunk_len);
+        match compression::compressor_feed(slot_id, chunk) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_compressor_finish(
     slot_id: u64,
     out_ptr: *mut *mut u8, out_len: *mut usize,
 ) -> i32 {
-    *out_ptr = std::ptr::null_mut();
-    *out_len = 0;
-    match compression::compressor_finish(slot_id) {
-        Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        match compression::compressor_finish(slot_id) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_compressor_dispose(slot_id: u64) -> i32 {
     compression::compressor_dispose(slot_id);
     Z42_COMPRESSION_OK
@@ -249,10 +263,10 @@ pub unsafe extern "C" fn z42_compression_compressor_dispose(slot_id: u64) -> i32
 /// Free a buffer previously returned by any `*_compress` / `*_decompress`
 /// entry. Pass the exact `(ptr, len)` pair received. Calling this with
 /// mismatched length is **undefined behavior**.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn z42_compression_free(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 { return; }
-    drop(Vec::from_raw_parts(ptr, len, len));
+    unsafe { drop(Vec::from_raw_parts(ptr, len, len)); }
 }
 
 // ── Helper: hand a Vec<u8> off to the caller as a (ptr, len) pair ────────────
@@ -262,8 +276,10 @@ unsafe fn write_owned_buffer(buf: Vec<u8>, out_ptr: *mut *mut u8, out_len: *mut 
     let mut boxed = buf.into_boxed_slice();
     let ptr = boxed.as_mut_ptr();
     std::mem::forget(boxed);
-    *out_ptr = ptr;
-    *out_len = len;
+    unsafe {
+        *out_ptr = ptr;
+        *out_len = len;
+    }
     Z42_COMPRESSION_OK
 }
 
