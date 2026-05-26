@@ -109,7 +109,7 @@ tier         = "tier2"
 [platform.ios]
 min_ios      = "16.0"                   # → Package.swift .iOS(.v16); IPHONEOS_DEPLOYMENT_TARGET for cargo builds
 min_macos    = "13.0"                   # → Package.swift .macOS(.v13)
-rust_targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim", "x86_64-apple-ios"]
+rust_targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"]
 tier         = "tier2"
 
 [platform.wasm]

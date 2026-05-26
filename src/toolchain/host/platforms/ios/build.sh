@@ -91,20 +91,16 @@ done
 
 DEV_LIB="$RUST_TARGET/aarch64-apple-ios/release/$LIB_NAME"
 SIM_ARM64_LIB="$RUST_TARGET/aarch64-apple-ios-sim/release/$LIB_NAME"
-SIM_X86_LIB="$RUST_TARGET/x86_64-apple-ios/release/$LIB_NAME"
 MAC_LIB="$RUST_TARGET/aarch64-apple-darwin/release/$LIB_NAME"
 
-for f in "$DEV_LIB" "$SIM_ARM64_LIB" "$SIM_X86_LIB" "$MAC_LIB"; do
+for f in "$DEV_LIB" "$SIM_ARM64_LIB" "$MAC_LIB"; do
     [[ -f "$f" ]] || { echo "error: expected lib not found: $f" >&2; exit 1; }
 done
 
-# ── (4) lipo iOS simulator slices into one universal. ────────────────────
+# ── (4) simulator slice (arm64-only; x86_64-apple-ios dropped per versions.toml). ──
+# No lipo needed — single-arch sim slice used directly in xcframework.
 
-SIM_UNIVERSAL="$HERE/build/sim-universal/$LIB_NAME"
-mkdir -p "$(dirname "$SIM_UNIVERSAL")"
-echo "lipo -create simulator slices"
-lipo -create "$SIM_ARM64_LIB" "$SIM_X86_LIB" -output "$SIM_UNIVERSAL"
-lipo -info "$SIM_UNIVERSAL"
+SIM_UNIVERSAL="$SIM_ARM64_LIB"
 
 # ── (5) xcodebuild -create-xcframework (ios-device + sim-universal + macos). ──
 

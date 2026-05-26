@@ -13,7 +13,7 @@
 
 ```bash
 # 1. 一次性 toolchain
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
 
 # 2. 编 compiler + stdlib
 dotnet build src/compiler/z42.slnx

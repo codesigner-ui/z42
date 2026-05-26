@@ -373,6 +373,8 @@ pub fn builtin_id_of(name: &str) -> Option<BuiltinId> {
 /// Resolve a builtin name via the per-VM extension table populated at
 /// VM startup by `native::ext::load_all`. Returns a `BuiltinId` whose
 /// high bit is set; dispatch routes it through `ext_builtins.dispatch`.
+/// Only available when the `native-interop` feature is enabled.
+#[cfg(feature = "native-interop")]
 pub fn ext_builtin_id_of(ctx: &VmContext, name: &str) -> Option<BuiltinId> {
     ctx.core.ext_builtins.lock().lookup_id(name)
         .map(|idx| BuiltinId(idx | BUILTIN_ID_EXT_BIT))
@@ -386,6 +388,7 @@ pub fn exec_builtin_by_id(ctx: &VmContext, id: BuiltinId, args: &[Value]) -> Res
     // the hot path — single atomic Relaxed op, no control-flow impact.
     ctx.core.counters.builtin_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
+    #[cfg(feature = "native-interop")]
     if id.0 & BUILTIN_ID_EXT_BIT != 0 {
         let idx = id.0 & !BUILTIN_ID_EXT_BIT;
         let fn_ptr = {
@@ -411,6 +414,7 @@ pub fn exec_builtin(ctx: &VmContext, name: &str, args: &[Value]) -> Result<Value
     if let Some(&id) = builtin_index().get(name) {
         return BUILTINS[id as usize].1(ctx, args);
     }
+    #[cfg(feature = "native-interop")]
     {
         let ext = ctx.core.ext_builtins.lock();
         if let Some(idx) = ext.lookup_id(name) {

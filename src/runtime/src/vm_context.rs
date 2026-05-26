@@ -252,6 +252,9 @@ pub struct VmCore {
     /// search path, dlopens each `libz42_*.{so,dylib,dll}`, and lets it
     /// register `(name, fn_ptr)` pairs. Lookup parallels static `BUILTINS[]`;
     /// see `corelib::ext_builtin_id_of` for the resolver fallback.
+    /// Only present when `native-interop` feature is enabled (gated alongside
+    /// the `native` module in lib.rs).
+    #[cfg(feature = "native-interop")]
     pub(crate) ext_builtins:       Mutex<crate::native::ext::ExtBuiltinTable>,
     /// **add-z42-io-filestream (2026-05-24)**: live `Std.IO.FileStream`
     /// handles keyed by monotonic slot id. `__file_open` inserts;
@@ -502,6 +505,7 @@ impl VmContext {
             needs_auto_collect:   Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rwlocks:              Mutex::new(HashMap::new()),
             next_rwlock_id:       std::sync::atomic::AtomicU64::new(1),
+            #[cfg(feature = "native-interop")]
             ext_builtins:         Mutex::new(crate::native::ext::ExtBuiltinTable::default()),
             file_handles:         Mutex::new(HashMap::new()),
             next_file_handle_id:  std::sync::atomic::AtomicU64::new(1),
@@ -625,6 +629,7 @@ impl VmContext {
         // once at primary-VM init only (workers via `new_with_core` reuse
         // the parent's populated table). Failures are logged but never
         // abort startup — apps that don't need any ext lib still boot.
+        #[cfg(feature = "native-interop")]
         if let Err(e) = crate::native::ext::load_all(&boxed) {
             tracing::warn!("native ext loader: {:#}", e);
         }
