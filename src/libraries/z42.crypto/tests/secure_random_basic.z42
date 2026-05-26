@@ -1,0 +1,132 @@
+// add-csprng-to-crypto (2026-05-26): basic functional tests for
+// Std.Crypto.SecureRandom (OS-backed CSPRNG).
+namespace Z42CryptoSecureRandomBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+
+[Test]
+void test_get_bytes_returns_requested_length() {
+    byte[] b = SecureRandom.GetBytes(16);
+    Assert.Equal(16, b.Length);
+}
+
+[Test]
+void test_get_bytes_zero_returns_empty() {
+    byte[] b = SecureRandom.GetBytes(0);
+    Assert.Equal(0, b.Length);
+}
+
+[Test]
+void test_get_bytes_negative_throws() {
+    bool threw = false;
+    try {
+        SecureRandom.GetBytes(-1);
+    } catch (ArgumentException e) {
+        threw = true;
+        Assert.True(e.Message.Contains("non-negative"));
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_get_bytes_large_buffer() {
+    // 4 KiB — non-trivial size, well below any defensive cap.
+    byte[] b = SecureRandom.GetBytes(4096);
+    Assert.Equal(4096, b.Length);
+}
+
+[Test]
+void test_two_calls_differ() {
+    // 32 bytes = 256 bits of entropy; collision probability ~2^-128.
+    byte[] a = SecureRandom.GetBytes(32);
+    byte[] b = SecureRandom.GetBytes(32);
+    bool different = false;
+    int i = 0;
+    while (i < 32) {
+        if (a[i] != b[i]) { different = true; break; }
+        i = i + 1;
+    }
+    Assert.True(different);
+}
+
+[Test]
+void test_next_int_produces_value() {
+    // We can't test the value directly (it's random), but we can prove
+    // the call path works and returns ~uniformly distributed values.
+    // Sample 100 NextInt() and verify at least one negative + one
+    // non-negative — under uniform i32 the probability of all-same-sign
+    // is 2 × 0.5^100 ≈ astronomically small.
+    bool saw_negative = false;
+    bool saw_non_negative = false;
+    int i = 0;
+    while (i < 100) {
+        int n = SecureRandom.NextInt();
+        if (n < 0) saw_negative = true;
+        else saw_non_negative = true;
+        i = i + 1;
+    }
+    Assert.True(saw_negative);
+    Assert.True(saw_non_negative);
+}
+
+[Test]
+void test_next_long_produces_value() {
+    bool saw_negative = false;
+    bool saw_non_negative = false;
+    int i = 0;
+    while (i < 100) {
+        long n = SecureRandom.NextLong();
+        if (n < 0L) saw_negative = true;
+        else saw_non_negative = true;
+        i = i + 1;
+    }
+    Assert.True(saw_negative);
+    Assert.True(saw_non_negative);
+}
+
+[Test]
+void test_next_u32_bounded_one_returns_zero() {
+    int i = 0;
+    while (i < 10) {
+        Assert.Equal(0, SecureRandom.NextU32Bounded(1));
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_next_u32_bounded_range() {
+    int bound = 10;
+    int i = 0;
+    while (i < 100) {
+        int v = SecureRandom.NextU32Bounded(bound);
+        Assert.True(v >= 0);
+        Assert.True(v < bound);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_next_u32_bounded_zero_throws() {
+    bool threw = false;
+    try {
+        SecureRandom.NextU32Bounded(0);
+    } catch (ArgumentException e) {
+        threw = true;
+        Assert.True(e.Message.Contains("positive"));
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_next_u32_bounded_negative_throws() {
+    bool threw = false;
+    try {
+        SecureRandom.NextU32Bounded(-5);
+    } catch (ArgumentException e) {
+        threw = true;
+        Assert.True(e.Message.Contains("positive"));
+    }
+    Assert.True(threw);
+}

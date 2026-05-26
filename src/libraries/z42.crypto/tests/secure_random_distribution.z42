@@ -1,0 +1,47 @@
+// add-csprng-to-crypto (2026-05-26): statistical sanity check.
+//
+// NOT a NIST randomness test suite — just guards against gross failures
+// like "always returns 0" or "only returns even numbers". Real CSPRNG
+// quality validation lives in the OS implementation (getrandom / BCrypt).
+namespace Z42CryptoSecureRandomDistributionTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+
+[Test]
+void test_next_u32_bounded_uniform_buckets() {
+    // 1000 samples in [0, 8); expected ~125 per bucket.
+    // Loose χ² bound: each bucket count ∈ [50, 250] — that's roughly
+    // ±6 standard deviations from expected, leaving astronomical margin
+    // (true failure probability < 1e-9 for a uniform source).
+    int N = 1000;
+    int B = 8;
+    int[] counts = new int[B];
+    int i = 0;
+    while (i < N) {
+        int v = SecureRandom.NextU32Bounded(B);
+        counts[v] = counts[v] + 1;
+        i = i + 1;
+    }
+    int b = 0;
+    while (b < B) {
+        Assert.True(counts[b] >= 50);
+        Assert.True(counts[b] <= 250);
+        b = b + 1;
+    }
+}
+
+[Test]
+void test_get_bytes_no_dominant_zero() {
+    // 1024 random bytes — under uniform u8 source, expected zeros ≈ 4.
+    // Threshold = 50 leaves massive margin.
+    byte[] b = SecureRandom.GetBytes(1024);
+    int zeros = 0;
+    int i = 0;
+    while (i < 1024) {
+        if (b[i] == (byte)0) zeros = zeros + 1;
+        i = i + 1;
+    }
+    Assert.True(zeros < 50);
+}

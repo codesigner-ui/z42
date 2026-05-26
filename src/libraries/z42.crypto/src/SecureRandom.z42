@@ -1,0 +1,81 @@
+namespace Std.Crypto;
+
+using Std;
+
+// add-csprng-to-crypto (2026-05-26): OS-backed cryptographically secure
+// random number generator. Bridges to `__crypto_random_bytes` builtin which
+// wraps Linux getrandom(2) / macOS getentropy / Windows BCryptGenRandom.
+//
+// **Use this for** session tokens, CSRF nonces, KDF salts, masking keys,
+// password generation, anything where unpredictability matters.
+//
+// **Do NOT use `Std.Random`** (PCG) for any security purpose — it's a
+// deterministic PRNG for fixtures / simulation / temporary IDs.
+//
+// wasm32 throws `Std.NotSupportedException` (wasm-bridge to browser
+// crypto.getRandomValues / WASI is `add-csprng-wasm-bridge` follow-up).
+public static class SecureRandom {
+    [Native("__crypto_random_bytes")]
+    private static extern byte[] _CryptoRandomBytes(int n);
+
+    /// Fill `n` bytes from OS CSPRNG. `n` must be ≥ 0.
+    public static byte[] GetBytes(int n) {
+        if (n < 0) {
+            throw new ArgumentException("n must be non-negative, got " + n.ToString());
+        }
+        return _CryptoRandomBytes(n);
+    }
+
+    /// Random `int` uniformly distributed over the full i32 range
+    /// (including negatives). Built from 4 CSPRNG bytes, big-endian.
+    /// Computed in i64 to preserve bit pattern when the high bit is set;
+    /// final (int) cast truncates to the low 32 bits (sign-aware).
+    public static int NextInt() {
+        byte[] b = GetBytes(4);
+        long r = (((long)b[0] & 0xFFL) << 24)
+              | (((long)b[1] & 0xFFL) << 16)
+              | (((long)b[2] & 0xFFL) << 8)
+              |  ((long)b[3] & 0xFFL);
+        return (int)r;
+    }
+
+    /// Random `long` uniformly distributed over the full i64 range.
+    /// Built from 8 CSPRNG bytes, big-endian.
+    public static long NextLong() {
+        byte[] b = GetBytes(8);
+        long r = 0L;
+        int i = 0;
+        while (i < 8) {
+            r = (r << 8) | ((long)b[i] & 0xFFL);
+            i = i + 1;
+        }
+        return r;
+    }
+
+    /// Random `int` in `[0, bound)`, uniformly distributed.
+    /// Uses rejection sampling to avoid modulo bias.
+    ///
+    /// Throws ArgumentException if `bound <= 0`.
+    public static int NextU32Bounded(int bound) {
+        if (bound <= 0) {
+            throw new ArgumentException("bound must be positive, got " + bound.ToString());
+        }
+        // Two-step rejection sampling on raw u32:
+        //   1. Compute the "fair zone" = floor(2^32 / bound) * bound.
+        //   2. Sample u in [0, 2^32). If u >= zone, reject and resample.
+        // Expected rejection rate < 50% when bound ≤ 2^31.
+        long u32max_plus_one = 4294967296L;     // 2^32
+        long zone = (u32max_plus_one / (long)bound) * (long)bound;
+        while (true) {
+            byte[] b = GetBytes(4);
+            long u = (((long)b[0] & 0xFFL) << 24)
+                  | (((long)b[1] & 0xFFL) << 16)
+                  | (((long)b[2] & 0xFFL) << 8)
+                  |  ((long)b[3] & 0xFFL);
+            if (u < zone) {
+                return (int)(u % (long)bound);
+            }
+        }
+        throw new Exception("unreachable");
+    }
+}

@@ -35,6 +35,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
     even with weak hashes). Still in use: TOTP (RFC 6238 default),
     AWS Signature V2, etc.
 
+- OS CSPRNG — `Std.Crypto.SecureRandom` (add-csprng-to-crypto, 2026-05-26)
+  - `GetBytes(int n) -> byte[]` — fill `n` bytes from OS entropy source
+  - `NextInt() -> int` — uniform over full i32 range
+  - `NextLong() -> long` — uniform over full i64 range
+  - `NextU32Bounded(int bound) -> int` — uniform in `[0, bound)` via rejection sampling
+  - Bridges to `__crypto_random_bytes` builtin: Linux `getrandom(2)` / macOS `getentropy` / Windows `BCryptGenRandom`
+  - wasm32 throws `NotSupportedException` (browser `crypto.getRandomValues` bridge is follow-up)
+
 Pure-script implementation built on `Sha256.Hash` / `Sha1.Hash`. State held as `long`
 (i64) masked to 32 bits at every op boundary — z42 `int` is signed i32 and
 overflows on the message schedule additions.
@@ -50,8 +58,9 @@ of overload-by-arg-type. z42 当前 overload 解析对 `byte[]` vs `string`
 
 ## Deferred / Future Work
 
-### CSPRNG（`Std.Crypto.Random`）
+### CSPRNG wasm32 bridge（`Std.Crypto.SecureRandom` on wasm32）
 
-- **来源**：add-z42-crypto 计划但 v0 未做
-- **触发原因**：依赖 OS-level `getrandom` / `BCryptGenRandom` syscall；z42 还没有 syscall 抽象层
-- **触发条件**：z42.os / z42.io.fs 落地后，配合 `Std.Random` API 区分 deterministic vs secure 两层
+- **来源**：add-csprng-to-crypto (2026-05-26)；native 已落地，wasm32 仍抛 `NotSupportedException`
+- **触发原因**：wasm32 无 `getrandom` syscall；需桥接到浏览器 `crypto.getRandomValues` 或 WASI `random_get`
+- **前置依赖**：wasm32 WASI 运行时路径或 JS interop bridge
+- **触发条件**：wasm32 target 落地时

@@ -41,6 +41,7 @@ pub mod system;
 pub mod threading;
 pub mod sync;
 pub mod network;
+pub mod crypto;
 
 use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
@@ -334,6 +335,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-process-which (2026-05-26) — appended to preserve existing BuiltinIds ──
     ("__process_which", process::builtin_process_which),
+
+    // ── add-csprng-to-crypto (2026-05-27) — OS-CSPRNG backing Std.Crypto.SecureRandom ──
+    ("__crypto_random_bytes", crypto::builtin_crypto_random_bytes),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

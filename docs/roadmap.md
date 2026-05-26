@@ -304,7 +304,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | pre-existing cargo test build break | `cargo build --release --lib --tests` 17 个编译错误在 `gc::region_tests` / `metadata::build_id_tests` / `arc_heap::ArcMagrGC::debug_validate_invariants` / `gc::region::Violation` 等纯测试代码；lib production build 干净。阻塞 Rust 单测 GREEN 路径；stdlib end-to-end test (z42c→z42vm) 不受影响。发现于 2026-05-26 add-process-which 实施期 | — (需独立 fix spec) |
 | ~~URL-safe Base64~~ ✅ + ~~Base32~~ ✅ + UTF-16 / Encoding streaming API | **URL-safe Base64 已落地 2026-05-25** (`add-encoding-base64-url`)；**Base32 已落地 2026-05-25** (`add-encoding-base32`)；UTF-16 / streaming / Crockford / Base32-hex / Base85 仍延后 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
 | HMAC-SHA256 | v0 SHA-256 落地后的下一步；RFC 2104 公式 | [stdlib/crypto.md](design/stdlib/crypto.md#hmac-sha256) |
-| Std.Crypto.Random (CSPRNG) | 需要 OS syscall 抽象层（z42.os / z42.io.fs）就绪 | [stdlib/crypto.md](design/stdlib/crypto.md#csprngstdcryptorandom) |
+| ~~Std.Crypto.SecureRandom (CSPRNG)~~ ✅ | **✅ 已落地 2026-05-26** (add-csprng-to-crypto)；wasm32 bridge 仍延后 | [stdlib/crypto.md](design/stdlib/crypto.md#csprng-wasm32-bridgestdcryptosecurerandom-on-wasm32) |
 | Zip.Write | byte[][] 类型系统或 2-pass workaround；v0 仅 Read | [stdlib/compression.md](design/stdlib/compression.md#compression-future-zip-write) |
 | Compression streaming decode | v0 是 accumulate-then-decompress | [stdlib/compression.md](design/stdlib/compression.md#compression-future-streaming-decode) |
 | Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |

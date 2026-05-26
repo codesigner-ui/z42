@@ -79,7 +79,7 @@
 | ~~z42.threading~~ | ~~`System.Threading.Thread`~~ | ~~`std::thread`~~ | ~~L2~~ | — | **✅ 已落地 2026-05-20**（add-threading-stdlib + add-sync-primitives 双 spec） |
 | **z42.async** | `Task` + `async/await` + `CancellationToken` | `tokio` / `async-std` | L3 | 部分 native | **L3 async/await 语法**（roadmap L3）；标准库需先有 z42.threading 同步原语 |
 | ~~z42.net K1~~ | ~~`System.Net.Sockets`~~ | ~~`std::net::Tcp*`~~ | ~~L2~~ | — | **✅ K1 已落地 2026-05-24**（add-z42-net）—— TCP-only。UDP / IPAddress / DNS / Timeout / TLS / HTTP / async 走 follow-up specs |
-| **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI | ✅ SHA-256 + HMAC-SHA256 已落地 (2026-05-24)；KDF / 对称加密 / CSPRNG 留 follow-up |
+| **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI | ✅ SHA-256 + HMAC-SHA256 已落地 (2026-05-24)；✅ CSPRNG `SecureRandom` 已落地 (2026-05-26)；KDF / 对称加密 留 follow-up |
 
 **起步排期**：
 - L2 末 / L3 初：`z42.regex` ✅ → `z42.threading` ✅ → `z42.crypto` (SHA-256 ✅ + HMAC ✅) → `z42.net` K1 ✅
