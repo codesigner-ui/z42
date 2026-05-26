@@ -11,6 +11,8 @@ byte ↔ text 编码三件套：Hex / Base64 / UTF-8。纯脚本实现（无 VM 
 | `src/Hex.z42` | `Std.Encoding.Hex` — Encode / EncodeUpper / Decode |
 | `src/Base64.z42` | `Std.Encoding.Base64` — RFC 4648 §4 标准 Base64（含 `=` padding） |
 | `src/Utf8.z42` | `Std.Encoding.Utf8` — GetBytes / GetString，严格校验 UTF-8 |
+| `src/Utf16.z42` | `Std.Encoding.Utf16` — `GetBytesLE/BE` + `GetStringLE/BE`；surrogate pair + 严格校验 |
+| `src/Utf32.z42` | `Std.Encoding.Utf32` — `GetBytesLE/BE` + `GetStringLE/BE`；定宽 4 bytes/codepoint，拒 surrogate / >U+10FFFF |
 
 ## 入口点
 

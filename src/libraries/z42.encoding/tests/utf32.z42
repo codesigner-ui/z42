@@ -1,0 +1,96 @@
+// add-encoding-utf32 (2026-05-27): UTF-32 LE/BE encode + decode.
+namespace Z42EncodingUtf32Tests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+[Test]
+void test_ascii_le_four_bytes_per_char() {
+    byte[] b = Utf32.GetBytesLE("A");
+    Assert.Equal(4, b.Length);
+    Assert.Equal(0x41, (int)b[0] & 0xFF);    // 'A'
+    Assert.Equal(0x00, (int)b[1] & 0xFF);
+    Assert.Equal(0x00, (int)b[2] & 0xFF);
+    Assert.Equal(0x00, (int)b[3] & 0xFF);
+}
+
+[Test]
+void test_ascii_be_swapped() {
+    byte[] b = Utf32.GetBytesBE("A");
+    Assert.Equal(0x00, (int)b[0] & 0xFF);
+    Assert.Equal(0x00, (int)b[1] & 0xFF);
+    Assert.Equal(0x00, (int)b[2] & 0xFF);
+    Assert.Equal(0x41, (int)b[3] & 0xFF);
+}
+
+[Test]
+void test_supplementary_one_codepoint_four_bytes() {
+    // 🎉 = U+1F389 → no surrogate pair, just 4 LE bytes 89 F3 01 00.
+    byte[] b = Utf32.GetBytesLE("🎉");
+    Assert.Equal(4, b.Length);
+    Assert.Equal(0x89, (int)b[0] & 0xFF);
+    Assert.Equal(0xF3, (int)b[1] & 0xFF);
+    Assert.Equal(0x01, (int)b[2] & 0xFF);
+    Assert.Equal(0x00, (int)b[3] & 0xFF);
+}
+
+[Test]
+void test_bmp_round_trip() {
+    string s = "你好世界";
+    byte[] le = Utf32.GetBytesLE(s);
+    Assert.Equal(16, le.Length);     // 4 codepoints * 4 bytes
+    Assert.Equal(s, Utf32.GetStringLE(le));
+}
+
+[Test]
+void test_supplementary_round_trip() {
+    string s = "A🎉B🌍C";
+    byte[] le = Utf32.GetBytesLE(s);
+    Assert.Equal(20, le.Length);     // 5 codepoints * 4 bytes
+    Assert.Equal(s, Utf32.GetStringLE(le));
+    Assert.Equal(s, Utf32.GetStringBE(Utf32.GetBytesBE(s)));
+}
+
+[Test]
+void test_empty_string_zero_bytes() {
+    Assert.Equal(0, Utf32.GetBytesLE("").Length);
+    Assert.Equal("", Utf32.GetStringLE(new byte[0]));
+}
+
+[Test]
+void test_decode_non_multiple_of_4_throws() {
+    bool caught = false;
+    try {
+        Utf32.GetStringLE(new byte[5]);
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_decode_surrogate_value_throws() {
+    // 0xD800 as a codepoint must be rejected.
+    byte[] bad = new byte[4];
+    bad[0] = (byte)0x00;
+    bad[1] = (byte)0xD8;
+    bad[2] = (byte)0x00;
+    bad[3] = (byte)0x00;
+    bool caught = false;
+    try { Utf32.GetStringLE(bad); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_decode_out_of_range_throws() {
+    // 0x110000 = first invalid codepoint.
+    byte[] bad = new byte[4];
+    bad[0] = (byte)0x00;
+    bad[1] = (byte)0x00;
+    bad[2] = (byte)0x11;
+    bad[3] = (byte)0x00;
+    bool caught = false;
+    try { Utf32.GetStringLE(bad); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}

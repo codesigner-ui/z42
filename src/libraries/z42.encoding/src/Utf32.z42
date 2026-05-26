@@ -1,0 +1,92 @@
+namespace Std.Encoding;
+
+using Std;
+
+// add-encoding-utf32 (2026-05-27): UTF-32 encode / decode (ISO/IEC 10646).
+//
+// Fixed-width 4 bytes per codepoint. Standalone surrogates (0xD800-
+// 0xDFFF) and out-of-range (>U+10FFFF) are rejected on both encode and
+// decode with `FormatException`. `LE` / `BE` choose byte order.
+//
+// Use case: Windows wide-string APIs that take `wchar_t*` of 32-bit
+// chars (rare; usually UTF-16), and conversion between z42 strings and
+// linear arrays of Unicode scalars without surrogate pair complexity.
+public static class Utf32 {
+    // ── Encode ───────────────────────────────────────────────────────────────
+
+    public static byte[] GetBytesLE(string s) { return _encode(s, true); }
+    public static byte[] GetBytesBE(string s) { return _encode(s, false); }
+
+    static byte[] _encode(string s, bool le) {
+        int n = s.Length;
+        byte[] result = new byte[n * 4];
+        int i = 0;
+        while (i < n) {
+            int cp = (int)s.CharAt(i);
+            if (cp >= 0xD800 && cp <= 0xDFFF) {
+                throw new FormatException(
+                    "Utf32.GetBytes: input contains standalone surrogate U+"
+                    + Int32.ToString(cp));
+            }
+            if (cp < 0 || cp > 0x10FFFF) {
+                throw new FormatException(
+                    "Utf32.GetBytes: codepoint out of Unicode range: " + Int32.ToString(cp));
+            }
+            _writeU32(result, i * 4, cp, le);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    static void _writeU32(byte[] b, int off, int v, bool le) {
+        if (le) {
+            b[off]     = (byte)(v & 0xFF);
+            b[off + 1] = (byte)((v >> 8) & 0xFF);
+            b[off + 2] = (byte)((v >> 16) & 0xFF);
+            b[off + 3] = (byte)((v >> 24) & 0xFF);
+        } else {
+            b[off]     = (byte)((v >> 24) & 0xFF);
+            b[off + 1] = (byte)((v >> 16) & 0xFF);
+            b[off + 2] = (byte)((v >> 8) & 0xFF);
+            b[off + 3] = (byte)(v & 0xFF);
+        }
+    }
+
+    // ── Decode ───────────────────────────────────────────────────────────────
+
+    public static string GetStringLE(byte[] bytes) { return _decode(bytes, true); }
+    public static string GetStringBE(byte[] bytes) { return _decode(bytes, false); }
+
+    static string _decode(byte[] bytes, bool le) {
+        if (bytes.Length == 0) return "";
+        if (bytes.Length % 4 != 0) {
+            throw new FormatException("Utf32.GetString: byte length not multiple of 4");
+        }
+        int n = bytes.Length / 4;
+        char[] result = new char[n];
+        int i = 0;
+        while (i < n) {
+            int cp = _readU32(bytes, i * 4, le);
+            if (cp >= 0xD800 && cp <= 0xDFFF) {
+                throw new FormatException(
+                    "Utf32.GetString: encoded surrogate U+" + Int32.ToString(cp));
+            }
+            if (cp < 0 || cp > 0x10FFFF) {
+                throw new FormatException(
+                    "Utf32.GetString: codepoint out of Unicode range: " + Int32.ToString(cp));
+            }
+            result[i] = (char)cp;
+            i = i + 1;
+        }
+        return String.FromChars(result);
+    }
+
+    static int _readU32(byte[] b, int off, bool le) {
+        int b0 = (int)b[off]     & 0xFF;
+        int b1 = (int)b[off + 1] & 0xFF;
+        int b2 = (int)b[off + 2] & 0xFF;
+        int b3 = (int)b[off + 3] & 0xFF;
+        if (le) return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+    }
+}

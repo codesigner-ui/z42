@@ -1,0 +1,102 @@
+// add-encoding-utf16 (2026-05-27): UTF-16 LE/BE encode + decode.
+namespace Z42EncodingUtf16Tests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+[Test]
+void test_ascii_le_two_bytes_per_char() {
+    byte[] b = Utf16.GetBytesLE("Hi");
+    Assert.Equal(4, b.Length);
+    Assert.Equal(0x48, (int)b[0] & 0xFF);    // 'H' low byte
+    Assert.Equal(0x00, (int)b[1] & 0xFF);
+    Assert.Equal(0x69, (int)b[2] & 0xFF);    // 'i'
+    Assert.Equal(0x00, (int)b[3] & 0xFF);
+}
+
+[Test]
+void test_ascii_be_swapped() {
+    byte[] b = Utf16.GetBytesBE("Hi");
+    Assert.Equal(0x00, (int)b[0] & 0xFF);
+    Assert.Equal(0x48, (int)b[1] & 0xFF);
+    Assert.Equal(0x00, (int)b[2] & 0xFF);
+    Assert.Equal(0x69, (int)b[3] & 0xFF);
+}
+
+[Test]
+void test_bmp_non_ascii_round_trip() {
+    string s = "你好";
+    byte[] le = Utf16.GetBytesLE(s);
+    Assert.Equal(4, le.Length);
+    Assert.Equal(s, Utf16.GetStringLE(le));
+    byte[] be = Utf16.GetBytesBE(s);
+    Assert.Equal(s, Utf16.GetStringBE(be));
+}
+
+[Test]
+void test_supplementary_emits_surrogate_pair() {
+    // 🎉 = U+1F389. Surrogate pair: high=0xD83C, low=0xDF89.
+    byte[] b = Utf16.GetBytesLE("🎉");
+    Assert.Equal(4, b.Length);
+    Assert.Equal(0x3C, (int)b[0] & 0xFF);
+    Assert.Equal(0xD8, (int)b[1] & 0xFF);
+    Assert.Equal(0x89, (int)b[2] & 0xFF);
+    Assert.Equal(0xDF, (int)b[3] & 0xFF);
+}
+
+[Test]
+void test_supplementary_round_trip() {
+    string s = "🎉🌍🚀";
+    Assert.Equal(s, Utf16.GetStringLE(Utf16.GetBytesLE(s)));
+    Assert.Equal(s, Utf16.GetStringBE(Utf16.GetBytesBE(s)));
+}
+
+[Test]
+void test_empty_string_zero_bytes() {
+    Assert.Equal(0, Utf16.GetBytesLE("").Length);
+    Assert.Equal("", Utf16.GetStringLE(new byte[0]));
+}
+
+[Test]
+void test_decode_odd_length_throws() {
+    bool caught = false;
+    try {
+        byte[] bad = new byte[3];
+        Utf16.GetStringLE(bad);
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_decode_lone_low_surrogate_throws() {
+    // 0xDC00 alone with no preceding high.
+    byte[] bad = new byte[2];
+    bad[0] = (byte)0x00;
+    bad[1] = (byte)0xDC;
+    bool caught = false;
+    try { Utf16.GetStringLE(bad); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_decode_truncated_surrogate_pair_throws() {
+    // High surrogate 0xD83C with no following low.
+    byte[] bad = new byte[2];
+    bad[0] = (byte)0x3C;
+    bad[1] = (byte)0xD8;
+    bool caught = false;
+    try { Utf16.GetStringLE(bad); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_mixed_bmp_and_supplementary() {
+    string s = "A🎉B";
+    byte[] le = Utf16.GetBytesLE(s);
+    // A=2 bytes + 🎉=4 bytes + B=2 bytes
+    Assert.Equal(8, le.Length);
+    Assert.Equal(s, Utf16.GetStringLE(le));
+}

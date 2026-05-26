@@ -1,0 +1,121 @@
+namespace Std.Encoding;
+
+using Std;
+
+// add-encoding-utf16 (2026-05-27): UTF-16 encode / decode (RFC 2781).
+//
+// `LE` = little-endian (low byte first; default on x86/ARM, the wire
+// format Windows PE / .NET interop expects). `BE` = big-endian
+// (high byte first; PDF / Java serialisation default).
+//
+// Codepoints 0–0xFFFF (BMP) → 2 bytes; 0x10000–0x10FFFF → surrogate
+// pair (4 bytes). Standalone surrogates (0xD800–0xDFFF) in input
+// strings are rejected. `GetString*` validates surrogate pairing and
+// rejects truncated / overlong / out-of-range input with
+// `FormatException`.
+public static class Utf16 {
+    // ── Encode ───────────────────────────────────────────────────────────────
+
+    public static byte[] GetBytesLE(string s) { return _encode(s, true); }
+    public static byte[] GetBytesBE(string s) { return _encode(s, false); }
+
+    static byte[] _encode(string s, bool le) {
+        if (s.Length == 0) return new byte[0];
+
+        // Pass 1: count bytes (2 for BMP, 4 for supplementary).
+        int total = 0;
+        int i = 0;
+        while (i < s.Length) {
+            int cp = (int)s.CharAt(i);
+            if (cp >= 0xD800 && cp <= 0xDFFF) {
+                throw new FormatException(
+                    "Utf16.GetBytes: input contains standalone surrogate U+"
+                    + Int32.ToString(cp));
+            }
+            if (cp < 0x10000) total = total + 2;
+            else              total = total + 4;
+            i = i + 1;
+        }
+
+        // Pass 2: emit.
+        byte[] result = new byte[total];
+        int dst = 0;
+        i = 0;
+        while (i < s.Length) {
+            int cp = (int)s.CharAt(i);
+            if (cp < 0x10000) {
+                _writeU16(result, dst, cp, le);
+                dst = dst + 2;
+            } else {
+                int v = cp - 0x10000;
+                int high = 0xD800 + (v >> 10);
+                int low  = 0xDC00 + (v & 0x3FF);
+                _writeU16(result, dst, high, le);
+                _writeU16(result, dst + 2, low, le);
+                dst = dst + 4;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    static void _writeU16(byte[] b, int off, int v, bool le) {
+        if (le) {
+            b[off]     = (byte)(v & 0xFF);
+            b[off + 1] = (byte)((v >> 8) & 0xFF);
+        } else {
+            b[off]     = (byte)((v >> 8) & 0xFF);
+            b[off + 1] = (byte)(v & 0xFF);
+        }
+    }
+
+    // ── Decode ───────────────────────────────────────────────────────────────
+
+    public static string GetStringLE(byte[] bytes) { return _decode(bytes, true); }
+    public static string GetStringBE(byte[] bytes) { return _decode(bytes, false); }
+
+    static string _decode(byte[] bytes, bool le) {
+        if (bytes.Length == 0) return "";
+        if (bytes.Length % 2 != 0) {
+            throw new FormatException("Utf16.GetString: byte length not multiple of 2");
+        }
+        char[] tmp = new char[bytes.Length / 2];     // upper bound
+        int outI = 0;
+        int i = 0;
+        while (i < bytes.Length) {
+            int u = _readU16(bytes, i, le);
+            i = i + 2;
+            if (u >= 0xD800 && u <= 0xDBFF) {
+                // high surrogate — expect low next
+                if (i + 1 >= bytes.Length) {
+                    throw new FormatException("Utf16.GetString: truncated surrogate pair");
+                }
+                int low = _readU16(bytes, i, le);
+                i = i + 2;
+                if (low < 0xDC00 || low > 0xDFFF) {
+                    throw new FormatException(
+                        "Utf16.GetString: high surrogate not followed by low surrogate");
+                }
+                int cp = 0x10000 + ((u - 0xD800) << 10) + (low - 0xDC00);
+                tmp[outI] = (char)cp;
+                outI = outI + 1;
+            } else if (u >= 0xDC00 && u <= 0xDFFF) {
+                throw new FormatException("Utf16.GetString: lone low surrogate");
+            } else {
+                tmp[outI] = (char)u;
+                outI = outI + 1;
+            }
+        }
+        char[] result = new char[outI];
+        int j = 0;
+        while (j < outI) { result[j] = tmp[j]; j = j + 1; }
+        return String.FromChars(result);
+    }
+
+    static int _readU16(byte[] b, int off, bool le) {
+        int b0 = (int)b[off] & 0xFF;
+        int b1 = (int)b[off + 1] & 0xFF;
+        if (le) return b0 | (b1 << 8);
+        return (b0 << 8) | b1;
+    }
+}
