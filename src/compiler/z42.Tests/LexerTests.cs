@@ -125,6 +125,81 @@ public sealed class LexerTests
         Lex("$\"value\"")[0].Kind.Should().Be(TokenKind.InterpolatedStringLiteral);
     }
 
+    // ── Raw string literal (add-raw-string-literal 2026-05-27) ────────────────
+
+    [Fact]
+    public void RawString_SingleLine_IsOneToken()
+    {
+        var tok = Lex("\"\"\"hi\"\"\"")[0];
+        tok.Kind.Should().Be(TokenKind.RawStringLiteral);
+        tok.Text.Should().Be("\"\"\"hi\"\"\"");
+    }
+
+    [Fact]
+    public void RawString_MultiLine_PreservesNewlines()
+    {
+        var src = "\"\"\"line1\nline2\nline3\"\"\"";
+        var tok = Lex(src)[0];
+        tok.Kind.Should().Be(TokenKind.RawStringLiteral);
+        tok.Text.Should().Be(src);
+        tok.Text.Should().Contain("\n");
+    }
+
+    [Fact]
+    public void RawString_Empty_IsSixQuotes()
+    {
+        var tok = Lex("\"\"\"\"\"\"")[0];
+        tok.Kind.Should().Be(TokenKind.RawStringLiteral);
+        tok.Text.Should().Be("\"\"\"\"\"\"");
+    }
+
+    [Fact]
+    public void RawString_EmbedsSingleDoubleQuote()
+    {
+        var src = "\"\"\"he said \"hi\".\"\"\"";
+        var tok = Lex(src)[0];
+        tok.Kind.Should().Be(TokenKind.RawStringLiteral);
+        tok.Text.Should().Be(src);
+    }
+
+    [Fact]
+    public void RawString_EmbedsTwoConsecutiveQuotes()
+    {
+        // body = `x ""y` (two consecutive `"` are fine; only three close)
+        var src = "\"\"\"x \"\"y\"\"\"";
+        var tok = Lex(src)[0];
+        tok.Kind.Should().Be(TokenKind.RawStringLiteral);
+        tok.Text.Should().Be(src);
+    }
+
+    [Fact]
+    public void RawString_BackslashNotEscaped()
+    {
+        // `"""\n"""` — body is literal backslash + n (no escape processing)
+        var src = "\"\"\"\\n\"\"\"";
+        var tok = Lex(src)[0];
+        tok.Kind.Should().Be(TokenKind.RawStringLiteral);
+        tok.Text.Should().Be(src);
+        // Body contains the literal backslash character.
+        tok.Text.Should().Contain("\\");
+    }
+
+    [Fact]
+    public void RawString_UnterminatedAtEof_Throws()
+    {
+        var act = () => Lex("\"\"\"abc");
+        act.Should().Throw<Z42.Syntax.Parser.ParseException>()
+           .WithMessage("*unterminated raw string*");
+    }
+
+    [Fact]
+    public void RawString_UnterminatedWithStrayQuotes_Throws()
+    {
+        // Two consecutive `"` don't close; needs three. Source has no terminator.
+        var act = () => Lex("\"\"\"x \"\"y");
+        act.Should().Throw<Z42.Syntax.Parser.ParseException>();
+    }
+
     // ── Char literal ──────────────────────────────────────────────────────────
 
     [Fact]

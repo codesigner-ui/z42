@@ -281,6 +281,9 @@ internal static partial class ExprParser
         [TokenKind.StringLiteral]             = new((c, t, _, _) => Ok(new LitStrExpr(UnescapeString(t.Text[1..^1]), t.Span), c)),
         [TokenKind.CharLiteral]               = new((c, t, _, _) => Ok(new LitCharExpr(UnescapeChar(t.Text), t.Span), c)),
         [TokenKind.InterpolatedStringLiteral] = new(ParseInterpolatedNud),
+        // Raw string """..."""—strip 3 quotes each side, NO UnescapeString
+        // (add-raw-string-literal 2026-05-27).
+        [TokenKind.RawStringLiteral]          = new((c, t, _, _) => Ok(new LitStrExpr(t.Text[3..^3], t.Span), c)),
         [TokenKind.True]                      = new((c, t, _, _) => Ok(new LitBoolExpr(true,  t.Span), c)),
         [TokenKind.False]                     = new((c, t, _, _) => Ok(new LitBoolExpr(false, t.Span), c)),
         [TokenKind.Null]                      = new((c, t, _, _) => Ok(new LitNullExpr(t.Span), c)),

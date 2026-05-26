@@ -376,7 +376,13 @@ BIN_LIT   = "0b" [01] [01_]*
 INT_SUFFIX   = "L" / "l" / "U" / "u" / "UL" / "ul" / "Lu" / "lU"
 FLOAT_SUFFIX = "f" / "F" / "d" / "D" / "m" / "M"
 
-STRING  = "\"" ([^"\\] / ESCAPE)* "\""
+STRING  = RAW_STRING
+        / "\"" ([^"\\] / ESCAPE)* "\""
+
+(* Raw / multi-line string — no escape processing; newlines and `"` (up
+   to two consecutive) kept verbatim. Three consecutive `"` close the
+   literal. Added 2026-05-27 by add-raw-string-literal. *)
+RAW_STRING = "\"\"\"" (!"\"\"\"" .)* "\"\"\""
         / "@\"" ([^"] / "\"\"")* "\""     (* verbatim string *)
 
 CHAR    = "'" ([^'\\] / ESCAPE) "'"

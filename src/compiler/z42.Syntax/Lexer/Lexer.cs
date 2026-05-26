@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Syntax.Parser;
 
 namespace Z42.Syntax.Lexer;
 
@@ -142,6 +143,27 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
                 if (c == '\\') Advance(); // skip escape char
                 Advance();
             }
+        }
+        else if (rule.IsRaw)
+        {
+            // Triple-quoted raw string: """...""" — no escape processing,
+            // newlines kept verbatim, content cannot contain `"""`
+            // (add-raw-string-literal 2026-05-27).
+            while (_pos + 2 < source.Length)
+            {
+                if (source[_pos] == '"' && source[_pos + 1] == '"' && source[_pos + 2] == '"')
+                {
+                    Advance(); Advance(); Advance();   // closing """
+                    return new Token(rule.Kind, source[startPos.._pos],
+                        MakeSpan(startPos, startLine, startCol), leadingTrivia);
+                }
+                Advance();
+            }
+            // Unterminated — raw strings, unlike regular ones, error explicitly
+            // since users mis-counting closing quotes is a common typo.
+            throw new ParseException(
+                "unterminated raw string literal (expected `\"\"\"`)",
+                MakeSpan(startPos, startLine, startCol));
         }
         else
         {

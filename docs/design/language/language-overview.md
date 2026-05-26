@@ -88,7 +88,12 @@ string b = "world";
 // 字符串插值（C# $ 前缀）
 string msg = $"Hello, {b}! Length = {b.Length}";
 
-// 原始字符串（C# 11+）
+// 原始字符串 `"""..."""`（add-raw-string-literal 2026-05-26）
+// - 不解析 `\n` / `\t` 等转义（字面保留 backslash + char）
+// - 支持多行 + 嵌入单/双 quote（最多连续 2 个 `"`）
+// - 三连 `"""` 即闭合；空字符串写 `""""""`
+// - v0 不支持变长 quote 数（C# 11 的 `""""..."""""`）、indent dedent、
+//   `$"""..."""` 插值；详见 [`raw-string-literal.md`](raw-string-literal.md)
 string json = """
     {
         "key": "value"

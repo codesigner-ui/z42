@@ -5,6 +5,7 @@ public enum TokenKind
     // ── Literals ──────────────────────────────────────────────────────────────
     IntLiteral, FloatLiteral, StringLiteral, CharLiteral,
     InterpolatedStringLiteral,   // $"..."
+    RawStringLiteral,            // """..."""  (no escape processing, multi-line OK)
     True, False,
 
     // ── Identifiers & keywords ─────────────────────────────────────────────

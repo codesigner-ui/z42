@@ -52,13 +52,16 @@ internal static class LexRules
     // only the opening prefix and result kind are configured here.
 
     internal sealed record StringRule(string Prefix, TokenKind Kind,
-        bool IsChar = false, bool IsInterpolated = false);
+        bool IsChar = false, bool IsInterpolated = false, bool IsRaw = false);
 
+    // Prefix order is first-match — longer prefixes must come first.
+    // `"""` must precede `"` so a triple quote isn't tokenised as an empty
+    // string followed by another open quote (add-raw-string-literal 2026-05-27).
     internal static readonly IReadOnlyList<StringRule> StringRules =
     [
-        new("$\"", TokenKind.InterpolatedStringLiteral, IsInterpolated: true),
-        new("\"",  TokenKind.StringLiteral),
-        new("'",   TokenKind.CharLiteral, IsChar: true),
-        // To add verbatim strings: new("@\"", TokenKind.RawStringLiteral),
+        new("\"\"\"", TokenKind.RawStringLiteral,          IsRaw: true),
+        new("$\"",    TokenKind.InterpolatedStringLiteral, IsInterpolated: true),
+        new("\"",     TokenKind.StringLiteral),
+        new("'",      TokenKind.CharLiteral,               IsChar: true),
     ];
 }
