@@ -35,8 +35,9 @@ CARGO_TARGET=$(rid_to_cargo "$RID")
 # exported so cargo passes it to the clang linker; without it the linker
 # defaults to iOS 10.0 and libz-ng-sys's crc32_chorba references
 # ___chkstk_darwin (available since iOS 13.0) become undefined.
-IOS_DEPLOY="16.0"
-export IPHONEOS_DEPLOYMENT_TARGET="$IOS_DEPLOY"
+# Source of truth: versions.toml [platform.ios].min_ios
+export IPHONEOS_DEPLOYMENT_TARGET
+IPHONEOS_DEPLOYMENT_TARGET="$(versions_get platform.ios.min_ios)"
 
 # ── 1. bin/ placeholder ─────────────────────────────────────────────────
 

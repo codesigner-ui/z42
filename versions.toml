@@ -107,7 +107,7 @@ abis         = ["arm64-v8a", "x86_64"]                         # gradle 命名�
 tier         = "tier2"
 
 [platform.ios]
-min_ios      = "14.0"                   # → Package.swift .iOS(.v14)
+min_ios      = "16.0"                   # → Package.swift .iOS(.v16); IPHONEOS_DEPLOYMENT_TARGET for cargo builds
 min_macos    = "13.0"                   # → Package.swift .macOS(.v13)
 rust_targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim", "x86_64-apple-ios"]
 tier         = "tier2"

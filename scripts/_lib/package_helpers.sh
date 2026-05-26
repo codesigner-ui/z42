@@ -23,6 +23,8 @@
 _PKG_HELPERS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _PKG_HELPERS_ROOT="$(cd "$_PKG_HELPERS_DIR/../.." && pwd)"
 
+source "$_PKG_HELPERS_DIR/versions.sh"
+
 # ── RID detection + mapping ──────────────────────────────────────────────
 
 # Supported RID whitelist —— see memory: project_supported_platforms.
@@ -465,7 +467,7 @@ PSEC
 )
             compat_section=$(cat <<CSEC
 host-min-version      = "${version}"
-ios-deployment-target = "16.0"
+ios-deployment-target = "$(versions_get platform.ios.min_ios)"
 CSEC
 )
             ;;
