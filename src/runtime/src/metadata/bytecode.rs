@@ -89,19 +89,24 @@ impl Module {
 }
 
 /// Class descriptor — field layout for object allocation.
+///
+/// review.md E5 follow-up (2026-05-27): three immutable-after-construction
+/// fields stored as `Box<[T]>` (16 B) instead of `Vec<T>` (24 B) — saves
+/// 8 B/field/ClassDesc. TypeDesc still owns growable `Vec`s because the
+/// cross-zpkg fixup pass rebuilds them.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClassDesc {
     pub name: String,
     #[serde(default)]
     pub base_class: Option<String>,
-    pub fields: Vec<FieldDesc>,
+    pub fields: Box<[FieldDesc]>,
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
     #[serde(default)]
-    pub type_params: Vec<String>,
+    pub type_params: Box<[String]>,
     /// L3-G3a: constraint bundle per type parameter. When non-empty must align with
-    /// `type_params` by index. Absent entries in old zbc deserialise as empty Vec.
+    /// `type_params` by index. Absent entries in old zbc deserialise as empty box.
     #[serde(default)]
-    pub type_param_constraints: Vec<ConstraintBundle>,
+    pub type_param_constraints: Box<[ConstraintBundle]>,
 }
 
 /// Resolved constraint bundle for one generic type parameter. (L3-G3a, L3-G2.5 bare-tp)

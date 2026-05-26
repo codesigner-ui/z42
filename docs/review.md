@@ -1426,7 +1426,7 @@ pub struct ScriptObject {
 ## E5. 立即可做的小项目（≤1 天）
 
 1. ✅ ~~**`Function.line_table` / `local_vars` / `exception_table` 用 `Box<[T]>` 替代 `Vec<T>`**~~ — refactor-function-box-slice (2026-05-26); also includes `param_types` / `type_params` / `type_param_constraints` (6 fields × 8 B ≈ 48 B per Function)
-2. ✅ ~~**`Instruction::Call.args: Vec<u32>` → `Box<[u32]>`**~~ — refactor-instruction-box-slice (2026-05-26); covers all 9 reg-list variants (Call / Builtin / CallIndirect / MkClos.captures / ArrayNewLit.elems / ObjNew / VCall / CallNative / CallNativeVtable) + ObjNew.type_args String list; `read_args` decoder now returns `Box<[u32]>` directly
+2. ✅ ~~**`Instruction::Call.args: Vec<u32>` → `Box<[u32]>`**~~ — refactor-instruction-box-slice (2026-05-26); covers all 9 reg-list variants (Call / Builtin / CallIndirect / MkClos.captures / ArrayNewLit.elems / ObjNew / VCall / CallNative / CallNativeVtable) + ObjNew.type_args String list; `read_args` decoder now returns `Box<[u32]>` directly. ClassDesc 3 fields (fields / type_params / type_param_constraints) follow-up landed 2026-05-27.
 3. ⚡ **TypeDesc cold 字段先用 `Option<Box<...>>` 包起来** —— 不重排字段先减常驻内存
 4. ⚡ **`ScriptObject.type_args: Vec<String>` → `Option<Box<[StringId]>>`** —— 非泛型对象省 24B
 5. ⚡ **删 `TypeDesc.own_methods` 的 String pair tuple，仅保 `Vec<MethodId>`** —— vtable 名字应该走 vtable_by_name HashMap

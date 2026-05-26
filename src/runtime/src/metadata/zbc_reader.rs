@@ -293,7 +293,11 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             type_param_constraints.push(read_constraint_bundle(&mut c, pool)?);
         }
         classes.push(ClassDesc {
-            name, base_class, fields, type_params, type_param_constraints,
+            name,
+            base_class,
+            fields: fields.into_boxed_slice(),
+            type_params: type_params.into_boxed_slice(),
+            type_param_constraints: type_param_constraints.into_boxed_slice(),
         });
     }
     Ok(classes)

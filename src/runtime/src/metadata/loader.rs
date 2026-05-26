@@ -565,9 +565,9 @@ pub fn build_type_registry(module: &mut Module) {
             vtable_index,
             own_fields,
             own_methods,
-            type_params: desc.type_params.clone(),
+            type_params: desc.type_params.to_vec(),
             type_args: vec![],
-            type_param_constraints: desc.type_param_constraints.clone(),
+            type_param_constraints: desc.type_param_constraints.to_vec(),
             id: type_id,
         });
         debug_assert_eq!(

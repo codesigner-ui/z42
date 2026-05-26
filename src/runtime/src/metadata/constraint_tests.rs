@@ -23,9 +23,9 @@ fn simple_class(name: &str) -> ClassDesc {
     ClassDesc {
         name: name.to_owned(),
         base_class: None,
-        fields: vec![],
-        type_params: vec![],
-        type_param_constraints: vec![],
+        fields: Box::new([]),
+        type_params: Box::new([]),
+        type_param_constraints: Box::new([]),
     }
 }
 
@@ -52,11 +52,11 @@ fn generic_fn(name: &str, tp: &str, bundle: ConstraintBundle) -> Function {
 #[test]
 fn loader_populates_typedesc_constraints() {
     let mut cls = simple_class("Box");
-    cls.type_params = vec!["T".into()];
+    cls.type_params = vec!["T".into()].into_boxed_slice();
     cls.type_param_constraints = vec![ConstraintBundle {
         base_class: Some("Animal".into()),
         ..Default::default()
-    }];
+    }].into_boxed_slice();
     let mut m = empty_module("demo");
     m.classes = vec![cls, simple_class("Animal")];
     build_type_registry(&mut m);
@@ -71,11 +71,11 @@ fn verify_accepts_known_class_constraint() {
     let mut m = empty_module("demo");
     m.classes = vec![simple_class("Animal"), {
         let mut c = simple_class("Box");
-        c.type_params = vec!["T".into()];
+        c.type_params = vec!["T".into()].into_boxed_slice();
         c.type_param_constraints = vec![ConstraintBundle {
             base_class: Some("Animal".into()),
             ..Default::default()
-        }];
+        }].into_boxed_slice();
         c
     }];
     build_type_registry(&mut m);
@@ -86,11 +86,11 @@ fn verify_accepts_known_class_constraint() {
 fn verify_rejects_unknown_base_class() {
     let mut m = empty_module("demo");
     let mut c = simple_class("Box");
-    c.type_params = vec!["T".into()];
+    c.type_params = vec!["T".into()].into_boxed_slice();
     c.type_param_constraints = vec![ConstraintBundle {
         base_class: Some("Ghost".into()),
         ..Default::default()
-    }];
+    }].into_boxed_slice();
     m.classes = vec![c];
     build_type_registry(&mut m);
     let err = verify_constraints(&m).expect_err("Ghost is undefined");
@@ -115,14 +115,14 @@ fn verify_allows_std_namespace_reference() {
 fn loader_preserves_type_param_constraint() {
     // L3-G2.5 bare-typeparam: constraint `U: T` stored as type_param_constraint.
     let mut cls = simple_class("Container");
-    cls.type_params = vec!["T".into(), "U".into()];
+    cls.type_params = vec!["T".into(), "U".into()].into_boxed_slice();
     cls.type_param_constraints = vec![
         ConstraintBundle::default(),
         ConstraintBundle {
             type_param_constraint: Some("T".into()),
             ..Default::default()
         },
-    ];
+    ].into_boxed_slice();
     let mut m = empty_module("demo");
     m.classes = vec![cls];
     build_type_registry(&mut m);
