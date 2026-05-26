@@ -117,9 +117,10 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-24 add-overflow-divide-by-zero-exceptions 新增 OverflowException +
         //   DivideByZeroException，57 → 59；
         // 2026-05-25 add-gc-oom-exception 新增 OutOfMemoryException.z42，59 → 60；
-        // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，60 → 61）
+        // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，60 → 61；
+        // 2026-05-27 add-string-split-options 新增 SplitOptions.z42，61 → 62）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/61");
+        err2.Should().Contain("cached: 0/62");
     }
 }
