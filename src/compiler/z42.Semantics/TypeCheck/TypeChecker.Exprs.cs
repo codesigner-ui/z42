@@ -334,7 +334,7 @@ public sealed partial class TypeChecker
             lambdaEnv.Define(bp.Name, bp.Type);
 
         var frame = new LambdaBindingFrame { OuterEnv = env };
-        _lambdaBindingStack.Push(frame);
+        _lambdaBindingStack = _lambdaBindingStack.Push(frame);
         BoundLambdaBody body;
         Z42Type retType;
         try
@@ -363,7 +363,7 @@ public sealed partial class TypeChecker
         }
         finally
         {
-            _lambdaBindingStack.Pop();
+            _lambdaBindingStack = _lambdaBindingStack.Pop();
         }
 
         // 3. Synthesize the function type.
@@ -385,7 +385,7 @@ public sealed partial class TypeChecker
             // such enclosing frame so the capture propagates transitively from
             // the outermost defining scope down to the innermost reference.
             // See docs/design/language/closure.md §4 + impl-closure-l3-core Decision 6.
-            if (_lambdaBindingStack.Count > 0)
+            if (!_lambdaBindingStack.IsEmpty)
             {
                 var topFrame = _lambdaBindingStack.Peek();
                 if (!env.ResolvesVarBelowBoundary(id.Name, topFrame.OuterEnv))

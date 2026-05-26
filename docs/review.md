@@ -1872,7 +1872,7 @@ Phase 2（远期）：
 2. ✅ ~~**`DiagnosticCodes` 加 `Category` 字段**~~ — `DiagnosticCategory` enum + `DiagnosticCategories.Of(code)` classifier (2026-05-25)
 3. ✅ ~~**`Diagnostic` 加 `Properties: ImmutableDictionary<string, string>` 字段**~~ — `Diagnostic.Properties` + `Props` + `WithProperty` shipped
 4. ⚡ **Parser error message 加 `expected: <list>`** ── Roslyn 错误是 "expected `(`, identifier, or `default`"；z42 当前是单 token
-5. ⚡ **TypeChecker `_funcConstraints` 等 mutable stack 改 `ImmutableStack<T>`** ── 配合未来 Binder hierarchy 演进；现在改不破任何东西
+5. ✅ ~~**TypeChecker mutable stack 改 `ImmutableStack<T>`**~~ — `_catchVarStack` + `_lambdaBindingStack` (2026-05-27); aligns with future Binder hierarchy where each layer carries a binding snapshot. 1389 compiler tests stay green.
 6. ⚡ **BoundDumper 加 `--dump-bound-with-types` 选项** ── 当前已有 type 注解，再加 symbol id（依赖 F2.2 落地后）方便 LSP 调试
 7. ✅ ~~**`IrPassManager` 框架未用，加一个 no-op `IIrPass` 实现作为占位**~~ — `z42.IR/NoOpPass.cs` + IrPassManager pipeline
 

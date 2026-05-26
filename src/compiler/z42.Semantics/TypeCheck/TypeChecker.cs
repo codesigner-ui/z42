@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Z42.Core.Text;
 using Z42.Core.Features;
 using Z42.Semantics.Bound;
@@ -66,7 +67,11 @@ public sealed partial class TypeChecker : ITypeInferrer
         public List<BoundCapture> Captures { get; } = new();
         public Dictionary<string, int> NameToIndex { get; } = new();
     }
-    private readonly Stack<LambdaBindingFrame> _lambdaBindingStack = new();
+    /// review.md F5.5 (2026-05-27): `ImmutableStack` instead of `Stack` —
+    /// matches the future Binder-hierarchy direction (each layer holds a
+    /// snapshot of binding state). Push/Pop return a NEW stack — every
+    /// callsite reassigns to `_lambdaBindingStack`.
+    private ImmutableStack<LambdaBindingFrame> _lambdaBindingStack = ImmutableStack<LambdaBindingFrame>.Empty;
 
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
     {

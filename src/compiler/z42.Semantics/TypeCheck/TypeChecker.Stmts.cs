@@ -19,7 +19,11 @@ public sealed partial class TypeChecker
     // 2026-05-05 fix-bare-rethrow: stack of catch-variable names enclosing the
     // currently-being-bound statement. Push when entering CatchClause, pop on
     // exit. `throw;` at the top of an empty stack is an error.
-    private readonly Stack<string> _catchVarStack = new();
+    //
+    // review.md F5.5 (2026-05-27): `ImmutableStack` — Push/Pop return a NEW
+    // stack; every callsite reassigns. See TypeChecker.cs for rationale.
+    private System.Collections.Immutable.ImmutableStack<string> _catchVarStack =
+        System.Collections.Immutable.ImmutableStack<string>.Empty;
 
     // ── Block ─────────────────────────────────────────────────────────────────
 
@@ -189,7 +193,7 @@ public sealed partial class TypeChecker
                     // but we need a name to bind to. The IR side handles the
                     // null var case via __caught — see below.
                     var catchVar = clause.VarName ?? "__bare_catch__";
-                    _catchVarStack.Push(catchVar);
+                    _catchVarStack = _catchVarStack.Push(catchVar);
                     try
                     {
                         // catch-by-generic-type (2026-05-06): resolve declared
@@ -209,7 +213,7 @@ public sealed partial class TypeChecker
                     }
                     finally
                     {
-                        _catchVarStack.Pop();
+                        _catchVarStack = _catchVarStack.Pop();
                     }
                 }
                 var fin = tc.Finally != null ? BindBlock(tc.Finally, env, retType) : null;
@@ -226,7 +230,7 @@ public sealed partial class TypeChecker
                     // 2026-05-05 fix-bare-rethrow: `throw;` desugars to
                     // `throw <currentCatchVar>;`. Errors out when used
                     // outside a catch clause.
-                    if (_catchVarStack.Count == 0 || _catchVarStack.Peek() == "__bare_catch__")
+                    if (_catchVarStack.IsEmpty || _catchVarStack.Peek() == "__bare_catch__")
                     {
                         _diags.Error(DiagnosticCodes.UnexpectedToken,
                             "`throw;` (bare rethrow) is only valid inside a `catch (Exception <var>)` clause that binds the exception",
@@ -362,7 +366,7 @@ public sealed partial class TypeChecker
     {
         // One-level nesting limit retained: a local fn declared inside a
         // lambda/local-fn body is still rejected (L3-multilevel closure work).
-        if (_lambdaBindingStack.Count > 0)
+        if (!_lambdaBindingStack.IsEmpty)
         {
             _diags.Error(DiagnosticCodes.FeatureDisabled,
                 "nested local function is not allowed — multi-level lexical nesting requires the upcoming impl-closure-l3-multilevel work; please move to a top-level function for now",
@@ -382,7 +386,7 @@ public sealed partial class TypeChecker
         // the body never crosses the boundary, the frame's Captures stays
         // empty and Codegen falls back to the L2 LoadFn / direct Call path).
         var frame = new LambdaBindingFrame { OuterEnv = env };
-        _lambdaBindingStack.Push(frame);
+        _lambdaBindingStack = _lambdaBindingStack.Push(frame);
         BoundBlock body;
         try
         {
@@ -390,7 +394,7 @@ public sealed partial class TypeChecker
         }
         finally
         {
-            _lambdaBindingStack.Pop();
+            _lambdaBindingStack = _lambdaBindingStack.Pop();
         }
 
         var paramNames = fnDecl.Params.Select(p => p.Name).ToList();
