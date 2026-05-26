@@ -55,3 +55,77 @@ void test_compare() {
     Assert.False(a.Equals(b));
     Assert.True(a.Equals(DateTime.FromUnixMs(100)));
 }
+
+// ── add-datetime-iso8601 (2026-05-26) ────────────────────────────────────
+
+[Test]
+void test_iso8601_epoch() {
+    DateTime dt = DateTime.UnixEpoch();
+    Assert.Equal("1970-01-01T00:00:00.000Z", dt.ToIso8601());
+    Assert.Equal("1970-01-01T00:00:00Z",     dt.ToIso8601Basic());
+}
+
+[Test]
+void test_iso8601_known_modern_timestamp() {
+    // 1700000000 unix seconds = 2023-11-14T22:13:20 UTC
+    DateTime dt = DateTime.FromUnixMs(1700000000000L);
+    Assert.Equal("2023-11-14T22:13:20.000Z", dt.ToIso8601());
+    Assert.Equal("2023-11-14T22:13:20Z",     dt.ToIso8601Basic());
+}
+
+[Test]
+void test_iso8601_millisecond_padding() {
+    DateTime dt = DateTime.FromUnixMs(7L);   // 7 ms after epoch
+    Assert.Equal("1970-01-01T00:00:00.007Z", dt.ToIso8601());
+    DateTime dt2 = DateTime.FromUnixMs(42L); // 42 ms
+    Assert.Equal("1970-01-01T00:00:00.042Z", dt2.ToIso8601());
+    DateTime dt3 = DateTime.FromUnixMs(123L); // 123 ms
+    Assert.Equal("1970-01-01T00:00:00.123Z", dt3.ToIso8601());
+}
+
+[Test]
+void test_iso8601_leap_day_2024_02_29() {
+    // 2024-02-29 23:59:59.000 UTC = 1709251199000 ms
+    DateTime dt = DateTime.FromUnixMs(1709251199000L);
+    Assert.Equal("2024-02-29T23:59:59.000Z", dt.ToIso8601());
+}
+
+[Test]
+void test_iso8601_y2k_boundary() {
+    // 2000-01-01T00:00:00 UTC = 946684800000 ms（世纪 leap-year edge：div by 400 即 leap）
+    DateTime dt = DateTime.FromUnixMs(946684800000L);
+    Assert.Equal("2000-01-01T00:00:00.000Z", dt.ToIso8601());
+}
+
+[Test]
+void test_iso8601_negative_timestamp() {
+    // 1969-12-31T23:59:59.000 UTC = -1000 ms（验证 floor-div 处理负 unixMs）
+    DateTime dt = DateTime.FromUnixMs(-1000L);
+    Assert.Equal("1969-12-31T23:59:59.000Z", dt.ToIso8601());
+    Assert.Equal("1969-12-31T23:59:59Z",     dt.ToIso8601Basic());
+}
+
+[Test]
+void test_iso8601_pre_epoch_century_1900() {
+    // 1900-01-01T00:00:00 UTC = -2208988800000 ms（非 leap：div by 100 not by 400）
+    DateTime dt = DateTime.FromUnixMs(-2208988800000L);
+    Assert.Equal("1900-01-01T00:00:00.000Z", dt.ToIso8601());
+}
+
+[Test]
+void test_iso8601_year_1_jan_1() {
+    // Year-1 (proleptic Gregorian) sanity — 4-digit padding (0001).
+    // 0001-01-01 UTC = -62135596800000 ms
+    DateTime dt = DateTime.FromUnixMs(-62135596800000L);
+    Assert.Equal("0001-01-01T00:00:00.000Z", dt.ToIso8601());
+}
+
+[Test]
+void test_iso8601_mid_day_arbitrary() {
+    // 2026-05-26T14:32:01.789 UTC — combined hh/mm/ss/ms paths.
+    // 2026-05-26 00:00:00 UTC = 20599 days * 86400000 = 1779753600000 ms
+    // + 14h32m01.789s = 52321789 ms → 1779805921789 ms
+    DateTime dt = DateTime.FromUnixMs(1779805921789L);
+    Assert.Equal("2026-05-26T14:32:01.789Z", dt.ToIso8601());
+    Assert.Equal("2026-05-26T14:32:01Z",     dt.ToIso8601Basic());
+}
