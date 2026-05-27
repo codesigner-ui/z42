@@ -71,6 +71,7 @@ fn build_function(name: &str, instructions: Vec<Instruction>, terminator: Termin
         is_static: true,
         max_reg: 4,
         cold: None,
+        reg_types: Box::new([]),
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     }
@@ -381,6 +382,7 @@ fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminat
         is_static: true,
         max_reg: 4,
         cold: None,
+        reg_types: Box::new([]),
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };
@@ -469,6 +471,7 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
         is_static: true,
         max_reg: 16,
         cold: None,
+        reg_types: Box::new([]),
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };
@@ -522,6 +525,7 @@ fn z42_str_with_interior_nul_traps_marshal() {
         is_static: true,
         max_reg: 4,
         cold: None,
+        reg_types: Box::new([]),
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };

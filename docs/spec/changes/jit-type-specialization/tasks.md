@@ -5,9 +5,9 @@
 
 ## P0 (foundation) — preserve per-register type info
 
-- [ ] 0.1 User decides Option A (zbc bump) vs B (load-time inference)
-- [ ] 0.2 Add `IrType` enum in `src/runtime/src/metadata/bytecode.rs`
-       (mirror C# `IrType : byte` — 16 variants)
+- [x] 0.1 User decides Option A (zbc bump) vs B (load-time inference) — **Option A** chosen (2026-05-27)
+- [x] 0.2 Add `IrType` enum in `src/runtime/src/metadata/ir_type.rs`
+       (mirror C# `IrType : byte` — 16 variants) + `Function.reg_types: Box<[IrType]>` field (empty until REGT lands). 6 unit tests verify discriminant lockstep with C# side.
 - [ ] 0.3 (Option A) `ZbcWriter.Instructions.cs::WriteReg` writes
        `u16 id + u8 type`. Bump zbc minor; update zbc.md changelog.
 - [ ] 0.4 (Option A) `zbc_reader.rs` reads the new byte; populate

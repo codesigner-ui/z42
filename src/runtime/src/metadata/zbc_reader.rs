@@ -1093,6 +1093,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
             cold,
+            reg_types:       Box::new([]),
             block_index:     std::collections::HashMap::new(),
             resolved:        std::sync::OnceLock::new(),
         }
@@ -1402,6 +1403,7 @@ fn read_mods_section(
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
                 cold,
+                reg_types:       Box::new([]),
                 block_index:     std::collections::HashMap::new(),
                 resolved:        std::sync::OnceLock::new(),
             }

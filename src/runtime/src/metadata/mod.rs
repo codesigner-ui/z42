@@ -14,6 +14,11 @@ pub mod tokens;
 /// migrate individual `String` fields (Function.name / TypeDesc.name /
 /// Instruction variants with String params) to use this.
 pub mod string_id;
+/// review.md C2 step 0.2 (2026-05-27): `IrType` enum mirroring the C#
+/// `IrType : byte` in `z42.IR/IrModule.cs`. Foundation for JIT type
+/// specialization — populated per-register on the `Function` via the
+/// upcoming REGT zbc section.
+pub mod ir_type;
 pub mod bytecode;
 mod bytecode_serde;
 pub mod project;
@@ -41,6 +46,8 @@ mod types_tests;
 
 // Re-exports: string pool typed handle (Part 5 P0 Phase A, 2026-05-26)
 pub use string_id::StringId;
+// Re-exports: per-register static type tag (C2 step 0.2, 2026-05-27)
+pub use ir_type::IrType;
 
 // Re-exports: runtime value types
 pub use types::{default_value_for, ExecMode, FieldSlot, NativeData, PinSourceKind, ScriptObject, TypeDesc, Value};

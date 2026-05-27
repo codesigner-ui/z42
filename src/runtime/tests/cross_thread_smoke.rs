@@ -423,6 +423,7 @@ fn make_void_action_module(fn_name: &str) -> Module {
         is_static:              true,
         max_reg:                1,
         cold: None,
+        reg_types: Box::new([]),
         block_index:            std::collections::HashMap::new(),
         resolved:               std::sync::OnceLock::new(),
     };

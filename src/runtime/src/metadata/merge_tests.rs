@@ -27,6 +27,7 @@ fn make_module_with(
         is_static: false,
         max_reg: 0,
         cold: None,
+        reg_types: Box::new([]),
         block_index: std::collections::HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     }];
@@ -144,6 +145,7 @@ fn merge_deduplicates_functions_by_name() {
         is_static: false,
         max_reg: 0,
         cold: None,
+        reg_types: Box::new([]),
         block_index: std::collections::HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };

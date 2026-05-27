@@ -259,6 +259,15 @@ pub struct Function {
     /// no debug symbols. Reads go through accessor methods on `Function`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cold: Option<Box<FunctionCold>>,
+    /// review.md C2 step 0.2 (2026-05-27): per-register static type
+    /// from the C# IR's `TypedReg.Type`. Indexed by register ID;
+    /// length matches `max_reg`. Empty `Box<[]>` when no REGT section
+    /// is present in the zbc (legacy fixtures + writer-not-yet-updated
+    /// path). JIT translate.rs reads this to specialize arithmetic /
+    /// comparison / logical ops on known primitives (`I64` → emit
+    /// Cranelift `iadd` instead of `jit_add` helper call).
+    #[serde(default, skip)]
+    pub reg_types: Box<[super::ir_type::IrType]>,
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,
