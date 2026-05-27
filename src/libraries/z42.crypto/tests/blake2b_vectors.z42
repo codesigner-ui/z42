@@ -1,0 +1,158 @@
+// add-blake2b (2026-05-28): RFC 7693 §A.1 / §A.2 + libsodium reference
+// vectors for BLAKE2b.
+namespace Z42CryptoBlake2bVectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 7693 §A.1: "abc" — canonical sample ─────────────────────────────
+
+[Test]
+void test_blake2b_rfc7693_abc() {
+    Assert.Equal(
+        "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923",
+        Blake2b.HashStringHex("abc")
+    );
+}
+
+// ── Empty input (libsodium reference) ───────────────────────────────────
+
+[Test]
+void test_blake2b_empty() {
+    Assert.Equal(
+        "786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce",
+        Blake2b.HashStringHex("")
+    );
+}
+
+// ── Output-length variant: 32-byte (Hash256) ────────────────────────────
+// libsodium `crypto_generichash` default output length is 32; the
+// 32-byte digest of "abc" via blake2b-256 is:
+
+[Test]
+void test_blake2b_256_abc() {
+    // Reference: `hashlib.blake2b(b"abc", digest_size=32).hexdigest()`.
+    Assert.Equal(
+        "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319",
+        Blake2b.Hash256StringHex("abc")
+    );
+}
+
+[Test]
+void test_blake2b_256_empty() {
+    Assert.Equal(
+        "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8",
+        Blake2b.Hash256StringHex("")
+    );
+}
+
+// ── Variable output length (RFC 7693 §3.3 / §A.1.1) ─────────────────────
+// Output length 8 to 64 — must vary the digest (because output length
+// is encoded into parameter block).
+
+[Test]
+void test_blake2b_output_length_affects_digest() {
+    byte[] msg = Utf8.GetBytes("hello");
+    byte[] d8  = Blake2b.HashLen(msg, new byte[0], 8);
+    byte[] d16 = Blake2b.HashLen(msg, new byte[0], 16);
+    byte[] d32 = Blake2b.HashLen(msg, new byte[0], 32);
+    byte[] d64 = Blake2b.HashLen(msg, new byte[0], 64);
+    Assert.Equal(8,  d8.Length);
+    Assert.Equal(16, d16.Length);
+    Assert.Equal(32, d32.Length);
+    Assert.Equal(64, d64.Length);
+    // First 8 bytes of d16 should NOT equal d8 (parameter block differs).
+    bool same = true;
+    int i = 0;
+    while (i < 8) {
+        if (d8[i] != d16[i]) { same = false; }
+        i = i + 1;
+    }
+    Assert.True(!same);
+}
+
+// ── Keyed MAC mode ──────────────────────────────────────────────────────
+// Reference: `hashlib.blake2b(b"", key=b"\0"*32, digest_size=64).hexdigest()`.
+
+[Test]
+void test_blake2b_keyed_zero_key() {
+    byte[] key = new byte[32];
+    byte[] msg = new byte[0];
+    byte[] mac = Blake2b.HashLen(msg, key, 64);
+    Assert.Equal(
+        "cc789030610fd4bb91f53cf66fe84fa8670c76680e77a45aa32371a71901b9f3d954c08a3f96dec2f4485e005fb74b1bcdd54bbfff0581a611b15fb93702b347",
+        Hex.Encode(mac)
+    );
+}
+
+// Reference: RFC 7693 §A.1.1 test vector — keyed BLAKE2b with 64-byte
+// sequential key 00..3f, message = 0x00, full 64-byte digest.
+// Cross-checked against `hashlib.blake2b(bytes([0]), key=bytes(range(64))).hexdigest()`.
+
+[Test]
+void test_blake2b_keyed_rfc7693_a1_1() {
+    byte[] key = new byte[64];
+    int i = 0;
+    while (i < 64) { key[i] = (byte)i; i = i + 1; }
+    byte[] msg = new byte[1];   // single 0x00 byte
+    byte[] mac = Blake2b.HashLen(msg, key, 64);
+    Assert.Equal(
+        "961f6dd1e4dd30f63901690c512e78e4b45e4742ed197c3c5e45c549fd25f2e4187b0bc9fe30492b16b0d0bc4ef9b0f34c7003fac09a5ef1532e69430234cebd",
+        Hex.Encode(mac)
+    );
+}
+
+// ── Block-boundary: input exactly 128 / 129 / 127 bytes ─────────────────
+
+[Test]
+void test_blake2b_one_byte_below_block() {
+    byte[] msg = new byte[127];
+    int i = 0;
+    while (i < 127) { msg[i] = (byte)0x41; i = i + 1; }
+    Assert.Equal(128, Blake2b.HashHex(msg).Length);  // 64-byte digest = 128 hex chars
+}
+
+[Test]
+void test_blake2b_exactly_one_block() {
+    byte[] msg = new byte[128];
+    int i = 0;
+    while (i < 128) { msg[i] = (byte)0x42; i = i + 1; }
+    Assert.Equal(128, Blake2b.HashHex(msg).Length);
+}
+
+[Test]
+void test_blake2b_one_byte_above_block() {
+    byte[] msg = new byte[129];
+    int i = 0;
+    while (i < 129) { msg[i] = (byte)0x43; i = i + 1; }
+    Assert.Equal(128, Blake2b.HashHex(msg).Length);
+}
+
+// ── Validation ──────────────────────────────────────────────────────────
+
+[Test]
+void test_blake2b_rejects_zero_outlen() {
+    bool threw = false;
+    try { Blake2b.HashLen(new byte[0], new byte[0], 0); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_blake2b_rejects_oversized_outlen() {
+    bool threw = false;
+    try { Blake2b.HashLen(new byte[0], new byte[0], 65); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_blake2b_rejects_oversized_key() {
+    byte[] tooLargeKey = new byte[65];
+    bool threw = false;
+    try { Blake2b.HashLen(new byte[0], tooLargeKey, 64); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}

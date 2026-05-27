@@ -72,6 +72,15 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- BLAKE2b (RFC 7693) — `Std.Crypto.Blake2b` (add-blake2b, 2026-05-28)
+  - `Hash(byte[]) -> byte[64]` (512-bit default) / `Hash256(byte[]) -> byte[32]` (256-bit common)
+  - `HashLen(byte[] data, byte[] key, int outLen) -> byte[outLen]` — variable output (1..64) + optional key (0..64 bytes, keyed-MAC mode)
+  - `HashString` / `HashHex` / `HashStringHex` / `Hash256String` / `Hash256Hex` / `Hash256StringHex` convenience surface
+  - 12 rounds of `G` mixer over a 16-word working vector; 128-byte block, 64-bit words; SHA-512-style IV
+  - Parameter block (`0x01_01_kk_nn` for unkeyed default, with `kk = key length`, `nn = output length`) XORed into `h[0]` so output length and key length both influence the digest — same input with different `outLen` produces unrelated digests
+  - Use cases: Argon2 inner compression, IPFS default CID hash, WireGuard handshake, Zcash, NaCl libsodium `crypto_generichash`
+  - Verified against RFC 7693 §A.1 ("abc"), §A.1.1 keyed vector + libsodium reference empty / Hash256 vectors
+
 - ChaCha20-Poly1305 AEAD (RFC 8439 §2.8) — `Std.Crypto.ChaCha20Poly1305` (add-chacha20-poly1305, 2026-05-27)
   - `Encrypt(byte[32] key, byte[12] nonce, byte[] aad, byte[] plaintext) -> byte[]` — output = ciphertext || 16-byte tag
   - `Decrypt(byte[32] key, byte[12] nonce, byte[] aad, byte[] ctAndTag) -> byte[]` — constant-time tag verification; throws `ArgumentException` on mismatch
