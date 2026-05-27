@@ -322,7 +322,12 @@ pub enum Value {
     /// with the lifted function's qualified name. CallIndirect on a Closure
     /// passes `env` as the callee's first implicit parameter and copies user
     /// args after it. See docs/design/language/closure.md §6 + impl-closure-l3-core.
-    Closure { env: GcRef<Vec<Value>>, fn_name: String },
+    ///
+    /// review.md C1 chunk 5 (2026-05-27): payload boxed (the last and
+    /// biggest cold-path variant — 40 B inline = GcRef(16 B) + String(24 B)).
+    /// Boxing drops Value enum to ~24 B; capturing closures pay one heap
+    /// alloc per `MkClos` but that's dwarfed by the env's own GC alloc.
+    Closure(Box<ClosureData>),
     /// 2026-05-02 impl-closure-l3-escape-stack: 栈分配的 capturing closure 值。
     /// `env_idx` 索引创建该 closure 的 frame 的 `env_arena: Vec<Vec<Value>>`；
     /// CallIndirect 时由 dispatch 端通过当前帧的 arena 解 env。compiler 经
@@ -388,6 +393,17 @@ pub struct StackClosureData {
     pub fn_name: String,
 }
 
+/// Payload of [`Value::Closure`] — boxed (review.md C1 chunk 5,
+/// 2026-05-27) so the inline `Value` doesn't carry the 40-byte
+/// GcRef + String pair. `MkClos` (heap-alloc path) constructs one;
+/// `CallIndirect`, `__delegate_target`, `__delegate_fn_name`,
+/// `__delegate_eq` and the GC scanner consume.
+#[derive(Debug, Clone)]
+pub struct ClosureData {
+    pub env: GcRef<Vec<Value>>,
+    pub fn_name: String,
+}
+
 impl Value {
     /// **add-write-barriers (2026-05-21)**: returns `true` iff writing
     /// this value into a heap slot must dispatch a GC write barrier.
@@ -404,7 +420,7 @@ impl Value {
     #[inline]
     pub fn is_heap_ref(&self) -> bool {
         match self {
-            Value::Object(_) | Value::Array(_) | Value::Closure { .. } => true,
+            Value::Object(_) | Value::Array(_) | Value::Closure(_) => true,
             Value::Ref(kind) => matches!(
                 kind.as_ref(),
                 RefKind::Array { .. } | RefKind::Field { .. }
@@ -433,8 +449,8 @@ impl Value {
                 let arr = rc.borrow();
                 for elem in arr.iter() { visit(elem); }
             }
-            Value::Closure { env, .. } => {
-                let arr = env.borrow();
+            Value::Closure(c) => {
+                let arr = c.env.borrow();
                 for elem in arr.iter() { visit(elem); }
             }
             Value::Ref(kind) => match kind.as_ref() {

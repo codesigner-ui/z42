@@ -50,7 +50,7 @@ pub use string_id::StringId;
 pub use ir_type::IrType;
 
 // Re-exports: runtime value types
-pub use types::{default_value_for, ExecMode, FieldSlot, NativeData, PinSourceKind, PinnedViewData, ScriptObject, StackClosureData, TypeDesc, Value};
+pub use types::{default_value_for, ClosureData, ExecMode, FieldSlot, NativeData, PinSourceKind, PinnedViewData, ScriptObject, StackClosureData, TypeDesc, Value};
 #[allow(deprecated)]
 pub use types::ObjectData;
 

@@ -83,10 +83,10 @@ fn is_heap_ref_true_for_array() {
 
 #[test]
 fn is_heap_ref_true_for_closure() {
-    let v = Value::Closure {
+    let v = Value::Closure(Box::new(ClosureData {
         env:     GcRef::new(vec![Value::I64(42)]),
         fn_name: "lambda$0".to_string(),
-    };
+    }));
     assert!(v.is_heap_ref());
 }
 
@@ -167,9 +167,9 @@ fn value_size_observed() {
     // variants (review.md C1) should make this shrink. Update the expected
     // when an intentional shrink lands.
     //
-    // 2026-05-27 review.md C1 chunks 1-4 (PinnedView / FuncRef /
-    // StackClosure / Ref boxed): Value shrunk 48 B → 40 B. Closure
-    // remains inline (chunk 5 boxes it → expected 24 B).
-    assert_eq!(std::mem::size_of::<Value>(), 40,
+    // 2026-05-27 review.md C1 chunks 1-5 (all cold variants boxed):
+    // Value shrunk 48 B → 24 B. Max-payload variant is now
+    // Str(Arc<str>) = 16 B → +1 B tag + 7 B align = 24 B.
+    assert_eq!(std::mem::size_of::<Value>(), 24,
         "Value size changed: {}", std::mem::size_of::<Value>());
 }

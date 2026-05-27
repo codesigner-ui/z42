@@ -96,7 +96,10 @@ pub unsafe extern "C" fn jit_mk_clos(
             Value::Array(rc) => rc,
             _ => unreachable!("alloc_array must return Value::Array"),
         };
-        Value::Closure { env, fn_name: name }
+        Value::Closure(Box::new(crate::metadata::ClosureData {
+            env,
+            fn_name: name,
+        }))
     };
     frame_ref.regs[dst as usize] = value;
     0
@@ -125,7 +128,7 @@ pub unsafe extern "C" fn jit_call_indirect(
     //    一个新 GcRef Array（避免 callee 持有指向 caller arena 的 lifetime）。
     let (fn_name, env_vec_opt): (String, Option<Vec<Value>>) = match &frame_ref.regs[callee as usize] {
         Value::FuncRef(n) => (n.to_string(), None),
-        Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.borrow().clone())),
+        Value::Closure(c) => (c.fn_name.clone(), Some(c.env.borrow().clone())),
         Value::StackClosure(sc) => {
             let idx = sc.env_idx as usize;
             if idx >= frame_ref.env_arena.len() {

@@ -584,7 +584,7 @@ impl ArcMagrGC {
             let just_marked = match &v {
                 Value::Object(gc) => GcRef::mark(gc),
                 Value::Array(gc)  => GcRef::mark(gc),
-                Value::Closure { env, .. } => GcRef::mark(env),
+                Value::Closure(c) => GcRef::mark(&c.env),
                 Value::Ref(kind) => match kind.as_ref() {
                     crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::mark(gc_ref),
                     crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::mark(gc_ref),
@@ -613,7 +613,7 @@ impl ArcMagrGC {
         match v {
             Value::Object(gc) => GcRef::mark(gc),
             Value::Array(gc)  => GcRef::mark(gc),
-            Value::Closure { env, .. } => GcRef::mark(env),
+            Value::Closure(c) => GcRef::mark(&c.env),
             Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::mark(gc_ref),
                 crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::mark(gc_ref),
@@ -630,7 +630,7 @@ impl ArcMagrGC {
         match v {
             Value::Object(gc) => GcRef::gen_age(gc),
             Value::Array(gc)  => GcRef::gen_age(gc),
-            Value::Closure { env, .. } => GcRef::gen_age(env),
+            Value::Closure(c) => GcRef::gen_age(&c.env),
             Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::gen_age(gc_ref),
                 crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::gen_age(gc_ref),
@@ -860,7 +860,7 @@ impl ArcMagrGC {
         let new_age = match new {
             Value::Object(gc) => GcRef::gen_age(gc),
             Value::Array(gc)  => GcRef::gen_age(gc),
-            Value::Closure { env, .. } => GcRef::gen_age(env),
+            Value::Closure(c) => GcRef::gen_age(&c.env),
             Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::gen_age(gc_ref),
                 crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::gen_age(gc_ref),
@@ -1615,11 +1615,12 @@ impl MagrGC for ArcMagrGC {
             Value::FuncRef(name) => size_of::<Value>() + name.len(),
             // impl-closure-l3-core: Closure carries a heap-allocated env (Vec<Value>);
             // its size is the env's storage plus the function-name string.
-            Value::Closure { env, fn_name } => {
+            Value::Closure(c) => {
                 size_of::<Value>()
+                    + size_of::<crate::metadata::ClosureData>()
                     + size_of::<Vec<Value>>()
-                    + env.borrow().capacity() * size_of::<Value>()
-                    + fn_name.capacity()
+                    + c.env.borrow().capacity() * size_of::<Value>()
+                    + c.fn_name.capacity()
             }
             // impl-closure-l3-escape-stack: StackClosure 的 env 在创建 frame 的
             // env_arena 中，由 frame 拥有；本 Value 自身只携带 idx + fn_name。
@@ -1652,8 +1653,8 @@ impl MagrGC for ArcMagrGC {
             // impl-closure-l3-core: a closure's env owns Value slots that may
             // contain Object/Array refs; scan them so reachable closures keep
             // their captured objects alive.
-            Value::Closure { env, .. } => {
-                let arr = env.borrow();
+            Value::Closure(c) => {
+                let arr = c.env.borrow();
                 for elem in arr.iter() { visitor(elem); }
             }
             // Spec impl-ref-out-in-runtime: Ref::Array / Ref::Field 持 GcRef，
@@ -1775,6 +1776,11 @@ impl MagrGC for ArcMagrGC {
                 // drain-empty-check and handshake-acquire are now safely
                 // captured in mark_queue.
                 self.drain_mark_queue();
+                #[cfg(debug_assertions)]
+                {
+                    let after_p5 = self.mark_queue.lock().len();
+                    assert_eq!(after_p5, 0, "BUG: mark_queue not empty after Phase 5 drain ({after_p5} items)");
+                }
 
                 // Phase 6: STW sweep (mutators still parked).
                 let freed_bytes = self.sweep_phase();
@@ -1790,10 +1796,13 @@ impl MagrGC for ArcMagrGC {
                     kind: GcKind::CycleCollector, freed_bytes, pause_us,
                 });
 
-                // pause Drop releases the world.
-                drop(pause);
+                // Validate heap invariants while world is still stopped
+                // (before pause Drop wakes workers and write-barriers resume).
                 #[cfg(debug_assertions)]
                 self.debug_validate_invariants();
+
+                // pause Drop releases the world.
+                drop(pause);
             }
             super::GcMode::GenerationalMarkSweep => {
                 // add-generational-gc P3 (2026-05-22): minor + escalation.
