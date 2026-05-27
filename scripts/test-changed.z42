@@ -1,0 +1,462 @@
+// port-test-changed (2026-05-27): test-changed.sh → z42 self-host.
+//
+// Inspect uncommitted git changes, map each file to a coarse test command,
+// dedupe, and run the union in order. Mirrors docs/design/testing/testing.md
+// "增量测试" mapping. Same semantics as the bash version:
+//   - base ref defaults to HEAD; env Z42_TEST_CHANGED_BASE or argv[0] override
+//   - --dry-run prints plan but doesn't execute
+//   - first failing command short-circuits the remainder
+//
+// Bash entry point: scripts/test-changed.sh — bootstraps compiler + VM,
+// then exec's the z42 script. Args + base resolution happen here in z42.
+namespace Z42TestChangedScript;
+
+using Std;
+using Std.IO;
+
+void Main() {
+    // ── Resolve base ref + dry-run from env vars (see bash wrapper) ──────
+    string base_ = _envOpt("Z42_TEST_CHANGED_BASE", "HEAD");
+    bool dryRun = _envOpt("Z42_TEST_CHANGED_DRY_RUN", "0") == "1";
+
+    if (!_isInGitRepo()) {
+        ConsoleError.WriteLine("[test-changed] error: not a git repository");
+        Environment.Exit(2);
+        return;
+    }
+
+    Console.WriteLine("[test-changed] base = " + base_);
+
+    // ── Collect changed files ────────────────────────────────────────────
+    string tracked   = _gitOutput(new string[]{ "diff", "--name-only", base_, "--" });
+    string untracked = _gitOutput(new string[]{ "ls-files", "--others", "--exclude-standard" });
+    string[] changed = _dedupeNonEmpty(_splitLines(tracked + "\n" + untracked));
+
+    if (changed.Length == 0) {
+        Console.WriteLine("[test-changed] no changed files; nothing to run");
+        return;
+    }
+
+    Console.WriteLine("[test-changed] changed files (" + changed.Length.ToString() + "):");
+    int li = 0;
+    while (li < changed.Length) {
+        Console.WriteLine("  " + changed[li]);
+        li = li + 1;
+    }
+
+    // ── Map each file → test command ─────────────────────────────────────
+    string[] plan = new string[8];
+    int      planCount = 0;
+    bool needsFull = false;
+    bool touchedAny = false;
+    int i = 0;
+    while (i < changed.Length) {
+        string f = changed[i];
+        _MapResult m = _mapFile(f);
+        if (m.needsFull) {
+            needsFull = true;
+            touchedAny = true;
+        } else if (m.touchedAny) {
+            touchedAny = true;
+            int ci = 0;
+            while (ci < m.commands.Length) {
+                if (m.commands[ci].Length > 0
+                    && !_contains(plan, planCount, m.commands[ci])) {
+                    plan = _append(plan, planCount, m.commands[ci]);
+                    planCount = planCount + 1;
+                }
+                ci = ci + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    if (needsFull) {
+        plan = new string[1];
+        plan[0] = "just test";
+        planCount = 1;
+    }
+
+    if (planCount == 0) {
+        if (!touchedAny) {
+            Console.WriteLine(
+                "[test-changed] only documentation / spec / config touched; no tests to run");
+        } else {
+            Console.WriteLine(
+                "[test-changed] no test commands mapped (changes don't affect any test scope)");
+        }
+        return;
+    }
+
+    // ── Plan output ──────────────────────────────────────────────────────
+    Console.WriteLine("[test-changed] plan:");
+    int pi = 0;
+    while (pi < planCount) {
+        Console.WriteLine("  → " + plan[pi]);
+        pi = pi + 1;
+    }
+
+    if (dryRun) {
+        Console.WriteLine("[test-changed] --dry-run: not executing");
+        return;
+    }
+
+    // ── Execution ────────────────────────────────────────────────────────
+    Console.WriteLine("[test-changed] running...");
+    Console.WriteLine("");
+
+    int exitCode = 0;
+    pi = 0;
+    while (pi < planCount) {
+        string cmd = plan[pi];
+        Console.WriteLine("──── " + cmd + " ────");
+        ProcessResult r;
+        try {
+            r = new Process("bash")
+                .Arg("-c").Arg(cmd)
+                .Stdout(Stdio.Inherit())
+                .Stderr(Stdio.Inherit())
+                .Run();
+        } catch (Exception e) {
+            ConsoleError.WriteLine("[test-changed] spawn failed: " + e.Message);
+            Environment.Exit(2);
+            return;
+        }
+        if (r.ExitCode != 0) {
+            exitCode = r.ExitCode;
+            Console.WriteLine("[test-changed] command failed: " + cmd
+                + "  (exit " + exitCode.ToString() + ")");
+            break;
+        }
+        Console.WriteLine("");
+        pi = pi + 1;
+    }
+
+    if (exitCode == 0) {
+        Console.WriteLine("[test-changed] result: ok");
+    }
+    Environment.Exit(exitCode);
+}
+
+// ── Mapping ──────────────────────────────────────────────────────────────
+
+class _MapResult {
+    public string[] commands;
+    public bool needsFull;
+    public bool touchedAny;
+
+    public _MapResult() {
+        this.commands = new string[0];
+        this.needsFull = false;
+        this.touchedAny = false;
+    }
+}
+
+_MapResult _mapFile(string f) {
+    var r = new _MapResult();
+
+    // Docs / spec / claude state — no tests.
+    if (_endsWith(f, ".md")
+        || _startsWith(f, "docs/")
+        || _startsWith(f, ".claude/")
+        || f == ".gitignore"
+        || f == ".gitattributes"
+        || _startsWithPrefix(f, "LICENSE")
+        || _startsWithPrefix(f, "README")) {
+        return r;
+    }
+
+    // Stdlib library.
+    if (_startsWith(f, "src/libraries/")) {
+        string lib = _segment(f, 2);
+        if (_containsSlash(f, "/src/")) {
+            r.commands = new string[2];
+            r.commands[0] = "just test-stdlib " + lib;
+            r.commands[1] = "just test-vm";
+            r.touchedAny = true;
+            return r;
+        }
+        if (_containsSlash(f, "/tests/")) {
+            r.commands = new string[1];
+            r.commands[0] = "just test-stdlib " + lib;
+            r.touchedAny = true;
+            return r;
+        }
+        if (_endsWith(f, ".toml")) {
+            r.commands = new string[1];
+            r.commands[0] = "just test-stdlib " + lib;
+            r.touchedAny = true;
+            return r;
+        }
+        // Catch-all (workspace.toml at root, README inside lib root, etc.)
+        return r;
+    }
+
+    // Runtime (Rust VM).
+    if (_startsWith(f, "src/runtime/src/")
+        || f == "src/runtime/Cargo.toml"
+        || f == "src/runtime/Cargo.lock"
+        || f == "src/runtime/build.rs") {
+        r.commands = new string[2];
+        r.commands[0] = "cargo test --manifest-path src/runtime/Cargo.toml";
+        r.commands[1] = "just test-vm";
+        r.touchedAny = true;
+        return r;
+    }
+    if (_startsWith(f, "src/runtime/tests/")) {
+        r.commands = new string[1];
+        r.commands[0] = "cargo test --manifest-path src/runtime/Cargo.toml";
+        r.touchedAny = true;
+        return r;
+    }
+    if (_startsWith(f, "src/tests/cross-zpkg/")) {
+        r.commands = new string[1];
+        r.commands[0] = "just test-cross-zpkg";
+        r.touchedAny = true;
+        return r;
+    }
+    if (_startsWith(f, "src/tests/")) {
+        r.commands = new string[1];
+        r.commands[0] = "just test-vm";
+        r.touchedAny = true;
+        return r;
+    }
+
+    // C# compiler.
+    if (_startsWith(f, "src/compiler/")) {
+        r.commands = new string[2];
+        r.commands[0] = "just test-compiler";
+        r.commands[1] = "just test-vm";
+        r.touchedAny = true;
+        return r;
+    }
+
+    // Toolchain.
+    if (_startsWith(f, "src/toolchain/")) {
+        r.commands = new string[2];
+        r.commands[0] = "cargo test --manifest-path src/toolchain/test-runner/Cargo.toml";
+        r.commands[1] = "just test-stdlib";
+        r.touchedAny = true;
+        return r;
+    }
+
+    // Test infrastructure scripts.
+    if (f == "scripts/test-vm.sh" || f == "scripts/regen-golden-tests.sh") {
+        r.commands = new string[1];
+        r.commands[0] = "just test-vm";
+        r.touchedAny = true;
+        return r;
+    }
+    if (f == "scripts/test-stdlib.sh" || f == "scripts/build-stdlib.sh") {
+        r.commands = new string[1];
+        r.commands[0] = "just test-stdlib";
+        r.touchedAny = true;
+        return r;
+    }
+    if (f == "scripts/test-cross-zpkg.sh") {
+        r.commands = new string[1];
+        r.commands[0] = "just test-cross-zpkg";
+        r.touchedAny = true;
+        return r;
+    }
+
+    // justfile, top-level config → full sweep.
+    if (f == "justfile" || _endsWith(f, ".workspace.toml")) {
+        r.needsFull = true;
+        r.touchedAny = true;
+        return r;
+    }
+
+    // Anything else under src/ → full sweep (defensive).
+    if (_startsWith(f, "src/")) {
+        r.needsFull = true;
+        r.touchedAny = true;
+        return r;
+    }
+
+    // Examples / artifacts / bench — no test impact.
+    if (_startsWith(f, "examples/")
+        || _startsWith(f, "artifacts/")
+        || _startsWith(f, "bench/")) {
+        return r;
+    }
+
+    // Unknown root-level file → full sweep (safe default).
+    r.needsFull = true;
+    r.touchedAny = true;
+    return r;
+}
+
+// ── Git helpers ──────────────────────────────────────────────────────────
+
+bool _isInGitRepo() {
+    try {
+        ProcessResult r = new Process("git")
+            .Arg("rev-parse").Arg("--is-inside-work-tree")
+            .Stdout(Stdio.Null()).Stderr(Stdio.Null())
+            .Run();
+        return r.ExitCode == 0;
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+string _gitOutput(string[] args) {
+    try {
+        ProcessResult r = new Process("git")
+            .Args(args)
+            .Stderr(Stdio.Null())
+            .Run();
+        if (r.ExitCode != 0) return "";
+        return r.Stdout;
+    } catch (Exception e) {
+        return "";
+    }
+}
+
+// ── String / array helpers ───────────────────────────────────────────────
+
+string _envOpt(string name, string fallback) {
+    string? v = Environment.GetEnvironmentVariable(name);
+    if (v == null) return fallback;
+    string nonNull = v ?? "";
+    if (nonNull.Length == 0) return fallback;
+    return nonNull;
+}
+
+bool _startsWith(string s, string prefix) {
+    if (s.Length < prefix.Length) return false;
+    int i = 0;
+    while (i < prefix.Length) {
+        if (s.CharAt(i) != prefix.CharAt(i)) return false;
+        i = i + 1;
+    }
+    return true;
+}
+
+// Allow either exact "LICENSE" or "LICENSE.md" / "LICENSE-MIT" style.
+bool _startsWithPrefix(string s, string prefix) {
+    return _startsWith(s, prefix);
+}
+
+bool _endsWith(string s, string suffix) {
+    if (s.Length < suffix.Length) return false;
+    int off = s.Length - suffix.Length;
+    int i = 0;
+    while (i < suffix.Length) {
+        if (s.CharAt(off + i) != suffix.CharAt(i)) return false;
+        i = i + 1;
+    }
+    return true;
+}
+
+bool _containsSlash(string s, string needle) {
+    int i = 0;
+    int limit = s.Length - needle.Length;
+    while (i <= limit) {
+        bool match = true;
+        int j = 0;
+        while (j < needle.Length) {
+            if (s.CharAt(i + j) != needle.CharAt(j)) { match = false; break; }
+            j = j + 1;
+        }
+        if (match) return true;
+        i = i + 1;
+    }
+    return false;
+}
+
+// Return the n-th path segment (0-based; '/'-split).
+string _segment(string path, int n) {
+    int idx = 0;
+    int start = 0;
+    int i = 0;
+    while (i <= path.Length) {
+        if (i == path.Length || path.CharAt(i) == '/') {
+            if (idx == n) {
+                return path.Substring(start, i - start);
+            }
+            idx = idx + 1;
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+string[] _splitLines(string s) {
+    string[] result = new string[8];
+    int n = 0;
+    int start = 0;
+    int i = 0;
+    while (i <= s.Length) {
+        if (i == s.Length || s.CharAt(i) == '\n') {
+            if (i > start) {
+                result = _append(result, n, s.Substring(start, i - start));
+                n = n + 1;
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    string[] tight = new string[n];
+    int t = 0;
+    while (t < n) { tight[t] = result[t]; t = t + 1; }
+    return tight;
+}
+
+string[] _dedupeNonEmpty(string[] xs) {
+    string[] result = new string[xs.Length];
+    int n = 0;
+    int i = 0;
+    while (i < xs.Length) {
+        if (xs[i].Length > 0 && !_contains(result, n, xs[i])) {
+            result[n] = xs[i];
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    _sortStrings(result, n);
+    string[] tight = new string[n];
+    int t = 0;
+    while (t < n) { tight[t] = result[t]; t = t + 1; }
+    return tight;
+}
+
+bool _contains(string[] arr, int count, string v) {
+    int i = 0;
+    while (i < count) {
+        if (arr[i] == v) return true;
+        i = i + 1;
+    }
+    return false;
+}
+
+void _sortStrings(string[] arr, int count) {
+    int i = 1;
+    while (i < count) {
+        string key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && key.CompareTo(arr[j]) < 0) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+}
+
+string[] _append(string[] arr, int count, string v) {
+    if (count < arr.Length) {
+        arr[count] = v;
+        return arr;
+    }
+    int newCap = arr.Length * 2;
+    if (newCap < 4) { newCap = 4; }
+    string[] bigger = new string[newCap];
+    int i = 0;
+    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+    bigger[count] = v;
+    return bigger;
+}
+
