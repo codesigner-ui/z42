@@ -72,6 +72,17 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- RSA (RFC 8017 / PKCS#1 v2.2) — `Std.Crypto.Rsa` (add-rsa, 2026-05-28)
+  - `RsaPublicKey(n, e)` / `RsaPrivateKey(n, e, d)` value types holding raw BigInt modulus + exponents
+  - `RsaPrivateKey.GetPublicKey() -> RsaPublicKey` — derives the matching public half
+  - `Rsa.SignPkcs1v15Sha256(priv, message) -> byte[k]` — RSASSA-PKCS1-v1_5 signing with SHA-256 + standard DigestInfo DER prefix (RFC 8017 §9.2); deterministic
+  - `Rsa.VerifyPkcs1v15Sha256(pub, message, signature) -> bool` — constant-time encoding comparison; never throws on bad signature
+  - `Rsa.RawPublicOp(pub, message) -> byte[k]` / `Rsa.RawPrivateOp(priv, ciphertext) -> byte[k]` — raw RSAEP / RSADP modular exponentiation (no padding; for protocol interop only — use AEAD primitives for actual encryption)
+  - Built atop `BigInt.ModPow` (square-and-multiply ladder) + `BigInt.ModInverse` (extended-Euclidean) — no new field arithmetic needed
+  - Use cases: JWT RS256 verification, x509 / PKI signature checks, S/MIME, JWS, legacy protocol interop
+  - **Out of scope (deferred)**: DER/PEM/PKCS#1/PKCS#8 key parsing (`rsa-future-key-parsing`), RSA-OAEP (`rsa-future-oaep`), RSA-PSS (`rsa-future-pss`), SHA-1/384/512 sign/verify variants (`rsa-future-other-hashes`), CRT decrypt fast path (`rsa-future-crt`), blinding (`rsa-future-blinding`)
+  - Performance: RSA-2048 sign ~2-5 s on pure-script interp (2048-bit exponent ModPow); verify is fast (e=65537 has 17 bits → 17 modmuls). Bulk signing wants the cdylib follow-up
+
 - Ed25519 signature (RFC 8032) — `Std.Crypto.Ed25519` (add-ed25519, 2026-05-28)
   - `GeneratePublicKey(byte[32] secretKey) -> byte[32]` — derives compressed public key from secret
   - `Sign(byte[32] secretKey, byte[] message) -> byte[64]` — `R || S` per §5.1.6

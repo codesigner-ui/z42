@@ -1,0 +1,144 @@
+// add-rsa (2026-05-28): RSA test vectors (RSASSA-PKCS1-v1_5 sign / verify
+// with SHA-256). Tests use a small RSA-512 key derived from hardcoded
+// primes — sufficient for the PKCS#1 + SHA-256 padding floor (k ≥ 62
+// bytes ⇒ modulus ≥ 496 bits) and fast enough for the interpreted
+// stdlib test runner.
+namespace Z42CryptoRsaVectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+using Std.Numerics;
+
+// ── Test key fixture ────────────────────────────────────────────────────
+//
+// Build a 507-bit RSA test key from two well-known cryptographic primes:
+//   p = 2^255 - 19   (the Curve25519 field prime, RFC 7748)
+//   q = 2^252 + 27742317777372353535851937790883648493
+//       (the Ed25519 group order ℓ, RFC 8032)
+// Both are universally verified primes, so we sidestep needing to run
+// NextPrime in the test setup (which would be slow in pure-script
+// interpreter).
+//
+// n is 507 bits — comfortably above the SHA-256 PKCS#1 v1.5 floor (496
+// bits = 19 DigestInfo + 32 SHA-256 + 11 padding overhead).
+
+static RsaPrivateKey _testKey() {
+    BigInt p = BigInt.One.ShiftLeft(255).Subtract(new BigInt(19L));
+    BigInt q = BigInt.One.ShiftLeft(252).Add(
+        BigInt.Parse("27742317777372353535851937790883648493"));
+    BigInt n = p.Multiply(q);
+    BigInt e = new BigInt(65537L);
+    BigInt phi = p.Subtract(BigInt.One).Multiply(q.Subtract(BigInt.One));
+    BigInt d = e.ModInverse(phi);
+    return new RsaPrivateKey(n, e, d);
+}
+
+// ── Sign / verify round trip ────────────────────────────────────────────
+
+[Test]
+void test_rsa_pkcs1_sign_verify_round_trip() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg = Utf8.GetBytes("Hello, RSA world!");
+    byte[] sig = Rsa.SignPkcs1v15Sha256(priv, msg);
+    // Signature length must equal modulus byte length (64 for RSA-512).
+    Assert.Equal(64, sig.Length);
+    Assert.True(Rsa.VerifyPkcs1v15Sha256(pub, msg, sig));
+}
+
+[Test]
+void test_rsa_pkcs1_sign_is_deterministic() {
+    // PKCS#1 v1.5 signatures are deterministic (no randomness in EMSA
+    // padding) — signing the same message twice must yield identical
+    // bytes. PSS signatures would differ; that's the key API contrast.
+    RsaPrivateKey priv = _testKey();
+    byte[] msg = Utf8.GetBytes("deterministic-msg");
+    byte[] sig1 = Rsa.SignPkcs1v15Sha256(priv, msg);
+    byte[] sig2 = Rsa.SignPkcs1v15Sha256(priv, msg);
+    Assert.Equal(Hex.Encode(sig1), Hex.Encode(sig2));
+}
+
+[Test]
+void test_rsa_pkcs1_verify_rejects_tampered_signature() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg = Utf8.GetBytes("payload");
+    byte[] sig = Rsa.SignPkcs1v15Sha256(priv, msg);
+    sig[0] = (byte)((int)sig[0] ^ 0x01);
+    Assert.True(!Rsa.VerifyPkcs1v15Sha256(pub, msg, sig));
+}
+
+[Test]
+void test_rsa_pkcs1_verify_rejects_tampered_message() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg = Utf8.GetBytes("original");
+    byte[] sig = Rsa.SignPkcs1v15Sha256(priv, msg);
+    byte[] tamperedMsg = Utf8.GetBytes("originaL");  // last byte changed
+    Assert.True(!Rsa.VerifyPkcs1v15Sha256(pub, tamperedMsg, sig));
+}
+
+[Test]
+void test_rsa_pkcs1_verify_rejects_wrong_length_signature() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg = Utf8.GetBytes("msg");
+    byte[] short_ = new byte[63];   // one byte shorter than k
+    Assert.True(!Rsa.VerifyPkcs1v15Sha256(pub, msg, short_));
+}
+
+// ── Raw modular exponentiation (RSAEP / RSADP) ──────────────────────────
+
+[Test]
+void test_rsa_raw_public_private_round_trip() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    // Choose a message smaller than the modulus. Use 32 zero bytes + a
+    // 32-byte payload (so byte 0 is 0 and the value is definitely < n).
+    byte[] message = new byte[64];
+    int i = 0;
+    while (i < 32) { message[32 + i] = (byte)(i + 1); i = i + 1; }
+    byte[] encrypted = Rsa.RawPublicOp(pub, message);
+    byte[] decrypted = Rsa.RawPrivateOp(priv, encrypted);
+    Assert.Equal(Hex.Encode(message), Hex.Encode(decrypted));
+}
+
+[Test]
+void test_rsa_raw_rejects_message_geq_modulus() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    // n is 64 bytes; build a 64-byte representative that exceeds n by
+    // setting all bytes to 0xFF (the maximum 64-byte BE value).
+    byte[] tooLarge = new byte[64];
+    int i = 0;
+    while (i < 64) { tooLarge[i] = (byte)0xFF; i = i + 1; }
+    bool threw = false;
+    try { Rsa.RawPublicOp(pub, tooLarge); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── PKCS#1 v1.5 padding ground-truth check ──────────────────────────────
+//
+// Verify the EMSA-PKCS1-v1_5 encoding indirectly via signature shape:
+//   - Signature byte 0 = high byte of (EM^d mod n) which by EM design has
+//     leading 0x00 0x01 — but after mod-exp the high byte can be anything.
+//   - More usefully: verify(pub, msg, sig) succeeding for an external
+//     signature would prove the encoding matches. Without an external
+//     vector here we instead check that the verifier rejects an
+//     incorrectly-padded payload (raw modular exponentiation of garbage).
+
+[Test]
+void test_rsa_verify_rejects_random_garbage_as_signature() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg = Utf8.GetBytes("real-message");
+    // 64 bytes of pseudo-random — astronomically unlikely to form a
+    // valid PKCS#1-padded encoding under any RSA key.
+    byte[] garbage = new byte[64];
+    int i = 0;
+    while (i < 64) { garbage[i] = (byte)((i * 37 + 11) & 0xFF); i = i + 1; }
+    Assert.True(!Rsa.VerifyPkcs1v15Sha256(pub, msg, garbage));
+}

@@ -1,0 +1,214 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+using Std.Numerics;
+
+// add-rsa (2026-05-28): RSA primitive (RFC 8017 / PKCS#1 v2.2).
+//
+// Pure-script over `Std.Numerics.BigInt.ModPow` (which uses Montgomery's
+// binary square-and-multiply ladder — the same `ModPow` that already
+// covers `bigint-future-modpow`).
+//
+// v0 scope:
+//   - RsaPublicKey / RsaPrivateKey value types (raw `n` + `e` / `d`)
+//   - RSASSA-PKCS1-v1_5 sign + verify with SHA-256 (RFC 8017 §8.2)
+//   - Encrypt-with-public (raw modular exponentiation; for full RSAES-PKCS1
+//     callers should use the AEAD primitives instead)
+//
+// Out of scope (deferred):
+//   - DER / PEM / PKCS#1 / PKCS#8 key parsing — callers convert externally
+//     and pass raw `n`/`e`/`d` BigInts (via `Hex.Decode` + `BigInt.Parse`)
+//   - RSA-OAEP encryption padding (`rsa-future-oaep`)
+//   - RSA-PSS signature padding (`rsa-future-pss`)
+//   - SHA-1 / SHA-384 / SHA-512 sign/verify variants (`rsa-future-other-hashes`)
+//   - CRT decrypt fast path using p, q, dp, dq, qInv (`rsa-future-crt`)
+//   - Constant-time RSA blinding (`rsa-future-blinding`)
+//
+// Performance note: pure-script RSA-2048 sign is ~2-5 seconds (2048-bit
+// exponent ModPow); verify is fast (e=65537 has only 17 bits → 17
+// modular multiplications). Adequate for low-rate JWT verification /
+// per-request signature checks. Bulk signing wants the cdylib follow-up.
+
+/// RSA public key (modulus + public exponent).
+public class RsaPublicKey {
+    public BigInt n;
+    public BigInt e;
+    public RsaPublicKey(BigInt n, BigInt e) {
+        this.n = n;
+        this.e = e;
+    }
+}
+
+/// RSA private key (modulus + private exponent). The public exponent
+/// isn't strictly needed for signing but kept here so callers can derive
+/// the matching `RsaPublicKey` without separately tracking `e`.
+public class RsaPrivateKey {
+    public BigInt n;
+    public BigInt e;
+    public BigInt d;
+    public RsaPrivateKey(BigInt n, BigInt e, BigInt d) {
+        this.n = n;
+        this.e = e;
+        this.d = d;
+    }
+
+    public RsaPublicKey GetPublicKey() {
+        return new RsaPublicKey(this.n, this.e);
+    }
+}
+
+public static class Rsa {
+    // ── RSASSA-PKCS1-v1_5 sign / verify with SHA-256 ─────────────────────────
+    //
+    // Signature length = byte length of n (`k = ⌈log256(n)⌉`).
+    // EMSA-PKCS1-v1_5-encoded message:
+    //   EM = 0x00 || 0x01 || PS || 0x00 || T
+    // where:
+    //   - PS = (k - tLen - 3) bytes of 0xFF (≥ 8 by RFC 8017 §9.2.1 step 3)
+    //   - T  = DigestInfo (DER prefix) || H (the SHA-256 hash)
+    //
+    // The DER prefix for SHA-256 is 19 bytes:
+    //   30 31 30 0d 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20
+
+    /// Sign `message` with SHA-256 + PKCS#1 v1.5 padding under
+    /// `privateKey`. Output is exactly `n.byteLength()` bytes.
+    public static byte[] SignPkcs1v15Sha256(RsaPrivateKey privateKey, byte[] message) {
+        byte[] hash = Sha256.Hash(message);
+        int k = Rsa._modulusByteLength(privateKey.n);
+        byte[] em = Rsa._emsaPkcs1v15Sha256(hash, k);
+        BigInt mInt = Rsa._readBEBigInt(em);
+        BigInt sInt = mInt.ModPow(privateKey.d, privateKey.n);
+        return Rsa._writeBEBigInt(sInt, k);
+    }
+
+    /// Verify `signature` against SHA-256(`message`) under `publicKey`.
+    /// Returns `true` iff the signature is valid. NEVER throws on bad
+    /// signature — only on malformed lengths.
+    public static bool VerifyPkcs1v15Sha256(RsaPublicKey publicKey, byte[] message, byte[] signature) {
+        int k = Rsa._modulusByteLength(publicKey.n);
+        if (signature.Length != k) { return false; }
+        BigInt sInt = Rsa._readBEBigInt(signature);
+        // sInt must be < n.
+        if (sInt.CompareTo(publicKey.n) >= 0) { return false; }
+        BigInt mInt = sInt.ModPow(publicKey.e, publicKey.n);
+        byte[] em = Rsa._writeBEBigInt(mInt, k);
+        // Recompute expected encoding and constant-time compare.
+        byte[] hash = Sha256.Hash(message);
+        byte[] expected = Rsa._emsaPkcs1v15Sha256(hash, k);
+        if (expected.Length != em.Length) { return false; }
+        int diff = 0;
+        int i = 0;
+        while (i < em.Length) {
+            diff = diff | ((int)em[i] ^ (int)expected[i]);
+            i = i + 1;
+        }
+        return diff == 0;
+    }
+
+    /// EMSA-PKCS1-v1_5 encoding for a SHA-256 hash. Returns the `k`-byte
+    /// encoded message ready for modular exponentiation.
+    /// Throws `ArgumentException` if `k` is too small for the encoding
+    /// (RFC 8017 §9.2.1 requires `k ≥ tLen + 11`; for SHA-256, k ≥ 62).
+    static byte[] _emsaPkcs1v15Sha256(byte[] hash, int k) {
+        // DigestInfo DER prefix for SHA-256 (RFC 8017 §9.2 note 1).
+        int[] derPrefix = new int[19];
+        derPrefix[0]  = 0x30; derPrefix[1]  = 0x31; derPrefix[2]  = 0x30; derPrefix[3]  = 0x0d;
+        derPrefix[4]  = 0x06; derPrefix[5]  = 0x09; derPrefix[6]  = 0x60; derPrefix[7]  = 0x86;
+        derPrefix[8]  = 0x48; derPrefix[9]  = 0x01; derPrefix[10] = 0x65; derPrefix[11] = 0x03;
+        derPrefix[12] = 0x04; derPrefix[13] = 0x02; derPrefix[14] = 0x01; derPrefix[15] = 0x05;
+        derPrefix[16] = 0x00; derPrefix[17] = 0x04; derPrefix[18] = 0x20;
+        int tLen = 19 + 32;   // DigestInfo prefix + SHA-256 output
+        if (k < tLen + 11) {
+            throw new ArgumentException(
+                "Rsa: modulus too small (k=" + k.ToString() + ", need ≥ " + (tLen + 11).ToString() + " bytes)");
+        }
+        byte[] em = new byte[k];
+        em[0] = (byte)0x00;
+        em[1] = (byte)0x01;
+        // PS = (k - tLen - 3) bytes of 0xFF.
+        int psLen = k - tLen - 3;
+        int i = 0;
+        while (i < psLen) { em[2 + i] = (byte)0xFF; i = i + 1; }
+        em[2 + psLen] = (byte)0x00;
+        // T = DigestInfo prefix || hash.
+        int off = 3 + psLen;
+        int j = 0;
+        while (j < 19) { em[off + j] = (byte)derPrefix[j]; j = j + 1; }
+        off = off + 19;
+        int h = 0;
+        while (h < 32) { em[off + h] = hash[h]; h = h + 1; }
+        return em;
+    }
+
+    // ── Raw public-key operation (RSAEP / RSAVP1) ────────────────────────────
+    //
+    // For full RSAES-PKCS1 encryption use the AEAD primitives (AES-GCM /
+    // ChaCha20-Poly1305) instead — RSA encryption is mostly a legacy /
+    // interop concern. Exposed here for completeness + protocol interop.
+
+    /// Raw `message^e mod n` modular exponentiation (RSAEP per RFC 8017
+    /// §5.1.1). Input message must be in `[0, n)`. Returns `n.byteLength()`
+    /// bytes. No padding applied — pad-then-call for actual encryption.
+    public static byte[] RawPublicOp(RsaPublicKey publicKey, byte[] message) {
+        int k = Rsa._modulusByteLength(publicKey.n);
+        BigInt mInt = Rsa._readBEBigInt(message);
+        if (mInt.CompareTo(publicKey.n) >= 0) {
+            throw new ArgumentException("Rsa: message representative ≥ modulus");
+        }
+        BigInt cInt = mInt.ModPow(publicKey.e, publicKey.n);
+        return Rsa._writeBEBigInt(cInt, k);
+    }
+
+    /// Raw `ciphertext^d mod n` (RSADP per RFC 8017 §5.1.2). Same input
+    /// constraints as RawPublicOp; no padding stripping.
+    public static byte[] RawPrivateOp(RsaPrivateKey privateKey, byte[] ciphertext) {
+        int k = Rsa._modulusByteLength(privateKey.n);
+        BigInt cInt = Rsa._readBEBigInt(ciphertext);
+        if (cInt.CompareTo(privateKey.n) >= 0) {
+            throw new ArgumentException("Rsa: ciphertext representative ≥ modulus");
+        }
+        BigInt mInt = cInt.ModPow(privateKey.d, privateKey.n);
+        return Rsa._writeBEBigInt(mInt, k);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// Byte length of a non-negative BigInt's big-endian encoding.
+    /// `_modulusByteLength(n) = ⌈BitLength(n) / 8⌉`.
+    static int _modulusByteLength(BigInt n) {
+        int bitLen = n.BitLength();
+        return (bitLen + 7) / 8;
+    }
+
+    /// Read big-endian byte array as a non-negative BigInt.
+    static BigInt _readBEBigInt(byte[] bytes) {
+        BigInt acc = BigInt.Zero;
+        int i = 0;
+        while (i < bytes.Length) {
+            acc = acc.ShiftLeft(8).Add(new BigInt((long)((int)bytes[i] & 0xFF)));
+            i = i + 1;
+        }
+        return acc;
+    }
+
+    /// Write non-negative BigInt as `n`-byte big-endian, zero-padded on
+    /// the left. Throws if the value's natural encoding exceeds `n` bytes.
+    static byte[] _writeBEBigInt(BigInt v, int n) {
+        byte[] out_ = new byte[n];
+        BigInt mask8 = new BigInt(255L);
+        BigInt cur = v;
+        int i = n - 1;
+        while (i >= 0) {
+            BigInt low = cur.And(mask8);
+            out_[i] = (byte)(low.ToInt64() & 0xFFL);
+            cur = cur.ShiftRight(8);
+            i = i - 1;
+        }
+        if (!cur.IsZero()) {
+            throw new ArgumentException(
+                "Rsa: value doesn't fit in " + n.ToString() + " bytes");
+        }
+        return out_;
+    }
+}

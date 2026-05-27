@@ -79,7 +79,7 @@
 | ~~z42.threading~~ | ~~`System.Threading.Thread`~~ | ~~`std::thread`~~ | ~~L2~~ | — | **✅ 已落地 2026-05-20**（add-threading-stdlib + add-sync-primitives 双 spec） |
 | **z42.async** | `Task` + `async/await` + `CancellationToken` | `tokio` / `async-std` | L3 | 部分 native | **L3 async/await 语法**（roadmap L3）；标准库需先有 z42.threading 同步原语 |
 | ~~z42.net K1~~ | ~~`System.Net.Sockets`~~ | ~~`std::net::Tcp*`~~ | ~~L2~~ | — | **✅ K1 已落地 2026-05-24**（add-z42-net）—— TCP-only。UDP / IPAddress / DNS / Timeout / TLS / HTTP / async 走 follow-up specs |
-| **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI | ✅ SHA-1 / SHA-256 / SHA-384 / SHA-512 / SHA3-224/256/384/512 + SHAKE128/256 + Keccak-256/512 (legacy) + BLAKE2b + HMAC for SHA-1/256/384/512 + CSPRNG `SecureRandom` + PBKDF2 + HKDF-SHA-256/512 + scrypt + AES-128/192/256 (ECB + CTR + CBC-PKCS7 + GCM) + ChaCha20 + Poly1305 + ChaCha20-Poly1305 AEAD + X25519 ECDH + Ed25519 signing 已落地 (2026-05-24 → 2026-05-28)；hw-accel / non-96-bit-IV-GCM / Argon2 / BLAKE2s / BLAKE3 留 follow-up |
+| **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI | ✅ SHA-1 / SHA-256 / SHA-384 / SHA-512 / SHA3-224/256/384/512 + SHAKE128/256 + Keccak-256/512 (legacy) + BLAKE2b + HMAC for SHA-1/256/384/512 + CSPRNG `SecureRandom` + PBKDF2 + HKDF-SHA-256/512 + scrypt + AES-128/192/256 (ECB + CTR + CBC-PKCS7 + GCM) + ChaCha20 + Poly1305 + ChaCha20-Poly1305 AEAD + X25519 ECDH + Ed25519 signing + RSA (PKCS#1 v1.5 sign/verify + raw RSAEP/RSADP) 已落地 (2026-05-24 → 2026-05-28)；hw-accel / non-96-bit-IV-GCM / RSA-OAEP / RSA-PSS / Argon2 / BLAKE2s / BLAKE3 留 follow-up |
 
 **起步排期**：
 - L2 末 / L3 初：`z42.regex` ✅ → `z42.threading` ✅ → `z42.crypto` (SHA-256 ✅ + HMAC ✅) → `z42.net` K1 ✅
