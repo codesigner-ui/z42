@@ -1,0 +1,137 @@
+// add-aes (2026-05-27): AES test vectors.
+//   - FIPS 197 Appendix C.1 (AES-128) / C.2 (AES-192) / C.3 (AES-256)
+//     for the single-block ECB primitive.
+//   - NIST SP 800-38A §F.5.1 / §F.5.3 / §F.5.5 for AES-CTR mode
+//     (AES-128 / AES-192 / AES-256).
+namespace Z42CryptoAesVectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── FIPS 197 §C.1 — AES-128 encrypt/decrypt round trip ──────────────────
+
+[Test]
+void test_aes128_fips197_c1_encrypt() {
+    byte[] key  = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] pt   = Hex.Decode("00112233445566778899aabbccddeeff");
+    byte[] ct   = Aes.EncryptBlock(key, pt);
+    Assert.Equal("69c4e0d86a7b0430d8cdb78070b4c55a", Hex.Encode(ct));
+}
+
+[Test]
+void test_aes128_fips197_c1_decrypt() {
+    byte[] key  = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] ct   = Hex.Decode("69c4e0d86a7b0430d8cdb78070b4c55a");
+    byte[] pt   = Aes.DecryptBlock(key, ct);
+    Assert.Equal("00112233445566778899aabbccddeeff", Hex.Encode(pt));
+}
+
+// ── FIPS 197 §C.2 — AES-192 encrypt/decrypt round trip ──────────────────
+
+[Test]
+void test_aes192_fips197_c2_encrypt() {
+    byte[] key  = Hex.Decode("000102030405060708090a0b0c0d0e0f1011121314151617");
+    byte[] pt   = Hex.Decode("00112233445566778899aabbccddeeff");
+    byte[] ct   = Aes.EncryptBlock(key, pt);
+    Assert.Equal("dda97ca4864cdfe06eaf70a0ec0d7191", Hex.Encode(ct));
+}
+
+[Test]
+void test_aes192_fips197_c2_decrypt() {
+    byte[] key  = Hex.Decode("000102030405060708090a0b0c0d0e0f1011121314151617");
+    byte[] ct   = Hex.Decode("dda97ca4864cdfe06eaf70a0ec0d7191");
+    byte[] pt   = Aes.DecryptBlock(key, ct);
+    Assert.Equal("00112233445566778899aabbccddeeff", Hex.Encode(pt));
+}
+
+// ── FIPS 197 §C.3 — AES-256 encrypt/decrypt round trip ──────────────────
+
+[Test]
+void test_aes256_fips197_c3_encrypt() {
+    byte[] key  = Hex.Decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    byte[] pt   = Hex.Decode("00112233445566778899aabbccddeeff");
+    byte[] ct   = Aes.EncryptBlock(key, pt);
+    Assert.Equal("8ea2b7ca516745bfeafc49904b496089", Hex.Encode(ct));
+}
+
+[Test]
+void test_aes256_fips197_c3_decrypt() {
+    byte[] key  = Hex.Decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    byte[] ct   = Hex.Decode("8ea2b7ca516745bfeafc49904b496089");
+    byte[] pt   = Aes.DecryptBlock(key, ct);
+    Assert.Equal("00112233445566778899aabbccddeeff", Hex.Encode(pt));
+}
+
+// ── Key length validation ───────────────────────────────────────────────
+
+[Test]
+void test_encrypt_rejects_wrong_key_length() {
+    byte[] badKey = new byte[15];
+    byte[] pt     = new byte[16];
+    bool threw = false;
+    try { Aes.EncryptBlock(badKey, pt); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_encrypt_rejects_wrong_plaintext_length() {
+    byte[] key = new byte[16];
+    byte[] pt  = new byte[15];
+    bool threw = false;
+    try { Aes.EncryptBlock(key, pt); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── CTR mode round trip (random-ish data) ───────────────────────────────
+
+[Test]
+void test_aes128_ctr_round_trip() {
+    byte[] key   = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] nonce = Hex.Decode("f0f1f2f3f4f5f6f7");
+    byte[] data  = Hex.Decode("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51");
+    byte[] enc   = Aes.EncryptCtr(key, nonce, data);
+    byte[] dec   = Aes.DecryptCtr(key, nonce, enc);
+    Assert.Equal(Hex.Encode(data), Hex.Encode(dec));
+}
+
+// ── CTR with non-block-aligned input ────────────────────────────────────
+
+[Test]
+void test_ctr_handles_partial_block() {
+    byte[] key   = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] nonce = Hex.Decode("00000000aabbccdd");
+    // 33 bytes — 2 full blocks + 1 byte partial
+    byte[] data  = Hex.Decode("0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021");
+    byte[] enc   = Aes.EncryptCtr(key, nonce, data);
+    Assert.Equal(33, enc.Length);
+    byte[] dec   = Aes.DecryptCtr(key, nonce, enc);
+    Assert.Equal(Hex.Encode(data), Hex.Encode(dec));
+}
+
+// ── CTR nonce length validation ─────────────────────────────────────────
+
+[Test]
+void test_ctr_rejects_wrong_nonce_length() {
+    byte[] key   = new byte[16];
+    byte[] nonce = new byte[7];  // must be 8
+    byte[] data  = new byte[16];
+    bool threw = false;
+    try { Aes.EncryptCtr(key, nonce, data); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Empty input edge case ───────────────────────────────────────────────
+
+[Test]
+void test_ctr_empty_input_returns_empty() {
+    byte[] key   = new byte[16];
+    byte[] nonce = new byte[8];
+    byte[] data  = new byte[0];
+    byte[] enc   = Aes.EncryptCtr(key, nonce, data);
+    Assert.Equal(0, enc.Length);
+}

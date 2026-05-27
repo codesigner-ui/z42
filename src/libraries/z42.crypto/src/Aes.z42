@@ -1,0 +1,434 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-aes (2026-05-27): AES (FIPS 197) — Rijndael 128-bit block, 128 /
+// 192 / 256-bit keys. Pure-script implementation (no FFI), matching the
+// rest of z42.crypto. Tested against FIPS 197 Appendix C vectors +
+// NIST SP 800-38A §F.5.1 CTR-mode vector.
+//
+// v0 scope:
+//   - Single-block encrypt / decrypt (ECB primitive)
+//   - CTR mode (RFC 3686-style: nonce || counter, counter starts at 0)
+//
+// Out of scope (separate follow-ups):
+//   - CBC mode (caller can compose from EncryptBlock + XOR; native CBC
+//     wrapper deferred to `aes-future-cbc`)
+//   - GCM / AEAD (GHASH polynomial mul in pure-script is slow; native
+//     cdylib path deferred to `aes-future-gcm`)
+//   - Key Wrap (RFC 3394)
+//   - HW-accelerated path (AES-NI / ARMv8 Crypto Extensions) — would
+//     require cdylib backend (`aes-future-hw-accel`)
+//
+// Performance note: pure-script AES at z42-interp speeds is fine for
+// low-rate use (token decryption, small-payload AEAD, protocol-message
+// envelopes). Bulk encryption (>1 MB) wants the cdylib follow-up.
+
+public static class Aes {
+    // ── Public API ───────────────────────────────────────────────────────
+
+    /// Encrypt one 16-byte block. `key` is 16, 24, or 32 bytes selecting
+    /// AES-128 / AES-192 / AES-256. Throws `ArgumentException` on
+    /// wrong-size key or non-16-byte plaintext.
+    public static byte[] EncryptBlock(byte[] key, byte[] plaintext) {
+        if (plaintext.Length != 16) {
+            throw new ArgumentException("AES.EncryptBlock: plaintext must be 16 bytes");
+        }
+        int[] roundKeys = Aes._keyExpansion(key);
+        int nr = (roundKeys.Length / 16) - 1;
+        int[] state = Aes._bytesToState(plaintext);
+        Aes._addRoundKey(state, roundKeys, 0);
+        int r = 1;
+        while (r < nr) {
+            Aes._subBytes(state);
+            Aes._shiftRows(state);
+            Aes._mixColumns(state);
+            Aes._addRoundKey(state, roundKeys, r * 16);
+            r = r + 1;
+        }
+        Aes._subBytes(state);
+        Aes._shiftRows(state);
+        Aes._addRoundKey(state, roundKeys, nr * 16);
+        return Aes._stateToBytes(state);
+    }
+
+    /// Decrypt one 16-byte block. Same key sizing as EncryptBlock.
+    public static byte[] DecryptBlock(byte[] key, byte[] ciphertext) {
+        if (ciphertext.Length != 16) {
+            throw new ArgumentException("AES.DecryptBlock: ciphertext must be 16 bytes");
+        }
+        int[] roundKeys = Aes._keyExpansion(key);
+        int nr = (roundKeys.Length / 16) - 1;
+        int[] state = Aes._bytesToState(ciphertext);
+        Aes._addRoundKey(state, roundKeys, nr * 16);
+        int r = nr - 1;
+        while (r > 0) {
+            Aes._invShiftRows(state);
+            Aes._invSubBytes(state);
+            Aes._addRoundKey(state, roundKeys, r * 16);
+            Aes._invMixColumns(state);
+            r = r - 1;
+        }
+        Aes._invShiftRows(state);
+        Aes._invSubBytes(state);
+        Aes._addRoundKey(state, roundKeys, 0);
+        return Aes._stateToBytes(state);
+    }
+
+    /// AES-CTR encrypt/decrypt (the same operation in CTR mode — XOR
+    /// with the keystream).
+    ///
+    /// IV layout: 8-byte nonce || 8-byte big-endian counter starting at 0.
+    /// Each block of plaintext is XOR'd with `AES(key, nonce||counter)`,
+    /// counter increments per block. Total plaintext length ≤ 2^64 × 16
+    /// bytes (i.e. effectively unbounded).
+    ///
+    /// Pass the same `nonce` and `key` for decrypt — the keystream is
+    /// deterministic.
+    public static byte[] EncryptCtr(byte[] key, byte[] nonce, byte[] data) {
+        if (nonce.Length != 8) {
+            throw new ArgumentException("AES.EncryptCtr: nonce must be 8 bytes");
+        }
+        byte[] out_ = new byte[data.Length];
+        byte[] iv = new byte[16];
+        int i = 0;
+        while (i < 8) { iv[i] = nonce[i]; i = i + 1; }
+        // Counter (bytes 8..15) starts at 0.
+        long counter = 0L;
+        int blocks = (data.Length + 15) / 16;
+        int b = 0;
+        while (b < blocks) {
+            // Write counter big-endian into iv[8..15].
+            iv[8]  = (byte)((counter >> 56) & 0xFFL);
+            iv[9]  = (byte)((counter >> 48) & 0xFFL);
+            iv[10] = (byte)((counter >> 40) & 0xFFL);
+            iv[11] = (byte)((counter >> 32) & 0xFFL);
+            iv[12] = (byte)((counter >> 24) & 0xFFL);
+            iv[13] = (byte)((counter >> 16) & 0xFFL);
+            iv[14] = (byte)((counter >> 8)  & 0xFFL);
+            iv[15] = (byte)(counter & 0xFFL);
+            byte[] keystream = Aes.EncryptBlock(key, iv);
+            int off = b * 16;
+            int blockLen = data.Length - off;
+            if (blockLen > 16) { blockLen = 16; }
+            int j = 0;
+            while (j < blockLen) {
+                out_[off + j] = (byte)((int)data[off + j] ^ (int)keystream[j]);
+                j = j + 1;
+            }
+            counter = counter + 1L;
+            b = b + 1;
+        }
+        return out_;
+    }
+
+    /// CTR is symmetric — decrypt is the same as encrypt.
+    public static byte[] DecryptCtr(byte[] key, byte[] nonce, byte[] data) {
+        return Aes.EncryptCtr(key, nonce, data);
+    }
+
+    // ── Key Expansion (FIPS 197 §5.2) ────────────────────────────────────
+
+    /// Returns flat int[] of (Nr+1) * 16 bytes — round key R occupies
+    /// indices [R*16 .. R*16+15]. z42 lacks `int[][]` jagged arrays, so
+    /// we flatten and let callers index by round number.
+    /// Nr = 10 for AES-128, 12 for AES-192, 14 for AES-256.
+    static int[] _keyExpansion(byte[] key) {
+        int nk;
+        int nr;
+        if (key.Length == 16)      { nk = 4;  nr = 10; }
+        else if (key.Length == 24) { nk = 6;  nr = 12; }
+        else if (key.Length == 32) { nk = 8;  nr = 14; }
+        else {
+            throw new ArgumentException(
+                "AES: key length must be 16 / 24 / 32 bytes, got " + key.Length.ToString());
+        }
+
+        // Per FIPS 197: total 4 × (Nr + 1) 32-bit words. We store as
+        // 4-byte rows in a flat int[] (one int per byte) for easy access.
+        int totalWords = 4 * (nr + 1);  // e.g. 44 / 52 / 60
+        int[] w = new int[totalWords * 4];  // flat byte view
+
+        // Copy original key into the first Nk words.
+        int i = 0;
+        while (i < nk * 4) {
+            w[i] = (int)key[i] & 0xFF;
+            i = i + 1;
+        }
+
+        // Round constants (Rcon[1..]) — leading high byte of each Rcon
+        // word; the lower 3 bytes are zero. Computed as powers of 2 in
+        // GF(2^8) per FIPS 197 §5.2.
+        int[] rcon = Aes._rconTable();
+
+        int wordIdx = nk;
+        while (wordIdx < totalWords) {
+            // Take the previous word (4 bytes at offset (wordIdx-1)*4).
+            int p = (wordIdx - 1) * 4;
+            int t0 = w[p];     int t1 = w[p + 1];
+            int t2 = w[p + 2]; int t3 = w[p + 3];
+
+            if (wordIdx % nk == 0) {
+                // RotWord: cyclic left shift by 1 byte.
+                int tmp = t0; t0 = t1; t1 = t2; t2 = t3; t3 = tmp;
+                // SubWord: S-box each byte.
+                int[] sb = Aes._sbox();
+                t0 = sb[t0]; t1 = sb[t1]; t2 = sb[t2]; t3 = sb[t3];
+                // XOR with round constant.
+                t0 = t0 ^ rcon[wordIdx / nk];
+            } else if (nk > 6 && wordIdx % nk == 4) {
+                // AES-256 extra SubWord step every Nk=8 words.
+                int[] sb = Aes._sbox();
+                t0 = sb[t0]; t1 = sb[t1]; t2 = sb[t2]; t3 = sb[t3];
+            }
+
+            // w[wordIdx] = w[wordIdx - nk] XOR t (byte-wise).
+            int q = (wordIdx - nk) * 4;
+            int o = wordIdx * 4;
+            w[o]     = w[q]     ^ t0;
+            w[o + 1] = w[q + 1] ^ t1;
+            w[o + 2] = w[q + 2] ^ t2;
+            w[o + 3] = w[q + 3] ^ t3;
+            wordIdx = wordIdx + 1;
+        }
+
+        // w is already the flat layout (one int per byte) the cipher loop
+        // wants — `w[R*16 + k]` is byte k of round key R.
+        return w;
+    }
+
+    // ── State transforms (FIPS 197 §5.1) ─────────────────────────────────
+
+    /// State is 16 ints (0..255 each), column-major: state[c*4 + r] is
+    /// the byte at row r, column c. Matches FIPS 197's diagram.
+    static int[] _bytesToState(byte[] input) {
+        int[] s = new int[16];
+        int i = 0;
+        while (i < 16) {
+            s[i] = (int)input[i] & 0xFF;
+            i = i + 1;
+        }
+        return s;
+    }
+
+    static byte[] _stateToBytes(int[] state) {
+        byte[] out_ = new byte[16];
+        int i = 0;
+        while (i < 16) { out_[i] = (byte)(state[i] & 0xFF); i = i + 1; }
+        return out_;
+    }
+
+    static void _addRoundKey(int[] state, int[] roundKeys, int off) {
+        int i = 0;
+        while (i < 16) {
+            state[i] = state[i] ^ roundKeys[off + i];
+            i = i + 1;
+        }
+    }
+
+    static void _subBytes(int[] state) {
+        int[] sb = Aes._sbox();
+        int i = 0;
+        while (i < 16) { state[i] = sb[state[i]]; i = i + 1; }
+    }
+
+    static void _invSubBytes(int[] state) {
+        int[] isb = Aes._invSbox();
+        int i = 0;
+        while (i < 16) { state[i] = isb[state[i]]; i = i + 1; }
+    }
+
+    /// ShiftRows: row r is cyclically shifted left by r positions
+    /// (over the 4 columns). FIPS 197 §5.1.2.
+    /// State indexing: state[c*4 + r] is (row r, column c).
+    static void _shiftRows(int[] state) {
+        // Row 1: shift left by 1 → (1,0)←(1,1), (1,1)←(1,2), ...
+        int t = state[0*4 + 1];
+        state[0*4 + 1] = state[1*4 + 1];
+        state[1*4 + 1] = state[2*4 + 1];
+        state[2*4 + 1] = state[3*4 + 1];
+        state[3*4 + 1] = t;
+        // Row 2: shift left by 2 → swap (col0↔col2) and (col1↔col3).
+        t = state[0*4 + 2]; state[0*4 + 2] = state[2*4 + 2]; state[2*4 + 2] = t;
+        t = state[1*4 + 2]; state[1*4 + 2] = state[3*4 + 2]; state[3*4 + 2] = t;
+        // Row 3: shift left by 3 (≡ shift right by 1).
+        t = state[3*4 + 3];
+        state[3*4 + 3] = state[2*4 + 3];
+        state[2*4 + 3] = state[1*4 + 3];
+        state[1*4 + 3] = state[0*4 + 3];
+        state[0*4 + 3] = t;
+    }
+
+    static void _invShiftRows(int[] state) {
+        // Row 1: shift right by 1.
+        int t = state[3*4 + 1];
+        state[3*4 + 1] = state[2*4 + 1];
+        state[2*4 + 1] = state[1*4 + 1];
+        state[1*4 + 1] = state[0*4 + 1];
+        state[0*4 + 1] = t;
+        // Row 2: shift right by 2 ≡ same as forward shift by 2.
+        t = state[0*4 + 2]; state[0*4 + 2] = state[2*4 + 2]; state[2*4 + 2] = t;
+        t = state[1*4 + 2]; state[1*4 + 2] = state[3*4 + 2]; state[3*4 + 2] = t;
+        // Row 3: shift right by 3 (≡ shift left by 1).
+        t = state[0*4 + 3];
+        state[0*4 + 3] = state[1*4 + 3];
+        state[1*4 + 3] = state[2*4 + 3];
+        state[2*4 + 3] = state[3*4 + 3];
+        state[3*4 + 3] = t;
+    }
+
+    /// MixColumns: per column c, multiply the 4-byte vector by the
+    /// matrix [[2,3,1,1],[1,2,3,1],[1,1,2,3],[3,1,1,2]] over GF(2^8).
+    static void _mixColumns(int[] state) {
+        int c = 0;
+        while (c < 4) {
+            int s0 = state[c*4 + 0];
+            int s1 = state[c*4 + 1];
+            int s2 = state[c*4 + 2];
+            int s3 = state[c*4 + 3];
+            state[c*4 + 0] = Aes._xtime(s0) ^ (Aes._xtime(s1) ^ s1) ^ s2 ^ s3;
+            state[c*4 + 1] = s0 ^ Aes._xtime(s1) ^ (Aes._xtime(s2) ^ s2) ^ s3;
+            state[c*4 + 2] = s0 ^ s1 ^ Aes._xtime(s2) ^ (Aes._xtime(s3) ^ s3);
+            state[c*4 + 3] = (Aes._xtime(s0) ^ s0) ^ s1 ^ s2 ^ Aes._xtime(s3);
+            c = c + 1;
+        }
+    }
+
+    /// Inverse MixColumns: matrix [[14,11,13,9],[9,14,11,13],[13,9,14,11],
+    /// [11,13,9,14]] over GF(2^8).
+    static void _invMixColumns(int[] state) {
+        int c = 0;
+        while (c < 4) {
+            int s0 = state[c*4 + 0];
+            int s1 = state[c*4 + 1];
+            int s2 = state[c*4 + 2];
+            int s3 = state[c*4 + 3];
+            state[c*4 + 0] = Aes._gmul(s0, 14) ^ Aes._gmul(s1, 11) ^ Aes._gmul(s2, 13) ^ Aes._gmul(s3, 9);
+            state[c*4 + 1] = Aes._gmul(s0, 9)  ^ Aes._gmul(s1, 14) ^ Aes._gmul(s2, 11) ^ Aes._gmul(s3, 13);
+            state[c*4 + 2] = Aes._gmul(s0, 13) ^ Aes._gmul(s1, 9)  ^ Aes._gmul(s2, 14) ^ Aes._gmul(s3, 11);
+            state[c*4 + 3] = Aes._gmul(s0, 11) ^ Aes._gmul(s1, 13) ^ Aes._gmul(s2, 9)  ^ Aes._gmul(s3, 14);
+            c = c + 1;
+        }
+    }
+
+    // ── GF(2^8) helpers ──────────────────────────────────────────────────
+
+    /// xtime: multiply by 2 in GF(2^8) with reduction by AES polynomial
+    /// x^8 + x^4 + x^3 + x + 1 (0x11B). If high bit set, XOR 0x1B after shift.
+    static int _xtime(int b) {
+        int shifted = (b << 1) & 0xFF;
+        if ((b & 0x80) != 0) { return shifted ^ 0x1B; }
+        return shifted;
+    }
+
+    /// Russian-peasant multiplication in GF(2^8) (FIPS 197 §4.2.1).
+    static int _gmul(int a, int b) {
+        int result = 0;
+        int aa = a;
+        int bb = b;
+        int i = 0;
+        while (i < 8) {
+            if ((bb & 1) != 0) { result = result ^ aa; }
+            aa = Aes._xtime(aa);
+            bb = bb >> 1;
+            i = i + 1;
+        }
+        return result & 0xFF;
+    }
+
+    // ── Tables ───────────────────────────────────────────────────────────
+
+    /// AES S-box (FIPS 197 Table 4).
+    static int[] _sbox() {
+        int[] s = new int[256];
+        // Row 0
+        s[0x00]=0x63; s[0x01]=0x7c; s[0x02]=0x77; s[0x03]=0x7b; s[0x04]=0xf2; s[0x05]=0x6b; s[0x06]=0x6f; s[0x07]=0xc5;
+        s[0x08]=0x30; s[0x09]=0x01; s[0x0a]=0x67; s[0x0b]=0x2b; s[0x0c]=0xfe; s[0x0d]=0xd7; s[0x0e]=0xab; s[0x0f]=0x76;
+        s[0x10]=0xca; s[0x11]=0x82; s[0x12]=0xc9; s[0x13]=0x7d; s[0x14]=0xfa; s[0x15]=0x59; s[0x16]=0x47; s[0x17]=0xf0;
+        s[0x18]=0xad; s[0x19]=0xd4; s[0x1a]=0xa2; s[0x1b]=0xaf; s[0x1c]=0x9c; s[0x1d]=0xa4; s[0x1e]=0x72; s[0x1f]=0xc0;
+        s[0x20]=0xb7; s[0x21]=0xfd; s[0x22]=0x93; s[0x23]=0x26; s[0x24]=0x36; s[0x25]=0x3f; s[0x26]=0xf7; s[0x27]=0xcc;
+        s[0x28]=0x34; s[0x29]=0xa5; s[0x2a]=0xe5; s[0x2b]=0xf1; s[0x2c]=0x71; s[0x2d]=0xd8; s[0x2e]=0x31; s[0x2f]=0x15;
+        s[0x30]=0x04; s[0x31]=0xc7; s[0x32]=0x23; s[0x33]=0xc3; s[0x34]=0x18; s[0x35]=0x96; s[0x36]=0x05; s[0x37]=0x9a;
+        s[0x38]=0x07; s[0x39]=0x12; s[0x3a]=0x80; s[0x3b]=0xe2; s[0x3c]=0xeb; s[0x3d]=0x27; s[0x3e]=0xb2; s[0x3f]=0x75;
+        s[0x40]=0x09; s[0x41]=0x83; s[0x42]=0x2c; s[0x43]=0x1a; s[0x44]=0x1b; s[0x45]=0x6e; s[0x46]=0x5a; s[0x47]=0xa0;
+        s[0x48]=0x52; s[0x49]=0x3b; s[0x4a]=0xd6; s[0x4b]=0xb3; s[0x4c]=0x29; s[0x4d]=0xe3; s[0x4e]=0x2f; s[0x4f]=0x84;
+        s[0x50]=0x53; s[0x51]=0xd1; s[0x52]=0x00; s[0x53]=0xed; s[0x54]=0x20; s[0x55]=0xfc; s[0x56]=0xb1; s[0x57]=0x5b;
+        s[0x58]=0x6a; s[0x59]=0xcb; s[0x5a]=0xbe; s[0x5b]=0x39; s[0x5c]=0x4a; s[0x5d]=0x4c; s[0x5e]=0x58; s[0x5f]=0xcf;
+        s[0x60]=0xd0; s[0x61]=0xef; s[0x62]=0xaa; s[0x63]=0xfb; s[0x64]=0x43; s[0x65]=0x4d; s[0x66]=0x33; s[0x67]=0x85;
+        s[0x68]=0x45; s[0x69]=0xf9; s[0x6a]=0x02; s[0x6b]=0x7f; s[0x6c]=0x50; s[0x6d]=0x3c; s[0x6e]=0x9f; s[0x6f]=0xa8;
+        s[0x70]=0x51; s[0x71]=0xa3; s[0x72]=0x40; s[0x73]=0x8f; s[0x74]=0x92; s[0x75]=0x9d; s[0x76]=0x38; s[0x77]=0xf5;
+        s[0x78]=0xbc; s[0x79]=0xb6; s[0x7a]=0xda; s[0x7b]=0x21; s[0x7c]=0x10; s[0x7d]=0xff; s[0x7e]=0xf3; s[0x7f]=0xd2;
+        s[0x80]=0xcd; s[0x81]=0x0c; s[0x82]=0x13; s[0x83]=0xec; s[0x84]=0x5f; s[0x85]=0x97; s[0x86]=0x44; s[0x87]=0x17;
+        s[0x88]=0xc4; s[0x89]=0xa7; s[0x8a]=0x7e; s[0x8b]=0x3d; s[0x8c]=0x64; s[0x8d]=0x5d; s[0x8e]=0x19; s[0x8f]=0x73;
+        s[0x90]=0x60; s[0x91]=0x81; s[0x92]=0x4f; s[0x93]=0xdc; s[0x94]=0x22; s[0x95]=0x2a; s[0x96]=0x90; s[0x97]=0x88;
+        s[0x98]=0x46; s[0x99]=0xee; s[0x9a]=0xb8; s[0x9b]=0x14; s[0x9c]=0xde; s[0x9d]=0x5e; s[0x9e]=0x0b; s[0x9f]=0xdb;
+        s[0xa0]=0xe0; s[0xa1]=0x32; s[0xa2]=0x3a; s[0xa3]=0x0a; s[0xa4]=0x49; s[0xa5]=0x06; s[0xa6]=0x24; s[0xa7]=0x5c;
+        s[0xa8]=0xc2; s[0xa9]=0xd3; s[0xaa]=0xac; s[0xab]=0x62; s[0xac]=0x91; s[0xad]=0x95; s[0xae]=0xe4; s[0xaf]=0x79;
+        s[0xb0]=0xe7; s[0xb1]=0xc8; s[0xb2]=0x37; s[0xb3]=0x6d; s[0xb4]=0x8d; s[0xb5]=0xd5; s[0xb6]=0x4e; s[0xb7]=0xa9;
+        s[0xb8]=0x6c; s[0xb9]=0x56; s[0xba]=0xf4; s[0xbb]=0xea; s[0xbc]=0x65; s[0xbd]=0x7a; s[0xbe]=0xae; s[0xbf]=0x08;
+        s[0xc0]=0xba; s[0xc1]=0x78; s[0xc2]=0x25; s[0xc3]=0x2e; s[0xc4]=0x1c; s[0xc5]=0xa6; s[0xc6]=0xb4; s[0xc7]=0xc6;
+        s[0xc8]=0xe8; s[0xc9]=0xdd; s[0xca]=0x74; s[0xcb]=0x1f; s[0xcc]=0x4b; s[0xcd]=0xbd; s[0xce]=0x8b; s[0xcf]=0x8a;
+        s[0xd0]=0x70; s[0xd1]=0x3e; s[0xd2]=0xb5; s[0xd3]=0x66; s[0xd4]=0x48; s[0xd5]=0x03; s[0xd6]=0xf6; s[0xd7]=0x0e;
+        s[0xd8]=0x61; s[0xd9]=0x35; s[0xda]=0x57; s[0xdb]=0xb9; s[0xdc]=0x86; s[0xdd]=0xc1; s[0xde]=0x1d; s[0xdf]=0x9e;
+        s[0xe0]=0xe1; s[0xe1]=0xf8; s[0xe2]=0x98; s[0xe3]=0x11; s[0xe4]=0x69; s[0xe5]=0xd9; s[0xe6]=0x8e; s[0xe7]=0x94;
+        s[0xe8]=0x9b; s[0xe9]=0x1e; s[0xea]=0x87; s[0xeb]=0xe9; s[0xec]=0xce; s[0xed]=0x55; s[0xee]=0x28; s[0xef]=0xdf;
+        s[0xf0]=0x8c; s[0xf1]=0xa1; s[0xf2]=0x89; s[0xf3]=0x0d; s[0xf4]=0xbf; s[0xf5]=0xe6; s[0xf6]=0x42; s[0xf7]=0x68;
+        s[0xf8]=0x41; s[0xf9]=0x99; s[0xfa]=0x2d; s[0xfb]=0x0f; s[0xfc]=0xb0; s[0xfd]=0x54; s[0xfe]=0xbb; s[0xff]=0x16;
+        return s;
+    }
+
+    /// Inverse S-box (FIPS 197 Table 6).
+    static int[] _invSbox() {
+        int[] s = new int[256];
+        s[0x00]=0x52; s[0x01]=0x09; s[0x02]=0x6a; s[0x03]=0xd5; s[0x04]=0x30; s[0x05]=0x36; s[0x06]=0xa5; s[0x07]=0x38;
+        s[0x08]=0xbf; s[0x09]=0x40; s[0x0a]=0xa3; s[0x0b]=0x9e; s[0x0c]=0x81; s[0x0d]=0xf3; s[0x0e]=0xd7; s[0x0f]=0xfb;
+        s[0x10]=0x7c; s[0x11]=0xe3; s[0x12]=0x39; s[0x13]=0x82; s[0x14]=0x9b; s[0x15]=0x2f; s[0x16]=0xff; s[0x17]=0x87;
+        s[0x18]=0x34; s[0x19]=0x8e; s[0x1a]=0x43; s[0x1b]=0x44; s[0x1c]=0xc4; s[0x1d]=0xde; s[0x1e]=0xe9; s[0x1f]=0xcb;
+        s[0x20]=0x54; s[0x21]=0x7b; s[0x22]=0x94; s[0x23]=0x32; s[0x24]=0xa6; s[0x25]=0xc2; s[0x26]=0x23; s[0x27]=0x3d;
+        s[0x28]=0xee; s[0x29]=0x4c; s[0x2a]=0x95; s[0x2b]=0x0b; s[0x2c]=0x42; s[0x2d]=0xfa; s[0x2e]=0xc3; s[0x2f]=0x4e;
+        s[0x30]=0x08; s[0x31]=0x2e; s[0x32]=0xa1; s[0x33]=0x66; s[0x34]=0x28; s[0x35]=0xd9; s[0x36]=0x24; s[0x37]=0xb2;
+        s[0x38]=0x76; s[0x39]=0x5b; s[0x3a]=0xa2; s[0x3b]=0x49; s[0x3c]=0x6d; s[0x3d]=0x8b; s[0x3e]=0xd1; s[0x3f]=0x25;
+        s[0x40]=0x72; s[0x41]=0xf8; s[0x42]=0xf6; s[0x43]=0x64; s[0x44]=0x86; s[0x45]=0x68; s[0x46]=0x98; s[0x47]=0x16;
+        s[0x48]=0xd4; s[0x49]=0xa4; s[0x4a]=0x5c; s[0x4b]=0xcc; s[0x4c]=0x5d; s[0x4d]=0x65; s[0x4e]=0xb6; s[0x4f]=0x92;
+        s[0x50]=0x6c; s[0x51]=0x70; s[0x52]=0x48; s[0x53]=0x50; s[0x54]=0xfd; s[0x55]=0xed; s[0x56]=0xb9; s[0x57]=0xda;
+        s[0x58]=0x5e; s[0x59]=0x15; s[0x5a]=0x46; s[0x5b]=0x57; s[0x5c]=0xa7; s[0x5d]=0x8d; s[0x5e]=0x9d; s[0x5f]=0x84;
+        s[0x60]=0x90; s[0x61]=0xd8; s[0x62]=0xab; s[0x63]=0x00; s[0x64]=0x8c; s[0x65]=0xbc; s[0x66]=0xd3; s[0x67]=0x0a;
+        s[0x68]=0xf7; s[0x69]=0xe4; s[0x6a]=0x58; s[0x6b]=0x05; s[0x6c]=0xb8; s[0x6d]=0xb3; s[0x6e]=0x45; s[0x6f]=0x06;
+        s[0x70]=0xd0; s[0x71]=0x2c; s[0x72]=0x1e; s[0x73]=0x8f; s[0x74]=0xca; s[0x75]=0x3f; s[0x76]=0x0f; s[0x77]=0x02;
+        s[0x78]=0xc1; s[0x79]=0xaf; s[0x7a]=0xbd; s[0x7b]=0x03; s[0x7c]=0x01; s[0x7d]=0x13; s[0x7e]=0x8a; s[0x7f]=0x6b;
+        s[0x80]=0x3a; s[0x81]=0x91; s[0x82]=0x11; s[0x83]=0x41; s[0x84]=0x4f; s[0x85]=0x67; s[0x86]=0xdc; s[0x87]=0xea;
+        s[0x88]=0x97; s[0x89]=0xf2; s[0x8a]=0xcf; s[0x8b]=0xce; s[0x8c]=0xf0; s[0x8d]=0xb4; s[0x8e]=0xe6; s[0x8f]=0x73;
+        s[0x90]=0x96; s[0x91]=0xac; s[0x92]=0x74; s[0x93]=0x22; s[0x94]=0xe7; s[0x95]=0xad; s[0x96]=0x35; s[0x97]=0x85;
+        s[0x98]=0xe2; s[0x99]=0xf9; s[0x9a]=0x37; s[0x9b]=0xe8; s[0x9c]=0x1c; s[0x9d]=0x75; s[0x9e]=0xdf; s[0x9f]=0x6e;
+        s[0xa0]=0x47; s[0xa1]=0xf1; s[0xa2]=0x1a; s[0xa3]=0x71; s[0xa4]=0x1d; s[0xa5]=0x29; s[0xa6]=0xc5; s[0xa7]=0x89;
+        s[0xa8]=0x6f; s[0xa9]=0xb7; s[0xaa]=0x62; s[0xab]=0x0e; s[0xac]=0xaa; s[0xad]=0x18; s[0xae]=0xbe; s[0xaf]=0x1b;
+        s[0xb0]=0xfc; s[0xb1]=0x56; s[0xb2]=0x3e; s[0xb3]=0x4b; s[0xb4]=0xc6; s[0xb5]=0xd2; s[0xb6]=0x79; s[0xb7]=0x20;
+        s[0xb8]=0x9a; s[0xb9]=0xdb; s[0xba]=0xc0; s[0xbb]=0xfe; s[0xbc]=0x78; s[0xbd]=0xcd; s[0xbe]=0x5a; s[0xbf]=0xf4;
+        s[0xc0]=0x1f; s[0xc1]=0xdd; s[0xc2]=0xa8; s[0xc3]=0x33; s[0xc4]=0x88; s[0xc5]=0x07; s[0xc6]=0xc7; s[0xc7]=0x31;
+        s[0xc8]=0xb1; s[0xc9]=0x12; s[0xca]=0x10; s[0xcb]=0x59; s[0xcc]=0x27; s[0xcd]=0x80; s[0xce]=0xec; s[0xcf]=0x5f;
+        s[0xd0]=0x60; s[0xd1]=0x51; s[0xd2]=0x7f; s[0xd3]=0xa9; s[0xd4]=0x19; s[0xd5]=0xb5; s[0xd6]=0x4a; s[0xd7]=0x0d;
+        s[0xd8]=0x2d; s[0xd9]=0xe5; s[0xda]=0x7a; s[0xdb]=0x9f; s[0xdc]=0x93; s[0xdd]=0xc9; s[0xde]=0x9c; s[0xdf]=0xef;
+        s[0xe0]=0xa0; s[0xe1]=0xe0; s[0xe2]=0x3b; s[0xe3]=0x4d; s[0xe4]=0xae; s[0xe5]=0x2a; s[0xe6]=0xf5; s[0xe7]=0xb0;
+        s[0xe8]=0xc8; s[0xe9]=0xeb; s[0xea]=0xbb; s[0xeb]=0x3c; s[0xec]=0x83; s[0xed]=0x53; s[0xee]=0x99; s[0xef]=0x61;
+        s[0xf0]=0x17; s[0xf1]=0x2b; s[0xf2]=0x04; s[0xf3]=0x7e; s[0xf4]=0xba; s[0xf5]=0x77; s[0xf6]=0xd6; s[0xf7]=0x26;
+        s[0xf8]=0xe1; s[0xf9]=0x69; s[0xfa]=0x14; s[0xfb]=0x63; s[0xfc]=0x55; s[0xfd]=0x21; s[0xfe]=0x0c; s[0xff]=0x7d;
+        return s;
+    }
+
+    /// Rcon table — high byte of each round constant word.
+    /// rcon[i] = 2^(i-1) in GF(2^8) for i >= 1; rcon[0] unused.
+    static int[] _rconTable() {
+        // For AES-128/192/256, max needed Rcon index is 10 (AES-128 uses
+        // up to rcon[10]). Compute up to 11 to be safe.
+        int[] r = new int[11];
+        r[0] = 0x00;  // unused
+        r[1] = 0x01;
+        int i = 2;
+        while (i < 11) {
+            r[i] = Aes._xtime(r[i - 1]);
+            i = i + 1;
+        }
+        return r;
+    }
+}
