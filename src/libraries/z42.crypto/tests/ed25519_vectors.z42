@@ -1,0 +1,144 @@
+// add-ed25519 (2026-05-28): RFC 8032 §7.1 test vectors for Ed25519.
+namespace Z42CryptoEd25519VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 8032 §7.1 Test 1: empty message ─────────────────────────────────
+// Secret:    9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60
+// Public:    d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a
+// Message:   (empty)
+// Signature: e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b
+
+[Test]
+void test_ed25519_rfc8032_test1_public_key() {
+    byte[] sk = Hex.Decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
+    byte[] pk = Ed25519.GeneratePublicKey(sk);
+    Assert.Equal(
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        Hex.Encode(pk)
+    );
+}
+
+[Test]
+void test_ed25519_rfc8032_test1_sign_empty() {
+    byte[] sk  = Hex.Decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
+    byte[] msg = new byte[0];
+    byte[] sig = Ed25519.Sign(sk, msg);
+    Assert.Equal(
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b",
+        Hex.Encode(sig)
+    );
+}
+
+[Test]
+void test_ed25519_rfc8032_test1_verify() {
+    byte[] pk  = Hex.Decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    byte[] msg = new byte[0];
+    byte[] sig = Hex.Decode("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+    Assert.True(Ed25519.Verify(pk, msg, sig));
+}
+
+// ── RFC 8032 §7.1 Test 2: 1-byte message ────────────────────────────────
+// Secret:    4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb
+// Public:    3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c
+// Message:   72
+// Signature: 92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00
+
+[Test]
+void test_ed25519_rfc8032_test2_public_key() {
+    byte[] sk = Hex.Decode("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb");
+    byte[] pk = Ed25519.GeneratePublicKey(sk);
+    Assert.Equal(
+        "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+        Hex.Encode(pk)
+    );
+}
+
+[Test]
+void test_ed25519_rfc8032_test2_sign() {
+    byte[] sk  = Hex.Decode("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb");
+    byte[] msg = Hex.Decode("72");
+    byte[] sig = Ed25519.Sign(sk, msg);
+    Assert.Equal(
+        "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+        Hex.Encode(sig)
+    );
+}
+
+[Test]
+void test_ed25519_rfc8032_test2_verify() {
+    byte[] pk  = Hex.Decode("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
+    byte[] msg = Hex.Decode("72");
+    byte[] sig = Hex.Decode("92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+    Assert.True(Ed25519.Verify(pk, msg, sig));
+}
+
+// ── RFC 8032 §7.1 Test 3: 2-byte message ────────────────────────────────
+// Secret:    c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7
+// Public:    fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025
+// Message:   af82
+// Signature: 6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a
+
+[Test]
+void test_ed25519_rfc8032_test3_sign() {
+    byte[] sk  = Hex.Decode("c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7");
+    byte[] msg = Hex.Decode("af82");
+    byte[] sig = Ed25519.Sign(sk, msg);
+    Assert.Equal(
+        "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+        Hex.Encode(sig)
+    );
+}
+
+// ── Tampering detection ─────────────────────────────────────────────────
+
+[Test]
+void test_ed25519_rejects_tampered_signature() {
+    byte[] pk  = Hex.Decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    byte[] msg = new byte[0];
+    byte[] sig = Hex.Decode("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+    sig[0] = (byte)((int)sig[0] ^ 0x01);
+    Assert.True(!Ed25519.Verify(pk, msg, sig));
+}
+
+[Test]
+void test_ed25519_rejects_tampered_message() {
+    byte[] pk  = Hex.Decode("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
+    byte[] msg = Hex.Decode("72");
+    byte[] sig = Hex.Decode("92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+    msg[0] = (byte)((int)msg[0] ^ 0x01);
+    Assert.True(!Ed25519.Verify(pk, msg, sig));
+}
+
+[Test]
+void test_ed25519_rejects_wrong_public_key() {
+    byte[] pk  = Hex.Decode("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+    byte[] msg = Hex.Decode("72");
+    byte[] sig = Hex.Decode("92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+    // pk is Test 1's, but signature is from Test 2 — must reject.
+    Assert.True(!Ed25519.Verify(pk, msg, sig));
+}
+
+// ── Length validation ───────────────────────────────────────────────────
+
+[Test]
+void test_ed25519_rejects_wrong_secret_length() {
+    byte[] bad = new byte[31];
+    bool threw = false;
+    try { Ed25519.Sign(bad, new byte[0]); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_ed25519_rejects_wrong_signature_length() {
+    byte[] pk  = new byte[32];
+    byte[] bad = new byte[63];
+    bool threw = false;
+    try { Ed25519.Verify(pk, new byte[0], bad); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}

@@ -72,6 +72,18 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- Ed25519 signature (RFC 8032) — `Std.Crypto.Ed25519` (add-ed25519, 2026-05-28)
+  - `GeneratePublicKey(byte[32] secretKey) -> byte[32]` — derives compressed public key from secret
+  - `Sign(byte[32] secretKey, byte[] message) -> byte[64]` — `R || S` per §5.1.6
+  - `Verify(byte[32] publicKey, byte[] message, byte[64] signature) -> bool` — never throws on bad signature, only on malformed lengths
+  - Twisted Edwards curve `-x² + y² = 1 + d·x²·y²` over GF(2^255-19); curve order ℓ = 2^252 + 27742317777372353535851937790883648493
+  - Extended twisted Edwards point coords `(X, Y, Z, T)` via Hisil et al `add-2008-hwcd-3` / `dbl-2008-hwcd-3` formulas (specialised for a = -1)
+  - Square-root mod p via `a^((p+3)/8)` then adjust by `sqrt(-1) = 2^((p-1)/4)` if needed (works because p ≡ 5 mod 8)
+  - Decode-then-verify (not batch) — fails closed on point-not-on-curve / S ≥ ℓ
+  - SHA-512 already in z42.crypto; Ed25519 uses it for both the secret-key-expansion hash and the per-signature `r` / `k` derivations
+  - Use cases: SSH `ssh-ed25519`, age signing, JWT `EdDSA`, OpenBSD signify, libsodium `crypto_sign`
+  - Verified against RFC 8032 §7.1 Test 1 (empty msg), Test 2 (1-byte msg), Test 3 (2-byte msg)
+
 - X25519 ECDH (RFC 7748) — `Std.Crypto.X25519` (add-x25519, 2026-05-28)
   - `ScalarMult(byte[32] scalar, byte[32] point) -> byte[32]` — Curve25519 Montgomery-ladder scalar multiplication
   - `ScalarMultBase(byte[32] scalar) -> byte[32]` — convenience: scalar × generator (u=9), derives public key from private

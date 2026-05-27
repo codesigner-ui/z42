@@ -1,0 +1,396 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+using Std.Numerics;
+
+// add-ed25519 (2026-05-28): Ed25519 digital signature (RFC 8032 §5.1).
+//
+// Twisted Edwards curve `-x² + y² = 1 + d·x²·y²` over GF(2^255 - 19),
+// where `d = -121665 / 121666 (mod p)`. Curve order
+// ℓ = 2^252 + 27742317777372353535851937790883648493.
+// Used by SSH `ssh-ed25519` keys, age signing, JWT EdDSA, OpenBSD signify,
+// libsodium `crypto_sign`.
+//
+// API surface:
+//   - GeneratePublicKey(secretKey)              — derives 32-byte public from 32-byte secret
+//   - Sign(secretKey, message)                  — returns 64-byte signature (R || S)
+//   - Verify(publicKey, message, signature)     — returns bool
+//
+// Algorithm (RFC 8032 §5.1.6 sign / §5.1.7 verify):
+//   sign:
+//     h = SHA-512(secretKey)             # 64 bytes
+//     s = clamp(h[0..32])                # scalar mod ℓ
+//     prefix = h[32..64]
+//     A = s · B                          # public key (compressed)
+//     r = SHA-512(prefix || msg) mod ℓ
+//     R = r · B
+//     k = SHA-512(R || A || msg) mod ℓ
+//     S = (r + k·s) mod ℓ
+//     signature = R || S
+//
+//   verify:
+//     decode R, S from signature; reject if S ≥ ℓ
+//     k = SHA-512(R || A || msg) mod ℓ
+//     accept iff [S]B == R + [k]A on the curve
+//
+// Pure-script over `Std.Numerics.BigInt` — same performance caveat as X25519.
+
+public static class Ed25519 {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    /// Derive the 32-byte Ed25519 public key from a 32-byte secret key.
+    public static byte[] GeneratePublicKey(byte[] secretKey) {
+        if (secretKey.Length != 32) {
+            throw new ArgumentException(
+                "Ed25519: secret key must be 32 bytes, got " + secretKey.Length.ToString());
+        }
+        byte[] h = Sha512.Hash(secretKey);
+        BigInt s = Ed25519._clampedScalar(h);
+        BigInt[] A = Ed25519._scalarMultBase(s);
+        return Ed25519._compressPoint(A);
+    }
+
+    /// Sign `message` with `secretKey` (32 bytes). Output = 64-byte
+    /// `R || S` per RFC 8032 §5.1.6.
+    public static byte[] Sign(byte[] secretKey, byte[] message) {
+        if (secretKey.Length != 32) {
+            throw new ArgumentException(
+                "Ed25519: secret key must be 32 bytes, got " + secretKey.Length.ToString());
+        }
+        byte[] h = Sha512.Hash(secretKey);
+        BigInt s = Ed25519._clampedScalar(h);
+        // Prefix = h[32..64].
+        byte[] prefix = new byte[32];
+        int i = 0;
+        while (i < 32) { prefix[i] = h[32 + i]; i = i + 1; }
+        // A = s · B.
+        BigInt[] A = Ed25519._scalarMultBase(s);
+        byte[] aEnc = Ed25519._compressPoint(A);
+        // r = SHA-512(prefix || msg) mod ℓ.
+        byte[] rHashInput = Ed25519._concat(prefix, message);
+        byte[] rHash = Sha512.Hash(rHashInput);
+        BigInt r = Ed25519._reduceMod_l_64bytes(rHash);
+        // R = r · B.
+        BigInt[] R = Ed25519._scalarMultBase(r);
+        byte[] rEnc = Ed25519._compressPoint(R);
+        // k = SHA-512(R || A || msg) mod ℓ.
+        byte[] kHashInput = Ed25519._concat3(rEnc, aEnc, message);
+        byte[] kHash = Sha512.Hash(kHashInput);
+        BigInt k = Ed25519._reduceMod_l_64bytes(kHash);
+        // S = (r + k·s) mod ℓ.
+        BigInt l = Ed25519._curveOrder();
+        BigInt S = r.Add(k.Multiply(s)).Mod(l);
+        if (S._sign < 0) { S = S.Add(l); }
+        // signature = rEnc || S_LE.
+        byte[] sEnc = Ed25519._writeLEBigInt(S, 32);
+        byte[] sig = new byte[64];
+        int j = 0;
+        while (j < 32) { sig[j] = rEnc[j]; sig[32 + j] = sEnc[j]; j = j + 1; }
+        return sig;
+    }
+
+    /// Verify `signature` (64 bytes) on `message` with `publicKey` (32 bytes).
+    /// Returns `true` iff the signature is valid. NEVER throws on bad
+    /// signature — only on malformed lengths.
+    public static bool Verify(byte[] publicKey, byte[] message, byte[] signature) {
+        if (publicKey.Length != 32) {
+            throw new ArgumentException(
+                "Ed25519: public key must be 32 bytes, got " + publicKey.Length.ToString());
+        }
+        if (signature.Length != 64) {
+            throw new ArgumentException(
+                "Ed25519: signature must be 64 bytes, got " + signature.Length.ToString());
+        }
+        // Decode R, S from signature.
+        byte[] rEnc = new byte[32];
+        byte[] sEnc = new byte[32];
+        int i = 0;
+        while (i < 32) { rEnc[i] = signature[i]; sEnc[i] = signature[32 + i]; i = i + 1; }
+        BigInt S = Ed25519._readLEBigInt(sEnc);
+        BigInt l = Ed25519._curveOrder();
+        // Reject S ≥ ℓ (malleability prevention).
+        if (S.CompareTo(l) >= 0) { return false; }
+        // Decode R and A as curve points.
+        BigInt[] R = Ed25519._decompressPoint(rEnc);
+        if (R == null) { return false; }
+        BigInt[] A = Ed25519._decompressPoint(publicKey);
+        if (A == null) { return false; }
+        // k = SHA-512(R || A || msg) mod ℓ.
+        byte[] kHashInput = Ed25519._concat3(rEnc, publicKey, message);
+        byte[] kHash = Sha512.Hash(kHashInput);
+        BigInt k = Ed25519._reduceMod_l_64bytes(kHash);
+        // Compute [S]B and R + [k]A; accept iff equal.
+        BigInt[] sB = Ed25519._scalarMultBase(S);
+        BigInt[] kA = Ed25519._scalarMult(k, A);
+        BigInt[] sum = Ed25519._pointAdd(R, kA);
+        return Ed25519._pointEqual(sB, sum);
+    }
+
+    // ── Clamping (RFC 8032 §5.1.5) ───────────────────────────────────────────
+
+    /// Take the first 32 bytes of `h` (SHA-512 of secret key), clamp per
+    /// RFC 8032 §5.1.5, and return as scalar.
+    static BigInt _clampedScalar(byte[] h) {
+        byte[] s = new byte[32];
+        int i = 0;
+        while (i < 32) { s[i] = h[i]; i = i + 1; }
+        s[0]  = (byte)((int)s[0]  & 248);
+        s[31] = (byte)((int)s[31] & 127);
+        s[31] = (byte)((int)s[31] | 64);
+        return Ed25519._readLEBigInt(s);
+    }
+
+    // ── Constants ────────────────────────────────────────────────────────────
+
+    /// Field prime p = 2^255 - 19.
+    static BigInt _primeP() {
+        return BigInt.One.ShiftLeft(255).Subtract(new BigInt(19L));
+    }
+
+    /// Curve order ℓ (scalar group order).
+    static BigInt _curveOrder() {
+        // ℓ = 2^252 + 27742317777372353535851937790883648493
+        return BigInt.One.ShiftLeft(252).Add(
+            BigInt.Parse("27742317777372353535851937790883648493"));
+    }
+
+    /// Curve parameter d = -121665 / 121666 (mod p).
+    /// Cached value: 37095705934669439343138083508754565189542113879843219016388785533085940283555.
+    static BigInt _curveD() {
+        return BigInt.Parse("37095705934669439343138083508754565189542113879843219016388785533085940283555");
+    }
+
+    /// Base point B (compressed encoding decodes to By + sign bit).
+    /// By = 4 / 5 mod p; Bx = the positive root.
+    static BigInt[] _basePoint() {
+        BigInt bx = BigInt.Parse("15112221349535400772501151409588531511454012693041857206046113283949847762202");
+        BigInt by = BigInt.Parse("46316835694926478169428394003475163141307993866256225615783033603165251855960");
+        return Ed25519._pointToExtended(bx, by);
+    }
+
+    // ── Point representation: extended twisted Edwards (X, Y, Z, T) ──────────
+    // x = X/Z, y = Y/Z, T = X·Y/Z. T is redundant with X/Y/Z but speeds up
+    // addition (avoids a per-add multiply). All operations preserve T.
+
+    static BigInt[] _pointToExtended(BigInt x, BigInt y) {
+        BigInt p = Ed25519._primeP();
+        BigInt[] pt = new BigInt[4];
+        pt[0] = x;
+        pt[1] = y;
+        pt[2] = BigInt.One;
+        pt[3] = Ed25519._modP(x.Multiply(y), p);
+        return pt;
+    }
+
+    /// Point doubling on twisted Edwards in extended coords. Formula
+    /// `dbl-2008-hwcd-3` (Hisil et al), specialised for a = -1:
+    ///   A = X1²; B = Y1²; C = 2·Z1²; D = -A
+    ///   E = (X1 + Y1)² - A - B     (= 2·X1·Y1)
+    ///   G = D + B = B - A
+    ///   F = G - C
+    ///   H = D - B = -(A + B)
+    ///   X3 = E·F; Y3 = G·H; T3 = E·H; Z3 = F·G
+    static BigInt[] _pointDouble(BigInt[] P) {
+        BigInt p = Ed25519._primeP();
+        BigInt X1 = P[0]; BigInt Y1 = P[1]; BigInt Z1 = P[2];
+        BigInt A  = Ed25519._modP(X1.Multiply(X1), p);
+        BigInt B  = Ed25519._modP(Y1.Multiply(Y1), p);
+        BigInt C  = Ed25519._modP(Z1.Multiply(Z1).Multiply(new BigInt(2L)), p);
+        BigInt xPlusY = Ed25519._modP(X1.Add(Y1), p);
+        BigInt E  = Ed25519._modP(xPlusY.Multiply(xPlusY).Subtract(A).Subtract(B), p);
+        BigInt G  = Ed25519._modP(B.Subtract(A), p);          // D + B with D = -A
+        BigInt F  = Ed25519._modP(G.Subtract(C), p);
+        BigInt H  = Ed25519._modP(A.Add(B).Negate(), p);      // D - B with D = -A
+        BigInt[] R = new BigInt[4];
+        R[0] = Ed25519._modP(E.Multiply(F), p);
+        R[1] = Ed25519._modP(G.Multiply(H), p);
+        R[2] = Ed25519._modP(F.Multiply(G), p);
+        R[3] = Ed25519._modP(E.Multiply(H), p);
+        return R;
+    }
+
+    /// Point addition on twisted Edwards in extended coords (Hisil et al
+    /// "add-2008-hwcd-3" for a=-1).
+    static BigInt[] _pointAdd(BigInt[] P, BigInt[] Q) {
+        BigInt p = Ed25519._primeP();
+        BigInt X1 = P[0]; BigInt Y1 = P[1]; BigInt Z1 = P[2]; BigInt T1 = P[3];
+        BigInt X2 = Q[0]; BigInt Y2 = Q[1]; BigInt Z2 = Q[2]; BigInt T2 = Q[3];
+        BigInt A = Ed25519._modP(Y1.Subtract(X1).Multiply(Y2.Subtract(X2)), p);
+        BigInt B = Ed25519._modP(Y1.Add(X1).Multiply(Y2.Add(X2)), p);
+        BigInt C = Ed25519._modP(T1.Multiply(new BigInt(2L)).Multiply(Ed25519._curveD()).Multiply(T2), p);
+        BigInt D = Ed25519._modP(Z1.Multiply(new BigInt(2L)).Multiply(Z2), p);
+        BigInt E = Ed25519._modP(B.Subtract(A), p);
+        BigInt F = Ed25519._modP(D.Subtract(C), p);
+        BigInt G = Ed25519._modP(D.Add(C), p);
+        BigInt H = Ed25519._modP(B.Add(A), p);
+        BigInt[] R = new BigInt[4];
+        R[0] = Ed25519._modP(E.Multiply(F), p);
+        R[1] = Ed25519._modP(G.Multiply(H), p);
+        R[2] = Ed25519._modP(F.Multiply(G), p);
+        R[3] = Ed25519._modP(E.Multiply(H), p);
+        return R;
+    }
+
+    /// Equality of two points (compares affine projections X1·Z2 == X2·Z1
+    /// and Y1·Z2 == Y2·Z1, sidestepping the inverse).
+    static bool _pointEqual(BigInt[] P, BigInt[] Q) {
+        BigInt p = Ed25519._primeP();
+        BigInt lhs1 = Ed25519._modP(P[0].Multiply(Q[2]), p);
+        BigInt rhs1 = Ed25519._modP(Q[0].Multiply(P[2]), p);
+        if (lhs1.CompareTo(rhs1) != 0) { return false; }
+        BigInt lhs2 = Ed25519._modP(P[1].Multiply(Q[2]), p);
+        BigInt rhs2 = Ed25519._modP(Q[1].Multiply(P[2]), p);
+        return lhs2.CompareTo(rhs2) == 0;
+    }
+
+    /// Scalar multiplication via double-and-add over the bits of `s`.
+    static BigInt[] _scalarMult(BigInt s, BigInt[] P) {
+        // Identity point on the curve: (0, 1, 1, 0).
+        BigInt[] result = new BigInt[4];
+        result[0] = BigInt.Zero; result[1] = BigInt.One;
+        result[2] = BigInt.One;  result[3] = BigInt.Zero;
+        BigInt[] cur = P;
+        int bitLen = s.BitLength();
+        int i = 0;
+        while (i < bitLen) {
+            if (s.TestBit(i)) {
+                result = Ed25519._pointAdd(result, cur);
+            }
+            cur = Ed25519._pointDouble(cur);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    static BigInt[] _scalarMultBase(BigInt s) {
+        return Ed25519._scalarMult(s, Ed25519._basePoint());
+    }
+
+    // ── Point compression / decompression (RFC 8032 §5.1.2 / §5.1.3) ─────────
+
+    /// Compress an extended-coord point into 32 bytes: little-endian y
+    /// with high bit of byte 31 = sign of x (= x & 1).
+    static byte[] _compressPoint(BigInt[] P) {
+        BigInt p = Ed25519._primeP();
+        BigInt zInv = P[2].ModInverse(p);
+        BigInt x = Ed25519._modP(P[0].Multiply(zInv), p);
+        BigInt y = Ed25519._modP(P[1].Multiply(zInv), p);
+        byte[] yBytes = Ed25519._writeLEBigInt(y, 32);
+        // High bit of byte 31 = bit 0 of x.
+        if (x.TestBit(0)) {
+            yBytes[31] = (byte)((int)yBytes[31] | 128);
+        }
+        return yBytes;
+    }
+
+    /// Decompress 32 bytes into an extended-coord point. Returns `null`
+    /// if the input doesn't encode a valid curve point.
+    static BigInt[] _decompressPoint(byte[] data) {
+        byte[] yBytes = new byte[32];
+        int i = 0;
+        while (i < 32) { yBytes[i] = data[i]; i = i + 1; }
+        int xSign = ((int)yBytes[31] >> 7) & 1;
+        yBytes[31] = (byte)((int)yBytes[31] & 127);
+        BigInt y = Ed25519._readLEBigInt(yBytes);
+        BigInt p = Ed25519._primeP();
+        if (y.CompareTo(p) >= 0) { return null; }
+        // Solve x² = (y² - 1) / (d·y² + 1) mod p.
+        BigInt y2  = Ed25519._modP(y.Multiply(y), p);
+        BigInt num = Ed25519._modP(y2.Subtract(BigInt.One), p);
+        BigInt den = Ed25519._modP(Ed25519._curveD().Multiply(y2).Add(BigInt.One), p);
+        BigInt denInv = den.ModInverse(p);
+        BigInt x2  = Ed25519._modP(num.Multiply(denInv), p);
+        BigInt x   = Ed25519._sqrtModP(x2, p);
+        if (x == null) { return null; }
+        // Pick the root matching xSign.
+        bool xParity = x.TestBit(0);
+        if ((xSign == 1) != xParity) {
+            x = p.Subtract(x);
+        }
+        return Ed25519._pointToExtended(x, y);
+    }
+
+    /// Square root mod p (p = 2^255 - 19, p ≡ 5 mod 8). Returns `null`
+    /// if `a` is not a quadratic residue.
+    static BigInt _sqrtModP(BigInt a, BigInt p) {
+        if (a.IsZero()) { return BigInt.Zero; }
+        // Candidate: β = a^((p+3)/8) mod p.
+        BigInt exp1 = p.Add(new BigInt(3L)).ShiftRight(3);
+        BigInt beta = a.ModPow(exp1, p);
+        BigInt beta2 = Ed25519._modP(beta.Multiply(beta), p);
+        if (beta2.CompareTo(a) == 0) { return beta; }
+        // If β² == -a, multiply by 2^((p-1)/4) = sqrt(-1) mod p.
+        BigInt negA = Ed25519._modP(a.Negate(), p);
+        if (beta2.CompareTo(negA) == 0) {
+            BigInt exp2 = p.Subtract(BigInt.One).ShiftRight(2);
+            BigInt sqrtMinus1 = new BigInt(2L).ModPow(exp2, p);
+            return Ed25519._modP(beta.Multiply(sqrtMinus1), p);
+        }
+        return null;   // not a quadratic residue
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    static BigInt _modP(BigInt a, BigInt p) {
+        BigInt r = a.Mod(p);
+        if (r._sign < 0) { r = r.Add(p); }
+        return r;
+    }
+
+    /// Reduce a 64-byte SHA-512 output as a 512-bit little-endian
+    /// non-negative integer mod ℓ.
+    static BigInt _reduceMod_l_64bytes(byte[] h) {
+        BigInt v = Ed25519._readLEBigInt(h);
+        BigInt l = Ed25519._curveOrder();
+        BigInt r = v.Mod(l);
+        if (r._sign < 0) { r = r.Add(l); }
+        return r;
+    }
+
+    static byte[] _concat(byte[] a, byte[] b) {
+        byte[] out_ = new byte[a.Length + b.Length];
+        int i = 0;
+        while (i < a.Length) { out_[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < b.Length) { out_[a.Length + j] = b[j]; j = j + 1; }
+        return out_;
+    }
+
+    static byte[] _concat3(byte[] a, byte[] b, byte[] c) {
+        byte[] out_ = new byte[a.Length + b.Length + c.Length];
+        int i = 0;
+        while (i < a.Length) { out_[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < b.Length) { out_[a.Length + j] = b[j]; j = j + 1; }
+        int k = 0;
+        while (k < c.Length) { out_[a.Length + b.Length + k] = c[k]; k = k + 1; }
+        return out_;
+    }
+
+    static BigInt _readLEBigInt(byte[] bytes) {
+        BigInt acc = BigInt.Zero;
+        int i = 0;
+        while (i < bytes.Length) {
+            int b = (int)bytes[i] & 0xFF;
+            BigInt term = new BigInt((long)b).ShiftLeft(8 * i);
+            acc = acc.Add(term);
+            i = i + 1;
+        }
+        return acc;
+    }
+
+    static byte[] _writeLEBigInt(BigInt v, int n) {
+        byte[] out_ = new byte[n];
+        BigInt mask8 = new BigInt(255L);
+        BigInt cur = v;
+        int i = 0;
+        while (i < n) {
+            BigInt low = cur.And(mask8);
+            out_[i] = (byte)(low.ToInt64() & 0xFFL);
+            cur = cur.ShiftRight(8);
+            i = i + 1;
+        }
+        return out_;
+    }
+}
