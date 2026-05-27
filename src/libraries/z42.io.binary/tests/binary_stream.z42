@@ -147,7 +147,7 @@ void test_default_writer_to_array_still_works() {
     Assert.Equal(0x12, (int)result[1]);
 }
 
-// ── Read past EOF → BinaryException ──────────────────────────────────────
+// ── Read past EOF → EndOfStreamException (post cb5fb4b8) ─────────────────
 
 [Test]
 void test_reader_throws_on_premature_eof() {
@@ -156,7 +156,7 @@ void test_reader_throws_on_premature_eof() {
     bool caught = false;
     try {
         r.ReadInt32LE();  // needs 4 bytes, only 2 available
-    } catch (BinaryException e) {
+    } catch (EndOfStreamException e) {
         caught = true;
     }
     Assert.True(caught);

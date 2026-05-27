@@ -25,7 +25,7 @@ void test_read_int32_short_buffer_throws() {
     var r = new BinaryReader(data);
     bool caught = false;
     try { r.ReadInt32LE(); }
-    catch (BinaryException e) { caught = true; }
+    catch (EndOfStreamException e) { caught = true; }
     Assert.True(caught);
 }
 

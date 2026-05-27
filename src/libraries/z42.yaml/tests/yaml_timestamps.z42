@@ -1,0 +1,116 @@
+// add-yaml-timestamps (2026-05-27): YamlValue kind 7 (Timestamp).
+namespace Z42YamlTimestampsTests;
+
+using Std;
+using Std.Test;
+using Std.Time;
+using Std.Yaml;
+
+[Test]
+void test_parse_recognises_iso8601_utc() {
+    YamlValue doc = YamlValue.Parse("when: 2026-05-27T14:32:31Z");
+    YamlValue v = doc.Get("when");
+    Assert.True(v.IsTimestamp());
+    Assert.Equal("2026-05-27T14:32:31.000Z", v.AsTimestamp().ToIso8601());
+}
+
+[Test]
+void test_parse_recognises_iso8601_with_offset() {
+    YamlValue doc = YamlValue.Parse("when: 2023-11-15T07:13:20+09:00");
+    YamlValue v = doc.Get("when");
+    Assert.True(v.IsTimestamp());
+    // Offset applied → stored as UTC.
+    Assert.Equal("2023-11-14T22:13:20.000Z", v.AsTimestamp().ToIso8601());
+}
+
+[Test]
+void test_parse_recognises_date_only_as_midnight_utc() {
+    YamlValue doc = YamlValue.Parse("birthday: 1969-07-20");
+    YamlValue v = doc.Get("birthday");
+    Assert.True(v.IsTimestamp());
+    Assert.Equal("1969-07-20T00:00:00.000Z", v.AsTimestamp().ToIso8601());
+}
+
+[Test]
+void test_parse_recognises_with_milliseconds() {
+    YamlValue doc = YamlValue.Parse("when: 2026-05-27T14:32:31.789Z");
+    YamlValue v = doc.Get("when");
+    Assert.True(v.IsTimestamp());
+    Assert.Equal("2026-05-27T14:32:31.789Z", v.AsTimestamp().ToIso8601());
+}
+
+[Test]
+void test_stringify_preserves_raw_lexeme() {
+    // Round-trip with an offset value — raw lexeme keeps `+09:00` instead
+    // of converting to canonical UTC `Z`.
+    string input = "when: 2023-11-15T07:13:20+09:00\n";
+    YamlValue doc = YamlValue.Parse(input);
+    string output = YamlValue.Stringify(doc);
+    Assert.True(output.Contains("2023-11-15T07:13:20+09:00"));
+}
+
+[Test]
+void test_stringify_from_datetime_emits_canonical_utc() {
+    // When constructed via OfTimestamp(dt) (no raw lexeme stored),
+    // Stringify emits the canonical ToIso8601() form.
+    DateTime dt = DateTime.ParseIso8601("2026-05-27T14:32:31Z");
+    YamlValue m = YamlValue.OfMapping();
+    m.Set("when", YamlValue.OfTimestamp(dt));
+    string output = YamlValue.Stringify(m);
+    Assert.True(output.Contains("2026-05-27T14:32:31.000Z"));
+}
+
+[Test]
+void test_kind_name_is_timestamp() {
+    YamlValue v = YamlValue.OfTimestamp(DateTime.UnixEpoch());
+    Assert.Equal("timestamp", v.KindName());
+}
+
+[Test]
+void test_predicates_are_disjoint() {
+    YamlValue v = YamlValue.OfTimestamp(DateTime.UnixEpoch());
+    Assert.True(v.IsTimestamp());
+    Assert.False(v.IsString());
+    Assert.False(v.IsInt());
+    Assert.False(v.IsFloat());
+    Assert.False(v.IsNull());
+}
+
+[Test]
+void test_as_timestamp_on_wrong_kind_throws() {
+    YamlValue v = YamlValue.OfString("not a timestamp");
+    bool caught = false;
+    try { v.AsTimestamp(); } catch (YamlException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_almost_timestamp_falls_through_to_string() {
+    // "2026-13-01" matches the loose prefix check (4 digits + dash + ...)
+    // but ParseIso8601 rejects month 13. Should land as a string, not
+    // throw at YamlValue.Parse time.
+    YamlValue doc = YamlValue.Parse("v: 2026-13-01");
+    YamlValue v = doc.Get("v");
+    Assert.True(v.IsString());
+    Assert.Equal("2026-13-01", v.AsString());
+}
+
+[Test]
+void test_deep_clone_preserves_timestamp() {
+    YamlValue orig = YamlValue.OfTimestampString("2026-05-27T14:32:31Z");
+    YamlValue clone = orig.DeepClone();
+    Assert.True(clone.IsTimestamp());
+    Assert.Equal(orig.AsTimestamp().UnixMs(), clone.AsTimestamp().UnixMs());
+    Assert.Equal(orig.AsTimestampRaw(), clone.AsTimestampRaw());
+}
+
+[Test]
+void test_sequence_of_timestamps() {
+    string input = "dates:\n  - 2026-01-01\n  - 2026-06-15T12:00:00Z\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue list = doc.Get("dates");
+    Assert.True(list.IsSequence());
+    Assert.Equal(2, list.Length());
+    Assert.True(list.At(0).IsTimestamp());
+    Assert.True(list.At(1).IsTimestamp());
+}

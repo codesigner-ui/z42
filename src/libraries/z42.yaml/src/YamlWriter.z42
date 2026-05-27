@@ -47,7 +47,7 @@ public sealed class YamlWriter {
             }
             return;
         }
-        if (v.IsBool() || v.IsInt() || v.IsFloat() || v.IsString()) {
+        if (v.IsBool() || v.IsInt() || v.IsFloat() || v.IsString() || v.IsTimestamp()) {
             string lit = this._ScalarLiteral(v);
             if (inline) {
                 sb.Append(lit);
@@ -143,6 +143,14 @@ public sealed class YamlWriter {
                 return this._DoubleQuote(s);
             }
             return s;
+        }
+        if (v.IsTimestamp()) {
+            // add-yaml-timestamps (2026-05-27): prefer raw lexeme for
+            // round-trip fidelity; fall back to canonical UTC ISO when
+            // constructed via `OfTimestamp(DateTime)`.
+            string raw = v.AsTimestampRaw();
+            if (raw.Length > 0) { return raw; }
+            return v.AsTimestamp().ToIso8601();
         }
         throw new YamlException("YamlWriter: not a scalar (" + v.KindName() + ")");
     }

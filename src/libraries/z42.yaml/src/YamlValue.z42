@@ -2,6 +2,7 @@ namespace Std.Yaml;
 
 using Std;
 using Std.IO;
+using Std.Time;
 
 // add-z42-yaml (2026-05-24): YAML 值的运行时表示。
 //
@@ -15,7 +16,7 @@ using Std.IO;
 // large ints (2^53+) lose precision when stored as f64. Same trade as
 // TomlValue.
 //
-// Kind discriminator (0..=6):
+// Kind discriminator (0..=7):
 //   0 = Null    (YAML `~` or empty)
 //   1 = Bool    (YAML 1.2: `true` / `false` only — no `yes`/`on` foot-gun)
 //   2 = Int     (decimal i64; octal / hex deferred — yaml-future-numeric-bases)
@@ -23,6 +24,7 @@ using Std.IO;
 //   4 = String  (UTF-8)
 //   5 = Sequence (ordered list)
 //   6 = Mapping  (ordered key→value, string keys only in v0)
+//   7 = Timestamp (ISO 8601; add-yaml-timestamps 2026-05-27)
 
 public class YamlValue {
     private int _kind;
@@ -30,6 +32,11 @@ public class YamlValue {
     private long _int;
     private double _float;
     private string _str;
+    // Timestamp slot (kind == 7) — add-yaml-timestamps (2026-05-27).
+    // Stores both parsed DateTime + raw lexeme so Stringify can reproduce
+    // the original offset / precision the parser saw.
+    private DateTime _ts;
+    private string _tsRaw;
 
     // Sequence storage (when kind == 5)
     private YamlValue[] _seqItems;
@@ -134,6 +141,29 @@ public class YamlValue {
         return v;
     }
 
+    /// add-yaml-timestamps (2026-05-27): YAML timestamp scalar from DateTime.
+    /// `Stringify` will emit `dt.ToIso8601()` (UTC + 3-digit ms). For
+    /// round-trip preservation of non-UTC offset / different precision,
+    /// use `OfTimestampString(raw)`.
+    public static YamlValue OfTimestamp(DateTime dt) {
+        YamlValue v = new YamlValue();
+        v._kind = 7;
+        v._ts = dt;
+        v._tsRaw = "";
+        return v;
+    }
+
+    /// add-yaml-timestamps (2026-05-27): construct from ISO 8601 string,
+    /// preserving the raw lexeme for round-trip fidelity. Throws
+    /// ArgumentException (from DateTime.ParseIso8601) on malformed input.
+    public static YamlValue OfTimestampString(string iso) {
+        YamlValue v = new YamlValue();
+        v._kind = 7;
+        v._ts = DateTime.ParseIso8601(iso);
+        v._tsRaw = iso;
+        return v;
+    }
+
     public static YamlValue OfSequence() {
         YamlValue v = new YamlValue();
         v._kind = 5;
@@ -153,13 +183,14 @@ public class YamlValue {
 
     // ── Predicates ───────────────────────────────────────────────────────
 
-    public bool IsNull()     { return this._kind == 0; }
-    public bool IsBool()     { return this._kind == 1; }
-    public bool IsInt()      { return this._kind == 2; }
-    public bool IsFloat()    { return this._kind == 3; }
-    public bool IsString()   { return this._kind == 4; }
-    public bool IsSequence() { return this._kind == 5; }
-    public bool IsMapping()  { return this._kind == 6; }
+    public bool IsNull()      { return this._kind == 0; }
+    public bool IsBool()      { return this._kind == 1; }
+    public bool IsInt()       { return this._kind == 2; }
+    public bool IsFloat()     { return this._kind == 3; }
+    public bool IsString()    { return this._kind == 4; }
+    public bool IsSequence()  { return this._kind == 5; }
+    public bool IsMapping()   { return this._kind == 6; }
+    public bool IsTimestamp() { return this._kind == 7; }
 
     /// Type tag name for diagnostics.
     public string KindName() {
@@ -171,6 +202,7 @@ public class YamlValue {
         if (k == 4) return "string";
         if (k == 5) return "sequence";
         if (k == 6) return "mapping";
+        if (k == 7) return "timestamp";
         return "unknown";
     }
 
@@ -202,6 +234,23 @@ public class YamlValue {
             throw new YamlException("expected string, got " + this.KindName());
         }
         return this._str;
+    }
+
+    /// add-yaml-timestamps (2026-05-27): DateTime accessor for kind 7.
+    public DateTime AsTimestamp() {
+        if (this._kind != 7) {
+            throw new YamlException("expected timestamp, got " + this.KindName());
+        }
+        return this._ts;
+    }
+
+    /// Raw lexeme of a parsed timestamp (empty when constructed from a
+    /// DateTime via `OfTimestamp`). Useful for round-trip preservation.
+    public string AsTimestampRaw() {
+        if (this._kind != 7) {
+            throw new YamlException("expected timestamp, got " + this.KindName());
+        }
+        return this._tsRaw;
     }
 
     // ── Sequence operations (only valid when IsSequence()) ──────────────
@@ -325,6 +374,13 @@ public class YamlValue {
         if (this._kind == 2) { return YamlValue.OfInt(this._int); }
         if (this._kind == 3) { return YamlValue.OfFloat(this._float); }
         if (this._kind == 4) { return YamlValue.OfString(this._str); }
+        if (this._kind == 7) {
+            YamlValue v = new YamlValue();
+            v._kind  = 7;
+            v._ts    = this._ts;
+            v._tsRaw = this._tsRaw;
+            return v;
+        }
         if (this._kind == 5) {
             YamlValue seq = YamlValue.OfSequence();
             int i = 0;

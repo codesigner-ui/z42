@@ -1123,6 +1123,15 @@ public sealed class YamlParser {
         if (this._LooksLikeOctal(raw)) {
             return YamlValue.OfInt(this._ParseOctal(raw));
         }
+        // add-yaml-timestamps (2026-05-27): ISO 8601 timestamp before
+        // numeric inference. `YYYY-...` shape doesn't overlap int/float
+        // lexical patterns so there's no false positive on numeric input.
+        // Parse failure falls through to numeric / string for graceful
+        // degradation of "almost-but-not-quite" date-shaped strings.
+        if (this._LooksLikeTimestamp(raw)) {
+            try { return YamlValue.OfTimestampString(raw); }
+            catch (Exception e) { /* fall through */ }
+        }
         // Try int → float → string.
         if (this._LooksLikeInt(raw)) {
             try { return YamlValue.OfInt(Int64.Parse(raw)); }
@@ -1133,6 +1142,31 @@ public sealed class YamlParser {
             catch (Exception e) { /* fall through to string */ }
         }
         return YamlValue.OfString(raw);
+    }
+
+    /// Cheap prefix-check for ISO 8601 — `YYYY-MM-DD` exactly, or that
+    /// followed by `T`/`t`/space + at least `HH`. ParseIso8601 does the
+    /// real validation; this just gates whether to attempt it.
+    private bool _LooksLikeTimestamp(string s) {
+        if (s.Length < 10) { return false; }
+        int i = 0;
+        while (i < 4) {
+            char c = s.CharAt(i);
+            if (c < '0' || c > '9') { return false; }
+            i = i + 1;
+        }
+        if (s.CharAt(4) != '-') { return false; }
+        if (s.CharAt(5) < '0' || s.CharAt(5) > '9') { return false; }
+        if (s.CharAt(6) < '0' || s.CharAt(6) > '9') { return false; }
+        if (s.CharAt(7) != '-') { return false; }
+        if (s.CharAt(8) < '0' || s.CharAt(8) > '9') { return false; }
+        if (s.CharAt(9) < '0' || s.CharAt(9) > '9') { return false; }
+        if (s.Length == 10) { return true; }
+        char sep = s.CharAt(10);
+        if (sep != 'T' && sep != 't' && sep != ' ') { return false; }
+        if (s.Length < 13) { return false; }
+        return (s.CharAt(11) >= '0' && s.CharAt(11) <= '9')
+            && (s.CharAt(12) >= '0' && s.CharAt(12) <= '9');
     }
 
     /// YAML 1.2 hex literal: `0x` prefix (lowercase), at least one hex digit.
