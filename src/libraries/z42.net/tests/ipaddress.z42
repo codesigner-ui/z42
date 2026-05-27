@@ -1,0 +1,217 @@
+// add-net-ipaddress (2026-05-27): IPAddress v0 (IPv4 + IPv6).
+namespace Z42NetIPAddressTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+// ── IPv4 parse + round-trip ───────────────────────────────────────────
+
+[Test]
+void test_parse_ipv4_dotted_quad() {
+    IPAddress a = IPAddress.Parse("192.168.1.1");
+    Assert.True(a.IsIPv4());
+    Assert.Equal("192.168.1.1", a.ToString());
+}
+
+[Test]
+void test_parse_ipv4_zero() {
+    IPAddress a = IPAddress.Parse("0.0.0.0");
+    Assert.True(a.IsAny());
+    Assert.Equal("0.0.0.0", a.ToString());
+}
+
+[Test]
+void test_parse_ipv4_max() {
+    IPAddress a = IPAddress.Parse("255.255.255.255");
+    Assert.Equal("255.255.255.255", a.ToString());
+}
+
+[Test]
+void test_parse_ipv4_loopback() {
+    IPAddress a = IPAddress.Parse("127.0.0.1");
+    Assert.True(a.IsLoopback());
+}
+
+[Test]
+void test_parse_ipv4_rejects_oct_over_255() {
+    bool caught = false;
+    try { IPAddress.Parse("1.2.300.4"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_ipv4_rejects_too_few_octets() {
+    bool caught = false;
+    try { IPAddress.Parse("1.2.3"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_ipv4_rejects_empty_octet() {
+    bool caught = false;
+    try { IPAddress.Parse("1..2.3"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_ipv4_rejects_non_digit() {
+    bool caught = false;
+    try { IPAddress.Parse("a.b.c.d"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_ipv4_get_address_bytes() {
+    byte[] b = IPAddress.Parse("1.2.3.4").GetAddressBytes();
+    Assert.Equal(4, b.Length);
+    Assert.Equal((byte)1, b[0]);
+    Assert.Equal((byte)2, b[1]);
+    Assert.Equal((byte)3, b[2]);
+    Assert.Equal((byte)4, b[3]);
+}
+
+// ── IPv4 factories + classifiers ──────────────────────────────────────
+
+[Test]
+void test_loopback_constant() {
+    Assert.Equal("127.0.0.1", IPAddress.Loopback().ToString());
+    Assert.True(IPAddress.Loopback().IsLoopback());
+}
+
+[Test]
+void test_any_constant() {
+    Assert.True(IPAddress.Any().IsAny());
+    Assert.Equal("0.0.0.0", IPAddress.Any().ToString());
+}
+
+[Test]
+void test_multicast_detection_ipv4() {
+    Assert.True(IPAddress.Parse("239.1.2.3").IsMulticast());
+    Assert.True(IPAddress.Parse("224.0.0.1").IsMulticast());
+    Assert.False(IPAddress.Parse("192.168.1.1").IsMulticast());
+    Assert.False(IPAddress.Parse("10.0.0.0").IsMulticast());
+}
+
+// ── IPv6 parse + round-trip ───────────────────────────────────────────
+
+[Test]
+void test_parse_ipv6_full_form() {
+    IPAddress a = IPAddress.Parse("2001:0db8:0000:0000:0000:0000:0000:0001");
+    Assert.True(a.IsIPv6());
+    // Canonical re-render compresses zeros.
+    Assert.Equal("2001:db8::1", a.ToString());
+}
+
+[Test]
+void test_parse_ipv6_double_colon_short() {
+    IPAddress a = IPAddress.Parse("::1");
+    Assert.True(a.IsLoopback());
+    Assert.Equal("::1", a.ToString());
+}
+
+[Test]
+void test_parse_ipv6_all_zero() {
+    IPAddress a = IPAddress.Parse("::");
+    Assert.True(a.IsAny());
+    Assert.Equal("::", a.ToString());
+}
+
+[Test]
+void test_parse_ipv6_middle_compression() {
+    IPAddress a = IPAddress.Parse("2001:db8::8a2e:370:7334");
+    Assert.Equal("2001:db8::8a2e:370:7334", a.ToString());
+}
+
+[Test]
+void test_parse_ipv6_rejects_two_double_colons() {
+    bool caught = false;
+    try { IPAddress.Parse("1::2::3"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_ipv6_rejects_oversized_group() {
+    bool caught = false;
+    try { IPAddress.Parse("12345::1"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_ipv6_rejects_too_many_groups() {
+    bool caught = false;
+    try { IPAddress.Parse("1:2:3:4:5:6:7:8:9"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_ipv6_rejects_too_few_groups_without_compression() {
+    bool caught = false;
+    try { IPAddress.Parse("1:2:3:4:5:6:7"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_ipv6_loopback_factory() {
+    Assert.Equal("::1", IPAddress.IPv6Loopback().ToString());
+    Assert.True(IPAddress.IPv6Loopback().IsLoopback());
+}
+
+[Test]
+void test_ipv6_any_factory() {
+    Assert.Equal("::", IPAddress.IPv6Any().ToString());
+    Assert.True(IPAddress.IPv6Any().IsAny());
+}
+
+[Test]
+void test_ipv6_multicast_ff00() {
+    Assert.True(IPAddress.Parse("ff02::1").IsMulticast());
+    Assert.False(IPAddress.Parse("2001:db8::1").IsMulticast());
+}
+
+[Test]
+void test_ipv6_get_address_bytes_length_16() {
+    Assert.Equal(16, IPAddress.IPv6Loopback().GetAddressBytes().Length);
+}
+
+[Test]
+void test_ipv6_hex_case_normalised_to_lower() {
+    IPAddress a = IPAddress.Parse("2001:DB8::ABCD");
+    Assert.Equal("2001:db8::abcd", a.ToString());
+}
+
+// ── Dispatch & misc ───────────────────────────────────────────────────
+
+[Test]
+void test_parse_empty_throws() {
+    bool caught = false;
+    try { IPAddress.Parse(""); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_no_separator_throws() {
+    bool caught = false;
+    try { IPAddress.Parse("12345"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_equals_same_address() {
+    Assert.True(IPAddress.Parse("1.2.3.4").Equals(IPAddress.Parse("1.2.3.4")));
+    Assert.True(IPAddress.Parse("::1").Equals(IPAddress.IPv6Loopback()));
+}
+
+[Test]
+void test_equals_mismatched_family_false() {
+    // IPv4 1.2.3.4 vs IPv6 ::1.2.3.4 are different addresses.
+    Assert.False(IPAddress.Parse("1.2.3.4").Equals(IPAddress.IPv6Loopback()));
+}
+
+[Test]
+void test_family_constants() {
+    Assert.Equal(4, IPAddress.Loopback().Family());
+    Assert.Equal(6, IPAddress.IPv6Loopback().Family());
+    Assert.Equal(4, IPAddress.FamilyIPv4);
+    Assert.Equal(6, IPAddress.FamilyIPv6);
+}
