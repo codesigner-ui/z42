@@ -73,6 +73,15 @@ fi
 # parallel mode.
 echo "Building VM..."
 cargo build -q --manifest-path "$RUNTIME_MANIFEST"
+# Also build the z42-compression cdylib — z42vm dlopens it at startup for
+# `__compressor_*` natives. The main `cargo build` above only emits the
+# rlib via the dependency graph; `crate-type = ["cdylib", ...]` outputs
+# (`libz42_compression.dylib` etc.) are produced only when the
+# z42-compression crate is the workspace root of a `cargo build`
+# invocation. JIT mode pre-resolves all builtins at compile time, so
+# missing this dylib makes every JIT golden test panic with `unknown
+# builtin __compressor_begin`.
+cargo build -q --manifest-path "$ROOT/src/runtime/crates/z42-compression/Cargo.toml"
 VM_BIN="$ROOT/artifacts/build/runtime/debug/z42vm"
 if [[ ! -x "$VM_BIN" ]]; then
     echo "error: VM binary not found at $VM_BIN after cargo build" >&2
