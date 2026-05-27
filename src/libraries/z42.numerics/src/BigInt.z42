@@ -479,76 +479,190 @@ public class BigInt {
 
     // ── Bit operations (add-bigint-bitops, 2026-05-25) ──────────────────
     //
-    // v0 scope: AND / OR / XOR 限非负操作数；ShiftLeft / ShiftRight 操作
-    // magnitude 保留 sign（非算术 shift）；TestBit / BitLength 限非负 receiver.
-    // 两补码语义留 follow-up spec（bigint-future-bitops-twoscomp）。
+    // add-bigint-bitops-twoscomp (2026-05-27): AND / OR / XOR / NOT /
+    // TestBit on negative operands via infinite-precision two's-complement.
+    // ShiftLeft / ShiftRight remain magnitude shifts (callers wanting
+    // arithmetic shift-right toward -∞ should use `Divide(2^k)` until a
+    // dedicated `ArithmeticShiftRight` ships).
+    //
+    // Limb mask = (1 << 31) - 1 = 0x7FFFFFFF. Two's-comp of -x at length
+    // n_limbs = invert_per_limb(|x| padded to n_limbs) + 1, with leading
+    // limbs = LIMB_MASK (all-1) for sign extension.
 
-    /// 位与 (AND). 双方都必须非负 (this._sign >= 0 AND other._sign >= 0)；
-    /// 负数操作数抛 ArgumentException (v0 限制).
+    static int LIMB_MASK = 0x7FFFFFFF;
+
+    /// 位与 (AND). 两个操作数都按无限位 two's-complement 表示后逐限位相与；
+    /// 结果符号由 result_lead = a_lead AND b_lead 决定 (两个都负才负)。
     public BigInt And(BigInt other) {
-        if (this._sign < 0 || other._sign < 0) {
-            throw new ArgumentException("BigInt.And: negative operand not supported (v0)");
-        }
         if (this._sign == 0 || other._sign == 0) return BigInt.Zero;
-        int la = this._mag.Length;
-        int lb = other._mag.Length;
-        int n;
-        if (la < lb) { n = la; } else { n = lb; }
-        int[] r = new int[n];
-        int i = 0;
-        while (i < n) {
-            r[i] = this._mag[i] & other._mag[i];
-            i = i + 1;
+        if (this._sign > 0 && other._sign > 0) {
+            // Fast path: both non-negative — result is bounded by the
+            // shorter operand (高 bit AND 0 = 0).
+            int la = this._mag.Length;
+            int lb = other._mag.Length;
+            int n;
+            if (la < lb) { n = la; } else { n = lb; }
+            int[] r = new int[n];
+            int i = 0;
+            while (i < n) {
+                r[i] = this._mag[i] & other._mag[i];
+                i = i + 1;
+            }
+            return BigInt._fromMagSign(r, 1);
         }
-        return BigInt._fromMagSign(r, 1);
+        return BigInt._bitop(this, other, 0);
     }
 
-    /// 位或 (OR). 同 And 的非负限制.
+    /// 位或 (OR). 两个操作数 two's-complement OR；结果符号 = a_lead OR b_lead
+    /// (任一负则负).
     public BigInt Or(BigInt other) {
-        if (this._sign < 0 || other._sign < 0) {
-            throw new ArgumentException("BigInt.Or: negative operand not supported (v0)");
-        }
         if (this._sign == 0) return other;
         if (other._sign == 0) return this;
-        int la = this._mag.Length;
-        int lb = other._mag.Length;
-        int n;
-        if (la > lb) { n = la; } else { n = lb; }
-        int[] r = new int[n];
-        int i = 0;
-        while (i < n) {
-            int av = 0;
-            int bv = 0;
-            if (i < la) av = this._mag[i];
-            if (i < lb) bv = other._mag[i];
-            r[i] = av | bv;
-            i = i + 1;
+        if (this._sign > 0 && other._sign > 0) {
+            int la = this._mag.Length;
+            int lb = other._mag.Length;
+            int n;
+            if (la > lb) { n = la; } else { n = lb; }
+            int[] r = new int[n];
+            int i = 0;
+            while (i < n) {
+                int av = 0;
+                int bv = 0;
+                if (i < la) av = this._mag[i];
+                if (i < lb) bv = other._mag[i];
+                r[i] = av | bv;
+                i = i + 1;
+            }
+            return BigInt._fromMagSign(r, 1);
         }
-        return BigInt._fromMagSign(r, 1);
+        return BigInt._bitop(this, other, 1);
     }
 
-    /// 位异或 (XOR). 同 And 的非负限制.
+    /// 位异或 (XOR). 两个操作数 two's-complement XOR；结果符号 = a_lead XOR b_lead
+    /// (恰好一个负才负).
     public BigInt Xor(BigInt other) {
-        if (this._sign < 0 || other._sign < 0) {
-            throw new ArgumentException("BigInt.Xor: negative operand not supported (v0)");
-        }
         if (this._sign == 0) return other;
         if (other._sign == 0) return this;
-        int la = this._mag.Length;
-        int lb = other._mag.Length;
+        if (this._sign > 0 && other._sign > 0) {
+            int la = this._mag.Length;
+            int lb = other._mag.Length;
+            int n;
+            if (la > lb) { n = la; } else { n = lb; }
+            int[] r = new int[n];
+            int i = 0;
+            while (i < n) {
+                int av = 0;
+                int bv = 0;
+                if (i < la) av = this._mag[i];
+                if (i < lb) bv = other._mag[i];
+                r[i] = av ^ bv;
+                i = i + 1;
+            }
+            return BigInt._fromMagSign(r, 1);
+        }
+        return BigInt._bitop(this, other, 2);
+    }
+
+    /// 位非 (NOT). 用代数恒等式 `~x == -(x + 1)`。
+    /// 命名为 `BitNot` 而非 `Not` 以避开 z42 method resolution 的 name-only
+    /// dispatch 隐患（与未来潜在的 boolean `Not()` 同名风险）。
+    public BigInt BitNot() {
+        BigInt incremented = this.Add(BigInt.One);
+        return incremented.Negate();
+    }
+
+    // Internal: two's-comp limb-wise bit op for the mixed-sign / both-negative
+    // cases. `opKind`: 0 = AND, 1 = OR, 2 = XOR.
+    static BigInt _bitop(BigInt a, BigInt b, int opKind) {
+        // Pick n big enough for both operands; +1 for sign safety when at
+        // least one is negative (so the sign bit of the result is captured
+        // in an extra zero/one limb if it overflowed the shorter operand).
+        int la = a._mag.Length;
+        int lb = b._mag.Length;
         int n;
         if (la > lb) { n = la; } else { n = lb; }
+        n = n + 1;
+
+        int[] aLimbs = BigInt._twosCompLimbs(a, n);
+        int[] bLimbs = BigInt._twosCompLimbs(b, n);
+        int aLead = a._sign < 0 ? BigInt.LIMB_MASK : 0;
+        int bLead = b._sign < 0 ? BigInt.LIMB_MASK : 0;
+
         int[] r = new int[n];
+        int rLead;
         int i = 0;
-        while (i < n) {
-            int av = 0;
-            int bv = 0;
-            if (i < la) av = this._mag[i];
-            if (i < lb) bv = other._mag[i];
-            r[i] = av ^ bv;
+        if (opKind == 0) {
+            while (i < n) { r[i] = aLimbs[i] & bLimbs[i]; i = i + 1; }
+            rLead = aLead & bLead;
+        } else if (opKind == 1) {
+            while (i < n) { r[i] = aLimbs[i] | bLimbs[i]; i = i + 1; }
+            rLead = aLead | bLead;
+        } else {
+            while (i < n) { r[i] = aLimbs[i] ^ bLimbs[i]; i = i + 1; }
+            rLead = aLead ^ bLead;
+        }
+        return BigInt._fromTwosCompLimbs(r, rLead);
+    }
+
+    /// Convert `n` to a length-`len` two's-complement limb array.
+    /// Non-negative: zero-pad |n| to len.
+    /// Negative: invert |n| limb-by-limb then add 1 (carrying through len).
+    static int[] _twosCompLimbs(BigInt n, int len) {
+        int[] mag = n._mag;
+        int ml = mag.Length;
+        int[] r = new int[len];
+        int i = 0;
+        while (i < len) {
+            int v = 0;
+            if (i < ml) v = mag[i];
+            r[i] = v;
             i = i + 1;
         }
-        return BigInt._fromMagSign(r, 1);
+        if (n._sign >= 0) return r;
+        // Invert all limbs (per the limb mask, keeping the high bit clear).
+        i = 0;
+        while (i < len) {
+            r[i] = (~r[i]) & BigInt.LIMB_MASK;
+            i = i + 1;
+        }
+        // Add 1 with carry propagation.
+        int carry = 1;
+        i = 0;
+        while (i < len && carry != 0) {
+            int sum = r[i] + carry;
+            r[i] = sum & BigInt.LIMB_MASK;
+            carry = (sum >> 31) & 1;
+            i = i + 1;
+        }
+        return r;
+    }
+
+    /// Reverse `_twosCompLimbs`: given the two's-comp limb array + leading
+    /// pattern (0 for non-negative, LIMB_MASK for negative), recover the
+    /// BigInt sign + magnitude.
+    static BigInt _fromTwosCompLimbs(int[] limbs, int lead) {
+        if (lead == 0) {
+            // Result is non-negative — magnitude is `limbs` (with trailing
+            // zeros trimmed by _fromMagSign).
+            return BigInt._fromMagSign(limbs, 1);
+        }
+        // Result is negative — magnitude = invert(limbs) + 1.
+        int len = limbs.Length;
+        int[] mag = new int[len];
+        int i = 0;
+        while (i < len) {
+            mag[i] = (~limbs[i]) & BigInt.LIMB_MASK;
+            i = i + 1;
+        }
+        int carry = 1;
+        i = 0;
+        while (i < len && carry != 0) {
+            int sum = mag[i] + carry;
+            mag[i] = sum & BigInt.LIMB_MASK;
+            carry = (sum >> 31) & 1;
+            i = i + 1;
+        }
+        return BigInt._fromMagSign(mag, -1);
     }
 
     /// 左移 n 位 (n >= 0)。Magnitude 左移；符号保留 (-8 << 1 == -16).
@@ -578,20 +692,27 @@ public class BigInt {
         return BigInt._fromMagSign(mag, this._sign);
     }
 
-    /// 测试 bit `n` (n >= 0) 是否 set。Receiver 必须非负 (v0 限制)。
-    /// `n` 超出 BitLength 返回 false (高位都是 0).
+    /// 测试 bit `n` (n >= 0) 是否 set。
+    /// add-bigint-bitops-twoscomp (2026-05-27): supports negative receivers
+    /// via infinite-precision two's-complement view. `TestBit(i)` on a
+    /// negative value matches Python `(n >> i) & 1` semantics — for
+    /// `(-1).TestBit(i) == true` at every `i` (sign-extended ones).
+    /// `n` beyond the magnitude returns the lead bit (0 for non-neg, 1 for neg).
     public bool TestBit(int n) {
         if (n < 0) {
             throw new ArgumentException("BigInt.TestBit: negative bit index");
         }
-        if (this._sign < 0) {
-            throw new ArgumentException("BigInt.TestBit: negative receiver not supported (v0)");
-        }
         if (this._sign == 0) return false;
         int limbIdx = n / 31;
         int bitIdx  = n % 31;
-        if (limbIdx >= this._mag.Length) return false;
-        return ((this._mag[limbIdx] >> bitIdx) & 1) == 1;
+        if (this._sign > 0) {
+            if (limbIdx >= this._mag.Length) return false;
+            return ((this._mag[limbIdx] >> bitIdx) & 1) == 1;
+        }
+        // Negative — convert enough limbs to cover bit `n`, then test.
+        int need = limbIdx + 1;
+        int[] tc = BigInt._twosCompLimbs(this, need);
+        return ((tc[limbIdx] >> bitIdx) & 1) == 1;
     }
 
     /// 表示该数值（绝对值）所需的最少 bit 数。

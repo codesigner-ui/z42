@@ -111,17 +111,22 @@ negative-amount / zero / overshoot / negative-receiver cases. Two's-
 complement semantics for negatives (`Not` + signed-bitwise) is the
 follow-up `bigint-future-bitops-twoscomp`.
 
-### `bigint-future-bitops-twoscomp` — two's-complement bit-ops on negatives
+### ~~`bigint-future-bitops-twoscomp`~~ — **✅ 已落地 2026-05-27 (add-bigint-bitops-twoscomp)**
 
-- **来源**：add-bigint-bitops v0 scope cut (negatives currently throw
-  ArgumentException for And/Or/Xor/TestBit; ShiftRight on negatives
-  uses magnitude shift, not the .NET-style arithmetic shift toward -∞)
-- **触发原因**：proper two's-complement requires a virtual infinite-
-  sign-extension scheme over the sign+magnitude representation; non-
-  trivial and rarely needed for the v0 use cases (crypto / bitset on
-  non-negative big ints)
-- **触发条件**：first real use case for negative-operand bitwise ops
-  (signed serialization / bit-manipulation tricks on negatives)
+Shipped: `And` / `Or` / `Xor` accept negative operands via
+infinite-precision two's-complement view (Python-style: `-1 & 7 == 7`,
+`-2 | 3 == -1`, `-7 ^ 7 == -2`). `TestBit` extended for negative
+receivers (sign-extended ones — `(-1).TestBit(100) == true`). New
+`BitNot()` via algebraic identity `~x == -(x+1)`. Both-non-negative
+fast path preserved unchanged. `ShiftLeft` / `ShiftRight` remain
+magnitude shifts (preserving sign without arithmetic-shift toward -∞);
+callers wanting floor-toward-negative semantics should use `Divide` on
+`2^k` — a dedicated `ArithmeticShiftRight` follow-up if needed. Algorithm:
+`_twosCompLimbs(n, len)` pads + (if negative) inverts + adds 1 across
+limbs; `_bitop` runs the limb-wise op + tracks the lead-bit (0 / LIMB_MASK)
+to recover the result's sign. 36 tests cover positive fast path,
+negative-operand cases, BitNot algebraic round-trip, and the renamed-from-
+ArgumentException tests now verifying correctness.
 - **当前 workaround**：take `.Abs()` first, do the op, then re-sign
   appropriately
 

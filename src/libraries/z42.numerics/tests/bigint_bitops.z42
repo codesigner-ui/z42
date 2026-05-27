@@ -33,14 +33,13 @@ void test_and_huge_with_byte_mask() {
 }
 
 [Test]
-void test_and_rejects_negative() {
-    bool threw = false;
-    try {
-        new BigInt(-1L).And(new BigInt(7L));
-    } catch (ArgumentException e) {
-        threw = true;
-    }
-    Assert.True(threw);
+void test_and_negative_via_twos_comp() {
+    // add-bigint-bitops-twoscomp (2026-05-27): negatives no longer
+    // throw — they participate via infinite-precision two's-comp.
+    // -1 == ...all-1s, AND 7 == 7
+    Assert.Equal(7L, new BigInt(-1L).And(new BigInt(7L)).ToInt64());
+    // (-2).And(3) = ...11111110 & 011 = 010 = 2
+    Assert.Equal(2L, new BigInt(-2L).And(new BigInt(3L)).ToInt64());
 }
 
 // ── OR ──────────────────────────────────────────────────────────────────
@@ -60,14 +59,11 @@ void test_or_identity_with_zero() {
 }
 
 [Test]
-void test_or_rejects_negative() {
-    bool threw = false;
-    try {
-        new BigInt(7L).Or(new BigInt(-1L));
-    } catch (ArgumentException e) {
-        threw = true;
-    }
-    Assert.True(threw);
+void test_or_negative_via_twos_comp() {
+    // 7 | -1 = ...all-1s = -1 (any | all-1 = all-1)
+    Assert.Equal(-1L, new BigInt(7L).Or(new BigInt(-1L)).ToInt64());
+    // -8 | 3 = ...11111000 | 011 = ...11111011 = -5
+    Assert.Equal(-5L, new BigInt(-8L).Or(new BigInt(3L)).ToInt64());
 }
 
 // ── XOR ─────────────────────────────────────────────────────────────────
@@ -86,14 +82,14 @@ void test_xor_self_zero() {
 }
 
 [Test]
-void test_xor_rejects_negative() {
-    bool threw = false;
-    try {
-        new BigInt(-7L).Xor(new BigInt(7L));
-    } catch (ArgumentException e) {
-        threw = true;
-    }
-    Assert.True(threw);
+void test_xor_negative_via_twos_comp() {
+    // -7 == ...11111001, 7 == ...00000111
+    // XOR = ...11111110 = -2
+    Assert.Equal(-2L, new BigInt(-7L).Xor(new BigInt(7L)).ToInt64());
+    // -1 XOR -1 == 0 (any XOR self == 0)
+    Assert.True(new BigInt(-1L).Xor(new BigInt(-1L)).IsZero());
+    // -1 XOR 0 == -1
+    Assert.Equal(-1L, new BigInt(-1L).Xor(BigInt.Zero).ToInt64());
 }
 
 // ── ShiftLeft ───────────────────────────────────────────────────────────
@@ -217,14 +213,45 @@ void test_testbit_rejects_negative_index() {
 }
 
 [Test]
-void test_testbit_rejects_negative_receiver() {
-    bool threw = false;
-    try {
-        new BigInt(-1L).TestBit(0);
-    } catch (ArgumentException e) {
-        threw = true;
-    }
-    Assert.True(threw);
+void test_testbit_on_negative_via_twos_comp() {
+    // add-bigint-bitops-twoscomp (2026-05-27): -1 in infinite-precision
+    // two's-complement is sign-extended ones; every bit is 1.
+    Assert.True(new BigInt(-1L).TestBit(0));
+    Assert.True(new BigInt(-1L).TestBit(1));
+    Assert.True(new BigInt(-1L).TestBit(100));
+
+    // -2 == ...11111110: bit 0 is 0, bit 1 onward are 1.
+    Assert.False(new BigInt(-2L).TestBit(0));
+    Assert.True(new BigInt(-2L).TestBit(1));
+    Assert.True(new BigInt(-2L).TestBit(50));
+}
+
+// ── BitNot ──────────────────────────────────────────────────────────────
+
+[Test]
+void test_bit_not_zero_is_minus_one() {
+    Assert.Equal(-1L, BigInt.Zero.BitNot().ToInt64());
+}
+
+[Test]
+void test_bit_not_one_is_minus_two() {
+    Assert.Equal(-2L, BigInt.One.BitNot().ToInt64());
+}
+
+[Test]
+void test_bit_not_minus_one_is_zero() {
+    Assert.True(new BigInt(-1L).BitNot().IsZero());
+}
+
+[Test]
+void test_bit_not_minus_five_is_four() {
+    Assert.Equal(4L, new BigInt(-5L).BitNot().ToInt64());
+}
+
+[Test]
+void test_bit_not_round_trip() {
+    BigInt original = new BigInt(123456L);
+    Assert.Equal(0, original.BitNot().BitNot().CompareTo(original));
 }
 
 // ── BitLength ───────────────────────────────────────────────────────────
