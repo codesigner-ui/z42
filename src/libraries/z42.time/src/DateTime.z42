@@ -89,6 +89,205 @@ public sealed class DateTime {
             + "." + _pad3(ms) + tz.ToOffsetString();
     }
 
+    // ── ISO-8601 解析 (add-datetime-iso8601-parse 2026-05-27) ───────────────
+
+    // Inverse of ToIso8601 / ToIso8601With — accepts a calendar-date prefix
+    // optionally followed by a time-of-day, optional fractional seconds,
+    // and an optional timezone offset. Returns the resulting moment as
+    // unix-epoch UTC.
+    //
+    // Accepted shapes (RFC 3339 / ISO 8601 subset):
+    //   YYYY-MM-DD                              → midnight UTC of that date
+    //   YYYY-MM-DDTHH:MM:SS                     → assume UTC (no suffix)
+    //   YYYY-MM-DDTHH:MM:SSZ                    → UTC explicit
+    //   YYYY-MM-DDTHH:MM:SS.sss                 → millis (1-9 frac digits, truncated to ms)
+    //   YYYY-MM-DDTHH:MM:SS.sssZ
+    //   YYYY-MM-DDTHH:MM:SS+HH:MM               → with offset (RFC 3339)
+    //   YYYY-MM-DDTHH:MM:SS-HH:MM
+    //   YYYY-MM-DDTHH:MM:SS.sss±HH:MM
+    //   "T" separator may also be a single space (RFC 3339 §5.6 NOTE).
+    //
+    // Throws `ArgumentException` with the offending span on any malformed
+    // input. Missing timezone suffix is treated as UTC (matches the
+    // round-trip with `ToIso8601()` whose output ends in `Z`).
+    public static DateTime ParseIso8601(string s) {
+        if (s == null || s.Length < 10) {
+            throw new ArgumentException("ParseIso8601: input too short: '" + (s ?? "") + "'");
+        }
+        // YYYY-MM-DD
+        int year  = _parseFixed(s, 0, 4, "year");
+        _expect(s, 4, '-');
+        int month = _parseFixed(s, 5, 2, "month");
+        _expect(s, 7, '-');
+        int day   = _parseFixed(s, 8, 2, "day");
+        if (month < 1 || month > 12) {
+            throw new ArgumentException("ParseIso8601: month out of range: " + month.ToString());
+        }
+        if (day < 1 || day > 31) {
+            throw new ArgumentException("ParseIso8601: day out of range: " + day.ToString());
+        }
+
+        long days = _daysFromCivil((long)year, (long)month, (long)day);
+        long unixMs = days * 86400000L;
+
+        if (s.Length == 10) {
+            // Date-only — midnight UTC.
+            return new DateTime(unixMs);
+        }
+        // Expect 'T' or space separator at position 10.
+        char sep = s.CharAt(10);
+        if (sep != 'T' && sep != 't' && sep != ' ') {
+            throw new ArgumentException(
+                "ParseIso8601: expected 'T' or space at position 10, got '" + _charStr(sep) + "'");
+        }
+        if (s.Length < 19) {
+            throw new ArgumentException("ParseIso8601: truncated time component");
+        }
+        int hour = _parseFixed(s, 11, 2, "hour");
+        _expect(s, 13, ':');
+        int minute = _parseFixed(s, 14, 2, "minute");
+        _expect(s, 16, ':');
+        int second = _parseFixed(s, 17, 2, "second");
+        if (hour > 23 || minute > 59 || second > 60) {
+            throw new ArgumentException(
+                "ParseIso8601: time out of range " + hour.ToString() + ":"
+                + minute.ToString() + ":" + second.ToString());
+        }
+        // Cap second at 59 — leap seconds (60) are accepted but bucketed.
+        if (second == 60) { second = 59; }
+        unixMs = unixMs
+            + (long)hour * 3600000L
+            + (long)minute * 60000L
+            + (long)second * 1000L;
+
+        int pos = 19;
+
+        // Optional fractional seconds: "." then 1-9 digits → ms (truncated).
+        if (pos < s.Length && s.CharAt(pos) == '.') {
+            pos = pos + 1;
+            int fracStart = pos;
+            while (pos < s.Length && _isDigit(s.CharAt(pos))) { pos = pos + 1; }
+            int fracLen = pos - fracStart;
+            if (fracLen == 0) {
+                throw new ArgumentException("ParseIso8601: '.' not followed by fractional digits");
+            }
+            // Read up to 3 digits as ms; truncate longer (microsecond /
+            // nanosecond precision is lost — DateTime is ms-resolution).
+            long ms = 0L;
+            int i = 0;
+            while (i < 3) {
+                if (i < fracLen) {
+                    ms = ms * 10L + (long)((int)s.CharAt(fracStart + i) - (int)'0');
+                } else {
+                    ms = ms * 10L;
+                }
+                i = i + 1;
+            }
+            unixMs = unixMs + ms;
+        }
+
+        // Optional timezone suffix: Z | ±HH:MM | ±HHMM | ±HH
+        if (pos >= s.Length) {
+            // No suffix — treat as UTC (round-trips with our own ToIso8601
+            // which always emits Z, but be lenient on input).
+            return new DateTime(unixMs);
+        }
+        char tz = s.CharAt(pos);
+        if (tz == 'Z' || tz == 'z') {
+            if (pos + 1 != s.Length) {
+                throw new ArgumentException(
+                    "ParseIso8601: trailing characters after 'Z': '"
+                    + s.Substring(pos + 1, s.Length - pos - 1) + "'");
+            }
+            return new DateTime(unixMs);
+        }
+        if (tz != '+' && tz != '-') {
+            throw new ArgumentException(
+                "ParseIso8601: expected 'Z', '+', or '-' at position "
+                + pos.ToString() + ", got '" + _charStr(tz) + "'");
+        }
+        int sign = (tz == '-') ? -1 : 1;
+        pos = pos + 1;
+        if (pos + 2 > s.Length) {
+            throw new ArgumentException("ParseIso8601: offset truncated");
+        }
+        int offHours = _parseFixed(s, pos, 2, "offset hours");
+        pos = pos + 2;
+        int offMinutes = 0;
+        if (pos < s.Length) {
+            // Optional ':' then minutes.
+            if (s.CharAt(pos) == ':') { pos = pos + 1; }
+            if (pos + 2 > s.Length) {
+                throw new ArgumentException("ParseIso8601: offset minutes truncated");
+            }
+            offMinutes = _parseFixed(s, pos, 2, "offset minutes");
+            pos = pos + 2;
+        }
+        if (pos != s.Length) {
+            throw new ArgumentException(
+                "ParseIso8601: trailing characters after offset: '"
+                + s.Substring(pos, s.Length - pos) + "'");
+        }
+        if (offHours > 23 || offMinutes > 59) {
+            throw new ArgumentException(
+                "ParseIso8601: offset out of range "
+                + offHours.ToString() + ":" + offMinutes.ToString());
+        }
+        long offsetMs = (long)sign * ((long)offHours * 3600000L + (long)offMinutes * 60000L);
+        // Local time at offset = UTC + offset, so UTC = local - offset.
+        return new DateTime(unixMs - offsetMs);
+    }
+
+    // Inverse of `_civilFromDays`: convert (y, m, d) → days since 1970-01-01.
+    // Howard Hinnant's `days_from_civil` (matches sibling algorithm).
+    static long _daysFromCivil(long y, long m, long d) {
+        if (m <= 2L) { y = y - 1L; }
+        long era;
+        if (y >= 0L) { era = y / 400L; } else { era = (y - 399L) / 400L; }
+        long yoe = y - era * 400L;
+        long mAdj;
+        if (m > 2L) { mAdj = m - 3L; } else { mAdj = m + 9L; }
+        long doy = (153L * mAdj + 2L) / 5L + d - 1L;
+        long doe = yoe * 365L + yoe / 4L - yoe / 100L + doy;
+        return era * 146097L + doe - 719468L;
+    }
+
+    static int _parseFixed(string s, int start, int width, string fieldName) {
+        if (start + width > s.Length) {
+            throw new ArgumentException("ParseIso8601: " + fieldName + " truncated");
+        }
+        int n = 0;
+        int i = 0;
+        while (i < width) {
+            char c = s.CharAt(start + i);
+            if (!_isDigit(c)) {
+                throw new ArgumentException(
+                    "ParseIso8601: non-digit in " + fieldName + " at position "
+                    + (start + i).ToString() + ": '" + _charStr(c) + "'");
+            }
+            n = n * 10 + ((int)c - (int)'0');
+            i = i + 1;
+        }
+        return n;
+    }
+
+    static void _expect(string s, int pos, char want) {
+        if (pos >= s.Length || s.CharAt(pos) != want) {
+            char got = pos < s.Length ? s.CharAt(pos) : '?';
+            throw new ArgumentException(
+                "ParseIso8601: expected '" + _charStr(want) + "' at position "
+                + pos.ToString() + ", got '" + _charStr(got) + "'");
+        }
+    }
+
+    static bool _isDigit(char c) { return c >= '0' && c <= '9'; }
+
+    static string _charStr(char c) {
+        char[] buf = new char[1];
+        buf[0] = c;
+        return String.FromChars(buf);
+    }
+
     // ── 内部实现 ─────────────────────────────────────────────────────────────
 
     private string _formatIsoDate() {

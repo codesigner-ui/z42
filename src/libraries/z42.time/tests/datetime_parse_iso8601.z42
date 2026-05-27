@@ -1,0 +1,151 @@
+// add-datetime-iso8601-parse (2026-05-27): DateTime.ParseIso8601.
+namespace Z42TimeDateTimeParseIso8601Tests;
+
+using Std;
+using Std.Test;
+using Std.Time;
+
+[Test]
+void test_roundtrip_with_to_iso8601() {
+    // The pair must be inverse for any UTC moment our formatter can produce.
+    DateTime original = DateTime.FromUnixMs(1779805921789L);
+    string iso = original.ToIso8601();
+    DateTime parsed = DateTime.ParseIso8601(iso);
+    Assert.Equal(original.UnixMs(), parsed.UnixMs());
+}
+
+[Test]
+void test_unix_epoch_roundtrip() {
+    DateTime epoch = DateTime.UnixEpoch();
+    string iso = epoch.ToIso8601();
+    Assert.Equal("1970-01-01T00:00:00.000Z", iso);
+    DateTime parsed = DateTime.ParseIso8601(iso);
+    Assert.Equal(0L, parsed.UnixMs());
+}
+
+[Test]
+void test_date_only_yields_midnight_utc() {
+    // 2026-05-27 midnight UTC.
+    DateTime parsed = DateTime.ParseIso8601("2026-05-27");
+    // 2026-05-27 00:00:00 UTC = days_from_civil(2026, 5, 27) * 86400 * 1000.
+    // Compare against an in-language baseline by re-parsing the round-trip.
+    DateTime midnight = DateTime.ParseIso8601("2026-05-27T00:00:00Z");
+    Assert.Equal(midnight.UnixMs(), parsed.UnixMs());
+}
+
+[Test]
+void test_basic_utc_z_suffix() {
+    DateTime d = DateTime.ParseIso8601("2026-05-27T14:32:31Z");
+    Assert.Equal("2026-05-27T14:32:31.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_with_milliseconds() {
+    DateTime d = DateTime.ParseIso8601("2026-05-27T14:32:31.789Z");
+    Assert.Equal("2026-05-27T14:32:31.789Z", d.ToIso8601());
+}
+
+[Test]
+void test_truncates_fractional_below_ms() {
+    // Microsecond precision lost (DateTime is ms-resolution).
+    DateTime d = DateTime.ParseIso8601("2026-05-27T14:32:31.123456Z");
+    Assert.Equal("2026-05-27T14:32:31.123Z", d.ToIso8601());
+}
+
+[Test]
+void test_pads_fractional_under_ms() {
+    // .5 means 500 ms (not 5 ms — left-aligned per ISO 8601).
+    DateTime d = DateTime.ParseIso8601("2026-05-27T14:32:31.5Z");
+    Assert.Equal("2026-05-27T14:32:31.500Z", d.ToIso8601());
+}
+
+[Test]
+void test_positive_offset_subtracts() {
+    // 2023-11-15 07:13:20 JST (+09:00) == 2023-11-14 22:13:20 UTC
+    DateTime d = DateTime.ParseIso8601("2023-11-15T07:13:20+09:00");
+    Assert.Equal("2023-11-14T22:13:20.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_negative_offset_adds() {
+    // 2023-11-15 02:13:20 EST (-05:00) == 2023-11-15 07:13:20 UTC
+    DateTime d = DateTime.ParseIso8601("2023-11-15T02:13:20-05:00");
+    Assert.Equal("2023-11-15T07:13:20.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_offset_without_colon() {
+    DateTime d = DateTime.ParseIso8601("2023-11-15T07:13:20+0900");
+    Assert.Equal("2023-11-14T22:13:20.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_no_suffix_treated_as_utc() {
+    DateTime d = DateTime.ParseIso8601("2026-05-27T14:32:31");
+    Assert.Equal("2026-05-27T14:32:31.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_space_separator_accepted() {
+    // RFC 3339 §5.6 NOTE: SP MAY replace 'T'.
+    DateTime d = DateTime.ParseIso8601("2026-05-27 14:32:31Z");
+    Assert.Equal("2026-05-27T14:32:31.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_pre_epoch_negative_unix_ms() {
+    // 1969-07-21 02:56:00 UTC (Apollo 11 moon walk start).
+    DateTime d = DateTime.ParseIso8601("1969-07-21T02:56:00Z");
+    Assert.True(d.UnixMs() < 0L);
+    Assert.Equal("1969-07-21T02:56:00.000Z", d.ToIso8601());
+}
+
+[Test]
+void test_rejects_too_short_input() {
+    bool caught = false;
+    try { DateTime.ParseIso8601("2026-05"); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_rejects_non_digit_in_year() {
+    bool caught = false;
+    try { DateTime.ParseIso8601("XXXX-05-27"); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_rejects_bad_separator() {
+    bool caught = false;
+    try { DateTime.ParseIso8601("2026/05/27"); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_rejects_out_of_range_month() {
+    bool caught = false;
+    try { DateTime.ParseIso8601("2026-13-01"); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_rejects_trailing_garbage_after_z() {
+    bool caught = false;
+    try { DateTime.ParseIso8601("2026-05-27T14:32:31Zextra"); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_rejects_dot_without_fractional_digits() {
+    bool caught = false;
+    try { DateTime.ParseIso8601("2026-05-27T14:32:31.Z"); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_leap_second_60_buckets_to_59() {
+    // RFC 3339 allows :60 for positive leap second; we bucket into :59
+    // so the unix-ms math doesn't overshoot the next minute.
+    DateTime d = DateTime.ParseIso8601("2016-12-31T23:59:60Z");
+    Assert.Equal("2016-12-31T23:59:59.000Z", d.ToIso8601());
+}
