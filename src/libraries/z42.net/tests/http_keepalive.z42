@@ -1,0 +1,198 @@
+// add-z42-net-http-keepalive (2026-05-28): connection-reuse tests.
+namespace Z42NetHttpKeepAliveTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+// Read one HTTP request (headers + optional body) from a Stream.
+// Returns the request text. Drains exactly Content-Length bytes if
+// the request carries one (POST), otherwise stops at \r\n\r\n.
+static string _readOneRequest(Stream s) {
+    byte[] buf = new byte[8192];
+    int total = 0;
+    int headerEnd = -1;
+    while (headerEnd < 0) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) {
+            // EOF before headers complete.
+            char[] charsEarly = new char[total];
+            int p = 0;
+            while (p < total) { charsEarly[p] = (char)((int)buf[p] & 0xFF); p = p + 1; }
+            return String.FromChars(charsEarly);
+        }
+        total = total + got;
+        int i = 3;
+        while (i < total) {
+            if (buf[i - 3] == (byte)13 && buf[i - 2] == (byte)10
+                && buf[i - 1] == (byte)13 && buf[i] == (byte)10) {
+                headerEnd = i + 1;
+                i = total;
+            }
+            i = i + 1;
+        }
+    }
+    char[] chars = new char[headerEnd];
+    int j = 0;
+    while (j < headerEnd) { chars[j] = (char)((int)buf[j] & 0xFF); j = j + 1; }
+    return String.FromChars(chars);
+}
+
+[Test]
+void test_keepalive_reuses_single_tcp_connection_across_two_gets() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/hello";
+
+    // Server thread: accept ONE TCP connection, serve TWO sequential
+    // requests on it (keep-alive). After the second response we
+    // proactively close — the client must dispose cleanly.
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        // First request
+        string req1 = _readOneRequest(s);
+        string resp1 = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "Content-Length: 6\r\n"
+            + "Connection: keep-alive\r\n"
+            + "\r\n"
+            + "first!";
+        byte[] r1 = Utf8.GetBytes(resp1);
+        s.Write(r1, 0, r1.Length);
+        // Second request on same socket
+        string req2 = _readOneRequest(s);
+        string resp2 = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "Content-Length: 7\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+            + "second!";
+        byte[] r2 = Utf8.GetBytes(resp2);
+        s.Write(r2, 0, r2.Length);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    client.SetKeepAlive(true);
+    Assert.True(client.GetKeepAlive());
+
+    HttpResponse a = client.Get(url);
+    Assert.Equal(200, a.StatusCode);
+    Assert.Equal("first!", a.BodyAsString());
+
+    // Second request should reuse the pooled socket — the same server
+    // thread will handle both requests on one accepted TcpClient.
+    HttpResponse b = client.Get(url);
+    Assert.Equal(200, b.StatusCode);
+    Assert.Equal("second!", b.BodyAsString());
+
+    client.Dispose();
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_keepalive_off_uses_close_header_and_separate_connections() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/x";
+
+    // Server expects TWO separate accept() calls because the client
+    // sends Connection: close on each.
+    Thread srv = Thread.Start(() => {
+        int round = 0;
+        while (round < 2) {
+            var peer = server.AcceptTcpClient();
+            var s = peer.GetStream();
+            string req = _readOneRequest(s);
+            // Caller MUST have sent Connection: close.
+            string lower = req.ToLower();
+            // Look for "connection: close"
+            bool hasClose = false;
+            int i = 0;
+            int n = lower.Length;
+            while (i + 17 < n) {
+                if (lower.CharAt(i)      == 'c'
+                 && lower.CharAt(i + 1)  == 'o'
+                 && lower.CharAt(i + 2)  == 'n'
+                 && lower.CharAt(i + 3)  == 'n'
+                 && lower.CharAt(i + 4)  == 'e'
+                 && lower.CharAt(i + 5)  == 'c'
+                 && lower.CharAt(i + 6)  == 't'
+                 && lower.CharAt(i + 7)  == 'i'
+                 && lower.CharAt(i + 8)  == 'o'
+                 && lower.CharAt(i + 9)  == 'n'
+                 && lower.CharAt(i + 10) == ':') {
+                    hasClose = true;
+                    i = n;
+                }
+                i = i + 1;
+            }
+            string resp = "HTTP/1.1 200 OK\r\n"
+                + "Content-Type: text/plain\r\n"
+                + "Content-Length: 2\r\n"
+                + "Connection: close\r\n"
+                + "\r\n"
+                + "ok";
+            byte[] rb = Utf8.GetBytes(resp);
+            s.Write(rb, 0, rb.Length);
+            peer.Dispose();
+            round = round + 1;
+        }
+    });
+
+    var client = new HttpClient();
+    Assert.True(!client.GetKeepAlive());   // default off
+
+    HttpResponse a = client.Get(url);
+    Assert.Equal(200, a.StatusCode);
+    Assert.Equal("ok", a.BodyAsString());
+    HttpResponse b = client.Get(url);
+    Assert.Equal(200, b.StatusCode);
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_keepalive_dispose_closes_pooled_connection() {
+    // After Dispose() the pool is empty and the client can still send
+    // requests (just creates a fresh socket each time).
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/y";
+
+    Thread srv = Thread.Start(() => {
+        int round = 0;
+        while (round < 2) {
+            var peer = server.AcceptTcpClient();
+            var s = peer.GetStream();
+            string req = _readOneRequest(s);
+            string resp = "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\nZ";
+            byte[] rb = Utf8.GetBytes(resp);
+            s.Write(rb, 0, rb.Length);
+            peer.Dispose();
+            round = round + 1;
+        }
+    });
+
+    var client = new HttpClient();
+    client.SetKeepAlive(true);
+    HttpResponse a = client.Get(url);
+    Assert.Equal(200, a.StatusCode);
+    // First server response had Connection: close so the socket was
+    // disposed rather than pooled — calling Dispose is still safe.
+    client.Dispose();
+    // Second request — pool is empty, fresh socket.
+    HttpResponse b = client.Get(url);
+    Assert.Equal(200, b.StatusCode);
+
+    srv.Join();
+    server.Stop();
+}

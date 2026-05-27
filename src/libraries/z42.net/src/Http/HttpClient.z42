@@ -20,10 +20,16 @@ using Std.Net.Sockets;
 // outgoing always Content-Length.
 public class HttpClient {
     private string    _userAgent;
-    private CookieJar _cookieJar;     // null → no cookie handling (default)
-    private int       _maxRedirects;  // 0 → no auto-follow (default); recommended: 10
-    private int       _timeoutMs;     // 0 → no timeout (default); >0 applied to read+write
-    private bool      _autoDecompress; // false → leave body raw; true → Accept-Encoding: gzip + decode
+    private CookieJar _cookieJar;
+    private int       _maxRedirects;
+    private int       _timeoutMs;
+    private bool      _autoDecompress;
+    // add-z42-net-http-keepalive (2026-05-28): TCP connection reuse pool.
+    private bool         _keepAlive;
+    private string[]     _poolKeys;
+    private TcpClient[]  _poolClients;
+    private int          _poolCount;
+    private int          _poolCapacity;
 
     public HttpClient() {
         this._userAgent      = "z42-http/0.1";
@@ -31,6 +37,90 @@ public class HttpClient {
         this._maxRedirects   = 0;
         this._timeoutMs      = 0;
         this._autoDecompress = false;
+        this._keepAlive      = false;
+        this._poolCapacity   = 8;
+        this._poolKeys       = new string[this._poolCapacity];
+        this._poolClients    = new TcpClient[this._poolCapacity];
+        this._poolCount      = 0;
+    }
+
+    /// Enable TCP connection reuse (HTTP/1.1 keep-alive). When on,
+    /// requests carry `Connection: keep-alive`; successful responses
+    /// whose `Connection` header doesn't say "close" return the socket
+    /// to a pool keyed by `host:port`. Subsequent requests to the same
+    /// host first try the pooled socket — with one silent retry on
+    /// stale-connection failure (servers may close idle keep-alive
+    /// sockets unilaterally). Pool capped at 8 host:port entries
+    /// (oldest evicted on overflow).
+    public void SetKeepAlive(bool enable) {
+        this._keepAlive = enable;
+        if (!enable) { this._closeAllPooled(); }
+    }
+
+    public bool GetKeepAlive() { return this._keepAlive; }
+
+    /// Release all pooled connections. Idempotent. After this the
+    /// client may still be used — subsequent requests just open fresh
+    /// sockets (or repopulate the pool if keep-alive stays enabled).
+    public void Dispose() { this._closeAllPooled(); }
+
+    private void _closeAllPooled() {
+        int i = 0;
+        while (i < this._poolCount) {
+            TcpClient c = this._poolClients[i];
+            if (c != null) {
+                try { c.Dispose(); } catch (Exception e) { /* swallow */ }
+            }
+            this._poolKeys[i] = null;
+            this._poolClients[i] = null;
+            i = i + 1;
+        }
+        this._poolCount = 0;
+    }
+
+    private TcpClient _takeFromPool(string key) {
+        int i = 0;
+        while (i < this._poolCount) {
+            if (this._poolKeys[i] == key) {
+                TcpClient c = this._poolClients[i];
+                int last = this._poolCount - 1;
+                if (i != last) {
+                    this._poolKeys[i]    = this._poolKeys[last];
+                    this._poolClients[i] = this._poolClients[last];
+                }
+                this._poolKeys[last]    = null;
+                this._poolClients[last] = null;
+                this._poolCount = last;
+                return c;
+            }
+            i = i + 1;
+        }
+        return null;
+    }
+
+    private void _returnToPool(string key, TcpClient client) {
+        int i = 0;
+        while (i < this._poolCount) {
+            if (this._poolKeys[i] == key) {
+                try { this._poolClients[i].Dispose(); } catch (Exception e) { /* swallow */ }
+                this._poolClients[i] = client;
+                return;
+            }
+            i = i + 1;
+        }
+        if (this._poolCount >= this._poolCapacity) {
+            try { this._poolClients[0].Dispose(); } catch (Exception e) { /* swallow */ }
+            int j = 1;
+            while (j < this._poolCount) {
+                this._poolKeys[j - 1]    = this._poolKeys[j];
+                this._poolClients[j - 1] = this._poolClients[j];
+                j = j + 1;
+            }
+            this._poolCount = this._poolCount - 1;
+        }
+        this._poolKeys[this._poolCount]    = key;
+        this._poolClients[this._poolCount] = client;
+        this._poolCount = this._poolCount + 1;
     }
 
     /// add-z42-net-http-compression (2026-05-27): transparent gzip handling.
@@ -255,7 +345,11 @@ public class HttpClient {
             request.Headers.Set("User-Agent", this._userAgent);
         }
         if (!request.Headers.Contains("Connection")) {
-            request.Headers.Set("Connection", "close");
+            if (this._keepAlive) {
+                request.Headers.Set("Connection", "keep-alive");
+            } else {
+                request.Headers.Set("Connection", "close");
+            }
         }
         if (this._autoDecompress && !request.Headers.Contains("Accept-Encoding")) {
             request.Headers.Set("Accept-Encoding", "gzip");
@@ -277,28 +371,51 @@ public class HttpClient {
         // Serialise request → byte[]
         byte[] reqBytes = HttpClient._serialiseRequest(request, url);
 
-        var client = new TcpClient();
-        client.Connect(url.Host, url.Port);
-        // add-httpclient-timeout (2026-05-27): apply read+write deadline
-        // before any IO so a silent / dead peer can't hang the script.
-        if (this._timeoutMs > 0) {
-            client.SetReadTimeout(this._timeoutMs);
-            client.SetWriteTimeout(this._timeoutMs);
-        }
-        var stream = client.GetStream();
-        // `var` to avoid z42 cross-file class-token mismatch on HttpResponse:
-        // declaring `HttpResponse resp` while the constructor lives in
-        // HttpResponse.z42 + CookieJar.IngestFromResponse signature lives in
-        // CookieJar.z42 produces two type tokens. `var` inference threads the
-        // same token through.
+        string poolKey = url.Host + ":" + Int32.ToString(url.Port);
         var resp = HttpClient._initialResp();
-        try {
-            stream.Write(reqBytes, 0, reqBytes.Length);
-            resp = HttpClient._readResponse(stream);
-            client.Dispose();
-        } catch (Exception e) {
-            client.Dispose();
-            throw e;
+        TcpClient client = null;
+        bool fromPool = false;
+        if (this._keepAlive) {
+            client = this._takeFromPool(poolKey);
+            fromPool = client != null;
+        }
+        // First attempt — may fail if the pooled connection was closed
+        // by the server during idle. One silent retry with a fresh socket.
+        bool succeeded = false;
+        int attempt = 0;
+        while (!succeeded && attempt < 2) {
+            if (client == null) {
+                client = new TcpClient();
+                client.Connect(url.Host, url.Port);
+                fromPool = false;
+            }
+            if (this._timeoutMs > 0) {
+                client.SetReadTimeout(this._timeoutMs);
+                client.SetWriteTimeout(this._timeoutMs);
+            }
+            var stream = client.GetStream();
+            try {
+                stream.Write(reqBytes, 0, reqBytes.Length);
+                resp = HttpClient._readResponse(stream);
+                succeeded = true;
+            } catch (Exception e) {
+                try { client.Dispose(); } catch (Exception e2) { /* swallow */ }
+                client = null;
+                if (!fromPool || attempt == 1) { throw e; }
+                fromPool = false;
+                attempt = attempt + 1;
+            }
+        }
+        // Pool or dispose based on Connection header.
+        bool serverWantsClose = false;
+        string respConn = resp.Headers.Get("Connection");
+        if (respConn != null && respConn.ToLower() == "close") {
+            serverWantsClose = true;
+        }
+        if (this._keepAlive && !serverWantsClose) {
+            this._returnToPool(poolKey, client);
+        } else {
+            try { client.Dispose(); } catch (Exception e) { /* swallow */ }
         }
         // add-z42-net-http-compression (2026-05-27): auto-decode gzip
         // response body before cookies / downstream observers see it.
