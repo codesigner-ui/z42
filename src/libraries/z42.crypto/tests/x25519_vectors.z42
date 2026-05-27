@@ -1,0 +1,139 @@
+// add-x25519 (2026-05-28): RFC 7748 §5.2 / §6.1 test vectors for X25519.
+namespace Z42CryptoX25519VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 7748 §5.2 — single-step ScalarMult vectors ──────────────────────
+
+[Test]
+void test_x25519_rfc7748_section5_2_vec1() {
+    byte[] scalar = Hex.Decode("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4");
+    byte[] u      = Hex.Decode("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c");
+    byte[] result = X25519.ScalarMult(scalar, u);
+    Assert.Equal(
+        "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552",
+        Hex.Encode(result)
+    );
+}
+
+[Test]
+void test_x25519_rfc7748_section5_2_vec2() {
+    byte[] scalar = Hex.Decode("4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d");
+    byte[] u      = Hex.Decode("e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493");
+    byte[] result = X25519.ScalarMult(scalar, u);
+    Assert.Equal(
+        "95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957",
+        Hex.Encode(result)
+    );
+}
+
+// ── RFC 7748 §6.1 — Alice / Bob ECDH key exchange ───────────────────────
+//
+// Alice and Bob each generate a private scalar; derive their public keys
+// via ScalarMultBase; exchange publics; compute the shared secret via
+// ScalarMult of own private × peer's public. Both sides must arrive at
+// the same shared secret — that's the ECDH guarantee.
+
+[Test]
+void test_x25519_rfc7748_section6_1_alice_public_key() {
+    byte[] alicePriv = Hex.Decode("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+    byte[] alicePub  = X25519.ScalarMultBase(alicePriv);
+    Assert.Equal(
+        "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
+        Hex.Encode(alicePub)
+    );
+}
+
+[Test]
+void test_x25519_rfc7748_section6_1_bob_public_key() {
+    byte[] bobPriv = Hex.Decode("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
+    byte[] bobPub  = X25519.ScalarMultBase(bobPriv);
+    Assert.Equal(
+        "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
+        Hex.Encode(bobPub)
+    );
+}
+
+[Test]
+void test_x25519_rfc7748_section6_1_shared_secret_from_alice() {
+    byte[] alicePriv = Hex.Decode("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+    byte[] bobPub    = Hex.Decode("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
+    byte[] shared    = X25519.ScalarMult(alicePriv, bobPub);
+    Assert.Equal(
+        "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+        Hex.Encode(shared)
+    );
+}
+
+[Test]
+void test_x25519_rfc7748_section6_1_shared_secret_from_bob() {
+    byte[] bobPriv   = Hex.Decode("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
+    byte[] alicePub  = Hex.Decode("8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a");
+    byte[] shared    = X25519.ScalarMult(bobPriv, alicePub);
+    // Must equal Alice's computed shared secret — that's the ECDH agreement.
+    Assert.Equal(
+        "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+        Hex.Encode(shared)
+    );
+}
+
+// ── Clamp behaviour (RFC 7748 §5) ───────────────────────────────────────
+
+[Test]
+void test_x25519_clamp_clears_low_3_bits_of_byte_0() {
+    byte[] scalar = new byte[32];
+    int i = 0;
+    while (i < 32) { scalar[i] = (byte)0xFF; i = i + 1; }
+    byte[] clamped = X25519.Clamp(scalar);
+    // Byte 0: 0xFF & 248 = 0xF8 (low 3 bits cleared)
+    Assert.Equal(248, (int)clamped[0] & 0xFF);
+    // Byte 31: (0xFF & 127) | 64 = 0x7F | 0x40 = 0x7F (already has bit 6 set)
+    Assert.Equal(127, (int)clamped[31] & 0xFF);
+}
+
+[Test]
+void test_x25519_clamp_sets_bit_6_of_byte_31() {
+    byte[] scalar = new byte[32];   // all zero
+    byte[] clamped = X25519.Clamp(scalar);
+    Assert.Equal(0,  (int)clamped[0]  & 0xFF);
+    Assert.Equal(64, (int)clamped[31] & 0xFF);  // 0x00 → 0x40 after clamp
+}
+
+[Test]
+void test_x25519_clamp_does_not_mutate_input() {
+    byte[] scalar = new byte[32];
+    int i = 0;
+    while (i < 32) { scalar[i] = (byte)0xFF; i = i + 1; }
+    byte[] _unused = X25519.Clamp(scalar);
+    // Original must remain unchanged.
+    int j = 0;
+    while (j < 32) {
+        Assert.Equal(255, (int)scalar[j] & 0xFF);
+        j = j + 1;
+    }
+}
+
+// ── Validation ──────────────────────────────────────────────────────────
+
+[Test]
+void test_x25519_rejects_wrong_scalar_length() {
+    byte[] bad = new byte[31];
+    byte[] u   = new byte[32];
+    bool threw = false;
+    try { X25519.ScalarMult(bad, u); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_x25519_rejects_wrong_point_length() {
+    byte[] s = new byte[32];
+    byte[] bad = new byte[33];
+    bool threw = false;
+    try { X25519.ScalarMult(s, bad); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}

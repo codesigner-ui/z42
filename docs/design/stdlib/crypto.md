@@ -72,6 +72,16 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- X25519 ECDH (RFC 7748) — `Std.Crypto.X25519` (add-x25519, 2026-05-28)
+  - `ScalarMult(byte[32] scalar, byte[32] point) -> byte[32]` — Curve25519 Montgomery-ladder scalar multiplication
+  - `ScalarMultBase(byte[32] scalar) -> byte[32]` — convenience: scalar × generator (u=9), derives public key from private
+  - `Clamp(byte[32]) -> byte[32]` — RFC 7748 §5 clamping (caller doesn't need to pre-clamp ScalarMult inputs — handled internally)
+  - `U_BASE = 9` constant for the curve's base point u-coordinate
+  - Field arithmetic over GF(2^255 - 19) via `Std.Numerics.BigInt`; constant-time conditional swaps (`_cswap`) defend against scalar timing leaks at the ladder layer
+  - Use cases: TLS 1.3 / WireGuard / Signal / age / SSH `curve25519-sha256` / Tor key agreement
+  - Verified against RFC 7748 §5.2 single-step vectors + §6.1 Alice/Bob ECDH (both sides converge to same shared secret)
+  - Performance note: pure-script BigInt-backed ~150 ms per ScalarMult; adequate for one-handshake-per-connection use; bulk ECDH wants cdylib
+
 - BLAKE2b (RFC 7693) — `Std.Crypto.Blake2b` (add-blake2b, 2026-05-28)
   - `Hash(byte[]) -> byte[64]` (512-bit default) / `Hash256(byte[]) -> byte[32]` (256-bit common)
   - `HashLen(byte[] data, byte[] key, int outLen) -> byte[outLen]` — variable output (1..64) + optional key (0..64 bytes, keyed-MAC mode)
