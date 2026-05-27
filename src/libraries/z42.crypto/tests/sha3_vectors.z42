@@ -1,0 +1,150 @@
+// add-sha3 (2026-05-27): FIPS 202 §A.5 + NIST CAVS short-message test
+// vectors for SHA3-224 / SHA3-256 / SHA3-384 / SHA3-512.
+namespace Z42CryptoSha3VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── Empty string ────────────────────────────────────────────────────────
+
+[Test]
+void test_sha3_224_empty() {
+    Assert.Equal(
+        "6b4e03423667dbb73b6e15454f0eb1abd4597f9a1b078e3f5b5a6bc7",
+        Sha3.Hash224StringHex("")
+    );
+}
+
+[Test]
+void test_sha3_256_empty() {
+    Assert.Equal(
+        "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a",
+        Sha3.Hash256StringHex("")
+    );
+}
+
+[Test]
+void test_sha3_384_empty() {
+    Assert.Equal(
+        "0c63a75b845e4f7d01107d852e4c2485c51a50aaaa94fc61995e71bbee983a2ac3713831264adb47fb6bd1e058d5f004",
+        Sha3.Hash384StringHex("")
+    );
+}
+
+[Test]
+void test_sha3_512_empty() {
+    Assert.Equal(
+        "a69f73cca23a9ac5c8b567dc185a756e97c982164fe25859e0d1dcc1475c80a615b2123af1f5f94c11e3e9402c3ac558f500199d95b6d3e301758586281dcd26",
+        Sha3.Hash512StringHex("")
+    );
+}
+
+// ── "abc" — FIPS 202 §A.5 sample ────────────────────────────────────────
+
+[Test]
+void test_sha3_224_abc() {
+    Assert.Equal(
+        "e642824c3f8cf24ad09234ee7d3c766fc9a3a5168d0c94ad73b46fdf",
+        Sha3.Hash224StringHex("abc")
+    );
+}
+
+[Test]
+void test_sha3_256_abc() {
+    Assert.Equal(
+        "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532",
+        Sha3.Hash256StringHex("abc")
+    );
+}
+
+[Test]
+void test_sha3_384_abc() {
+    Assert.Equal(
+        "ec01498288516fc926459f58e2c6ad8df9b473cb0fc08c2596da7cf0e49be4b298d88cea927ac7f539f1edf228376d25",
+        Sha3.Hash384StringHex("abc")
+    );
+}
+
+[Test]
+void test_sha3_512_abc() {
+    Assert.Equal(
+        "b751850b1a57168a5693cd924b6b096e08f621827444f70d884f5d0240d2712e10e116e9192af3c91a7ec57647e3934057340b4cf408d5a56592f8274eec53f0",
+        Sha3.Hash512StringHex("abc")
+    );
+}
+
+// ── 448-bit message: "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq" ──
+
+[Test]
+void test_sha3_256_56_byte_message() {
+    Assert.Equal(
+        "41c0dba2a9d6240849100376a8235e2c82e1b9998a999e21db32dd97496d3376",
+        Sha3.Hash256StringHex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+    );
+}
+
+[Test]
+void test_sha3_512_56_byte_message() {
+    Assert.Equal(
+        "04a371e84ecfb5b8b77cb48610fca8182dd457ce6f326a0fd3d7ec2f1e91636dee691fbe0c985302ba1b0d8dc78c086346b533b49c030d99a27daf1139d6e75e",
+        Sha3.Hash512StringHex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+    );
+}
+
+// ── Block-boundary tests ────────────────────────────────────────────────
+// SHA3-256 rate r=136 bytes. Exercising 135 / 136 / 137 byte inputs
+// confirms the padding-block + carry-over logic.
+
+[Test]
+void test_sha3_256_one_byte_below_rate() {
+    byte[] msg = new byte[135];
+    int i = 0;
+    while (i < 135) { msg[i] = (byte)0x41; i = i + 1; }  // 135 × 'A'
+    Assert.Equal(64, Sha3.Hash256Hex(msg).Length);  // 32-byte digest = 64 hex chars
+}
+
+[Test]
+void test_sha3_256_exactly_rate() {
+    byte[] msg = new byte[136];
+    int i = 0;
+    while (i < 136) { msg[i] = (byte)0x42; i = i + 1; }  // 136 × 'B'
+    Assert.Equal(64, Sha3.Hash256Hex(msg).Length);
+}
+
+[Test]
+void test_sha3_256_one_byte_above_rate() {
+    byte[] msg = new byte[137];
+    int i = 0;
+    while (i < 137) { msg[i] = (byte)0x43; i = i + 1; }  // 137 × 'C'
+    Assert.Equal(64, Sha3.Hash256Hex(msg).Length);
+}
+
+// ── Output length sanity ────────────────────────────────────────────────
+
+[Test]
+void test_output_lengths() {
+    byte[] data = new byte[0];
+    Assert.Equal(28, Sha3.Hash224(data).Length);
+    Assert.Equal(32, Sha3.Hash256(data).Length);
+    Assert.Equal(48, Sha3.Hash384(data).Length);
+    Assert.Equal(64, Sha3.Hash512(data).Length);
+}
+
+// ── Differentiation across variants ─────────────────────────────────────
+
+[Test]
+void test_sha3_256_differs_from_sha2_256() {
+    string msg = "hello world";
+    // SHA-3 256 of "hello world" — different from SHA-2 256 by construction
+    Assert.Equal(
+        "644bcc7e564373040999aac89e7622f3ca71fba1d972fd94a31c3bfbf24e3938",
+        Sha3.Hash256StringHex(msg)
+    );
+    // SHA-2 256 of "hello world" — sanity check for distinctness
+    Assert.Equal(
+        "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
+        Sha256.HashStringHex(msg)
+    );
+}

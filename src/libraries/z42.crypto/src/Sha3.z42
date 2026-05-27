@@ -1,0 +1,240 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-sha3 (2026-05-27): SHA-3 (FIPS 202) hash family — Keccak-f[1600].
+//
+// Pure-script implementation. SHA-3 is sponge-based (vs SHA-2's
+// Merkle-Damgård) — a 1600-bit (25 × 64-bit) state permuted by
+// Keccak-f, then "absorb" XOR-mixes input into the rate portion and
+// "squeeze" reads output bytes from the same rate portion.
+//
+// State layout: flat `long[25]` indexed as `state[x + 5*y]`, where
+// x, y in 0..4 are the FIPS 202 §3.1.2 column/row coordinates.
+//
+// Variants (FIPS 202 §6.1) — all share Keccak-f[1600], differ only in
+// the rate `r` (and thus output length):
+//   SHA3-224 : r=1152 bits (144 bytes), d=28 bytes
+//   SHA3-256 : r=1088 bits (136 bytes), d=32 bytes
+//   SHA3-384 : r= 832 bits (104 bytes), d=48 bytes
+//   SHA3-512 : r= 576 bits ( 72 bytes), d=64 bytes
+//
+// Domain separation byte = 0x06 (SHA-3 prefix `01` + start of multirate
+// padding `1`). Last byte of padding has high bit set (`0x80`).
+//
+// Note: this implements *FIPS 202 SHA-3*, not the legacy Keccak used by
+// Ethereum (which differs only in the domain-separation byte: 0x01 vs
+// 0x06). A `Keccak256.HashEthereum` variant is `sha3-future-keccak-legacy`.
+//
+// Tested against NIST FIPS 202 §A.5 sample test vectors for all four
+// output lengths.
+
+public static class Sha3 {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    public static byte[] Hash224(byte[] data) { return Sha3._hash(data, 144, 28); }
+    public static byte[] Hash256(byte[] data) { return Sha3._hash(data, 136, 32); }
+    public static byte[] Hash384(byte[] data) { return Sha3._hash(data, 104, 48); }
+    public static byte[] Hash512(byte[] data) { return Sha3._hash(data,  72, 64); }
+
+    public static byte[] Hash224String(string s) { return Sha3.Hash224(Utf8.GetBytes(s)); }
+    public static byte[] Hash256String(string s) { return Sha3.Hash256(Utf8.GetBytes(s)); }
+    public static byte[] Hash384String(string s) { return Sha3.Hash384(Utf8.GetBytes(s)); }
+    public static byte[] Hash512String(string s) { return Sha3.Hash512(Utf8.GetBytes(s)); }
+
+    public static string Hash224Hex(byte[] data) { return Hex.Encode(Sha3.Hash224(data)); }
+    public static string Hash256Hex(byte[] data) { return Hex.Encode(Sha3.Hash256(data)); }
+    public static string Hash384Hex(byte[] data) { return Hex.Encode(Sha3.Hash384(data)); }
+    public static string Hash512Hex(byte[] data) { return Hex.Encode(Sha3.Hash512(data)); }
+
+    public static string Hash224StringHex(string s) { return Hex.Encode(Sha3.Hash224String(s)); }
+    public static string Hash256StringHex(string s) { return Hex.Encode(Sha3.Hash256String(s)); }
+    public static string Hash384StringHex(string s) { return Hex.Encode(Sha3.Hash384String(s)); }
+    public static string Hash512StringHex(string s) { return Hex.Encode(Sha3.Hash512String(s)); }
+
+    // ── Sponge: absorb + squeeze ─────────────────────────────────────────────
+
+    /// Sponge construction with rate `r` bytes and output length `d` bytes.
+    /// Domain-separation byte = 0x06 (SHA-3 family).
+    static byte[] _hash(byte[] data, int r, int d) {
+        long[] state = new long[25];
+        // Absorb full-rate blocks.
+        int off = 0;
+        while (data.Length - off >= r) {
+            Sha3._absorbBlock(state, data, off, r);
+            Sha3._keccakF(state);
+            off = off + r;
+        }
+        // Pad final block: copy remaining bytes, append 0x06, zero-fill,
+        // OR last byte with 0x80. Even an empty trailing chunk gets one
+        // padding block (matches FIPS 202 §B.2).
+        byte[] last = new byte[r];
+        int rem = data.Length - off;
+        int i = 0;
+        while (i < rem) { last[i] = data[off + i]; i = i + 1; }
+        last[rem] = (byte)0x06;
+        last[r - 1] = (byte)((int)last[r - 1] | 0x80);
+        Sha3._absorbBlock(state, last, 0, r);
+        Sha3._keccakF(state);
+        // Squeeze d bytes. Output drawn from rate portion (lanes 0..r/8).
+        byte[] out_ = new byte[d];
+        int produced = 0;
+        while (produced < d) {
+            int chunk = d - produced;
+            if (chunk > r) { chunk = r; }
+            int j = 0;
+            while (j < chunk) {
+                int laneIdx = j / 8;
+                int byteIdx = j % 8;
+                long lane = state[laneIdx];
+                out_[produced + j] = (byte)(Sha3._lshr64(lane, byteIdx * 8) & 0xFFL);
+                j = j + 1;
+            }
+            produced = produced + chunk;
+            if (produced < d) { Sha3._keccakF(state); }
+        }
+        return out_;
+    }
+
+    /// XOR an r-byte block (interpreted as `r/8` little-endian 64-bit lanes)
+    /// into the rate portion of the state.
+    static void _absorbBlock(long[] state, byte[] data, int offset, int r) {
+        int lanes = r / 8;
+        int i = 0;
+        while (i < lanes) {
+            state[i] = state[i] ^ Sha3._readLE64(data, offset + i * 8);
+            i = i + 1;
+        }
+    }
+
+    // ── Keccak-f[1600] permutation (FIPS 202 §3.2) ───────────────────────────
+
+    /// Apply 24 rounds of Keccak-f[1600] in place.
+    static void _keccakF(long[] state) {
+        long[] rc = Sha3._roundConstants();
+        int[] rho = Sha3._rotationOffsets();
+        int round = 0;
+        while (round < 24) {
+            // θ: column parity diffusion.
+            long[] c = new long[5];
+            int x = 0;
+            while (x < 5) {
+                c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20];
+                x = x + 1;
+            }
+            long[] d = new long[5];
+            x = 0;
+            while (x < 5) {
+                int xm1 = (x + 4) % 5;
+                int xp1 = (x + 1) % 5;
+                d[x] = c[xm1] ^ Sha3._rotl64(c[xp1], 1);
+                x = x + 1;
+            }
+            int idx = 0;
+            while (idx < 25) {
+                state[idx] = state[idx] ^ d[idx % 5];
+                idx = idx + 1;
+            }
+
+            // ρ and π combined: B[y, 2x+3y] = rotl(A[x, y], rho[x, y]).
+            long[] b = new long[25];
+            int y = 0;
+            while (y < 5) {
+                x = 0;
+                while (x < 5) {
+                    int srcIdx = x + 5 * y;
+                    int dstX = y;
+                    int dstY = (2 * x + 3 * y) % 5;
+                    int dstIdx = dstX + 5 * dstY;
+                    b[dstIdx] = Sha3._rotl64(state[srcIdx], rho[srcIdx]);
+                    x = x + 1;
+                }
+                y = y + 1;
+            }
+
+            // χ: nonlinear column-wise step.
+            y = 0;
+            while (y < 5) {
+                x = 0;
+                while (x < 5) {
+                    int xp1 = (x + 1) % 5;
+                    int xp2 = (x + 2) % 5;
+                    state[x + 5 * y] = b[x + 5 * y] ^ ((~b[xp1 + 5 * y]) & b[xp2 + 5 * y]);
+                    x = x + 1;
+                }
+                y = y + 1;
+            }
+
+            // ι: XOR round constant into lane (0, 0).
+            state[0] = state[0] ^ rc[round];
+            round = round + 1;
+        }
+    }
+
+    /// Keccak-f rotation offsets ρ[x, y] (FIPS 202 Table 2).
+    /// Indexed as `rho[x + 5*y]` — same layout as the state.
+    static int[] _rotationOffsets() {
+        int[] r = new int[25];
+        // Row y=0: x=0..4
+        r[0]  =  0; r[1]  =  1; r[2]  = 62; r[3]  = 28; r[4]  = 27;
+        // Row y=1: x=0..4
+        r[5]  = 36; r[6]  = 44; r[7]  =  6; r[8]  = 55; r[9]  = 20;
+        // Row y=2: x=0..4
+        r[10] =  3; r[11] = 10; r[12] = 43; r[13] = 25; r[14] = 39;
+        // Row y=3: x=0..4
+        r[15] = 41; r[16] = 45; r[17] = 15; r[18] = 21; r[19] =  8;
+        // Row y=4: x=0..4
+        r[20] = 18; r[21] =  2; r[22] = 61; r[23] = 56; r[24] = 14;
+        return r;
+    }
+
+    /// Keccak-f[1600] round constants RC[0..23] (FIPS 202 §3.2.5).
+    static long[] _roundConstants() {
+        long[] rc = new long[24];
+        rc[0]  = 0x0000000000000001L; rc[1]  = 0x0000000000008082L;
+        rc[2]  = 0x800000000000808AL; rc[3]  = 0x8000000080008000L;
+        rc[4]  = 0x000000000000808BL; rc[5]  = 0x0000000080000001L;
+        rc[6]  = 0x8000000080008081L; rc[7]  = 0x8000000000008009L;
+        rc[8]  = 0x000000000000008AL; rc[9]  = 0x0000000000000088L;
+        rc[10] = 0x0000000080008009L; rc[11] = 0x000000008000000AL;
+        rc[12] = 0x000000008000808BL; rc[13] = 0x800000000000008BL;
+        rc[14] = 0x8000000000008089L; rc[15] = 0x8000000000008003L;
+        rc[16] = 0x8000000000008002L; rc[17] = 0x8000000000000080L;
+        rc[18] = 0x000000000000800AL; rc[19] = 0x800000008000000AL;
+        rc[20] = 0x8000000080008081L; rc[21] = 0x8000000000008080L;
+        rc[22] = 0x0000000080000001L; rc[23] = 0x8000000080008008L;
+        return rc;
+    }
+
+    // ── 64-bit bit-twiddling helpers ─────────────────────────────────────────
+
+    /// Logical right shift on i64. Arithmetic `>>` sign-extends negative
+    /// values; mask off the introduced 1s.
+    static long _lshr64(long x, int n) {
+        if (n == 0) return x;
+        if (x >= 0L) return x >> n;
+        return (x >> n) ^ ((-1L) << (64 - n));
+    }
+
+    /// Left rotation by n bits on i64 (n in [0, 63]).
+    static long _rotl64(long x, int n) {
+        if (n == 0) return x;
+        return (x << n) | Sha3._lshr64(x, 64 - n);
+    }
+
+    // ── Byte-order helpers (little-endian per FIPS 202 §B.1) ─────────────────
+
+    static long _readLE64(byte[] data, int offset) {
+        long b0 = (long)((int)data[offset]     & 0xFF);
+        long b1 = (long)((int)data[offset + 1] & 0xFF);
+        long b2 = (long)((int)data[offset + 2] & 0xFF);
+        long b3 = (long)((int)data[offset + 3] & 0xFF);
+        long b4 = (long)((int)data[offset + 4] & 0xFF);
+        long b5 = (long)((int)data[offset + 5] & 0xFF);
+        long b6 = (long)((int)data[offset + 6] & 0xFF);
+        long b7 = (long)((int)data[offset + 7] & 0xFF);
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+             | (b4 << 32) | (b5 << 40) | (b6 << 48) | (b7 << 56);
+    }
+}
