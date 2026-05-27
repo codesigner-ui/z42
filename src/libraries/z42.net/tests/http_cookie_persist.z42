@@ -1,0 +1,113 @@
+// add-cookie-jar-persist (2026-05-27): SaveToFile / LoadFromFile.
+namespace Z42NetCookiePersistTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Net.Http;
+
+[Test]
+void test_save_then_load_roundtrip_preserves_cookies() {
+    string tmp = File.CreateTempDir("z42-cookie-persist-");
+    try {
+        var jar = new CookieJar();
+        var a = new Cookie("session", "abc123");
+        a.Domain = "example.com";
+        a.Path = "/";
+        a.Secure = true;
+        a.HttpOnly = true;
+        a.ExpiresUnixSec = 2000000000L;
+        jar.Add(a);
+
+        var b = new Cookie("pref", "dark-mode");
+        b.Domain = "app.example.com";
+        b.Path = "/settings";
+        jar.Add(b);
+
+        string path = Path.Join(tmp, "cookies.txt");
+        jar.SaveToFile(path);
+
+        var jar2 = new CookieJar();
+        int loaded = jar2.LoadFromFile(path);
+        Assert.Equal(2, loaded);
+        Assert.Equal(2, jar2.LiveCount(0L));
+
+        // Round-trip preserves the matching contract.
+        string h = jar2.CookieHeaderFor("example.com", "/", true, 1000000000L);
+        Assert.True(h.Length > 0);
+        Assert.True(h.Contains("session=abc123"));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_load_decodes_http_only_marker() {
+    string tmp = File.CreateTempDir("z42-cookie-persist-");
+    try {
+        string path = Path.Join(tmp, "cookies.txt");
+        // Manual Netscape-format file with #HttpOnly_ prefix.
+        string body = "# Netscape HTTP Cookie File\n"
+            + "#HttpOnly_example.com\tFALSE\t/\tTRUE\t0\tsessionid\txyz\n";
+        File.WriteAllText(path, body);
+
+        var jar = new CookieJar();
+        int loaded = jar.LoadFromFile(path);
+        Assert.Equal(1, loaded);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_load_skips_comments_and_blank_lines() {
+    string tmp = File.CreateTempDir("z42-cookie-persist-");
+    try {
+        string path = Path.Join(tmp, "cookies.txt");
+        string body = "# header\n"
+            + "\n"
+            + "# another comment\n"
+            + "example.com\tFALSE\t/\tFALSE\t0\tname\tval\n"
+            + "\n";
+        File.WriteAllText(path, body);
+
+        var jar = new CookieJar();
+        int loaded = jar.LoadFromFile(path);
+        Assert.Equal(1, loaded);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_load_skips_malformed_lines() {
+    string tmp = File.CreateTempDir("z42-cookie-persist-");
+    try {
+        string path = Path.Join(tmp, "cookies.txt");
+        string body = "example.com\tFALSE\t/\tFALSE\t0\tname\tval\n"
+            + "not-enough-fields\n"
+            + "example.com\tFALSE\t/\tFALSE\t0\tsecond\tval2\n";
+        File.WriteAllText(path, body);
+
+        var jar = new CookieJar();
+        int loaded = jar.LoadFromFile(path);
+        Assert.Equal(2, loaded);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_save_writes_netscape_header() {
+    string tmp = File.CreateTempDir("z42-cookie-persist-");
+    try {
+        var jar = new CookieJar();
+        jar.Add(new Cookie("k", "v"));
+        string path = Path.Join(tmp, "cookies.txt");
+        jar.SaveToFile(path);
+        string content = File.ReadAllText(path);
+        Assert.True(content.StartsWith("# Netscape HTTP Cookie File"));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
