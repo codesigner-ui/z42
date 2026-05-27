@@ -46,6 +46,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - 128-byte block size (vs HmacSha256's 64); HmacSha384 reuses the 128-byte block since SHA-384 shares SHA-512's compression
   - 27 NIST FIPS 180-2 + RFC 4231 vectors GREEN end-to-end
 
+- HKDF (RFC 5869) — `Std.Crypto.HkdfSha256` / `Std.Crypto.HkdfSha512` (add-hkdf, 2026-05-27)
+  - `Derive(salt, ikm, info, length) -> byte[]` — one-shot Extract+Expand
+  - `Extract(salt, ikm) -> byte[HashLen]` — pseudo-random key from input keying material
+  - `Expand(prk, info, length) -> byte[length]` — derived bytes from PRK + context
+  - Length cap: 255 × HashLen (8160 for SHA-256, 16320 for SHA-512)
+  - Null/empty salt substituted with HashLen zero bytes per RFC §2.2
+  - Verified against all 3 RFC 5869 §A vectors (SHA-256) + SHA-512 cross-check vs Python cryptography
+
 - OS CSPRNG — `Std.Crypto.SecureRandom` (add-csprng-to-crypto, 2026-05-26)
   - `GetBytes(int n) -> byte[]` — fill `n` bytes from OS entropy source
   - `NextInt() -> int` — uniform over full i32 range

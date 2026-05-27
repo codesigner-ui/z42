@@ -1,0 +1,167 @@
+// add-hkdf (2026-05-27): RFC 5869 §A test vectors for HKDF-SHA-256.
+// Plus a parallel set of SHA-512 expectations computed against Python's
+// `cryptography.hazmat.primitives.kdf.hkdf.HKDF` for the same IKM.
+namespace Z42CryptoHkdfVectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 5869 §A.1 — basic test case with SHA-256 ────────────────────────
+
+[Test]
+void test_hkdf_sha256_rfc5869_a1_extract() {
+    byte[] ikm  = Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+    byte[] salt = Hex.Decode("000102030405060708090a0b0c");
+    byte[] prk  = HkdfSha256.Extract(salt, ikm);
+    Assert.Equal(
+        "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5",
+        Hex.Encode(prk)
+    );
+}
+
+[Test]
+void test_hkdf_sha256_rfc5869_a1_expand() {
+    byte[] prk  = Hex.Decode("077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5");
+    byte[] info = Hex.Decode("f0f1f2f3f4f5f6f7f8f9");
+    byte[] okm  = HkdfSha256.Expand(prk, info, 42);
+    Assert.Equal(
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865",
+        Hex.Encode(okm)
+    );
+}
+
+[Test]
+void test_hkdf_sha256_rfc5869_a1_derive() {
+    byte[] ikm  = Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+    byte[] salt = Hex.Decode("000102030405060708090a0b0c");
+    byte[] info = Hex.Decode("f0f1f2f3f4f5f6f7f8f9");
+    Assert.Equal(
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865",
+        HkdfSha256.DeriveHex(salt, ikm, info, 42)
+    );
+}
+
+// ── RFC 5869 §A.2 — longer inputs / outputs with SHA-256 ────────────────
+
+[Test]
+void test_hkdf_sha256_rfc5869_a2_derive() {
+    byte[] ikm  = Hex.Decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f");
+    byte[] salt = Hex.Decode("606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf");
+    byte[] info = Hex.Decode("b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff");
+    Assert.Equal(
+        "b11e398dc80327a1c8e7f78c596a49344f012eda2d4efad8a050cc4c19afa97c59045a99cac7827271cb41c65e590e09da3275600c2f09b8367793a9aca3db71cc30c58179ec3e87c14c01d5c1f3434f1d87",
+        HkdfSha256.DeriveHex(salt, ikm, info, 82)
+    );
+}
+
+// ── RFC 5869 §A.3 — zero-length salt with SHA-256 ───────────────────────
+
+[Test]
+void test_hkdf_sha256_rfc5869_a3_zero_salt() {
+    byte[] ikm  = Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+    byte[] info = new byte[0];
+    Assert.Equal(
+        "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8",
+        HkdfSha256.DeriveHex(new byte[0], ikm, info, 42)
+    );
+}
+
+[Test]
+void test_hkdf_sha256_null_salt_equiv_zero_salt() {
+    byte[] ikm = Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+    byte[] withNull = HkdfSha256.Derive(null, ikm, new byte[0], 42);
+    byte[] withEmpty = HkdfSha256.Derive(new byte[0], ikm, new byte[0], 42);
+    Assert.Equal(Hex.Encode(withNull), Hex.Encode(withEmpty));
+}
+
+// ── Edge cases ──────────────────────────────────────────────────────────
+
+[Test]
+void test_hkdf_sha256_zero_length_output() {
+    byte[] okm = HkdfSha256.Derive(new byte[0], new byte[]{ (byte)1, (byte)2, (byte)3 }, new byte[0], 0);
+    Assert.Equal(0, okm.Length);
+}
+
+[Test]
+void test_hkdf_sha256_one_byte_output() {
+    byte[] okm = HkdfSha256.Derive(
+        Hex.Decode("000102030405060708090a0b0c"),
+        Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"),
+        Hex.Decode("f0f1f2f3f4f5f6f7f8f9"),
+        1
+    );
+    Assert.Equal(1, okm.Length);
+    Assert.Equal((byte)0x3c, okm[0]);  // first byte of A.1 OKM
+}
+
+[Test]
+void test_hkdf_sha256_max_length_8160() {
+    byte[] okm = HkdfSha256.Derive(new byte[0], new byte[]{ (byte)1 }, new byte[0], 8160);
+    Assert.Equal(8160, okm.Length);
+}
+
+[Test]
+void test_hkdf_sha256_over_max_length_throws() {
+    bool caught = false;
+    try {
+        HkdfSha256.Derive(new byte[0], new byte[]{ (byte)1 }, new byte[0], 8161);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+// ── HKDF-SHA-512 ────────────────────────────────────────────────────────
+//
+// RFC 5869 has SHA-256-only vectors. Below are SHA-512 expectations
+// computed against Python `cryptography.hazmat.primitives.kdf.hkdf`
+// with the same A.1 inputs but HMAC-SHA-512 as the hash. Confirms the
+// extract+expand bit-shuffling is correct for the larger HashLen.
+
+[Test]
+void test_hkdf_sha512_extract_matches_pycryptography() {
+    byte[] ikm  = Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+    byte[] salt = Hex.Decode("000102030405060708090a0b0c");
+    byte[] prk  = HkdfSha512.Extract(salt, ikm);
+    Assert.Equal(64, prk.Length);
+    Assert.Equal(
+        "665799823737ded04a88e47e54a5890bb2c3d247c7a4254a8e61350723590a26c36238127d8661b88cf80ef802d57e2f7cebcf1e00e083848be19929c61b4237",
+        Hex.Encode(prk)
+    );
+}
+
+[Test]
+void test_hkdf_sha512_derive_42_bytes() {
+    byte[] ikm  = Hex.Decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b");
+    byte[] salt = Hex.Decode("000102030405060708090a0b0c");
+    byte[] info = Hex.Decode("f0f1f2f3f4f5f6f7f8f9");
+    Assert.Equal(
+        "832390086cda71fb47625bb5ceb168e4c8e26a1a16ed34d9fc7fe92c1481579338da362cb8d9f925d7cb",
+        HkdfSha512.DeriveHex(salt, ikm, info, 42)
+    );
+}
+
+[Test]
+void test_hkdf_sha512_zero_length_output() {
+    byte[] okm = HkdfSha512.Derive(new byte[0], new byte[]{ (byte)1 }, new byte[0], 0);
+    Assert.Equal(0, okm.Length);
+}
+
+[Test]
+void test_hkdf_sha512_max_length_16320() {
+    byte[] okm = HkdfSha512.Derive(new byte[0], new byte[]{ (byte)1 }, new byte[0], 16320);
+    Assert.Equal(16320, okm.Length);
+}
+
+[Test]
+void test_hkdf_sha512_over_max_length_throws() {
+    bool caught = false;
+    try {
+        HkdfSha512.Derive(new byte[0], new byte[]{ (byte)1 }, new byte[0], 16321);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
