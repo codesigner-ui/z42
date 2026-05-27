@@ -49,6 +49,15 @@ public static class JsonPath {
                     throw new JsonException("JsonPath: empty segment after '.' at pos " + Int32.ToString(start));
                 }
                 string key = path.Substring(start, i - start);
+                // Reject the JSONPath wildcard `*` (and recursive descent
+                // sentinel) explicitly so callers don't silently get null
+                // when they meant "all children". Both features are out of
+                // scope for v0 — surface the missing capability loudly.
+                if (key == "*") {
+                    throw new JsonException(
+                        "JsonPath: wildcard `*` not supported (v0 selects a single value) at pos "
+                        + Int32.ToString(start));
+                }
                 cur = _stepObject(cur, key);
                 if (cur == null) return null;
             } else if (c == '[') {

@@ -66,8 +66,9 @@ void test_distance_completely_different_is_max_length() {
 void test_distance_longer_a_works_too() {
     // Internal optimisation picks the shorter as inner loop; verify both
     // orderings give the same answer.
-    Assert.Equal(7, Levenshtein.Distance("abcdefghij", "xyz"));
-    Assert.Equal(7, Levenshtein.Distance("xyz", "abcdefghij"));
+    // abcdefghij (10) vs xyz (3): replace 3 + delete 7 = 10
+    Assert.Equal(10, Levenshtein.Distance("abcdefghij", "xyz"));
+    Assert.Equal(10, Levenshtein.Distance("xyz", "abcdefghij"));
 }
 
 [Test]

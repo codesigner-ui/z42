@@ -123,7 +123,15 @@ run_test_file() {
         return 1
     fi
 
-    "$RUNNER" "$zbc"
+    # add-test-runner-parallel (2026-05-27): pass --jobs through to the
+    # runner. JOBS == 1 is the default — runner runs serially via the
+    # in-process path (Setup/Teardown preserved). JOBS > 1 switches the
+    # runner to parallel subprocess execution.
+    if [[ "$JOBS" -gt 1 ]]; then
+        "$RUNNER" --jobs "$JOBS" "$zbc"
+    else
+        "$RUNNER" "$zbc"
+    fi
 }
 
 # ── Main loop ─────────────────────────────────────────────────────────────────

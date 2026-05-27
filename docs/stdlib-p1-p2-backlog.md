@@ -20,7 +20,7 @@
 | `Cli.Subcommand`（ArgParser 树形） | 2h | ✅ | `609b870e` | `SubcommandRouter.Add(name, desc, ArgParser) + Match(argv)` 派发；`SubcommandMatch` 包装结果。不修 ArgParser 自身 |
 | `Text.Levenshtein(a, b)` / `SimilarityRatio` | 1h | ✅ | `1c481c2f` | 两行 DP `O(|a|·|b|)` 时间 / `O(min)` 空间；归一化 ratio ∈ [0,1] |
 | `Encoding.UTF16/UTF32` | 3h | ✅ | `37b7191e` | `Utf16` + `Utf32` 各 `GetBytesLE/BE` + `GetStringLE/BE`；UTF-16 surrogate pair；严格校验 |
-| 并行 `[Test]` 执行 | 大 | ⏳ | — | test-runner 重构；当前串行 fork 子进程 |
+| 并行 `[Test]` 执行 | 大 | ✅ | _pending_ | `--jobs N` (≥1) — N=1 in-process Setup/Teardown 保留；N>1 强制 subprocess pool 跨 `std::thread::scope`。z42.crypto 实测 18s → 5.7s (3.2× / 607% CPU) |
 | `Std.IO.Stream.Seek` 边界验证 | 30m | ✅ | `86d4a63f` | `FileStream.Seek` 拒绝 resulting position < 0（all 3 origins）with `ArgumentException`；over-end 仍允许（BCL convention） |
 | `ProcessHandle.WriteStdin` string 便利方法 | 30m | ✅ | `86d4a63f` | 修正原描述：`WriteStdin(byte[])` 早已存在；缺的是 string 形式。命名 `WriteStdinString(s)` 避开 z42 typed-overload-resolution 限制 |
 
@@ -36,4 +36,4 @@
 
 - `compiler-future-typed-overload-resolution`：`override` 父方法的 arity overload 不支持（add-bigint-tobase 撞到）；可能影响其他 stdlib 类的 API 命名选择
 - `compression-future-zip-write`：`Zip.Write` 仍未实现（compression.md Deferred）；本表 `Zip.CreateFromDirectory` 依赖该项，若 Zip.Write 没就绪需要单独立 spec 把 v0 Zip.Write 落地，再做 CreateFromDirectory
-- test-runner Arc<str> 类型错（其他 in-flight session 在修）：所有 [Test] 端到端 GREEN 都等它落地
+- ~~test-runner Arc<str> 类型错~~ ✅ 已 settle（2026-05-27 验证 cargo build clean）；本会话所有 16 stdlib libs `test-lib.sh` 全 GREEN（z42.json wildcard test 一并修了）

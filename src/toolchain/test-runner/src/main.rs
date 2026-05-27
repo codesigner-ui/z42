@@ -28,6 +28,7 @@ mod bootstrap;
 mod discover;
 mod exec;     // legacy subprocess path (kept for `--legacy-subprocess` fallback)
 mod format;
+mod parallel; // add-test-runner-parallel: --jobs N >1 worker pool
 mod result;
 mod runner;   // in-process Setup/Test/Teardown chain (R3b default)
 
@@ -67,6 +68,17 @@ struct Cli {
     /// runtime regressions; will be removed once R3b is stable.
     #[arg(long)]
     legacy_subprocess: bool,
+
+    /// Number of parallel worker threads. Each worker forks `z42vm` per
+    /// test. Default: 1 (serial, no thread pool — preserves Setup/Teardown).
+    /// Pass `--jobs 0` to auto-detect from `available_parallelism()`.
+    ///
+    /// add-test-runner-parallel (2026-05-27): N>1 implies `--legacy-
+    /// subprocess` since `VmContext` is `!Send`. Setup/Teardown hooks
+    /// are skipped in subprocess mode — use `--jobs 1` (default) if you
+    /// need them.
+    #[arg(long, value_name = "N")]
+    jobs: Option<usize>,
 }
 
 fn main() {
@@ -90,7 +102,18 @@ fn run(cli: &Cli) -> Result<i32> {
     let module_name = std::path::Path::new(zbc_path)
         .file_name().and_then(|s| s.to_str()).unwrap_or(zbc_path).to_string();
 
-    if cli.legacy_subprocess {
+    // add-test-runner-parallel (2026-05-27): --jobs N (N>1) forces
+    // subprocess mode since VmContext is !Send. Resolve N first so the
+    // routing decision is explicit.
+    let jobs = resolve_jobs(cli.jobs);
+    let use_subprocess = cli.legacy_subprocess || jobs > 1;
+    if jobs > 1 && !cli.legacy_subprocess {
+        eprintln!(
+            "{}: --jobs {} forces subprocess execution; [Setup]/[Teardown] will not run",
+            "note".yellow(), jobs);
+    }
+
+    if use_subprocess {
         // Legacy path: subprocess fork per test (no Setup/Teardown).
         let artifact = z42::metadata::load_artifact(zbc_path)
             .with_context(|| format!("loading artifact `{zbc_path}`"))?;
@@ -106,11 +129,17 @@ fn run(cli: &Cli) -> Result<i32> {
         }
         let z42vm = exec::resolve_z42vm(cli.z42vm.as_ref())
             .context("locating z42vm binary (use --z42vm to override)")?;
-        let mut results: Vec<TestResult> = Vec::with_capacity(report.tests.len());
-        for test in &report.tests {
-            let outcome = exec::run_one(&z42vm, zbc_path, test);
-            results.push(TestResult::from_outcome(test.method_name.to_string(), outcome));
-        }
+        let results: Vec<TestResult> = if jobs > 1 {
+            // Parallel subprocess pool.
+            parallel::run_tests(&z42vm, zbc_path, &report.tests, jobs)
+        } else {
+            // Serial legacy path.
+            report.tests.iter()
+                .map(|t| TestResult::from_outcome(
+                    t.method_name.to_string(),
+                    exec::run_one(&z42vm, zbc_path, t)))
+                .collect()
+        };
         emit(&format, &module_name, &results)?;
         let exit_code = if results.iter().any(|r| r.status == TestStatus::Failed) { 1 } else { 0 };
         return Ok(exit_code);
@@ -190,4 +219,23 @@ fn emit(format: &Format, module_name: &str, results: &[TestResult]) -> Result<()
         Format::Json   => format::json::print(module_name, results)?,
     }
     Ok(())
+}
+
+/// add-test-runner-parallel (2026-05-27): resolve --jobs N.
+/// - `None` → 1 (preserve current default; no behavior change for callers
+///   that don't opt in).
+/// - `Some(0)` → auto-detect via `available_parallelism()` (rayon-style
+///   "use all CPUs" sentinel).
+/// - `Some(n ≥ 1024)` → also auto-detect (defensive cap; callers passing
+///   `--jobs 9999` clearly want "as many as possible", not literal 9999
+///   subprocess forks).
+/// - `Some(n)` (1 ≤ n < 1024) → verbatim.
+fn resolve_jobs(cli_jobs: Option<usize>) -> usize {
+    match cli_jobs {
+        None    => 1,
+        Some(0) | Some(1024..) => std::thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(1),
+        Some(n) => n,
+    }
 }
