@@ -62,7 +62,7 @@ fi
 
 # ── Early lib validation (before slow tooling build) ─────────────────────────
 
-for lib in "${LIBS[@]}"; do
+for lib in ${LIBS[@]+"${LIBS[@]}"}; do
     if [[ ! -d "$ROOT/src/libraries/$lib" ]]; then
         echo "error: library not found: src/libraries/$lib" >&2
         echo "       available: $(ls "$ROOT/src/libraries/" | tr '\n' ' ')" >&2
