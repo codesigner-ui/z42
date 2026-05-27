@@ -1,0 +1,35 @@
+// add-z42-net-http-compression (2026-05-27): HttpClient.SetAutoDecompress.
+//
+// API-level tests only. End-to-end gzip round-trip via real TcpListener
+// is feasible but introduces threading + port-binding flake — defer to
+// the broader test-suite once z42.net's e2e harness gets a stable
+// gzip-server fixture.
+namespace Z42NetHttpAutoDecompressTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Http;
+
+[Test]
+void test_auto_decompress_default_is_off() {
+    var client = new HttpClient();
+    Assert.False(client.GetAutoDecompress());
+}
+
+[Test]
+void test_set_auto_decompress_round_trips() {
+    var client = new HttpClient();
+    client.SetAutoDecompress(true);
+    Assert.True(client.GetAutoDecompress());
+    client.SetAutoDecompress(false);
+    Assert.False(client.GetAutoDecompress());
+}
+
+[Test]
+void test_set_auto_decompress_independent_per_instance() {
+    var a = new HttpClient();
+    var b = new HttpClient();
+    a.SetAutoDecompress(true);
+    Assert.True(a.GetAutoDecompress());
+    Assert.False(b.GetAutoDecompress());
+}
