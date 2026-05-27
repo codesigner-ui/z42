@@ -188,22 +188,26 @@ wrapper overhead is < 0.5%.
 - **当前 workaround**：emit `.tar.gz` (Tar.Write is shipped) or
   `.tar.zst` instead of `.zip` for archive-producing use cases.
 
-### `compression-future-streaming-decode`
+### ~~`compression-future-streaming-decode`~~ — **✅ 已落地 2026-05-27 (add-compression-streaming-decode)**
 
-- **来源**：add-z42-compression v0 decoder simplification
-- **触发原因**：v0 decoders accumulate-then-decompress at Finish
-  because flate2's high-level decoders are pull-based (`Read` shape)
-  and don't fit our push-based slot-table dispatch cleanly. The
-  low-level `flate2::Decompress` state machine + a parallel push-mode
-  zstd decoder integration is a ~150 LOC refactor in the cdylib.
-- **触发条件**：first concrete use case that breaks the v0 assumption
-  ("compressed payload < 100 MB"). Examples: gzip log tailing,
-  multi-GB `.tar.gz` extraction in `setup-tools.sh`-style scripts.
-- **配套缺口**：`Tar.ExtractTo` (add-tar-extract-to 2026-05-26) 当前也是
-  `byte[]` 入参 + in-memory entries 数组；真流式 = streaming Tar reader
-  接 streaming Gzip decoder。一旦 cdylib 升级，Tar 应同步加
-  `ExtractStream(Stream src, string dir)`，避开 30 MB+ tarball 解压时
-  ~250 MB 峰值内存。两者一起做。
+Shipped: cdylib's slot-table decoders refactored from
+`*Dec(Vec<u8>)` accumulators to push-mode `flate2::write::*Decoder`
+(deflate / zlib / gzip) and `zstd::stream::write::Decoder` (zstd).
+`compressor_feed` now writes the chunk into the decoder and returns
+the bytes that forwarded into the inner `Vec` *that* call — so
+multi-MB inputs surface decoded output progressively instead of
+waiting for `compressor_finish`. End-to-end correctness verified by
+the existing stream_pipeline + gzip_round_trip + zstd_round_trip
+tests (all GREEN unchanged); the v0→v1 contract change is invisible
+to callers using `Stream.WrapRead` / `WrapWrite` since both already
+treat the decoder as a chunk-by-chunk pipeline.
+
+**Follow-up gaps** (separate specs):
+- `Tar.ExtractStream(Stream src, string dir)` — Tar reader currently
+  takes `byte[]`; pairs naturally with streaming gzip for `.tar.gz`
+  extraction (avoid ~250 MB peak on 30 MB tarballs)
+- Wasm zstd decode still returns the unsupported error (gated on
+  `compression-future-wasm-zstd`)
 
 ### `compression-future-brotli`
 
