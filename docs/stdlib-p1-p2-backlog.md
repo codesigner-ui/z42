@@ -21,8 +21,8 @@
 | `Text.Levenshtein(a, b)` / `SimilarityRatio` | 1h | ✅ | `1c481c2f` | 两行 DP `O(|a|·|b|)` 时间 / `O(min)` 空间；归一化 ratio ∈ [0,1] |
 | `Encoding.UTF16/UTF32` | 3h | ✅ | `37b7191e` | `Utf16` + `Utf32` 各 `GetBytesLE/BE` + `GetStringLE/BE`；UTF-16 surrogate pair；严格校验 |
 | 并行 `[Test]` 执行 | 大 | ⏳ | — | test-runner 重构；当前串行 fork 子进程 |
-| `Std.IO.Stream.Seek` 边界验证 | 30m | ✅ | _pending_ | `FileStream.Seek` 拒绝 resulting position < 0（all 3 origins）with `ArgumentException`；over-end 仍允许（BCL convention） |
-| `ProcessHandle.WriteStdin` string 便利方法 | 30m | ✅ | _pending_ | 修正原描述：`WriteStdin(byte[])` 早已存在；缺的是 string 形式。命名 `WriteStdinString(s)` 避开 z42 typed-overload-resolution 限制 |
+| `Std.IO.Stream.Seek` 边界验证 | 30m | ✅ | `86d4a63f` | `FileStream.Seek` 拒绝 resulting position < 0（all 3 origins）with `ArgumentException`；over-end 仍允许（BCL convention） |
+| `ProcessHandle.WriteStdin` string 便利方法 | 30m | ✅ | `86d4a63f` | 修正原描述：`WriteStdin(byte[])` 早已存在；缺的是 string 形式。命名 `WriteStdinString(s)` 避开 z42 typed-overload-resolution 限制 |
 
 ## 实施记录
 
