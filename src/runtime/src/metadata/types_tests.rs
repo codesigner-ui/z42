@@ -126,7 +126,9 @@ fn is_heap_ref_false_for_func_ref() {
 
 #[test]
 fn is_heap_ref_false_for_pinned_view() {
-    let v = Value::PinnedView { ptr: 0x1000, len: 4, kind: PinSourceKind::ArrayU8 };
+    let v = Value::PinnedView(Box::new(PinnedViewData {
+        ptr: 0x1000, len: 4, kind: PinSourceKind::ArrayU8,
+    }));
     assert!(!v.is_heap_ref());
 }
 
@@ -157,4 +159,19 @@ fn default_value_for_string_keys_match_tags() {
         Value::F64(v) => assert_eq!(v, 0.0),
         other => panic!("expected F64(0.0), got {:?}", other),
     }
+}
+
+#[test]
+fn value_size_observed() {
+    // Diagnostic: pin current Value size. Refactors that hot/cold-split
+    // variants (review.md C1) should make this shrink. Update the expected
+    // when an intentional shrink lands.
+    //
+    // 2026-05-27 review.md C1 step 1 (PinnedView boxed): Value remains 48 B
+    // because Closure { env: GcRef (16 B), fn_name: String (24 B) } and
+    // Ref { kind: RefKind } both still carry 32-40 B payloads inline.
+    // Subsequent step boxes Closure → expected to drop to ~32 B; boxing
+    // Ref / FuncRef / StackClosure follows.
+    assert_eq!(std::mem::size_of::<Value>(), 48,
+        "Value size changed: {}", std::mem::size_of::<Value>());
 }

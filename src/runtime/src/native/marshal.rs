@@ -106,13 +106,13 @@ pub fn value_to_z42(v: &Value, target: &SigType, arena: &mut Arena) -> Result<Z4
         // emits separate `FieldGet view, "ptr"` / `FieldGet view, "len"`
         // before the call site, but a defensive fall-through here lets a
         // hand-crafted IR pass the view directly when convenient.
-        (Value::PinnedView { ptr, .. }, SigType::Ptr | SigType::SelfRef | SigType::CStr) => {
-            Ok(dispatch::z42_native_ptr(*ptr as usize as *mut c_void))
+        (Value::PinnedView(pv), SigType::Ptr | SigType::SelfRef | SigType::CStr) => {
+            Ok(dispatch::z42_native_ptr(pv.ptr as usize as *mut c_void))
         }
         (
-            Value::PinnedView { len, .. },
+            Value::PinnedView(pv),
             SigType::U64 | SigType::I64 | SigType::U32 | SigType::I32,
-        ) => Ok(dispatch::z42_i64(*len as i64)),
+        ) => Ok(dispatch::z42_i64(pv.len as i64)),
         // Spec C8 — Value::Str → *const c_char (NUL-terminated). The
         // arena owns the CString for the call's duration. Interior NULs
         // surface as Std.InvalidMarshalException (2026-05-11 retire-z-codes;

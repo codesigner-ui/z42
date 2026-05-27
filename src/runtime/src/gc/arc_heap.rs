@@ -1609,7 +1609,7 @@ impl MagrGC for ArcMagrGC {
             // Spec C4: PinnedView holds raw ptr+len; the borrowed buffer
             // itself is owned by the source `Value::Str` / `Value::Array`,
             // not by the view. Charge only the discriminant + scalars.
-            Value::PinnedView { .. } => size_of::<Value>(),
+            Value::PinnedView(_) => size_of::<Value>() + size_of::<crate::metadata::PinnedViewData>(),
             // impl-lambda-l2: FuncRef holds the function name; no managed heap
             // allocation beyond the string buffer.
             Value::FuncRef(name) => size_of::<Value>() + name.capacity(),

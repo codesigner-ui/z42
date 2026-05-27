@@ -120,11 +120,11 @@ pub(super) fn pin_ptr(
     ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, src: u32,
 ) -> Result<Option<Value>> {
     let view = match frame.get(src)? {
-        Value::Str(s) => Value::PinnedView {
+        Value::Str(s) => Value::PinnedView(Box::new(crate::metadata::PinnedViewData {
             ptr: s.as_ptr() as u64,
             len: s.len() as u64,
             kind: crate::metadata::PinSourceKind::Str,
-        },
+        })),
         Value::Array(arr) => {
             // Spec C10 — `Array<u8>` pin: snapshot the bytes into
             // a Box<[u8]> owned by the VM for the pin's lifetime.
@@ -149,11 +149,11 @@ pub(super) fn pin_ptr(
             let len = bytes.len() as u64;
             let buf: Box<[u8]> = bytes.into_boxed_slice();
             let ptr = ctx.pin_owned_buffer(buf);
-            Value::PinnedView {
+            Value::PinnedView(Box::new(crate::metadata::PinnedViewData {
                 ptr,
                 len,
                 kind: crate::metadata::PinSourceKind::ArrayU8,
-            }
+            }))
         }
         other => {
             let msg = format!(
@@ -169,13 +169,13 @@ pub(super) fn pin_ptr(
 
 pub(super) fn unpin_ptr(ctx: &VmContext, frame: &Frame, pinned: u32) -> Result<()> {
     match frame.get(pinned)? {
-        Value::PinnedView { ptr, kind: crate::metadata::PinSourceKind::ArrayU8, .. } => {
+        Value::PinnedView(pv) if pv.kind == crate::metadata::PinSourceKind::ArrayU8 => {
             // Spec C10: drop the snapshot Box<[u8]> we leaked into
             // VmContext at PinPtr time.
-            ctx.release_owned_buffer(*ptr);
+            ctx.release_owned_buffer(pv.ptr);
             Ok(())
         }
-        Value::PinnedView { .. } => {
+        Value::PinnedView(_) => {
             // Str pin: borrowed from the source String — no-op.
             // Future moving GC will deregister the entry from its
             // pin set here.

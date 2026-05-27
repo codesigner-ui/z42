@@ -88,8 +88,8 @@ pub fn value_to_str(v: &Value) -> String {
             format!("[{}]", inner.join(", "))
         }
         Value::Object(rc) => format!("{}{{...}}", rc.borrow().type_desc.name),
-        Value::PinnedView { ptr, len, kind } => {
-            format!("PinnedView{{ptr=0x{ptr:x}, len={len}, kind={kind:?}}}")
+        Value::PinnedView(pv) => {
+            format!("PinnedView{{ptr=0x{:x}, len={}, kind={:?}}}", pv.ptr, pv.len, pv.kind)
         }
         Value::FuncRef(name) => format!("<fn {name}>"),
         Value::Closure { fn_name, .. }      => format!("<closure {fn_name}>"),

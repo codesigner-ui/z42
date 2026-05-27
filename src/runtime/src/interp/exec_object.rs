@@ -175,11 +175,11 @@ pub(super) fn field_get(
             "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
             other => bail!("array has no field `{}`", other),
         },
-        Value::PinnedView { ptr, len, .. } => match field_name {
+        Value::PinnedView(pv) => match field_name {
             // Spec C4 — only `ptr` / `len` are exposed; element type
             // information (kind) stays internal.
-            "ptr" => Value::I64(*ptr as i64),
-            "len" => Value::I64(*len as i64),
+            "ptr" => Value::I64(pv.ptr as i64),
+            "len" => Value::I64(pv.len as i64),
             other => bail!("PinnedView has no field `{}` (only `ptr` / `len`)", other),
         },
         other => bail!("FieldGet: not an object or known value type, got {:?}", other),

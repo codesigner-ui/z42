@@ -303,7 +303,12 @@ pub enum Value {
     /// untyped raw address — consumers must know the source `kind` to
     /// interpret it. Field access (`.ptr` / `.len`) goes through the
     /// regular `FieldGet` instruction.
-    PinnedView { ptr: u64, len: u64, kind: PinSourceKind },
+    ///
+    /// review.md C1 step 1 (2026-05-27): payload boxed to shrink the
+    /// inline `Value` size — `PinnedView` is created on the rare
+    /// `PinPtr` opcode and immediately consumed by the next native
+    /// call, so the heap-alloc cost is dominated by the FFI it enables.
+    PinnedView(Box<PinnedViewData>),
     /// Function reference value. Currently used by L2 no-capture lambda
     /// literals (see docs/design/language/closure.md §6). Indirect call dispatches
     /// to the named function in the loaded module.
@@ -345,6 +350,17 @@ pub enum RefKind {
 pub enum PinSourceKind {
     Str,
     ArrayU8,
+}
+
+/// Payload of [`Value::PinnedView`] — boxed (review.md C1 step 1,
+/// 2026-05-27) so the inline `Value` doesn't pay for the 24-byte raw
+/// FFI view triple. `PinPtr` constructs one; `UnpinPtr` and any
+/// `FieldGet` reading `.ptr` / `.len` borrow through the box.
+#[derive(Debug, Clone)]
+pub struct PinnedViewData {
+    pub ptr:  u64,
+    pub len:  u64,
+    pub kind: PinSourceKind,
 }
 
 impl Value {
@@ -409,7 +425,7 @@ impl Value {
             // Primitives — no children.
             Value::I64(_) | Value::F64(_) | Value::Bool(_) | Value::Char(_)
             | Value::Str(_) | Value::Null | Value::FuncRef(_)
-            | Value::PinnedView { .. } | Value::StackClosure { .. } => {}
+            | Value::PinnedView(_) | Value::StackClosure { .. } => {}
         }
     }
 }
@@ -426,10 +442,9 @@ impl PartialEq for Value {
             // Array/Object equality is reference equality (same as C# reference semantics)
             (Value::Array(a),  Value::Array(b))  => GcRef::ptr_eq(a, b),
             (Value::Object(a), Value::Object(b)) => GcRef::ptr_eq(a, b),
-            (
-                Value::PinnedView { ptr: ap, len: al, kind: ak },
-                Value::PinnedView { ptr: bp, len: bl, kind: bk },
-            ) => ap == bp && al == bl && ak == bk,
+            (Value::PinnedView(a), Value::PinnedView(b)) => {
+                a.ptr == b.ptr && a.len == b.len && a.kind == b.kind
+            }
             // Spec impl-ref-out-in-runtime: Ref 比较按 RefKind 字段；
             // Array/Field kind 用 GcRef::ptr_eq（同 Object/Array 引用语义）；
             // Stack kind 比 frame_idx + slot（指向同一栈位置）。
