@@ -7,8 +7,9 @@
 
 use crate::metadata::{Function, Instruction, Terminator};
 use anyhow::{bail, Result};
-use cranelift_codegen::ir::{AbiParam, InstBuilder};
+use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlags};
 use cranelift_codegen::ir::types;
+use crate::metadata::IrType;
 use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{FuncId, Module as CraneliftModule};
@@ -300,12 +301,26 @@ pub fn translate_function(
     let hr_convert        = imp!(helper_ids.convert);
     // add-gc-safepoint-jit (2026-05-21): cooperative GC safepoint trampoline.
     let hr_check_safepoint = imp!(helper_ids.check_safepoint);
+    let hr_regs_ptr        = imp!(helper_ids.regs_ptr);
 
     // add-gc-safepoint-jit (2026-05-21): function-entry safepoint check.
     // A spawned worker that enters JIT-compiled code immediately after
     // spawn must respect a pending GC pause before touching any roots.
     // Idle fast path is one Mutex lock + one enum compare (~10ns).
     builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+
+    // review.md C2 P1 step 1 (2026-05-28): cache `frame.regs.as_mut_ptr()`
+    // for typed-arithmetic fast paths. One helper call per function (not per
+    // op) yields raw `*mut Value` we use to compute slot addresses inline.
+    // Pre-conditions: `JitFrame::new` pre-allocates regs with stable
+    // capacity → the data pointer never moves for the function's lifetime.
+    let regs_base = {
+        let inst = builder.ins().call(hr_regs_ptr, &[frame_val]);
+        builder.inst_results(inst)[0]
+    };
+    // C2 P1 fast-path layout constants live inside `emit_i64_binop` (the sole
+    // consumer today); when comparison + logical ops are specialized in the
+    // next chunk they'll move to module scope.
 
     // ── Translate each z42 block ──────────────────────────────────────────────
     for (block_idx, z42_block) in z42_func.blocks.iter().enumerate() {
@@ -495,28 +510,56 @@ pub fn translate_function(
                     builder.ins().call(hr_copy, &[frame_val, ctx_val, d, s]);
                 }
 
-                // Arithmetic
+                // Arithmetic — review.md C2 P1 (2026-05-28): when reg_types
+                // confirm all three operands are I64, emit native Cranelift
+                // iadd/isub/imul/sdiv/srem via raw load/store on frame.regs;
+                // skip the extern "C" helper call entirely. Otherwise fall
+                // back to the type-dispatching helper (handles Str concat,
+                // F64, mixed types, etc.).
+                //
+                // Safety of raw store: when reg_types[dst] == I64, every
+                // write to that register slot is I64 (initial Null also has
+                // no Drop), so raw bit-copy without Drop is sound. Div/Rem
+                // on i64 panic on /0 — keep helper for those (zero-check +
+                // exception propagation lives there). Add/Sub/Mul are
+                // wrapping (`vm-wrapping-int-arith`, 2026-04-28) matching
+                // Cranelift defaults.
                 Instruction::Add { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_add, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::Add);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_add, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Sub { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_sub, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::Sub);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_sub, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Mul { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_mul, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::Mul);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_mul, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Div { dst, a, b } => {
+                    // Keep helper: i64 div-by-zero must surface a catchable
+                    // z42 exception. Native sdiv on x86_64 traps with SIGFPE.
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
                     let inst = builder.ins().call(hr_div, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Rem { dst, a, b } => {
+                    // Same as Div — keep helper for /0 exception handling.
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
                     let inst = builder.ins().call(hr_rem, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
@@ -947,4 +990,74 @@ pub fn translate_function(
     jit.define_function(func_id, &mut ctx)?;
     jit.clear_context(&mut ctx);
     Ok(())
+}
+
+// ── review.md C2 P1 specialization helpers (2026-05-28) ────────────────────────
+//
+// Predicate + emitter for the I64-typed arithmetic fast path. Pure module-
+// scope functions so translate_function's hot path can call them without the
+// borrow-checker grief of closures-over-mut-builder.
+
+/// True iff `reg_types[dst]`, `reg_types[a]`, `reg_types[b]` are all
+/// `IrType::I64`. Out-of-range or `Unknown` regs fall back to the slow
+/// (helper-call) path.
+#[inline]
+fn is_i64_typed(func: &Function, dst: u32, a: u32, b: u32) -> bool {
+    let rt = &func.reg_types;
+    let get = |i: u32| rt.get(i as usize).copied().unwrap_or(IrType::Unknown);
+    get(dst).is_i64() && get(a).is_i64() && get(b).is_i64()
+}
+
+/// Binary op kind passed to `emit_i64_binop`. Mirrors the subset of
+/// `Instruction` variants we specialize so far.
+#[derive(Clone, Copy)]
+enum BinopKind { Add, Sub, Mul }
+
+/// Emit Cranelift native code for `frame.regs[dst] = Value::I64(op(a, b))`,
+/// loading both operands' i64 payloads via raw pointer arithmetic against
+/// the cached `regs_base` and storing back with the I64 discriminant byte.
+///
+/// Layout assumption (pinned by `value_size_observed` +
+/// `value_*_payload_at_offset_8` tests):
+///   * Value stride 24 B, alignment 8
+///   * u8 discriminant at offset 0 (TAG_I64 = 0)
+///   * i64 payload at offset 8
+///
+/// Safety: caller must have verified `reg_types[dst] == I64` so the
+/// pre-existing slot value is either `Null` (initial) or `I64`, both of
+/// which have no Drop work — raw bit-copy is sound.
+fn emit_i64_binop(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, a: u32, b: u32,
+    op: BinopKind,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_I64:        u8  = 0;
+
+    // Compute slot addresses: regs_base + idx * 24.
+    let off_a   = builder.ins().iconst(types::I64, (a   as i64) * VALUE_STRIDE);
+    let off_b   = builder.ins().iconst(types::I64, (b   as i64) * VALUE_STRIDE);
+    let off_dst = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_a   = builder.ins().iadd(regs_base, off_a);
+    let addr_b   = builder.ins().iadd(regs_base, off_b);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+
+    // Load payload i64s.
+    let ai = builder.ins().load(types::I64, MemFlags::trusted(), addr_a, PAYLOAD_OFFSET);
+    let bi = builder.ins().load(types::I64, MemFlags::trusted(), addr_b, PAYLOAD_OFFSET);
+
+    // Compute (Cranelift `iadd`/`isub`/`imul` are wrapping by default —
+    // matches z42's `vm-wrapping-int-arith` semantics).
+    let result = match op {
+        BinopKind::Add => builder.ins().iadd(ai, bi),
+        BinopKind::Sub => builder.ins().isub(ai, bi),
+        BinopKind::Mul => builder.ins().imul(ai, bi),
+    };
+
+    // Store discriminant (u8 0 = TAG_I64) then i64 payload.
+    let tag = builder.ins().iconst(types::I8, TAG_I64 as i64);
+    builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
 }
