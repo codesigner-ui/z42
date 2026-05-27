@@ -119,6 +119,25 @@ public class FileStream : Stream {
         if (origin != SeekOrigin.Begin && origin != SeekOrigin.Current && origin != SeekOrigin.End) {
             throw new ArgumentException("Seek: unknown origin " + origin.ToString());
         }
+        // add-stream-seek-bounds (2026-05-27): reject resulting position < 0
+        // up-front with a clear ArgumentException, instead of relying on the
+        // OS to return some platform-specific errno that surfaces as a vague
+        // IO error. Over-end seeks remain allowed (BCL convention; writes
+        // sparse-extend).
+        long basePos;
+        if (origin == SeekOrigin.Begin) {
+            basePos = 0L;
+        } else if (origin == SeekOrigin.Current) {
+            basePos = FileStream._FilePosition(this._slotId);
+        } else {
+            basePos = FileStream._FileLength(this._slotId);
+        }
+        long newPos = basePos + offset;
+        if (newPos < 0L) {
+            throw new ArgumentException(
+                "Seek: resulting position would be negative (basePos="
+                + basePos.ToString() + ", offset=" + offset.ToString() + ")");
+        }
         return FileStream._FileSeek(this._slotId, offset, origin);
     }
 

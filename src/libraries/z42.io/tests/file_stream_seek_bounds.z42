@@ -1,0 +1,116 @@
+// add-stream-seek-bounds (2026-05-27): FileStream.Seek rejects negative
+// resulting positions before hitting the native syscall.
+namespace Z42IoFileStreamSeekBoundsTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_seek_negative_absolute_throws() {
+    string tmp = File.CreateTempDir("z42-seek-bounds");
+    try {
+        string path = Path.Join(tmp, "x.bin");
+        File.WriteAllBytes(path, new byte[100]);
+        FileStream fs = new FileStream(path, FileMode.Read);
+        try {
+            bool caught = false;
+            try {
+                fs.Seek(-5, SeekOrigin.Begin);
+            } catch (ArgumentException e) {
+                caught = true;
+            }
+            Assert.True(caught);
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_seek_current_underflow_throws() {
+    string tmp = File.CreateTempDir("z42-seek-bounds");
+    try {
+        string path = Path.Join(tmp, "x.bin");
+        File.WriteAllBytes(path, new byte[100]);
+        FileStream fs = new FileStream(path, FileMode.Read);
+        try {
+            fs.Seek(50, SeekOrigin.Begin);  // position now 50
+            bool caught = false;
+            try {
+                fs.Seek(-200, SeekOrigin.Current);   // 50 - 200 = -150
+            } catch (ArgumentException e) {
+                caught = true;
+            }
+            Assert.True(caught);
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_seek_end_underflow_throws() {
+    string tmp = File.CreateTempDir("z42-seek-bounds");
+    try {
+        string path = Path.Join(tmp, "x.bin");
+        File.WriteAllBytes(path, new byte[50]);
+        FileStream fs = new FileStream(path, FileMode.Read);
+        try {
+            bool caught = false;
+            try {
+                fs.Seek(-200, SeekOrigin.End);   // 50 - 200 = -150
+            } catch (ArgumentException e) {
+                caught = true;
+            }
+            Assert.True(caught);
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_seek_within_bounds_succeeds() {
+    string tmp = File.CreateTempDir("z42-seek-bounds");
+    try {
+        string path = Path.Join(tmp, "x.bin");
+        File.WriteAllBytes(path, new byte[100]);
+        FileStream fs = new FileStream(path, FileMode.Read);
+        try {
+            Assert.Equal(50L, fs.Seek(50, SeekOrigin.Begin));
+            Assert.Equal(75L, fs.Seek(25, SeekOrigin.Current));
+            Assert.Equal(0L,  fs.Seek(-100, SeekOrigin.End));
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_seek_past_end_allowed_for_writable() {
+    // BCL convention: writable streams allow seeking past end (next
+    // write sparse-extends). We don't reject.
+    string tmp = File.CreateTempDir("z42-seek-bounds");
+    try {
+        string path = Path.Join(tmp, "x.bin");
+        File.WriteAllBytes(path, new byte[10]);
+        FileStream fs = new FileStream(path, FileMode.Write);
+        try {
+            long p = fs.Seek(1000, SeekOrigin.Begin);   // far past EOF
+            Assert.True(p >= 0L);
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}

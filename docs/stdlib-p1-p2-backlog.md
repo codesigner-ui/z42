@@ -19,10 +19,10 @@
 | `Time.TimeZone` 基础 + 短代码 → UTC offset 表 | 3h+ | ✅ | `9c5bb11c` | 固定 offset + ~22 短代码（UTC/GMT/EST/PST/JST/IST/...）；`DateTime.ToIso8601With(tz)` 配套渲染。无 DST、无 IANA 完整库（仍 Deferred） |
 | `Cli.Subcommand`（ArgParser 树形） | 2h | ✅ | `609b870e` | `SubcommandRouter.Add(name, desc, ArgParser) + Match(argv)` 派发；`SubcommandMatch` 包装结果。不修 ArgParser 自身 |
 | `Text.Levenshtein(a, b)` / `SimilarityRatio` | 1h | ✅ | `1c481c2f` | 两行 DP `O(|a|·|b|)` 时间 / `O(min)` 空间；归一化 ratio ∈ [0,1] |
-| `Encoding.UTF16/UTF32` | 3h | ✅ | _pending_ | `Utf16` + `Utf32` 各 `GetBytesLE/BE` + `GetStringLE/BE`；UTF-16 surrogate pair；严格校验 |
+| `Encoding.UTF16/UTF32` | 3h | ✅ | `37b7191e` | `Utf16` + `Utf32` 各 `GetBytesLE/BE` + `GetStringLE/BE`；UTF-16 surrogate pair；严格校验 |
 | 并行 `[Test]` 执行 | 大 | ⏳ | — | test-runner 重构；当前串行 fork 子进程 |
-| `Std.IO.Stream.Seek` 边界验证 | 30m | ⏳ | — | 当前可超界，应抛 `IOException` |
-| `ProcessHandle.WriteStdin(byte[])` 重载 | 30m | ⏳ | — | 当前只接 string；与 stdout 字节流不对称 |
+| `Std.IO.Stream.Seek` 边界验证 | 30m | ✅ | _pending_ | `FileStream.Seek` 拒绝 resulting position < 0（all 3 origins）with `ArgumentException`；over-end 仍允许（BCL convention） |
+| `ProcessHandle.WriteStdin` string 便利方法 | 30m | ✅ | _pending_ | 修正原描述：`WriteStdin(byte[])` 早已存在；缺的是 string 形式。命名 `WriteStdinString(s)` 避开 z42 typed-overload-resolution 限制 |
 
 ## 实施记录
 

@@ -14,12 +14,12 @@ z42 标准 IO 类型。
 | `Directory.z42` | `Directory` | 目录创建 / 列表 / 删除；`CreateTempDir(prefix)` 为 `File.CreateTempDir` 的 alias |
 | `Path.z42` | `Path` | 路径拼接和解析；`Glob`（直接子项）+ `GlobRecursive(dir, pattern)` 递归 |
 | `Environment.z42` | `Environment` | 环境变量、进程退出 |
-| `Process.z42` / `ProcessHandle.z42` / `ProcessResult.z42` | 进程子系统 | 启动 / 等待 / kill / stdin 写入；静态 `Process.Which(name)` 在 `$PATH` 查可执行 |
+| `Process.z42` / `ProcessHandle.z42` / `ProcessResult.z42` | 进程子系统 | 启动 / 等待 / kill / stdin 写入（`WriteStdin(byte[])` + `WriteStdinString(string)`）；静态 `Process.Which(name)` 在 `$PATH` 查可执行 |
 | `ProcessStdinStream.z42` | `ProcessStdinStream` | write-only Stream over a live child stdin pipe (delegates to ProcessHandle.WriteStdin / CloseStdin) |
 | `ProcessOutputStream.z42` | `ProcessOutputStream` | read-only Stream over child stdout/stderr (fd-parameterised；backed by `__process_handle_read_*` builtins) |
 | `Stream.z42` | `Stream` | 流式 I/O base class（capability + Read/Write/Seek + ReadAllBytes / WriteAllBytes / ReadExactly） |
 | `MemoryStream.z42` | `MemoryStream` | `byte[]`-backed Stream（writable + growable / read-only view + `ToArray()`） |
-| `FileStream.z42` | `FileStream` | OS-file-backed Stream（Read / Write / Append mode，走 `VmCore.file_handles` slot table） |
+| `FileStream.z42` | `FileStream` | OS-file-backed Stream（Read / Write / Append mode，走 `VmCore.file_handles` slot table；`Seek` 拒绝 resulting position < 0 with `ArgumentException`） |
 | `BufferedStream.z42` | `BufferedStream` | single-buffer Stream wrapper batching small Read/Write into larger inner ops（4 KB default） |
 | `FileMode.z42` | `FileMode` | `FileStream` 构造模式常量（Read=0 / Write=1 / Append=2） |
 | `SeekOrigin.z42` | `SeekOrigin` | `Seek(offset, origin)` origin 常量（Begin=0 / Current=1 / End=2） |

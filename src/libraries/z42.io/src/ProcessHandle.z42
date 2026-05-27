@@ -1,5 +1,7 @@
 namespace Std.IO;
 
+using Std.Encoding;
+
 // 2026-05-13 add-std-process: handle to a live spawned child process.
 // Returned by `Process.Spawn()`. The handle carries an opaque slot id
 // pointing at VM-managed state in `VmContext.processes`; all operations
@@ -67,6 +69,17 @@ public class ProcessHandle : IDisposable {
         this.EnsureLive();
         object res = ProcessHandleNative.WriteStdin(this._slotId, bytes);
         this.CheckHandleResponse(res);
+    }
+
+    // add-process-write-stdin-string (2026-05-27): UTF-8 string convenience.
+    // Equivalent to `WriteStdin(Utf8.GetBytes(s))` — saves the boilerplate
+    // for line-oriented stdin (printf-style commands, echo replacements).
+    //
+    // Named `WriteStdinString` rather than overloading `WriteStdin(string)`
+    // because z42's compiler doesn't yet resolve overloads by parameter
+    // type (tracked as `compiler-future-typed-overload-resolution`).
+    public void WriteStdinString(string s) {
+        this.WriteStdin(Utf8.GetBytes(s));
     }
 
     public void CloseStdin() {
