@@ -194,6 +194,44 @@ pub unsafe extern "C" fn z42_compression_zstd_decompress(
     }
 }
 
+// ── Brotli one-shot (add-z42-compression-brotli 2026-05-27) ─────────────────
+//
+// Pure-Rust brotli works on every target (including wasm32) so no cfg
+// gating needed. RFC 7932.
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn z42_compression_brotli_compress(
+    input_ptr: *const u8, input_len: usize,
+    level: i32,
+    out_ptr: *mut *mut u8, out_len: *mut usize,
+) -> i32 {
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        let input = std::slice::from_raw_parts(input_ptr, input_len);
+        match compression::brotli_compress(input, level) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn z42_compression_brotli_decompress(
+    input_ptr: *const u8, input_len: usize,
+    out_ptr: *mut *mut u8, out_len: *mut usize,
+) -> i32 {
+    unsafe {
+        *out_ptr = std::ptr::null_mut();
+        *out_len = 0;
+        let input = std::slice::from_raw_parts(input_ptr, input_len);
+        match compression::brotli_decompress(input) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
+    }
+}
+
 // ── Streaming entries (slot-based) ───────────────────────────────────────────
 //
 // Streaming compressors / decompressors live in a process-global slot

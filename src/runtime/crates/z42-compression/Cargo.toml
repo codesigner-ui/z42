@@ -19,6 +19,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # 2-3× the perf of stock zlib).
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 anyhow = "1"
+# add-z42-compression-brotli (2026-05-27): pure-Rust brotli (no C deps),
+# works on every target including wasm. RFC 7932.
+brotli = { version = "7", default-features = false, features = ["std"] }
 
 # Non-wasm-only deps:
 #   * zlib-ng feature: vendored C, needs system clang (works on every

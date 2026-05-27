@@ -23,6 +23,8 @@ const ALGO_DEFLATE_RAW: i32 = 0;
 const ALGO_ZLIB:        i32 = 1;
 const ALGO_GZIP:        i32 = 2;
 const ALGO_ZSTD:        i32 = 10;
+#[allow(dead_code)]
+const ALGO_BROTLI:      i32 = 11;
 
 type AlgoResult = Result<Vec<u8>, (i32, String)>;
 
@@ -100,6 +102,46 @@ pub fn zstd_compress(input: &[u8], level: i32) -> AlgoResult {
 pub fn zstd_decompress(input: &[u8]) -> AlgoResult {
     zstd::stream::decode_all(input)
         .map_err(|e| (Z42_COMPRESSION_ERR_DECOMPRESS, format!("invalid zstd data: {e}")))
+}
+
+// ── Brotli (add-z42-compression-brotli 2026-05-27) ───────────────────────
+//
+// Pure-Rust brotli — works on every target including wasm32 (no C deps,
+// unlike zstd). RFC 7932. Used by HTTP `Content-Encoding: br` and other
+// web-y workloads.
+
+/// Brotli quality range: 0..=11 (11 = best ratio, slowest). Default 11
+/// matches the brotli reference encoder.
+fn brotli_quality(level: i32) -> Result<u32, (i32, String)> {
+    match level {
+        0..=11 => Ok(level as u32),
+        n => Err((Z42_COMPRESSION_ERR_INVALID_LEVEL,
+                  format!("brotli level must be 0..=11, got {n}"))),
+    }
+}
+
+pub fn brotli_compress(input: &[u8], level: i32) -> AlgoResult {
+    let quality = brotli_quality(level)?;
+    // window-bits 22 = brotli default; larger = better ratio at memory cost.
+    let lgwin: u32 = 22;
+    let mut out: Vec<u8> = Vec::with_capacity(input.len() / 2 + 64);
+    let params = brotli::enc::BrotliEncoderParams {
+        quality: quality as i32,
+        lgwin: lgwin as i32,
+        ..Default::default()
+    };
+    let mut reader = input;
+    brotli::BrotliCompress(&mut reader, &mut out, &params)
+        .map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, format!("brotli: {e:?}")))?;
+    Ok(out)
+}
+
+pub fn brotli_decompress(input: &[u8]) -> AlgoResult {
+    let mut out: Vec<u8> = Vec::with_capacity(input.len() * 4);
+    let mut reader = input;
+    brotli::BrotliDecompress(&mut reader, &mut out)
+        .map_err(|e| (Z42_COMPRESSION_ERR_DECOMPRESS, format!("invalid brotli data: {e:?}")))?;
+    Ok(out)
 }
 
 // ── Streaming slot table ────────────────────────────────────────────────────

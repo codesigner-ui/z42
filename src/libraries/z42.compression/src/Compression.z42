@@ -12,6 +12,15 @@ public static class Compression {
     public static int ZstdFastest = 1;
     public static int ZstdDefault = 3;
     public static int ZstdBest    = 22;
+
+    // Brotli level constants (0..=11). Default 4 — the brotli reference's
+    // "11" is best-ratio but takes seconds on small inputs (pure-Rust impl
+    // pays heavily for high-quality backward-reference search); HTTP-server
+    // workloads typically pick 4 for response-time-sensitive content.
+    // add-z42-compression-brotli (2026-05-27).
+    public static int BrotliFastest = 0;
+    public static int BrotliDefault = 4;
+    public static int BrotliBest    = 11;
 }
 
 // Algorithm IDs passed to the streaming builtin __compressor_begin and
@@ -22,4 +31,5 @@ public static class AlgoId {
     public static int Zlib       = 1;
     public static int Gzip       = 2;
     public static int Zstd       = 10;
+    public static int Brotli     = 11;
 }
