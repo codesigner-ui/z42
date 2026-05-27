@@ -413,6 +413,64 @@ mod imp {
         ctx.core.udp_sockets.lock().remove(&slot_id);
         Ok(Value::Null)
     }
+
+    /// add-z42-net-udp-recv-into (2026-05-27)
+    /// `__net_udp_recv_into(slot, buf, offset, count) -> [0, n, host, port] | err | invalid`
+    /// Receive a datagram directly into the caller's pre-allocated byte[].
+    /// Avoids the per-call array allocation that plain `__net_udp_recv` does.
+    /// Truncates the datagram silently if it exceeds `count` (matches BCL
+    /// `UdpClient.Receive(byte[])` semantics — caller decides buffer size).
+    pub fn builtin_net_udp_recv_into(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_recv_into";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let buf_arr = match args.get(1) {
+            Some(Value::Array(rc)) => rc.clone(),
+            other => bail!("{}: arg 1 expected byte array, got {:?}", NAME, other),
+        };
+        let offset = arg_i64(args, 2, NAME)? as usize;
+        let count  = arg_i64(args, 3, NAME)? as usize;
+
+        let buf_len = buf_arr.borrow().len();
+        if offset + count > buf_len {
+            bail!("{}: offset {} + count {} exceeds buf length {}", NAME, offset, count, buf_len);
+        }
+
+        let sock_opt = {
+            let mut map = ctx.core.udp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(sock) = sock_opt else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        // Recv into scratch buffer then copy into the caller's array — the
+        // borrow_mut on the Rc-wrapped Vec<Value> doesn't escape so this
+        // never aliases.
+        let mut tmp = vec![0u8; count];
+        let recv_result = sock.recv_from(&mut tmp);
+        ctx.core.udp_sockets.lock().insert(slot_id, sock);
+
+        match recv_result {
+            Ok((n, peer)) => {
+                // Copy received bytes (clamped to count, matching socket
+                // truncation behaviour) into the caller's array.
+                let mut borrowed = buf_arr.borrow_mut();
+                let written = n.min(count);
+                for i in 0..written {
+                    borrowed[offset + i] = Value::I64(tmp[i] as i64);
+                }
+                let host_str = peer.ip().to_string();
+                let port_i64 = peer.port() as i64;
+                Ok(ctx.heap().alloc_array(vec![
+                    Value::I64(KIND_OK),
+                    Value::I64(written as i64),
+                    Value::Str(host_str.into()),
+                    Value::I64(port_i64),
+                ]))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("udp recv_into: {}", e))),
+        }
+    }
 }
 
 // ── wasm32: all builtins return KIND_UNSUPPORTED tuple ────────────────────
@@ -455,6 +513,9 @@ mod imp {
     }
     pub fn builtin_net_udp_drop(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(Value::Null)
+    }
+    pub fn builtin_net_udp_recv_into(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
     }
 }
 

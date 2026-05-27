@@ -20,6 +20,12 @@ public static class UdpNative {
 
     [Native("__net_udp_drop")]
     public static extern void Drop(long slotId);
+
+    /// add-z42-net-udp-recv-into (2026-05-27): receive into caller's buffer.
+    /// Returns `[0, bytesWritten, remoteHost, remotePort]` ok / `[1, msg]`
+    /// err / `[2]` invalid. Datagram clamped to `count` (silent truncation).
+    [Native("__net_udp_recv_into")]
+    public static extern object[] RecvInto(long slotId, byte[] buf, int offset, int count);
 }
 
 // add-z42-net-udp K2 (2026-05-25): decode helpers — kind-tag → typed value

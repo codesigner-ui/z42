@@ -35,6 +35,11 @@ public class UdpClient {
     private bool   _connected;
     private string _remoteHost;
     private int    _remotePort;
+    // add-z42-net-udp-recv-into (2026-05-27): sender address of the most
+    // recent ReceiveInto call (Receive() returns its own tuple so no
+    // shared state needed; ReceiveInto returns just bytesWritten).
+    private string _lastRxHost;
+    private int    _lastRxPort;
 
     public UdpClient() {
         this._slotId     = -1;
@@ -45,6 +50,8 @@ public class UdpClient {
         this._connected  = false;
         this._remoteHost = "";
         this._remotePort = 0;
+        this._lastRxHost = "";
+        this._lastRxPort = 0;
     }
 
     /// Bind to `host:port`. Use port 0 to let the OS pick an available
@@ -154,6 +161,48 @@ public class UdpClient {
     public int SendConnected(byte[] data) {
         return this.SendConnected(data, data.Length);
     }
+
+    /// add-z42-net-udp-recv-into (2026-05-27): receive a datagram into the
+    /// caller's pre-allocated buffer at `[offset, offset + count)`. Avoids
+    /// the per-call allocation of `Receive()`. Returns the number of bytes
+    /// written (clamped to `count` — over-large datagrams are truncated to
+    /// fit; caller can pre-size the buffer to MTU-style limits if needed).
+    /// Remote sender address is exposed via `LastReceiveHost` / `LastReceivePort`
+    /// helpers since z42's overload resolver can't disambiguate two `Receive`
+    /// shapes by arg-type alone — the array overload chose a different
+    /// disposition for the address pair.
+    public int ReceiveInto(byte[] buf, int offset, int count) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._bound) {
+            throw new InvalidOperationException("UdpClient.ReceiveInto() called before Bind()");
+        }
+        object[] raw = UdpNative.RecvInto(this._slotId, buf, offset, count);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            UdpDecode.Throw(raw, kind);
+            return -1;
+        }
+        int n = (int)(long)raw[1];
+        this._lastRxHost = (string)raw[2];
+        this._lastRxPort = (int)(long)raw[3];
+        return n;
+    }
+
+    /// Convenience: fill the entire `buf` (offset 0, count buf.Length).
+    /// Named distinctly (not an overload of `ReceiveInto`) because z42's
+    /// arity-based overload resolution proved fragile under cross-file
+    /// method tables here — keep an explicit name until
+    /// `compiler-future-typed-overload-resolution` lands.
+    public int ReceiveIntoFull(byte[] buf) {
+        return this.ReceiveInto(buf, 0, buf.Length);
+    }
+
+    /// Sender address of the most recent `ReceiveInto` call (empty / 0 before
+    /// any successful receive).
+    public string LastReceiveHost() { return this._lastRxHost; }
+    public int    LastReceivePort() { return this._lastRxPort; }
 
     /// Local bound port — useful after `Bind(host, 0)` to discover the
     /// OS-assigned port. Throws `InvalidOperationException` if not bound.

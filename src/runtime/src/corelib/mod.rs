@@ -354,6 +354,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-thread-sleep (2026-05-27) — blocking sleep ──
     ("__thread_sleep", threading::builtin_thread_sleep),
+
+    // ── add-z42-net-udp-recv-into (2026-05-27) — buffer-fill Receive variant ──
+    ("__net_udp_recv_into", network::builtin_net_udp_recv_into),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
