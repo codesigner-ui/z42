@@ -1,0 +1,141 @@
+// add-scrypt (2026-05-27): RFC 7914 §11 test vector #1 + edge cases.
+namespace Z42CryptoScryptVectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 7914 §11 vector #1 — the only small-N vector ─────────────────────
+
+[Test]
+void test_scrypt_rfc7914_vector_1() {
+    // password="", salt="", N=16, r=1, p=1, dkLen=64
+    // Expected DK from RFC 7914 §11.
+    byte[] dk = Scrypt.Derive(new byte[0], new byte[0], 16, 1, 1, 64);
+    Assert.Equal(
+        "77d6576238657b203b19ca42c18a0497f16b4844e3074ae8dfdffa3fede21442fcd0069ded0948f8326a753a0fc81f17e8d3e0fb2e0d3628cf35e20c38d18906",
+        Hex.Encode(dk)
+    );
+}
+
+// ── Smoke / API correctness ──────────────────────────────────────────────
+
+[Test]
+void test_scrypt_dklen_output_size() {
+    byte[] dk = Scrypt.Derive(new byte[]{ (byte)1 }, new byte[]{ (byte)2 }, 16, 1, 1, 32);
+    Assert.Equal(32, dk.Length);
+}
+
+[Test]
+void test_scrypt_different_dklen_different_prefix_when_short() {
+    // PBKDF2 expands deterministically; the first N bytes of a longer
+    // DK should match the bytes of a shorter DK with same params.
+    byte[] dk32 = Scrypt.Derive(new byte[]{ (byte)1 }, new byte[]{ (byte)2 }, 16, 1, 1, 32);
+    byte[] dk64 = Scrypt.Derive(new byte[]{ (byte)1 }, new byte[]{ (byte)2 }, 16, 1, 1, 64);
+    int i = 0;
+    while (i < 32) {
+        Assert.Equal((int)dk32[i], (int)dk64[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_scrypt_different_salt_different_output() {
+    byte[] pw = Utf8.GetBytes("hunter2");
+    byte[] dkA = Scrypt.Derive(pw, Utf8.GetBytes("saltA"), 16, 1, 1, 32);
+    byte[] dkB = Scrypt.Derive(pw, Utf8.GetBytes("saltB"), 16, 1, 1, 32);
+    bool anyDifferent = false;
+    int i = 0;
+    while (i < 32) {
+        if ((int)dkA[i] != (int)dkB[i]) { anyDifferent = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDifferent);
+}
+
+[Test]
+void test_scrypt_different_password_different_output() {
+    byte[] salt = Utf8.GetBytes("salt");
+    byte[] dkA = Scrypt.Derive(Utf8.GetBytes("alpha"), salt, 16, 1, 1, 32);
+    byte[] dkB = Scrypt.Derive(Utf8.GetBytes("beta"),  salt, 16, 1, 1, 32);
+    bool anyDifferent = false;
+    int i = 0;
+    while (i < 32) {
+        if ((int)dkA[i] != (int)dkB[i]) { anyDifferent = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDifferent);
+}
+
+[Test]
+void test_scrypt_n_not_power_of_2_throws() {
+    bool caught = false;
+    try {
+        Scrypt.Derive(new byte[0], new byte[0], 15, 1, 1, 32);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_scrypt_n_less_than_2_throws() {
+    bool caught = false;
+    try {
+        Scrypt.Derive(new byte[0], new byte[0], 1, 1, 1, 32);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_scrypt_r_zero_throws() {
+    bool caught = false;
+    try {
+        Scrypt.Derive(new byte[0], new byte[0], 16, 0, 1, 32);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_scrypt_p_zero_throws() {
+    bool caught = false;
+    try {
+        Scrypt.Derive(new byte[0], new byte[0], 16, 1, 0, 32);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_scrypt_p_greater_than_1_works() {
+    // Same password / salt at p=1 vs p=2 must produce different output
+    // (p changes the PBKDF2 derived block layout entering ROMix).
+    byte[] dk1 = Scrypt.Derive(Utf8.GetBytes("pw"), Utf8.GetBytes("salt"), 16, 1, 1, 32);
+    byte[] dk2 = Scrypt.Derive(Utf8.GetBytes("pw"), Utf8.GetBytes("salt"), 16, 1, 2, 32);
+    bool anyDifferent = false;
+    int i = 0;
+    while (i < 32) {
+        if ((int)dk1[i] != (int)dk2[i]) { anyDifferent = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDifferent);
+}
+
+[Test]
+void test_scrypt_r_greater_than_1_works() {
+    byte[] dk1 = Scrypt.Derive(Utf8.GetBytes("pw"), Utf8.GetBytes("salt"), 16, 1, 1, 32);
+    byte[] dk2 = Scrypt.Derive(Utf8.GetBytes("pw"), Utf8.GetBytes("salt"), 16, 2, 1, 32);
+    bool anyDifferent = false;
+    int i = 0;
+    while (i < 32) {
+        if ((int)dk1[i] != (int)dk2[i]) { anyDifferent = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDifferent);
+}

@@ -54,6 +54,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - Null/empty salt substituted with HashLen zero bytes per RFC §2.2
   - Verified against all 3 RFC 5869 §A vectors (SHA-256) + SHA-512 cross-check vs Python cryptography
 
+- scrypt (RFC 7914) — `Std.Crypto.Scrypt` (add-scrypt, 2026-05-27)
+  - `Derive(password, salt, N, r, p, dkLen) -> byte[]` — memory-hard password hash
+  - Pure-script Salsa20/8 + BlockMix + ROMix over the shipped PBKDF2-HMAC-SHA-256
+  - N must be a power of 2 ≥ 2; `r*p < 2^30` per RFC §6
+  - Verified against RFC 7914 §11 vector #1 (N=16, r=1, p=1) — larger vectors (N≥1024)
+    are correct algorithmically but too slow for interpreted z42 in CI; cdylib-backed
+    `Scrypt.DeriveNative` is a follow-up for production hashing throughput
+
 - OS CSPRNG — `Std.Crypto.SecureRandom` (add-csprng-to-crypto, 2026-05-26)
   - `GetBytes(int n) -> byte[]` — fill `n` bytes from OS entropy source
   - `NextInt() -> int` — uniform over full i32 range

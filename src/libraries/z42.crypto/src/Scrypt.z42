@@ -1,0 +1,292 @@
+namespace Std.Crypto;
+
+using Std;
+
+// add-scrypt (2026-05-27): scrypt password-hash KDF (RFC 7914 / Colin
+// Percival 2009). Memory-hard alternative to PBKDF2 — designed so a
+// brute-forcer needs O(N × r) memory per attempt, which makes GPU /
+// ASIC attacks fundamentally more expensive than parallelism alone.
+//
+// Pipeline:
+//   1. PBKDF2-HMAC-SHA256(password, salt, 1, p × 128 × r) → B[0..p-1]
+//      (each B[i] = 128r bytes)
+//   2. For each i: B[i] = ROMix(B[i], N) — the memory-hard step
+//   3. PBKDF2-HMAC-SHA256(password, concat(B[0..p-1]), 1, dkLen) → DK
+//
+// ROMix(B, N):
+//   X = B
+//   for j in 0..N:     V[j] = X; X = BlockMix(X)        # fill
+//   for j in 0..N:     X = BlockMix(X XOR V[Integerify(X) mod N])  # mix
+//   return X
+//
+// BlockMix uses Salsa20/8 (8-round variant) as the mixing primitive
+// per RFC 7914 §3.
+//
+// Tested against RFC 7914 §11 vector #1 (N=16, r=1, p=1) — the only
+// small-enough vector for pure-script execution; the larger vectors
+// (N=1024 / N=16384) are too slow to include in CI but the algorithm
+// is dominated by the same ROMix kernel either way.
+public static class Scrypt {
+    /// Derive `dkLen` bytes from `password` + `salt` using scrypt(N, r, p).
+    /// Constraints (per RFC 7914 §6):
+    ///   - N must be a power of 2 ≥ 2
+    ///   - r * p must be < 2^30 (overflow guard on the inner PBKDF2 output)
+    ///   - dkLen ≤ (2^32 - 1) * 32 (PBKDF2 length cap; effectively unbounded
+    ///     for any realistic call)
+    public static byte[] Derive(byte[] password, byte[] salt,
+                                int n, int r, int p, int dkLen) {
+        Scrypt._validate(n, r, p, dkLen);
+
+        // Step 1: B = PBKDF2-HMAC-SHA256(password, salt, 1, p × 128 × r)
+        int blockBytes = 128 * r;
+        byte[] b = Pbkdf2.DeriveKey(password, salt, 1, p * blockBytes);
+
+        // Step 2: ROMix each 128r-byte block independently. (RFC 7914
+        // lets us parallelise across p, but z42 stdlib doesn't have a
+        // thread-pool primitive in-scope here — sequential is fine for
+        // a v0; parallel-p is a follow-up.)
+        int i = 0;
+        while (i < p) {
+            byte[] bi = new byte[blockBytes];
+            int k = 0;
+            while (k < blockBytes) {
+                bi[k] = b[i * blockBytes + k];
+                k = k + 1;
+            }
+            byte[] mixed = Scrypt._roMix(bi, n, r);
+            k = 0;
+            while (k < blockBytes) {
+                b[i * blockBytes + k] = mixed[k];
+                k = k + 1;
+            }
+            i = i + 1;
+        }
+
+        // Step 3: DK = PBKDF2-HMAC-SHA256(password, B, 1, dkLen)
+        return Pbkdf2.DeriveKey(password, b, 1, dkLen);
+    }
+
+    static void _validate(int n, int r, int p, int dkLen) {
+        if (n < 2 || !Scrypt._isPowerOfTwo(n)) {
+            throw new ArgumentException(
+                "scrypt: N must be a power of 2 ≥ 2, got " + n.ToString());
+        }
+        if (r < 1) {
+            throw new ArgumentException("scrypt: r must be ≥ 1, got " + r.ToString());
+        }
+        if (p < 1) {
+            throw new ArgumentException("scrypt: p must be ≥ 1, got " + p.ToString());
+        }
+        // RFC §6 overflow guard.
+        long rp = (long)r * (long)p;
+        if (rp >= 1073741824L) {  // 2^30
+            throw new ArgumentException("scrypt: r * p must be < 2^30");
+        }
+        if (dkLen < 0) {
+            throw new ArgumentException("scrypt: dkLen must be ≥ 0");
+        }
+    }
+
+    static bool _isPowerOfTwo(int x) {
+        return x > 0 && (x & (x - 1)) == 0;
+    }
+
+    // ── ROMix (RFC 7914 §4) ────────────────────────────────────────────
+
+    static byte[] _roMix(byte[] block, int n, int r) {
+        int blockBytes = 128 * r;
+        // V is N × blockBytes. Flat byte[] indexed as V[j * blockBytes + k].
+        byte[] v = new byte[n * blockBytes];
+        // X = block (copy so we don't mutate caller's buffer).
+        byte[] x = new byte[blockBytes];
+        int k = 0;
+        while (k < blockBytes) { x[k] = block[k]; k = k + 1; }
+
+        // Fill loop: V[j] = X; X = BlockMix(X)
+        int j = 0;
+        while (j < n) {
+            k = 0;
+            while (k < blockBytes) { v[j * blockBytes + k] = x[k]; k = k + 1; }
+            x = Scrypt._blockMix(x, r);
+            j = j + 1;
+        }
+
+        // Mix loop: X = BlockMix(X XOR V[Integerify(X) mod N])
+        j = 0;
+        while (j < n) {
+            int idx = Scrypt._integerify(x, r) & (n - 1);  // N is power of 2
+            byte[] vj = new byte[blockBytes];
+            k = 0;
+            while (k < blockBytes) {
+                vj[k] = (byte)((int)x[k] ^ (int)v[idx * blockBytes + k]);
+                k = k + 1;
+            }
+            x = Scrypt._blockMix(vj, r);
+            j = j + 1;
+        }
+        return x;
+    }
+
+    /// "Integerify" picks the low 32 bits of the LAST 64-byte sub-block
+    /// of X (RFC 7914 §4 step 6) as a little-endian uint, used as the
+    /// V-index. Returns int — since N is a power of 2 ≤ ~2^30, mod-N
+    /// can be done via `& (N - 1)` cleanly.
+    static int _integerify(byte[] x, int r) {
+        // Last 64-byte sub-block starts at offset (2r - 1) * 64.
+        int off = (2 * r - 1) * 64;
+        int b0 = (int)x[off]     & 0xFF;
+        int b1 = (int)x[off + 1] & 0xFF;
+        int b2 = (int)x[off + 2] & 0xFF;
+        int b3 = (int)x[off + 3] & 0xFF;
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+
+    // ── BlockMix (RFC 7914 §3) ─────────────────────────────────────────
+
+    /// BlockMix(B[0..2r-1]) where each B[i] is 64 bytes.
+    /// Output is permuted: Y[0], Y[2], ..., Y[2r-2], Y[1], Y[3], ..., Y[2r-1].
+    static byte[] _blockMix(byte[] b, int r) {
+        int twoR = 2 * r;
+        // X = B[2r-1] (the last 64-byte block)
+        byte[] x = new byte[64];
+        int k = 0;
+        while (k < 64) { x[k] = b[(twoR - 1) * 64 + k]; k = k + 1; }
+
+        // Y[i] = Salsa20/8(X XOR B[i]) for i in 0..2r
+        byte[] y = new byte[twoR * 64];
+        int i = 0;
+        while (i < twoR) {
+            byte[] t = new byte[64];
+            int j = 0;
+            while (j < 64) {
+                t[j] = (byte)((int)x[j] ^ (int)b[i * 64 + j]);
+                j = j + 1;
+            }
+            x = Scrypt._salsa20_8(t);
+            j = 0;
+            while (j < 64) { y[i * 64 + j] = x[j]; j = j + 1; }
+            i = i + 1;
+        }
+
+        // Permute: out = Y[0], Y[2], ..., Y[2r-2], Y[1], Y[3], ..., Y[2r-1]
+        byte[] out_ = new byte[twoR * 64];
+        i = 0;
+        // Even-indexed first.
+        int outIdx = 0;
+        while (i < twoR) {
+            int j2 = 0;
+            while (j2 < 64) {
+                out_[outIdx * 64 + j2] = y[i * 64 + j2];
+                j2 = j2 + 1;
+            }
+            outIdx = outIdx + 1;
+            i = i + 2;
+        }
+        // Odd-indexed second.
+        i = 1;
+        while (i < twoR) {
+            int j2 = 0;
+            while (j2 < 64) {
+                out_[outIdx * 64 + j2] = y[i * 64 + j2];
+                j2 = j2 + 1;
+            }
+            outIdx = outIdx + 1;
+            i = i + 2;
+        }
+        return out_;
+    }
+
+    // ── Salsa20/8 core (RFC 7914 §3 / Bernstein 2007) ──────────────────
+
+    /// Salsa20 core reduced to 8 rounds (4 double-rounds). Operates on a
+    /// 64-byte input parsed as 16 × little-endian u32, then sums the
+    /// transformed state with the input modulo 2^32.
+    static byte[] _salsa20_8(byte[] input) {
+        // Parse input into 16 u32 (use long to avoid signed-int overflow).
+        long[] x = new long[16];
+        int i = 0;
+        while (i < 16) {
+            int off = i * 4;
+            long b0 = (long)((int)input[off]     & 0xFF);
+            long b1 = (long)((int)input[off + 1] & 0xFF);
+            long b2 = (long)((int)input[off + 2] & 0xFF);
+            long b3 = (long)((int)input[off + 3] & 0xFF);
+            x[i] = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+            i = i + 1;
+        }
+        // Save initial state for final add.
+        long[] orig = new long[16];
+        i = 0;
+        while (i < 16) { orig[i] = x[i]; i = i + 1; }
+
+        // 4 double-rounds = 8 rounds.
+        int round = 0;
+        while (round < 4) {
+            // Column round
+            x[ 4] = x[ 4] ^ Scrypt._rotl32(x[ 0] + x[12],  7);
+            x[ 8] = x[ 8] ^ Scrypt._rotl32(x[ 4] + x[ 0],  9);
+            x[12] = x[12] ^ Scrypt._rotl32(x[ 8] + x[ 4], 13);
+            x[ 0] = x[ 0] ^ Scrypt._rotl32(x[12] + x[ 8], 18);
+
+            x[ 9] = x[ 9] ^ Scrypt._rotl32(x[ 5] + x[ 1],  7);
+            x[13] = x[13] ^ Scrypt._rotl32(x[ 9] + x[ 5],  9);
+            x[ 1] = x[ 1] ^ Scrypt._rotl32(x[13] + x[ 9], 13);
+            x[ 5] = x[ 5] ^ Scrypt._rotl32(x[ 1] + x[13], 18);
+
+            x[14] = x[14] ^ Scrypt._rotl32(x[10] + x[ 6],  7);
+            x[ 2] = x[ 2] ^ Scrypt._rotl32(x[14] + x[10],  9);
+            x[ 6] = x[ 6] ^ Scrypt._rotl32(x[ 2] + x[14], 13);
+            x[10] = x[10] ^ Scrypt._rotl32(x[ 6] + x[ 2], 18);
+
+            x[ 3] = x[ 3] ^ Scrypt._rotl32(x[15] + x[11],  7);
+            x[ 7] = x[ 7] ^ Scrypt._rotl32(x[ 3] + x[15],  9);
+            x[11] = x[11] ^ Scrypt._rotl32(x[ 7] + x[ 3], 13);
+            x[15] = x[15] ^ Scrypt._rotl32(x[11] + x[ 7], 18);
+
+            // Row round
+            x[ 1] = x[ 1] ^ Scrypt._rotl32(x[ 0] + x[ 3],  7);
+            x[ 2] = x[ 2] ^ Scrypt._rotl32(x[ 1] + x[ 0],  9);
+            x[ 3] = x[ 3] ^ Scrypt._rotl32(x[ 2] + x[ 1], 13);
+            x[ 0] = x[ 0] ^ Scrypt._rotl32(x[ 3] + x[ 2], 18);
+
+            x[ 6] = x[ 6] ^ Scrypt._rotl32(x[ 5] + x[ 4],  7);
+            x[ 7] = x[ 7] ^ Scrypt._rotl32(x[ 6] + x[ 5],  9);
+            x[ 4] = x[ 4] ^ Scrypt._rotl32(x[ 7] + x[ 6], 13);
+            x[ 5] = x[ 5] ^ Scrypt._rotl32(x[ 4] + x[ 7], 18);
+
+            x[11] = x[11] ^ Scrypt._rotl32(x[10] + x[ 9],  7);
+            x[ 8] = x[ 8] ^ Scrypt._rotl32(x[11] + x[10],  9);
+            x[ 9] = x[ 9] ^ Scrypt._rotl32(x[ 8] + x[11], 13);
+            x[10] = x[10] ^ Scrypt._rotl32(x[ 9] + x[ 8], 18);
+
+            x[12] = x[12] ^ Scrypt._rotl32(x[15] + x[14],  7);
+            x[13] = x[13] ^ Scrypt._rotl32(x[12] + x[15],  9);
+            x[14] = x[14] ^ Scrypt._rotl32(x[13] + x[12], 13);
+            x[15] = x[15] ^ Scrypt._rotl32(x[14] + x[13], 18);
+
+            round = round + 1;
+        }
+
+        // Add original state, mask to 32 bits, serialise little-endian.
+        byte[] out_ = new byte[64];
+        i = 0;
+        while (i < 16) {
+            long v = (x[i] + orig[i]) & 0xFFFFFFFFL;
+            int off = i * 4;
+            out_[off]     = (byte)(v & 0xFFL);
+            out_[off + 1] = (byte)((v >> 8)  & 0xFFL);
+            out_[off + 2] = (byte)((v >> 16) & 0xFFL);
+            out_[off + 3] = (byte)((v >> 24) & 0xFFL);
+            i = i + 1;
+        }
+        return out_;
+    }
+
+    /// 32-bit left rotation. Input may be any long (we mask to 32 bits
+    /// before rotating so callers can pass the result of `a + b` without
+    /// pre-masking).
+    static long _rotl32(long x, int n) {
+        long masked = x & 0xFFFFFFFFL;
+        return ((masked << n) | (masked >> (32 - n))) & 0xFFFFFFFFL;
+    }
+}
