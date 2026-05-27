@@ -4,15 +4,21 @@
 // Cranelift `imul` + `iadd` + `icmp lt` + raw load/store on
 // frame.regs — no extern "C" helper call.
 //
-// Measured (2026-05-28, M-series macOS, single-thread):
-//   * pre-P1 (helper calls):   ~456 ms (5-run avg)
-//   * with P1 fast paths:      ~392 ms (5-run avg)
-//   * speedup:                 1.16× (~14% faster on this shape)
+// Measured (2026-05-28, M-series macOS, single-thread, 5-run avg):
+//   * pre-P1 (all helper calls):       ~456 ms
+//   * P1 arith+cmp only:               ~392 ms (1.16×)
+//   * P1 + BrCond specialization:      ~302 ms (1.51×)
 //
-// The 1.16× is below the spec's "2-5×" aspiration because the loop's
-// `BrCond` reading the Bool comparison result still goes through the
-// `jit_get_bool` helper. A follow-up that specializes BrCond when the
-// source register is statically Bool would push the speedup further.
+// BrCond specialization (load i8 payload directly when reg_types[cond]
+// is Bool, feed to Cranelift `brif` — skips the `jit_get_bool` helper)
+// is what unlocks the bulk of the speedup on tight loops, because every
+// backward branch in this shape was paying a helper call to read a
+// Bool we'd JUST stored via the cmp fast path.
+//
+// Remaining gap to the spec's 2× aspiration: roughly half the loop's
+// remaining cost is in `jit_check_safepoint` (called at function entry
+// + every BrCond as a GC cooperation point). Inlining its mutex-poll
+// fast path is the next obvious target.
 //
 // Expected output (long): 333333283333350000000
 

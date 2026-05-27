@@ -989,16 +989,34 @@ pub fn translate_function(
                 // back-edge is a BrCond rather than a Br.
                 builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
 
-                let cv   = ri!(*cond);
-                let inst = builder.ins().call(hr_get_bool, &[frame_val, ctx_val, cv]);
-                let b    = builder.inst_results(inst)[0];
-
                 let true_idx  = z42_func.blocks.iter().position(|blk| &blk.label == true_label)
                     .expect("true_label not found");
                 let false_idx = z42_func.blocks.iter().position(|blk| &blk.label == false_label)
                     .expect("false_label not found");
 
-                builder.ins().brif(b, cl_blocks[true_idx], &[], cl_blocks[false_idx], &[]);
+                // C2 P1 step 4 (2026-05-28): when reg_types[cond] confirms
+                // Bool, skip the `jit_get_bool` helper call entirely — load
+                // the i8 payload byte directly from `frame.regs[cond]` and
+                // feed it to `brif`. Closes the dominant remaining helper-
+                // call cost in the canonical numeric loop (every backward
+                // branch was paying a function call to read a Bool we'd
+                // *just* written via the cmp fast path).
+                let cond_is_bool = z42_func.reg_types
+                    .get(*cond as usize)
+                    .copied() == Some(IrType::Bool);
+                if cond_is_bool {
+                    const VALUE_STRIDE:   i64 = 24;
+                    const PAYLOAD_OFFSET: i32 = 8;
+                    let off  = builder.ins().iconst(types::I64, (*cond as i64) * VALUE_STRIDE);
+                    let addr = builder.ins().iadd(regs_base, off);
+                    let b    = builder.ins().load(types::I8, MemFlags::trusted(), addr, PAYLOAD_OFFSET);
+                    builder.ins().brif(b, cl_blocks[true_idx], &[], cl_blocks[false_idx], &[]);
+                } else {
+                    let cv   = ri!(*cond);
+                    let inst = builder.ins().call(hr_get_bool, &[frame_val, ctx_val, cv]);
+                    let b    = builder.inst_results(inst)[0];
+                    builder.ins().brif(b, cl_blocks[true_idx], &[], cl_blocks[false_idx], &[]);
+                }
             }
             Terminator::Throw { reg } => {
                 let rv = ri!(*reg);
