@@ -1,0 +1,200 @@
+namespace Std.Net.WebSockets;
+
+using Std;
+using Std.IO;
+using Std.Crypto;
+using Std.Encoding;
+using Std.Net.Sockets;
+
+// add-z42-net-websocket-server (2026-05-27): server-side WebSocket.
+//
+// Symmetric to WebSocketClient: this class binds a TCP listener,
+// accepts connections, performs the RFC 6455 §1.3 handshake (Upgrade /
+// Sec-WebSocket-Accept), and hands each accepted client back as a
+// WebSocketConnection for full-duplex frame I/O.
+//
+// Frame I/O reuses `_FrameCodec.ReadFrame` (which handles masked
+// client→server frames) and `_FrameCodec.EncodeServerFrame` (no mask
+// per RFC §5.1).
+//
+// v0 scope (kept tight to match client side):
+//   - ws:// only (wss:// gated on `net-future-tls`)
+//   - sequential single-threaded accept loop (caller can spawn
+//     Std.Threading.Thread per connection — same pattern as the
+//     HttpServer.ServeThreaded sibling)
+//   - no per-message-deflate (`net-future-websocket-deflate`)
+//   - no Sec-WebSocket-Protocol negotiation (any subprotocol header
+//     from the client is acknowledged but no specific subprotocol is
+//     chosen — empty Sec-WebSocket-Protocol echoed back)
+//
+// Usage:
+//   var srv = new WebSocketServer();
+//   srv.Bind("127.0.0.1", 8080);
+//   while (running) {
+//       WebSocketConnection conn = srv.Accept();
+//       WebSocketMessage msg = conn.Receive();
+//       conn.SendText("echo: " + msg.AsText());
+//       conn.Close(1000, "bye");
+//   }
+//   srv.Stop();
+public class WebSocketServer {
+    private TcpListener _listener;
+    private bool _running;
+
+    public WebSocketServer() {
+        this._listener = null;
+        this._running = false;
+    }
+
+    /// Bind to `host:port`. Use port 0 to let the OS pick an ephemeral
+    /// port; query `LocalPort()` afterwards to discover.
+    public void Bind(string host, int port) {
+        if (this._running) {
+            throw new InvalidOperationException("WebSocketServer already bound");
+        }
+        this._listener = TcpListener.Create(host, port);
+        this._running = true;
+    }
+
+    /// Accept one incoming connection, perform the RFC 6455 handshake,
+    /// and return a `WebSocketConnection` for frame I/O. Blocks until
+    /// a client connects. Throws `WebSocketProtocolException` if the
+    /// handshake fails.
+    public WebSocketConnection Accept() {
+        if (!this._running) {
+            throw new InvalidOperationException("WebSocketServer not bound — call Bind first");
+        }
+        TcpClient tcp = this._listener.AcceptTcpClient();
+        Stream stream = tcp.GetStream();
+        WebSocketServer._performHandshake(stream);
+        return new WebSocketConnection(tcp, stream);
+    }
+
+    /// Local bound port — useful after `Bind(host, 0)` to discover the
+    /// OS-assigned port.
+    public int LocalPort() {
+        if (!this._running) {
+            throw new InvalidOperationException("WebSocketServer not bound");
+        }
+        return this._listener.LocalPort();
+    }
+
+    /// Stop accepting; release the listening socket. Already-accepted
+    /// `WebSocketConnection` instances remain valid until closed.
+    public void Stop() {
+        if (!this._running) return;
+        this._running = false;
+        this._listener.Stop();
+    }
+
+    // ── Internal: handshake ────────────────────────────────────────────
+
+    static void _performHandshake(Stream stream) {
+        // Read request lines until a blank line (end of headers).
+        // _WsLineReader (defined in WebSocketClient.z42) handles the
+        // CRLF + buffered-read protocol.
+        _WsLineReader reader = new _WsLineReader(stream);
+        string requestLine = reader.ReadLine();
+        if (requestLine == null || requestLine.Length == 0) {
+            throw new WebSocketProtocolException("handshake: empty request line");
+        }
+        if (!requestLine.StartsWith("GET ")) {
+            throw new WebSocketProtocolException(
+                "handshake: expected GET request, got '" + requestLine + "'");
+        }
+
+        string clientKey = "";
+        string upgrade   = "";
+        string connection_ = "";
+        string wsVersion = "";
+        while (true) {
+            string line = reader.ReadLine();
+            if (line == null) {
+                throw new WebSocketProtocolException("handshake: stream closed mid-headers");
+            }
+            if (line.Length == 0) break;  // blank line ends headers
+
+            int colon = WebSocketServer._indexOfChar(line, ':');
+            if (colon < 0) continue;
+            string name  = WebSocketServer._lower(line.Substring(0, colon));
+            string value = WebSocketServer._trim(line.Substring(colon + 1, line.Length - colon - 1));
+            if (name == "sec-websocket-key")     { clientKey   = value; }
+            else if (name == "upgrade")          { upgrade     = WebSocketServer._lower(value); }
+            else if (name == "connection")       { connection_ = WebSocketServer._lower(value); }
+            else if (name == "sec-websocket-version") { wsVersion = value; }
+        }
+
+        if (upgrade != "websocket") {
+            throw new WebSocketProtocolException(
+                "handshake: missing or wrong Upgrade header (got '" + upgrade + "')");
+        }
+        // Connection header may include other tokens; just check for "upgrade".
+        if (!connection_.Contains("upgrade")) {
+            throw new WebSocketProtocolException(
+                "handshake: Connection header lacks 'upgrade'");
+        }
+        if (clientKey.Length == 0) {
+            throw new WebSocketProtocolException("handshake: missing Sec-WebSocket-Key");
+        }
+        if (wsVersion != "13") {
+            throw new WebSocketProtocolException(
+                "handshake: only WebSocket version 13 supported (got '" + wsVersion + "')");
+        }
+
+        string accept = WebSocketServer._computeAccept(clientKey);
+        string response = "HTTP/1.1 101 Switching Protocols\r\n"
+            + "Upgrade: websocket\r\n"
+            + "Connection: Upgrade\r\n"
+            + "Sec-WebSocket-Accept: " + accept + "\r\n"
+            + "\r\n";
+        byte[] respBytes = Utf8.GetBytes(response);
+        stream.Write(respBytes, 0, respBytes.Length);
+    }
+
+    /// Compute `Sec-WebSocket-Accept` per RFC 6455 §4.2.2:
+    /// base64(SHA-1(clientKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")).
+    /// Inlined here (not shared with WebSocketClient._computeExpectedAccept)
+    /// because that helper is private to the client class.
+    static string _computeAccept(string clientKey) {
+        string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+        byte[] digest = Sha1.HashString(clientKey + magic);
+        return Base64.Encode(digest);
+    }
+
+    // ── String helpers (z42.text not imported here; keep inline) ──────
+
+    static int _indexOfChar(string s, char c) {
+        int i = 0;
+        while (i < s.Length) {
+            if (s.CharAt(i) == c) return i;
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    static string _trim(string s) {
+        int start = 0;
+        while (start < s.Length && (s.CharAt(start) == ' ' || s.CharAt(start) == '\t')) {
+            start = start + 1;
+        }
+        int end = s.Length;
+        while (end > start
+            && (s.CharAt(end - 1) == ' ' || s.CharAt(end - 1) == '\t'
+                || s.CharAt(end - 1) == '\r')) {
+            end = end - 1;
+        }
+        return s.Substring(start, end - start);
+    }
+
+    static string _lower(string s) {
+        char[] buf = new char[s.Length];
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c >= 'A' && c <= 'Z') { c = (char)((int)c + 32); }
+            buf[i] = c;
+            i = i + 1;
+        }
+        return String.FromChars(buf);
+    }
+}

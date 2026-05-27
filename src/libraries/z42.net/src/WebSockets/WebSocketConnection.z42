@@ -1,0 +1,143 @@
+namespace Std.Net.WebSockets;
+
+using Std;
+using Std.IO;
+using Std.Encoding;
+using Std.Net.Sockets;
+
+// add-z42-net-websocket-server (2026-05-27): per-client connection
+// handle handed back by `WebSocketServer.Accept`. Mirrors
+// `WebSocketClient`'s public surface (`SendText` / `SendBinary` /
+// `SendPing` / `Receive` / `Close`) but skips the client's
+// connect-time handshake (already done by Accept) and uses the
+// unmasked `_FrameCodec.EncodeServerFrame` for outgoing frames per
+// RFC 6455 §5.1.
+//
+// Lifecycle: caller can Send / Receive freely; the connection ends
+// when either side sends a Close frame (or the underlying TCP socket
+// closes / errors). `Dispose` releases the TCP socket; `Close(code,
+// reason)` sends a Close control frame first then disposes.
+public class WebSocketConnection {
+    private TcpClient _tcp;
+    private Stream    _stream;
+    private int       _state;   // mirrors WebSocketState (0=Connecting, 1=Open, 2=CloseSent, 3=Closed)
+
+    /// Constructed by `WebSocketServer.Accept` — not part of the public
+    /// API for direct instantiation (handshake must have already run).
+    public WebSocketConnection(TcpClient tcp, Stream stream) {
+        this._tcp    = tcp;
+        this._stream = stream;
+        this._state  = WebSocketState.Open;
+    }
+
+    public int State() { return this._state; }
+
+    /// Send a UTF-8 text frame.
+    public void SendText(string text) {
+        this._ensureOpen();
+        byte[] payload = Utf8.GetBytes(text);
+        byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpText,
+                                                     payload, payload.Length);
+        this._stream.Write(frame, 0, frame.Length);
+    }
+
+    /// Send a binary frame of `length` bytes from `data[0..length]`.
+    public void SendBinary(byte[] data, int length) {
+        this._ensureOpen();
+        byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpBinary,
+                                                     data, length);
+        this._stream.Write(frame, 0, frame.Length);
+    }
+
+    /// Send a ping control frame with the given payload (≤ 125 bytes per
+    /// RFC §5.5).
+    public void SendPing(byte[] payload, int length) {
+        this._ensureOpen();
+        if (length > 125) {
+            throw new WebSocketProtocolException(
+                "ping payload must be ≤ 125 bytes (got " + length.ToString() + ")");
+        }
+        byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpPing,
+                                                     payload, length);
+        this._stream.Write(frame, 0, frame.Length);
+    }
+
+    /// Block on the next inbound message. Control frames (Ping / Close)
+    /// are handled internally: Ping returns a Pong automatically; Close
+    /// transitions state and returns a Close-typed WebSocketMessage so
+    /// callers can react. Returns `null` when the underlying TCP closes
+    /// without a clean Close frame.
+    public WebSocketMessage Receive() {
+        if (this._state == WebSocketState.Closed) {
+            throw new InvalidOperationException("WebSocketConnection already closed");
+        }
+        while (true) {
+            _DecodedFrame f = _FrameCodec.ReadFrame(this._stream);
+            int op = f.Opcode;
+            if (op == _FrameCodec.OpText) {
+                return new WebSocketMessage(WebSocketMessageType.Text, f.Payload);
+            }
+            if (op == _FrameCodec.OpBinary) {
+                return new WebSocketMessage(WebSocketMessageType.Binary, f.Payload);
+            }
+            if (op == _FrameCodec.OpPing) {
+                // Auto-Pong with the same payload (RFC §5.5.3).
+                byte[] pong = _FrameCodec.EncodeServerFrame(_FrameCodec.OpPong,
+                                                            f.Payload, f.Payload.Length);
+                this._stream.Write(pong, 0, pong.Length);
+                continue;
+            }
+            if (op == _FrameCodec.OpPong) {
+                // Ignore unsolicited pongs (RFC §5.5.3). Continue the loop.
+                continue;
+            }
+            if (op == _FrameCodec.OpClose) {
+                this._state = WebSocketState.Closed;
+                return new WebSocketMessage(WebSocketMessageType.Close, f.Payload);
+            }
+            // Reserved / unknown control frame.
+            throw new WebSocketProtocolException(
+                "received unsupported opcode " + op.ToString());
+        }
+        return null;  // unreachable
+    }
+
+    /// Send a Close control frame with the given status code (e.g. 1000
+    /// for normal closure) + UTF-8 reason; the wire payload is
+    /// status-code (2 bytes big-endian) || UTF-8 reason. After Close
+    /// the connection is considered closed locally; Receive on a fully
+    /// closed connection throws.
+    public void Close(int statusCode, string reason) {
+        if (this._state == WebSocketState.Closed) return;
+        byte[] reasonBytes = Utf8.GetBytes(reason);
+        byte[] payload = new byte[2 + reasonBytes.Length];
+        payload[0] = (byte)((statusCode >> 8) & 0xFF);
+        payload[1] = (byte)(statusCode & 0xFF);
+        int i = 0;
+        while (i < reasonBytes.Length) {
+            payload[2 + i] = reasonBytes[i];
+            i = i + 1;
+        }
+        byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpClose,
+                                                     payload, payload.Length);
+        this._stream.Write(frame, 0, frame.Length);
+        this._state = WebSocketState.Closed;
+    }
+
+    /// Release the underlying TCP socket. Idempotent.
+    public void Dispose() {
+        if (this._state != WebSocketState.Closed) {
+            this._state = WebSocketState.Closed;
+        }
+        if (this._tcp != null) {
+            this._tcp.Dispose();
+            this._tcp = null;
+        }
+    }
+
+    void _ensureOpen() {
+        if (this._state == WebSocketState.Closed) {
+            throw new InvalidOperationException("WebSocketConnection: already closed");
+        }
+    }
+}

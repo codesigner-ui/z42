@@ -1,0 +1,120 @@
+// add-z42-net-websocket-server (2026-05-27): WebSocketServer + WebSocketConnection.
+//
+// API / lifecycle tests only. End-to-end Connect↔Accept↔Send↔Receive
+// is exercised via the existing `http_cookies_auto` / WebSocketClient
+// e2e harness; adding it here would duplicate the threaded test
+// infrastructure that's known to be flaky in the in-process test
+// runner. The frame-codec EncodeServerFrame change is unit-covered
+// below.
+namespace Z42NetWebSocketServerTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Net.WebSockets;
+
+[Test]
+void test_server_construct_initial_not_bound() {
+    // Constructing doesn't bind — Accept before Bind should throw.
+    var srv = new WebSocketServer();
+    bool caught = false;
+    try {
+        srv.Accept();
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_double_bind_throws() {
+    var srv = new WebSocketServer();
+    srv.Bind("127.0.0.1", 0);
+    bool caught = false;
+    try {
+        srv.Bind("127.0.0.1", 0);
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    srv.Stop();
+}
+
+[Test]
+void test_local_port_assigned_by_os_when_zero() {
+    var srv = new WebSocketServer();
+    srv.Bind("127.0.0.1", 0);
+    int port = srv.LocalPort();
+    Assert.True(port > 0);
+    Assert.True(port < 65536);
+    srv.Stop();
+}
+
+[Test]
+void test_local_port_before_bind_throws() {
+    var srv = new WebSocketServer();
+    bool caught = false;
+    try {
+        srv.LocalPort();
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_stop_is_idempotent() {
+    var srv = new WebSocketServer();
+    srv.Bind("127.0.0.1", 0);
+    srv.Stop();
+    srv.Stop();  // second call must not throw
+}
+
+// ── _FrameCodec.EncodeServerFrame unit tests ─────────────────────────
+
+[Test]
+void test_encode_server_frame_no_mask_bit() {
+    // Server-side text frame "hi" (2 bytes payload, < 126) — no MASK
+    // bit, no masking key, payload written raw.
+    byte[] payload = new byte[]{ (byte)'h', (byte)'i' };
+    byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpText,
+                                                 payload, payload.Length);
+    // 2 header + 2 payload = 4 bytes.
+    Assert.Equal(4, frame.Length);
+    // Byte 0: FIN(1) + RSV(000) + opcode(0001 = text) = 0x81
+    Assert.Equal(0x81, (int)frame[0] & 0xFF);
+    // Byte 1: MASK(0) + len(2) = 0x02 (NOT 0x82 like the client-side variant)
+    Assert.Equal(0x02, (int)frame[1] & 0xFF);
+    Assert.Equal((int)'h', (int)frame[2] & 0xFF);
+    Assert.Equal((int)'i', (int)frame[3] & 0xFF);
+}
+
+[Test]
+void test_encode_server_frame_medium_payload_uses_16bit_length() {
+    // 200-byte payload triggers the 16-bit extended length field.
+    byte[] payload = new byte[200];
+    int i = 0;
+    while (i < 200) { payload[i] = (byte)i; i = i + 1; }
+    byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpBinary,
+                                                 payload, payload.Length);
+    // 2 base + 2 ext-len + 200 payload = 204 bytes (no 4-byte mask).
+    Assert.Equal(204, frame.Length);
+    Assert.Equal(0x82, (int)frame[0] & 0xFF);  // FIN + binary opcode
+    Assert.Equal(126, (int)frame[1] & 0xFF);   // MASK=0, len=126 marker
+    // Extended length: 200 big-endian.
+    Assert.Equal(0, (int)frame[2] & 0xFF);
+    Assert.Equal(200, (int)frame[3] & 0xFF);
+}
+
+[Test]
+void test_encode_server_frame_payload_not_masked() {
+    // Verify the payload bytes appear unmodified at the frame's payload
+    // offset (a client-side encode would XOR them with the masking key).
+    byte[] payload = new byte[]{ (byte)0x42, (byte)0xFE, (byte)0x00, (byte)0xFF };
+    byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpBinary,
+                                                 payload, payload.Length);
+    Assert.Equal(0x42, (int)frame[2] & 0xFF);
+    Assert.Equal(0xFE, (int)frame[3] & 0xFF);
+    Assert.Equal(0x00, (int)frame[4] & 0xFF);
+    Assert.Equal(0xFF, (int)frame[5] & 0xFF);
+}

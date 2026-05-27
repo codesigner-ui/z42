@@ -106,6 +106,53 @@ public static class _FrameCodec {
         return frame;
     }
 
+    /// add-z42-net-websocket-server (2026-05-27): server-side frame
+    /// encoder. RFC 6455 §5.1: "A server MUST NOT mask any frames that
+    /// it sends to the client." Same wire layout as `EncodeFrame` but
+    /// MASK bit cleared, no 4-byte masking key, payload written
+    /// unmodified.
+    public static byte[] EncodeServerFrame(int opcode, byte[] payload, int payloadLen) {
+        int extLenBytes;
+        int hdrLen2;
+        if (payloadLen < 126) {
+            extLenBytes = 0;
+            hdrLen2     = payloadLen;
+        } else if (payloadLen < 65536) {
+            extLenBytes = 2;
+            hdrLen2     = 126;
+        } else {
+            extLenBytes = 8;
+            hdrLen2     = 127;
+        }
+        int totalLen = 2 + extLenBytes + payloadLen;
+        byte[] frame = new byte[totalLen];
+        // Byte 0: FIN=1 + RSV1-3=0 + opcode (4 bits)
+        frame[0] = (byte)(0x80 | (opcode & 0x0F));
+        // Byte 1: MASK=0 + 7-bit length field
+        frame[1] = (byte)(hdrLen2);
+        int off = 2;
+        if (extLenBytes == 2) {
+            frame[off]     = (byte)((payloadLen >> 8) & 0xFF);
+            frame[off + 1] = (byte)(payloadLen & 0xFF);
+            off = off + 2;
+        } else if (extLenBytes == 8) {
+            int i = 0;
+            while (i < 4) { frame[off + i] = (byte)0; i = i + 1; }
+            frame[off + 4] = (byte)((payloadLen >> 24) & 0xFF);
+            frame[off + 5] = (byte)((payloadLen >> 16) & 0xFF);
+            frame[off + 6] = (byte)((payloadLen >> 8)  & 0xFF);
+            frame[off + 7] = (byte)(payloadLen & 0xFF);
+            off = off + 8;
+        }
+        // Payload written unmasked.
+        int j = 0;
+        while (j < payloadLen) {
+            frame[off + j] = payload[j];
+            j = j + 1;
+        }
+        return frame;
+    }
+
     /// Decoded inbound frame fields.
     public static _DecodedFrame ReadFrame(Stream stream) {
         // Read 2 base bytes
