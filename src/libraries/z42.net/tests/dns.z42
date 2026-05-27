@@ -1,0 +1,49 @@
+// add-z42-net-dns (2026-05-27): Std.Net.Sockets.Dns.GetHostAddresses.
+namespace Z42NetDnsTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_lookup_localhost_returns_at_least_one_address() {
+    // `localhost` is the only host we can rely on across CI environments
+    // (no internet access in most CI sandboxes).
+    IPAddress[] addrs = Dns.GetHostAddresses("localhost");
+    Assert.True(addrs.Length >= 1);
+}
+
+[Test]
+void test_lookup_numeric_ipv4_round_trips() {
+    IPAddress[] addrs = Dns.GetHostAddresses("127.0.0.1");
+    Assert.Equal(1, addrs.Length);
+    Assert.True(addrs[0].IsIPv4());
+    Assert.Equal("127.0.0.1", addrs[0].ToString());
+}
+
+[Test]
+void test_lookup_numeric_ipv6_round_trips() {
+    IPAddress[] addrs = Dns.GetHostAddresses("::1");
+    Assert.Equal(1, addrs.Length);
+    Assert.True(addrs[0].IsIPv6());
+    Assert.True(addrs[0].IsLoopback());
+}
+
+[Test]
+void test_lookup_localhost_contains_loopback() {
+    IPAddress[] addrs = Dns.GetHostAddresses("localhost");
+    bool sawLoopback = false;
+    int i = 0;
+    while (i < addrs.Length) {
+        if (addrs[i].IsLoopback()) { sawLoopback = true; }
+        i = i + 1;
+    }
+    Assert.True(sawLoopback);
+}
+
+// Note: an "unresolvable hostname throws" test was tried but dropped —
+// macOS resolvers occasionally return success for RFC 6761 `.invalid`
+// names via mDNS / Bonjour search-domain interactions, making the
+// negative case environment-dependent. The throw path is covered by
+// the underlying Rust runtime's `socket_err` wrapping; the z42 side
+// just decodes whichever tuple the resolver hands back.

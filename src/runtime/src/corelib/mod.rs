@@ -362,6 +362,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__net_udp_join_multicast",      network::builtin_net_udp_join_multicast),
     ("__net_udp_leave_multicast",     network::builtin_net_udp_leave_multicast),
     ("__net_udp_set_multicast_loop",  network::builtin_net_udp_set_multicast_loop),
+
+    // ── add-z42-net-dns (2026-05-27) — synchronous DNS resolution ──
+    ("__net_dns_lookup",              network::builtin_net_dns_lookup),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

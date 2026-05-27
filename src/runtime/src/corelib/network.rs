@@ -527,6 +527,37 @@ mod imp {
         }
     }
 
+    // ── add-z42-net-dns (2026-05-27) — synchronous DNS resolution ────────
+
+    /// `__net_dns_lookup(host) -> [0, string[]] | err`
+    /// Resolve `host` to a sorted-by-libc array of textual IP addresses
+    /// (v4 + v6 mixed in whatever order the OS resolver returns; caller
+    /// can filter by parsing each with IPAddress.Parse). Synchronous —
+    /// blocks the calling thread for the duration of getaddrinfo.
+    pub fn builtin_net_dns_lookup(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_dns_lookup";
+        let host = arg_str(args, 0, NAME)?.to_string();
+        // `to_socket_addrs` requires a port — append `:0`. The port in the
+        // resulting addresses is ignored; we only emit the IP string.
+        let probe = format!("{}:0", host);
+        match probe.to_socket_addrs() {
+            Ok(iter) => {
+                let mut ip_strs: Vec<Value> = Vec::new();
+                let mut seen: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                for addr in iter {
+                    let s = addr.ip().to_string();
+                    if seen.insert(s.clone()) {
+                        ip_strs.push(Value::Str(s.into()));
+                    }
+                }
+                let arr = ctx.heap().alloc_array(ip_strs);
+                Ok(ctx.heap().alloc_array(vec![Value::I64(KIND_OK), arr]))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("dns lookup {}: {}", host, e))),
+        }
+    }
+
     /// add-z42-net-udp-recv-into (2026-05-27)
     /// `__net_udp_recv_into(slot, buf, offset, count) -> [0, n, host, port] | err | invalid`
     /// Receive a datagram directly into the caller's pre-allocated byte[].
@@ -637,6 +668,9 @@ mod imp {
         Ok(unsupported(ctx))
     }
     pub fn builtin_net_udp_set_multicast_loop(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_dns_lookup(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(unsupported(ctx))
     }
 }

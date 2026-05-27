@@ -1,0 +1,48 @@
+namespace Std.Net.Sockets;
+
+using Std;
+
+// add-z42-net-dns (2026-05-27): synchronous DNS lookup.
+//
+// v0 surface mirrors .NET BCL `System.Net.Dns.GetHostAddresses(host)`:
+// returns `IPAddress[]` resolved from `host`. Blocks the calling thread
+// for the duration of `getaddrinfo`. Mixed IPv4 + IPv6 results in the
+// order the OS resolver hands them back (typically v6 first on modern
+// dual-stack systems); caller can filter via `IsIPv4()` / `IsIPv6()`.
+//
+// Not in scope for v0 (deferred follow-ups):
+//   * SRV / MX / TXT / PTR record lookups (need a real DNS protocol
+//     parser rather than getaddrinfo)
+//   * Async / cancellable lookup (L3 async/await)
+//   * Per-query timeout (relies on OS-default resolver timeout)
+public static class Dns {
+    /// Resolve `host` to one-or-more IPAddresses. Throws `SocketException`
+    /// on resolver failure (NXDOMAIN, no network, timeout). Numeric input
+    /// (e.g. `"127.0.0.1"`, `"::1"`) round-trips back as a single-element
+    /// array without hitting the network.
+    public static IPAddress[] GetHostAddresses(string host) {
+        object[] raw = DnsNative.Lookup(host);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            // Reuse the UDP/TCP error decoder — it covers `socket_err` /
+            // `handle_invalid` / `unsupported` consistently.
+            UdpDecode.Throw(raw, kind);
+            return new IPAddress[0];
+        }
+        object[] strs = (object[])raw[1];
+        IPAddress[] result = new IPAddress[strs.Length];
+        int i = 0;
+        while (i < strs.Length) {
+            result[i] = IPAddress.Parse((string)strs[i]);
+            i = i + 1;
+        }
+        return result;
+    }
+}
+
+/// Native sink — keeps the [Native] extern signature isolated.
+public static class DnsNative {
+    /// Returns `[0, string[]]` ok / `[1, msg]` err / `[3]` unsupported.
+    [Native("__net_dns_lookup")]
+    public static extern object[] Lookup(string host);
+}
