@@ -27,7 +27,7 @@ pub unsafe extern "C" fn jit_load_fn(
 ) -> u8 {
     let name = std::str::from_utf8(std::slice::from_raw_parts(name_ptr, name_len))
         .unwrap_or("<invalid>");
-    (*frame).regs[dst as usize] = Value::FuncRef(name.to_string());
+    (*frame).regs[dst as usize] = Value::FuncRef(name.into());
     0
 }
 
@@ -48,9 +48,8 @@ pub unsafe extern "C" fn jit_load_fn_cached(
     let cached = vm_ctx.func_ref_slot(slot_id);
     let value = if matches!(cached, Value::Null) {
         let name = std::str::from_utf8(std::slice::from_raw_parts(name_ptr, name_len))
-            .unwrap_or("<invalid>")
-            .to_string();
-        let v = Value::FuncRef(name);
+            .unwrap_or("<invalid>");
+        let v = Value::FuncRef(name.into());
         vm_ctx.set_func_ref_slot(slot_id, v.clone());
         v
     } else {
@@ -122,7 +121,7 @@ pub unsafe extern "C" fn jit_call_indirect(
     //    Stack closure 从 caller frame.env_arena 复制内容；callee 内统一拿到
     //    一个新 GcRef Array（避免 callee 持有指向 caller arena 的 lifetime）。
     let (fn_name, env_vec_opt): (String, Option<Vec<Value>>) = match &frame_ref.regs[callee as usize] {
-        Value::FuncRef(n) => (n.clone(), None),
+        Value::FuncRef(n) => (n.to_string(), None),
         Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.borrow().clone())),
         Value::StackClosure { env_idx, fn_name } => {
             let idx = *env_idx as usize;

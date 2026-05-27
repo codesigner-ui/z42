@@ -312,7 +312,12 @@ pub enum Value {
     /// Function reference value. Currently used by L2 no-capture lambda
     /// literals (see docs/design/language/closure.md §6). Indirect call dispatches
     /// to the named function in the loaded module.
-    FuncRef(String),
+    ///
+    /// review.md C1 chunk 2 (2026-05-27): `Box<str>` instead of `String`.
+    /// Saves 8 B/instance (Box<str> = 16 B vs String = 24 B; no `cap` word).
+    /// FuncRef names are write-once at creation and read-only thereafter
+    /// (immutable identity → no append/grow operation needed).
+    FuncRef(Box<str>),
     /// L3 capturing closure value: pairs a heap-allocated env (Vec<Value>)
     /// with the lifted function's qualified name. CallIndirect on a Closure
     /// passes `env` as the callee's first implicit parameter and copies user

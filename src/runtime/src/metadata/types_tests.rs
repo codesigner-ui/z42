@@ -121,7 +121,7 @@ fn is_heap_ref_false_for_primitives() {
 
 #[test]
 fn is_heap_ref_false_for_func_ref() {
-    assert!(!Value::FuncRef("Foo.bar".to_string()).is_heap_ref());
+    assert!(!Value::FuncRef("Foo.bar".into()).is_heap_ref());
 }
 
 #[test]

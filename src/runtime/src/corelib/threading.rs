@@ -55,7 +55,7 @@ pub fn builtin_thread_spawn(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         .ok_or_else(|| anyhow!("__thread_spawn: missing action argument"))?;
 
     let (fn_name, env_vec): (String, Option<Vec<Value>>) = match callable {
-        Value::FuncRef(name) => (name.clone(), None),
+        Value::FuncRef(name) => (name.to_string(), None),
         Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.borrow().clone())),
         Value::StackClosure { .. } => bail!(
             "__thread_spawn: stack-allocated closure cannot escape to a worker thread \

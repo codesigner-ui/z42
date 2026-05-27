@@ -1612,7 +1612,7 @@ impl MagrGC for ArcMagrGC {
             Value::PinnedView(_) => size_of::<Value>() + size_of::<crate::metadata::PinnedViewData>(),
             // impl-lambda-l2: FuncRef holds the function name; no managed heap
             // allocation beyond the string buffer.
-            Value::FuncRef(name) => size_of::<Value>() + name.capacity(),
+            Value::FuncRef(name) => size_of::<Value>() + name.len(),
             // impl-closure-l3-core: Closure carries a heap-allocated env (Vec<Value>);
             // its size is the env's storage plus the function-name string.
             Value::Closure { env, fn_name } => {

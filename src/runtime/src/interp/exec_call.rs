@@ -110,7 +110,7 @@ pub(super) fn builtin(
 /// L2 no-capture lambda lifting: push a function reference value.
 /// See docs/design/language/closure.md §6 + ir.md.
 pub(super) fn load_fn(frame: &mut Frame, dst: u32, func: &str) {
-    frame.set(dst, Value::FuncRef(func.to_string()));
+    frame.set(dst, Value::FuncRef(func.into()));
 }
 
 /// 2026-05-02 add-method-group-conversion (D1b): cached method group
@@ -121,7 +121,7 @@ pub(super) fn load_fn_cached(
 ) {
     let cached = ctx.func_ref_slot(slot_id);
     let value = if matches!(cached, Value::Null) {
-        let v = Value::FuncRef(func.to_string());
+        let v = Value::FuncRef(func.into());
         ctx.set_func_ref_slot(slot_id, v.clone());
         v
     } else {
@@ -141,7 +141,7 @@ pub(super) fn call_indirect(
     // → 从当前 frame.env_arena 复制出 Vec（新 GcRef，callee 内 lifetime
     //   独立于 caller frame，避免 caller 弹出 arena 后 use-after-free）
     let (fname, env_vec_opt): (String, Option<Vec<Value>>) = match frame.get(callee)? {
-        Value::FuncRef(name)               => (name.clone(), None),
+        Value::FuncRef(name)               => (name.to_string(), None),
         Value::Closure { env, fn_name }    => (fn_name.clone(), Some(env.borrow().clone())),
         Value::StackClosure { env_idx, fn_name } => {
             let idx = *env_idx as usize;
