@@ -13,21 +13,21 @@ using Std.Numerics;
 
 // ── Test key fixture ────────────────────────────────────────────────────
 //
-// Build a 507-bit RSA test key from two well-known cryptographic primes:
-//   p = 2^255 - 19   (the Curve25519 field prime, RFC 7748)
-//   q = 2^252 + 27742317777372353535851937790883648493
-//       (the Ed25519 group order ℓ, RFC 8032)
-// Both are universally verified primes, so we sidestep needing to run
-// NextPrime in the test setup (which would be slow in pure-script
-// interpreter).
+// Build a 648-bit RSA test key from two well-known Mersenne primes:
+//   p = 2^521 - 1   (M521 — Mersenne prime, 521 bits)
+//   q = 2^127 - 1   (M127 — Mersenne prime, 127 bits)
+// Both are universally verified primes, so we sidestep NextPrime() in
+// test setup (slow in pure-script). The bit-asymmetry between p and q
+// makes the key cryptographically trivial to factor, but that's fine —
+// these tests exercise the encoding/padding logic, not security.
 //
-// n is 507 bits — comfortably above the SHA-256 PKCS#1 v1.5 floor (496
-// bits = 19 DigestInfo + 32 SHA-256 + 11 padding overhead).
+// n = p × q is 648 bits = 81 bytes. Comfortably above the
+// RSA-OAEP-SHA-256 floor (k ≥ 2·hLen + 2 = 66 bytes) and the
+// RSASSA-PSS-SHA-256 floor (emLen ≥ hLen + sLen + 2).
 
 static RsaPrivateKey _testKey() {
-    BigInt p = BigInt.One.ShiftLeft(255).Subtract(new BigInt(19L));
-    BigInt q = BigInt.One.ShiftLeft(252).Add(
-        BigInt.Parse("27742317777372353535851937790883648493"));
+    BigInt p = BigInt.One.ShiftLeft(521).Subtract(BigInt.One);
+    BigInt q = BigInt.One.ShiftLeft(127).Subtract(BigInt.One);
     BigInt n = p.Multiply(q);
     BigInt e = new BigInt(65537L);
     BigInt phi = p.Subtract(BigInt.One).Multiply(q.Subtract(BigInt.One));
@@ -44,7 +44,7 @@ void test_rsa_pkcs1_sign_verify_round_trip() {
     byte[] msg = Utf8.GetBytes("Hello, RSA world!");
     byte[] sig = Rsa.SignPkcs1v15Sha256(priv, msg);
     // Signature length must equal modulus byte length (64 for RSA-512).
-    Assert.Equal(64, sig.Length);
+    Assert.Equal(81, sig.Length);
     Assert.True(Rsa.VerifyPkcs1v15Sha256(pub, msg, sig));
 }
 
@@ -85,7 +85,7 @@ void test_rsa_pkcs1_verify_rejects_wrong_length_signature() {
     RsaPrivateKey priv = _testKey();
     RsaPublicKey  pub  = priv.GetPublicKey();
     byte[] msg = Utf8.GetBytes("msg");
-    byte[] short_ = new byte[63];   // one byte shorter than k
+    byte[] short_ = new byte[80];   // one byte shorter than k
     Assert.True(!Rsa.VerifyPkcs1v15Sha256(pub, msg, short_));
 }
 
@@ -95,11 +95,11 @@ void test_rsa_pkcs1_verify_rejects_wrong_length_signature() {
 void test_rsa_raw_public_private_round_trip() {
     RsaPrivateKey priv = _testKey();
     RsaPublicKey  pub  = priv.GetPublicKey();
-    // Choose a message smaller than the modulus. Use 32 zero bytes + a
-    // 32-byte payload (so byte 0 is 0 and the value is definitely < n).
-    byte[] message = new byte[64];
+    // Choose a message smaller than the modulus. 81-byte buffer with
+    // top bytes zero so the value is definitely < n.
+    byte[] message = new byte[81];
     int i = 0;
-    while (i < 32) { message[32 + i] = (byte)(i + 1); i = i + 1; }
+    while (i < 32) { message[49 + i] = (byte)(i + 1); i = i + 1; }
     byte[] encrypted = Rsa.RawPublicOp(pub, message);
     byte[] decrypted = Rsa.RawPrivateOp(priv, encrypted);
     Assert.Equal(Hex.Encode(message), Hex.Encode(decrypted));
@@ -109,11 +109,11 @@ void test_rsa_raw_public_private_round_trip() {
 void test_rsa_raw_rejects_message_geq_modulus() {
     RsaPrivateKey priv = _testKey();
     RsaPublicKey  pub  = priv.GetPublicKey();
-    // n is 64 bytes; build a 64-byte representative that exceeds n by
-    // setting all bytes to 0xFF (the maximum 64-byte BE value).
-    byte[] tooLarge = new byte[64];
+    // n is 648 bits = 81 bytes; build an 81-byte all-0xFF representative
+    // that exceeds n.
+    byte[] tooLarge = new byte[81];
     int i = 0;
-    while (i < 64) { tooLarge[i] = (byte)0xFF; i = i + 1; }
+    while (i < 81) { tooLarge[i] = (byte)0xFF; i = i + 1; }
     bool threw = false;
     try { Rsa.RawPublicOp(pub, tooLarge); }
     catch (ArgumentException) { threw = true; }
@@ -130,15 +130,136 @@ void test_rsa_raw_rejects_message_geq_modulus() {
 //     vector here we instead check that the verifier rejects an
 //     incorrectly-padded payload (raw modular exponentiation of garbage).
 
+// ── RSASSA-PSS sign / verify round trip ─────────────────────────────────
+
+[Test]
+void test_rsa_pss_sign_verify_round_trip() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg  = Utf8.GetBytes("PSS test message");
+    byte[] salt = new byte[32];
+    int i = 0;
+    while (i < 32) { salt[i] = (byte)(i * 13 + 7); i = i + 1; }
+    byte[] sig = Rsa.SignPssSha256(priv, msg, salt);
+    Assert.Equal(81, sig.Length);   // matches modulus byte length
+    Assert.True(Rsa.VerifyPssSha256(pub, msg, sig, 32));
+}
+
+[Test]
+void test_rsa_pss_empty_salt_round_trip() {
+    // Empty salt is permitted (saltLen = 0). Useful for deterministic
+    // signatures.
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg  = Utf8.GetBytes("zero-salt PSS");
+    byte[] salt = new byte[0];
+    byte[] sig  = Rsa.SignPssSha256(priv, msg, salt);
+    Assert.True(Rsa.VerifyPssSha256(pub, msg, sig, 0));
+}
+
+[Test]
+void test_rsa_pss_rejects_tampered_signature() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg  = Utf8.GetBytes("msg");
+    byte[] salt = new byte[16];
+    byte[] sig  = Rsa.SignPssSha256(priv, msg, salt);
+    sig[0] = (byte)((int)sig[0] ^ 0x01);
+    Assert.True(!Rsa.VerifyPssSha256(pub, msg, sig, 16));
+}
+
+[Test]
+void test_rsa_pss_rejects_wrong_saltlen() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg  = Utf8.GetBytes("msg");
+    byte[] salt = new byte[32];
+    byte[] sig  = Rsa.SignPssSha256(priv, msg, salt);
+    // Verify with the wrong saltLen — must reject.
+    Assert.True(!Rsa.VerifyPssSha256(pub, msg, sig, 16));
+}
+
+// ── RSA-OAEP encrypt / decrypt round trip ───────────────────────────────
+
+[Test]
+void test_rsa_oaep_round_trip() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg  = Utf8.GetBytes("OAEP payload!");   // 13 bytes, ≤ 15-byte limit
+    byte[] seed = new byte[32];
+    int i = 0;
+    while (i < 32) { seed[i] = (byte)(i * 17 + 3); i = i + 1; }
+    byte[] ct  = Rsa.EncryptOaepSha256(pub, msg, new byte[0], seed);
+    Assert.Equal(81, ct.Length);   // matches modulus byte length
+    byte[] pt  = Rsa.DecryptOaepSha256(priv, ct, new byte[0]);
+    Assert.Equal(Hex.Encode(msg), Hex.Encode(pt));
+}
+
+[Test]
+void test_rsa_oaep_with_label_round_trip() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg   = Utf8.GetBytes("contextual");
+    byte[] label = Utf8.GetBytes("session-id-42");
+    byte[] seed  = new byte[32];
+    int i = 0;
+    while (i < 32) { seed[i] = (byte)i; i = i + 1; }
+    byte[] ct = Rsa.EncryptOaepSha256(pub, msg, label, seed);
+    byte[] pt = Rsa.DecryptOaepSha256(priv, ct, label);
+    Assert.Equal(Hex.Encode(msg), Hex.Encode(pt));
+}
+
+[Test]
+void test_rsa_oaep_rejects_wrong_label() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg   = Utf8.GetBytes("payload");
+    byte[] label = Utf8.GetBytes("alpha");
+    byte[] seed  = new byte[32];
+    byte[] ct = Rsa.EncryptOaepSha256(pub, msg, label, seed);
+    bool threw = false;
+    try { Rsa.DecryptOaepSha256(priv, ct, Utf8.GetBytes("beta")); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_rsa_oaep_rejects_tampered_ciphertext() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    byte[] msg   = Utf8.GetBytes("data");
+    byte[] seed  = new byte[32];
+    byte[] ct = Rsa.EncryptOaepSha256(pub, msg, new byte[0], seed);
+    ct[0] = (byte)((int)ct[0] ^ 0x01);
+    bool threw = false;
+    try { Rsa.DecryptOaepSha256(priv, ct, new byte[0]); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_rsa_oaep_rejects_too_long_message() {
+    RsaPrivateKey priv = _testKey();
+    RsaPublicKey  pub  = priv.GetPublicKey();
+    // For k=81 bytes + SHA-256 (hLen=32), max message = k - 2·hLen - 2 = 15.
+    // 16-byte message must trigger the length-check.
+    byte[] msg  = new byte[16];
+    byte[] seed = new byte[32];
+    bool threw = false;
+    try { Rsa.EncryptOaepSha256(pub, msg, new byte[0], seed); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
 [Test]
 void test_rsa_verify_rejects_random_garbage_as_signature() {
     RsaPrivateKey priv = _testKey();
     RsaPublicKey  pub  = priv.GetPublicKey();
     byte[] msg = Utf8.GetBytes("real-message");
-    // 64 bytes of pseudo-random — astronomically unlikely to form a
+    // 81 bytes of pseudo-random — astronomically unlikely to form a
     // valid PKCS#1-padded encoding under any RSA key.
-    byte[] garbage = new byte[64];
+    byte[] garbage = new byte[81];
     int i = 0;
-    while (i < 64) { garbage[i] = (byte)((i * 37 + 11) & 0xFF); i = i + 1; }
+    while (i < 81) { garbage[i] = (byte)((i * 37 + 11) & 0xFF); i = i + 1; }
     Assert.True(!Rsa.VerifyPkcs1v15Sha256(pub, msg, garbage));
 }

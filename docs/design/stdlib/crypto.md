@@ -77,10 +77,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `RsaPrivateKey.GetPublicKey() -> RsaPublicKey` — derives the matching public half
   - `Rsa.SignPkcs1v15Sha256(priv, message) -> byte[k]` — RSASSA-PKCS1-v1_5 signing with SHA-256 + standard DigestInfo DER prefix (RFC 8017 §9.2); deterministic
   - `Rsa.VerifyPkcs1v15Sha256(pub, message, signature) -> bool` — constant-time encoding comparison; never throws on bad signature
-  - `Rsa.RawPublicOp(pub, message) -> byte[k]` / `Rsa.RawPrivateOp(priv, ciphertext) -> byte[k]` — raw RSAEP / RSADP modular exponentiation (no padding; for protocol interop only — use AEAD primitives for actual encryption)
+  - `Rsa.SignPssSha256(priv, message, salt) -> byte[k]` — RSASSA-PSS signing (RFC 8017 §8.1) with SHA-256 + MGF1-SHA-256; caller provides salt (pass empty for deterministic, or 32 random bytes for probabilistic)
+  - `Rsa.VerifyPssSha256(pub, message, signature, saltLen) -> bool` — PSS verification; `saltLen` must match what the signer used
+  - `Rsa.EncryptOaepSha256(pub, message, label, seed) -> byte[k]` — RSAES-OAEP encryption (RFC 8017 §7.1) with SHA-256 + MGF1-SHA-256; `label` empty for typical use; `seed` is 32 random bytes (pass deterministic seed for testing)
+  - `Rsa.DecryptOaepSha256(priv, ciphertext, label) -> byte[]` — OAEP decryption; throws `ArgumentException` on malformed padding (do NOT distinguish from other errors — OAEP was designed to mitigate distinguishing-attack timing leaks)
+  - `Rsa.RawPublicOp(pub, message) -> byte[k]` / `Rsa.RawPrivateOp(priv, ciphertext) -> byte[k]` — raw RSAEP / RSADP modular exponentiation (no padding; for protocol interop only)
   - Built atop `BigInt.ModPow` (square-and-multiply ladder) + `BigInt.ModInverse` (extended-Euclidean) — no new field arithmetic needed
   - Use cases: JWT RS256 verification, x509 / PKI signature checks, S/MIME, JWS, legacy protocol interop
-  - **Out of scope (deferred)**: DER/PEM/PKCS#1/PKCS#8 key parsing (`rsa-future-key-parsing`), RSA-OAEP (`rsa-future-oaep`), RSA-PSS (`rsa-future-pss`), SHA-1/384/512 sign/verify variants (`rsa-future-other-hashes`), CRT decrypt fast path (`rsa-future-crt`), blinding (`rsa-future-blinding`)
+  - **Out of scope (deferred)**: DER/PEM/PKCS#1/PKCS#8 key parsing (`rsa-future-key-parsing`), SHA-1/384/512 sign/verify variants (`rsa-future-other-hashes`), CRT decrypt fast path (`rsa-future-crt`), blinding (`rsa-future-blinding`)
   - Performance: RSA-2048 sign ~2-5 s on pure-script interp (2048-bit exponent ModPow); verify is fast (e=65537 has 17 bits → 17 modmuls). Bulk signing wants the cdylib follow-up
 
 - Ed25519 signature (RFC 8032) — `Std.Crypto.Ed25519` (add-ed25519, 2026-05-28)

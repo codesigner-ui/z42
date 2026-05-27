@@ -141,6 +141,358 @@ public static class Rsa {
         return em;
     }
 
+    // ── RSASSA-PSS sign / verify with SHA-256 (RFC 8017 §8.1) ────────────────
+    //
+    // add-rsa-pss (2026-05-28): probabilistic signature scheme. Same hash
+    // (SHA-256) but with secure padding — PSS is the recommended modern
+    // signature scheme. JWT PS256, X.509 with rsassaPss, IETF EdDSA-Edition
+    // alternative.
+    //
+    // EMSA-PSS-encoded message (RFC 8017 §9.1.1):
+    //   EM = maskedDB || H || 0xBC
+    // where:
+    //   mHash = SHA-256(message)
+    //   salt = caller-provided saltLen bytes (often equal to hLen=32)
+    //   M' = 0x00..00 (8 bytes) || mHash || salt
+    //   H = SHA-256(M')
+    //   PS = (emLen - saltLen - hLen - 2) zero bytes
+    //   DB = PS || 0x01 || salt
+    //   dbMask = MGF1(H, emLen - hLen - 1)
+    //   maskedDB = DB XOR dbMask; clear top bits to fit emBits
+    //
+    // For determinism we accept the salt as an explicit parameter (testable
+    // with RFC 8017 §A.2.3 fixed-salt vectors). For real-world use callers
+    // should pass `Std.Crypto.SecureRandom.GetBytes(32)` for the salt.
+
+    /// Sign with RSASSA-PSS / SHA-256 / MGF1-SHA-256. `salt` length is
+    /// caller's choice (32 bytes recommended). Output length = byte length
+    /// of n.
+    public static byte[] SignPssSha256(RsaPrivateKey privateKey, byte[] message, byte[] salt) {
+        byte[] mHash = Sha256.Hash(message);
+        int k = Rsa._modulusByteLength(privateKey.n);
+        int emBits = privateKey.n.BitLength() - 1;
+        int emLen = (emBits + 7) / 8;
+        byte[] em = Rsa._emsaPssEncode(mHash, salt, emLen, emBits);
+        // RSA modular exponentiation expects k-byte input; PSS produces
+        // emLen-byte EM with the top bits already cleared. If emLen < k
+        // (when n's top bit is at byte boundary), left-pad with one
+        // zero byte.
+        byte[] emPadded;
+        if (emLen == k) {
+            emPadded = em;
+        } else {
+            emPadded = new byte[k];
+            int i = 0;
+            while (i < emLen) { emPadded[k - emLen + i] = em[i]; i = i + 1; }
+        }
+        BigInt mInt = Rsa._readBEBigInt(emPadded);
+        BigInt sInt = mInt.ModPow(privateKey.d, privateKey.n);
+        return Rsa._writeBEBigInt(sInt, k);
+    }
+
+    /// Verify RSASSA-PSS / SHA-256 signature. `saltLen` must match what
+    /// the signer used (RFC 8017 §9.1.2 step 11 — verifier knows the
+    /// salt length, not the salt itself).
+    public static bool VerifyPssSha256(RsaPublicKey publicKey, byte[] message, byte[] signature, int saltLen) {
+        int k = Rsa._modulusByteLength(publicKey.n);
+        if (signature.Length != k) { return false; }
+        int emBits = publicKey.n.BitLength() - 1;
+        int emLen = (emBits + 7) / 8;
+        if (emLen < 32 + saltLen + 2) { return false; }   // hLen + saltLen + 2
+        BigInt sInt = Rsa._readBEBigInt(signature);
+        if (sInt.CompareTo(publicKey.n) >= 0) { return false; }
+        BigInt mInt = sInt.ModPow(publicKey.e, publicKey.n);
+        byte[] emPadded = Rsa._writeBEBigInt(mInt, k);
+        // Strip leading zero bytes when emLen < k.
+        byte[] em;
+        if (emLen == k) {
+            em = emPadded;
+        } else {
+            em = new byte[emLen];
+            int i = 0;
+            while (i < emLen) { em[i] = emPadded[k - emLen + i]; i = i + 1; }
+        }
+        byte[] mHash = Sha256.Hash(message);
+        return Rsa._emsaPssVerify(mHash, em, saltLen, emBits);
+    }
+
+    /// EMSA-PSS encoding (RFC 8017 §9.1.1). `salt.Length` determines
+    /// saltLen. Throws if emLen too small for the encoding.
+    static byte[] _emsaPssEncode(byte[] mHash, byte[] salt, int emLen, int emBits) {
+        int hLen = 32;
+        int sLen = salt.Length;
+        if (emLen < hLen + sLen + 2) {
+            throw new ArgumentException(
+                "Rsa.PSS: emLen too small (" + emLen.ToString() + " < " + (hLen + sLen + 2).ToString() + ")");
+        }
+        // M' = 0x00..00 (8 bytes) || mHash || salt
+        byte[] mPrime = new byte[8 + hLen + sLen];
+        // First 8 bytes already zero.
+        int i = 0;
+        while (i < hLen) { mPrime[8 + i] = mHash[i]; i = i + 1; }
+        int j = 0;
+        while (j < sLen) { mPrime[8 + hLen + j] = salt[j]; j = j + 1; }
+        byte[] H = Sha256.Hash(mPrime);
+        // DB = PS (emLen-sLen-hLen-2 zero bytes) || 0x01 || salt
+        byte[] DB = new byte[emLen - hLen - 1];
+        DB[emLen - sLen - hLen - 2] = (byte)0x01;
+        int s = 0;
+        while (s < sLen) { DB[emLen - sLen - hLen - 1 + s] = salt[s]; s = s + 1; }
+        // dbMask = MGF1(H, emLen - hLen - 1)
+        byte[] dbMask = Rsa._mgf1Sha256(H, emLen - hLen - 1);
+        byte[] maskedDB = new byte[emLen - hLen - 1];
+        int x = 0;
+        while (x < emLen - hLen - 1) {
+            maskedDB[x] = (byte)((int)DB[x] ^ (int)dbMask[x]);
+            x = x + 1;
+        }
+        // Clear leftmost 8*emLen - emBits bits of maskedDB[0].
+        int clearBits = 8 * emLen - emBits;
+        if (clearBits > 0) {
+            int mask = (1 << (8 - clearBits)) - 1;
+            maskedDB[0] = (byte)((int)maskedDB[0] & mask);
+        }
+        // EM = maskedDB || H || 0xBC
+        byte[] em = new byte[emLen];
+        int p = 0;
+        while (p < emLen - hLen - 1) { em[p] = maskedDB[p]; p = p + 1; }
+        int q = 0;
+        while (q < hLen) { em[emLen - hLen - 1 + q] = H[q]; q = q + 1; }
+        em[emLen - 1] = (byte)0xBC;
+        return em;
+    }
+
+    /// EMSA-PSS verification (RFC 8017 §9.1.2). Returns true iff the
+    /// encoded message is valid for the given mHash + saltLen + emBits.
+    static bool _emsaPssVerify(byte[] mHash, byte[] em, int sLen, int emBits) {
+        int hLen = 32;
+        int emLen = em.Length;
+        if (emLen < hLen + sLen + 2) { return false; }
+        if (((int)em[emLen - 1] & 0xFF) != 0xBC) { return false; }
+        // maskedDB = em[0..emLen-hLen-1], H = em[emLen-hLen-1..emLen-1]
+        byte[] maskedDB = new byte[emLen - hLen - 1];
+        int i = 0;
+        while (i < emLen - hLen - 1) { maskedDB[i] = em[i]; i = i + 1; }
+        byte[] H = new byte[hLen];
+        int j = 0;
+        while (j < hLen) { H[j] = em[emLen - hLen - 1 + j]; j = j + 1; }
+        // Check top bits of maskedDB[0] cleared.
+        int clearBits = 8 * emLen - emBits;
+        if (clearBits > 0) {
+            int topMask = ~((1 << (8 - clearBits)) - 1);
+            if (((int)maskedDB[0] & topMask & 0xFF) != 0) { return false; }
+        }
+        byte[] dbMask = Rsa._mgf1Sha256(H, emLen - hLen - 1);
+        byte[] DB = new byte[emLen - hLen - 1];
+        int x = 0;
+        while (x < emLen - hLen - 1) {
+            DB[x] = (byte)((int)maskedDB[x] ^ (int)dbMask[x]);
+            x = x + 1;
+        }
+        if (clearBits > 0) {
+            int mask = (1 << (8 - clearBits)) - 1;
+            DB[0] = (byte)((int)DB[0] & mask);
+        }
+        // Check DB[0..emLen-hLen-sLen-3] all zero, then DB[that] == 0x01.
+        int psEnd = emLen - hLen - sLen - 2;
+        int p = 0;
+        while (p < psEnd) {
+            if (((int)DB[p] & 0xFF) != 0) { return false; }
+            p = p + 1;
+        }
+        if (((int)DB[psEnd] & 0xFF) != 0x01) { return false; }
+        // salt = DB[emLen - hLen - sLen - 1 ..]
+        byte[] salt = new byte[sLen];
+        int s = 0;
+        while (s < sLen) { salt[s] = DB[psEnd + 1 + s]; s = s + 1; }
+        // H' = SHA-256(0x00..00 || mHash || salt) — must equal H.
+        byte[] mPrime = new byte[8 + hLen + sLen];
+        int m = 0;
+        while (m < hLen) { mPrime[8 + m] = mHash[m]; m = m + 1; }
+        int t = 0;
+        while (t < sLen) { mPrime[8 + hLen + t] = salt[t]; t = t + 1; }
+        byte[] hPrime = Sha256.Hash(mPrime);
+        int diff = 0;
+        int u = 0;
+        while (u < hLen) { diff = diff | ((int)hPrime[u] ^ (int)H[u]); u = u + 1; }
+        return diff == 0;
+    }
+
+    // ── RSAES-OAEP encrypt / decrypt with SHA-256 (RFC 8017 §7.1) ────────────
+    //
+    // add-rsa-oaep (2026-05-28): probabilistic encryption. Secure
+    // alternative to PKCS#1 v1.5 for actual RSA encryption use.
+    //
+    // EME-OAEP-encoded message (RFC 8017 §7.1.1):
+    //   EM = 0x00 || maskedSeed || maskedDB
+    // where:
+    //   lHash = SHA-256(label)   // label empty → hash of empty string
+    //   PS = (k - mLen - 2*hLen - 2) zero bytes
+    //   DB = lHash || PS || 0x01 || message
+    //   seed = caller-provided hLen bytes (testable; production = SecureRandom)
+    //   dbMask = MGF1(seed, k - hLen - 1)
+    //   maskedDB = DB XOR dbMask
+    //   seedMask = MGF1(maskedDB, hLen)
+    //   maskedSeed = seed XOR seedMask
+
+    /// Encrypt with RSA-OAEP / SHA-256 / MGF1-SHA-256. `label` may be
+    /// empty (typical) — used for context binding. `seed` length must
+    /// be 32 (SHA-256 output size).
+    public static byte[] EncryptOaepSha256(RsaPublicKey publicKey, byte[] message, byte[] label, byte[] seed) {
+        if (seed.Length != 32) {
+            throw new ArgumentException(
+                "Rsa.OAEP: seed must be 32 bytes (SHA-256 output size)");
+        }
+        int k = Rsa._modulusByteLength(publicKey.n);
+        int hLen = 32;
+        if (message.Length > k - 2 * hLen - 2) {
+            throw new ArgumentException(
+                "Rsa.OAEP: message too long for modulus (max "
+                + (k - 2 * hLen - 2).ToString() + " bytes)");
+        }
+        byte[] lHash = Sha256.Hash(label);
+        // DB = lHash || PS || 0x01 || message
+        byte[] DB = new byte[k - hLen - 1];
+        int i = 0;
+        while (i < hLen) { DB[i] = lHash[i]; i = i + 1; }
+        int psEnd = k - message.Length - hLen - 2;
+        DB[psEnd] = (byte)0x01;
+        int j = 0;
+        while (j < message.Length) { DB[psEnd + 1 + j] = message[j]; j = j + 1; }
+        // Apply masks.
+        byte[] dbMask = Rsa._mgf1Sha256(seed, k - hLen - 1);
+        byte[] maskedDB = new byte[k - hLen - 1];
+        int x = 0;
+        while (x < k - hLen - 1) {
+            maskedDB[x] = (byte)((int)DB[x] ^ (int)dbMask[x]);
+            x = x + 1;
+        }
+        byte[] seedMask = Rsa._mgf1Sha256(maskedDB, hLen);
+        byte[] maskedSeed = new byte[hLen];
+        int y = 0;
+        while (y < hLen) {
+            maskedSeed[y] = (byte)((int)seed[y] ^ (int)seedMask[y]);
+            y = y + 1;
+        }
+        // EM = 0x00 || maskedSeed || maskedDB
+        byte[] em = new byte[k];
+        int s = 0;
+        while (s < hLen) { em[1 + s] = maskedSeed[s]; s = s + 1; }
+        int d = 0;
+        while (d < k - hLen - 1) { em[1 + hLen + d] = maskedDB[d]; d = d + 1; }
+        BigInt mInt = Rsa._readBEBigInt(em);
+        BigInt cInt = mInt.ModPow(publicKey.e, publicKey.n);
+        return Rsa._writeBEBigInt(cInt, k);
+    }
+
+    /// Decrypt RSA-OAEP / SHA-256 / MGF1-SHA-256. Returns plaintext.
+    /// Throws `ArgumentException` on malformed padding (likely indicates
+    /// tampered ciphertext — DO NOT differentiate from other errors at
+    /// the caller layer; the timing-leak risk of distinguishing
+    /// padding-error from value-error is exactly what OAEP was designed
+    /// to mitigate).
+    public static byte[] DecryptOaepSha256(RsaPrivateKey privateKey, byte[] ciphertext, byte[] label) {
+        int k = Rsa._modulusByteLength(privateKey.n);
+        int hLen = 32;
+        if (ciphertext.Length != k) {
+            throw new ArgumentException("Rsa.OAEP: ciphertext length mismatch");
+        }
+        if (k < 2 * hLen + 2) {
+            throw new ArgumentException("Rsa.OAEP: modulus too small");
+        }
+        BigInt cInt = Rsa._readBEBigInt(ciphertext);
+        if (cInt.CompareTo(privateKey.n) >= 0) {
+            throw new ArgumentException("Rsa.OAEP: ciphertext ≥ modulus");
+        }
+        BigInt mInt = cInt.ModPow(privateKey.d, privateKey.n);
+        byte[] em = Rsa._writeBEBigInt(mInt, k);
+        // Decompose EM = Y || maskedSeed || maskedDB where Y == 0x00.
+        if (((int)em[0] & 0xFF) != 0) {
+            throw new ArgumentException("Rsa.OAEP: malformed encoding (Y != 0)");
+        }
+        byte[] maskedSeed = new byte[hLen];
+        int i = 0;
+        while (i < hLen) { maskedSeed[i] = em[1 + i]; i = i + 1; }
+        byte[] maskedDB = new byte[k - hLen - 1];
+        int j = 0;
+        while (j < k - hLen - 1) { maskedDB[j] = em[1 + hLen + j]; j = j + 1; }
+        // Undo masks.
+        byte[] seedMask = Rsa._mgf1Sha256(maskedDB, hLen);
+        byte[] seed = new byte[hLen];
+        int s = 0;
+        while (s < hLen) {
+            seed[s] = (byte)((int)maskedSeed[s] ^ (int)seedMask[s]);
+            s = s + 1;
+        }
+        byte[] dbMask = Rsa._mgf1Sha256(seed, k - hLen - 1);
+        byte[] DB = new byte[k - hLen - 1];
+        int x = 0;
+        while (x < k - hLen - 1) {
+            DB[x] = (byte)((int)maskedDB[x] ^ (int)dbMask[x]);
+            x = x + 1;
+        }
+        // DB = lHash' || PS || 0x01 || message.
+        // Verify lHash' equals expected; PS all zeros; locate 0x01 separator.
+        byte[] lHash = Sha256.Hash(label);
+        int diff = 0;
+        int h = 0;
+        while (h < hLen) { diff = diff | ((int)DB[h] ^ (int)lHash[h]); h = h + 1; }
+        if (diff != 0) {
+            throw new ArgumentException("Rsa.OAEP: lHash mismatch");
+        }
+        // Scan for the 0x01 separator after the all-zero PS.
+        int sep = -1;
+        int p = hLen;
+        while (p < k - hLen - 1) {
+            int v = (int)DB[p] & 0xFF;
+            if (v == 0x01) {
+                sep = p;
+                p = k;   // break
+            } else if (v != 0x00) {
+                throw new ArgumentException("Rsa.OAEP: malformed PS");
+            } else {
+                p = p + 1;
+            }
+        }
+        if (sep < 0) {
+            throw new ArgumentException("Rsa.OAEP: missing 0x01 separator");
+        }
+        int mLen = k - hLen - 1 - sep - 1;
+        byte[] message = new byte[mLen];
+        int m = 0;
+        while (m < mLen) { message[m] = DB[sep + 1 + m]; m = m + 1; }
+        return message;
+    }
+
+    // ── MGF1 (RFC 8017 §B.2.1) with SHA-256 ──────────────────────────────────
+
+    /// MGF1 mask generation function. Output = hash(seed || ctr) for
+    /// ctr = 0, 1, 2, ... concatenated and truncated to `maskLen` bytes.
+    static byte[] _mgf1Sha256(byte[] seed, int maskLen) {
+        int hLen = 32;
+        int blocks = (maskLen + hLen - 1) / hLen;
+        byte[] out_ = new byte[maskLen];
+        byte[] block = new byte[seed.Length + 4];
+        int i = 0;
+        while (i < seed.Length) { block[i] = seed[i]; i = i + 1; }
+        int b = 0;
+        while (b < blocks) {
+            // Counter ctr as 4-byte big-endian.
+            block[seed.Length]     = (byte)((b >> 24) & 0xFF);
+            block[seed.Length + 1] = (byte)((b >> 16) & 0xFF);
+            block[seed.Length + 2] = (byte)((b >> 8)  & 0xFF);
+            block[seed.Length + 3] = (byte)(b & 0xFF);
+            byte[] h = Sha256.Hash(block);
+            int produced = b * hLen;
+            int copyLen = hLen;
+            if (produced + copyLen > maskLen) { copyLen = maskLen - produced; }
+            int j = 0;
+            while (j < copyLen) { out_[produced + j] = h[j]; j = j + 1; }
+            b = b + 1;
+        }
+        return out_;
+    }
+
     // ── Raw public-key operation (RSAEP / RSAVP1) ────────────────────────────
     //
     // For full RSAES-PKCS1 encryption use the AEAD primitives (AES-GCM /
