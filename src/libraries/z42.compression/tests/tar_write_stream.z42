@@ -1,0 +1,144 @@
+// add-tar-write-stream (2026-05-27): Tar.WriteStream(entries, dest).
+namespace Z42CompressionTarWriteStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Compression;
+using Std.Archive;
+using Std.Encoding;
+
+[Test]
+void test_write_stream_byte_identical_to_write() {
+    // The streaming variant must produce exactly the same archive
+    // bytes as Tar.Write for the same entries — different code paths,
+    // identical wire format.
+    TarEntry[] entries = new TarEntry[2];
+    entries[0] = new TarEntry("a.txt", Utf8.GetBytes("alpha"), 0x1A4);
+    entries[1] = new TarEntry("sub/b.txt", Utf8.GetBytes("beta"), 0x1A4);
+    byte[] viaBuffer = Tar.Write(entries);
+
+    var ms = new MemoryStream();
+    Tar.WriteStream(entries, ms);
+    byte[] viaStream = ms.ToArray();
+
+    Assert.Equal(viaBuffer.Length, viaStream.Length);
+    int i = 0;
+    while (i < viaBuffer.Length) {
+        Assert.Equal((int)viaBuffer[i], (int)viaStream[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_write_stream_round_trip_through_extract_stream() {
+    TarEntry[] entries = new TarEntry[3];
+    entries[0] = new TarEntry("one.txt", Utf8.GetBytes("first"),  0x1A4);
+    entries[1] = new TarEntry("two.txt", Utf8.GetBytes("second"), 0x1A4);
+    entries[2] = new TarEntry("three.txt", Utf8.GetBytes("third"), 0x1A4);
+
+    var ms = new MemoryStream();
+    Tar.WriteStream(entries, ms);
+    byte[] archive = ms.ToArray();
+
+    string tmp = File.CreateTempDir("z42-tar-write-stream-");
+    try {
+        var rms = new MemoryStream(archive);
+        int n = Tar.ExtractStream(rms, tmp);
+        Assert.Equal(3, n);
+        Assert.Equal("first",  File.ReadAllText(Path.Join(tmp, "one.txt")));
+        Assert.Equal("second", File.ReadAllText(Path.Join(tmp, "two.txt")));
+        Assert.Equal("third",  File.ReadAllText(Path.Join(tmp, "three.txt")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_write_stream_zero_entries_emits_only_trailer() {
+    var ms = new MemoryStream();
+    Tar.WriteStream(new TarEntry[0], ms);
+    byte[] result = ms.ToArray();
+    // Just the 1024-byte zero trailer (2 × 512).
+    Assert.Equal(1024, result.Length);
+    int i = 0;
+    while (i < 1024) {
+        Assert.Equal(0, (int)result[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_write_stream_pairs_with_gzip_streaming_encode() {
+    // The real win: gzip-wrap the dest stream so the archive never
+    // exists in memory uncompressed. End-to-end .tar.gz pipeline:
+    //   tar entries → tar block stream → gzip encoder → byte buffer
+    TarEntry[] entries = new TarEntry[2];
+    entries[0] = new TarEntry("a.bin", Utf8.GetBytes("payload alpha"),  0x1A4);
+    entries[1] = new TarEntry("b.bin", Utf8.GetBytes("payload beta!!"), 0x1A4);
+
+    var compressedOut = new MemoryStream();
+    Stream gz = Gzip.WrapWrite(compressedOut);
+    try {
+        Tar.WriteStream(entries, gz);
+    } finally {
+        gz.Close();  // flushes gzip footer
+    }
+    byte[] tgz = compressedOut.ToArray();
+    // Magic 0x1F 0x8B
+    Assert.Equal(0x1F, (int)tgz[0] & 0xFF);
+    Assert.Equal(0x8B, (int)tgz[1] & 0xFF);
+
+    // Decompress + extract round-trip.
+    string tmp = File.CreateTempDir("z42-tar-write-stream-tgz-");
+    try {
+        var rIn = new MemoryStream(tgz);
+        Stream rGz = Gzip.WrapRead(rIn);
+        int n = Tar.ExtractStream(rGz, tmp);
+        Assert.Equal(2, n);
+        Assert.Equal("payload alpha",  File.ReadAllText(Path.Join(tmp, "a.bin")));
+        Assert.Equal("payload beta!!", File.ReadAllText(Path.Join(tmp, "b.bin")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_write_stream_does_not_close_dest() {
+    var ms = new MemoryStream();
+    TarEntry[] entries = new TarEntry[1];
+    entries[0] = new TarEntry("x.txt", Utf8.GetBytes("body"), 0x1A4);
+    Tar.WriteStream(entries, ms);
+    // Caller should still be able to use the stream afterwards.
+    ms.Write(Utf8.GetBytes("trailing append"), 0, 15);
+    byte[] result = ms.ToArray();
+    // Last 15 bytes are the trailing append.
+    int off = result.Length - 15;
+    Assert.Equal((int)'t', (int)result[off]);
+    Assert.Equal((int)'r', (int)result[off + 1]);
+}
+
+[Test]
+void test_write_stream_padding_correctness_non_512_multiple() {
+    // 100-byte content needs 412 bytes of zero padding (512 - 100).
+    byte[] payload = new byte[100];
+    int j = 0;
+    while (j < 100) { payload[j] = (byte)(j + 1); j = j + 1; }
+    TarEntry[] entries = new TarEntry[1];
+    entries[0] = new TarEntry("padded.bin", payload, 0x1A4);
+
+    var ms = new MemoryStream();
+    Tar.WriteStream(entries, ms);
+    byte[] result = ms.ToArray();
+    // Total = 512 header + 512 (100 payload + 412 pad) + 1024 trailer.
+    Assert.Equal(2048, result.Length);
+
+    // Payload at offset 512..612; padding 612..1024 all zero.
+    Assert.Equal(1, (int)result[512]);
+    Assert.Equal(100, (int)result[611]);
+    int k = 612;
+    while (k < 1024) {
+        Assert.Equal(0, (int)result[k]);
+        k = k + 1;
+    }
+}
