@@ -221,6 +221,281 @@ public static class Aes {
         return out_;
     }
 
+    // ── AES-GCM AEAD (NIST SP 800-38D) ───────────────────────────────────
+    //
+    // add-aes-gcm (2026-05-27): authenticated encryption with associated
+    // data. Tag length fixed at 16 bytes (NIST recommends ≥ 12; we don't
+    // expose shorter tags to dodge the truncation footguns documented in
+    // RFC 5116 §5.3).
+    //
+    // IV: 12 bytes recommended (96-bit IV path of NIST SP 800-38D §7.1 —
+    // a single AES block J0 = IV || 0x00000001 with the bottom 32 bits
+    // serving as the counter). Other IV lengths route through the GHASH
+    // derivation but the 96-bit path is the only "fast" and widely-used
+    // form so v0 hard-requires it; callers wanting non-96-bit IV should
+    // wait for the cdylib backend (aes-future-hw-accel) or compose
+    // manually via GHASH + EncryptBlock.
+    //
+    // Pure-script GHASH (bit-by-bit, no PCLMUL) is slow — bulk encryption
+    // (> tens of KB) wants the cdylib follow-up. For low-rate use (token
+    // envelopes, single-message AEAD, protocol headers) pure-script
+    // throughput is adequate.
+
+    /// Encrypt + authenticate. Output = ciphertext (same length as
+    /// `plaintext`) || tag (16 bytes appended at the end).
+    public static byte[] EncryptGcm(byte[] key, byte[] iv, byte[] aad, byte[] plaintext) {
+        if (iv.Length != 12) {
+            throw new ArgumentException(
+                "AES.EncryptGcm: IV must be 12 bytes (96-bit IV path; non-96-bit deferred to aes-future-hw-accel)");
+        }
+        byte[] h = Aes.EncryptBlock(key, new byte[16]);
+        byte[] j0 = new byte[16];
+        int i = 0;
+        while (i < 12) { j0[i] = iv[i]; i = i + 1; }
+        j0[15] = (byte)1;
+        // Encrypt with counter incremented from J0.
+        byte[] counter = new byte[16];
+        int k = 0;
+        while (k < 16) { counter[k] = j0[k]; k = k + 1; }
+        Aes._gcmInc32(counter);
+        byte[] ciphertext = Aes._gcmCtr(key, counter, plaintext);
+        byte[] tag = Aes._gcmComputeTag(key, h, j0, aad, ciphertext);
+        // Concatenate ciphertext || tag.
+        byte[] out_ = new byte[ciphertext.Length + 16];
+        int p = 0;
+        while (p < ciphertext.Length) { out_[p] = ciphertext[p]; p = p + 1; }
+        int q = 0;
+        while (q < 16) { out_[ciphertext.Length + q] = tag[q]; q = q + 1; }
+        return out_;
+    }
+
+    /// Decrypt + verify. Input = ciphertext || 16-byte tag. Throws
+    /// `ArgumentException` if the tag mismatches (DO NOT swallow this —
+    /// a tag failure means the ciphertext or AAD was tampered with).
+    public static byte[] DecryptGcm(byte[] key, byte[] iv, byte[] aad, byte[] ctAndTag) {
+        if (iv.Length != 12) {
+            throw new ArgumentException(
+                "AES.DecryptGcm: IV must be 12 bytes (96-bit IV path)");
+        }
+        if (ctAndTag.Length < 16) {
+            throw new ArgumentException("AES.DecryptGcm: input shorter than 16-byte tag");
+        }
+        int ctLen = ctAndTag.Length - 16;
+        byte[] ciphertext = new byte[ctLen];
+        int i = 0;
+        while (i < ctLen) { ciphertext[i] = ctAndTag[i]; i = i + 1; }
+        byte[] expected = new byte[16];
+        int j = 0;
+        while (j < 16) { expected[j] = ctAndTag[ctLen + j]; j = j + 1; }
+
+        byte[] h = Aes.EncryptBlock(key, new byte[16]);
+        byte[] j0 = new byte[16];
+        int k = 0;
+        while (k < 12) { j0[k] = iv[k]; k = k + 1; }
+        j0[15] = (byte)1;
+
+        byte[] actual = Aes._gcmComputeTag(key, h, j0, aad, ciphertext);
+        // Constant-time compare to avoid leaking position of mismatch.
+        int diff = 0;
+        int t = 0;
+        while (t < 16) {
+            diff = diff | ((int)actual[t] ^ (int)expected[t]);
+            t = t + 1;
+        }
+        if (diff != 0) {
+            throw new ArgumentException(
+                "AES.DecryptGcm: authentication tag mismatch — ciphertext or AAD tampered");
+        }
+        // Tag OK — decrypt.
+        byte[] counter = new byte[16];
+        int m = 0;
+        while (m < 16) { counter[m] = j0[m]; m = m + 1; }
+        Aes._gcmInc32(counter);
+        return Aes._gcmCtr(key, counter, ciphertext);
+    }
+
+    /// 32-bit big-endian increment of the last 4 bytes of `block`.
+    /// Wraps modulo 2^32 (NIST SP 800-38D §6.2).
+    static void _gcmInc32(byte[] block) {
+        long c = ((long)((int)block[12] & 0xFF) << 24)
+               | ((long)((int)block[13] & 0xFF) << 16)
+               | ((long)((int)block[14] & 0xFF) << 8)
+               |  (long)((int)block[15] & 0xFF);
+        c = (c + 1L) & 0xFFFFFFFFL;
+        block[12] = (byte)((c >> 24) & 0xFFL);
+        block[13] = (byte)((c >> 16) & 0xFFL);
+        block[14] = (byte)((c >>  8) & 0xFFL);
+        block[15] = (byte)( c        & 0xFFL);
+    }
+
+    /// GCTR with explicit starting counter (`counter` is the FIRST counter
+    /// used — not J0, but the post-inc32(J0) value for AEAD).
+    static byte[] _gcmCtr(byte[] key, byte[] counter, byte[] data) {
+        byte[] out_ = new byte[data.Length];
+        byte[] cb = new byte[16];
+        int k = 0;
+        while (k < 16) { cb[k] = counter[k]; k = k + 1; }
+        int blocks = (data.Length + 15) / 16;
+        int b = 0;
+        while (b < blocks) {
+            byte[] ks = Aes.EncryptBlock(key, cb);
+            int off = b * 16;
+            int blockLen = data.Length - off;
+            if (blockLen > 16) { blockLen = 16; }
+            int j = 0;
+            while (j < blockLen) {
+                out_[off + j] = (byte)((int)data[off + j] ^ (int)ks[j]);
+                j = j + 1;
+            }
+            Aes._gcmInc32(cb);
+            b = b + 1;
+        }
+        return out_;
+    }
+
+    /// Compute GCM authentication tag:
+    ///   S = GHASH_H(AAD || 0^v || C || 0^u || len(AAD) || len(C))
+    ///   T = AES_K(J0) XOR S
+    /// Lengths are encoded as 64-bit big-endian *bit* counts.
+    static byte[] _gcmComputeTag(byte[] key, byte[] h, byte[] j0, byte[] aad, byte[] ciphertext) {
+        // Build the GHASH input — AAD padded to 16 + ciphertext padded to
+        // 16 + length-field block (8 bytes AAD bits BE, 8 bytes CT bits BE).
+        int aadPad = (16 - (aad.Length % 16)) % 16;
+        int ctPad  = (16 - (ciphertext.Length % 16)) % 16;
+        int total  = aad.Length + aadPad + ciphertext.Length + ctPad + 16;
+        byte[] buf = new byte[total];
+        int off = 0;
+        int i = 0;
+        while (i < aad.Length) { buf[off + i] = aad[i]; i = i + 1; }
+        off = off + aad.Length + aadPad;
+        int j = 0;
+        while (j < ciphertext.Length) { buf[off + j] = ciphertext[j]; j = j + 1; }
+        off = off + ciphertext.Length + ctPad;
+        // Length fields (in BITS, 64-bit big-endian).
+        long aadBits = ((long)aad.Length) * 8L;
+        long ctBits  = ((long)ciphertext.Length) * 8L;
+        Aes._gcmWriteBE64(buf, off,      aadBits);
+        Aes._gcmWriteBE64(buf, off + 8,  ctBits);
+        // Chain GHASH over the buffer.
+        long[] hLong = Aes._gcmBytesToLongs(h);
+        long[] y = new long[2];   // accumulator, starts at 0
+        int blocks = total / 16;
+        int b = 0;
+        while (b < blocks) {
+            long[] x = Aes._gcmBytesToLongs128(buf, b * 16);
+            y[0] = y[0] ^ x[0];
+            y[1] = y[1] ^ x[1];
+            long[] r = Aes._gcmGfMul(y, hLong);
+            y[0] = r[0]; y[1] = r[1];
+            b = b + 1;
+        }
+        byte[] s = Aes._gcmLongsToBytes(y);
+        // T = AES(K, J0) XOR S
+        byte[] ej0 = Aes.EncryptBlock(key, j0);
+        byte[] tag = new byte[16];
+        int t = 0;
+        while (t < 16) {
+            tag[t] = (byte)((int)ej0[t] ^ (int)s[t]);
+            t = t + 1;
+        }
+        return tag;
+    }
+
+    /// GHASH polynomial multiplication in GF(2^128) with reduction by
+    /// `x^128 + x^7 + x^2 + x + 1`. NIST SP 800-38D §6.3. Bit-by-bit —
+    /// slow but correct; cdylib path (PCLMUL) is `aes-future-hw-accel`.
+    ///
+    /// Convention: x[0] is the MS 64 bits (bit 127 is x[0]'s top bit),
+    /// x[1] is the LS 64 bits. Shifting toward LSB corresponds to
+    /// dividing by `x` in the field; reduction polynomial R = 0xE1 << 120.
+    static long[] _gcmGfMul(long[] x, long[] y) {
+        long z0 = 0L;
+        long z1 = 0L;
+        long v0 = y[0];
+        long v1 = y[1];
+        int i = 0;
+        while (i < 128) {
+            // Test bit i of x in MSB-first order.
+            long bit;
+            if (i < 64) {
+                bit = Aes._lshr64(x[0], 63 - i) & 1L;
+            } else {
+                bit = Aes._lshr64(x[1], 127 - i) & 1L;
+            }
+            if (bit != 0L) {
+                z0 = z0 ^ v0;
+                z1 = z1 ^ v1;
+            }
+            // v >>>= 1 (across the 128-bit value), then conditional XOR
+            // with the reduction polynomial in the high byte if LSB was 1.
+            long carry = v1 & 1L;
+            v1 = Aes._lshr64(v1, 1) | (v0 << 63);
+            v0 = Aes._lshr64(v0, 1);
+            if (carry != 0L) {
+                // R = 0xE1 placed at the top byte = 0xE100000000000000
+                v0 = v0 ^ 0xE100000000000000L;
+            }
+            i = i + 1;
+        }
+        long[] out_ = new long[2];
+        out_[0] = z0;
+        out_[1] = z1;
+        return out_;
+    }
+
+    /// Logical right shift on long (`>>` arithmetic-extends for negative).
+    static long _lshr64(long x, int n) {
+        if (n == 0) return x;
+        if (x >= 0L) return x >> n;
+        return (x >> n) ^ ((-1L) << (64 - n));
+    }
+
+    /// 16-byte block → (hi64, lo64) big-endian.
+    static long[] _gcmBytesToLongs(byte[] b) {
+        long[] out_ = new long[2];
+        out_[0] = Aes._gcmReadBE64(b, 0);
+        out_[1] = Aes._gcmReadBE64(b, 8);
+        return out_;
+    }
+
+    static long[] _gcmBytesToLongs128(byte[] b, int offset) {
+        long[] out_ = new long[2];
+        out_[0] = Aes._gcmReadBE64(b, offset);
+        out_[1] = Aes._gcmReadBE64(b, offset + 8);
+        return out_;
+    }
+
+    static byte[] _gcmLongsToBytes(long[] x) {
+        byte[] out_ = new byte[16];
+        Aes._gcmWriteBE64(out_, 0, x[0]);
+        Aes._gcmWriteBE64(out_, 8, x[1]);
+        return out_;
+    }
+
+    static long _gcmReadBE64(byte[] b, int o) {
+        long b0 = (long)((int)b[o]     & 0xFF);
+        long b1 = (long)((int)b[o + 1] & 0xFF);
+        long b2 = (long)((int)b[o + 2] & 0xFF);
+        long b3 = (long)((int)b[o + 3] & 0xFF);
+        long b4 = (long)((int)b[o + 4] & 0xFF);
+        long b5 = (long)((int)b[o + 5] & 0xFF);
+        long b6 = (long)((int)b[o + 6] & 0xFF);
+        long b7 = (long)((int)b[o + 7] & 0xFF);
+        return (b0 << 56) | (b1 << 48) | (b2 << 40) | (b3 << 32)
+             | (b4 << 24) | (b5 << 16) | (b6 <<  8) | b7;
+    }
+
+    static void _gcmWriteBE64(byte[] b, int o, long v) {
+        b[o]     = (byte)(Aes._lshr64(v, 56) & 0xFFL);
+        b[o + 1] = (byte)(Aes._lshr64(v, 48) & 0xFFL);
+        b[o + 2] = (byte)(Aes._lshr64(v, 40) & 0xFFL);
+        b[o + 3] = (byte)(Aes._lshr64(v, 32) & 0xFFL);
+        b[o + 4] = (byte)(Aes._lshr64(v, 24) & 0xFFL);
+        b[o + 5] = (byte)(Aes._lshr64(v, 16) & 0xFFL);
+        b[o + 6] = (byte)(Aes._lshr64(v,  8) & 0xFFL);
+        b[o + 7] = (byte)(v & 0xFFL);
+    }
+
     // ── Key Expansion (FIPS 197 §5.2) ────────────────────────────────────
 
     /// Returns flat int[] of (Nr+1) * 16 bytes — round key R occupies

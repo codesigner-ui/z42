@@ -79,9 +79,11 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `DecryptCtr(byte[] key, byte[8] nonce, byte[] data) -> byte[]` — symmetric, same as encrypt
   - `EncryptCbcPkcs7(byte[] key, byte[16] iv, byte[] data) -> byte[]` — CBC mode with PKCS#7 padding (RFC 5652 §6.3); output length is always a positive multiple of 16, full padding block appended when input is already aligned
   - `DecryptCbcPkcs7(byte[] key, byte[16] iv, byte[] data) -> byte[]` — validates + strips PKCS#7 padding; throws `ArgumentException` on malformed padding (likely wrong key/IV/corrupted ciphertext)
+  - `EncryptGcm(byte[] key, byte[12] iv, byte[] aad, byte[] plaintext) -> byte[]` — AEAD per NIST SP 800-38D; output is `ciphertext || 16-byte tag`. 96-bit IV path only (other lengths require GHASH-derived J0 — deferred to cdylib backend)
+  - `DecryptGcm(byte[] key, byte[12] iv, byte[] aad, byte[] ctAndTag) -> byte[]` — verifies tag with constant-time compare; throws `ArgumentException` if tampered (do NOT swallow this — failure means ciphertext or AAD was modified). Tag length fixed at 16 bytes (NIST recommends ≥ 12; shorter tags are a footgun per RFC 5116 §5.3 and not exposed)
   - Key length selects variant: 16 bytes = AES-128, 24 = AES-192, 32 = AES-256
   - Pure-script implementation (matches Sha256 / Hmac / Hkdf pattern): KeyExpansion + SubBytes / ShiftRows / MixColumns over GF(2^8); flat `int[]` round-key layout because z42 lacks `int[][]` jagged arrays
-  - Verified against FIPS 197 §C.1 / §C.2 / §C.3 (block) + NIST SP 800-38A §F.2.1 (CBC) reference vectors
+  - Verified against FIPS 197 §C.1 / §C.2 / §C.3 (block) + NIST SP 800-38A §F.2.1 (CBC) + NIST SP 800-38D / GCM-spec §B.1-4 + B.15 (GCM) reference vectors
   - CTR counter: 8-byte big-endian, starts at 0, increments per 16-byte block; total ≤ 2^64 × 16 bytes effectively unbounded
   - Performance note: pure-script AES at z42-interp speeds is fine for low-rate use (token encryption, small-payload envelopes); bulk encryption wants the cdylib follow-up
   - **Out of scope (deferred)**: GCM / AEAD, Key Wrap, AES-NI / ARMv8 Crypto Extensions hardware acceleration — see Deferred section
@@ -109,12 +111,12 @@ of overload-by-arg-type. z42 当前 overload 解析对 `byte[]` vs `string`
 
 ## Deferred / Future Work
 
-### aes-future-gcm: AES-GCM AEAD
+### aes-future-gcm-non96iv: AES-GCM with non-96-bit IV
 
-- **来源**：add-aes (2026-05-27)
-- **触发原因**：GHASH 多项式乘法纯脚本实现速度太慢；建议走 cdylib 路径与 hw-accel 同框架
-- **前置依赖**：cdylib backend（与 hw-accel 共享）
-- **触发条件**：TLS 1.3 / WireGuard 等 AEAD 协议需要时
+- **来源**：add-aes-gcm (2026-05-27)；GCM with 96-bit IV shipped, other IV lengths route through `GHASH_H(IV || pad || len(IV))` to derive J0
+- **触发原因**：96-bit IV is by far the most common form (TLS 1.3, WireGuard, AES-GCM-SIV all use 96-bit) — keeps v0 surface minimal
+- **前置依赖**：无（pure-script extension to existing GCM)
+- **触发条件**：spec compliance for legacy GCM consumers, or AES-GCM-SIV implementation
 
 ### aes-future-hw-accel: AES-NI / ARMv8 Crypto Extensions
 

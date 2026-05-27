@@ -215,6 +215,166 @@ void test_cbc_decrypt_rejects_wrong_iv_length() {
     Assert.True(threw);
 }
 
+// ── AES-GCM AEAD (NIST SP 800-38D + GCM test vectors) ───────────────────
+
+// Test Case 1 (gcm-spec §B.1): empty plaintext, empty AAD, all-zero key+IV.
+// Expected: empty ciphertext, tag = 58e2fccefa7e3061367f1d57a4e7455a
+[Test]
+void test_aes128_gcm_case1_empty_plaintext_empty_aad() {
+    byte[] key  = Hex.Decode("00000000000000000000000000000000");
+    byte[] iv   = Hex.Decode("000000000000000000000000");
+    byte[] aad  = new byte[0];
+    byte[] pt   = new byte[0];
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    // Length = 0 (ciphertext) + 16 (tag) = 16
+    Assert.Equal(16, enc.Length);
+    Assert.Equal("58e2fccefa7e3061367f1d57a4e7455a", Hex.Encode(enc));
+}
+
+// Test Case 2 (gcm-spec §B.2): 16-byte zero plaintext, empty AAD.
+// Expected: ciphertext = 0388dace60b6a392f328c2b971b2fe78
+//           tag        = ab6e47d42cec13bdf53a67b21257bddf
+[Test]
+void test_aes128_gcm_case2_block_plaintext() {
+    byte[] key  = Hex.Decode("00000000000000000000000000000000");
+    byte[] iv   = Hex.Decode("000000000000000000000000");
+    byte[] aad  = new byte[0];
+    byte[] pt   = Hex.Decode("00000000000000000000000000000000");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    Assert.Equal(
+        "0388dace60b6a392f328c2b971b2fe78ab6e47d42cec13bdf53a67b21257bddf",
+        Hex.Encode(enc)
+    );
+}
+
+// Test Case 3 (gcm-spec §B.3): multi-block plaintext, empty AAD.
+// Key = feffe9928665731c6d6a8f9467308308
+// IV  = cafebabefacedbaddecaf888
+// P   = d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255
+// Expected:
+//   C = 42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985
+//   T = 4d5c2af327cd64a62cf35abd2ba6fab4
+[Test]
+void test_aes128_gcm_case3_multi_block() {
+    byte[] key  = Hex.Decode("feffe9928665731c6d6a8f9467308308");
+    byte[] iv   = Hex.Decode("cafebabefacedbaddecaf888");
+    byte[] aad  = new byte[0];
+    byte[] pt   = Hex.Decode("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    Assert.Equal(
+        "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f59854d5c2af327cd64a62cf35abd2ba6fab4",
+        Hex.Encode(enc)
+    );
+}
+
+// Test Case 4 (gcm-spec §B.4): truncated plaintext + non-empty AAD.
+// Key = feffe9928665731c6d6a8f9467308308
+// IV  = cafebabefacedbaddecaf888
+// A   = feedfacedeadbeeffeedfacedeadbeefabaddad2  (20 bytes)
+// P   = d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39  (60 bytes)
+// Expected:
+//   C = 42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091
+//   T = 5bc94fbc3221a5db94fae95ae7121a47
+[Test]
+void test_aes128_gcm_case4_with_aad() {
+    byte[] key  = Hex.Decode("feffe9928665731c6d6a8f9467308308");
+    byte[] iv   = Hex.Decode("cafebabefacedbaddecaf888");
+    byte[] aad  = Hex.Decode("feedfacedeadbeeffeedfacedeadbeefabaddad2");
+    byte[] pt   = Hex.Decode("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    Assert.Equal(
+        "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e0915bc94fbc3221a5db94fae95ae7121a47",
+        Hex.Encode(enc)
+    );
+}
+
+// AES-256 Test Case 15 (gcm-spec §B.15): all-zero everything.
+[Test]
+void test_aes256_gcm_case15_empty() {
+    byte[] key  = Hex.Decode("0000000000000000000000000000000000000000000000000000000000000000");
+    byte[] iv   = Hex.Decode("000000000000000000000000");
+    byte[] aad  = new byte[0];
+    byte[] pt   = new byte[0];
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    Assert.Equal("530f8afbc74536b9a963b4f1c4cb738b", Hex.Encode(enc));
+}
+
+// Round-trip across all three key sizes.
+[Test]
+void test_gcm_round_trip_aes128() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("f0f1f2f3f4f5f6f7f8f9fafb");
+    byte[] aad  = Hex.Decode("aabbccddeeff");
+    byte[] pt   = Hex.Decode("0102030405060708090a0b0c0d0e0f1011121314");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    byte[] dec  = Aes.DecryptGcm(key, iv, aad, enc);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+[Test]
+void test_gcm_round_trip_aes256() {
+    byte[] key  = Hex.Decode("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4");
+    byte[] iv   = Hex.Decode("cafebabefacedbaddecaf888");
+    byte[] aad  = Hex.Decode("feedfacedeadbeeffeedfacedeadbeef");
+    byte[] pt   = Hex.Decode("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    byte[] dec  = Aes.DecryptGcm(key, iv, aad, enc);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+// Tag-mismatch detection — flipping any bit of ciphertext, AAD, or tag
+// must trigger ArgumentException.
+[Test]
+void test_gcm_detects_ciphertext_tampering() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("f0f1f2f3f4f5f6f7f8f9fafb");
+    byte[] aad  = new byte[0];
+    byte[] pt   = Hex.Decode("0102030405060708090a0b0c0d0e0f10");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    // Flip a bit in the first ciphertext byte (before the tag).
+    enc[0] = (byte)((int)enc[0] ^ 0x01);
+    bool threw = false;
+    try { Aes.DecryptGcm(key, iv, aad, enc); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_gcm_detects_aad_tampering() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("f0f1f2f3f4f5f6f7f8f9fafb");
+    byte[] aad  = Hex.Decode("0102030405");
+    byte[] pt   = Hex.Decode("aabbccddeeff");
+    byte[] enc  = Aes.EncryptGcm(key, iv, aad, pt);
+    byte[] wrongAad = Hex.Decode("0102030406");  // last byte flipped
+    bool threw = false;
+    try { Aes.DecryptGcm(key, iv, wrongAad, enc); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_gcm_rejects_wrong_iv_length() {
+    byte[] key  = new byte[16];
+    byte[] iv   = new byte[8];  // must be 12
+    byte[] aad  = new byte[0];
+    byte[] pt   = new byte[16];
+    bool threw = false;
+    try { Aes.EncryptGcm(key, iv, aad, pt); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_gcm_empty_aad_and_plaintext_round_trip() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("f0f1f2f3f4f5f6f7f8f9fafb");
+    byte[] enc  = Aes.EncryptGcm(key, iv, new byte[0], new byte[0]);
+    Assert.Equal(16, enc.Length);  // tag only
+    byte[] dec  = Aes.DecryptGcm(key, iv, new byte[0], enc);
+    Assert.Equal(0, dec.Length);
+}
+
 [Test]
 void test_cbc_decrypt_detects_corrupted_padding() {
     byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
