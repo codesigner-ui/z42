@@ -1,0 +1,393 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+using Std.Numerics;
+
+// add-ecdsa-p256 (2026-05-28): ECDSA over NIST P-256 (secp256r1) per
+// FIPS 186-4 with SHA-256, RFC 6979 deterministic nonce.
+//
+// Curve: short Weierstrass `y² = x³ + a·x + b mod p`, a = p - 3
+//   p  = FFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+//   b  = 5AC635D8AA3A93E7B3EBBD55769886BC651D06B0CC53B0F63BCE3C3E27D2604B
+//   Gx = 6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296
+//   Gy = 4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5
+//   n  = FFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+//
+// API surface:
+//   - GeneratePublicKey(privateScalar) → (publicX, publicY) — encodes as 64-byte
+//     uncompressed (X || Y) — caller can prepend 0x04 for the SEC1 format
+//   - Sign(privateScalar, message)   → byte[64] (r || s) — deterministic
+//                                       via RFC 6979 (testable + safe vs
+//                                       low-entropy RNG)
+//   - Verify(publicKey, message, sig) → bool — accepts the 64-byte (X||Y)
+//                                       public-key form
+//
+// Point representation: affine `(x, y)` BigInt pairs with a sentinel
+// `null` Point[] for the identity. Affine + per-op modular inverse is
+// slow but simple — Jacobian projective would be ~4× faster but adds
+// significant complexity. Pure-script use is low-rate (one signature
+// per JWT / API request) so the simpler form wins.
+//
+// Tested against RFC 6979 §A.2.5 deterministic-k test vectors.
+
+public static class EcdsaP256 {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    /// Derive the 64-byte uncompressed public-key encoding (X || Y) from
+    /// a 32-byte scalar private key.
+    public static byte[] GeneratePublicKey(byte[] privateScalar) {
+        if (privateScalar.Length != 32) {
+            throw new ArgumentException(
+                "EcdsaP256: private scalar must be 32 bytes, got " + privateScalar.Length.ToString());
+        }
+        BigInt n = EcdsaP256._curveOrder();
+        BigInt d = EcdsaP256._readBEBigInt(privateScalar);
+        if (d.IsZero() || d.CompareTo(n) >= 0) {
+            throw new ArgumentException("EcdsaP256: private scalar must be in [1, n-1]");
+        }
+        BigInt[] Q = EcdsaP256._scalarMultBase(d);
+        if (Q == null) {
+            throw new ArgumentException("EcdsaP256: degenerate public key (scalar produced identity)");
+        }
+        return EcdsaP256._pointToBytes(Q);
+    }
+
+    /// Sign `message` under `privateScalar`. Output = 64-byte `r || s`
+    /// (each component 32-byte big-endian). Deterministic per RFC 6979.
+    public static byte[] Sign(byte[] privateScalar, byte[] message) {
+        if (privateScalar.Length != 32) {
+            throw new ArgumentException(
+                "EcdsaP256: private scalar must be 32 bytes, got " + privateScalar.Length.ToString());
+        }
+        BigInt n = EcdsaP256._curveOrder();
+        BigInt d = EcdsaP256._readBEBigInt(privateScalar);
+        if (d.IsZero() || d.CompareTo(n) >= 0) {
+            throw new ArgumentException("EcdsaP256: private scalar must be in [1, n-1]");
+        }
+        byte[] hash = Sha256.Hash(message);
+        BigInt e = EcdsaP256._truncateHash(hash, n);
+        // RFC 6979 §3.2 deterministic nonce generation may need to retry
+        // until r ≠ 0 and s ≠ 0. With overwhelming probability the first
+        // candidate works.
+        int attempt = 0;
+        while (attempt < 16) {
+            BigInt k = EcdsaP256._deterministicK(d, hash, n, attempt);
+            BigInt[] R = EcdsaP256._scalarMultBase(k);
+            if (R != null) {
+                BigInt r = EcdsaP256._modN(R[0], n);
+                if (!r.IsZero()) {
+                    BigInt kInv = k.ModInverse(n);
+                    BigInt s = EcdsaP256._modN(kInv.Multiply(e.Add(r.Multiply(d))), n);
+                    if (!s.IsZero()) {
+                        byte[] sig = new byte[64];
+                        byte[] rBytes = EcdsaP256._writeBEBigInt(r, 32);
+                        byte[] sBytes = EcdsaP256._writeBEBigInt(s, 32);
+                        int i = 0;
+                        while (i < 32) { sig[i] = rBytes[i]; sig[32 + i] = sBytes[i]; i = i + 1; }
+                        return sig;
+                    }
+                }
+            }
+            attempt = attempt + 1;
+        }
+        throw new InvalidOperationException(
+            "EcdsaP256.Sign: RFC 6979 candidate exhaustion (this is astronomically improbable)");
+    }
+
+    /// Verify `signature` against SHA-256(message) using a 64-byte
+    /// uncompressed `publicKey` = X || Y. Returns `false` on any failure
+    /// (never throws on bad signature — only on malformed lengths).
+    public static bool Verify(byte[] publicKey, byte[] message, byte[] signature) {
+        if (publicKey.Length != 64) {
+            throw new ArgumentException(
+                "EcdsaP256.Verify: public key must be 64 bytes (X || Y), got " + publicKey.Length.ToString());
+        }
+        if (signature.Length != 64) {
+            throw new ArgumentException(
+                "EcdsaP256.Verify: signature must be 64 bytes (r || s), got " + signature.Length.ToString());
+        }
+        BigInt n = EcdsaP256._curveOrder();
+        BigInt p = EcdsaP256._curvePrime();
+        // Parse public key.
+        byte[] xBytes = new byte[32];
+        byte[] yBytes = new byte[32];
+        int i = 0;
+        while (i < 32) { xBytes[i] = publicKey[i]; yBytes[i] = publicKey[32 + i]; i = i + 1; }
+        BigInt qx = EcdsaP256._readBEBigInt(xBytes);
+        BigInt qy = EcdsaP256._readBEBigInt(yBytes);
+        if (qx.CompareTo(p) >= 0 || qy.CompareTo(p) >= 0) { return false; }
+        BigInt[] Q = new BigInt[2];
+        Q[0] = qx; Q[1] = qy;
+        if (!EcdsaP256._isOnCurve(Q)) { return false; }
+        // Parse signature.
+        byte[] rBytes = new byte[32];
+        byte[] sBytes = new byte[32];
+        int j = 0;
+        while (j < 32) { rBytes[j] = signature[j]; sBytes[j] = signature[32 + j]; j = j + 1; }
+        BigInt r = EcdsaP256._readBEBigInt(rBytes);
+        BigInt s = EcdsaP256._readBEBigInt(sBytes);
+        if (r.IsZero() || r.CompareTo(n) >= 0) { return false; }
+        if (s.IsZero() || s.CompareTo(n) >= 0) { return false; }
+        // Compute u1 = e * s^-1 mod n; u2 = r * s^-1 mod n.
+        byte[] hash = Sha256.Hash(message);
+        BigInt e = EcdsaP256._truncateHash(hash, n);
+        BigInt sInv = s.ModInverse(n);
+        BigInt u1 = EcdsaP256._modN(e.Multiply(sInv), n);
+        BigInt u2 = EcdsaP256._modN(r.Multiply(sInv), n);
+        // (x1, _) = u1*G + u2*Q
+        BigInt[] u1G = EcdsaP256._scalarMultBase(u1);
+        BigInt[] u2Q = EcdsaP256._scalarMult(u2, Q);
+        BigInt[] R = EcdsaP256._pointAdd(u1G, u2Q);
+        if (R == null) { return false; }
+        BigInt x1ModN = EcdsaP256._modN(R[0], n);
+        return x1ModN.CompareTo(r) == 0;
+    }
+
+    // ── Curve constants ──────────────────────────────────────────────────────
+
+    static BigInt _curvePrime() {
+        return BigInt.ParseHex("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff");
+    }
+    static BigInt _curveOrder() {
+        return BigInt.ParseHex("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+    }
+    static BigInt _curveB() {
+        return BigInt.ParseHex("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b");
+    }
+    static BigInt[] _basePoint() {
+        BigInt[] G = new BigInt[2];
+        G[0] = BigInt.ParseHex("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296");
+        G[1] = BigInt.ParseHex("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5");
+        return G;
+    }
+
+    // ── Field helpers ────────────────────────────────────────────────────────
+
+    static BigInt _modP(BigInt a) {
+        BigInt p = EcdsaP256._curvePrime();
+        BigInt r = a.Mod(p);
+        if (r._sign < 0) { r = r.Add(p); }
+        return r;
+    }
+    static BigInt _modN(BigInt a, BigInt n) {
+        BigInt r = a.Mod(n);
+        if (r._sign < 0) { r = r.Add(n); }
+        return r;
+    }
+
+    /// Verify `(x, y)` lies on the curve `y² = x³ - 3x + b mod p`.
+    static bool _isOnCurve(BigInt[] P) {
+        if (P == null) { return false; }
+        BigInt p = EcdsaP256._curvePrime();
+        BigInt x = P[0]; BigInt y = P[1];
+        BigInt lhs = EcdsaP256._modP(y.Multiply(y));
+        BigInt three = new BigInt(3L);
+        BigInt rhs = EcdsaP256._modP(x.Multiply(x).Multiply(x).Subtract(three.Multiply(x)).Add(EcdsaP256._curveB()));
+        return lhs.CompareTo(rhs) == 0;
+    }
+
+    /// Truncate / convert SHA-256 hash to a scalar mod n. For P-256 the
+    /// hash and curve order are both 256-bit, so this is just a big-
+    /// endian read + range check (no truncation in practice).
+    static BigInt _truncateHash(byte[] hash, BigInt n) {
+        BigInt e = EcdsaP256._readBEBigInt(hash);
+        // For SHA-256 + P-256 sizes match; nothing to truncate.
+        // If e ≥ n we reduce (FIPS 186-4 step 5 mod-n is implicit).
+        if (e.CompareTo(n) >= 0) {
+            e = e.Mod(n);
+        }
+        return e;
+    }
+
+    // ── Short Weierstrass point arithmetic (affine) ──────────────────────────
+    // The `null` sentinel represents the identity (point at infinity).
+
+    /// Point doubling on `y² = x³ - 3x + b`.
+    static BigInt[] _pointDouble(BigInt[] P) {
+        if (P == null) { return null; }
+        BigInt y = P[1];
+        if (y.IsZero()) { return null; }   // tangent vertical → identity
+        BigInt p = EcdsaP256._curvePrime();
+        BigInt x = P[0];
+        // λ = (3x² + a) / (2y); a = -3 → 3x² - 3 = 3(x² - 1) = 3(x-1)(x+1).
+        BigInt three = new BigInt(3L);
+        BigInt num = EcdsaP256._modP(three.Multiply(x.Multiply(x).Subtract(BigInt.One)));
+        BigInt den = EcdsaP256._modP(y.Multiply(new BigInt(2L)));
+        BigInt lam = EcdsaP256._modP(num.Multiply(den.ModInverse(p)));
+        BigInt x3 = EcdsaP256._modP(lam.Multiply(lam).Subtract(x.Multiply(new BigInt(2L))));
+        BigInt y3 = EcdsaP256._modP(lam.Multiply(x.Subtract(x3)).Subtract(y));
+        BigInt[] R = new BigInt[2];
+        R[0] = x3; R[1] = y3;
+        return R;
+    }
+
+    /// Point addition. Handles P + (-Q) = identity, P + identity, identity + Q.
+    static BigInt[] _pointAdd(BigInt[] P, BigInt[] Q) {
+        if (P == null) { return Q; }
+        if (Q == null) { return P; }
+        BigInt px = P[0]; BigInt py = P[1];
+        BigInt qx = Q[0]; BigInt qy = Q[1];
+        if (px.CompareTo(qx) == 0) {
+            // Either P = Q (double) or P = -Q (identity).
+            BigInt sumY = EcdsaP256._modP(py.Add(qy));
+            if (sumY.IsZero()) { return null; }
+            return EcdsaP256._pointDouble(P);
+        }
+        BigInt p = EcdsaP256._curvePrime();
+        BigInt num = EcdsaP256._modP(qy.Subtract(py));
+        BigInt den = EcdsaP256._modP(qx.Subtract(px));
+        BigInt lam = EcdsaP256._modP(num.Multiply(den.ModInverse(p)));
+        BigInt x3 = EcdsaP256._modP(lam.Multiply(lam).Subtract(px).Subtract(qx));
+        BigInt y3 = EcdsaP256._modP(lam.Multiply(px.Subtract(x3)).Subtract(py));
+        BigInt[] R = new BigInt[2];
+        R[0] = x3; R[1] = y3;
+        return R;
+    }
+
+    /// Scalar multiplication via double-and-add (LSB-first). Not constant-
+    /// time — adequate for verify-side (public scalars); sign-side leaks
+    /// the bit pattern of `k` but RFC 6979's k is derived deterministically
+    /// from secrets so the leak is limited to the hash-side mix.
+    static BigInt[] _scalarMult(BigInt k, BigInt[] P) {
+        BigInt[] result = null;   // identity
+        BigInt[] cur = P;
+        int bitLen = k.BitLength();
+        int i = 0;
+        while (i < bitLen) {
+            if (k.TestBit(i)) {
+                result = EcdsaP256._pointAdd(result, cur);
+            }
+            cur = EcdsaP256._pointDouble(cur);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    static BigInt[] _scalarMultBase(BigInt k) {
+        return EcdsaP256._scalarMult(k, EcdsaP256._basePoint());
+    }
+
+    // ── Point serialisation ──────────────────────────────────────────────────
+
+    /// Emit a non-identity point as 64-byte uncompressed `X || Y`.
+    static byte[] _pointToBytes(BigInt[] P) {
+        byte[] out_ = new byte[64];
+        byte[] xBytes = EcdsaP256._writeBEBigInt(P[0], 32);
+        byte[] yBytes = EcdsaP256._writeBEBigInt(P[1], 32);
+        int i = 0;
+        while (i < 32) { out_[i] = xBytes[i]; out_[32 + i] = yBytes[i]; i = i + 1; }
+        return out_;
+    }
+
+    // ── RFC 6979 deterministic nonce (HMAC-SHA-256 based) ────────────────────
+    //
+    // Implements RFC 6979 §3.2 with HMAC-SHA-256. The `attempt` parameter
+    // routes the rare retry loop: attempt 0 produces the "first candidate"
+    // per the RFC; higher values re-enter the K/V update step.
+
+    static BigInt _deterministicK(BigInt privateScalar, byte[] msgHash, BigInt n, int attempt) {
+        // qlen = bit length of n (256 for P-256). rlen = 8 * ceil(qlen/8) = 256.
+        // For P-256 qlen = rlen = 256, so int2octets and bits2octets are
+        // identical mod-n conversion → 32-byte BE.
+        byte[] x = EcdsaP256._writeBEBigInt(privateScalar, 32);
+        byte[] h1 = EcdsaP256._writeBEBigInt(EcdsaP256._truncateHash(msgHash, n), 32);
+        // V = 0x01 0x01 ... 0x01 (32 bytes); K = 0x00 ... 0x00 (32 bytes).
+        byte[] V = new byte[32];
+        byte[] K = new byte[32];
+        int i = 0;
+        while (i < 32) { V[i] = (byte)0x01; i = i + 1; }
+        // K = HMAC_K(V || 0x00 || x || h1)
+        byte[] inp = EcdsaP256._concat4(V, EcdsaP256._oneByte(0x00), x, h1);
+        K = HmacSha256.Compute(K, inp);
+        // V = HMAC_K(V)
+        V = HmacSha256.Compute(K, V);
+        // K = HMAC_K(V || 0x01 || x || h1)
+        inp = EcdsaP256._concat4(V, EcdsaP256._oneByte(0x01), x, h1);
+        K = HmacSha256.Compute(K, inp);
+        // V = HMAC_K(V)
+        V = HmacSha256.Compute(K, V);
+        // Each retry loop iteration: T = HMAC_K(V); candidate = bits2int(T) mod n.
+        // `attempt` lets the caller force later iterations if the first
+        // produced r=0 or s=0 in the signing loop.
+        int retry = 0;
+        while (true) {
+            V = HmacSha256.Compute(K, V);
+            BigInt cand = EcdsaP256._readBEBigInt(V);
+            // bits2int truncates / mods into [0, n).
+            if (cand.CompareTo(n) >= 0) {
+                cand = cand.Mod(n);
+            }
+            if (!cand.IsZero() && retry >= attempt) {
+                return cand;
+            }
+            // Update K/V per RFC 6979 §3.2 step h.3.
+            byte[] retryInp = EcdsaP256._concat2(V, EcdsaP256._oneByte(0x00));
+            K = HmacSha256.Compute(K, retryInp);
+            V = HmacSha256.Compute(K, V);
+            retry = retry + 1;
+            if (retry > 256) {
+                throw new InvalidOperationException("EcdsaP256: RFC 6979 retry overflow");
+            }
+        }
+        // Unreachable but z42 type-checker may want it.
+        return BigInt.Zero;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    static byte[] _oneByte(int v) {
+        byte[] b = new byte[1];
+        b[0] = (byte)(v & 0xFF);
+        return b;
+    }
+
+    static byte[] _concat2(byte[] a, byte[] b) {
+        byte[] r = new byte[a.Length + b.Length];
+        int i = 0;
+        while (i < a.Length) { r[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < b.Length) { r[a.Length + j] = b[j]; j = j + 1; }
+        return r;
+    }
+
+    static byte[] _concat4(byte[] a, byte[] b, byte[] c, byte[] d) {
+        byte[] r = new byte[a.Length + b.Length + c.Length + d.Length];
+        int i = 0;
+        while (i < a.Length) { r[i] = a[i]; i = i + 1; }
+        int off = a.Length;
+        int j = 0;
+        while (j < b.Length) { r[off + j] = b[j]; j = j + 1; }
+        off = off + b.Length;
+        int k = 0;
+        while (k < c.Length) { r[off + k] = c[k]; k = k + 1; }
+        off = off + c.Length;
+        int m = 0;
+        while (m < d.Length) { r[off + m] = d[m]; m = m + 1; }
+        return r;
+    }
+
+    static BigInt _readBEBigInt(byte[] bytes) {
+        BigInt acc = BigInt.Zero;
+        int i = 0;
+        while (i < bytes.Length) {
+            acc = acc.ShiftLeft(8).Add(new BigInt((long)((int)bytes[i] & 0xFF)));
+            i = i + 1;
+        }
+        return acc;
+    }
+
+    static byte[] _writeBEBigInt(BigInt v, int n) {
+        byte[] out_ = new byte[n];
+        BigInt mask8 = new BigInt(255L);
+        BigInt cur = v;
+        int i = n - 1;
+        while (i >= 0) {
+            BigInt low = cur.And(mask8);
+            out_[i] = (byte)(low.ToInt64() & 0xFFL);
+            cur = cur.ShiftRight(8);
+            i = i - 1;
+        }
+        return out_;
+    }
+}

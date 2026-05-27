@@ -72,6 +72,15 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- ECDSA over NIST P-256 (FIPS 186-4 + RFC 6979) — `Std.Crypto.EcdsaP256` (add-ecdsa-p256, 2026-05-28)
+  - `GeneratePublicKey(byte[32] privateScalar) -> byte[64]` — uncompressed `X || Y` encoding
+  - `Sign(byte[32] privateScalar, byte[] message) -> byte[64]` — `r || s` (32 bytes each, BE); deterministic via RFC 6979 HMAC-SHA-256 nonce derivation
+  - `Verify(byte[64] publicKey, byte[] message, byte[64] signature) -> bool` — never throws on bad sig; rejects off-curve points + out-of-range r/s
+  - Short Weierstrass curve `y² = x³ - 3x + b mod p` in affine coordinates; per-op modular inverse (simpler than Jacobian; adequate for low-rate use)
+  - RFC 6979 deterministic nonce so signatures are reproducible across implementations — eliminates the low-entropy-RNG footgun that's caused real-world ECDSA key recovery (PS3, Sony, Bitcoin wallets)
+  - Use cases: JWT ES256, x509 certificates with ECDSA, TLS 1.3 (when negotiated), most modern API signing schemes
+  - Verified against RFC 6979 §A.2.5 reference vectors (sign "sample" + "test" with the canonical d, plus verify round trips)
+
 - RSA (RFC 8017 / PKCS#1 v2.2) — `Std.Crypto.Rsa` (add-rsa, 2026-05-28)
   - `RsaPublicKey(n, e)` / `RsaPrivateKey(n, e, d)` value types holding raw BigInt modulus + exponents
   - `RsaPrivateKey.GetPublicKey() -> RsaPublicKey` — derives the matching public half
