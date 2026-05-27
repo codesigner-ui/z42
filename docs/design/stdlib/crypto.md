@@ -105,6 +105,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - Verified against RFC 7748 §5.2 single-step vectors + §6.1 Alice/Bob ECDH (both sides converge to same shared secret)
   - Performance note: pure-script BigInt-backed ~150 ms per ScalarMult; adequate for one-handshake-per-connection use; bulk ECDH wants cdylib
 
+- BLAKE2s (RFC 7693 §B) — `Std.Crypto.Blake2s` (add-blake2s, 2026-05-28)
+  - `Hash(byte[]) -> byte[32]` — 256-bit default
+  - `HashLen(byte[] data, byte[] key, int outLen) -> byte[outLen]` — variable output 1..32 + optional key 0..32 bytes
+  - `HashString` / `HashHex` / `HashStringHex` convenience
+  - 32-bit BLAKE2 variant: 10 rounds, 64-byte block, SHA-256-style IV; matches BLAKE2b structurally but cheaper on 32-bit hardware
+  - Used by Argon2i / Argon2id inner compression on 32-bit-friendly paths
+  - Verified against RFC 7693 §B.1 "abc" + libsodium reference empty / zero-key vectors + RFC 7693 §B.1 sequential-key 0x00..0x1f keyed vector
+
 - BLAKE2b (RFC 7693) — `Std.Crypto.Blake2b` (add-blake2b, 2026-05-28)
   - `Hash(byte[]) -> byte[64]` (512-bit default) / `Hash256(byte[]) -> byte[32]` (256-bit common)
   - `HashLen(byte[] data, byte[] key, int outLen) -> byte[outLen]` — variable output (1..64) + optional key (0..64 bytes, keyed-MAC mode)

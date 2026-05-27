@@ -1,0 +1,218 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-blake2s (2026-05-28): BLAKE2s hash (RFC 7693 §B).
+//
+// 32-bit BLAKE2 variant. Same algorithm as BLAKE2b but with 32-bit
+// words, 64-byte block, 10 rounds (vs BLAKE2b's 64-bit / 128-byte / 12).
+// Output length 1..32 bytes; key length 0..32 bytes (keyed-MAC mode).
+//
+// Use cases: Argon2i / Argon2id inner compression (low-memory hardware
+// or 32-bit-friendly paths use BLAKE2s instead of BLAKE2b), constrained
+// embedded contexts where 64-bit ops are expensive.
+//
+// Storage: state uses `int[8]` (i32) for h, working vector `int[16]`,
+// message `int[16]`. z42 `int` is signed i32 with wrap-on-overflow —
+// same semantics as Java `int` so all 32-bit arithmetic just works
+// without sign masking (until the byte-emit step which masks to u8).
+//
+// IV[0..7] = SHA-256 H[0..7] (first 32 bits of fractional parts of sqrt
+// of first 8 primes).
+//
+// SIGMA permutation: first 10 rows of the same table BLAKE2b uses (the
+// 12-round BLAKE2b cycles through 12; the 10-round BLAKE2s uses 10).
+
+public static class Blake2s {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    /// Default 32-byte (256-bit) digest.
+    public static byte[] Hash(byte[] data) {
+        return Blake2s.HashLen(data, new byte[0], 32);
+    }
+    public static byte[] HashString(string s) { return Blake2s.Hash(Utf8.GetBytes(s)); }
+    public static string HashHex(byte[] data) { return Hex.Encode(Blake2s.Hash(data)); }
+    public static string HashStringHex(string s) { return Hex.Encode(Blake2s.HashString(s)); }
+
+    /// Keyed hash with variable output. `key.Length` in `[0, 32]`,
+    /// `outLen` in `[1, 32]`. Pass `key = new byte[0]` for unkeyed.
+    public static byte[] HashLen(byte[] data, byte[] key, int outLen) {
+        if (outLen < 1 || outLen > 32) {
+            throw new ArgumentException(
+                "Blake2s: output length must be in [1, 32], got " + outLen.ToString());
+        }
+        if (key.Length > 32) {
+            throw new ArgumentException(
+                "Blake2s: key length must be ≤ 32, got " + key.Length.ToString());
+        }
+        int[] h = Blake2s._initHash(key.Length, outLen);
+        long counter = 0L;   // 64-bit byte counter, decomposed into hi/lo 32 at use
+
+        byte[] effective;
+        if (key.Length > 0) {
+            int extra = data.Length;
+            effective = new byte[64 + extra];
+            int i = 0;
+            while (i < key.Length) { effective[i] = key[i]; i = i + 1; }
+            int j = 0;
+            while (j < extra) { effective[64 + j] = data[j]; j = j + 1; }
+        } else {
+            effective = data;
+        }
+
+        int total = effective.Length;
+        if (total == 0) {
+            byte[] emptyBlock = new byte[64];
+            Blake2s._compress(h, emptyBlock, 0, counter, true);
+        } else {
+            int off = 0;
+            while (off + 64 < total) {
+                counter = counter + 64L;
+                Blake2s._compress(h, effective, off, counter, false);
+                off = off + 64;
+            }
+            int remaining = total - off;
+            byte[] lastBlock = new byte[64];
+            int k = 0;
+            while (k < remaining) { lastBlock[k] = effective[off + k]; k = k + 1; }
+            counter = counter + (long)remaining;
+            Blake2s._compress(h, lastBlock, 0, counter, true);
+        }
+
+        byte[] out_ = new byte[outLen];
+        int b = 0;
+        while (b < outLen) {
+            int laneIdx = b / 4;
+            int byteIdx = b % 4;
+            out_[b] = (byte)((h[laneIdx] >> (byteIdx * 8)) & 0xFF);
+            b = b + 1;
+        }
+        return out_;
+    }
+
+    // ── Initialisation ───────────────────────────────────────────────────────
+
+    /// IV[0..7] = SHA-256 H[0..7]. Values that exceed signed-i32 range
+    /// are written as `(int)<u32>L` casts since z42's int literal parser
+    /// rejects out-of-range hex (and `0xBB67AE85` in signed-i32 == sign-bit-set
+    /// = -1150833723).
+    static int[] _iv() {
+        int[] iv = new int[8];
+        iv[0] = 0x6A09E667;          iv[1] = (int)0xBB67AE85L;
+        iv[2] = 0x3C6EF372;          iv[3] = (int)0xA54FF53AL;
+        iv[4] = 0x510E527F;          iv[5] = (int)0x9B05688CL;
+        iv[6] = 0x1F83D9AB;          iv[7] = 0x5BE0CD19;
+        return iv;
+    }
+
+    /// h[0] ^= 0x0101_kk_nn (RFC 7693 §B.1 — parameter block).
+    static int[] _initHash(int keyLen, int outLen) {
+        int[] h = Blake2s._iv();
+        int param = 0x01010000 | ((keyLen & 0xFF) << 8) | (outLen & 0xFF);
+        h[0] = h[0] ^ param;
+        return h;
+    }
+
+    // ── Compress function (RFC 7693 §B.2) ────────────────────────────────────
+
+    static void _compress(int[] h, byte[] block, int offset, long counter, bool isLast) {
+        int[] iv = Blake2s._iv();
+        int[] v = new int[16];
+        int i = 0;
+        while (i < 8) { v[i] = h[i]; i = i + 1; }
+        v[8]  = iv[0]; v[9]  = iv[1]; v[10] = iv[2]; v[11] = iv[3];
+        // Counter as two 32-bit halves (low / high) per RFC 7693.
+        int counterLo = (int)(counter & 0xFFFFFFFFL);
+        int counterHi = (int)((counter >> 32) & 0xFFFFFFFFL);
+        v[12] = iv[4] ^ counterLo;
+        v[13] = iv[5] ^ counterHi;
+        v[14] = iv[6];
+        if (isLast) { v[14] = v[14] ^ (-1); }   // f0 = 0xFFFFFFFF
+        v[15] = iv[7];   // f1 = 0 (no tree mode)
+
+        int[] m = new int[16];
+        int j = 0;
+        while (j < 16) { m[j] = Blake2s._readLE32(block, offset + j * 4); j = j + 1; }
+
+        int[] sigma = Blake2s._sigma();
+        // BLAKE2s does 10 rounds (vs BLAKE2b's 12).
+        int r = 0;
+        while (r < 10) {
+            int sOff = r * 16;
+            Blake2s._G(v, 0, 4,  8, 12, m[sigma[sOff +  0]], m[sigma[sOff +  1]]);
+            Blake2s._G(v, 1, 5,  9, 13, m[sigma[sOff +  2]], m[sigma[sOff +  3]]);
+            Blake2s._G(v, 2, 6, 10, 14, m[sigma[sOff +  4]], m[sigma[sOff +  5]]);
+            Blake2s._G(v, 3, 7, 11, 15, m[sigma[sOff +  6]], m[sigma[sOff +  7]]);
+            Blake2s._G(v, 0, 5, 10, 15, m[sigma[sOff +  8]], m[sigma[sOff +  9]]);
+            Blake2s._G(v, 1, 6, 11, 12, m[sigma[sOff + 10]], m[sigma[sOff + 11]]);
+            Blake2s._G(v, 2, 7,  8, 13, m[sigma[sOff + 12]], m[sigma[sOff + 13]]);
+            Blake2s._G(v, 3, 4,  9, 14, m[sigma[sOff + 14]], m[sigma[sOff + 15]]);
+            r = r + 1;
+        }
+
+        int k = 0;
+        while (k < 8) { h[k] = h[k] ^ v[k] ^ v[k + 8]; k = k + 1; }
+    }
+
+    /// G mixer with BLAKE2s rotation constants (RFC 7693 §B.2.1):
+    ///   a = a + b + x; d = rotr32(d ^ a, 16);
+    ///   c = c + d;     b = rotr32(b ^ c, 12);
+    ///   a = a + b + y; d = rotr32(d ^ a,  8);
+    ///   c = c + d;     b = rotr32(b ^ c,  7);
+    static void _G(int[] v, int ai, int bi, int ci, int di, int x, int y) {
+        int a = v[ai]; int b = v[bi]; int c = v[ci]; int d = v[di];
+        a = a + b + x;   d = Blake2s._rotr32(d ^ a, 16);
+        c = c + d;       b = Blake2s._rotr32(b ^ c, 12);
+        a = a + b + y;   d = Blake2s._rotr32(d ^ a,  8);
+        c = c + d;       b = Blake2s._rotr32(b ^ c,  7);
+        v[ai] = a; v[bi] = b; v[ci] = c; v[di] = d;
+    }
+
+    /// 32-bit logical right rotation. z42 `int` is signed i32; `>>`
+    /// arithmetic-extends so we cast through long + mask for the LSR
+    /// half, then OR with the LSL shift.
+    static int _rotr32(int x, int n) {
+        long lx = ((long)x) & 0xFFFFFFFFL;
+        long shifted = ((lx >> n) | (lx << (32 - n))) & 0xFFFFFFFFL;
+        return (int)shifted;
+    }
+
+    /// SIGMA permutation — first 10 rows of the same table BLAKE2b uses
+    /// (RFC 7693 §2.7 / §A.4). BLAKE2s cycles through 10 rounds exactly,
+    /// so no mod-10 indexing needed.
+    static int[] _sigma() {
+        int[] s = new int[160];
+        s[0]=0;   s[1]=1;   s[2]=2;   s[3]=3;   s[4]=4;   s[5]=5;   s[6]=6;   s[7]=7;
+        s[8]=8;   s[9]=9;   s[10]=10; s[11]=11; s[12]=12; s[13]=13; s[14]=14; s[15]=15;
+        s[16]=14; s[17]=10; s[18]=4;  s[19]=8;  s[20]=9;  s[21]=15; s[22]=13; s[23]=6;
+        s[24]=1;  s[25]=12; s[26]=0;  s[27]=2;  s[28]=11; s[29]=7;  s[30]=5;  s[31]=3;
+        s[32]=11; s[33]=8;  s[34]=12; s[35]=0;  s[36]=5;  s[37]=2;  s[38]=15; s[39]=13;
+        s[40]=10; s[41]=14; s[42]=3;  s[43]=6;  s[44]=7;  s[45]=1;  s[46]=9;  s[47]=4;
+        s[48]=7;  s[49]=9;  s[50]=3;  s[51]=1;  s[52]=13; s[53]=12; s[54]=11; s[55]=14;
+        s[56]=2;  s[57]=6;  s[58]=5;  s[59]=10; s[60]=4;  s[61]=0;  s[62]=15; s[63]=8;
+        s[64]=9;  s[65]=0;  s[66]=5;  s[67]=7;  s[68]=2;  s[69]=4;  s[70]=10; s[71]=15;
+        s[72]=14; s[73]=1;  s[74]=11; s[75]=12; s[76]=6;  s[77]=8;  s[78]=3;  s[79]=13;
+        s[80]=2;  s[81]=12; s[82]=6;  s[83]=10; s[84]=0;  s[85]=11; s[86]=8;  s[87]=3;
+        s[88]=4;  s[89]=13; s[90]=7;  s[91]=5;  s[92]=15; s[93]=14; s[94]=1;  s[95]=9;
+        s[96]=12;  s[97]=5;  s[98]=1;  s[99]=15; s[100]=14; s[101]=13; s[102]=4;  s[103]=10;
+        s[104]=0;  s[105]=7;  s[106]=6;  s[107]=3;  s[108]=9;  s[109]=2;  s[110]=8;  s[111]=11;
+        s[112]=13; s[113]=11; s[114]=7;  s[115]=14; s[116]=12; s[117]=1;  s[118]=3;  s[119]=9;
+        s[120]=5;  s[121]=0;  s[122]=15; s[123]=4;  s[124]=8;  s[125]=6;  s[126]=2;  s[127]=10;
+        s[128]=6;  s[129]=15; s[130]=14; s[131]=9;  s[132]=11; s[133]=3;  s[134]=0;  s[135]=8;
+        s[136]=12; s[137]=2;  s[138]=13; s[139]=7;  s[140]=1;  s[141]=4;  s[142]=10; s[143]=5;
+        s[144]=10; s[145]=2;  s[146]=8;  s[147]=4;  s[148]=7;  s[149]=6;  s[150]=1;  s[151]=5;
+        s[152]=15; s[153]=11; s[154]=9;  s[155]=14; s[156]=3;  s[157]=12; s[158]=13; s[159]=0;
+        return s;
+    }
+
+    // ── LE byte I/O ──────────────────────────────────────────────────────────
+
+    static int _readLE32(byte[] b, int o) {
+        int b0 = (int)b[o]     & 0xFF;
+        int b1 = (int)b[o + 1] & 0xFF;
+        int b2 = (int)b[o + 2] & 0xFF;
+        int b3 = (int)b[o + 3] & 0xFF;
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+}

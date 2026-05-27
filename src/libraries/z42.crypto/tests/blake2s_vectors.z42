@@ -1,0 +1,143 @@
+// add-blake2s (2026-05-28): RFC 7693 §B.1 + libsodium reference vectors
+// for BLAKE2s.
+namespace Z42CryptoBlake2sVectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 7693 §B.1: "abc" — canonical sample ─────────────────────────────
+
+[Test]
+void test_blake2s_rfc7693_abc() {
+    Assert.Equal(
+        "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982",
+        Blake2s.HashStringHex("abc")
+    );
+}
+
+// ── Empty input (libsodium reference) ───────────────────────────────────
+
+[Test]
+void test_blake2s_empty() {
+    Assert.Equal(
+        "69217a3079908094e11121d042354a7c1f55b6482ca1a51e1b250dfd1ed0eef9",
+        Blake2s.HashStringHex("")
+    );
+}
+
+// ── Output-length variant ───────────────────────────────────────────────
+
+[Test]
+void test_blake2s_output_length_affects_digest() {
+    byte[] msg = Utf8.GetBytes("hello");
+    byte[] d8  = Blake2s.HashLen(msg, new byte[0], 8);
+    byte[] d16 = Blake2s.HashLen(msg, new byte[0], 16);
+    byte[] d32 = Blake2s.HashLen(msg, new byte[0], 32);
+    Assert.Equal(8,  d8.Length);
+    Assert.Equal(16, d16.Length);
+    Assert.Equal(32, d32.Length);
+    bool same = true;
+    int i = 0;
+    while (i < 8) {
+        if (d8[i] != d16[i]) { same = false; }
+        i = i + 1;
+    }
+    Assert.True(!same);
+}
+
+// ── Keyed MAC mode ──────────────────────────────────────────────────────
+// Reference: `hashlib.blake2s(b"", key=b"\0"*32).hexdigest()`.
+
+[Test]
+void test_blake2s_keyed_zero_key() {
+    byte[] key = new byte[32];
+    byte[] msg = new byte[0];
+    byte[] mac = Blake2s.HashLen(msg, key, 32);
+    Assert.Equal(
+        "cc8ed046995def3f21db6abcfe34c3526960be9dd3270ed1ab7cfc7f29ad4bd6",
+        Hex.Encode(mac)
+    );
+}
+
+// RFC 7693 §B.1 keyed test vector: key = 32 bytes sequential 0x00..0x1f,
+// data = empty, outputLen = 32.
+
+[Test]
+void test_blake2s_keyed_rfc7693_b1() {
+    byte[] key = new byte[32];
+    int i = 0;
+    while (i < 32) { key[i] = (byte)i; i = i + 1; }
+    byte[] msg = new byte[0];
+    byte[] mac = Blake2s.HashLen(msg, key, 32);
+    Assert.Equal(
+        "48a8997da407876b3d79c0d92325ad3b89cbb754d86ab71aee047ad345fd2c49",
+        Hex.Encode(mac)
+    );
+}
+
+// ── Block-boundary tests ────────────────────────────────────────────────
+
+[Test]
+void test_blake2s_one_byte_below_block() {
+    byte[] msg = new byte[63];
+    int i = 0;
+    while (i < 63) { msg[i] = (byte)0x41; i = i + 1; }
+    Assert.Equal(64, Blake2s.HashHex(msg).Length);
+}
+
+[Test]
+void test_blake2s_exactly_one_block() {
+    byte[] msg = new byte[64];
+    int i = 0;
+    while (i < 64) { msg[i] = (byte)0x42; i = i + 1; }
+    Assert.Equal(64, Blake2s.HashHex(msg).Length);
+}
+
+[Test]
+void test_blake2s_one_byte_above_block() {
+    byte[] msg = new byte[65];
+    int i = 0;
+    while (i < 65) { msg[i] = (byte)0x43; i = i + 1; }
+    Assert.Equal(64, Blake2s.HashHex(msg).Length);
+}
+
+// ── BLAKE2s differs from BLAKE2b (sanity check) ─────────────────────────
+
+[Test]
+void test_blake2s_differs_from_blake2b_256() {
+    // Same input, both 32-byte output, but different algorithm parameters
+    // → digests must differ.
+    string msg = "compare";
+    string s = Blake2s.HashStringHex(msg);
+    string b = Blake2b.Hash256StringHex(msg);
+    Assert.True(s != b);
+}
+
+// ── Validation ──────────────────────────────────────────────────────────
+
+[Test]
+void test_blake2s_rejects_zero_outlen() {
+    bool threw = false;
+    try { Blake2s.HashLen(new byte[0], new byte[0], 0); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_blake2s_rejects_oversized_outlen() {
+    bool threw = false;
+    try { Blake2s.HashLen(new byte[0], new byte[0], 33); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_blake2s_rejects_oversized_key() {
+    byte[] tooLargeKey = new byte[33];
+    bool threw = false;
+    try { Blake2s.HashLen(new byte[0], tooLargeKey, 32); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
