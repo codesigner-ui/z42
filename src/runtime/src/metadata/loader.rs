@@ -535,7 +535,10 @@ pub fn build_type_registry(module: &mut Module) {
         }).collect();
 
         // ── Own methods (this class's own declarations) ───────────────────
-        let mut own_methods: Vec<(String, String)> = Vec::new();
+        // review.md E5.5 (2026-05-27): store qualified func names only;
+        // the simple vtable-slot name is re-derived at merge time via
+        // `TypeDesc::derive_simple_method_name`.
+        let mut own_methods: Vec<Box<str>> = Vec::new();
         let prefix = format!("{}.", class_name);
         for func in &module.functions {
             if !func.name.starts_with(&prefix) { continue; }
@@ -543,16 +546,14 @@ pub fn build_type_registry(module: &mut Module) {
             // Skip constructors (same name as class simple name) and __static_init__
             let simple_name = class_name.split('.').next_back().unwrap_or(class_name.as_str());
             if method == simple_name || method.starts_with("__") { continue; }
-            // Arity-overloaded names (Method$N) share the base slot with Method
-            let base_method = method.split('$').next().unwrap_or(method);
-            own_methods.push((base_method.to_string(), func.name.clone()));
+            own_methods.push(func.name.clone().into_boxed_str());
         }
 
         // ── Initial merged view: inherit from local-registry base if present.
         // Cross-zpkg base classes contribute nothing here — that's fixed up
         // later by `try_fixup_inheritance` once the dep is loaded.
         let (fields, field_index, vtable, vtable_index) =
-            merge_with_base(&own_fields, &own_methods, desc.base_class.as_deref(), &registry);
+            merge_with_base(&own_fields, &own_methods, class_name, desc.base_class.as_deref(), &registry);
 
         let type_id = crate::metadata::tokens::TypeId(next_type_id);
         next_type_id += 1;
@@ -610,9 +611,14 @@ pub fn build_type_registry(module: &mut Module) {
 /// If `base_class_name` is `None`, `own_*` becomes the entire merged view.
 /// If `base_class_name` is `Some(b)` but `b` isn't in `registry`, the merge
 /// degrades to "own only" (cross-zpkg base unresolved — fixup later).
+///
+/// review.md E5.5 (2026-05-27): `own_methods` carries qualified func names
+/// only; the vtable slot key (simple name) is derived per entry via
+/// `TypeDesc::derive_simple_method_name(class_name, fq)`.
 fn merge_with_base(
     own_fields:  &[FieldSlot],
-    own_methods: &[(String, String)],
+    own_methods: &[Box<str>],
+    class_name:  &str,
     base_class_name: Option<&str>,
     registry:    &HashMap<String, Arc<TypeDesc>>,
 ) -> (Vec<FieldSlot>, HashMap<String, usize>, Vec<(String, String)>, HashMap<String, usize>) {
@@ -632,13 +638,14 @@ fn merge_with_base(
         .collect();
 
     // Apply own methods: override if base method same simple name, else append.
-    for (simple_name, fq_func_name) in own_methods {
+    for fq_func_name in own_methods {
+        let simple_name = TypeDesc::derive_simple_method_name(class_name, fq_func_name);
         if let Some(&slot) = vtable_index.get(simple_name) {
-            vtable[slot] = (simple_name.clone(), fq_func_name.clone());
+            vtable[slot] = (simple_name.to_string(), fq_func_name.to_string());
         } else {
             let slot = vtable.len();
-            vtable_index.insert(simple_name.clone(), slot);
-            vtable.push((simple_name.clone(), fq_func_name.clone()));
+            vtable_index.insert(simple_name.to_string(), slot);
+            vtable.push((simple_name.to_string(), fq_func_name.to_string()));
         }
     }
 
@@ -685,6 +692,7 @@ pub fn try_fixup_inheritance(
         let layout = merge_with_base(
             td.own_fields(),
             td.own_methods(),
+            &td.name,
             td.base_name.as_deref(),
             registry,
         );
@@ -734,8 +742,9 @@ fn needs_fixup(td: &TypeDesc, registry: &HashMap<String, Arc<TypeDesc>>) -> bool
         + td.own_fields().iter().filter(|f| !base.fields.iter().any(|b| b.name == f.name)).count();
     let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let own_unique_methods = td.own_methods().iter()
-        .filter(|(n, _)| !base.vtable_index.contains_key(n))
-        .filter(|(n, _)| seen.insert(n.as_str()))
+        .map(|fq| TypeDesc::derive_simple_method_name(&td.name, fq))
+        .filter(|simple| !base.vtable_index.contains_key(*simple))
+        .filter(|simple| seen.insert(*simple))
         .count();
     let expected_vtable_count = base.vtable.len() + own_unique_methods;
     td.fields.len() != expected_field_count || td.vtable.len() != expected_vtable_count

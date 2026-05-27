@@ -1435,7 +1435,7 @@ pub struct ScriptObject {
 2. ✅ ~~**`Instruction::Call.args: Vec<u32>` → `Box<[u32]>`**~~ — refactor-instruction-box-slice (2026-05-26); covers all 9 reg-list variants (Call / Builtin / CallIndirect / MkClos.captures / ArrayNewLit.elems / ObjNew / VCall / CallNative / CallNativeVtable) + ObjNew.type_args String list; `read_args` decoder now returns `Box<[u32]>` directly. ClassDesc 3 fields (fields / type_params / type_param_constraints) follow-up landed 2026-05-27.
 3. ✅ ~~**TypeDesc cold 字段** `Vec<T>` → `Box<[T]>`~~ — refactor-typedesc-cold-box-slice (2026-05-27); five immutable-after-construction fields (`own_fields` / `own_methods` / `type_params` / `type_args` / `type_param_constraints`); hot fields (`fields` / `vtable`) stay growable for fixup rewrites. Saves 8 B × 5 ≈ 40 B per TypeDesc.
 4. 🟡 ~~**`ScriptObject.type_args: Vec<String>` → `Box<[String]>`**~~ (2026-05-27) — first half (Vec → Box<[T]>) landed, saves 8 B/object via no `cap` word. `Option`-wrap + `StringId` migration (the full target) waits on StringId Phase B+.
-5. ⚡ **删 `TypeDesc.own_methods` 的 String pair tuple，仅保 `Vec<MethodId>`** —— vtable 名字应该走 vtable_by_name HashMap
+5. ✅ ~~**删 `TypeDesc.own_methods` 的 String pair tuple**~~ — refactor-own-methods-fq-only (2026-05-27): `Box<[(String, String)]>` → `Box<[Box<str>]>` (just the qualified func name; vtable slot key derived per entry via `TypeDesc::derive_simple_method_name`). Saves one `String` allocation + 16–24 B per method on every class. `Vec<MethodId>` further-reduce target deferred (would need module-context access during `try_fixup_inheritance` — TypeDesc has no back-reference).
 
 每项独立 commit，小步前进，不依赖大改造。
 

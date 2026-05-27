@@ -142,12 +142,17 @@ pub struct TypeDescCold {
     /// fixup pass can rebuild `fields` = base.fields ++ own_fields once the
     /// base class becomes resolvable via the global type registry.
     pub own_fields: Box<[FieldSlot]>,
-    /// fix-cross-pkg-subclass-fields (2026-05-14): the (simple_method_name,
-    /// qualified_func_name) pairs **this class itself defines**, in the
-    /// order they were discovered by `build_type_registry`. Used by fixup
-    /// to rebuild `vtable` (preserving override-vs-append semantics) once
-    /// the base class becomes resolvable.
-    pub own_methods: Box<[(String, String)]>,
+    /// fix-cross-pkg-subclass-fields (2026-05-14): the **qualified func
+    /// names** of methods this class itself defines, in the order they
+    /// were discovered by `build_type_registry`. Used by fixup to rebuild
+    /// `vtable` (preserving override-vs-append semantics) once the base
+    /// class becomes resolvable.
+    ///
+    /// review.md E5.5 (2026-05-27): the simple method name (vtable slot
+    /// key) is no longer stored — it's derived at merge time via
+    /// [`TypeDesc::derive_simple_method_name`] given the owning class
+    /// name. Saves one heap allocation + 16–24 B per method.
+    pub own_methods: Box<[Box<str>]>,
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
     pub type_params: Box<[String]>,
     /// Concrete type arguments for an instantiated generic class: ["int"], ["string", "int"].
@@ -168,7 +173,7 @@ impl TypeDesc {
     }
 
     #[inline] pub fn own_fields(&self)             -> &[FieldSlot]                              { self.cold_slice(|c| &c.own_fields) }
-    #[inline] pub fn own_methods(&self)            -> &[(String, String)]                       { self.cold_slice(|c| &c.own_methods) }
+    #[inline] pub fn own_methods(&self)            -> &[Box<str>]                               { self.cold_slice(|c| &c.own_methods) }
     #[inline] pub fn type_params(&self)            -> &[String]                                 { self.cold_slice(|c| &c.type_params) }
     #[inline] pub fn type_args(&self)              -> &[String]                                 { self.cold_slice(|c| &c.type_args) }
     #[inline] pub fn type_param_constraints(&self) -> &[super::bytecode::ConstraintBundle]      { self.cold_slice(|c| &c.type_param_constraints) }
@@ -177,6 +182,29 @@ impl TypeDesc {
     #[inline]
     pub fn cold_mut(&mut self) -> &mut TypeDescCold {
         self.cold.get_or_insert_with(|| Box::new(TypeDescCold::default()))
+    }
+
+    /// review.md E5.5 (2026-05-27): derive the simple method name (vtable
+    /// slot key) from a qualified function name in `own_methods`. Strips
+    /// the owning class's `"<ClassName>."` prefix, then the arity suffix
+    /// `"$N"` (so `Foo.Bar.Method$2` → `Method`).
+    ///
+    /// Returns the input unchanged when the prefix doesn't match — a
+    /// defensive fallback that should never fire in practice because
+    /// `build_type_registry` only inserts entries with the matching
+    /// prefix.
+    #[inline]
+    pub fn derive_simple_method_name<'a>(class_name: &str, fq: &'a str) -> &'a str {
+        let dot = class_name.len();
+        if fq.len() <= dot + 1
+            || !fq.is_char_boundary(dot)
+            || !fq.as_bytes().get(dot).is_some_and(|&b| b == b'.')
+            || &fq[..dot] != class_name
+        {
+            return fq;
+        }
+        let after_prefix = &fq[dot + 1..];
+        after_prefix.split('$').next().unwrap_or(after_prefix)
     }
 }
 
