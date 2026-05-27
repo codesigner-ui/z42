@@ -173,6 +173,73 @@ void test_keccak_legacy_512_empty() {
     );
 }
 
+// ── SHAKE128 / SHAKE256: extendable-output (FIPS 202 §6.2) ──────────────
+// CAVS-style vectors: first 32 bytes of SHAKE output for empty + "abc".
+
+[Test]
+void test_shake128_empty_32_bytes() {
+    Assert.Equal(
+        "7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26",
+        Sha3.Shake128StringHex("", 32)
+    );
+}
+
+[Test]
+void test_shake256_empty_32_bytes() {
+    Assert.Equal(
+        "46b9dd2b0ba88d13233b3feb743eeb243fcd52ea62b81b82b50c27646ed5762f",
+        Sha3.Shake256StringHex("", 32)
+    );
+}
+
+[Test]
+void test_shake128_abc_32_bytes() {
+    Assert.Equal(
+        "5881092dd818bf5cf8a3ddb793fbcba74097d5c526a6d35f97b83351940f2cc8",
+        Sha3.Shake128StringHex("abc", 32)
+    );
+}
+
+[Test]
+void test_shake256_abc_32_bytes() {
+    Assert.Equal(
+        "483366601360a8771c6863080cc4114d8db44530f8f1e1ee4f94ea37e78b5739",
+        Sha3.Shake256StringHex("abc", 32)
+    );
+}
+
+[Test]
+void test_shake128_multi_block_squeeze() {
+    // 200 bytes > SHAKE128 rate (168) — forces a second Keccak-f squeeze.
+    // First 32 bytes must still match the canonical CAVS vector.
+    byte[] out_ = Sha3.Shake128String("", 200);
+    Assert.Equal(200, out_.Length);
+    // Slice first 32 bytes and hex-encode for comparison.
+    byte[] first32 = new byte[32];
+    int i = 0;
+    while (i < 32) { first32[i] = out_[i]; i = i + 1; }
+    Assert.Equal(
+        "7f9c2ba4e88f827d616045507605853ed73b8093f6efbc88eb1a6eacfa66ef26",
+        Hex.Encode(first32)
+    );
+}
+
+[Test]
+void test_shake_zero_output_returns_empty() {
+    byte[] out128 = Sha3.Shake128String("anything", 0);
+    byte[] out256 = Sha3.Shake256String("anything", 0);
+    Assert.Equal(0, out128.Length);
+    Assert.Equal(0, out256.Length);
+}
+
+[Test]
+void test_shake_rejects_negative_length() {
+    bool threw = false;
+    try { Sha3.Shake128String("x", -1); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
 [Test]
 void test_sha3_256_differs_from_sha2_256() {
     string msg = "hello world";

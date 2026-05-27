@@ -75,6 +75,37 @@ public static class Sha3 {
     public static string KeccakLegacy256StringHex(string s)  { return Hex.Encode(Sha3.KeccakLegacy256String(s)); }
     public static string KeccakLegacy512StringHex(string s)  { return Hex.Encode(Sha3.KeccakLegacy512String(s)); }
 
+    // ── SHAKE128 / SHAKE256: extendable-output functions (FIPS 202 §6.2) ─────
+    //
+    // add-sha3-shake (2026-05-27): unlike fixed-length SHA-3, SHAKE
+    // produces arbitrary-length output. Rate / capacity:
+    //   SHAKE128 : r = 168 bytes (1344 bits), capacity 256 bits → 128-bit security
+    //   SHAKE256 : r = 136 bytes (1088 bits), capacity 512 bits → 256-bit security
+    // Domain-separation byte = 0x1F (`1111` SHAKE suffix + start of
+    // multirate padding `1`).
+    //
+    // Use cases: stream cipher / DRBG seed expansion / arbitrary-length
+    // hashing for protocol IDs / hash-based signatures (SPHINCS+).
+
+    public static byte[] Shake128(byte[] data, int outputLen) {
+        if (outputLen < 0) {
+            throw new ArgumentException("Sha3.Shake128: outputLen must be ≥ 0, got " + outputLen.ToString());
+        }
+        return Sha3._sponge(data, 168, outputLen, 0x1F);
+    }
+    public static byte[] Shake256(byte[] data, int outputLen) {
+        if (outputLen < 0) {
+            throw new ArgumentException("Sha3.Shake256: outputLen must be ≥ 0, got " + outputLen.ToString());
+        }
+        return Sha3._sponge(data, 136, outputLen, 0x1F);
+    }
+    public static byte[] Shake128String(string s, int outputLen) { return Sha3.Shake128(Utf8.GetBytes(s), outputLen); }
+    public static byte[] Shake256String(string s, int outputLen) { return Sha3.Shake256(Utf8.GetBytes(s), outputLen); }
+    public static string Shake128Hex(byte[] data, int outputLen) { return Hex.Encode(Sha3.Shake128(data, outputLen)); }
+    public static string Shake256Hex(byte[] data, int outputLen) { return Hex.Encode(Sha3.Shake256(data, outputLen)); }
+    public static string Shake128StringHex(string s, int outputLen) { return Hex.Encode(Sha3.Shake128String(s, outputLen)); }
+    public static string Shake256StringHex(string s, int outputLen) { return Hex.Encode(Sha3.Shake256String(s, outputLen)); }
+
     // ── Sponge: absorb + squeeze ─────────────────────────────────────────────
 
     /// Sponge construction with rate `r` bytes, output length `d` bytes,

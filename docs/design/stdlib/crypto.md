@@ -68,6 +68,7 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - Sponge construction over Keccak-f[1600] permutation; rates r = 144 / 136 / 104 / 72 bytes (224/256/384/512); 24 rounds θ ρ π χ ι per absorb/squeeze cycle
   - Domain-separation byte `0x06` (FIPS 202)
   - Legacy Keccak (domain byte `0x01`) — `KeccakLegacy256` / `KeccakLegacy512` and their `String`/`Hex`/`StringHex` siblings — provided for Ethereum address derivation, Solidity `keccak256(bytes)` interop, and pre-FIPS Keccak tools. Mixing the two for the same input produces different hashes by design
+  - SHAKE extendable-output functions (FIPS 202 §6.2): `Shake128(data, outputLen) -> byte[]` / `Shake256(data, outputLen) -> byte[]` + parallel String/Hex/StringHex forms. Rate r = 168 / 136 bytes; domain byte `0x1F`. Arbitrary output length (squeeze loops through Keccak-f for chunks larger than r). Use cases: stream-cipher / DRBG / SPHINCS+ signatures
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
