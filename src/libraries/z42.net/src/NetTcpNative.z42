@@ -36,6 +36,16 @@ public static class NetTcpNative {
 
     [Native("__net_tcp_socket_set_write_timeout")]
     public static extern object[] SocketSetWriteTimeout(long slotId, int millis);
+
+    // add-z42-net-socket-options (2026-05-27): TCP_NODELAY + IP_TTL.
+    [Native("__net_tcp_socket_set_nodelay")]
+    public static extern object[] SocketSetNoDelay(long slotId, bool enable);
+
+    [Native("__net_tcp_socket_set_ttl")]
+    public static extern object[] SocketSetTtl(long slotId, int ttl);
+
+    [Native("__net_tcp_listener_set_ttl")]
+    public static extern object[] ListenerSetTtl(long slotId, int ttl);
 }
 
 // add-z42-net K1 (2026-05-24): decode helpers for the kind-tagged tuple

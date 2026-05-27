@@ -121,6 +121,32 @@ public class TcpClient {
         }
     }
 
+    /// add-z42-net-socket-options (2026-05-27): TCP_NODELAY (Nagle off).
+    /// Default off batches small writes for throughput; on sends
+    /// immediately for latency-sensitive protocols (HTTP/2, gaming, RPC).
+    public void SetNoDelay(bool enable) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        object[] raw = NetTcpNative.SocketSetNoDelay(this._slotId, enable);
+        long kind = (long)raw[0];
+        if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
+    }
+
+    /// add-z42-net-socket-options (2026-05-27): IP_TTL (hop limit) on the
+    /// connected socket. `ttl` ∈ [1, 255] typical (255 = unrestricted,
+    /// 1 = link-local only).
+    public void SetTtl(int ttl) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        object[] raw = NetTcpNative.SocketSetTtl(this._slotId, ttl);
+        long kind = (long)raw[0];
+        if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
+    }
+
     /// Close the socket and release the underlying fd. Idempotent.
     /// Subsequent operations throw `SocketClosedException`.
     public void Dispose() {

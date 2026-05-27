@@ -301,6 +301,99 @@ mod imp {
         Ok(Value::Null)
     }
 
+    // ── add-z42-net-socket-options (2026-05-27) ──────────────────────────
+
+    /// `__net_tcp_socket_set_nodelay(slot, enable) -> [0] | err | invalid`
+    /// Toggle TCP_NODELAY (disable Nagle's algorithm) on a connected socket.
+    pub fn builtin_net_tcp_socket_set_nodelay(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_set_nodelay";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let enable = match args.get(1) {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::I64(n))  => *n != 0,
+            other => bail!("{}: arg 1 expected bool, got {:?}", NAME, other),
+        };
+        let stream = {
+            let map = ctx.core.tcp_sockets.lock();
+            match map.get(&slot_id) {
+                Some(s) => s.try_clone(),
+                None => return Ok(handle_invalid(ctx)),
+            }
+        };
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => return Ok(socket_err(ctx, format!("set_nodelay: try_clone: {}", e))),
+        };
+        match stream.set_nodelay(enable) {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_nodelay: {}", e))),
+        }
+    }
+
+    /// `__net_tcp_socket_set_ttl(slot, ttl) -> [0] | err | invalid`
+    /// IP_TTL on the connected socket. 0 < ttl ≤ 255 typical.
+    pub fn builtin_net_tcp_socket_set_ttl(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_set_ttl";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let ttl = arg_i64(args, 1, NAME)?;
+        if ttl < 0 || ttl > u32::MAX as i64 {
+            return Ok(socket_err(ctx, format!("set_ttl: value {} out of range", ttl)));
+        }
+        let stream = {
+            let map = ctx.core.tcp_sockets.lock();
+            match map.get(&slot_id) {
+                Some(s) => s.try_clone(),
+                None => return Ok(handle_invalid(ctx)),
+            }
+        };
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => return Ok(socket_err(ctx, format!("set_ttl: try_clone: {}", e))),
+        };
+        match stream.set_ttl(ttl as u32) {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_ttl: {}", e))),
+        }
+    }
+
+    /// `__net_tcp_listener_set_ttl(slot, ttl) -> [0] | err | invalid`
+    pub fn builtin_net_tcp_listener_set_ttl(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_listener_set_ttl";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let ttl = arg_i64(args, 1, NAME)?;
+        if ttl < 0 || ttl > u32::MAX as i64 {
+            return Ok(socket_err(ctx, format!("set_ttl: value {} out of range", ttl)));
+        }
+        let map = ctx.core.tcp_listeners.lock();
+        let listener = match map.get(&slot_id) {
+            Some(l) => l,
+            None => return Ok(handle_invalid(ctx)),
+        };
+        match listener.set_ttl(ttl as u32) {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_ttl: {}", e))),
+        }
+    }
+
+    /// `__net_udp_set_ttl(slot, ttl) -> [0] | err | invalid` — unicast TTL.
+    pub fn builtin_net_udp_set_ttl(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_set_ttl";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let ttl = arg_i64(args, 1, NAME)?;
+        if ttl < 0 || ttl > u32::MAX as i64 {
+            return Ok(socket_err(ctx, format!("set_ttl: value {} out of range", ttl)));
+        }
+        let map = ctx.core.udp_sockets.lock();
+        let sock = match map.get(&slot_id) {
+            Some(s) => s,
+            None => return Ok(handle_invalid(ctx)),
+        };
+        match sock.set_ttl(ttl as u32) {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_ttl: {}", e))),
+        }
+    }
+
     // ── UDP builtins (add-z42-net-udp K2, 2026-05-25) ────────────────────
     use std::net::UdpSocket;
 
@@ -671,6 +764,18 @@ mod imp {
         Ok(unsupported(ctx))
     }
     pub fn builtin_net_dns_lookup(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_set_nodelay(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_set_ttl(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_listener_set_ttl(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_set_ttl(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(unsupported(ctx))
     }
 }

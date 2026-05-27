@@ -95,6 +95,20 @@ public class TcpListener {
         return this._bindHost;
     }
 
+    /// add-z42-net-socket-options (2026-05-27): IP_TTL on the listening
+    /// socket. Affects TTL on TCP responses (SYN-ACK) before connections
+    /// are accepted; accepted child sockets inherit the OS default unless
+    /// `TcpClient.SetTtl` is called on each.
+    public void SetTtl(int ttl) {
+        if (this._stopped) { throw new SocketClosedException(); }
+        if (!this._started) {
+            throw new InvalidOperationException("TcpListener.SetTtl called before Start");
+        }
+        object[] raw = NetTcpNative.ListenerSetTtl(this._slotId, ttl);
+        long kind = (long)raw[0];
+        if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
+    }
+
     /// Stop accepting and release the listening socket. Idempotent. Once
     /// stopped, subsequent AcceptTcpClient throws SocketClosedException.
     public void Stop() {

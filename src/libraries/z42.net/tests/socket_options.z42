@@ -1,0 +1,76 @@
+// add-z42-net-socket-options (2026-05-27): TCP_NODELAY / IP_TTL.
+namespace Z42NetSocketOptionsTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_tcp_client_set_nodelay_after_connect() {
+    var listener = TcpListener.Create("127.0.0.1", 0);
+    int port = listener.LocalPort();
+    // No accept needed — we just need a connect target; the kernel will
+    // hold the syn-ack while we set the option on our side.
+    var client = TcpClient.ConnectTo("127.0.0.1", port);
+    client.SetNoDelay(true);
+    client.SetNoDelay(false);
+    client.Dispose();
+    listener.Stop();
+}
+
+[Test]
+void test_tcp_client_set_ttl() {
+    var listener = TcpListener.Create("127.0.0.1", 0);
+    int port = listener.LocalPort();
+    var client = TcpClient.ConnectTo("127.0.0.1", port);
+    client.SetTtl(64);
+    client.SetTtl(255);
+    client.Dispose();
+    listener.Stop();
+}
+
+[Test]
+void test_tcp_client_set_ttl_out_of_range_throws() {
+    var listener = TcpListener.Create("127.0.0.1", 0);
+    int port = listener.LocalPort();
+    var client = TcpClient.ConnectTo("127.0.0.1", port);
+    bool caught = false;
+    try {
+        client.SetTtl(-1);
+    } catch (SocketException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    client.Dispose();
+    listener.Stop();
+}
+
+[Test]
+void test_tcp_listener_set_ttl() {
+    var listener = TcpListener.Create("127.0.0.1", 0);
+    listener.SetTtl(64);
+    listener.SetTtl(128);
+    listener.Stop();
+}
+
+[Test]
+void test_udp_set_ttl() {
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    u.SetTtl(64);
+    u.SetTtl(255);
+    u.Dispose();
+}
+
+[Test]
+void test_udp_set_ttl_before_bind_throws() {
+    var u = new UdpClient();
+    bool caught = false;
+    try {
+        u.SetTtl(64);
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    u.Dispose();
+}

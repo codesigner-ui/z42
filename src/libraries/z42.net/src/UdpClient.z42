@@ -248,6 +248,19 @@ public class UdpClient {
     /// loop back to the local host. Default = true (matches BSD socket
     /// default). Disabling can save a recv per send for senders that
     /// don't need to consume their own output.
+    /// add-z42-net-socket-options (2026-05-27): IP_TTL for unicast sends.
+    /// (Multicast TTL is `set_multicast_ttl_v4` — separate follow-up if
+    /// a caller needs it.)
+    public void SetTtl(int ttl) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._bound) {
+            throw new InvalidOperationException("SetTtl before Bind");
+        }
+        object[] raw = UdpNative.SetTtl(this._slotId, ttl);
+        long kind = (long)raw[0];
+        if (kind != 0) { UdpDecode.Throw(raw, kind); }
+    }
+
     public void SetMulticastLoop(bool enable) {
         if (this._disposed) { throw new SocketClosedException(); }
         if (!this._bound) {

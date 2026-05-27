@@ -365,6 +365,12 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-z42-net-dns (2026-05-27) — synchronous DNS resolution ──
     ("__net_dns_lookup",              network::builtin_net_dns_lookup),
+
+    // ── add-z42-net-socket-options (2026-05-27) — TCP_NODELAY / IP_TTL ──
+    ("__net_tcp_socket_set_nodelay",  network::builtin_net_tcp_socket_set_nodelay),
+    ("__net_tcp_socket_set_ttl",      network::builtin_net_tcp_socket_set_ttl),
+    ("__net_tcp_listener_set_ttl",    network::builtin_net_tcp_listener_set_ttl),
+    ("__net_udp_set_ttl",             network::builtin_net_udp_set_ttl),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
