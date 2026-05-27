@@ -1,0 +1,227 @@
+namespace Std.Numerics;
+
+using Std;
+using Std.Math;
+
+// add-numerics-complex (2026-05-27): immutable complex number value type
+// over `double` real + imaginary parts. Mirrors .NET BCL
+// `System.Numerics.Complex` API surface, naming convention, and
+// edge-case behaviour (Inf / NaN propagation per IEEE 754).
+//
+// Method naming follows the stdlib convention used by `BigInt`: distinct
+// method names rather than operator overloads (z42 generic op overloads
+// are deferred to L3). `a.Add(b)` instead of `a + b`.
+//
+// Examples:
+//   var z = new Complex(3.0, 4.0);          // 3 + 4i
+//   z.Magnitude()                            // 5.0
+//   z.Phase()                                // atan2(4, 3) ≈ 0.927
+//   z.Add(Complex.One).ToString()            // "(4, 4)"
+//   Complex.Exp(new Complex(0.0, Math.PI))   // ≈ -1 + 0i (Euler's identity)
+public sealed class Complex {
+    public double Real;
+    public double Imaginary;
+
+    public Complex(double real, double imaginary) {
+        this.Real      = real;
+        this.Imaginary = imaginary;
+    }
+
+    // ── Well-known constants (factories, not static fields — z42 static
+    //    init isn't run lazily so a stale process-shared instance would
+    //    suffer the same write-issue as a static `final` would) ─────────
+
+    public static Complex Zero() {
+        return new Complex(0.0, 0.0);
+    }
+
+    public static Complex One() {
+        return new Complex(1.0, 0.0);
+    }
+
+    public static Complex ImaginaryOne() {
+        return new Complex(0.0, 1.0);
+    }
+
+    // ── Polar / Cartesian conversion ────────────────────────────────────
+
+    /// Construct from polar (magnitude, phase-radians).
+    /// `magnitude < 0` is accepted (rotates the phase by π).
+    public static Complex FromPolar(double magnitude, double phase) {
+        return new Complex(magnitude * Math.Cos(phase),
+                           magnitude * Math.Sin(phase));
+    }
+
+    /// |z| — the Euclidean norm: sqrt(real² + imag²).
+    /// Uses naive form (no scaling guard); for crypto-size values where
+    /// real² overflows, scale operands first.
+    public double Magnitude() {
+        return Math.Sqrt(this.Real * this.Real + this.Imaginary * this.Imaginary);
+    }
+
+    /// Argument of z in radians, in (-π, π]. atan2(imag, real).
+    public double Phase() {
+        return Math.Atan2(this.Imaginary, this.Real);
+    }
+
+    // ── Equality / classification ──────────────────────────────────────
+
+    public bool IsZero() {
+        return this.Real == 0.0 && this.Imaginary == 0.0;
+    }
+
+    public bool IsReal() {
+        return this.Imaginary == 0.0;
+    }
+
+    public bool IsImaginary() {
+        return this.Real == 0.0 && this.Imaginary != 0.0;
+    }
+
+    public bool Equals(Complex other) {
+        return this.Real == other.Real && this.Imaginary == other.Imaginary;
+    }
+
+    // ── Field operations ────────────────────────────────────────────────
+
+    public Complex Add(Complex other) {
+        return new Complex(this.Real + other.Real,
+                           this.Imaginary + other.Imaginary);
+    }
+
+    public Complex Subtract(Complex other) {
+        return new Complex(this.Real - other.Real,
+                           this.Imaginary - other.Imaginary);
+    }
+
+    /// (a + bi)(c + di) = (ac - bd) + (ad + bc)i
+    public Complex Multiply(Complex other) {
+        double a = this.Real;
+        double b = this.Imaginary;
+        double c = other.Real;
+        double d = other.Imaginary;
+        return new Complex(a * c - b * d, a * d + b * c);
+    }
+
+    /// Scalar multiply by a real (avoids constructing `Complex(s, 0)`).
+    public Complex MultiplyReal(double s) {
+        return new Complex(this.Real * s, this.Imaginary * s);
+    }
+
+    /// (a + bi) / (c + di) = ((ac + bd) + (bc - ad)i) / (c² + d²)
+    /// Smith's algorithm chooses the larger of |c|, |d| to scale and
+    /// avoid intermediate overflow on near-magnitude operands.
+    public Complex Divide(Complex other) {
+        double a = this.Real;
+        double b = this.Imaginary;
+        double c = other.Real;
+        double d = other.Imaginary;
+        if (Math.Abs(c) >= Math.Abs(d)) {
+            if (c == 0.0) {
+                // c == d == 0 → divide-by-zero. IEEE NaN/Inf propagates.
+                double denom = c * c + d * d;
+                return new Complex((a * c + b * d) / denom,
+                                   (b * c - a * d) / denom);
+            }
+            double r = d / c;
+            double denom = c + d * r;
+            return new Complex((a + b * r) / denom,
+                               (b - a * r) / denom);
+        }
+        double r = c / d;
+        double denom = c * r + d;
+        return new Complex((a * r + b) / denom,
+                           (b * r - a) / denom);
+    }
+
+    /// Additive inverse: -(a + bi) = -a - bi
+    public Complex Negate() {
+        return new Complex(-this.Real, -this.Imaginary);
+    }
+
+    /// Complex conjugate: (a + bi)* = a - bi
+    public Complex Conjugate() {
+        return new Complex(this.Real, -this.Imaginary);
+    }
+
+    /// Multiplicative inverse: 1 / z = z* / |z|²
+    public Complex Reciprocal() {
+        if (this.IsZero()) {
+            // BCL returns Zero for 0.Reciprocal — we match for consistency.
+            return Complex.Zero();
+        }
+        double denom = this.Real * this.Real + this.Imaginary * this.Imaginary;
+        return new Complex(this.Real / denom, -this.Imaginary / denom);
+    }
+
+    // ── Transcendentals ────────────────────────────────────────────────
+
+    /// e^z = e^Real * (cos(Imag) + i*sin(Imag))  — Euler's formula.
+    public static Complex Exp(Complex z) {
+        double er = Math.Exp(z.Real);
+        return new Complex(er * Math.Cos(z.Imaginary),
+                           er * Math.Sin(z.Imaginary));
+    }
+
+    /// Principal branch of natural log: ln(z) = ln|z| + i*arg(z).
+    /// `ln(0)` returns NaN per IEEE.
+    public static Complex Log(Complex z) {
+        return new Complex(Math.Log(z.Magnitude()), z.Phase());
+    }
+
+    /// Principal square root: sqrt(re^iθ) = sqrt(r) * e^(iθ/2)
+    public static Complex Sqrt(Complex z) {
+        if (z.IsZero()) { return Complex.Zero(); }
+        double r = z.Magnitude();
+        double sqrtR = Math.Sqrt(r);
+        double halfPhase = z.Phase() * 0.5;
+        return new Complex(sqrtR * Math.Cos(halfPhase),
+                           sqrtR * Math.Sin(halfPhase));
+    }
+
+    /// sin(a + bi) = sin(a)*cosh(b) + i*cos(a)*sinh(b)
+    public static Complex Sin(Complex z) {
+        double a = z.Real;
+        double b = z.Imaginary;
+        return new Complex(Math.Sin(a) * _cosh(b),
+                           Math.Cos(a) * _sinh(b));
+    }
+
+    /// cos(a + bi) = cos(a)*cosh(b) - i*sin(a)*sinh(b)
+    public static Complex Cos(Complex z) {
+        double a = z.Real;
+        double b = z.Imaginary;
+        return new Complex(Math.Cos(a) * _cosh(b),
+                           -Math.Sin(a) * _sinh(b));
+    }
+
+    /// z^w = exp(w * ln(z)). 0^0 → 1 (BCL convention).
+    public static Complex Pow(Complex z, Complex w) {
+        if (z.IsZero()) {
+            if (w.IsZero()) { return Complex.One(); }
+            return Complex.Zero();
+        }
+        return Complex.Exp(w.Multiply(Complex.Log(z)));
+    }
+
+    // ── Display ────────────────────────────────────────────────────────
+
+    public override string ToString() {
+        return "(" + this.Real.ToString() + ", " + this.Imaginary.ToString() + ")";
+    }
+
+    // ── Internal helpers (z42 Math missing hyperbolics) ────────────────
+
+    /// cosh(x) = (e^x + e^-x) / 2. z42.math doesn't expose hyperbolic
+    /// helpers; inlined here for the trig identities.
+    static double _cosh(double x) {
+        double ex = Math.Exp(x);
+        return (ex + 1.0 / ex) * 0.5;
+    }
+
+    /// sinh(x) = (e^x - e^-x) / 2
+    static double _sinh(double x) {
+        double ex = Math.Exp(x);
+        return (ex - 1.0 / ex) * 0.5;
+    }
+}

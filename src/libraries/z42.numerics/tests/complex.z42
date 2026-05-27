@@ -1,0 +1,196 @@
+// add-numerics-complex (2026-05-27): Std.Numerics.Complex.
+namespace Z42NumericsComplexTests;
+
+using Std;
+using Std.Test;
+using Std.Math;
+using Std.Numerics;
+
+// Tolerance for floating-point comparisons (Sin / Sqrt / Exp don't round
+// to the exact rational value).
+static bool _near(double a, double b) {
+    double diff = a - b;
+    if (diff < 0.0) { diff = -diff; }
+    return diff < 1e-9;
+}
+
+[Test]
+void test_constructor_and_components() {
+    var z = new Complex(3.0, 4.0);
+    Assert.True(_near(3.0, z.Real));
+    Assert.True(_near(4.0, z.Imaginary));
+}
+
+[Test]
+void test_constants_zero_one_imaginary_one() {
+    Assert.True(Complex.Zero().IsZero());
+    Assert.True(Complex.One().IsReal());
+    Assert.True(_near(1.0, Complex.One().Real));
+    Assert.True(Complex.ImaginaryOne().IsImaginary());
+    Assert.True(_near(1.0, Complex.ImaginaryOne().Imaginary));
+}
+
+[Test]
+void test_magnitude_3_4_5() {
+    // 3-4-5 triangle: |3 + 4i| = 5
+    var z = new Complex(3.0, 4.0);
+    Assert.True(_near(5.0, z.Magnitude()));
+}
+
+[Test]
+void test_phase_of_real_one_is_zero() {
+    Assert.True(_near(0.0, Complex.One().Phase()));
+}
+
+[Test]
+void test_phase_of_imag_one_is_half_pi() {
+    Assert.True(_near(Math.Pi / 2.0, Complex.ImaginaryOne().Phase()));
+}
+
+[Test]
+void test_from_polar_round_trips_3_4() {
+    var z = new Complex(3.0, 4.0);
+    var rebuilt = Complex.FromPolar(z.Magnitude(), z.Phase());
+    Assert.True(_near(3.0, rebuilt.Real));
+    Assert.True(_near(4.0, rebuilt.Imaginary));
+}
+
+[Test]
+void test_add() {
+    var a = new Complex(1.0, 2.0);
+    var b = new Complex(3.0, 5.0);
+    var c = a.Add(b);
+    Assert.True(_near(4.0, c.Real));
+    Assert.True(_near(7.0, c.Imaginary));
+}
+
+[Test]
+void test_subtract() {
+    var a = new Complex(5.0, 7.0);
+    var b = new Complex(2.0, 3.0);
+    var c = a.Subtract(b);
+    Assert.True(_near(3.0, c.Real));
+    Assert.True(_near(4.0, c.Imaginary));
+}
+
+[Test]
+void test_multiply_i_squared_is_minus_one() {
+    // i² = -1
+    var iSquared = Complex.ImaginaryOne().Multiply(Complex.ImaginaryOne());
+    Assert.True(_near(-1.0, iSquared.Real));
+    Assert.True(_near(0.0,  iSquared.Imaginary));
+}
+
+[Test]
+void test_multiply_3_2i_times_1_4i() {
+    // (3 + 2i)(1 + 4i) = 3 + 12i + 2i + 8i² = -5 + 14i
+    var a = new Complex(3.0, 2.0);
+    var b = new Complex(1.0, 4.0);
+    var c = a.Multiply(b);
+    Assert.True(_near(-5.0, c.Real));
+    Assert.True(_near(14.0, c.Imaginary));
+}
+
+[Test]
+void test_multiply_real_scalar() {
+    var z = new Complex(2.0, -3.0);
+    var s = z.MultiplyReal(2.5);
+    Assert.True(_near(5.0, s.Real));
+    Assert.True(_near(-7.5, s.Imaginary));
+}
+
+[Test]
+void test_divide_by_self_is_one() {
+    var z = new Complex(3.0, 4.0);
+    var q = z.Divide(z);
+    Assert.True(_near(1.0, q.Real));
+    Assert.True(_near(0.0, q.Imaginary));
+}
+
+[Test]
+void test_negate() {
+    var z = new Complex(-2.0, 3.0);
+    var n = z.Negate();
+    Assert.True(_near(2.0, n.Real));
+    Assert.True(_near(-3.0, n.Imaginary));
+}
+
+[Test]
+void test_conjugate_flips_imaginary_sign() {
+    var z = new Complex(2.0, -3.0);
+    var c = z.Conjugate();
+    Assert.True(_near(2.0, c.Real));
+    Assert.True(_near(3.0, c.Imaginary));
+}
+
+[Test]
+void test_reciprocal_times_self_is_one() {
+    var z = new Complex(2.0, 3.0);
+    var prod = z.Reciprocal().Multiply(z);
+    Assert.True(_near(1.0, prod.Real));
+    Assert.True(_near(0.0, prod.Imaginary));
+}
+
+[Test]
+void test_reciprocal_of_zero_is_zero() {
+    // BCL convention.
+    Assert.True(Complex.Zero().Reciprocal().IsZero());
+}
+
+[Test]
+void test_eulers_identity_exp_i_pi_plus_one_is_zero() {
+    // e^(iπ) + 1 ≈ 0
+    var z = new Complex(0.0, Math.Pi);
+    var result = Complex.Exp(z).Add(Complex.One());
+    Assert.True(_near(0.0, result.Real));
+    Assert.True(_near(0.0, result.Imaginary));
+}
+
+[Test]
+void test_log_of_e_is_one() {
+    var e = new Complex(Math.E, 0.0);
+    var ln = Complex.Log(e);
+    Assert.True(_near(1.0, ln.Real));
+    Assert.True(_near(0.0, ln.Imaginary));
+}
+
+[Test]
+void test_sqrt_of_minus_one_is_i() {
+    var negOne = new Complex(-1.0, 0.0);
+    var root = Complex.Sqrt(negOne);
+    Assert.True(_near(0.0, root.Real));
+    Assert.True(_near(1.0, root.Imaginary));
+}
+
+[Test]
+void test_sqrt_squared_round_trip() {
+    var z = new Complex(3.0, 4.0);
+    var rt = Complex.Sqrt(z);
+    var back = rt.Multiply(rt);
+    Assert.True(_near(3.0, back.Real));
+    Assert.True(_near(4.0, back.Imaginary));
+}
+
+[Test]
+void test_pow_zero_zero_is_one_per_bcl() {
+    Assert.True(Complex.Pow(Complex.Zero(), Complex.Zero()).Equals(Complex.One()));
+}
+
+[Test]
+void test_pow_two_squared_is_four() {
+    var two = new Complex(2.0, 0.0);
+    var four = Complex.Pow(two, two);
+    Assert.True(_near(4.0, four.Real));
+    Assert.True(_near(0.0, four.Imaginary));
+}
+
+[Test]
+void test_to_string_format() {
+    Assert.Equal("(3, 4)", new Complex(3.0, 4.0).ToString());
+}
+
+[Test]
+void test_equals() {
+    Assert.True(new Complex(1.0, 2.0).Equals(new Complex(1.0, 2.0)));
+    Assert.False(new Complex(1.0, 2.0).Equals(new Complex(1.0, 3.0)));
+}
