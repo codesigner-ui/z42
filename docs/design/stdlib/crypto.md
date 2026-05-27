@@ -72,6 +72,13 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- ChaCha20-Poly1305 AEAD (RFC 8439 §2.8) — `Std.Crypto.ChaCha20Poly1305` (add-chacha20-poly1305, 2026-05-27)
+  - `Encrypt(byte[32] key, byte[12] nonce, byte[] aad, byte[] plaintext) -> byte[]` — output = ciphertext || 16-byte tag
+  - `Decrypt(byte[32] key, byte[12] nonce, byte[] aad, byte[] ctAndTag) -> byte[]` — constant-time tag verification; throws `ArgumentException` on mismatch
+  - Construction: Poly1305 one-time key derived from `ChaCha20(key, nonce, counter=0)[0..32]`; encrypt with ChaCha20 starting at counter=1; authenticate `aad || pad16(aad) || ciphertext || pad16(ciphertext) || len(aad)_8LE || len(ciphertext)_8LE`
+  - Use cases: TLS 1.3 (`TLS_CHACHA20_POLY1305_SHA256`), WireGuard transport, age file format, NaCl `crypto_aead_*`; software-friendly AEAD alternative to AES-256-GCM (no AES-NI needed)
+  - Verified against RFC 8439 §2.8.2 reference vector ("Ladies and Gentlemen of the class of '99..." + 114-byte plaintext + AAD)
+
 - Poly1305 (RFC 8439 §2.5) — `Std.Crypto.Poly1305` (add-poly1305, 2026-05-27)
   - `Mac(byte[32] key, byte[] message) -> byte[16]` — one-time authenticator over GF(2^130 - 5)
   - `MacHex(byte[32] key, byte[] message) -> string` — hex convenience

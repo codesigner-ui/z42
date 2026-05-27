@@ -1,0 +1,143 @@
+// add-chacha20-poly1305 (2026-05-27): RFC 8439 §2.8.2 + §A.5 vectors
+// for the ChaCha20-Poly1305 AEAD construction.
+namespace Z42CryptoChaCha20Poly1305VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 8439 §2.8.2: canonical AEAD test vector ─────────────────────────
+//
+// Plaintext (114 bytes): "Ladies and Gentlemen of the class of '99: ..."
+// AAD:     50515253c0c1c2c3c4c5c6c7
+// Key:     808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f
+// Nonce:   070000004041424344454647
+//
+// Expected ciphertext (114 bytes) followed by Tag (16 bytes) =
+//   d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d6
+//   3dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b36
+//   92ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc
+//   3ff4def08e4b7a9de576d26586cec64b6116
+//   1ae10b594f09e26a7e902ecbd0600691
+
+[Test]
+void test_chacha20_poly1305_rfc8439_section2_8_2() {
+    byte[] key   = Hex.Decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    byte[] nonce = Hex.Decode("070000004041424344454647");
+    byte[] aad   = Hex.Decode("50515253c0c1c2c3c4c5c6c7");
+    byte[] pt    = Hex.Decode("4c616469657320616e642047656e746c656d656e206f662074686520636c617373206f66202739393a204966204920636f756c64206f6666657220796f75206f6e6c79206f6e652074697020666f7220746865206675747572652c2073756e73637265656e20776f756c642062652069742e");
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    Assert.Equal(
+        "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b61161ae10b594f09e26a7e902ecbd0600691",
+        Hex.Encode(enc)
+    );
+}
+
+// ── Round trip ──────────────────────────────────────────────────────────
+
+[Test]
+void test_chacha20_poly1305_round_trip() {
+    byte[] key   = Hex.Decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    byte[] nonce = Hex.Decode("070000004041424344454647");
+    byte[] aad   = Hex.Decode("50515253c0c1c2c3c4c5c6c7");
+    byte[] pt    = Hex.Decode("4c616469657320616e642047656e746c656d656e206f662074686520636c617373206f66202739393a204966204920636f756c64206f6666657220796f75206f6e6c79206f6e652074697020666f7220746865206675747572652c2073756e73637265656e20776f756c642062652069742e");
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    byte[] dec   = ChaCha20Poly1305.Decrypt(key, nonce, aad, enc);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+// ── Empty AAD + non-empty plaintext ─────────────────────────────────────
+
+[Test]
+void test_chacha20_poly1305_empty_aad_round_trip() {
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[12];
+    byte[] aad   = new byte[0];
+    byte[] pt    = Hex.Decode("0102030405060708090a0b0c0d0e0f10");
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    Assert.Equal(32, enc.Length);  // 16 (pt) + 16 (tag)
+    byte[] dec   = ChaCha20Poly1305.Decrypt(key, nonce, aad, enc);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+// ── Empty plaintext + non-empty AAD ─────────────────────────────────────
+
+[Test]
+void test_chacha20_poly1305_empty_pt_with_aad() {
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[12];
+    byte[] aad   = Hex.Decode("0102030405");
+    byte[] pt    = new byte[0];
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    Assert.Equal(16, enc.Length);  // tag only
+    byte[] dec   = ChaCha20Poly1305.Decrypt(key, nonce, aad, enc);
+    Assert.Equal(0, dec.Length);
+}
+
+// ── Tamper detection ────────────────────────────────────────────────────
+
+[Test]
+void test_chacha20_poly1305_detects_ciphertext_tampering() {
+    byte[] key   = Hex.Decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    byte[] nonce = Hex.Decode("070000004041424344454647");
+    byte[] aad   = Hex.Decode("aabbccdd");
+    byte[] pt    = Hex.Decode("0102030405060708090a0b0c0d0e0f10");
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    enc[0] = (byte)((int)enc[0] ^ 0x01);  // flip a bit in the ciphertext
+    bool threw = false;
+    try { ChaCha20Poly1305.Decrypt(key, nonce, aad, enc); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_chacha20_poly1305_detects_aad_tampering() {
+    byte[] key   = Hex.Decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    byte[] nonce = Hex.Decode("070000004041424344454647");
+    byte[] aad   = Hex.Decode("aabbccdd");
+    byte[] pt    = Hex.Decode("0102030405060708090a0b0c0d0e0f10");
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    byte[] wrongAad = Hex.Decode("aabbccde");  // last byte flipped
+    bool threw = false;
+    try { ChaCha20Poly1305.Decrypt(key, nonce, wrongAad, enc); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_chacha20_poly1305_detects_tag_tampering() {
+    byte[] key   = Hex.Decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    byte[] nonce = Hex.Decode("070000004041424344454647");
+    byte[] aad   = new byte[0];
+    byte[] pt    = Hex.Decode("0102030405060708090a0b0c0d0e0f10");
+    byte[] enc   = ChaCha20Poly1305.Encrypt(key, nonce, aad, pt);
+    enc[enc.Length - 1] = (byte)((int)enc[enc.Length - 1] ^ 0x01);  // flip last byte of tag
+    bool threw = false;
+    try { ChaCha20Poly1305.Decrypt(key, nonce, aad, enc); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Validation ──────────────────────────────────────────────────────────
+
+[Test]
+void test_chacha20_poly1305_rejects_wrong_key_length() {
+    byte[] key   = new byte[31];
+    byte[] nonce = new byte[12];
+    bool threw = false;
+    try { ChaCha20Poly1305.Encrypt(key, nonce, new byte[0], new byte[16]); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_chacha20_poly1305_rejects_short_input() {
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[12];
+    byte[] tooShort = new byte[15];
+    bool threw = false;
+    try { ChaCha20Poly1305.Decrypt(key, nonce, new byte[0], tooShort); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}

@@ -1,0 +1,127 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-chacha20-poly1305 (2026-05-27): ChaCha20-Poly1305 AEAD (RFC 8439 §2.8).
+//
+// Construction:
+//   1. Derive Poly1305 one-time key (otk) from ChaCha20(key, nonce, counter=0).
+//      Only the first 32 bytes of the 64-byte block are used; the rest is
+//      discarded so the otk is independent of the encryption keystream.
+//   2. Encrypt plaintext with ChaCha20 starting at counter=1.
+//   3. Authenticate: tag = Poly1305(otk, aad || pad16(aad) || ciphertext ||
+//      pad16(ciphertext) || len(aad)_8LE || len(ciphertext)_8LE).
+//   4. Output = ciphertext || 16-byte tag.
+//
+// `pad16(x)` = zero-bytes to bring x's length up to the next 16-byte boundary
+// (none if already aligned).
+//
+// Use cases: TLS 1.3 (cipher suite TLS_CHACHA20_POLY1305_SHA256),
+// WireGuard transport encryption, age file format, NaCl `crypto_aead_*`.
+// Drop-in alternative to AES-256-GCM with comparable security and a
+// software-friendly performance profile (no AES-NI needed).
+
+public static class ChaCha20Poly1305 {
+    /// Encrypt + authenticate. Output = ciphertext (same length as
+    /// `plaintext`) || tag (16 bytes appended).
+    public static byte[] Encrypt(byte[] key, byte[] nonce, byte[] aad, byte[] plaintext) {
+        if (key.Length != 32) {
+            throw new ArgumentException("ChaCha20Poly1305: key must be 32 bytes");
+        }
+        if (nonce.Length != 12) {
+            throw new ArgumentException("ChaCha20Poly1305: nonce must be 12 bytes");
+        }
+        // Step 1: derive Poly1305 one-time key.
+        byte[] block0 = ChaCha20.Block(key, nonce, 0);
+        byte[] otk = new byte[32];
+        int i = 0;
+        while (i < 32) { otk[i] = block0[i]; i = i + 1; }
+        // Step 2: encrypt plaintext (counter starts at 1).
+        byte[] ciphertext = ChaCha20.Crypt(key, nonce, 1, plaintext);
+        // Step 3: compute MAC.
+        byte[] tag = ChaCha20Poly1305._computeTag(otk, aad, ciphertext);
+        // Step 4: concatenate.
+        byte[] out_ = new byte[ciphertext.Length + 16];
+        int p = 0;
+        while (p < ciphertext.Length) { out_[p] = ciphertext[p]; p = p + 1; }
+        int q = 0;
+        while (q < 16) { out_[ciphertext.Length + q] = tag[q]; q = q + 1; }
+        return out_;
+    }
+
+    /// Decrypt + verify. Input = ciphertext || 16-byte tag. Throws
+    /// `ArgumentException` if the tag mismatches (do NOT swallow this —
+    /// failure means the ciphertext or AAD was tampered with).
+    public static byte[] Decrypt(byte[] key, byte[] nonce, byte[] aad, byte[] ctAndTag) {
+        if (key.Length != 32) {
+            throw new ArgumentException("ChaCha20Poly1305: key must be 32 bytes");
+        }
+        if (nonce.Length != 12) {
+            throw new ArgumentException("ChaCha20Poly1305: nonce must be 12 bytes");
+        }
+        if (ctAndTag.Length < 16) {
+            throw new ArgumentException("ChaCha20Poly1305: input shorter than 16-byte tag");
+        }
+        int ctLen = ctAndTag.Length - 16;
+        byte[] ciphertext = new byte[ctLen];
+        int i = 0;
+        while (i < ctLen) { ciphertext[i] = ctAndTag[i]; i = i + 1; }
+        byte[] expected = new byte[16];
+        int j = 0;
+        while (j < 16) { expected[j] = ctAndTag[ctLen + j]; j = j + 1; }
+        // Derive otk + compute expected tag.
+        byte[] block0 = ChaCha20.Block(key, nonce, 0);
+        byte[] otk = new byte[32];
+        int k = 0;
+        while (k < 32) { otk[k] = block0[k]; k = k + 1; }
+        byte[] actual = ChaCha20Poly1305._computeTag(otk, aad, ciphertext);
+        // Constant-time compare.
+        int diff = 0;
+        int t = 0;
+        while (t < 16) {
+            diff = diff | ((int)actual[t] ^ (int)expected[t]);
+            t = t + 1;
+        }
+        if (diff != 0) {
+            throw new ArgumentException(
+                "ChaCha20Poly1305: authentication tag mismatch — ciphertext or AAD tampered");
+        }
+        // Tag OK — decrypt and return plaintext.
+        return ChaCha20.Crypt(key, nonce, 1, ciphertext);
+    }
+
+    /// Build the Poly1305 input from AAD + ciphertext + length-trailers
+    /// per RFC 8439 §2.8.1, then compute the 16-byte tag.
+    static byte[] _computeTag(byte[] otk, byte[] aad, byte[] ciphertext) {
+        int aadPad = (16 - (aad.Length % 16)) % 16;
+        int ctPad  = (16 - (ciphertext.Length % 16)) % 16;
+        int total  = aad.Length + aadPad + ciphertext.Length + ctPad + 16;
+        byte[] buf = new byte[total];
+        int off = 0;
+        int i = 0;
+        while (i < aad.Length) { buf[off + i] = aad[i]; i = i + 1; }
+        off = off + aad.Length + aadPad;
+        int j = 0;
+        while (j < ciphertext.Length) { buf[off + j] = ciphertext[j]; j = j + 1; }
+        off = off + ciphertext.Length + ctPad;
+        // Length trailers: 8-byte little-endian byte counts (NOT bit counts
+        // — unlike GCM, RFC 8439 uses bytes).
+        long aadLen = (long)aad.Length;
+        long ctLen  = (long)ciphertext.Length;
+        ChaCha20Poly1305._writeLE64(buf, off,     aadLen);
+        ChaCha20Poly1305._writeLE64(buf, off + 8, ctLen);
+        return Poly1305.Mac(otk, buf);
+    }
+
+    static void _writeLE64(byte[] b, int o, long v) {
+        b[o]     = (byte)(v & 0xFFL);
+        b[o + 1] = (byte)((v >> 8)  & 0xFFL);
+        b[o + 2] = (byte)((v >> 16) & 0xFFL);
+        b[o + 3] = (byte)((v >> 24) & 0xFFL);
+        b[o + 4] = (byte)((v >> 32) & 0xFFL);
+        b[o + 5] = (byte)((v >> 40) & 0xFFL);
+        b[o + 6] = (byte)((v >> 48) & 0xFFL);
+        b[o + 7] = (byte)((v >> 56) & 0xFFL);
+    }
+}
