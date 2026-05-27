@@ -1,6 +1,7 @@
 namespace Std.Net.Http;
 
 using Std;
+using Std.Encoding;
 
 // add-z42-net-http K3 (2026-05-25): outgoing HTTP request container.
 //
@@ -37,6 +38,28 @@ public class HttpRequest {
     /// by `HttpClient.Send`.
     public HttpRequest SetBody(byte[] body) {
         this.Body = body;
+        return this;
+    }
+
+    /// add-z42-net-http-auth (2026-05-27): RFC 7617 HTTP Basic auth.
+    ///   Authorization: Basic base64(user:password)
+    /// Overwrites any existing Authorization header. NOTE: Basic transmits
+    /// credentials in plaintext (base64 is encoding, not encryption) — only
+    /// use over TLS / HTTPS, or on trusted internal networks.
+    public HttpRequest WithBasicAuth(string user, string password) {
+        string creds = user + ":" + password;
+        byte[] credBytes = Utf8.GetBytes(creds);
+        string b64 = Base64.Encode(credBytes);
+        this.Headers.Set("Authorization", "Basic " + b64);
+        return this;
+    }
+
+    /// add-z42-net-http-auth (2026-05-27): RFC 6750 §2.1 Bearer token auth.
+    ///   Authorization: Bearer <token>
+    /// Used by OAuth 2.0 access tokens, GitHub PATs, JWT-based APIs, etc.
+    /// Overwrites any existing Authorization header.
+    public HttpRequest WithBearerToken(string token) {
+        this.Headers.Set("Authorization", "Bearer " + token);
         return this;
     }
 }
