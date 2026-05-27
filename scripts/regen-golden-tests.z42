@@ -1,0 +1,292 @@
+// port-regen-golden-tests (2026-05-27): regen-golden-tests.sh → z42 self-host.
+//
+// Mirrors scripts/regen-golden-tests.sh (139 LOC bash):
+//   1. Optional stdlib rebuild via build-stdlib.sh (skipped with --no-stdlib;
+//      bash wrapper invokes it before exec'ing us)
+//   2. Locate driver DLL; build z42.Driver if missing
+//   3. Enumerate golden test cases in two layouts:
+//        Dir mode:  <root>/<cat>/<name>/source.z42 → <...>/source.zbc
+//        Flat mode: src/tests/<cat>/<name>.z42     → src/tests/<cat>/<name>.zbc
+//      where <root> ∈ {src/tests, src/libraries/<lib>/tests}.
+//      Excluded categories under src/tests: errors / parse / cross-zpkg.
+//   4. For each case: `dotnet <driver.dll> <source> --emit zbc -o <output>`
+//   5. Tally + exit non-zero on any failure
+//
+// Bash entry point: scripts/regen-golden-tests.sh — bootstraps toolchain,
+// translates positional `release` to `--release`, runs build-stdlib unless
+// `--no-stdlib`, then exec's `dotnet run --project z42.Driver -- run
+// scripts/regen-golden-tests.z42 [--release]`.
+namespace Z42RegenGoldenTestsScript;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+
+void Main() {
+    string root = Environment.GetCurrentDirectory();
+
+    // ── CLI ──────────────────────────────────────────────────────────────
+    var p = new ArgParser("regen-golden-tests",
+        "Recompile golden test source.z42 → source.zbc artifacts");
+    p.AddFlag("release", "r", "Build in Release configuration (default Debug)");
+    ParseResult r;
+    try {
+        r = p.Parse(_argvSlice());
+    } catch (CliException e) {
+        ConsoleError.WriteLine("error: " + e.Message);
+        Environment.Exit(2);
+        return;
+    }
+    if (r.ShowHelp()) {
+        Console.WriteLine(p.HelpText());
+        return;
+    }
+    string buildConfig = r.GetFlag("release") ? "Release" : "Debug";
+
+    // ── Driver DLL location & build-if-missing ───────────────────────────
+    string driverDll = Path.Join(root,
+        "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    if (!File.Exists(driverDll)) {
+        Console.WriteLine("Building compiler (" + buildConfig + ")...");
+        ProcessResult br = new Process("dotnet")
+            .Arg("build").Arg("-q")
+            .Arg(Path.Join(root, "src/compiler/z42.Driver/z42.Driver.csproj"))
+            .Arg("-c").Arg(buildConfig)
+            .Stdout(Stdio.Inherit())
+            .Stderr(Stdio.Inherit())
+            .Run();
+        if (br.ExitCode != 0) {
+            Environment.Exit(br.ExitCode);
+            return;
+        }
+    }
+    if (!File.Exists(driverDll)) {
+        ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);
+        Environment.Exit(1);
+        return;
+    }
+
+    Console.WriteLine("Regenerating golden test artifacts...");
+    Console.WriteLine("");
+
+    // ── Enumerate cases ──────────────────────────────────────────────────
+    // Use parallel growable arrays: (name, source, output).
+    string[] caseNames    = new string[64];
+    string[] caseSources  = new string[64];
+    string[] caseOutputs  = new string[64];
+    int      caseCount    = 0;
+
+    // Dir mode part 1: src/tests/<cat>/<name>/source.z42
+    string testsRoot = Path.Join(root, "src/tests");
+    string[] testCats = _enumDirsSorted(testsRoot);
+    int ci = 0;
+    while (ci < testCats.Length) {
+        string cat = testCats[ci];
+        if (_isExcludedCategory(cat)) { ci = ci + 1; continue; }
+        string catDir = Path.Join(testsRoot, cat);
+        string[] names = _enumDirsSorted(catDir);
+        int ni = 0;
+        while (ni < names.Length) {
+            string name = names[ni];
+            string caseDir = Path.Join(catDir, name);
+            string src = Path.Join(caseDir, "source.z42");
+            if (File.Exists(src)) {
+                string outPath = Path.Join(caseDir, "source.zbc");
+                caseNames   = _append(caseNames,   caseCount, name);
+                caseSources = _append(caseSources, caseCount, src);
+                caseOutputs = _append(caseOutputs, caseCount, outPath);
+                caseCount = caseCount + 1;
+            }
+            ni = ni + 1;
+        }
+        ci = ci + 1;
+    }
+
+    // Dir mode part 2: src/libraries/<lib>/tests/<name>/source.z42
+    string libsRoot = Path.Join(root, "src/libraries");
+    string[] libs = _enumDirsSorted(libsRoot);
+    int li = 0;
+    while (li < libs.Length) {
+        string libTestsDir = Path.Join(libsRoot, libs[li] + "/tests");
+        if (Directory.Exists(libTestsDir)) {
+            string[] names = _enumDirsSorted(libTestsDir);
+            int ni = 0;
+            while (ni < names.Length) {
+                string name = names[ni];
+                string caseDir = Path.Join(libTestsDir, name);
+                string src = Path.Join(caseDir, "source.z42");
+                if (File.Exists(src)) {
+                    string outPath = Path.Join(caseDir, "source.zbc");
+                    caseNames   = _append(caseNames,   caseCount, name);
+                    caseSources = _append(caseSources, caseCount, src);
+                    caseOutputs = _append(caseOutputs, caseCount, outPath);
+                    caseCount = caseCount + 1;
+                }
+                ni = ni + 1;
+            }
+        }
+        li = li + 1;
+    }
+
+    // Flat mode: src/tests/<cat>/<name>.z42 (one level, not source.z42 in subdir)
+    ci = 0;
+    while (ci < testCats.Length) {
+        string cat = testCats[ci];
+        if (_isExcludedCategory(cat)) { ci = ci + 1; continue; }
+        string catDir = Path.Join(testsRoot, cat);
+        string[] entries = Path.Glob(catDir, "*.z42");
+        int ei = 0;
+        while (ei < entries.Length) {
+            string flatPath = entries[ei];
+            if (File.Exists(flatPath)) {
+                string name = Path.GetFileNameWithoutExtension(flatPath);
+                string outPath = Path.Join(catDir, name + ".zbc");
+                caseNames   = _append(caseNames,   caseCount, name);
+                caseSources = _append(caseSources, caseCount, flatPath);
+                caseOutputs = _append(caseOutputs, caseCount, outPath);
+                caseCount = caseCount + 1;
+            }
+            ei = ei + 1;
+        }
+        ci = ci + 1;
+    }
+
+    // ── Compile each case ────────────────────────────────────────────────
+    int pass = 0;
+    int fail = 0;
+    string[] failures = new string[8];
+    int      failCount = 0;
+    int k = 0;
+    while (k < caseCount) {
+        string name = caseNames[k];
+        string src  = caseSources[k];
+        string outPath = caseOutputs[k];
+        bool ok = _compileCase(driverDll, src, outPath);
+        if (ok) {
+            Console.WriteLine("  OK:   " + name);
+            pass = pass + 1;
+        } else {
+            Console.WriteLine("  FAIL: " + name);
+            fail = fail + 1;
+            failures = _append(failures, failCount, name);
+            failCount = failCount + 1;
+        }
+        k = k + 1;
+    }
+
+    Console.WriteLine("");
+    Console.WriteLine("══════════════════════════════════════");
+    Console.WriteLine(" Regenerated: " + pass.ToString() + " ok, "
+        + fail.ToString() + " failed, 0 skipped");
+    Console.WriteLine("══════════════════════════════════════");
+
+    if (failCount > 0) {
+        Console.WriteLine("");
+        Console.WriteLine("Failed tests:");
+        int fi = 0;
+        while (fi < failCount) {
+            Console.WriteLine("  - " + failures[fi]);
+            fi = fi + 1;
+        }
+        Environment.Exit(1);
+        return;
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+bool _isExcludedCategory(string cat) {
+    return cat == "errors" || cat == "parse" || cat == "cross-zpkg";
+}
+
+bool _compileCase(string driverDll, string source, string output) {
+    try {
+        ProcessResult r = new Process("dotnet")
+            .Arg(driverDll)
+            .Arg(source)
+            .Arg("--emit").Arg("zbc")
+            .Arg("-o").Arg(output)
+            .Stdout(Stdio.Null())
+            .Stderr(Stdio.Null())
+            .Run();
+        return r.ExitCode == 0;
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+// Enumerate immediate subdirectories of `dir`, returning sorted basenames.
+// Filters Directory.Enumerate results (which can include files) to dirs only.
+// Sort enforces cross-OS determinism per common-pitfalls.md §1.
+string[] _enumDirsSorted(string dir) {
+    if (!Directory.Exists(dir)) { return new string[0]; }
+    string[] entries = Directory.Enumerate(dir);
+    // First pass: count subdirs
+    int n = 0;
+    int i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) { n = n + 1; }
+        i = i + 1;
+    }
+    string[] subs = new string[n];
+    int j = 0;
+    i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) {
+            subs[j] = entries[i];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    _sortStrings(subs);
+    return subs;
+}
+
+void _sortStrings(string[] arr) {
+    int i = 1;
+    while (i < arr.Length) {
+        string key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && key.CompareTo(arr[j]) < 0) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+}
+
+string[] _append(string[] arr, int count, string v) {
+    if (count < arr.Length) {
+        arr[count] = v;
+        return arr;
+    }
+    int newCap = arr.Length * 2;
+    if (newCap < 4) { newCap = 4; }
+    string[] bigger = new string[newCap];
+    int i = 0;
+    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+    bigger[count] = v;
+    return bigger;
+}
+
+// Slice argv after `--mode <mode>` (the z42 driver's CLI shape).
+// Falls back to argv[3..] (vm + zbc + entry) when not found.
+string[] _argvSlice() {
+    string[] all = Environment.GetCommandLineArgs();
+    int start = 0;
+    int i = 0;
+    while (i < all.Length) {
+        if (all[i] == "--mode" && i + 1 < all.Length) { start = i + 2; i = i + 2; continue; }
+        i = i + 1;
+    }
+    if (start == 0) {
+        if (all.Length >= 3) { start = 3; }
+        else { start = all.Length; }
+    }
+    int n = all.Length - start;
+    string[] slice = new string[n];
+    int j = 0;
+    while (j < n) { slice[j] = all[start + j]; j = j + 1; }
+    return slice;
+}

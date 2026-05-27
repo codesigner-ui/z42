@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# scripts/regen-golden-tests.sh — Recompile all golden test source.z42 → source.zbc.
+# scripts/regen-golden-tests.sh — bootstrap stub for the z42 implementation.
 #
-# Run this after compiler changes to regenerate the VM golden test artifacts.
-# The resulting source.zbc files are checked into the repo and used by test-vm.sh.
-#
-# Default behaviour rebuilds the stdlib zpkgs first (via build-stdlib.sh) and
-# syncs them to artifacts/build/libs/release/. This guarantees user-facing golden sources
-# that import stdlib types compile against the latest stdlib IR / signatures
-# (2026-05-04 fix-test-vm-stale-artifacts: prior independent invocations could
-# silently emit zbc against stale stdlib because nothing forced a sync).
+# 2026-05-27 port-regen-golden-tests: 主体迁移到 scripts/regen-golden-tests.z42.
+# bash stub 处理 self-host 边界：
+#   1. cd 到 repo root
+#   2. 解析 legacy CLI（`release` 位置参数 + `--no-stdlib` flag）
+#   3. 编译 toolchain（dotnet build z42.Driver）
+#   4. 默认调用 build-stdlib.sh（除非 --no-stdlib）— 保证 golden test 编译
+#      面对的是最新 stdlib（fix-test-vm-stale-artifacts 2026-05-04）
+#   5. 调度到 scripts/regen-golden-tests.z42（接管枚举 + 编译 + 报告）
 #
 # Usage:
 #   ./scripts/regen-golden-tests.sh                  # debug build, rebuild stdlib
@@ -18,22 +18,17 @@
 
 set -euo pipefail
 
-# Resolve project root regardless of working directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
-GOLDEN_GLOBS=(
-    "src/tests/"*"/"*"/"
-    "src/libraries/"*"/tests/"*"/"
-)
-COMPILER_DRIVER="src/compiler/z42.Driver/z42.Driver.csproj"
-
+# Translate legacy positional CLI → z42 flag form.
 BUILD_CONFIG="Debug"
 REBUILD_STDLIB=true
+Z42_ARGS=()
 for arg in "$@"; do
     case "$arg" in
-        release)      BUILD_CONFIG="Release" ;;
+        release)      BUILD_CONFIG="Release"; Z42_ARGS+=(--release) ;;
         --no-stdlib)  REBUILD_STDLIB=false ;;
     esac
 done
@@ -48,92 +43,18 @@ if [ "$REBUILD_STDLIB" = true ]; then
     echo ""
 fi
 
-# Locate the driver DLL (output name is z42c.dll per z42.Driver.csproj).
+# Build only the compiler driver (z42c.dll) — not the full solution.
+# Building z42.slnx here triggers Microsoft.CodeCoverage targets on
+# z42.Tests which fail with MSB3492 when the mapping file from a prior
+# build exists. Reuse a prior artifact when present (CI pipelines pre-build
+# the slnx in an earlier wave).
 DRIVER_DLL="artifacts/build/compiler/z42.Driver/bin/z42c.dll"
-
-# Reuse an existing driver build when one is already on disk (CI pipelines
-# like test-all.sh --parallel always do `dotnet build src/compiler/z42.slnx`
-# in an earlier wave; rebuilding here trips MSB3492 because the slnx build
-# primed obj/.../AssemblyInfoInputs.cache for the Tests + CodeCoverage path
-# and the Driver-only incremental rebuild can't read it consistently).
-# Fall through to a Driver-only build only when no prior artifact exists.
 if [ ! -f "$DRIVER_DLL" ]; then
-    # Build only the compiler driver (z42c.dll) — not the full solution.
-    # Building z42.slnx here triggers Microsoft.CodeCoverage targets on
-    # z42.Tests which fail with MSB3492 when the mapping file from a prior
-    # build exists.
     echo "Building compiler (${BUILD_CONFIG})..."
-    dotnet build -q "$COMPILER_DRIVER" -c "$BUILD_CONFIG"
+    dotnet build -q src/compiler/z42.Driver/z42.Driver.csproj -c "$BUILD_CONFIG"
 fi
 
-if [ ! -f "$DRIVER_DLL" ]; then
-    echo "error: driver DLL not found at $DRIVER_DLL"
-    exit 1
-fi
-
-echo "Regenerating golden test artifacts..."
-echo ""
-
-PASS=0
-FAIL=0
-SKIP=0
-FAILURES=()
-
-# Enumerate cases in two layouts:
-#   Dir mode:  <root>/<name>/source.z42   → <root>/<name>/source.zbc
-#   Flat mode: <root>/<name>.z42          → <root>/<name>.zbc
-# CASES holds "name|source|output" tuples (| as separator since paths have no |).
-CASES=()
-# Dir mode
-for glob in "${GOLDEN_GLOBS[@]}"; do
-    for d in $glob; do
-        [ -d "$d" ] || continue
-        case "$d" in
-            src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
-        esac
-        [ -f "$d/source.z42" ] || continue
-        name=$(basename "$d")
-        CASES+=("$name|$d/source.z42|$d/source.zbc")
-    done
-done
-# Flat mode (only under src/tests/; src/libraries/<lib>/tests/*.z42 belongs
-# to the z42-test-runner via scripts/test-stdlib.sh, not the golden runner).
-for f in "src/tests/"*"/"*".z42"; do
-    [ -f "$f" ] || continue
-    case "$f" in
-        src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
-    esac
-    name=$(basename "$f" .z42)
-    dir=$(dirname "$f")
-    CASES+=("$name|$f|$dir/$name.zbc")
-done
-
-for entry in "${CASES[@]}"; do
-    name="${entry%%|*}"
-    rest="${entry#*|}"
-    source="${rest%%|*}"
-    output="${rest##*|}"
-
-    if dotnet "$DRIVER_DLL" "$source" --emit zbc -o "$output" 2>/dev/null; then
-        echo "  OK:   $name"
-        PASS=$((PASS + 1))
-    else
-        echo "  FAIL: $name"
-        FAIL=$((FAIL + 1))
-        FAILURES+=("$name")
-    fi
-done
-
-echo ""
-echo "══════════════════════════════════════"
-echo " Regenerated: $PASS ok, $FAIL failed, $SKIP skipped"
-echo "══════════════════════════════════════"
-
-if [ "${#FAILURES[@]}" -gt 0 ]; then
-    echo ""
-    echo "Failed tests:"
-    for f in "${FAILURES[@]}"; do
-        echo "  - $f"
-    done
-    exit 1
-fi
+# Hand off to the z42 implementation. Use --no-build because the bootstrap
+# above already built the driver in the requested configuration.
+exec dotnet run --project src/compiler/z42.Driver --verbosity quiet --no-build -- \
+    run scripts/regen-golden-tests.z42 "${Z42_ARGS[@]+"${Z42_ARGS[@]}"}"
