@@ -135,3 +135,96 @@ void test_ctr_empty_input_returns_empty() {
     byte[] enc   = Aes.EncryptCtr(key, nonce, data);
     Assert.Equal(0, enc.Length);
 }
+
+// ── CBC mode: NIST SP 800-38A §F.2.1 (CBC-AES128.Encrypt) ───────────────
+// Verify that the first 4 ciphertext blocks of a PKCS#7-padded encryption
+// match the NIST raw-CBC reference. The 5th block is the PKCS#7 full-block
+// padding (mandatory when input is already 16-byte aligned).
+
+[Test]
+void test_aes128_cbc_pkcs7_matches_nist_f21_ciphertext_blocks() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] pt   = Hex.Decode("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710");
+    byte[] enc  = Aes.EncryptCbcPkcs7(key, iv, pt);
+    // 64-byte input + 16-byte PKCS#7 pad block = 80 bytes
+    Assert.Equal(80, enc.Length);
+    // Extract first 64 bytes (the raw NIST-equivalent ciphertext).
+    byte[] firstFour = new byte[64];
+    int i = 0;
+    while (i < 64) { firstFour[i] = enc[i]; i = i + 1; }
+    Assert.Equal(
+        "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b273bed6b8e3c1743b7116e69e222295163ff1caa1681fac09120eca307586e1a7",
+        Hex.Encode(firstFour)
+    );
+}
+
+[Test]
+void test_aes128_cbc_pkcs7_round_trip() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] pt   = Hex.Decode("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710");
+    byte[] enc  = Aes.EncryptCbcPkcs7(key, iv, pt);
+    byte[] dec  = Aes.DecryptCbcPkcs7(key, iv, enc);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+[Test]
+void test_aes256_cbc_pkcs7_round_trip_partial_block() {
+    byte[] key  = Hex.Decode("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4");
+    byte[] iv   = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    // 17 bytes — non-block-aligned; PKCS#7 pads with 15 × 0x0F
+    byte[] pt   = Hex.Decode("6bc1bee22e409f96e93d7e117393172a01");
+    byte[] enc  = Aes.EncryptCbcPkcs7(key, iv, pt);
+    // 17 → 32 bytes after padding to next 16-boundary
+    Assert.Equal(32, enc.Length);
+    byte[] dec  = Aes.DecryptCbcPkcs7(key, iv, enc);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+[Test]
+void test_cbc_pkcs7_empty_input_produces_padding_block() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] pt   = new byte[0];
+    byte[] enc  = Aes.EncryptCbcPkcs7(key, iv, pt);
+    Assert.Equal(16, enc.Length);  // PKCS#7: empty input gets full padding block
+    byte[] dec  = Aes.DecryptCbcPkcs7(key, iv, enc);
+    Assert.Equal(0, dec.Length);
+}
+
+[Test]
+void test_cbc_decrypt_rejects_truncated_ciphertext() {
+    byte[] key  = new byte[16];
+    byte[] iv   = new byte[16];
+    byte[] ct   = new byte[15];  // not a multiple of 16
+    bool threw = false;
+    try { Aes.DecryptCbcPkcs7(key, iv, ct); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_cbc_decrypt_rejects_wrong_iv_length() {
+    byte[] key  = new byte[16];
+    byte[] iv   = new byte[15];
+    byte[] ct   = new byte[16];
+    bool threw = false;
+    try { Aes.DecryptCbcPkcs7(key, iv, ct); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_cbc_decrypt_detects_corrupted_padding() {
+    byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");
+    byte[] iv   = Hex.Decode("000102030405060708090a0b0c0d0e0f");
+    byte[] pt   = Hex.Decode("00010203040506070809");
+    byte[] enc  = Aes.EncryptCbcPkcs7(key, iv, pt);
+    // Flip a bit in the last byte → padding-validation must reject.
+    enc[enc.Length - 1] = (byte)((int)enc[enc.Length - 1] ^ 0x01);
+    bool threw = false;
+    try { Aes.DecryptCbcPkcs7(key, iv, enc); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}

@@ -67,12 +67,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `DecryptBlock(byte[] key, byte[16] ciphertext) -> byte[16]`
   - `EncryptCtr(byte[] key, byte[8] nonce, byte[] data) -> byte[]` — RFC 3686-style nonce||counter CTR mode
   - `DecryptCtr(byte[] key, byte[8] nonce, byte[] data) -> byte[]` — symmetric, same as encrypt
+  - `EncryptCbcPkcs7(byte[] key, byte[16] iv, byte[] data) -> byte[]` — CBC mode with PKCS#7 padding (RFC 5652 §6.3); output length is always a positive multiple of 16, full padding block appended when input is already aligned
+  - `DecryptCbcPkcs7(byte[] key, byte[16] iv, byte[] data) -> byte[]` — validates + strips PKCS#7 padding; throws `ArgumentException` on malformed padding (likely wrong key/IV/corrupted ciphertext)
   - Key length selects variant: 16 bytes = AES-128, 24 = AES-192, 32 = AES-256
   - Pure-script implementation (matches Sha256 / Hmac / Hkdf pattern): KeyExpansion + SubBytes / ShiftRows / MixColumns over GF(2^8); flat `int[]` round-key layout because z42 lacks `int[][]` jagged arrays
-  - Verified against FIPS 197 §C.1 / §C.2 / §C.3 vectors for all three key sizes
+  - Verified against FIPS 197 §C.1 / §C.2 / §C.3 (block) + NIST SP 800-38A §F.2.1 (CBC) reference vectors
   - CTR counter: 8-byte big-endian, starts at 0, increments per 16-byte block; total ≤ 2^64 × 16 bytes effectively unbounded
   - Performance note: pure-script AES at z42-interp speeds is fine for low-rate use (token encryption, small-payload envelopes); bulk encryption wants the cdylib follow-up
-  - **Out of scope (deferred)**: CBC mode, GCM / AEAD, Key Wrap, AES-NI / ARMv8 Crypto Extensions hardware acceleration — see Deferred section
+  - **Out of scope (deferred)**: GCM / AEAD, Key Wrap, AES-NI / ARMv8 Crypto Extensions hardware acceleration — see Deferred section
 
 - OS CSPRNG — `Std.Crypto.SecureRandom` (add-csprng-to-crypto, 2026-05-26)
   - `GetBytes(int n) -> byte[]` — fill `n` bytes from OS entropy source
@@ -96,13 +98,6 @@ of overload-by-arg-type. z42 当前 overload 解析对 `byte[]` vs `string`
 （HMAC-SHA-256-128 truncation）跳过，用户需要时可 `result[:16]`。
 
 ## Deferred / Future Work
-
-### aes-future-cbc: AES-CBC mode
-
-- **来源**：add-aes (2026-05-27)
-- **触发原因**：CTR + ECB primitive 覆盖大多数现代用例；CBC 调用方可由 EncryptBlock + XOR 自行组合，加 native wrapper 不属于 v0 范围
-- **前置依赖**：无
-- **触发条件**：legacy 协议互操作（如 TLS 1.0 / PKCS#7）需要时
 
 ### aes-future-gcm: AES-GCM AEAD
 

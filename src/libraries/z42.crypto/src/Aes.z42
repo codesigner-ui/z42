@@ -128,6 +128,99 @@ public static class Aes {
         return Aes.EncryptCtr(key, nonce, data);
     }
 
+    /// AES-CBC encrypt with PKCS#7 padding (RFC 5652 §6.3 — pad to next
+    /// 16-byte boundary; if input already aligned, append a full 16-byte
+    /// padding block so unpad is always unambiguous).
+    ///
+    /// `iv` must be exactly 16 bytes. Output length is always
+    /// `((data.Length / 16) + 1) * 16` due to mandatory padding.
+    public static byte[] EncryptCbcPkcs7(byte[] key, byte[] iv, byte[] data) {
+        if (iv.Length != 16) {
+            throw new ArgumentException("AES.EncryptCbcPkcs7: IV must be 16 bytes");
+        }
+        int padLen = 16 - (data.Length % 16);
+        int totalLen = data.Length + padLen;
+        byte[] padded = new byte[totalLen];
+        int i = 0;
+        while (i < data.Length) { padded[i] = data[i]; i = i + 1; }
+        // Pad bytes hold the pad length per PKCS#7.
+        while (i < totalLen) { padded[i] = (byte)padLen; i = i + 1; }
+
+        byte[] out_ = new byte[totalLen];
+        byte[] prev = new byte[16];
+        int k = 0;
+        while (k < 16) { prev[k] = iv[k]; k = k + 1; }
+        int blocks = totalLen / 16;
+        int b = 0;
+        while (b < blocks) {
+            // XOR plaintext block with previous ciphertext block (IV for b=0).
+            byte[] xored = new byte[16];
+            int off = b * 16;
+            int j = 0;
+            while (j < 16) {
+                xored[j] = (byte)((int)padded[off + j] ^ (int)prev[j]);
+                j = j + 1;
+            }
+            byte[] enc = Aes.EncryptBlock(key, xored);
+            j = 0;
+            while (j < 16) { out_[off + j] = enc[j]; prev[j] = enc[j]; j = j + 1; }
+            b = b + 1;
+        }
+        return out_;
+    }
+
+    /// AES-CBC decrypt with PKCS#7 unpadding. Throws `ArgumentException`
+    /// if input length isn't a multiple of 16, or if padding is malformed
+    /// (likely indicating wrong key / IV / corrupted ciphertext).
+    public static byte[] DecryptCbcPkcs7(byte[] key, byte[] iv, byte[] data) {
+        if (iv.Length != 16) {
+            throw new ArgumentException("AES.DecryptCbcPkcs7: IV must be 16 bytes");
+        }
+        if (data.Length == 0 || data.Length % 16 != 0) {
+            throw new ArgumentException(
+                "AES.DecryptCbcPkcs7: ciphertext length must be a positive multiple of 16");
+        }
+        byte[] plain = new byte[data.Length];
+        byte[] prev = new byte[16];
+        int k = 0;
+        while (k < 16) { prev[k] = iv[k]; k = k + 1; }
+        int blocks = data.Length / 16;
+        int b = 0;
+        while (b < blocks) {
+            int off = b * 16;
+            byte[] ctBlock = new byte[16];
+            int j = 0;
+            while (j < 16) { ctBlock[j] = data[off + j]; j = j + 1; }
+            byte[] dec = Aes.DecryptBlock(key, ctBlock);
+            j = 0;
+            while (j < 16) {
+                plain[off + j] = (byte)((int)dec[j] ^ (int)prev[j]);
+                prev[j] = ctBlock[j];
+                j = j + 1;
+            }
+            b = b + 1;
+        }
+        // Validate + strip PKCS#7 padding.
+        int padLen = (int)plain[data.Length - 1] & 0xFF;
+        if (padLen < 1 || padLen > 16) {
+            throw new ArgumentException(
+                "AES.DecryptCbcPkcs7: invalid PKCS#7 padding length " + padLen.ToString());
+        }
+        int padStart = data.Length - padLen;
+        int p = padStart;
+        while (p < data.Length) {
+            if (((int)plain[p] & 0xFF) != padLen) {
+                throw new ArgumentException(
+                    "AES.DecryptCbcPkcs7: corrupt PKCS#7 padding bytes");
+            }
+            p = p + 1;
+        }
+        byte[] out_ = new byte[padStart];
+        int q = 0;
+        while (q < padStart) { out_[q] = plain[q]; q = q + 1; }
+        return out_;
+    }
+
     // ── Key Expansion (FIPS 197 §5.2) ────────────────────────────────────
 
     /// Returns flat int[] of (Nr+1) * 16 bytes — round key R occupies
