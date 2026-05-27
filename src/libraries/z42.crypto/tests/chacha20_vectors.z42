@@ -1,0 +1,139 @@
+// add-chacha20 (2026-05-27): RFC 8439 §2.3.2 / §2.4.2 test vectors.
+namespace Z42CryptoChaCha20VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 8439 §2.3.2: keystream-block test vector ────────────────────────
+//
+// Key:     000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+// Nonce:   000000090000004a00000000
+// Counter: 1
+// Output (single 64-byte keystream block):
+//   10f1e7e4d13b5915500fdd1fa32071c4 c7d1f4c733c068030422aa9ac3d46c4e
+//   d2826446079faa0914c2d705d98b02a2 b5129cd1de164eb9cbd083e8a2503c4e
+
+[Test]
+void test_chacha20_block_rfc8439_section2_3_2() {
+    byte[] key   = Hex.Decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    byte[] nonce = Hex.Decode("000000090000004a00000000");
+    byte[] ks    = ChaCha20.Block(key, nonce, 1);
+    Assert.Equal(
+        "10f1e7e4d13b5915500fdd1fa32071c4c7d1f4c733c068030422aa9ac3d46c4ed2826446079faa0914c2d705d98b02a2b5129cd1de164eb9cbd083e8a2503c4e",
+        Hex.Encode(ks)
+    );
+}
+
+// ── RFC 8439 §2.4.2: full encryption vector ─────────────────────────────
+//
+// Key:     000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+// Nonce:   000000000000004a00000000
+// Counter: 1 (RFC 8439 §2.4 specifies initial-counter=1 for standalone)
+// Plaintext (114 bytes — "Ladies and Gentlemen of the class of '99..."):
+[Test]
+void test_chacha20_encrypt_rfc8439_section2_4_2() {
+    byte[] key   = Hex.Decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    byte[] nonce = Hex.Decode("000000000000004a00000000");
+    byte[] pt    = Hex.Decode("4c616469657320616e642047656e746c656d656e206f662074686520636c617373206f66202739393a204966204920636f756c64206f6666657220796f75206f6e6c79206f6e652074697020666f7220746865206675747572652c2073756e73637265656e20776f756c642062652069742e");
+    byte[] ct    = ChaCha20.Encrypt(key, nonce, pt);
+    Assert.Equal(
+        "6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0bf91b65c5524733ab8f593dabcd62b3571639d624e65152ab8f530c359f0861d807ca0dbf500d6a6156a38e088a22b65e52bc514d16ccf806818ce91ab77937365af90bbf74a35be6b40b8eedf2785e42874d",
+        Hex.Encode(ct)
+    );
+}
+
+// ── Round trip ──────────────────────────────────────────────────────────
+
+[Test]
+void test_chacha20_round_trip() {
+    byte[] key   = Hex.Decode("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f");
+    byte[] nonce = Hex.Decode("070000004041424344454647");
+    byte[] pt    = Hex.Decode("0102030405060708090a0b0c0d0e0f1011121314151617181920");
+    byte[] ct    = ChaCha20.Encrypt(key, nonce, pt);
+    byte[] dec   = ChaCha20.Decrypt(key, nonce, ct);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+// ── Non-block-aligned input (RFC 8439 §2.4.2 is 114 bytes — already
+//    covered above — but also test a small 5-byte payload) ──────────────
+
+[Test]
+void test_chacha20_short_input_round_trip() {
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[12];
+    byte[] pt    = Hex.Decode("0102030405");
+    byte[] ct    = ChaCha20.Encrypt(key, nonce, pt);
+    Assert.Equal(5, ct.Length);
+    byte[] dec   = ChaCha20.Decrypt(key, nonce, ct);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+// ── Empty input ─────────────────────────────────────────────────────────
+
+[Test]
+void test_chacha20_empty_input() {
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[12];
+    byte[] pt    = new byte[0];
+    byte[] ct    = ChaCha20.Encrypt(key, nonce, pt);
+    Assert.Equal(0, ct.Length);
+}
+
+// ── Multi-block input (forces counter increment) ────────────────────────
+
+[Test]
+void test_chacha20_multi_block_round_trip() {
+    byte[] key   = Hex.Decode("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    byte[] nonce = Hex.Decode("000000000000004a00000000");
+    // 200 bytes — forces 4 keystream blocks (counter 1..4)
+    byte[] pt    = new byte[200];
+    int i = 0;
+    while (i < 200) { pt[i] = (byte)(i & 0xFF); i = i + 1; }
+    byte[] ct    = ChaCha20.Encrypt(key, nonce, pt);
+    byte[] dec   = ChaCha20.Decrypt(key, nonce, ct);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+// ── Key / nonce length validation ───────────────────────────────────────
+
+[Test]
+void test_chacha20_rejects_short_key() {
+    byte[] key   = new byte[31];
+    byte[] nonce = new byte[12];
+    bool threw = false;
+    try { ChaCha20.Encrypt(key, nonce, new byte[16]); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_chacha20_rejects_short_nonce() {
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[8];  // old ChaCha20 form, not RFC 8439
+    bool threw = false;
+    try { ChaCha20.Encrypt(key, nonce, new byte[16]); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Counter=0 path (used for Poly1305 key derivation) ───────────────────
+
+[Test]
+void test_chacha20_counter_zero_block_for_poly1305_key() {
+    // RFC 8439 §2.6 — ChaCha20 with counter=0 produces the one-time
+    // key for Poly1305 in the AEAD construction. Use a known vector:
+    // Key=00..00, Nonce=00..00, Counter=0 → first 32 bytes are the
+    // Poly1305 r||s key.
+    byte[] key   = new byte[32];
+    byte[] nonce = new byte[12];
+    byte[] block = ChaCha20.Block(key, nonce, 0);
+    Assert.Equal(64, block.Length);
+    // Block starts with the well-known all-zero ChaCha20 output:
+    // 76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586
+    Assert.Equal(
+        "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586",
+        Hex.Encode(block)
+    );
+}

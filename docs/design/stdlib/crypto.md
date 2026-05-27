@@ -72,6 +72,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- ChaCha20 (RFC 8439) — `Std.Crypto.ChaCha20` (add-chacha20, 2026-05-27)
+  - `Encrypt(byte[32] key, byte[12] nonce, byte[] data) -> byte[]` — initial counter = 1 (RFC 8439 §2.4 standalone use)
+  - `Decrypt(byte[32] key, byte[12] nonce, byte[] data) -> byte[]` — symmetric (same as Encrypt)
+  - `Crypt(byte[32] key, byte[12] nonce, int counter, byte[] data) -> byte[]` — explicit-counter variant
+  - `Block(byte[32] key, byte[12] nonce, int counter) -> byte[64]` — single keystream block; exposed for Poly1305 key derivation (counter=0 path of the ChaCha20-Poly1305 AEAD construction)
+  - 256-bit key, 96-bit nonce; 20 rounds (10 column + 10 diagonal); 64-byte keystream blocks; pure-script
+  - Verified against RFC 8439 §2.3.2 (keystream block) + §2.4.2 (114-byte encryption) reference vectors
+
 - AES (FIPS 197) — `Std.Crypto.Aes` (add-aes, 2026-05-27)
   - `EncryptBlock(byte[] key, byte[16] plaintext) -> byte[16]` — single-block ECB primitive
   - `DecryptBlock(byte[] key, byte[16] ciphertext) -> byte[16]`
