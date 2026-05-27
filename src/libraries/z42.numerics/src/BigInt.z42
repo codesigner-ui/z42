@@ -1436,53 +1436,92 @@ public class BigInt {
         return new _MagDivModResult(BigInt._trim(q), BigInt._trim(rArr));
     }
 
-    /// General multi-limb divisor. Knuth Algorithm D / school long division
-    /// adapted for 31-bit limbs. Returns `[quotient, remainder]`.
+    /// General multi-limb divisor. Knuth Algorithm D adapted for 31-bit limbs.
+    /// Returns `[quotient, remainder]`.
     ///
-    /// Approach: shift divisor left so top bit of high limb is set (~30 or 29 bit position),
-    /// then for each quotient digit estimate by `top2(rem) / top1(div)`, correct down
-    /// by 1-2 if overestimate, subtract trial product, repeat. O(n × m).
+    /// add-bigint-divmod-normalised (2026-05-27): the original "simple
+    /// estimator + linear-decrement" path had a pathology on divisors with
+    /// small top limbs (e.g. Poly1305's `2^130 - 5` which has top limb 64
+    /// in 31-bit form) — the estimate ran wildly off and the linear
+    /// decrement loop could either hang or trip a downstream arithmetic
+    /// edge case. Switched to proper Knuth D normalisation:
+    ///   1. Shift divisor left by `s` until its top limb's bit 30 is set
+    ///      (i.e. top limb ≥ 2^30). Apply the same shift to the dividend.
+    ///   2. The estimator `q̂ = min(BASE-1, top2(rem) / top1(div))` is then
+    ///      provably ≤ true quotient digit + 2 (Knuth TAOCP vol 2 §4.3.1
+    ///      theorem B), so the decrement loop terminates in O(1) steps.
+    ///   3. After collecting the quotient, shift the remainder right by `s`
+    ///      to undo the normalisation.
     static _MagDivModResult _magDivModGeneral(int[] dividend, int[] divisor) {
-        // Simpler O(n × m × log) approach without normalisation: trial-and-error
-        // with binary search on quotient digit. Slower but correct + simpler to verify.
-        int n = dividend.Length;
-        int m = divisor.Length;
+        // Step 1: determine normalisation shift `s` so divisor's top limb
+        //   has bit 30 set (the highest bit of a 31-bit limb).
+        int topDivOrig = divisor[divisor.Length - 1];
+        int s = 0;
+        int probe = topDivOrig;
+        while (probe < 1073741824) {   // 2^30
+            probe = probe << 1;
+            s = s + 1;
+        }
+        int[] divisorN;
+        int[] dividendN;
+        if (s == 0) {
+            divisorN  = divisor;
+            dividendN = dividend;
+        } else {
+            divisorN  = BigInt._magShiftLeft(divisor, s);
+            dividendN = BigInt._magShiftLeft(dividend, s);
+        }
+        int n  = dividendN.Length;
+        int m  = divisorN.Length;
+        // After shift, divisorN.Length should == divisor.Length (we shift by
+        // < LIMB_BITS so no extra limb spawns). dividendN may grow by 1 limb.
         int qLen = n - m + 1;
+        if (qLen <= 0) {
+            // Dividend < divisor after normalisation — shouldn't happen
+            // because the caller enforces |dividend| > |divisor|, but
+            // guard defensively.
+            int[] emptyQ = new int[0];
+            return new _MagDivModResult(emptyQ, BigInt._trim(dividend));
+        }
         int[] q = new int[qLen];
-        // Working remainder = dividend (will shrink as we subtract).
+        // Working remainder = dividendN with one extra zero limb on top so
+        // we can index `rem[qi + m]` without bounds-check.
         int[] rem = new int[n + 1];
         int i = 0;
-        while (i < n) { rem[i] = dividend[i]; i = i + 1; }
+        while (i < n) { rem[i] = dividendN[i]; i = i + 1; }
         rem[n] = 0;
-        // Quotient digit positions go from high to low.
+        long topDivN = (long)divisorN[m - 1];   // ≥ 2^30 after normalisation
+        // Step 2: produce quotient digits high-to-low with Knuth's bounded estimator.
         int qi = qLen - 1;
         while (qi >= 0) {
-            // Estimate q_digit by binary searching in [0, BASE) such that
-            // (divisor * q_digit) << qi <= rem.
-            // Optimised initial estimate from top two limbs of rem and top of divisor.
             long topRem = ((long)rem[qi + m]) * BigInt.BASE + (long)rem[qi + m - 1];
-            long topDiv = (long)divisor[m - 1];
-            long estimate = topRem / topDiv;
+            long estimate = topRem / topDivN;
             if (estimate >= BigInt.BASE) estimate = BigInt.BASE - 1L;
-            // Now correct: build (divisor * estimate) shifted to qi position; if > rem suffix,
-            // decrement until fits.
-            while (estimate >= 0L) {
-                int[] trial = BigInt._magMulByLimb(divisor, (int)estimate);
+            // Estimate is at most true_digit + 2; decrement at most twice.
+            int safetyCount = 0;
+            while (safetyCount < 4) {
+                int[] trial = BigInt._magMulByLimb(divisorN, (int)estimate);
                 if (BigInt._magSubShifted_le(rem, trial, qi)) {
-                    // rem >= trial << qi → subtract in place and accept.
                     BigInt._magSubShifted_apply(rem, trial, qi);
                     q[qi] = (int)estimate;
-                    estimate = -1L;   // break
+                    safetyCount = 4;   // break
                 } else {
                     estimate = estimate - 1L;
+                    safetyCount = safetyCount + 1;
                 }
             }
             qi = qi - 1;
         }
-        // Build remainder array (drop trailing zeros).
-        int[] r = new int[m];
+        // Step 3: extract remainder, denormalise.
+        int[] rPre = new int[m];
         int j = 0;
-        while (j < m) { r[j] = rem[j]; j = j + 1; }
+        while (j < m) { rPre[j] = rem[j]; j = j + 1; }
+        int[] r;
+        if (s == 0) {
+            r = rPre;
+        } else {
+            r = BigInt._magShiftRight(rPre, s);
+        }
         return new _MagDivModResult(BigInt._trim(q), BigInt._trim(r));
     }
 
@@ -1490,16 +1529,17 @@ public class BigInt {
     static int[] _magMulByLimb(int[] a, int limbVal) {
         if (limbVal == 0 || a.Length == 0) return new int[0];
         long  lv = (long)limbVal;
-        int[] r  = new int[a.Length + 1];
+        int   n  = a.Length;
+        int[] r  = new int[n + 1];
         long  carry = 0L;
         int   i = 0;
-        while (i < a.Length) {
+        while (i < n) {
             long prod = (long)a[i] * lv + carry;
             r[i]      = (int)(prod % BigInt.BASE);
             carry     = prod / BigInt.BASE;
             i = i + 1;
         }
-        r[a.Length] = (int)carry;
+        r[n] = (int)carry;
         return BigInt._trim(r);
     }
 

@@ -72,6 +72,14 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- Poly1305 (RFC 8439 §2.5) — `Std.Crypto.Poly1305` (add-poly1305, 2026-05-27)
+  - `Mac(byte[32] key, byte[] message) -> byte[16]` — one-time authenticator over GF(2^130 - 5)
+  - `MacHex(byte[32] key, byte[] message) -> string` — hex convenience
+  - 32-byte key = r (clamped per RFC §2.5.1) || s (one-time pad)
+  - **One-time use only**: the key MUST be fresh for each message — reuse leaks the polynomial coefficient and breaks security entirely. In ChaCha20-Poly1305 AEAD, the key is derived per-message via `ChaCha20(key, nonce, counter=0)[0..32]`
+  - Pure-script over `Std.Numerics.BigInt` (z42 has no native 128/160-bit type)
+  - Verified against RFC 8439 §2.5.2 ("Cryptographic Forum Research Group") + all three §A.3 reference vectors
+
 - ChaCha20 (RFC 8439) — `Std.Crypto.ChaCha20` (add-chacha20, 2026-05-27)
   - `Encrypt(byte[32] key, byte[12] nonce, byte[] data) -> byte[]` — initial counter = 1 (RFC 8439 §2.4 standalone use)
   - `Decrypt(byte[32] key, byte[12] nonce, byte[] data) -> byte[]` — symmetric (same as Encrypt)

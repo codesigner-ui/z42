@@ -1,0 +1,45 @@
+// add-poly1305 (2026-05-27): regression test for a divmod bug surfaced by
+// Poly1305 — a 260-bit dividend divided by the Poly1305 prime (2^130 - 5).
+// The "small top limb" of the divisor (64 in 31-bit-limb form) used to
+// trip `_magDivModGeneral`'s simple top-2/top-1 estimator.
+namespace Z42NumericsBigIntModLargeDivisorTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_mod_by_poly1305_prime() {
+    // p = 2^130 - 5 (the Poly1305 prime field modulus).
+    BigInt p = BigInt.One.ShiftLeft(130).Subtract(new BigInt(5L));
+    Assert.Equal(5, p._mag.Length);
+    // (2^260 - 1) mod p — picked because it exercises a 260-bit dividend
+    // against a 130-bit divisor with small top limb (64), the worst case
+    // for the divmod estimator.
+    BigInt big = BigInt.One.ShiftLeft(260).Subtract(BigInt.One);
+    BigInt r = big.Mod(p);
+    // r must be < p.
+    Assert.True(r.CompareTo(p) < 0);
+    // r must be ≥ 0.
+    Assert.True(r.CompareTo(BigInt.Zero) >= 0);
+    // (big - r) must be divisible by p.
+    BigInt diff = big.Subtract(r);
+    BigInt rem = diff.Mod(p);
+    Assert.Equal("0", rem.ToString());
+}
+
+[Test]
+void test_mod_chain_simulating_poly1305_step() {
+    // Simulate one step of the Poly1305 accumulator:
+    // acc = ((acc + block) * r) mod p
+    BigInt p = BigInt.One.ShiftLeft(130).Subtract(new BigInt(5L));
+    BigInt r = BigInt.ParseHex("0806d5400e52447c036d555408bed685");
+    BigInt block = BigInt.ParseHex("0143727970746f6772617068696320466f");
+    // First, just block * r (no mod). Check the result's bit width.
+    BigInt prod = block.Multiply(r);
+    Assert.True(prod._mag.Length > 0);
+    Assert.True(prod._mag.Length <= 9);  // 130 bits * 128 bits ≤ 258 bits ≤ 9 × 31-bit limbs
+    // Now try Mod p. This is where the divmod path is exercised.
+    BigInt reduced = prod.Mod(p);
+    Assert.True(reduced.CompareTo(p) < 0);
+}
