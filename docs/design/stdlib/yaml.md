@@ -251,14 +251,19 @@ single-doc `Parse()` accepts trailing `...` / comments between docs.
 - **触发原因**：YAML 1.2 allows sequences / mappings as keys via the
   `? key` syntax. Rare in practice — v0 supports string keys only.
 
-### `yaml-future-timestamps`
+### ~~`yaml-future-timestamps`~~ — **✅ 已落地 2026-05-27 (add-yaml-timestamps)**
 
-- **来源**：add-z42-yaml v0 scope
-- **触发原因**：YAML can parse ISO-8601 timestamps as a dedicated
-  scalar type. Without `Std.Time.DateTime` being final / well-known,
-  z42.yaml can't represent these as anything richer than a string.
-- **触发条件**：z42.time stabilises a DateTime type that yaml can
-  emit / consume.
+Shipped: kind 7 (Timestamp) joins YamlValue's discriminator. Factories
+`OfTimestamp(DateTime)` (canonical UTC + ms output) and
+`OfTimestampString(iso)` (round-trip-preserves the original lexeme so
+non-UTC offset / sub-ms precision survive Stringify). Parser
+auto-recognises ISO 8601 prefix shapes (`YYYY-MM-DD` + optional
+`T`/`t`/space + time + Z/±HH:MM); parse failure falls through to
+numeric/string so "almost-date" strings degrade gracefully. Depends on
+`DateTime.ParseIso8601` (also shipped same day —
+`add-datetime-iso8601-parse`). 12 tests cover UTC / offset / date-only
+/ millis / raw-lexeme round-trip / canonical UTC output / DeepClone /
+fallback / sequence-of-timestamps.
 
 ### ~~`yaml-future-numeric-bases`~~ — **✅ 已落地 2026-05-25 (add-yaml-numeric-bases)**
 
