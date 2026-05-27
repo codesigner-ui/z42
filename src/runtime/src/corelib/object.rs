@@ -117,7 +117,7 @@ pub fn builtin_delegate_target(_ctx: &VmContext, args: &[Value]) -> Result<Value
 pub fn builtin_delegate_fn_name(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Closure { fn_name, .. }) => Ok(Value::Str(fn_name.clone().into())),
-        Some(Value::StackClosure { fn_name, .. }) => Ok(Value::Str(fn_name.clone().into())),
+        Some(Value::StackClosure(sc)) => Ok(Value::Str(sc.fn_name.clone().into())),
         Some(Value::FuncRef(name)) => Ok(Value::Str(name.clone().into())),
         _ => Ok(Value::Null),
     }
@@ -200,10 +200,9 @@ pub fn builtin_delegate_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
             Some(Value::Closure { env: ea, fn_name: na }),
             Some(Value::Closure { env: eb, fn_name: nb }),
         ) => na == nb && crate::gc::GcRef::ptr_eq(ea, eb),
-        (
-            Some(Value::StackClosure { env_idx: ia, fn_name: na }),
-            Some(Value::StackClosure { env_idx: ib, fn_name: nb }),
-        ) => na == nb && ia == ib,
+        (Some(Value::StackClosure(a)), Some(Value::StackClosure(b))) => {
+            a.fn_name == b.fn_name && a.env_idx == b.env_idx
+        }
         (Some(Value::Null), Some(Value::Null))           => true,
         (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
         _                                                => false,

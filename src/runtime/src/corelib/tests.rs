@@ -291,16 +291,16 @@ fn delegate_eq_diff_closure_env_not_equal() {
 #[test]
 fn delegate_eq_same_stackclosure_equal() {
     let c = ctx();
-    let a = Value::StackClosure { env_idx: 0, fn_name: "Demo.Stack".into() };
-    let b = Value::StackClosure { env_idx: 0, fn_name: "Demo.Stack".into() };
+    let a = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 0, fn_name: "Demo.Stack".into() }));
+    let b = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 0, fn_name: "Demo.Stack".into() }));
     assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(true));
 }
 
 #[test]
 fn delegate_eq_diff_stackclosure_idx_not_equal() {
     let c = ctx();
-    let a = Value::StackClosure { env_idx: 0, fn_name: "Demo.Stack".into() };
-    let b = Value::StackClosure { env_idx: 1, fn_name: "Demo.Stack".into() };
+    let a = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 0, fn_name: "Demo.Stack".into() }));
+    let b = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 1, fn_name: "Demo.Stack".into() }));
     assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
 }
 
@@ -316,7 +316,7 @@ fn delegate_eq_funcref_vs_closure_not_equal() {
 fn delegate_eq_closure_vs_stackclosure_not_equal() {
     let c = ctx();
     let a = Value::Closure { env: GcRef::new(vec![]), fn_name: "Demo.F".into() };
-    let b = Value::StackClosure { env_idx: 0, fn_name: "Demo.F".into() };
+    let b = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 0, fn_name: "Demo.F".into() }));
     assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
 }
 
@@ -436,7 +436,7 @@ fn delegate_target_returns_null_for_funcref() {
 #[test]
 fn delegate_target_returns_null_for_stack_closure() {
     let c = ctx();
-    let sc = Value::StackClosure { env_idx: 0, fn_name: "stack_lambda".into() };
+    let sc = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 0, fn_name: "stack_lambda".into() }));
     assert_eq!(exec_builtin(&c, "__delegate_target", &[sc]).unwrap(), Value::Null);
 }
 
@@ -453,7 +453,7 @@ fn delegate_fn_name_works_for_funcref_and_stack_closure() {
     assert_eq!(
         exec_builtin(&c, "__delegate_fn_name", &[Value::FuncRef("free_fn".into())]).unwrap(),
         s("free_fn"));
-    let sc = Value::StackClosure { env_idx: 3, fn_name: "stk".into() };
+    let sc = Value::StackClosure(Box::new(crate::metadata::StackClosureData { env_idx: 3, fn_name: "stk".into() }));
     assert_eq!(exec_builtin(&c, "__delegate_fn_name", &[sc]).unwrap(), s("stk"));
 }
 

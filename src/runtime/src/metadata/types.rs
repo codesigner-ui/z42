@@ -329,7 +329,12 @@ pub enum Value {
     /// escape 分析证明 closure 不离开创建 frame 时才发射该 variant；逃逸
     /// 场景仍走 `Value::Closure`。详见
     /// `docs/spec/archive/2026-05-02-impl-closure-l3-escape-stack/`。
-    StackClosure { env_idx: u32, fn_name: String },
+    ///
+    /// review.md C1 chunk 3 (2026-05-27): payload boxed to shrink the
+    /// inline `Value` size — StackClosure is created on the rare
+    /// non-escaping closure path and only consumed by the next
+    /// `CallIndirect` before the creating frame returns.
+    StackClosure(Box<StackClosureData>),
     /// Spec impl-ref-out-in-runtime: `ref` / `out` / `in` 参数运行时表达。
     /// 持有该 Value 的寄存器在 frame.get/set 时被透明 deref（单点 dispatch，
     /// 见 `interp/mod.rs::Frame::get`）。引用永远不离开调用栈帧（前置 spec
@@ -366,6 +371,16 @@ pub struct PinnedViewData {
     pub ptr:  u64,
     pub len:  u64,
     pub kind: PinSourceKind,
+}
+
+/// Payload of [`Value::StackClosure`] — boxed (review.md C1 chunk 3,
+/// 2026-05-27) so the inline `Value` doesn't pay for the env-idx + fn
+/// name pair. `MkClos` with stack-alloc=1 constructs one; `CallIndirect`
+/// is the sole consumer.
+#[derive(Debug, Clone)]
+pub struct StackClosureData {
+    pub env_idx: u32,
+    pub fn_name: String,
 }
 
 impl Value {
@@ -430,7 +445,7 @@ impl Value {
             // Primitives — no children.
             Value::I64(_) | Value::F64(_) | Value::Bool(_) | Value::Char(_)
             | Value::Str(_) | Value::Null | Value::FuncRef(_)
-            | Value::PinnedView(_) | Value::StackClosure { .. } => {}
+            | Value::PinnedView(_) | Value::StackClosure(_) => {}
         }
     }
 }

@@ -134,7 +134,7 @@ fn is_heap_ref_false_for_pinned_view() {
 
 #[test]
 fn is_heap_ref_false_for_stack_closure() {
-    let v = Value::StackClosure { env_idx: 0, fn_name: "inner".to_string() };
+    let v = Value::StackClosure(Box::new(StackClosureData { env_idx: 0, fn_name: "inner".to_string() }));
     assert!(!v.is_heap_ref());
 }
 

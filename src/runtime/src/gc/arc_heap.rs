@@ -1624,8 +1624,8 @@ impl MagrGC for ArcMagrGC {
             // impl-closure-l3-escape-stack: StackClosure 的 env 在创建 frame 的
             // env_arena 中，由 frame 拥有；本 Value 自身只携带 idx + fn_name。
             // GC 不为 arena 内存分配 / 释放负责（frame Drop 自动处理）。
-            Value::StackClosure { fn_name, .. } => {
-                size_of::<Value>() + fn_name.capacity()
+            Value::StackClosure(sc) => {
+                size_of::<Value>() + size_of::<crate::metadata::StackClosureData>() + sc.fn_name.capacity()
             }
             // Spec impl-ref-out-in-runtime: Ref 仅存索引或 GcRef；底层
             // Vec/Object 已被本身的 Value::Array / Value::Object 计入，

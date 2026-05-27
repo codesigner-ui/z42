@@ -57,7 +57,7 @@ pub fn builtin_thread_spawn(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let (fn_name, env_vec): (String, Option<Vec<Value>>) = match callable {
         Value::FuncRef(name) => (name.to_string(), None),
         Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.borrow().clone())),
-        Value::StackClosure { .. } => bail!(
+        Value::StackClosure(_) => bail!(
             "__thread_spawn: stack-allocated closure cannot escape to a worker thread \
              (compiler should have promoted it to a heap Closure for cross-thread use)"
         ),

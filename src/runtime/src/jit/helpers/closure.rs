@@ -85,7 +85,10 @@ pub unsafe extern "C" fn jit_mk_clos(
     let value = if stack_alloc != 0 {
         let idx = frame_ref.env_arena.len() as u32;
         frame_ref.env_arena.push(env_vec);
-        Value::StackClosure { env_idx: idx, fn_name: name }
+        Value::StackClosure(Box::new(crate::metadata::StackClosureData {
+            env_idx: idx,
+            fn_name: name,
+        }))
     } else {
         // Allocate env via the GC heap so it's tracked as a managed array.
         let env_val = vm_ctx_ref(ctx).heap().alloc_array(env_vec);
@@ -123,15 +126,15 @@ pub unsafe extern "C" fn jit_call_indirect(
     let (fn_name, env_vec_opt): (String, Option<Vec<Value>>) = match &frame_ref.regs[callee as usize] {
         Value::FuncRef(n) => (n.to_string(), None),
         Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.borrow().clone())),
-        Value::StackClosure { env_idx, fn_name } => {
-            let idx = *env_idx as usize;
+        Value::StackClosure(sc) => {
+            let idx = sc.env_idx as usize;
             if idx >= frame_ref.env_arena.len() {
                 set_exception(vm_ctx, Value::Str(format!(
                     "CallIndirect: stack closure env_idx {} out of bounds (arena_len={})",
                     idx, frame_ref.env_arena.len()).into()));
                 return 1;
             }
-            (fn_name.clone(), Some(frame_ref.env_arena[idx].clone()))
+            (sc.fn_name.clone(), Some(frame_ref.env_arena[idx].clone()))
         }
         other => {
             set_exception(vm_ctx, Value::Str(format!(

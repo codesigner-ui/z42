@@ -143,13 +143,13 @@ pub(super) fn call_indirect(
     let (fname, env_vec_opt): (String, Option<Vec<Value>>) = match frame.get(callee)? {
         Value::FuncRef(name)               => (name.to_string(), None),
         Value::Closure { env, fn_name }    => (fn_name.clone(), Some(env.borrow().clone())),
-        Value::StackClosure { env_idx, fn_name } => {
-            let idx = *env_idx as usize;
+        Value::StackClosure(sc) => {
+            let idx = sc.env_idx as usize;
             if idx >= frame.env_arena.len() {
                 bail!("CallIndirect: stack closure env_idx {} out of bounds (arena_len={})",
                       idx, frame.env_arena.len());
             }
-            (fn_name.clone(), Some(frame.env_arena[idx].clone()))
+            (sc.fn_name.clone(), Some(frame.env_arena[idx].clone()))
         }
         other => bail!("CallIndirect: expected FuncRef / Closure / StackClosure, got {:?}", other),
     };
@@ -209,7 +209,10 @@ pub(super) fn mk_clos(
     let value = if stack_alloc {
         let idx = frame.env_arena.len() as u32;
         frame.env_arena.push(env_vec);
-        Value::StackClosure { env_idx: idx, fn_name: fn_name.to_string() }
+        Value::StackClosure(Box::new(crate::metadata::StackClosureData {
+            env_idx: idx,
+            fn_name: fn_name.to_string(),
+        }))
     } else {
         let env_val = ctx.heap().alloc_array(env_vec);
         // add-gc-oom-exception: alloc_array returns Null only under strict OOM
