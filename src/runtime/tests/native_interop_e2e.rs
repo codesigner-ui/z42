@@ -31,6 +31,7 @@ extern "C" {
 // from `z42-rs` instead of hand-writing a `Z42TypeDescriptor_v1` literal.
 
 mod numz42_rs {
+    #[allow(unused_imports)]
     use ::z42_rs::prelude::*;
     use ::z42_rs as z42;
 

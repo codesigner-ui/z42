@@ -883,6 +883,7 @@ impl VmContext {
 
     /// Current depth of the call stack — debugging / tests.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn call_stack_depth(&self) -> usize {
         self.call_stack.lock().len()
     }
