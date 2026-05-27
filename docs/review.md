@@ -236,13 +236,20 @@ pub enum Value {
 
 ---
 
-## C2. JIT helper `regs[i].clone()` per op ⚠️ P0 done, P1+ open
+## C2. JIT helper `regs[i].clone()` per op ✅ P0+P1 shipped
 
-> Status (2026-05-27): P0 (per-register `IrType` info reaches Rust JIT) shipped as
-> commit `8ef184e6` — new `REGT` section in `.zbc` carries `Box<[IrType]>` per
-> function; `zbc 1.7→1.8` / `zpkg 0.8→0.9` strict-pin bump. P1 (Cranelift
-> native emission for I64/F64/Bool typed operands) tracked in
-> `docs/spec/changes/jit-type-specialization/tasks.md`.
+> Status (2026-05-28): P0 (per-register `IrType` info reaches Rust JIT) shipped
+> in `8ef184e6` (REGT section in `.zbc`, zbc 1.7→1.8 / zpkg 0.8→0.9 strict-pin bump).
+> P1 shipped in five commits — Value enum locked at 24 B with `#[repr(C, u8)]`
+> (`a41050b8`); `Add/Sub/Mul` go native `iadd/isub/imul` (`98426e40`);
+> `Eq/Ne/Lt/Le/Gt/Ge/And/Or/Not` go native `icmp/band/bor/bxor` (`fc3936f0`);
+> `BrCond` reads i8 payload byte directly (`3727e469`). Measured on
+> M-series macOS, 10M-iter SumSquares loop: **456 ms → 302 ms = 1.51×**
+> end-to-end (split: 1.16× from arith/cmp inlining, additional 1.30× from
+> BrCond). Below the spec's aspirational 2-5× — remaining gap is dominated
+> by `jit_check_safepoint` (helper call at every back-edge for GC
+> cooperation; next obvious win). Bench scenario at `bench/scenarios/
+> 04_c2_p1_arith_loop.z42`.
 
 **z42 实测**（[`jit/helpers/arith.rs:16-39`](../src/runtime/src/jit/helpers/arith.rs#L16-L39)）：
 
@@ -435,7 +442,7 @@ ee_alloc_context {
 
 | 优先级 | 改造 | 估时 | 解锁价值 | 类别 |
 |---|---|---|---|---|
-| 🟡 | **JIT type specialization**（C2）— P0 (REGT wire format) shipped 8ef184e6 (2026-05-27); P1 Cranelift native emit open | 2-3 天 | 数值循环 2-5x；不动 wire format | 代码 |
+| ✅ | ~~**JIT type specialization**（C2）~~— P0 + P1 shipped 2026-05-27/28; **1.51× measured on 10M-iter SumSquares loop**. P0: REGT wire format (`8ef184e6`). P1: 24 B Value + native iadd/icmp/band/bor/bxor + BrCond i8 load (`a41050b8`/`98426e40`/`fc3936f0`/`3727e469`) | 2-3 天 | 数值循环 1.51×（仍低于 spec 2×；`jit_check_safepoint` 内联是下一步） | 代码 |
 | **P0** | **JIT↔VM trait 抽象** —— 上半部分 P0 | 2-3 天 | metadata 可演进 | 架构 |
 | ✅ | ~~**`Value::Str(String) → Str(Arc<str>)`**~~（C1+C3）— landed in ae23fb60 (2026-05-27, bundled with edition 2024 upgrade); Arc not Rc because `Value: Send + Sync` | 1-2 天 | clone 从 O(n) byte copy 变 O(1) atomic incr | 代码 |
 | **P1** | **Field / Method name → token id**（C4+C5）— `HashMap<String> → Vec<(u32, slot)>` | 3-4 天 | poly site 提速 + 内存省 | 代码 |
@@ -1360,7 +1367,7 @@ pub struct ScriptObject {
 | ✅ | ~~Panic hook + signal handler~~ (D4) — Phase 1 `12cf7ef8` + Phase 2 add-os-signal-handler | 4 | done | ops |
 | ✅ | ~~`RuntimeConfig` 中心化~~ (D1) — refactor-runtime-config `81e1cbba` (2026-05-25); Phase 2 migrating subsystem-local `Z42_*` reads still open | 4 | done | ops |
 | 🟡 | **StringId intern**（E2.P3）— Phase A `StringId(u32)` newtype + accessors landed add-string-id-newtype (2026-05-26); Phase B+ migrates individual String fields one at a time | 5 | Phase A done | data |
-| 🟡 | **JIT type specialization** (C2) — P0 (REGT wire format) shipped 8ef184e6 (2026-05-27); P1 Cranelift native emit open | 2 | P0 done | perf |
+| ✅ | ~~**JIT type specialization** (C2)~~ — P0 (8ef184e6) + P1 in five commits (a41050b8/98426e40/fc3936f0/3727e469) ship 1.51× on 10M-iter SumSquares loop | 2 | done | perf |
 | **P0** | **JIT↔VM `JitVm` trait 抽象** (Part 1 + E1.P2) | 1 | 2-3 天 | arch |
 | 🟡 | **TypeDesc 热 / 冷拆分**（E2.P1）— Step 1 (2026-05-27): 5 cold fields (own_fields / own_methods / type_params / type_args / type_param_constraints) moved into `Box<TypeDescCold>` behind `Option`. Non-generic non-inheriting types now carry 8 B null ptr instead of 80 B inline; reads via accessor methods returning `&[T]`. Full 336 B → 64 B target (StringId / TypeId / MethodId migration of hot fields) waits on StringId Phase B+. | 5 | Step 1 done | data |
 | **P1** | **Instruction 瘦身**（E2.P4）— ~120B → ≤32B | 5 | 3-4 天 | data |
