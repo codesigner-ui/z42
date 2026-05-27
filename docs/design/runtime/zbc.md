@@ -446,6 +446,7 @@ z42c --assemble foo.zasm -o foo.zbc
 | 1.5 | 2026-05-13 | [fix-numeric-cast-lowering](../../spec/archive/2026-05-13-fix-numeric-cast-lowering/) | 新 opcode `Convert` (0xB1) 表达显式数值类型转换（替换之前 cast 为 IR no-op 的语义） |
 | 1.6 | 2026-05-19 | [fix-array-default-init](../../spec/archive/2026-05-19-fix-array-default-init/) | `ArrayNew` opcode 在 `size` 之后追加 1 byte element type tag（`TypeTags::*`），驱动数组元素的 per-type 默认值（int→0 / bool→false / char→'\0' / ref→null） |
 | 1.7 | 2026-05-27 | [align-zbc-reader-writer-asymmetry](../../spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) | SIGS / TYPE 在 u8 TypeTag 之后追加 u32 type_str_idx（ret_type / field type）。Reader 优先 string 作权威类型名；tag 留作 hint。修 Read→Write byte parity；启用 ReadWriteRoundTrip CI 防线 |
+| 1.8 | 2026-05-27 | [jit-type-specialization](../../spec/changes/jit-type-specialization/) P0 step 0.3/0.4 | 新 `REGT` section（`u32 fn_count` + per-fn `u32 reg_count + u8[] IrType`），承载每函数的 per-register `IrType` byte 数组。Reader 把每条解到 `Function.reg_types: Box<[IrType]>`，JIT translator 后续据此跳过 `jit_add` / `jit_eq` / `jit_and` helper、直接 emit Cranelift `iadd` / `icmp` / `band`。zpkg 0.9 同步在 packed module 加 length-prefixed `RegtData`。Pre-1.8 zbc 不可读 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)。简而言之 — 写 `ZbcWriter.VersionMinor++` + 同步 `zbc_reader.rs` 常量 + 本表加一行 + `generate-fixtures.sh` regen + commit。Invariant CI 校验三方常量一致。
 

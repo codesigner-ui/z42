@@ -121,7 +121,15 @@ public sealed record IrFunction(
     /// VM does not require this for transparent deref since `Value::Ref`
     /// in arg positions is detected at function entry — this list lets
     /// tooling / debugger surface the source-level modifier).
-    List<byte>? ParamModifiers = null);
+    List<byte>? ParamModifiers = null,
+    /// jit-type-specialization C2 P0 step 0.3/0.4 (zbc 1.8, 2026-05-27):
+    /// raw REGT bytes (per-register `IrType` byte) preserved during
+    /// Read→Write to maintain byte-identity. When non-null, the writer
+    /// emits these bytes verbatim instead of recomputing from
+    /// `TypedReg.Type` values; on the initial codegen path (compiler
+    /// IrFunction → ZbcWriter), this is left null so the writer falls
+    /// back to walking `Blocks` + collecting types from `TypedReg`s.
+    byte[]? RegTypes = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
 public sealed record IrLocalVarEntry(string Name, int RegId);

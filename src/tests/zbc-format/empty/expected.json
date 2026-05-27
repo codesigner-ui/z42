@@ -1,9 +1,9 @@
 {
   "header": {
     "major": 1,
-    "minor": 7,
+    "minor": 8,
     "flags": [],
-    "section_count": 7
+    "section_count": 8
   },
   "sections": [
     "NSPC",
@@ -12,7 +12,8 @@
     "SIGS",
     "IMPT",
     "EXPT",
-    "FUNC"
+    "FUNC",
+    "REGT"
   ],
   "module": "main",
   "string_pool_size": 0,

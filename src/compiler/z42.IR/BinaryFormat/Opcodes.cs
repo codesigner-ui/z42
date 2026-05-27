@@ -226,6 +226,7 @@ public static class SectionTags
     public static readonly byte[] Dbug = "DBUG"u8.ToArray();  // debug info
     public static readonly byte[] Tidx = "TIDX"u8.ToArray();  // R1: compile-time test metadata
     public static readonly byte[] Frcs = "FRCS"u8.ToArray();  // D1b: FuncRef cache slot count (single u32)
+    public static readonly byte[] Regt = "REGT"u8.ToArray();  // C2 P0 step 0.3 (zbc 1.8): per-function register IrType byte array
     public static readonly byte[] Blid = "BLID"u8.ToArray();  // split-debug-symbols: 16-byte BLAKE3-128 build_id (always last)
 
     public static bool Equals(ReadOnlySpan<byte> a, byte[] b) =>

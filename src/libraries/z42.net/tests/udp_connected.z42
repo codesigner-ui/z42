@@ -1,0 +1,108 @@
+// add-z42-net-udp-connected (2026-05-27): Connect / SendConnected / Disconnect.
+namespace Z42NetUdpConnectedTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+using Std.Encoding;
+
+[Test]
+void test_default_not_connected() {
+    var u = new UdpClient();
+    Assert.False(u.IsConnected());
+    u.Dispose();
+}
+
+[Test]
+void test_connect_sets_state() {
+    var u = new UdpClient();
+    u.Connect("127.0.0.1", 9999);
+    Assert.True(u.IsConnected());
+    u.Dispose();
+}
+
+[Test]
+void test_send_connected_before_connect_throws() {
+    var u = new UdpClient();
+    bool caught = false;
+    try {
+        u.SendConnected(new byte[]{ (byte)1, (byte)2 });
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    u.Dispose();
+}
+
+[Test]
+void test_disconnect_clears_state() {
+    var u = new UdpClient();
+    u.Connect("127.0.0.1", 9999);
+    Assert.True(u.IsConnected());
+    u.Disconnect();
+    Assert.False(u.IsConnected());
+    u.Dispose();
+}
+
+[Test]
+void test_connect_send_receive_roundtrip() {
+    // Server on ephemeral port, ready to echo.
+    var server = new UdpClient();
+    server.Bind("127.0.0.1", 0);
+    int serverPort = server.LocalPort();
+
+    var client = new UdpClient();
+    client.Connect("127.0.0.1", serverPort);
+    byte[] msg = Utf8.GetBytes("hello-connected");
+    int sent = client.SendConnected(msg);
+    Assert.Equal(msg.Length, sent);
+
+    UdpReceiveResult rx = server.Receive();
+    Assert.Equal("hello-connected", Utf8.GetString(rx.Buffer));
+
+    client.Dispose();
+    server.Dispose();
+}
+
+[Test]
+void test_retarget_via_connect() {
+    // Two server sockets — confirm Connect can retarget mid-life.
+    var s1 = new UdpClient();
+    s1.Bind("127.0.0.1", 0);
+    int p1 = s1.LocalPort();
+    var s2 = new UdpClient();
+    s2.Bind("127.0.0.1", 0);
+    int p2 = s2.LocalPort();
+
+    var c = new UdpClient();
+    c.Connect("127.0.0.1", p1);
+    c.SendConnected(Utf8.GetBytes("to-s1"));
+    Assert.Equal("to-s1", Utf8.GetString(s1.Receive().Buffer));
+
+    c.Connect("127.0.0.1", p2);
+    c.SendConnected(Utf8.GetBytes("to-s2"));
+    Assert.Equal("to-s2", Utf8.GetString(s2.Receive().Buffer));
+
+    c.Dispose();
+    s1.Dispose();
+    s2.Dispose();
+}
+
+[Test]
+void test_send_connected_full_array_overload() {
+    var server = new UdpClient();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+
+    var c = new UdpClient();
+    c.Connect("127.0.0.1", port);
+    byte[] full = Utf8.GetBytes("entire-array");
+    int sent = c.SendConnected(full);  // 1-arg overload
+    Assert.Equal(full.Length, sent);
+
+    UdpReceiveResult rx = server.Receive();
+    Assert.Equal("entire-array", Utf8.GetString(rx.Buffer));
+
+    c.Dispose();
+    server.Dispose();
+}

@@ -267,6 +267,12 @@ public static partial class ZpkgWriter
                 ? ZbcWriter.BuildDbugSection(mod.Functions, pool)
                 : [];
 
+            // jit-type-specialization C2 P0 step 0.3 (zpkg 0.9 / zbc 1.8):
+            // per-module REGT carrying per-function register IrType bytes,
+            // length-prefixed like DBUG. 0 bytes when no typed regs (mod
+            // with only param-less / pre-IrType functions).
+            byte[] regtData = ZbcWriter.BuildRegtSection(mod.Functions);
+
             w.Write((uint)pool.Idx(zbc.Namespace));
             w.Write((uint)pool.Idx(zbc.SourceFile));
             w.Write((uint)pool.Idx(zbc.SourceHash));
@@ -278,6 +284,8 @@ public static partial class ZpkgWriter
             if (typeData.Length > 0) w.Write(typeData);
             w.Write((uint)dbugData.Length);
             if (dbugData.Length > 0) w.Write(dbugData);
+            w.Write((uint)regtData.Length);
+            if (regtData.Length > 0) w.Write(regtData);
 
             firstSigIdx += (uint)mod.Functions.Count;
         }

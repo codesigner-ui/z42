@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 7;   // 2026-05-27 align-zbc-reader-writer-asymmetry: SIGS/TYPE 在 u8 type_tag 之后追加 u32 type_str_idx（read→write byte parity；string 是权威，tag 留作 hint）. Pre-1.7 not readable.
+    public const ushort VersionMinor = 8;   // 2026-05-27 jit-type-specialization C2 P0 step 0.3: new REGT section carries per-function register IrType bytes; reader populates Function.reg_types. Pre-1.8 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -112,6 +112,10 @@ public static partial class ZbcWriter
         sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
         sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
         sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap, allocator)));
+        // C2 P0 step 0.3 (zbc 1.8): REGT section piggybacks on FUNC's function
+        // ordering — same `module.Functions` traversal, so reader can pair them
+        // by index without a separate cross-reference table.
+        sections.Add((SectionTags.Regt, BuildRegtSection(module.Functions)));
 
         if (hasDebug && !stripSymbols)
         {
@@ -612,6 +616,76 @@ public static partial class ZbcWriter
     //
     // v=2 (R1.C) bumped from v=1 before any v=1 file existed in the wild.
     private const byte TidxFormatVersion = 2;
+
+    // ── REGT section (per-function register IrType bytes) ────────────────────
+    //
+    // jit-type-specialization C2 P0 step 0.3 (zbc 1.8, 2026-05-27): writer
+    // collects every TypedReg.Type seen in a function (Dst + all reads) and
+    // emits a flat per-function table indexed by register id. Reader on the
+    // Rust side populates `Function.reg_types: Box<[IrType]>` so the JIT
+    // translator can specialize arithmetic / comparison / logical ops on
+    // known primitive types (I64 → emit Cranelift iadd instead of jit_add
+    // helper call). When a register is referenced both as Dst (typed) and
+    // as a read operand (also typed in C# IR), the **first non-Unknown**
+    // type wins — the SSA convention means subsequent references should
+    // already agree, but the first-wins rule is also defensive against
+    // any future codegen producing a TypedReg(id, Unknown) at a use site.
+    //
+    // Wire format:
+    //     u32 fn_count                (matches FUNC count; mismatch → reader ignores)
+    //     for each function:
+    //         u32 reg_count           (== Function.MaxReg or 0 when no typed regs)
+    //         u8 × reg_count          (IrType byte per register id)
+    public static byte[] BuildRegtSection(IReadOnlyList<IrFunction> functions)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((uint)functions.Count);
+        foreach (var fn in functions)
+        {
+            // Round-trip fast path: if reader-preserved REGT bytes are
+            // attached, emit verbatim. This keeps Read→Write byte-identical
+            // even when the writer's TypedReg-walk would inadvertently
+            // produce different bytes (e.g. when a reg is referenced only
+            // as a read operand with type metadata stripped to Unknown).
+            if (fn.RegTypes is { } stored)
+            {
+                w.Write((uint)stored.Length);
+                if (stored.Length > 0) w.Write(stored);
+                continue;
+            }
+
+            // First-pass codegen path: collect per-register types from
+            // TypedReg.Type values. First-non-Unknown wins. `regCount` is
+            // taken from MaxReg / ParamCount (same source-of-truth as the
+            // FUNC body emit path).
+            int regCount = Math.Max(fn.MaxReg, fn.ParamCount);
+            if (regCount == 0)
+            {
+                w.Write((uint)0);
+                continue;
+            }
+
+            byte[] regTypes = new byte[regCount];  // default 0 == IrType.Unknown
+            void Visit(TypedReg r)
+            {
+                if (r.Id < 0 || r.Id >= regTypes.Length) return;
+                if (regTypes[r.Id] == 0 && r.Type != IrType.Unknown)
+                    regTypes[r.Id] = (byte)r.Type;
+            }
+
+            foreach (var block in fn.Blocks)
+            {
+                foreach (var instr in block.Instructions) VisitInstrRegs(instr, Visit);
+                VisitTermRegs(block.Terminator, Visit);
+            }
+
+            w.Write((uint)regCount);
+            w.Write(regTypes);
+        }
+        return ms.ToArray();
+    }
 
     private static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex, int[] strRemap)
     {

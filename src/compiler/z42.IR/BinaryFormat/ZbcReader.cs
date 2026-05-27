@@ -62,6 +62,14 @@ public static partial class ZbcReader
         var testIndex      = ReadSection(data, dir, SectionTags.Tidx,
                                          sec => ReadTidxSection(sec),
                                          (IReadOnlyList<TestEntry>)Array.Empty<TestEntry>());
+        // jit-type-specialization C2 P0 step 0.4 (zbc 1.8, 2026-05-27): REGT
+        // section carries per-function register IrType bytes. Reader preserves
+        // each function's raw byte slice on `IrFunction.RegTypes`, so a
+        // Read→Write round-trip emits byte-identical REGT (writer prefers
+        // stored bytes over recomputing from TypedRegs in this case).
+        var regtBytes      = ReadSection(data, dir, SectionTags.Regt,
+                                         sec => ReadRegtSection(sec),
+                                         new List<byte[]?>());
         // 2026-05-02 add-method-group-conversion (D1b)
         int funcRefCacheSlots = ReadSection(data, dir, SectionTags.Frcs,
                                          sec => (int)BitConverter.ToUInt32(sec, 0),
@@ -94,11 +102,13 @@ public static partial class ZbcReader
             var typeParamConstraints = sig?.TypeParamConstraints;
 
             var (lineTable, localVars) = i < dbugTables.Count ? dbugTables[i] : (null, null);
+            byte[]? regTypes = i < regtBytes.Count ? regtBytes[i] : null;
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                 excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
                 ParamTypes: sig?.ParamTypes,
                 LineTable: lineTable, LocalVarTable: localVars,
-                TypeParams: typeParams, TypeParamConstraints: typeParamConstraints));
+                TypeParams: typeParams, TypeParamConstraints: typeParamConstraints,
+                RegTypes: regTypes));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -576,6 +586,10 @@ public static partial class ZbcReader
     public static List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)> DecodeDbugSectionPublic(
         byte[] data, string[] pool) => ReadDbugSection(data, pool);
 
+    /// Exposes REGT section decoding for ZpkgReader (packed mode per-fn reg types).
+    public static List<byte[]?> DecodeRegtSectionPublic(byte[] data)
+        => ReadRegtSection(data);
+
     /// Exposes TYPE section decoding for ZpkgReader.
     public static List<IrClassDesc> DecodeTypeSectionPublic(
         byte[] data, string[] pool) => ReadTypeSection(data, pool);
@@ -609,6 +623,36 @@ public static partial class ZbcReader
                     if (block.Instructions[i] is ConstStrInstr cs && seen.TryGetValue(cs.Idx, out int local))
                         block.Instructions[i] = new ConstStrInstr(cs.Dst, local);
 
+        return result;
+    }
+
+    // ── REGT section (C2 P0 step 0.4, zbc 1.8) ───────────────────────────────
+    //
+    // Layout (mirror of ZbcWriter.BuildRegtSection):
+    //   u32 fn_count
+    //   for each function:
+    //     u32 reg_count
+    //     u8 × reg_count    (IrType byte per register id)
+    //
+    // For round-trip byte-identity we preserve each function's raw
+    // `u8 × reg_count` slice on `IrFunction.RegTypes`. Writer prefers
+    // these bytes when re-emitting REGT.
+    internal static List<byte[]?> ReadRegtSection(ReadOnlySpan<byte> sec)
+    {
+        var result = new List<byte[]?>();
+        if (sec.Length < 4) return result;
+        int off = 0;
+        uint fnCount = BitConverter.ToUInt32(sec.Slice(off, 4)); off += 4;
+        for (uint i = 0; i < fnCount; i++)
+        {
+            if (off + 4 > sec.Length) break;
+            uint regCount = BitConverter.ToUInt32(sec.Slice(off, 4)); off += 4;
+            if (regCount == 0) { result.Add(null); continue; }
+            if (off + (int)regCount > sec.Length) break;
+            var bytes = sec.Slice(off, (int)regCount).ToArray();
+            off += (int)regCount;
+            result.Add(bytes);
+        }
         return result;
     }
 

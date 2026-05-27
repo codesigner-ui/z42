@@ -27,13 +27,24 @@ public class UdpClient {
     private bool   _disposed;
     private int    _localPort;
     private string _bindHost;
+    // add-z42-net-udp-connected (2026-05-27): default remote for the bare
+    // SendConnected / SendConnectedString helpers. Kept independent of the
+    // OS-level UDP connect() — z42 still uses bare `sendto`/`recvfrom`
+    // under the hood (no kernel-level connected state), the "connection"
+    // is purely a stored default address in this object.
+    private bool   _connected;
+    private string _remoteHost;
+    private int    _remotePort;
 
     public UdpClient() {
-        this._slotId    = -1;
-        this._bound     = false;
-        this._disposed  = false;
-        this._localPort = 0;
-        this._bindHost  = "";
+        this._slotId     = -1;
+        this._bound      = false;
+        this._disposed   = false;
+        this._localPort  = 0;
+        this._bindHost   = "";
+        this._connected  = false;
+        this._remoteHost = "";
+        this._remotePort = 0;
     }
 
     /// Bind to `host:port`. Use port 0 to let the OS pick an available
@@ -93,6 +104,55 @@ public class UdpClient {
         string host = (string)raw[2];
         int    port = (int)(long)raw[3];
         return new UdpReceiveResult(buf, host, port);
+    }
+
+    /// add-z42-net-udp-connected (2026-05-27): set a default remote
+    /// address so subsequent `SendConnected` / `SendConnectedString` calls
+    /// don't need to repeat it. Does not actually call OS `connect(2)` on
+    /// the socket — under the hood we still use `sendto` with the stored
+    /// address, matching BCL `UdpClient.Connect` semantics (informational
+    /// default, not a kernel filter). Connect may be called multiple times
+    /// to retarget; reusing the same UdpClient across remotes is fine.
+    public void Connect(string remoteHost, int remotePort) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        this._remoteHost = remoteHost;
+        this._remotePort = remotePort;
+        this._connected  = true;
+    }
+
+    /// Clear the connected default. Subsequent `SendConnected` will throw.
+    /// `Connect` again to retarget. Idempotent.
+    public void Disconnect() {
+        this._connected  = false;
+        this._remoteHost = "";
+        this._remotePort = 0;
+    }
+
+    /// True if `Connect` has been called and not subsequently `Disconnect`-ed.
+    public bool IsConnected() {
+        return this._connected;
+    }
+
+    /// Send `length` bytes of `data` to the address previously set via
+    /// `Connect`. Throws `InvalidOperationException` if not connected.
+    /// Auto-binds to ephemeral `("0.0.0.0", 0)` on first send (same as
+    /// the addressed `Send` variant).
+    public int SendConnected(byte[] data, int length) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException(
+                "UdpClient.SendConnected called before Connect()");
+        }
+        return this.Send(data, length, this._remoteHost, this._remotePort);
+    }
+
+    /// Convenience: send the entire `data` array to the connected remote.
+    public int SendConnected(byte[] data) {
+        return this.SendConnected(data, data.Length);
     }
 
     /// Local bound port — useful after `Bind(host, 0)` to discover the

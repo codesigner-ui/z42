@@ -8,15 +8,11 @@
 - [x] 0.1 User decides Option A (zbc bump) vs B (load-time inference) — **Option A** chosen (2026-05-27)
 - [x] 0.2 Add `IrType` enum in `src/runtime/src/metadata/ir_type.rs`
        (mirror C# `IrType : byte` — 16 variants) + `Function.reg_types: Box<[IrType]>` field (empty until REGT lands). 6 unit tests verify discriminant lockstep with C# side.
-- [ ] 0.3 (Option A) `ZbcWriter.Instructions.cs::WriteReg` writes
-       `u16 id + u8 type`. Bump zbc minor; update zbc.md changelog.
-- [ ] 0.4 (Option A) `zbc_reader.rs` reads the new byte; populate
-       per-fn `Box<[IrType]>` parallel to register IDs (avoid bloating
-       every `Reg` field).
-- [ ] 0.5 (Option A) Regen 6 fixtures in `src/tests/zbc-format/`.
-- [ ] 0.6 (Option B) Implement load-time type inference walking
-       `Const*` opcodes and propagating through assignment chains.
-- [ ] 0.7 Verify `cargo test` + `test-vm.sh` 326/326.
+- [x] 0.3 (Option A) Added REGT section (NOT per-WriteReg byte — adopted parallel `Box<[IrType]>` per function to keep per-instruction layout intact). zbc bumped 1.7 → 1.8; zbc.md changelog row added.
+- [x] 0.4 (Option A) `zbc_reader.rs` reads REGT section after FUNC; populates `Function.reg_types: Box<[IrType]>`. zpkg packed-mode reader reads per-member `regt_data`. Coupled bump zpkg 0.8 → 0.9; zpkg.md changelog row added.
+- [x] 0.5 (Option A) Regen zbc-format + zpkg-format fixtures + 370 golden .zbc files.
+- [~] 0.6 (Option B) — superseded by A.
+- [x] 0.7 Verify dotnet test 1397/1397 + cargo test 679/679 + sidecar tests 11/11.
 
 ## P1 (specialization core)
 

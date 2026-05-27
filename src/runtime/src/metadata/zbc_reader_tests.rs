@@ -116,13 +116,13 @@ fn zbc_version_constants_pinned() {
     // Sanity: writer's claimed version matches what the reader pins.
     // If this fails, the constants drifted out of sync with C# ZbcWriter.
     assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
-    assert_eq!(ZBC_VERSION_MINOR, 7, "zbc minor at 1.7 (align reader-writer asymmetry — SIGS/TYPE carries u8 TypeTag + u32 type_str_idx)");
+    assert_eq!(ZBC_VERSION_MINOR, 8, "zbc minor at 1.8 (jit-type-specialization C2 P0 step 0.3/0.4 — REGT section per function carries IrType bytes)");
 }
 
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 8, "zpkg minor at 0.8 (catch-up to zbc 1.7)");
+    assert_eq!(ZPKG_VERSION_MINOR, 9, "zpkg minor at 0.9 (catch-up to zbc 1.8 — per-member RegtData added to packed function table)");
 }
 
 #[test]

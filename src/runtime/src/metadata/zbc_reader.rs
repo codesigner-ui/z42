@@ -30,7 +30,7 @@ use super::types::ExecMode;
 // See docs/design/runtime/zbc.md + .claude/rules/workflow.md for the full procedure.
 
 pub const ZBC_VERSION_MAJOR: u16 = 1;
-pub const ZBC_VERSION_MINOR: u16 = 7;
+pub const ZBC_VERSION_MINOR: u16 = 8;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -41,7 +41,7 @@ pub const ZBC_VERSION_MINOR: u16 = 7;
 // procedure (zbc bump → 4 zbc steps + 4 zpkg steps in the same commit).
 
 pub const ZPKG_VERSION_MAJOR: u16 = 0;
-pub const ZPKG_VERSION_MINOR: u16 = 8;
+pub const ZPKG_VERSION_MINOR: u16 = 9;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -578,6 +578,31 @@ fn read_dbug(sec: &[u8], pool: &[String]) -> Result<Vec<DbugFuncEntry>> {
     Ok(result)
 }
 
+/// jit-type-specialization C2 P0 step 0.4 (zbc 1.8, 2026-05-27): decode the
+/// REGT section into one `Box<[IrType]>` per function, indexed by position.
+/// Reader is liberal — unknown byte values decode as `IrType::Unknown` (per
+/// `IrType::from_u8`), so writer-side variant additions don't break older
+/// runtimes.
+fn read_regt(sec: &[u8]) -> Result<Vec<Box<[crate::metadata::IrType]>>> {
+    use crate::metadata::IrType;
+    let mut c = Cursor::new(sec);
+    let func_count = c.read_u32()? as usize;
+    let mut result = Vec::with_capacity(func_count);
+    for _ in 0..func_count {
+        let reg_count = c.read_u32()? as usize;
+        if reg_count == 0 {
+            result.push(Box::new([]) as Box<[IrType]>);
+            continue;
+        }
+        let mut types = Vec::with_capacity(reg_count);
+        for _ in 0..reg_count {
+            types.push(IrType::from_u8(c.read_u8()?));
+        }
+        result.push(types.into_boxed_slice());
+    }
+    Ok(result)
+}
+
 // ── Sidecar API (1.2 / 0.3 split-debug-symbols) ──────────────────────────────
 
 /// Decoded contents of a `.zbc` sidecar (zbc with `ZbcFlags::SymOnly` set).
@@ -1057,13 +1082,26 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
         .transpose()?
         .unwrap_or_default();
 
-    // Assemble functions from SIGS + FUNC + DBUG
+    // jit-type-specialization C2 P0 step 0.4 (zbc 1.8, 2026-05-27): per-
+    // function register IrType bytes. Absent (legacy zbc / writer-only-bumped
+    // path) → all functions get empty reg_types.
+    let mut regt_entries = get_section(data, &dir, b"REGT")
+        .map(read_regt)
+        .transpose()?
+        .unwrap_or_default();
+
+    // Assemble functions from SIGS + FUNC + DBUG + REGT
     let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {
         let sig = sigs.get(i);
         let dbug = if i < dbug_entries.len() {
             std::mem::take(&mut dbug_entries[i])
         } else {
             DbugFuncEntry::default()
+        };
+        let reg_types = if i < regt_entries.len() {
+            std::mem::take(&mut regt_entries[i])
+        } else {
+            Box::new([])
         };
         let cold_inner = crate::metadata::bytecode::FunctionCold {
             param_types:            sig.map(|s| s.param_types.clone()).unwrap_or_default().into_boxed_slice(),
@@ -1093,7 +1131,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
             cold,
-            reg_types:       Box::new([]),
+            reg_types,
             block_index:     std::collections::HashMap::new(),
             resolved:        std::sync::OnceLock::new(),
         }
@@ -1350,6 +1388,11 @@ fn read_mods_section(
         // 1.2 split-debug-symbols: per-member DBUG body. 0 bytes = no debug.
         let dbug_len    = c.read_u32()? as usize;
         let dbug_data   = c.read_bytes(dbug_len)?;
+        // jit-type-specialization C2 P0 (zpkg 0.9 / zbc 1.8, 2026-05-27):
+        // per-member REGT body. 0 bytes = no typed regs (legacy zbc / mod
+        // with no IrType-tagged functions).
+        let regt_len    = c.read_u32()? as usize;
+        let regt_data   = c.read_bytes(regt_len)?;
 
         let namespace = pool_str_owned(pool, ns_idx)?;
         let sigs_slice = &global_sigs[first_sig..first_sig + func_count.min(global_sigs.len() - first_sig.min(global_sigs.len()))];
@@ -1367,6 +1410,11 @@ fn read_mods_section(
         } else {
             Vec::new()
         };
+        let mut regt_entries = if regt_len > 0 {
+            read_regt(regt_data)?
+        } else {
+            Vec::new()
+        };
 
         let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {
             let sig = sigs_slice.get(i);
@@ -1374,6 +1422,11 @@ fn read_mods_section(
                 std::mem::take(&mut dbug_entries[i])
             } else {
                 DbugFuncEntry::default()
+            };
+            let reg_types = if i < regt_entries.len() {
+                std::mem::take(&mut regt_entries[i])
+            } else {
+                Box::new([])
             };
             let cold_inner = crate::metadata::bytecode::FunctionCold {
                 param_types:            sig.map(|s| s.param_types.clone()).unwrap_or_default().into_boxed_slice(),
@@ -1403,7 +1456,7 @@ fn read_mods_section(
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
                 cold,
-                reg_types:       Box::new([]),
+                reg_types,
                 block_index:     std::collections::HashMap::new(),
                 resolved:        std::sync::OnceLock::new(),
             }

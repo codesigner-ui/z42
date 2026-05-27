@@ -121,6 +121,10 @@ public static partial class ZpkgReader
             uint dbugBodySize  = r.ReadUInt32();
             byte[] dbugData    = dbugBodySize > 0 ? r.ReadBytes((int)dbugBodySize) : [];
 
+            // jit-type-specialization C2 P0 (zpkg 0.9 / zbc 1.8): per-member REGT body.
+            uint regtBodySize  = r.ReadUInt32();
+            byte[] regtData    = regtBodySize > 0 ? r.ReadBytes((int)regtBodySize) : [];
+
             // Decode function bodies using global pool
             var funcBodies = ZbcReader.DecodeFuncSectionPublic(funcData, pool);
             var classes    = typeData.Length > 0
@@ -129,6 +133,9 @@ public static partial class ZpkgReader
             var dbugTables = dbugData.Length > 0
                 ? ZbcReader.DecodeDbugSectionPublic(dbugData, pool)
                 : new List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)>();
+            var regTypes = regtData.Length > 0
+                ? ZbcReader.DecodeRegtSectionPublic(regtData)
+                : new List<byte[]?>();
 
             // Reconstruct functions
             var functions = new List<IrFunction>(funcCount);
@@ -141,9 +148,11 @@ public static partial class ZpkgReader
 
                 var (regCount, blocks, excTable) = funcBodies[fi];
                 var (lineTable, localVars) = fi < dbugTables.Count ? dbugTables[fi] : (null, null);
+                var fnRegTypes = fi < regTypes.Count ? regTypes[fi] : null;
                 functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                     excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
-                    LineTable: lineTable, LocalVarTable: localVars));
+                    LineTable: lineTable, LocalVarTable: localVars,
+                    RegTypes: fnRegTypes));
             }
 
             var strPool = ZbcReader.RebuildStringPoolPublic(pool, functions);

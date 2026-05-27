@@ -201,6 +201,9 @@ public static partial class ZpkgReader
                 // 1.2 split-debug-symbols: per-member DBUG body trailing typeData.
                 uint dbugBodySize  = r.ReadUInt32();
                 r.BaseStream.Seek(dbugBodySize, SeekOrigin.Current);
+                // jit-type-specialization C2 P0 (zpkg 0.9 / zbc 1.8): per-member REGT body.
+                uint regtBodySize  = r.ReadUInt32();
+                r.BaseStream.Seek(regtBodySize, SeekOrigin.Current);
                 result.Add((sourceFile, sourceHash, ns));
             }
             return result;

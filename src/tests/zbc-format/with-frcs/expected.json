@@ -1,11 +1,11 @@
 {
   "header": {
     "major": 1,
-    "minor": 7,
+    "minor": 8,
     "flags": [
       "HasDebug"
     ],
-    "section_count": 9
+    "section_count": 10
   },
   "sections": [
     "NSPC",
@@ -15,6 +15,7 @@
     "IMPT",
     "EXPT",
     "FUNC",
+    "REGT",
     "DBUG",
     "FRCS"
   ],
