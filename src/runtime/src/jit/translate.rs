@@ -565,51 +565,89 @@ pub fn translate_function(
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
-                // Comparison
+                // Comparison — C2 P1: I64-typed operands emit Cranelift
+                // `icmp <pred>` directly; Bool result stored back inline.
                 Instruction::Eq { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    builder.ins().call(hr_eq, &[frame_val, ctx_val, d, av, bv]);
+                    if is_i64_cmp(z42_func, *a, *b) {
+                        emit_i64_cmp(&mut builder, regs_base, *dst, *a, *b, CmpKind::Eq);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        builder.ins().call(hr_eq, &[frame_val, ctx_val, d, av, bv]);
+                    }
                 }
                 Instruction::Ne { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    builder.ins().call(hr_ne, &[frame_val, ctx_val, d, av, bv]);
+                    if is_i64_cmp(z42_func, *a, *b) {
+                        emit_i64_cmp(&mut builder, regs_base, *dst, *a, *b, CmpKind::Ne);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        builder.ins().call(hr_ne, &[frame_val, ctx_val, d, av, bv]);
+                    }
                 }
                 Instruction::Lt { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_lt, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_cmp(z42_func, *a, *b) {
+                        emit_i64_cmp(&mut builder, regs_base, *dst, *a, *b, CmpKind::Lt);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_lt, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Le { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_le, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_cmp(z42_func, *a, *b) {
+                        emit_i64_cmp(&mut builder, regs_base, *dst, *a, *b, CmpKind::Le);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_le, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Gt { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_gt, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_cmp(z42_func, *a, *b) {
+                        emit_i64_cmp(&mut builder, regs_base, *dst, *a, *b, CmpKind::Gt);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_gt, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Ge { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_ge, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_cmp(z42_func, *a, *b) {
+                        emit_i64_cmp(&mut builder, regs_base, *dst, *a, *b, CmpKind::Ge);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_ge, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
 
-                // Logical
+                // Logical — C2 P1: Bool-typed operands emit Cranelift
+                // `band`/`bor`/`bnot` directly on the i8 payload.
                 Instruction::And { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_and, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_bool_typed(z42_func, *dst, *a, *b) {
+                        emit_bool_binop(&mut builder, regs_base, *dst, *a, *b, BoolBinopKind::And);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_and, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Or { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_or, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_bool_typed(z42_func, *dst, *a, *b) {
+                        emit_bool_binop(&mut builder, regs_base, *dst, *a, *b, BoolBinopKind::Or);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_or, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Not { dst, src } => {
-                    let d = ri!(*dst); let s = ri!(*src);
-                    let inst = builder.ins().call(hr_not, &[frame_val, ctx_val, d, s]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_bool_typed_unary(z42_func, *dst, *src) {
+                        emit_bool_not(&mut builder, regs_base, *dst, *src);
+                    } else {
+                        let d = ri!(*dst); let s = ri!(*src);
+                        let inst = builder.ins().call(hr_not, &[frame_val, ctx_val, d, s]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
 
                 // Unary arithmetic
@@ -1013,6 +1051,39 @@ fn is_i64_typed(func: &Function, dst: u32, a: u32, b: u32) -> bool {
 #[derive(Clone, Copy)]
 enum BinopKind { Add, Sub, Mul }
 
+/// Comparison op kind for `emit_i64_cmp`.
+#[derive(Clone, Copy)]
+enum CmpKind { Eq, Ne, Lt, Le, Gt, Ge }
+
+/// Bool binary op kind for `emit_bool_binop`.
+#[derive(Clone, Copy)]
+enum BoolBinopKind { And, Or }
+
+/// I64 comparison fast-path predicate. Output is always `Bool` regardless
+/// of input — we only need to check operand types are I64.
+#[inline]
+fn is_i64_cmp(func: &Function, a: u32, b: u32) -> bool {
+    let rt = &func.reg_types;
+    let get = |i: u32| rt.get(i as usize).copied().unwrap_or(IrType::Unknown);
+    get(a).is_i64() && get(b).is_i64()
+}
+
+/// Bool binary-op predicate (And/Or): all three regs are Bool.
+#[inline]
+fn is_bool_typed(func: &Function, dst: u32, a: u32, b: u32) -> bool {
+    let rt = &func.reg_types;
+    let is_bool = |i: u32| rt.get(i as usize).copied() == Some(IrType::Bool);
+    is_bool(dst) && is_bool(a) && is_bool(b)
+}
+
+/// Bool unary-op predicate (Not): both regs are Bool.
+#[inline]
+fn is_bool_typed_unary(func: &Function, dst: u32, src: u32) -> bool {
+    let rt = &func.reg_types;
+    let is_bool = |i: u32| rt.get(i as usize).copied() == Some(IrType::Bool);
+    is_bool(dst) && is_bool(src)
+}
+
 /// Emit Cranelift native code for `frame.regs[dst] = Value::I64(op(a, b))`,
 /// loading both operands' i64 payloads via raw pointer arithmetic against
 /// the cached `regs_base` and storing back with the I64 discriminant byte.
@@ -1059,5 +1130,107 @@ fn emit_i64_binop(
     // Store discriminant (u8 0 = TAG_I64) then i64 payload.
     let tag = builder.ins().iconst(types::I8, TAG_I64 as i64);
     builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit Cranelift native `icmp <pred>` for `frame.regs[dst] = Value::Bool(a OP b)`
+/// when both `a` and `b` are statically I64. Result discriminant is `TAG_BOOL`,
+/// payload is the i8 comparison result.
+fn emit_i64_cmp(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, a: u32, b: u32,
+    kind: CmpKind,
+) {
+    use cranelift_codegen::ir::condcodes::IntCC;
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_BOOL:       u8  = 2;
+
+    let off_a   = builder.ins().iconst(types::I64, (a   as i64) * VALUE_STRIDE);
+    let off_b   = builder.ins().iconst(types::I64, (b   as i64) * VALUE_STRIDE);
+    let off_dst = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_a   = builder.ins().iadd(regs_base, off_a);
+    let addr_b   = builder.ins().iadd(regs_base, off_b);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+
+    let ai = builder.ins().load(types::I64, MemFlags::trusted(), addr_a, PAYLOAD_OFFSET);
+    let bi = builder.ins().load(types::I64, MemFlags::trusted(), addr_b, PAYLOAD_OFFSET);
+
+    // Cranelift `icmp` returns an i8 (boolean: 0 or 1) — directly the
+    // payload byte we need to write back. Signed compares since z42's
+    // `<` / `<=` etc. are signed on all narrow integer types (i8..i64).
+    let cc = match kind {
+        CmpKind::Eq => IntCC::Equal,
+        CmpKind::Ne => IntCC::NotEqual,
+        CmpKind::Lt => IntCC::SignedLessThan,
+        CmpKind::Le => IntCC::SignedLessThanOrEqual,
+        CmpKind::Gt => IntCC::SignedGreaterThan,
+        CmpKind::Ge => IntCC::SignedGreaterThanOrEqual,
+    };
+    let result_i8 = builder.ins().icmp(cc, ai, bi);
+
+    let tag = builder.ins().iconst(types::I8, TAG_BOOL as i64);
+    builder.ins().store(MemFlags::trusted(), tag,       addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result_i8, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit Cranelift native `band`/`bor` on Bool operands.
+/// `frame.regs[dst] = Value::Bool(a OP b)` for And/Or, statically Bool inputs.
+fn emit_bool_binop(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, a: u32, b: u32,
+    kind: BoolBinopKind,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_BOOL:       u8  = 2;
+
+    let off_a   = builder.ins().iconst(types::I64, (a   as i64) * VALUE_STRIDE);
+    let off_b   = builder.ins().iconst(types::I64, (b   as i64) * VALUE_STRIDE);
+    let off_dst = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_a   = builder.ins().iadd(regs_base, off_a);
+    let addr_b   = builder.ins().iadd(regs_base, off_b);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+
+    // Bool payload is a single u8 at offset 8.
+    let ai = builder.ins().load(types::I8, MemFlags::trusted(), addr_a, PAYLOAD_OFFSET);
+    let bi = builder.ins().load(types::I8, MemFlags::trusted(), addr_b, PAYLOAD_OFFSET);
+
+    let result = match kind {
+        BoolBinopKind::And => builder.ins().band(ai, bi),
+        BoolBinopKind::Or  => builder.ins().bor(ai, bi),
+    };
+
+    let tag = builder.ins().iconst(types::I8, TAG_BOOL as i64);
+    builder.ins().store(MemFlags::trusted(), tag,    addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit Cranelift native `bnot` (xor 1) for `Value::Bool(!a)`. The src
+/// payload is a single u8 (0 or 1); `xor 1` flips it. Avoids the
+/// `band/bor` constant-fold subtlety of Cranelift's `bnot` on i8 (which
+/// would flip ALL bits, producing 0xfe from 0x01 — wrong for a Bool slot).
+fn emit_bool_not(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, src: u32,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_BOOL:       u8  = 2;
+
+    let off_src = builder.ins().iconst(types::I64, (src as i64) * VALUE_STRIDE);
+    let off_dst = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_src = builder.ins().iadd(regs_base, off_src);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+
+    let si = builder.ins().load(types::I8, MemFlags::trusted(), addr_src, PAYLOAD_OFFSET);
+    let one = builder.ins().iconst(types::I8, 1);
+    let result = builder.ins().bxor(si, one);
+
+    let tag = builder.ins().iconst(types::I8, TAG_BOOL as i64);
+    builder.ins().store(MemFlags::trusted(), tag,    addr_dst, 0);
     builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
 }
