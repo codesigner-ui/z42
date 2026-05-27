@@ -257,11 +257,11 @@ underlying Stream open on `Close()` (caller owns lifecycle). See
   needs a proper `IDisposable` / `using` language story.
 - **触发条件**：z42 lands `IDisposable` + `using` syntax.
 
-### `io-stream-future-end-of-stream-exception`
+### ~~`io-stream-future-end-of-stream-exception`~~ — **✅ 已落地 2026-05-27 (add-end-of-stream-exception)**
 
-- **来源**：v0 scope cut
-- **触发原因**：`ReadExactly` today throws `InvalidOperationException`
-  on premature EOF. Should be a dedicated `Std.EndOfStreamException`
-  (mirrors .NET) — needs a small `add-z42-io-exceptions` follow-up.
-- **触发条件**：first caller that catches EOF specifically
-  (vs other `InvalidOperationException` causes).
+Shipped: `Std.EndOfStreamException` extends `Exception`, replaces v0's
+reuse of `InvalidOperationException` in `Stream.ReadExactly` on premature
+EOF. Catchable as either the specific type (preferred for EOF-distinct
+handling) or as base `Exception` (existing catch-all paths unchanged).
+Tests: `stream_convenience.test_read_exactly_throws_on_premature_eof`
+updated + `..._eof_catchable_as_base_exception` added.

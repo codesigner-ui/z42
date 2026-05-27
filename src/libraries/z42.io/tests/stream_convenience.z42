@@ -81,12 +81,29 @@ void test_read_exactly_returns_exact_count() {
 
 [Test]
 void test_read_exactly_throws_on_premature_eof() {
+    // add-end-of-stream-exception (2026-05-27): premature EOF now raises
+    // the dedicated EndOfStreamException (was InvalidOperationException in v0).
     byte[] data = new byte[] { (byte)1, (byte)2 };
     MemoryStream ro = new MemoryStream(data);
     bool caught = false;
     try {
         ro.ReadExactly(5);  // only 2 bytes available
-    } catch (InvalidOperationException e) {
+    } catch (EndOfStreamException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_read_exactly_eof_catchable_as_base_exception() {
+    // EndOfStreamException extends Exception so existing catch-all paths
+    // keep working — verifies inheritance for legacy callers.
+    byte[] data = new byte[] { (byte)1 };
+    MemoryStream ro = new MemoryStream(data);
+    bool caught = false;
+    try {
+        ro.ReadExactly(10);
+    } catch (Exception e) {
         caught = true;
     }
     Assert.True(caught);

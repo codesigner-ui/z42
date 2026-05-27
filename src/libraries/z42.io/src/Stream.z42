@@ -152,7 +152,7 @@ public class Stream {
         while (total < count) {
             int n = this.Read(result, total, count - total);
             if (n <= 0) {
-                throw new InvalidOperationException("ReadExactly: unexpected EOF after "
+                throw new EndOfStreamException("ReadExactly: unexpected EOF after "
                     + total.ToString() + " of " + count.ToString() + " bytes");
             }
             total = total + n;
