@@ -59,11 +59,7 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
-        own_fields: Vec::new().into(),
-        own_methods: Vec::new().into(),
-        type_params: vec![].into(),
-        type_args: Box::new([]),
-        type_param_constraints: vec![].into(),
+        cold: None,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })
 }

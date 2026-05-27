@@ -449,11 +449,7 @@ fn dummy_type_desc(name: &str) -> Arc<z42::metadata::TypeDesc> {
         field_index: std::collections::HashMap::new(),
         vtable: Vec::new(),
         vtable_index: std::collections::HashMap::new(),
-        own_fields: Vec::new().into(),
-        own_methods: Vec::new().into(),
-        type_params: vec![].into(),
-        type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
+        cold: None,
         id: z42::metadata::tokens::TypeId::UNRESOLVED,
     })
 }
@@ -480,11 +476,7 @@ fn concurrent_gc_mode_stress_no_race_no_leak() {
             field_index: std::collections::HashMap::new(),
             vtable: Vec::new(),
             vtable_index: std::collections::HashMap::new(),
-            own_fields: Vec::new().into(),
-            own_methods: Vec::new().into(),
-            type_params: vec![].into(),
-            type_args: vec![].into(),
-            type_param_constraints: vec![].into(),
+            cold: None,
             id: z42::metadata::tokens::TypeId::UNRESOLVED,
         })
     }

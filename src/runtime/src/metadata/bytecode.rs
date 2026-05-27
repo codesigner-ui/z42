@@ -68,6 +68,13 @@ impl Module {
         let new_id = TypeId(self.type_registry_vec.len() as u32);
         // Rebuild with the new module-local id (TypeDesc.id is a single u32 —
         // cheap to clone the rest by Arc-internals walking).
+        let cold = td.cold.as_deref().map(|c| Box::new(crate::metadata::types::TypeDescCold {
+            own_fields:             c.own_fields.clone(),
+            own_methods:            c.own_methods.clone(),
+            type_params:            c.type_params.clone(),
+            type_args:              c.type_args.clone(),
+            type_param_constraints: c.type_param_constraints.clone(),
+        }));
         let rebuilt = Arc::new(TypeDesc {
             name: td.name.clone(),
             id: new_id,
@@ -76,11 +83,7 @@ impl Module {
             field_index: td.field_index.clone(),
             vtable: td.vtable.clone(),
             vtable_index: td.vtable_index.clone(),
-            own_fields: td.own_fields.clone(),
-            own_methods: td.own_methods.clone(),
-            type_params: td.type_params.clone(),
-            type_args: td.type_args.clone(),
-            type_param_constraints: td.type_param_constraints.clone(),
+            cold,
         });
         self.type_registry.insert(rebuilt.name.clone(), rebuilt.clone());
         self.type_registry_vec.push(rebuilt);

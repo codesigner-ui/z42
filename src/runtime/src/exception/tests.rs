@@ -98,19 +98,19 @@ mod make_stdlib_exception_tests {
         for (i, f) in fields.iter().enumerate() {
             field_index.insert(f.name.to_string(), i);
         }
+        let own_fields_box: Box<[FieldSlot]> = fields.clone().into();
         Arc::new(TypeDesc {
             name:                   name.into(),
             id:                     TypeId::UNRESOLVED,
             base_name:              base.map(str::to_owned),
-            own_fields:             fields.clone().into(),
-            own_methods:            vec![].into(),
             fields,
             field_index,
             vtable:                 vec![],
             vtable_index:           HashMap::new(),
-            type_params:            vec![].into(),
-            type_args:              vec![].into(),
-            type_param_constraints: vec![].into(),
+            cold: Some(Box::new(crate::metadata::types::TypeDescCold {
+                own_fields: own_fields_box,
+                ..Default::default()
+            })),
         })
     }
 

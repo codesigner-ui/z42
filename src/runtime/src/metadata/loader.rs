@@ -556,6 +556,22 @@ pub fn build_type_registry(module: &mut Module) {
 
         let type_id = crate::metadata::tokens::TypeId(next_type_id);
         next_type_id += 1;
+        let cold_inner = crate::metadata::types::TypeDescCold {
+            own_fields:             own_fields.into(),
+            own_methods:            own_methods.into(),
+            type_params:            desc.type_params.clone(),
+            type_args:              vec![].into(),
+            type_param_constraints: desc.type_param_constraints.clone(),
+        };
+        let cold = if cold_inner.own_fields.is_empty()
+            && cold_inner.own_methods.is_empty()
+            && cold_inner.type_params.is_empty()
+            && cold_inner.type_param_constraints.is_empty()
+        {
+            None
+        } else {
+            Some(Box::new(cold_inner))
+        };
         let arc = Arc::new(TypeDesc {
             name: class_name.clone(),
             base_name: desc.base_class.clone(),
@@ -563,11 +579,7 @@ pub fn build_type_registry(module: &mut Module) {
             field_index,
             vtable,
             vtable_index,
-            own_fields: own_fields.into(),
-            own_methods: own_methods.into(),
-            type_params: desc.type_params.clone(),
-            type_args: vec![].into(),
-            type_param_constraints: desc.type_param_constraints.clone(),
+            cold,
             id: type_id,
         });
         debug_assert_eq!(
@@ -671,8 +683,8 @@ pub fn try_fixup_inheritance(
             continue;
         }
         let layout = merge_with_base(
-            &td.own_fields,
-            &td.own_methods,
+            td.own_fields(),
+            td.own_methods(),
             td.base_name.as_deref(),
             registry,
         );
@@ -719,9 +731,9 @@ fn needs_fixup(td: &TypeDesc, registry: &HashMap<String, Arc<TypeDesc>>) -> bool
     let Some(base_name) = td.base_name.as_deref() else { return false; };
     let Some(base) = registry.get(base_name) else { return false; }; // base still unresolvable
     let expected_field_count = base.fields.len()
-        + td.own_fields.iter().filter(|f| !base.fields.iter().any(|b| b.name == f.name)).count();
+        + td.own_fields().iter().filter(|f| !base.fields.iter().any(|b| b.name == f.name)).count();
     let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-    let own_unique_methods = td.own_methods.iter()
+    let own_unique_methods = td.own_methods().iter()
         .filter(|(n, _)| !base.vtable_index.contains_key(n))
         .filter(|(n, _)| seen.insert(n.as_str()))
         .count();
@@ -739,8 +751,8 @@ fn needs_fixup(td: &TypeDesc, registry: &HashMap<String, Arc<TypeDesc>>) -> bool
 /// in the error message so zbc tampering is flagged clearly.
 pub fn verify_constraints(module: &Module) -> Result<()> {
     for cls in module.type_registry.values() {
-        let tp_names: Vec<&str> = cls.type_params.iter().map(|s| s.as_str()).collect();
-        for bundle in &cls.type_param_constraints {
+        let tp_names: Vec<&str> = cls.type_params().iter().map(|s| s.as_str()).collect();
+        for bundle in cls.type_param_constraints() {
             check_constraint_refs(bundle, &module.type_registry, &cls.name, &tp_names)?;
         }
     }

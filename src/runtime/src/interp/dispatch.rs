@@ -130,13 +130,14 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
     TypeDesc {
         name: class_name.to_string(),
         base_name,
-        own_fields: own_fields.into(),
-        own_methods: vec![].into(),
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(), type_params: vec![].into(), type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
+        vtable_index: HashMap::new(),
+        cold: Some(Box::new(crate::metadata::types::TypeDescCold {
+            own_fields: own_fields.into(),
+            ..Default::default()
+        })),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     }
 }

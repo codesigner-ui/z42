@@ -20,10 +20,7 @@ fn obj(ctx: &VmContext, class_name: &str) -> Value {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
-        own_fields: Vec::new().into(),
-        own_methods: Vec::new().into(),
-        type_params: vec![].into(), type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
+        cold: None,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });
     ctx.heap().alloc_object(type_desc, Vec::new(), NativeData::None)

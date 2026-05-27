@@ -126,15 +126,14 @@ fn gc_handle_type_desc() -> Arc<TypeDesc> {
         Arc::new(TypeDesc {
             name: "Std.GCHandle".to_string(),
             base_name: None,
-            own_fields: fields.clone().into(),
-            own_methods: vec![].into(),
+            cold: Some(Box::new(crate::metadata::types::TypeDescCold {
+                own_fields: fields.clone().into(),
+                ..Default::default()
+            })),
             fields,
             field_index,
             vtable: Vec::new(),
             vtable_index: HashMap::new(),
-            type_params: vec![].into(),
-            type_args: vec![].into(),
-            type_param_constraints: vec![].into(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()
@@ -161,15 +160,14 @@ fn heap_stats_type_desc() -> Arc<TypeDesc> {
         Arc::new(TypeDesc {
             name: "Std.HeapStats".to_string(),
             base_name: None,
-            own_fields: fields.clone().into(),
-            own_methods: vec![].into(),
+            cold: Some(Box::new(crate::metadata::types::TypeDescCold {
+                own_fields: fields.clone().into(),
+                ..Default::default()
+            })),
             fields,
             field_index,
             vtable: Vec::new(),
             vtable_index: HashMap::new(),
-            type_params: vec![].into(),
-            type_args: vec![].into(),
-            type_param_constraints: vec![].into(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()
@@ -359,15 +357,14 @@ fn soft_handle_type_desc() -> Arc<TypeDesc> {
         Arc::new(TypeDesc {
             name: "Std.SoftHandle".to_string(),
             base_name: None,
-            own_fields: fields.clone().into(),
-            own_methods: vec![].into(),
+            cold: Some(Box::new(crate::metadata::types::TypeDescCold {
+                own_fields: fields.clone().into(),
+                ..Default::default()
+            })),
             fields,
             field_index,
             vtable: Vec::new(),
             vtable_index: HashMap::new(),
-            type_params: vec![].into(),
-            type_args: vec![].into(),
-            type_param_constraints: vec![].into(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()

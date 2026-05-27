@@ -62,8 +62,8 @@ fn loader_populates_typedesc_constraints() {
     build_type_registry(&mut m);
 
     let td = m.type_registry.get("Box").expect("Box in registry");
-    assert_eq!(td.type_param_constraints.len(), 1);
-    assert_eq!(td.type_param_constraints[0].base_class.as_deref(), Some("Animal"));
+    assert_eq!(td.type_param_constraints().len(), 1);
+    assert_eq!(td.type_param_constraints()[0].base_class.as_deref(), Some("Animal"));
 }
 
 #[test]
@@ -128,9 +128,9 @@ fn loader_preserves_type_param_constraint() {
     build_type_registry(&mut m);
 
     let td = m.type_registry.get("Container").expect("Container in registry");
-    assert_eq!(td.type_param_constraints.len(), 2);
-    assert_eq!(td.type_param_constraints[0].type_param_constraint, None);
-    assert_eq!(td.type_param_constraints[1].type_param_constraint.as_deref(), Some("T"));
+    assert_eq!(td.type_param_constraints().len(), 2);
+    assert_eq!(td.type_param_constraints()[0].type_param_constraint, None);
+    assert_eq!(td.type_param_constraints()[1].type_param_constraint.as_deref(), Some("T"));
 
     // verify pass passes through bare-tp constraints without registry lookup.
     verify_constraints(&m).expect("bare typeparam is local-only, no registry lookup needed");

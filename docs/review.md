@@ -1356,7 +1356,7 @@ pub struct ScriptObject {
 | 🟡 | **StringId intern**（E2.P3）— Phase A `StringId(u32)` newtype + accessors landed add-string-id-newtype (2026-05-26); Phase B+ migrates individual String fields one at a time | 5 | Phase A done | data |
 | **P0** | **JIT type specialization** (C2) | 2 | 2-3 天 | perf |
 | **P0** | **JIT↔VM `JitVm` trait 抽象** (Part 1 + E1.P2) | 1 | 2-3 天 | arch |
-| **P1** | **TypeDesc 热 / 冷拆分**（E2.P1）— 336B → 64B | 5 | 5-7 天 | data |
+| 🟡 | **TypeDesc 热 / 冷拆分**（E2.P1）— Step 1 (2026-05-27): 5 cold fields (own_fields / own_methods / type_params / type_args / type_param_constraints) moved into `Box<TypeDescCold>` behind `Option`. Non-generic non-inheriting types now carry 8 B null ptr instead of 80 B inline; reads via accessor methods returning `&[T]`. Full 336 B → 64 B target (StringId / TypeId / MethodId migration of hot fields) waits on StringId Phase B+. | 5 | Step 1 done | data |
 | **P1** | **Instruction 瘦身**（E2.P4）— ~120B → ≤32B | 5 | 3-4 天 | data |
 | 🟡 | **FieldSlot bit-packed**（E2.P2）— Step 1 (2026-05-27): `String` → `Box<str>` for `name` + `type_tag`; 48 B → 32 B per slot. Full 16 B target (StringId + TypeId + offset + flags) waits on StringId Phase B+ migration. | 5 | Step 1 done | data |
 | ✅ | ~~Per-module log filtering~~ (D2) — EnvFilter `Z42_LOG` wired in `init_tracing` (2026-05-25) | 4 | done | ops |

@@ -330,11 +330,7 @@ fn register_lazy_type_appends_with_next_id() {
         field_index: std::collections::HashMap::new(),
         vtable: vec![],
         vtable_index: std::collections::HashMap::new(),
-        own_fields: vec![].into(),
-        own_methods: vec![].into(),
-        type_params: vec![].into(),
-        type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
+        cold: None,
     });
 
     let assigned = module.register_lazy_type(foreign);
@@ -352,8 +348,7 @@ fn register_lazy_type_appends_with_next_id() {
         id: crate::metadata::tokens::TypeId(99),
         base_name: None, fields: vec![], field_index: std::collections::HashMap::new(),
         vtable: vec![], vtable_index: std::collections::HashMap::new(),
-        own_fields: vec![].into(), own_methods: vec![].into(),
-        type_params: vec![].into(), type_args: vec![].into(), type_param_constraints: vec![].into(),
+        cold: None,
     });
     let dup_id = module.register_lazy_type(dup);
     assert_eq!(dup_id, assigned, "re-register returns existing id");
@@ -422,7 +417,7 @@ fn fixup_inherits_base_fields_from_separate_module() {
     // Before merge, B's Sub has only its own field — base is unresolvable
     // within mod_b's local registry.
     let sub_before = mod_b.type_registry.get("Sub").expect("Sub registered");
-    assert_eq!(sub_before.own_fields.len(), 1, "Sub has 1 own field");
+    assert_eq!(sub_before.own_fields().len(), 1, "Sub has 1 own field");
     assert_eq!(sub_before.fields.len(), 1, "Sub.fields lacks inherited slots pre-fixup");
 
     // Simulate lazy_loader merge: copy both modules' TypeDescs into a

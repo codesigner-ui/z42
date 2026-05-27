@@ -116,18 +116,31 @@ pub struct TypeDesc {
     pub vtable: Vec<(String, String)>,
     /// `method_name → vtable slot index` — O(1) virtual dispatch.
     pub vtable_index: HashMap<String, usize>,
+    /// review.md E2.P1 Step 1 (2026-05-27): five rarely-accessed fields
+    /// (own_fields / own_methods / type_params / type_args /
+    /// type_param_constraints) live behind an `Option<Box<TypeDescCold>>`.
+    /// Hot path (FieldGet IC miss → `field_index`; VCall miss →
+    /// `vtable_index`; subclass walk → `base_name`; instance ops →
+    /// `fields`) never touches the cold box. Saves 5 × 16 B → 8 B
+    /// (Option-niche on Box) ≈ 72 B per non-generic non-inheriting
+    /// TypeDesc. Cold box allocated lazily by `cold_mut()` (loader fixup
+    /// and tests) and freed when TypeDesc drops.
+    ///
+    /// Full E2.P1 target (hot 64 B via StringId / TypeId / MethodId
+    /// migration + cold further packed) waits on StringId Phase B+.
+    pub cold: Option<Box<TypeDescCold>>,
+}
+
+/// Cold side-table for `TypeDesc`. Holds inheritance fixup inputs +
+/// generics metadata. Touched only by loader fixup, reflection /
+/// `DefaultOf` opcode, and constraint verification — never by hot
+/// dispatch.
+#[derive(Debug, Default)]
+pub struct TypeDescCold {
     /// fix-cross-pkg-subclass-fields (2026-05-14): the fields **this class
     /// itself declares** (excluding inherited). Preserved so the cross-zpkg
     /// fixup pass can rebuild `fields` = base.fields ++ own_fields once the
     /// base class becomes resolvable via the global type registry.
-    ///
-    /// review.md E5.3 follow-up (2026-05-27): these five fields are
-    /// immutable after `build_type_registry` / `try_fixup_inheritance`
-    /// finishes (the latter rewrites `fields` / `vtable` from `own_*` +
-    /// base, not these). Stored as `Box<[T]>` (16 B) instead of `Vec<T>`
-    /// (24 B) — saves 8 B/field × 5 ≈ 40 B per TypeDesc. `fields`,
-    /// `field_index`, `vtable`, `vtable_index` stay growable since fixup
-    /// reassigns them.
     pub own_fields: Box<[FieldSlot]>,
     /// fix-cross-pkg-subclass-fields (2026-05-14): the (simple_method_name,
     /// qualified_func_name) pairs **this class itself defines**, in the
@@ -143,6 +156,28 @@ pub struct TypeDesc {
     /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
     /// Empty for non-generic classes; inner bundle may be empty for unconstrained params.
     pub type_param_constraints: Box<[super::bytecode::ConstraintBundle]>,
+}
+
+impl TypeDesc {
+    #[inline]
+    fn cold_slice<T, F: FnOnce(&TypeDescCold) -> &[T]>(&self, f: F) -> &[T] {
+        match self.cold.as_ref() {
+            Some(c) => f(c),
+            None    => &[],
+        }
+    }
+
+    #[inline] pub fn own_fields(&self)             -> &[FieldSlot]                              { self.cold_slice(|c| &c.own_fields) }
+    #[inline] pub fn own_methods(&self)            -> &[(String, String)]                       { self.cold_slice(|c| &c.own_methods) }
+    #[inline] pub fn type_params(&self)            -> &[String]                                 { self.cold_slice(|c| &c.type_params) }
+    #[inline] pub fn type_args(&self)              -> &[String]                                 { self.cold_slice(|c| &c.type_args) }
+    #[inline] pub fn type_param_constraints(&self) -> &[super::bytecode::ConstraintBundle]      { self.cold_slice(|c| &c.type_param_constraints) }
+
+    /// Lazy-init the cold side-table for mutation.
+    #[inline]
+    pub fn cold_mut(&mut self) -> &mut TypeDescCold {
+        self.cold.get_or_insert_with(|| Box::new(TypeDescCold::default()))
+    }
 }
 
 // ── NativeData — native backing for built-in class types ────────────────────

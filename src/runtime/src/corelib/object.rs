@@ -29,16 +29,18 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         crate::metadata::FieldSlot { name: "__name".to_string().into(), type_tag: "str".to_string().into() },
         crate::metadata::FieldSlot { name: "__fullName".to_string().into(), type_tag: "str".to_string().into() },
     ];
+    let cold = Some(Box::new(crate::metadata::types::TypeDescCold {
+        own_fields: fields.clone().into(),
+        ..Default::default()
+    }));
     let type_desc = Arc::new(TypeDesc {
         name: crate::metadata::well_known_names::STD_TYPE.to_string(),
         base_name: None,
-        own_fields: fields.clone().into(),
-        own_methods: vec![].into(),
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(), type_params: vec![].into(), type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
+        vtable_index: HashMap::new(),
+        cold,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });
     Ok(ctx.heap().alloc_object(
@@ -178,11 +180,7 @@ fn weak_handle_type_desc() -> Arc<TypeDesc> {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
-        own_fields: Vec::new().into(),
-        own_methods: Vec::new().into(),
-        type_params: vec![].into(),
-        type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
+        cold: None,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })).clone()
 }

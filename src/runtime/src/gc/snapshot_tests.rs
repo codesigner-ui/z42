@@ -22,15 +22,14 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
     Arc::new(TypeDesc {
         name: name.to_string(),
         base_name: None,
-        fields: fields.clone(),
+        cold: Some(Box::new(crate::metadata::types::TypeDescCold {
+            own_fields: fields.clone().into(),
+            ..Default::default()
+        })),
+        fields,
         field_index,
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
-        own_fields: fields.into(),
-        own_methods: Vec::new().into(),
-        type_params: vec![].into(),
-        type_args: vec![].into(),
-        type_param_constraints: vec![].into(),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })
 }
