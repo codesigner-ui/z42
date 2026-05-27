@@ -41,6 +41,12 @@ fn ok_two(ctx: &VmContext, a: i64, b: i64) -> Value {
     ctx.heap().alloc_array(vec![Value::I64(KIND_OK), Value::I64(a), Value::I64(b)])
 }
 
+/// add-z42-net-udp-multicast (2026-05-27): success tuple without payload
+/// for void-shaped ops (multicast join/leave/set_loop).
+fn ok_unit(ctx: &VmContext) -> Value {
+    ctx.heap().alloc_array(vec![Value::I64(KIND_OK)])
+}
+
 fn socket_err(ctx: &VmContext, msg: String) -> Value {
     ctx.heap().alloc_array(vec![Value::I64(KIND_SOCKET_ERR), Value::Str(msg.into())])
 }
@@ -414,6 +420,113 @@ mod imp {
         Ok(Value::Null)
     }
 
+    // ── add-z42-net-udp-multicast (2026-05-27) ───────────────────────────
+    use std::net::Ipv4Addr;
+
+    /// Parse a dotted-quad string into Ipv4Addr.
+    fn parse_ipv4(s: &str) -> std::result::Result<Ipv4Addr, String> {
+        s.parse::<Ipv4Addr>().map_err(|e| format!("invalid IPv4 '{}': {}", s, e))
+    }
+
+    /// `__net_udp_join_multicast(slot, group_ip, iface_ip) -> Null | err | invalid`
+    /// IPv4 only in v0. `iface_ip` of "0.0.0.0" lets the OS pick the default
+    /// outgoing interface. Returns Null on success; KIND_ERR tuple on
+    /// failure; KIND_INVALID when slot is already dropped.
+    pub fn builtin_net_udp_join_multicast(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_join_multicast";
+        let slot_id   = require_slot_id(args, 0, NAME)?;
+        let group_str = arg_str(args, 1, NAME)?.to_string();
+        let iface_str = arg_str(args, 2, NAME)?.to_string();
+
+        let group_ip = match parse_ipv4(&group_str) {
+            Ok(ip) => ip,
+            Err(e) => return Ok(socket_err(ctx, e)),
+        };
+        if !group_ip.is_multicast() {
+            return Ok(socket_err(ctx, format!("{} is not a multicast address", group_str)));
+        }
+        let iface_ip = match parse_ipv4(&iface_str) {
+            Ok(ip) => ip,
+            Err(e) => return Ok(socket_err(ctx, e)),
+        };
+
+        let sock_opt = {
+            let mut map = ctx.core.udp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(sock) = sock_opt else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let result = sock.join_multicast_v4(&group_ip, &iface_ip);
+        ctx.core.udp_sockets.lock().insert(slot_id, sock);
+        match result {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("join_multicast_v4 {}: {}", group_str, e))),
+        }
+    }
+
+    /// `__net_udp_leave_multicast(slot, group_ip, iface_ip) -> Null | err | invalid`
+    pub fn builtin_net_udp_leave_multicast(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_leave_multicast";
+        let slot_id   = require_slot_id(args, 0, NAME)?;
+        let group_str = arg_str(args, 1, NAME)?.to_string();
+        let iface_str = arg_str(args, 2, NAME)?.to_string();
+
+        let group_ip = match parse_ipv4(&group_str) {
+            Ok(ip) => ip,
+            Err(e) => return Ok(socket_err(ctx, e)),
+        };
+        let iface_ip = match parse_ipv4(&iface_str) {
+            Ok(ip) => ip,
+            Err(e) => return Ok(socket_err(ctx, e)),
+        };
+
+        let sock_opt = {
+            let mut map = ctx.core.udp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(sock) = sock_opt else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let result = sock.leave_multicast_v4(&group_ip, &iface_ip);
+        ctx.core.udp_sockets.lock().insert(slot_id, sock);
+        match result {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("leave_multicast_v4 {}: {}", group_str, e))),
+        }
+    }
+
+    /// `__net_udp_set_multicast_loop(slot, enable) -> Null | err | invalid`
+    /// When true (default), multicasts loop back to the same host on the
+    /// joined group. Disabling can save a recv per send for senders that
+    /// don't need to consume their own output.
+    pub fn builtin_net_udp_set_multicast_loop(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_set_multicast_loop";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let enable  = match args.get(1) {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::I64(n))  => *n != 0,
+            other => bail!("{}: arg 1 expected bool, got {:?}", NAME, other),
+        };
+
+        let sock_opt = {
+            let mut map = ctx.core.udp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(sock) = sock_opt else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let result = sock.set_multicast_loop_v4(enable);
+        ctx.core.udp_sockets.lock().insert(slot_id, sock);
+        match result {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_multicast_loop_v4: {}", e))),
+        }
+    }
+
     /// add-z42-net-udp-recv-into (2026-05-27)
     /// `__net_udp_recv_into(slot, buf, offset, count) -> [0, n, host, port] | err | invalid`
     /// Receive a datagram directly into the caller's pre-allocated byte[].
@@ -515,6 +628,15 @@ mod imp {
         Ok(Value::Null)
     }
     pub fn builtin_net_udp_recv_into(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_join_multicast(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_leave_multicast(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_set_multicast_loop(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(unsupported(ctx))
     }
 }

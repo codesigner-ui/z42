@@ -357,6 +357,11 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-z42-net-udp-recv-into (2026-05-27) — buffer-fill Receive variant ──
     ("__net_udp_recv_into", network::builtin_net_udp_recv_into),
+
+    // ── add-z42-net-udp-multicast (2026-05-27) — IPv4 multicast group ops ──
+    ("__net_udp_join_multicast",      network::builtin_net_udp_join_multicast),
+    ("__net_udp_leave_multicast",     network::builtin_net_udp_leave_multicast),
+    ("__net_udp_set_multicast_loop",  network::builtin_net_udp_set_multicast_loop),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

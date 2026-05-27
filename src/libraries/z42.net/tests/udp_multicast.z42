@@ -1,0 +1,106 @@
+// add-z42-net-udp-multicast (2026-05-27): IPv4 multicast group ops.
+namespace Z42NetUdpMulticastTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_join_before_bind_throws() {
+    var u = new UdpClient();
+    bool caught = false;
+    try {
+        u.JoinMulticastGroup("239.1.2.3");
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    u.Dispose();
+}
+
+[Test]
+void test_leave_before_bind_throws() {
+    var u = new UdpClient();
+    bool caught = false;
+    try {
+        u.LeaveMulticastGroup("239.1.2.3");
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    u.Dispose();
+}
+
+[Test]
+void test_join_invalid_multicast_address_throws() {
+    // 1.2.3.4 is not multicast — kernel + our pre-check both reject.
+    var u = new UdpClient();
+    u.Bind("0.0.0.0", 0);
+    bool caught = false;
+    try {
+        u.JoinMulticastGroup("1.2.3.4");
+    } catch (SocketException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    u.Dispose();
+}
+
+[Test]
+void test_join_valid_multicast_address_succeeds() {
+    // 239.x.x.x is the administratively scoped IPv4 multicast block.
+    var u = new UdpClient();
+    u.Bind("0.0.0.0", 0);
+    // No exception = success. We can't validate end-to-end multicast
+    // delivery here without a router-aware test fixture (loopback alone
+    // doesn't always traverse the multicast switching path on macOS) —
+    // the membership join itself is the unit we're verifying.
+    u.JoinMulticastGroup("239.1.2.3");
+    u.LeaveMulticastGroup("239.1.2.3");
+    u.Dispose();
+}
+
+[Test]
+void test_join_with_explicit_interface_succeeds() {
+    var u = new UdpClient();
+    u.Bind("0.0.0.0", 0);
+    u.JoinMulticastGroup("239.5.6.7", "0.0.0.0");
+    u.LeaveMulticastGroup("239.5.6.7", "0.0.0.0");
+    u.Dispose();
+}
+
+[Test]
+void test_set_multicast_loop_succeeds_both_states() {
+    var u = new UdpClient();
+    u.Bind("0.0.0.0", 0);
+    u.SetMulticastLoop(true);
+    u.SetMulticastLoop(false);
+    u.Dispose();
+}
+
+[Test]
+void test_set_multicast_loop_before_bind_throws() {
+    var u = new UdpClient();
+    bool caught = false;
+    try {
+        u.SetMulticastLoop(true);
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+    u.Dispose();
+}
+
+[Test]
+void test_multiple_joins_on_same_socket() {
+    // A socket can subscribe to many groups simultaneously.
+    var u = new UdpClient();
+    u.Bind("0.0.0.0", 0);
+    u.JoinMulticastGroup("239.10.0.1");
+    u.JoinMulticastGroup("239.10.0.2");
+    u.JoinMulticastGroup("239.10.0.3");
+    u.LeaveMulticastGroup("239.10.0.1");
+    u.LeaveMulticastGroup("239.10.0.2");
+    u.LeaveMulticastGroup("239.10.0.3");
+    u.Dispose();
+}

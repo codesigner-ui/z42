@@ -204,6 +204,60 @@ public class UdpClient {
     public string LastReceiveHost() { return this._lastRxHost; }
     public int    LastReceivePort() { return this._lastRxPort; }
 
+    // ── Multicast (add-z42-net-udp-multicast 2026-05-27) ────────────────
+
+    /// Join an IPv4 multicast group. `groupIp` must be in the multicast
+    /// range (224.0.0.0/4); call after `Bind` (typically `Bind("0.0.0.0",
+    /// port)` so the kernel can deliver group traffic to your port).
+    /// `ifaceIp` of `"0.0.0.0"` defers interface selection to the OS.
+    /// Calling multiple times with different groups subscribes to all of
+    /// them on the same socket.
+    public void JoinMulticastGroup(string groupIp, string ifaceIp) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._bound) {
+            throw new InvalidOperationException("JoinMulticastGroup before Bind");
+        }
+        object[] raw = UdpNative.JoinMulticast(this._slotId, groupIp, ifaceIp);
+        long kind = (long)raw[0];
+        if (kind != 0) { UdpDecode.Throw(raw, kind); }
+    }
+
+    /// Convenience: defer interface to the OS (`0.0.0.0`).
+    public void JoinMulticastGroup(string groupIp) {
+        this.JoinMulticastGroup(groupIp, "0.0.0.0");
+    }
+
+    /// Leave a previously joined IPv4 multicast group. Idempotent at the
+    /// kernel level — re-leaving a group not currently joined errors as
+    /// `SocketException`. Caller responsible for symmetric Join/Leave.
+    public void LeaveMulticastGroup(string groupIp, string ifaceIp) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._bound) {
+            throw new InvalidOperationException("LeaveMulticastGroup before Bind");
+        }
+        object[] raw = UdpNative.LeaveMulticast(this._slotId, groupIp, ifaceIp);
+        long kind = (long)raw[0];
+        if (kind != 0) { UdpDecode.Throw(raw, kind); }
+    }
+
+    public void LeaveMulticastGroup(string groupIp) {
+        this.LeaveMulticastGroup(groupIp, "0.0.0.0");
+    }
+
+    /// IP_MULTICAST_LOOP — controls whether multicasts sent on this socket
+    /// loop back to the local host. Default = true (matches BSD socket
+    /// default). Disabling can save a recv per send for senders that
+    /// don't need to consume their own output.
+    public void SetMulticastLoop(bool enable) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._bound) {
+            throw new InvalidOperationException("SetMulticastLoop before Bind");
+        }
+        object[] raw = UdpNative.SetMulticastLoop(this._slotId, enable);
+        long kind = (long)raw[0];
+        if (kind != 0) { UdpDecode.Throw(raw, kind); }
+    }
+
     /// Local bound port — useful after `Bind(host, 0)` to discover the
     /// OS-assigned port. Throws `InvalidOperationException` if not bound.
     public int LocalPort() {
