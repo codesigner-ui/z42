@@ -22,6 +22,10 @@ anyhow = "1"
 # add-z42-compression-brotli (2026-05-27): pure-Rust brotli (no C deps),
 # works on every target including wasm. RFC 7932.
 brotli = { version = "7", default-features = false, features = ["std"] }
+# add-z42-compression-lz4 (2026-05-27): pure-Rust LZ4 (no C deps),
+# works on every target including wasm. Block format LZ4 (the most
+# common; frame format is a wrapper).
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "frame"] }
 
 # Non-wasm-only deps:
 #   * zlib-ng feature: vendored C, needs system clang (works on every

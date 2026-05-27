@@ -32,4 +32,5 @@ public static class AlgoId {
     public static int Gzip       = 2;
     public static int Zstd       = 10;
     public static int Brotli     = 11;
+    public static int Lz4        = 12;
 }

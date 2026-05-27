@@ -1,0 +1,81 @@
+// add-z42-compression-lz4 (2026-05-27): Std.Compression.Lz4.
+namespace Z42CompressionLz4Tests;
+
+using Std;
+using Std.Test;
+using Std.Text;
+using Std.Compression;
+using Std.Encoding;
+
+[Test]
+void test_round_trip_short_string() {
+    byte[] original = Utf8.GetBytes("hello lz4");
+    byte[] compressed = Lz4.Compress(original);
+    byte[] decoded = Lz4.Decompress(compressed);
+    Assert.Equal("hello lz4", Utf8.GetString(decoded));
+}
+
+[Test]
+void test_round_trip_empty_input() {
+    byte[] empty = new byte[0];
+    byte[] compressed = Lz4.Compress(empty);
+    byte[] decoded = Lz4.Decompress(compressed);
+    Assert.Equal(0, decoded.Length);
+}
+
+[Test]
+void test_round_trip_repeated_pattern_compresses() {
+    StringBuilder sb = new StringBuilder();
+    int i = 0;
+    while (i < 500) {
+        sb.Append("the quick brown fox jumps over the lazy dog. ");
+        i = i + 1;
+    }
+    string text = sb.ToString();
+    byte[] original = Utf8.GetBytes(text);
+    byte[] compressed = Lz4.Compress(original);
+    byte[] decoded = Lz4.Decompress(compressed);
+    Assert.Equal(text, Utf8.GetString(decoded));
+    // LZ4 should compress this highly-repetitive input by >5×.
+    Assert.True(compressed.Length * 5 < original.Length);
+}
+
+[Test]
+void test_frame_format_magic_bytes() {
+    // LZ4 frame magic = 0x184D2204 (little-endian).
+    byte[] compressed = Lz4.Compress(Utf8.GetBytes("anything"));
+    Assert.Equal(0x04, (int)compressed[0] & 0xFF);
+    Assert.Equal(0x22, (int)compressed[1] & 0xFF);
+    Assert.Equal(0x4D, (int)compressed[2] & 0xFF);
+    Assert.Equal(0x18, (int)compressed[3] & 0xFF);
+}
+
+[Test]
+void test_round_trip_with_level_ignored() {
+    // Level arg is accepted but ignored — same output regardless.
+    byte[] data = Utf8.GetBytes("level-independent payload");
+    byte[] lvl0 = Lz4.Compress(data, 0);
+    byte[] lvl9 = Lz4.Compress(data, 9);
+    Assert.Equal(lvl0.Length, lvl9.Length);
+    int i = 0;
+    while (i < lvl0.Length) {
+        Assert.Equal((int)lvl0[i], (int)lvl9[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_round_trip_binary_payload_full_byte_range() {
+    // 256 distinct byte values — exercises any byte-specific edge cases.
+    byte[] full = new byte[256];
+    int i = 0;
+    while (i < 256) { full[i] = (byte)i; i = i + 1; }
+    byte[] compressed = Lz4.Compress(full);
+    byte[] decoded = Lz4.Decompress(compressed);
+    Assert.Equal(256, decoded.Length);
+    int j = 0;
+    while (j < 256) {
+        Assert.Equal((int)full[j] & 0xFF, (int)decoded[j] & 0xFF);
+        j = j + 1;
+    }
+}

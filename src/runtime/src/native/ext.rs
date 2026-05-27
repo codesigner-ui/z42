@@ -245,6 +245,15 @@ type CBrotliDecompressFn = unsafe extern "C" fn(
     *const u8, usize,
     *mut *mut u8, *mut usize,
 ) -> i32;
+// add-z42-compression-lz4 (2026-05-27): same shape as brotli.
+type CLz4CompressFn = unsafe extern "C" fn(
+    *const u8, usize, i32,
+    *mut *mut u8, *mut usize,
+) -> i32;
+type CLz4DecompressFn = unsafe extern "C" fn(
+    *const u8, usize,
+    *mut *mut u8, *mut usize,
+) -> i32;
 type CCompressorBeginFn = unsafe extern "C" fn(
     i32, i32, i32,
     *mut u64,
@@ -278,6 +287,8 @@ struct LoadedCompression {
     zstd_decompress:     CZstdDecompressFn,
     brotli_compress:     CBrotliCompressFn,
     brotli_decompress:   CBrotliDecompressFn,
+    lz4_compress:        CLz4CompressFn,
+    lz4_decompress:      CLz4DecompressFn,
     compressor_begin:    CCompressorBeginFn,
     compressor_feed:     CCompressorFeedFn,
     compressor_finish:   CCompressorFinishFn,
@@ -301,6 +312,8 @@ unsafe fn compression_symbols_via_dlopen(
     let zstd_decompress: CZstdDecompressFn = *(lib.get(b"z42_compression_zstd_decompress")?);
     let brotli_compress: CBrotliCompressFn = *(lib.get(b"z42_compression_brotli_compress")?);
     let brotli_decompress: CBrotliDecompressFn = *(lib.get(b"z42_compression_brotli_decompress")?);
+    let lz4_compress: CLz4CompressFn = *(lib.get(b"z42_compression_lz4_compress")?);
+    let lz4_decompress: CLz4DecompressFn = *(lib.get(b"z42_compression_lz4_decompress")?);
     let compressor_begin: CCompressorBeginFn = *(lib.get(b"z42_compression_compressor_begin")?);
     let compressor_feed: CCompressorFeedFn = *(lib.get(b"z42_compression_compressor_feed")?);
     let compressor_finish: CCompressorFinishFn = *(lib.get(b"z42_compression_compressor_finish")?);
@@ -312,6 +325,7 @@ unsafe fn compression_symbols_via_dlopen(
         deflate_compress, deflate_decompress,
         zstd_compress, zstd_decompress,
         brotli_compress, brotli_decompress,
+        lz4_compress, lz4_decompress,
         compressor_begin, compressor_feed, compressor_finish, compressor_dispose,
         free, last_error,
     });
@@ -330,6 +344,8 @@ fn compression_symbols_bundled() -> &'static [(&'static str, NativeFn)] {
         zstd_decompress:    z42_compression::z42_compression_zstd_decompress,
         brotli_compress:    z42_compression::z42_compression_brotli_compress,
         brotli_decompress:  z42_compression::z42_compression_brotli_decompress,
+        lz4_compress:       z42_compression::z42_compression_lz4_compress,
+        lz4_decompress:     z42_compression::z42_compression_lz4_decompress,
         compressor_begin:   z42_compression::z42_compression_compressor_begin,
         compressor_feed:    z42_compression::z42_compression_compressor_feed,
         compressor_finish:  z42_compression::z42_compression_compressor_finish,
@@ -350,6 +366,8 @@ const COMPRESSION_BUILTINS: &[(&str, NativeFn)] = &[
     ("__zstd_decompress",      wrap_zstd_decompress),
     ("__brotli_compress",      wrap_brotli_compress),
     ("__brotli_decompress",    wrap_brotli_decompress),
+    ("__lz4_compress",         wrap_lz4_compress),
+    ("__lz4_decompress",       wrap_lz4_decompress),
     ("__compressor_begin",     wrap_compressor_begin),
     ("__compressor_feed",      wrap_compressor_feed),
     ("__compressor_finish",    wrap_compressor_finish),
@@ -547,6 +565,47 @@ fn wrap_brotli_decompress(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let rc = unsafe {
         (lc.brotli_decompress)(input.as_ptr(), input.len(),
                                &mut out_ptr, &mut out_len)
+    };
+    if rc != 0 {
+        bail!("{}: {} (rc={})", NAME, last_error_string(), rc);
+    }
+    Ok(bytes_to_value(ctx, take_owned_buffer(out_ptr, out_len)))
+}
+
+fn wrap_lz4_compress(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use anyhow::bail;
+    const NAME: &str = "__lz4_compress";
+    let input = require_byte_array(args, 0, NAME)?;
+    let level = arg_i64(args, 1, NAME)? as i32;
+
+    let guard = LOADED_COMPRESSION.lock();
+    let lc = guard.as_ref().ok_or_else(|| anyhow::anyhow!("{}: z42-compression not loaded", NAME))?;
+
+    let mut out_ptr: *mut u8 = std::ptr::null_mut();
+    let mut out_len: usize = 0;
+    let rc = unsafe {
+        (lc.lz4_compress)(input.as_ptr(), input.len(), level,
+                          &mut out_ptr, &mut out_len)
+    };
+    if rc != 0 {
+        bail!("{}: {} (rc={})", NAME, last_error_string(), rc);
+    }
+    Ok(bytes_to_value(ctx, take_owned_buffer(out_ptr, out_len)))
+}
+
+fn wrap_lz4_decompress(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use anyhow::bail;
+    const NAME: &str = "__lz4_decompress";
+    let input = require_byte_array(args, 0, NAME)?;
+
+    let guard = LOADED_COMPRESSION.lock();
+    let lc = guard.as_ref().ok_or_else(|| anyhow::anyhow!("{}: z42-compression not loaded", NAME))?;
+
+    let mut out_ptr: *mut u8 = std::ptr::null_mut();
+    let mut out_len: usize = 0;
+    let rc = unsafe {
+        (lc.lz4_decompress)(input.as_ptr(), input.len(),
+                            &mut out_ptr, &mut out_len)
     };
     if rc != 0 {
         bail!("{}: {} (rc={})", NAME, last_error_string(), rc);

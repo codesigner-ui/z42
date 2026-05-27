@@ -227,13 +227,26 @@ treat the decoder as a chunk-by-chunk pipeline.
   spec lands.
 - **当前 workaround**：none (no caller).
 
-### `compression-future-xz-lz4`
+### ~~`compression-future-lz4`~~ — **✅ 已落地 2026-05-27 (add-z42-compression-lz4)**
+
+Shipped: `Std.Compression.Lz4.{Compress(data[,level])/Decompress}`
+backed by pure-Rust `lz4_flex` crate. LZ4 frame format (the standard
+`.lz4` file wrapper — magic + descriptor + blocks + EndMark) so output
+interops with the standard `lz4` CLI. Pure Rust → works on every
+target including wasm32. `level` arg accepted for API symmetry but
+ignored (base LZ4 has no level dial; LZ4-HC variant deferred).
+
+Tests: 6/6 GREEN (short-string round-trip, empty input, repeated
+pattern compresses >5×, frame magic 0x184D2204, level-independence,
+full 256-byte-value binary payload).
+
+### `compression-future-xz`
 
 - **来源**：add-z42-compression v0 algorithm scope
-- **触发原因**：xz / LZ4 use cases are narrower (Linux kernel /
-  Debian packages for xz; throughput-critical Snappy alternatives for
-  LZ4). Zstd covers both ratio and speed cases adequately for now.
-- **触发条件**：concrete user demand for either.
+- **触发原因**：xz use case is narrower (Linux kernel /
+  Debian packages). Zstd covers most ratio cases adequately.
+- **触发条件**：concrete user demand. Available via `lzma-rs` (pure Rust,
+  decode-only) or `xz2` (C dep) when needed.
 
 ### `compression-future-libdeflate-batch`
 

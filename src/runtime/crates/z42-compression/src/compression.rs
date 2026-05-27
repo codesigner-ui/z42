@@ -112,6 +112,31 @@ pub fn zstd_decompress(input: &[u8]) -> AlgoResult {
         .map_err(|e| (Z42_COMPRESSION_ERR_DECOMPRESS, format!("invalid zstd data: {e}")))
 }
 
+// ── LZ4 (add-z42-compression-lz4 2026-05-27) ─────────────────────────────
+//
+// LZ4 frame format (the standard `lz4` CLI / file format wrapper around
+// the raw LZ4 block algorithm — magic number + descriptor + blocks +
+// EndMark). Pure-Rust `lz4_flex` works on wasm.
+//
+// LZ4 has no compression-level dial (the HC variant lives in separate
+// crates); `level` arg accepted for API symmetry but ignored.
+
+pub fn lz4_compress(input: &[u8], _level: i32) -> AlgoResult {
+    let mut enc = lz4_flex::frame::FrameEncoder::new(Vec::new());
+    std::io::Write::write_all(&mut enc, input)
+        .map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string()))?;
+    enc.finish()
+        .map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string()))
+}
+
+pub fn lz4_decompress(input: &[u8]) -> AlgoResult {
+    let mut out: Vec<u8> = Vec::with_capacity(input.len() * 4);
+    let mut dec = lz4_flex::frame::FrameDecoder::new(input);
+    std::io::Read::read_to_end(&mut dec, &mut out)
+        .map_err(|e| (Z42_COMPRESSION_ERR_DECOMPRESS, format!("invalid lz4 data: {e}")))?;
+    Ok(out)
+}
+
 // ── Brotli (add-z42-compression-brotli 2026-05-27) ───────────────────────
 //
 // Pure-Rust brotli — works on every target including wasm32 (no C deps,
