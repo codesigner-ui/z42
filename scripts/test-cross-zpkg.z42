@@ -1,0 +1,337 @@
+// port-test-cross-zpkg (2026-05-27): test-cross-zpkg.sh → z42 self-host.
+//
+// Each test under src/tests/cross-zpkg/<name>/ ships three z42.toml packages
+// (target / ext / main) plus expected_output.txt. We build them in
+// dependency order, populating each one's <pkg>/libs/ with prior zpkgs so
+// PackageCompiler's lib lookup resolves cross-package symbols. Then run
+// main's zpkg through z42vm with a temp libs dir that bundles stdlib +
+// our two test packages, capture stdout, and diff against expected.
+//
+// Build / run sequence per test:
+//   1. dotnet z42c.dll build <target>/z42.toml          (no deps)
+//   2. dotnet z42c.dll build <ext>/z42.toml             (deps on target)
+//   3. dotnet z42c.dll build <main>/z42.toml            (deps on target + ext)
+//   4. cargo run -q -- <main>.zpkg --mode <interp|jit>  (run + capture stdout)
+//
+// Bash entry point: scripts/test-cross-zpkg.sh — bootstraps compiler + VM
+// + stdlib, then exec's `dotnet run -- run scripts/test-cross-zpkg.z42 [mode]`.
+namespace Z42TestCrossZpkgScript;
+
+using Std;
+using Std.IO;
+
+void Main() {
+    string root = Environment.GetCurrentDirectory();
+
+    // ── Mode resolution ──────────────────────────────────────────────────
+    // The z42 driver's `run` subcommand does not forward arbitrary args to
+    // the script, so we read mode from the Z42_VM_MODE env var (set by the
+    // bash wrapper). Defaults to "interp" when unset.
+    string? envMode = Environment.GetEnvironmentVariable("Z42_VM_MODE");
+    string mode = "interp";
+    if (envMode != null) {
+        string e = envMode ?? "";
+        if (e.Length > 0) { mode = e; }
+    }
+
+    string testsDir = Path.Join(root, "src/tests/cross-zpkg");
+    string driverDll = Path.Join(root,
+        "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    string runtimeManifest = Path.Join(root, "src/runtime/Cargo.toml");
+    string stdlibRoot = Path.Join(root, "artifacts/build/libraries");
+
+    if (!File.Exists(driverDll)) {
+        ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);
+        ConsoleError.WriteLine("       Build it via: dotnet build src/compiler/z42.slnx");
+        Environment.Exit(1);
+        return;
+    }
+
+    // ── Enumerate test directories ───────────────────────────────────────
+    string[] names = _enumDirsSorted(testsDir);
+
+    int pass = 0;
+    int fail = 0;
+    string[] failures = new string[8];
+    int      failCount = 0;
+
+    int i = 0;
+    while (i < names.Length) {
+        string name = names[i];
+        string dir = Path.Join(testsDir, name);
+        string expectedPath = Path.Join(dir, "expected_output.txt");
+        if (!File.Exists(expectedPath)) {
+            i = i + 1;
+            continue;
+        }
+
+        Console.WriteLine("── Test: " + name + " ──");
+
+        string targetDir = Path.Join(dir, "target");
+        string extDir    = Path.Join(dir, "ext");
+        string mainDir   = Path.Join(dir, "main");
+
+        // Stage 1: target (no deps).
+        if (!_buildPkg(driverDll, targetDir, "")) {
+            fail = fail + 1;
+            failures = _append(failures, failCount, name + " (target build)");
+            failCount = failCount + 1;
+            i = i + 1;
+            continue;
+        }
+
+        // Stage 2: ext (deps on target/dist).
+        if (!_buildPkg(driverDll, extDir, Path.Join(targetDir, "dist"))) {
+            fail = fail + 1;
+            failures = _append(failures, failCount, name + " (ext build)");
+            failCount = failCount + 1;
+            i = i + 1;
+            continue;
+        }
+
+        // Stage 3: main (deps on target + ext). _buildPkg only seeds from a
+        // single dir; main needs both, so populate libs manually here.
+        string mainLibs = Path.Join(mainDir, "libs");
+        if (Directory.Exists(mainLibs)) { Directory.Delete(mainLibs, true); }
+        Directory.Create(mainLibs);
+        _copyZpkgs(Path.Join(targetDir, "dist"), mainLibs);
+        _copyZpkgs(Path.Join(extDir,    "dist"), mainLibs);
+        string mainToml = _findToml(mainDir);
+        if (mainToml.Length == 0 || !_invokeBuild(driverDll, mainToml)) {
+            Console.WriteLine("    main build failed");
+            fail = fail + 1;
+            failures = _append(failures, failCount, name + " (main build)");
+            failCount = failCount + 1;
+            i = i + 1;
+            continue;
+        }
+
+        // Stage 4: run main zpkg through z42vm.
+        string mainZpkg = _firstZpkg(Path.Join(mainDir, "dist"));
+        if (mainZpkg.Length == 0) {
+            Console.WriteLine("    main produced no zpkg");
+            fail = fail + 1;
+            failures = _append(failures, failCount, name + " (no zpkg)");
+            failCount = failCount + 1;
+            i = i + 1;
+            continue;
+        }
+
+        // Per-test libs dir: stdlib zpkgs + target + ext.
+        string testLibs = File.CreateTempDir("z42-xpkg-");
+        _copyStdlibZpkgs(stdlibRoot, testLibs);
+        _copyZpkgs(Path.Join(targetDir, "dist"), testLibs);
+        _copyZpkgs(Path.Join(extDir,    "dist"), testLibs);
+
+        string actual = "";
+        bool runErr = false;
+        try {
+            ProcessResult vmResult = new Process("cargo")
+                .Arg("run").Arg("-q")
+                .Arg("--manifest-path").Arg(runtimeManifest)
+                .Arg("--")
+                .Arg(mainZpkg)
+                .Arg("--mode").Arg(mode)
+                .Env("Z42_LIBS", testLibs)
+                .Run();
+            // bash: `$(... 2>&1)` — merge stderr into stdout. We approximate
+            // by concatenating; cargo -q + a passing VM run produces no
+            // stderr, so for successful tests the order doesn't matter.
+            actual = vmResult.Stdout + vmResult.Stderr;
+        } catch (Exception e) {
+            runErr = true;
+        }
+        Directory.Delete(testLibs, true);
+
+        string expected = File.ReadAllText(expectedPath);
+        if (!runErr && actual == expected) {
+            pass = pass + 1;
+            Console.WriteLine("  PASS");
+        } else {
+            fail = fail + 1;
+            failures = _append(failures, failCount, name);
+            failCount = failCount + 1;
+            Console.WriteLine("  FAIL");
+            Console.WriteLine("    expected: " + _firstLines(expected, 3));
+            Console.WriteLine("    actual:   " + _firstLines(actual,   3));
+        }
+
+        i = i + 1;
+    }
+
+    Console.WriteLine("");
+    Console.WriteLine("══════════════════════════════════════");
+    Console.WriteLine(" Total: " + pass.ToString() + " passed, "
+        + fail.ToString() + " failed");
+    Console.WriteLine("══════════════════════════════════════");
+
+    if (failCount > 0) {
+        Console.WriteLine("");
+        Console.WriteLine("Failed tests:");
+        int fi = 0;
+        while (fi < failCount) {
+            Console.WriteLine("  - " + failures[fi]);
+            fi = fi + 1;
+        }
+        Environment.Exit(1);
+        return;
+    }
+}
+
+// ── Per-stage helpers ────────────────────────────────────────────────────
+
+bool _buildPkg(string driverDll, string pkgDir, string srcLibsDir) {
+    // Populate <pkgDir>/libs with prior-stage zpkgs.
+    string pkgLibs = Path.Join(pkgDir, "libs");
+    if (Directory.Exists(pkgLibs)) { Directory.Delete(pkgLibs, true); }
+    Directory.Create(pkgLibs);
+    if (srcLibsDir.Length > 0) {
+        _copyZpkgs(srcLibsDir, pkgLibs);
+    }
+    string toml = _findToml(pkgDir);
+    if (toml.Length == 0) {
+        Console.WriteLine("    error: no toml in " + pkgDir);
+        return false;
+    }
+    if (!_invokeBuild(driverDll, toml)) {
+        Console.WriteLine("    build failed: " + pkgDir);
+        // Re-run noisy to surface the error.
+        try {
+            ProcessResult dr = new Process("dotnet")
+                .Arg(driverDll).Arg("build").Arg(toml)
+                .Run();
+            string combined = dr.Stdout + dr.Stderr;
+            Console.WriteLine("      " + _firstLines(combined, 10));
+        } catch (Exception e) {
+            Console.WriteLine("      (re-run also failed: " + e.Message + ")");
+        }
+        return false;
+    }
+    return true;
+}
+
+bool _invokeBuild(string driverDll, string toml) {
+    try {
+        ProcessResult br = new Process("dotnet")
+            .Arg(driverDll).Arg("build").Arg(toml)
+            .Stdout(Stdio.Null())
+            .Stderr(Stdio.Null())
+            .Run();
+        return br.ExitCode == 0;
+    } catch (Exception e) {
+        return false;
+    }
+}
+
+// ── Path / file helpers ──────────────────────────────────────────────────
+
+void _copyZpkgs(string srcDir, string dstDir) {
+    if (!Directory.Exists(srcDir)) return;
+    string[] zpkgs = Path.Glob(srcDir, "*.zpkg");
+    int i = 0;
+    while (i < zpkgs.Length) {
+        string dst = Path.Join(dstDir, Path.GetFileName(zpkgs[i]));
+        try { File.Copy(zpkgs[i], dst); } catch (Exception e) { /* skip */ }
+        i = i + 1;
+    }
+}
+
+// Stdlib zpkgs live at artifacts/build/libraries/<lib>/release/dist/<lib>.zpkg
+void _copyStdlibZpkgs(string stdlibRoot, string dstDir) {
+    if (!Directory.Exists(stdlibRoot)) return;
+    string[] libs = Directory.Enumerate(stdlibRoot);
+    int i = 0;
+    while (i < libs.Length) {
+        string distDir = Path.Join(stdlibRoot, libs[i] + "/release/dist");
+        _copyZpkgs(distDir, dstDir);
+        i = i + 1;
+    }
+}
+
+string _findToml(string dir) {
+    if (!Directory.Exists(dir)) return "";
+    string[] hits = Path.Glob(dir, "*.toml");
+    if (hits.Length == 0) return "";
+    return hits[0];
+}
+
+string _firstZpkg(string dir) {
+    if (!Directory.Exists(dir)) return "";
+    string[] hits = Path.Glob(dir, "*.zpkg");
+    if (hits.Length == 0) return "";
+    return hits[0];
+}
+
+// Return first `n` lines joined by '|' — matches bash `head -3 | tr '\n' '|'`.
+string _firstLines(string s, int n) {
+    string result = "";
+    int count = 0;
+    int start = 0;
+    int i = 0;
+    while (i < s.Length && count < n) {
+        if (s.CharAt(i) == '\n') {
+            if (result.Length > 0) { result = result + "|"; }
+            result = result + s.Substring(start, i - start);
+            count = count + 1;
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    if (count < n && start < s.Length) {
+        if (result.Length > 0) { result = result + "|"; }
+        result = result + s.Substring(start, s.Length - start);
+    }
+    return result;
+}
+
+string[] _enumDirsSorted(string dir) {
+    if (!Directory.Exists(dir)) { return new string[0]; }
+    string[] entries = Directory.Enumerate(dir);
+    int n = 0;
+    int i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) { n = n + 1; }
+        i = i + 1;
+    }
+    string[] subs = new string[n];
+    int j = 0;
+    i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) {
+            subs[j] = entries[i];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    _sortStrings(subs);
+    return subs;
+}
+
+void _sortStrings(string[] arr) {
+    int i = 1;
+    while (i < arr.Length) {
+        string key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && key.CompareTo(arr[j]) < 0) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+}
+
+string[] _append(string[] arr, int count, string v) {
+    if (count < arr.Length) {
+        arr[count] = v;
+        return arr;
+    }
+    int newCap = arr.Length * 2;
+    if (newCap < 4) { newCap = 4; }
+    string[] bigger = new string[newCap];
+    int i = 0;
+    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+    bigger[count] = v;
+    return bigger;
+}
+
