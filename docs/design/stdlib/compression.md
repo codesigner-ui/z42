@@ -173,20 +173,29 @@ wrapper overhead is < 0.5%.
 
 ## Deferred / Future Work
 
-### `compression-future-zip-write`
+### ~~`compression-future-zip-write`~~ — **✅ 已落地 2026-05-27 (add-zip-write)**
 
-- **来源**：add-z42-compression v0 scope cut
-- **触发原因**：natural implementation needs `byte[][]` (array of byte
-  arrays for accumulating local records + central directory entries
-  before stitching into the final output buffer). The z42 type system
-  does not yet model array-of-array; workarounds (`List<byte[]>` or
-  flat-buffer two-pass with offset tables) are tractable but ~300 lines
-  of careful index math that wasn't worth blocking v0 over.
-- **触发条件**：either `byte[][]` lands in z42 (`add-array-of-array`
-  spec, not yet drafted) OR a user has a concrete need for Zip Write
-  that justifies the two-pass workaround.
-- **当前 workaround**：emit `.tar.gz` (Tar.Write is shipped) or
-  `.tar.zst` instead of `.zip` for archive-producing use cases.
+Shipped: `Zip.Write(ZipEntry[]) → byte[]` builds `.zip` archives in
+memory. Per-entry method 0 (STORE) or 8 (DEFLATE, via
+`Std.Compression.Deflate.Compress`). CRC-32 (poly 0xEDB88320 IEEE
+802.3) computed inline via 256-entry lookup table. UTF-8 filename
+encoder inlined to keep Zip self-contained.
+
+Implementation chose the "flat-buffer single-pass + parallel
+offset/CRC arrays" path rather than the original design doc's "needs
+byte[][]" hypothetical — a single `_GrowBuf` byte accumulator with
+append + offset tracking sidesteps the absence of nested-array
+syntax in z42 at no cost.
+
+GPBF bit 11 always set (UTF-8 names). DOS mtime hard-coded to
+1980-01-01 (Zip's epoch); per-entry mtime preservation is a separate
+follow-up. ZIP64 / encryption / extra fields / comments still
+deferred.
+
+Tests: 10/10 GREEN (STORE / DEFLATE round-trip, mixed methods,
+empty archive (22-byte EOCD only), magic-byte verification, method
+validation, ExtractAllTo pipeline, empty content, UTF-8 filename
+byte-fidelity, DEFLATE beats STORE on repetitive input).
 
 ### ~~`compression-future-streaming-decode`~~ — **✅ 已落地 2026-05-27 (add-compression-streaming-decode)**
 
