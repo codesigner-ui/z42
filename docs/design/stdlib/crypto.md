@@ -35,6 +35,17 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
     even with weak hashes). Still in use: TOTP (RFC 6238 default),
     AWS Signature V2, etc.
 
+- SHA-512 + SHA-384 (FIPS 180-4) — `Std.Crypto.Sha512` / `Std.Crypto.Sha384` (add-sha512-to-crypto, 2026-05-27)
+  - `Hash(byte[]) -> byte[64]` (SHA-512) / `byte[48]` (SHA-384)
+  - Same `Hash / HashString / HashHex / HashStringHex` surface as Sha256
+  - SHA-384 shares the SHA-512 compression function (FIPS §6.5) — only IV and output-truncation differ
+  - 80 rounds, 128-byte blocks, 64-bit words (z42 `long` natural fit; logical right shift via `_lshr64` to dodge `>>` sign-extension)
+
+- HMAC-SHA-512 + HMAC-SHA-384 (RFC 2104) — `Std.Crypto.HmacSha512` / `Std.Crypto.HmacSha384` (add-hmac-sha512-sha384, 2026-05-27)
+  - Same `Compute / ComputeString / ComputeHex / ComputeStringHex` surface as HmacSha256
+  - 128-byte block size (vs HmacSha256's 64); HmacSha384 reuses the 128-byte block since SHA-384 shares SHA-512's compression
+  - 27 NIST FIPS 180-2 + RFC 4231 vectors GREEN end-to-end
+
 - OS CSPRNG — `Std.Crypto.SecureRandom` (add-csprng-to-crypto, 2026-05-26)
   - `GetBytes(int n) -> byte[]` — fill `n` bytes from OS entropy source
   - `NextInt() -> int` — uniform over full i32 range
