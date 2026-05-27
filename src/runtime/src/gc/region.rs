@@ -752,6 +752,11 @@ impl<T> Drop for Region<T> {
     }
 }
 
-#[cfg(test)]
+// Tests call `Region::validate()` / `Violation`, which are
+// `#[cfg(debug_assertions)]` only. Gate the module to match so
+// `cargo build --release --lib --tests` doesn't try to compile against
+// methods that don't exist in release builds.
+// (fix-gc-tests-release-build 2026-05-27)
+#[cfg(all(test, debug_assertions))]
 #[path = "region_tests.rs"]
 mod region_tests;
