@@ -1,0 +1,205 @@
+// add-numerics-decimal (2026-05-27): Std.Numerics.Decimal.
+namespace Z42NumericsDecimalTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_parse_integer_zero_scale() {
+    Decimal d = Decimal.Parse("42");
+    Assert.Equal("42", d.ToString());
+    Assert.Equal(0, d.Scale());
+}
+
+[Test]
+void test_parse_fractional_preserves_scale() {
+    Decimal d = Decimal.Parse("19.99");
+    Assert.Equal("19.99", d.ToString());
+    Assert.Equal(2, d.Scale());
+}
+
+[Test]
+void test_parse_negative() {
+    Decimal d = Decimal.Parse("-1.50");
+    Assert.Equal("-1.50", d.ToString());
+    Assert.True(d.IsNegative());
+}
+
+[Test]
+void test_parse_preserves_trailing_zeros() {
+    // Financial users expect "1.00" to stay "1.00" — not normalised to "1".
+    Decimal d = Decimal.Parse("1.00");
+    Assert.Equal("1.00", d.ToString());
+    Assert.Equal(2, d.Scale());
+}
+
+[Test]
+void test_parse_leading_zero_in_fraction() {
+    Decimal d = Decimal.Parse("0.0042");
+    Assert.Equal("0.0042", d.ToString());
+}
+
+[Test]
+void test_parse_zero_value_preserves_scale() {
+    Decimal d = Decimal.Parse("0.000");
+    Assert.True(d.IsZero());
+    Assert.Equal(3, d.Scale());
+    Assert.Equal("0.000", d.ToString());
+}
+
+[Test]
+void test_parse_rejects_empty() {
+    bool caught = false;
+    try { Decimal.Parse(""); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_rejects_letters() {
+    bool caught = false;
+    try { Decimal.Parse("3.14x"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_rejects_double_dot() {
+    bool caught = false;
+    try { Decimal.Parse("3.1.4"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_add_same_scale() {
+    Decimal a = Decimal.Parse("1.25");
+    Decimal b = Decimal.Parse("2.50");
+    Assert.Equal("3.75", a.Add(b).ToString());
+}
+
+[Test]
+void test_add_different_scales_takes_max_scale() {
+    Decimal a = Decimal.Parse("1.5");
+    Decimal b = Decimal.Parse("2.25");
+    Assert.Equal("3.75", a.Add(b).ToString());
+}
+
+[Test]
+void test_subtract() {
+    Decimal a = Decimal.Parse("10.00");
+    Decimal b = Decimal.Parse("3.50");
+    Assert.Equal("6.50", a.Subtract(b).ToString());
+}
+
+[Test]
+void test_subtract_negative_result() {
+    Decimal a = Decimal.Parse("1");
+    Decimal b = Decimal.Parse("3");
+    Assert.Equal("-2", a.Subtract(b).ToString());
+}
+
+[Test]
+void test_multiply_sums_scales() {
+    // 1.5 * 2.5 = 3.75 (scale 2 = 1 + 1)
+    Decimal a = Decimal.Parse("1.5");
+    Decimal b = Decimal.Parse("2.5");
+    Decimal p = a.Multiply(b);
+    Assert.Equal("3.75", p.ToString());
+    Assert.Equal(2, p.Scale());
+}
+
+[Test]
+void test_multiply_by_zero() {
+    Decimal price = Decimal.Parse("19.99");
+    Decimal zero  = Decimal.Zero();
+    Assert.True(price.Multiply(zero).IsZero());
+}
+
+[Test]
+void test_divide_clean_quotient() {
+    Decimal a = Decimal.Parse("10");
+    Decimal b = Decimal.Parse("4");
+    Assert.Equal("2.50", a.DivideBy(b, 2).ToString());
+}
+
+[Test]
+void test_divide_repeating_truncates_to_scale() {
+    // 10 / 3 = 3.3333... (truncated, not rounded).
+    Decimal a = Decimal.Parse("10");
+    Decimal b = Decimal.Parse("3");
+    Assert.Equal("3.3333", a.DivideBy(b, 4).ToString());
+}
+
+[Test]
+void test_divide_zero_throws() {
+    Decimal a = Decimal.Parse("1.0");
+    Decimal z = Decimal.Zero();
+    bool caught = false;
+    try { a.DivideBy(z, 4); } catch (ArgumentException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_negate() {
+    Assert.Equal("-3.14", Decimal.Parse("3.14").Negate().ToString());
+    Assert.Equal("3.14",  Decimal.Parse("-3.14").Negate().ToString());
+}
+
+[Test]
+void test_abs() {
+    Assert.Equal("3.14", Decimal.Parse("-3.14").Abs().ToString());
+    Assert.Equal("3.14", Decimal.Parse("3.14").Abs().ToString());
+}
+
+[Test]
+void test_compare_to() {
+    Decimal a = Decimal.Parse("1.5");
+    Decimal b = Decimal.Parse("1.50");
+    Decimal c = Decimal.Parse("1.51");
+    Assert.Equal(0,  a.CompareTo(b));      // 1.5 == 1.50 ignoring scale
+    Assert.Equal(-1, a.CompareTo(c));      // 1.5 < 1.51
+    Assert.Equal(1,  c.CompareTo(a));      // 1.51 > 1.5
+}
+
+[Test]
+void test_equals_ignores_scale_difference() {
+    // "1.5" and "1.50" represent the same value despite different scales.
+    Assert.True(Decimal.Parse("1.5").Equals(Decimal.Parse("1.50")));
+    Assert.False(Decimal.Parse("1.5").Equals(Decimal.Parse("1.51")));
+}
+
+[Test]
+void test_constants_zero_one() {
+    Assert.True(Decimal.Zero().IsZero());
+    Assert.Equal("0", Decimal.Zero().ToString());
+    Assert.Equal("1", Decimal.One().ToString());
+}
+
+[Test]
+void test_from_int_zero_scale() {
+    Assert.Equal("42",  Decimal.FromInt(42).ToString());
+    Assert.Equal("-7",  Decimal.FromInt(-7).ToString());
+}
+
+[Test]
+void test_currency_addition_chain() {
+    // Real use case: sum of taxed items.
+    Decimal price = Decimal.Parse("19.99");
+    Decimal tax   = Decimal.Parse("1.50");
+    Decimal ship  = Decimal.Parse("4.00");
+    Decimal total = price.Add(tax).Add(ship);
+    Assert.Equal("25.49", total.ToString());
+}
+
+[Test]
+void test_multiply_then_divide_round_trips_close() {
+    // (x / 7) * 7 ≈ x at sufficient precision.
+    Decimal x = Decimal.Parse("1");
+    Decimal seven = Decimal.Parse("7");
+    Decimal third = x.DivideBy(seven, 20);
+    Decimal back = third.Multiply(seven);
+    // back will be 0.999... at high scale — within one ULP of 1.
+    Decimal one = Decimal.Parse("1");
+    Decimal diff = one.Subtract(back).Abs();
+    // diff scale is 20 + 0 = 20; mantissa should be very small.
+    Assert.True(diff.CompareTo(Decimal.Parse("0.00000001")) < 0);
+}

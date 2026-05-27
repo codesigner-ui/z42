@@ -1,0 +1,272 @@
+namespace Std.Numerics;
+
+using Std;
+
+// add-numerics-decimal (2026-05-27): arbitrary-precision base-10 fixed-point
+// decimal value type. Backed by `BigInt` mantissa + `int` scale so the
+// representation is `mantissa * 10^-scale`.
+//
+// Unlike .NET BCL `System.Decimal` (28-29 digits, 96-bit mantissa),
+// z42's Decimal has no precision ceiling — multiplication of two N-digit
+// decimals produces a 2N-digit result, and division takes an explicit
+// precision argument so the caller controls scale growth.
+//
+// Naming follows the BigInt convention used by sibling Numerics types:
+// distinct named methods, not operator overloads (deferred to L3).
+//
+// Examples:
+//   var price = Decimal.Parse("19.99");
+//   var qty   = new Decimal(3);
+//   price.Multiply(qty)                       // 59.97
+//   Decimal.Parse("1.00").Subtract(price.Multiply(Decimal.FromInt(0)))
+//                                              // 1.00
+//   Decimal.Parse("10").Divide(Decimal.Parse("3"), 4)
+//                                              // 3.3333
+public sealed class Decimal {
+    // Value = _mantissa * 10^-_scale. Scale >= 0 (negative scale would
+    // model trailing-zero-ranges; we normalise into mantissa).
+    public BigInt _mantissa;
+    public int    _scale;
+
+    public Decimal(BigInt mantissa, int scale) {
+        if (scale < 0) {
+            throw new ArgumentException("Decimal scale must be non-negative");
+        }
+        this._mantissa = mantissa;
+        this._scale    = scale;
+    }
+
+    /// Integer factory — no decimal point.
+    public Decimal(int value) {
+        this._mantissa = new BigInt((long)value);
+        this._scale    = 0;
+    }
+
+    // ── Factories ──────────────────────────────────────────────────────
+
+    public static Decimal Zero() {
+        return new Decimal(BigInt.Zero, 0);
+    }
+
+    public static Decimal One() {
+        return new Decimal(BigInt.One, 0);
+    }
+
+    public static Decimal FromInt(int value) {
+        return new Decimal(new BigInt((long)value), 0);
+    }
+
+    public static Decimal FromLong(long value) {
+        return new Decimal(new BigInt(value), 0);
+    }
+
+    /// Parse a decimal literal: `[-]?digit+([.]digit+)?`. No exponent /
+    /// thousands-separator support in v0 (caller pre-strips). Throws
+    /// `FormatException` on malformed input.
+    public static Decimal Parse(string s) {
+        if (s == null || s.Length == 0) {
+            throw new FormatException("Decimal.Parse: empty input");
+        }
+        int sign = 1;
+        int i = 0;
+        if (s.CharAt(0) == '-') { sign = -1; i = 1; }
+        else if (s.CharAt(0) == '+') { i = 1; }
+        if (i >= s.Length) {
+            throw new FormatException("Decimal.Parse: lone sign '" + s + "'");
+        }
+        int dotPos = -1;
+        int j = i;
+        while (j < s.Length) {
+            char c = s.CharAt(j);
+            if (c == '.') {
+                if (dotPos >= 0) {
+                    throw new FormatException("Decimal.Parse: multiple '.' in '" + s + "'");
+                }
+                dotPos = j;
+            } else if (c < '0' || c > '9') {
+                throw new FormatException("Decimal.Parse: non-digit '" + Decimal._charStr(c) + "' in '" + s + "'");
+            }
+            j = j + 1;
+        }
+        // Compute scale and strip the dot.
+        int scale;
+        string digits;
+        if (dotPos < 0) {
+            scale  = 0;
+            digits = s.Substring(i, s.Length - i);
+        } else {
+            scale = s.Length - dotPos - 1;
+            if (scale == 0) {
+                // "12." form — keep mantissa, scale 0.
+                digits = s.Substring(i, dotPos - i);
+            } else {
+                digits = s.Substring(i, dotPos - i) + s.Substring(dotPos + 1, scale);
+            }
+            if (digits.Length == 0) {
+                throw new FormatException("Decimal.Parse: no digits in '" + s + "'");
+            }
+        }
+        BigInt mant = BigInt.Parse(digits);
+        if (sign < 0) { mant = mant.Negate(); }
+        return new Decimal(mant, scale);
+    }
+
+    // ── Predicates / accessors ─────────────────────────────────────────
+
+    public bool IsZero() {
+        return this._mantissa.IsZero();
+    }
+
+    public bool IsNegative() {
+        return this._mantissa.IsNegative();
+    }
+
+    public int Sign() {
+        return this._mantissa.Sign();
+    }
+
+    public BigInt Mantissa() {
+        return this._mantissa;
+    }
+
+    public int Scale() {
+        return this._scale;
+    }
+
+    // ── Internal: align scales ─────────────────────────────────────────
+
+    /// Returns the mantissa of `d` re-scaled to `targetScale` (must be ≥
+    /// d's current scale). Multiplies by 10^(target - current).
+    static BigInt _rescaleMantissa(Decimal d, int targetScale) {
+        int diff = targetScale - d._scale;
+        if (diff == 0) return d._mantissa;
+        return d._mantissa.Multiply(Decimal._powTen(diff));
+    }
+
+    /// Build 10^n as a BigInt. n must be non-negative.
+    static BigInt _powTen(int n) {
+        BigInt result = BigInt.One;
+        BigInt ten = new BigInt(10L);
+        int i = 0;
+        while (i < n) {
+            result = result.Multiply(ten);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // ── Arithmetic ─────────────────────────────────────────────────────
+
+    public Decimal Add(Decimal other) {
+        int s = this._scale > other._scale ? this._scale : other._scale;
+        BigInt a = Decimal._rescaleMantissa(this, s);
+        BigInt b = Decimal._rescaleMantissa(other, s);
+        return new Decimal(a.Add(b), s);
+    }
+
+    public Decimal Subtract(Decimal other) {
+        int s = this._scale > other._scale ? this._scale : other._scale;
+        BigInt a = Decimal._rescaleMantissa(this, s);
+        BigInt b = Decimal._rescaleMantissa(other, s);
+        return new Decimal(a.Subtract(b), s);
+    }
+
+    public Decimal Multiply(Decimal other) {
+        // (m1 * 10^-s1) * (m2 * 10^-s2) = (m1 * m2) * 10^-(s1 + s2)
+        return new Decimal(this._mantissa.Multiply(other._mantissa),
+                           this._scale + other._scale);
+    }
+
+    /// Divide with caller-specified result scale (digits after the point).
+    /// Algorithm: pre-multiply dividend mantissa by 10^(divisor_scale +
+    /// result_scale) so the integer divide produces the desired number of
+    /// fractional digits. Truncated toward zero (no banker's rounding in
+    /// v0 — `numerics-future-decimal-rounding-modes` follow-up).
+    ///
+    /// Named `DivideBy` rather than `Divide` because z42's method resolver
+    /// dispatches by name only (not receiver type) — `BigInt.Divide` and
+    /// `Decimal.Divide` collide and the call sites inside this method that
+    /// route to `BigInt.Divide` get mis-resolved to the 2-arg form. Follow-up
+    /// `compiler-future-typed-overload-resolution` lifts this.
+    public Decimal DivideBy(Decimal other, int resultScale) {
+        if (other.IsZero()) {
+            throw new ArgumentException("Decimal.Divide: divisor is zero");
+        }
+        if (resultScale < 0) {
+            throw new ArgumentException("Decimal.Divide: resultScale must be non-negative");
+        }
+        // Want: (this_m * 10^-this_s) / (other_m * 10^-other_s) =
+        //       (this_m / other_m) * 10^(other_s - this_s)
+        // We want the answer scaled to `resultScale`, i.e. mantissa
+        // representing answer * 10^resultScale. Pre-scale this_m by
+        // 10^(resultScale + this_s - other_s) so the integer divide
+        // gives the right magnitude.
+        int preScale = resultScale + other._scale - this._scale;
+        BigInt dividend;
+        if (preScale > 0) {
+            dividend = this._mantissa.Multiply(Decimal._powTen(preScale));
+        } else if (preScale < 0) {
+            // Rare: result has fewer digits than the divisor's scale.
+            // Multiply the divisor instead so we still divide cleanly.
+            BigInt divPow = Decimal._powTen(-preScale);
+            BigInt scaledDivisor = other._mantissa.Multiply(divPow);
+            return new Decimal(this._mantissa.Divide(scaledDivisor), resultScale);
+        } else {
+            dividend = this._mantissa;
+        }
+        return new Decimal(dividend.Divide(other._mantissa), resultScale);
+    }
+
+    public Decimal Negate() {
+        return new Decimal(this._mantissa.Negate(), this._scale);
+    }
+
+    public Decimal Abs() {
+        return new Decimal(this._mantissa.Abs(), this._scale);
+    }
+
+    // ── Comparison ─────────────────────────────────────────────────────
+
+    /// Same-scale-aware compare: returns -1 / 0 / +1.
+    public int CompareTo(Decimal other) {
+        int s = this._scale > other._scale ? this._scale : other._scale;
+        BigInt a = Decimal._rescaleMantissa(this, s);
+        BigInt b = Decimal._rescaleMantissa(other, s);
+        return a.CompareTo(b);
+    }
+
+    public bool Equals(Decimal other) {
+        return this.CompareTo(other) == 0;
+    }
+
+    // ── Display ────────────────────────────────────────────────────────
+
+    /// Render with the stored scale's worth of fractional digits — so
+    /// `Parse("1.00").ToString() == "1.00"` (preserves trailing zeros
+    /// the user wrote). Negative values get a leading `-`.
+    public override string ToString() {
+        if (this._scale == 0) {
+            return this._mantissa.ToString();
+        }
+        bool neg = this._mantissa.IsNegative();
+        string abs = this._mantissa.Abs().ToString();
+        // Pad with leading zeros until length > scale so we can split.
+        while (abs.Length <= this._scale) {
+            abs = "0" + abs;
+        }
+        int dotIdx = abs.Length - this._scale;
+        string intPart  = abs.Substring(0, dotIdx);
+        string fracPart = abs.Substring(dotIdx, this._scale);
+        string body = intPart + "." + fracPart;
+        if (neg) { return "-" + body; }
+        return body;
+    }
+
+    // ── Internal helpers ───────────────────────────────────────────────
+
+    static string _charStr(char c) {
+        char[] buf = new char[1];
+        buf[0] = c;
+        return String.FromChars(buf);
+    }
+}
