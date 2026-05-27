@@ -134,6 +134,45 @@ void test_output_lengths() {
 
 // ── Differentiation across variants ─────────────────────────────────────
 
+// ── Legacy Keccak-256 (Ethereum) — domain byte 0x01 vs 0x06 ─────────────
+
+[Test]
+void test_keccak_legacy_256_empty() {
+    // Ethereum's keccak256("") — distinct from SHA3-256("")
+    Assert.Equal(
+        "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470",
+        Sha3.KeccakLegacy256StringHex("")
+    );
+}
+
+[Test]
+void test_keccak_legacy_256_abc() {
+    // Pre-FIPS Keccak-256("abc") — verifies the 0x01 domain byte path
+    Assert.Equal(
+        "4e03657aea45a94fc7d47ba826c8d667c0d1e6e33a64a036ec44f58fa12d6c45",
+        Sha3.KeccakLegacy256StringHex("abc")
+    );
+}
+
+[Test]
+void test_keccak_legacy_distinct_from_sha3() {
+    // Same input → different output: this is precisely why the legacy
+    // variant exists. If these ever match, the 0x01 path is leaking into
+    // SHA-3 or vice versa.
+    string msg = "ethereum";
+    string fips = Sha3.Hash256StringHex(msg);
+    string legacy = Sha3.KeccakLegacy256StringHex(msg);
+    Assert.True(fips != legacy);
+}
+
+[Test]
+void test_keccak_legacy_512_empty() {
+    Assert.Equal(
+        "0eab42de4c3ceb9235fc91acffe746b29c29a8c366b7c60e4e67c466f36a4304c00fa9caf9d87976ba469bcbe06713b435f091ef2769fb160cdab33d3670680e",
+        Sha3.KeccakLegacy512StringHex("")
+    );
+}
+
 [Test]
 void test_sha3_256_differs_from_sha2_256() {
     string msg = "hello world";

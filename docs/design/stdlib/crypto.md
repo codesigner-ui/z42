@@ -66,7 +66,8 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `Hash224(byte[]) -> byte[28]` / `Hash256(byte[]) -> byte[32]` / `Hash384(byte[]) -> byte[48]` / `Hash512(byte[]) -> byte[64]`
   - Each has parallel `HashNxxxString(string) / HashNxxxHex(byte[]) / HashNxxxStringHex(string)` forms — same naming convention as Sha256
   - Sponge construction over Keccak-f[1600] permutation; rates r = 144 / 136 / 104 / 72 bytes (224/256/384/512); 24 rounds θ ρ π χ ι per absorb/squeeze cycle
-  - Domain-separation byte `0x06` (FIPS 202) — *not* the legacy `0x01` byte used by Ethereum / pre-FIPS Keccak. A `Keccak256.HashEthereum` follow-up is `sha3-future-keccak-legacy`
+  - Domain-separation byte `0x06` (FIPS 202)
+  - Legacy Keccak (domain byte `0x01`) — `KeccakLegacy256` / `KeccakLegacy512` and their `String`/`Hex`/`StringHex` siblings — provided for Ethereum address derivation, Solidity `keccak256(bytes)` interop, and pre-FIPS Keccak tools. Mixing the two for the same input produces different hashes by design
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
@@ -106,13 +107,6 @@ of overload-by-arg-type. z42 当前 overload 解析对 `byte[]` vs `string`
 （HMAC-SHA-256-128 truncation）跳过，用户需要时可 `result[:16]`。
 
 ## Deferred / Future Work
-
-### sha3-future-keccak-legacy: Legacy Keccak-256 (Ethereum)
-
-- **来源**：add-sha3 (2026-05-27)
-- **触发原因**：FIPS 202 SHA-3 covers modern use; legacy Keccak (domain byte `0x01` vs `0x06`) is needed only for Ethereum address derivation / Solidity `keccak256` interop
-- **前置依赖**：无（Sha3 已落地；只需一个 `0x01`-padding variant + new public class）
-- **触发条件**：Ethereum / Solidity 互操作用例落地时
 
 ### aes-future-gcm: AES-GCM AEAD
 

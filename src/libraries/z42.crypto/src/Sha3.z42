@@ -33,10 +33,10 @@ using Std.Encoding;
 public static class Sha3 {
     // ── Public API ───────────────────────────────────────────────────────────
 
-    public static byte[] Hash224(byte[] data) { return Sha3._hash(data, 144, 28); }
-    public static byte[] Hash256(byte[] data) { return Sha3._hash(data, 136, 32); }
-    public static byte[] Hash384(byte[] data) { return Sha3._hash(data, 104, 48); }
-    public static byte[] Hash512(byte[] data) { return Sha3._hash(data,  72, 64); }
+    public static byte[] Hash224(byte[] data) { return Sha3._sponge(data, 144, 28, 0x06); }
+    public static byte[] Hash256(byte[] data) { return Sha3._sponge(data, 136, 32, 0x06); }
+    public static byte[] Hash384(byte[] data) { return Sha3._sponge(data, 104, 48, 0x06); }
+    public static byte[] Hash512(byte[] data) { return Sha3._sponge(data,  72, 64, 0x06); }
 
     public static byte[] Hash224String(string s) { return Sha3.Hash224(Utf8.GetBytes(s)); }
     public static byte[] Hash256String(string s) { return Sha3.Hash256(Utf8.GetBytes(s)); }
@@ -53,11 +53,34 @@ public static class Sha3 {
     public static string Hash384StringHex(string s) { return Hex.Encode(Sha3.Hash384String(s)); }
     public static string Hash512StringHex(string s) { return Hex.Encode(Sha3.Hash512String(s)); }
 
+    // ── Legacy Keccak (pre-FIPS-202, Ethereum / Solidity) ────────────────────
+    //
+    // add-sha3-keccak-legacy (2026-05-27): Ethereum's `keccak256` predates
+    // FIPS 202 and uses domain-separation byte `0x01` instead of `0x06`.
+    // The permutation, state size, and rates are identical — only the
+    // suffix byte differs. Use these variants for:
+    //   - Ethereum address derivation (right-truncated keccak256 of pubkey)
+    //   - Solidity `keccak256(bytes)` compatibility
+    //   - Bitcoin Cash address / SHA3SUM legacy tools
+    //
+    // FIPS-202 SHA-3 callers must keep using `Hash{224,256,384,512}` above —
+    // mixing the two will produce different hashes for the same input.
+
+    public static byte[] KeccakLegacy256(byte[] data)        { return Sha3._sponge(data, 136, 32, 0x01); }
+    public static byte[] KeccakLegacy512(byte[] data)        { return Sha3._sponge(data,  72, 64, 0x01); }
+    public static byte[] KeccakLegacy256String(string s)     { return Sha3.KeccakLegacy256(Utf8.GetBytes(s)); }
+    public static byte[] KeccakLegacy512String(string s)     { return Sha3.KeccakLegacy512(Utf8.GetBytes(s)); }
+    public static string KeccakLegacy256Hex(byte[] data)     { return Hex.Encode(Sha3.KeccakLegacy256(data)); }
+    public static string KeccakLegacy512Hex(byte[] data)     { return Hex.Encode(Sha3.KeccakLegacy512(data)); }
+    public static string KeccakLegacy256StringHex(string s)  { return Hex.Encode(Sha3.KeccakLegacy256String(s)); }
+    public static string KeccakLegacy512StringHex(string s)  { return Hex.Encode(Sha3.KeccakLegacy512String(s)); }
+
     // ── Sponge: absorb + squeeze ─────────────────────────────────────────────
 
-    /// Sponge construction with rate `r` bytes and output length `d` bytes.
-    /// Domain-separation byte = 0x06 (SHA-3 family).
-    static byte[] _hash(byte[] data, int r, int d) {
+    /// Sponge construction with rate `r` bytes, output length `d` bytes,
+    /// and domain-separation byte `dsByte` (0x06 for FIPS 202 SHA-3,
+    /// 0x01 for legacy Keccak).
+    static byte[] _sponge(byte[] data, int r, int d, int dsByte) {
         long[] state = new long[25];
         // Absorb full-rate blocks.
         int off = 0;
@@ -73,7 +96,7 @@ public static class Sha3 {
         int rem = data.Length - off;
         int i = 0;
         while (i < rem) { last[i] = data[off + i]; i = i + 1; }
-        last[rem] = (byte)0x06;
+        last[rem] = (byte)dsByte;
         last[r - 1] = (byte)((int)last[r - 1] | 0x80);
         Sha3._absorbBlock(state, last, 0, r);
         Sha3._keccakF(state);
