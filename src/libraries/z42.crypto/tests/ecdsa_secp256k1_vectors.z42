@@ -1,0 +1,134 @@
+// add-ecdsa-secp256k1 (2026-05-28): test vectors for secp256k1 ECDSA.
+// Bitcoin/Ethereum's curve; pre-Ed25519 standard for blockchain signing.
+namespace Z42CryptoEcdsaSecp256k1VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── Trivial curve-constants check: d = 1 → public key = G ───────────────
+//
+// The base point G is the public key when the private scalar is 1.
+// secp256k1 generator (per SEC2):
+//   Gx = 79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+//   Gy = 483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+
+[Test]
+void test_secp256k1_scalar_1_yields_generator() {
+    byte[] d = new byte[32];
+    d[31] = (byte)0x01;   // d = 1 (32-byte BE)
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    Assert.Equal(
+        "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8",
+        Hex.Encode(pk)
+    );
+}
+
+// ── 2 × G test ──────────────────────────────────────────────────────────
+// Well-known secp256k1 point doubling reference:
+//   2G.x = C6047F9441ED7D6D3045406E95C07CD85C778E4B8CEF3CA7ABAC09B95C709EE5
+//   2G.y = 1AE168FEA63DC339A3C58419466CEAEEF7F632653266D0E1236431A950CFE52A
+
+[Test]
+void test_secp256k1_scalar_2_yields_2g() {
+    byte[] d = new byte[32];
+    d[31] = (byte)0x02;
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    Assert.Equal(
+        "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee51ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a",
+        Hex.Encode(pk)
+    );
+}
+
+// ── Sign / verify round trip ────────────────────────────────────────────
+
+[Test]
+void test_secp256k1_sign_verify_round_trip() {
+    byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    byte[] msg = Utf8.GetBytes("Bitcoin transaction payload");
+    byte[] sig = EcdsaSecp256k1.Sign(d, msg);
+    Assert.Equal(64, sig.Length);
+    Assert.True(EcdsaSecp256k1.Verify(pk, msg, sig));
+}
+
+[Test]
+void test_secp256k1_sign_is_deterministic() {
+    // RFC 6979 → same (d, msg) must produce identical signature bytes.
+    byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+    byte[] msg = Utf8.GetBytes("determinism");
+    byte[] sig1 = EcdsaSecp256k1.Sign(d, msg);
+    byte[] sig2 = EcdsaSecp256k1.Sign(d, msg);
+    Assert.Equal(Hex.Encode(sig1), Hex.Encode(sig2));
+}
+
+// ── Tampering rejection ─────────────────────────────────────────────────
+
+[Test]
+void test_secp256k1_rejects_tampered_signature() {
+    byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    byte[] msg = Utf8.GetBytes("payload");
+    byte[] sig = EcdsaSecp256k1.Sign(d, msg);
+    sig[0] = (byte)((int)sig[0] ^ 0x01);
+    Assert.True(!EcdsaSecp256k1.Verify(pk, msg, sig));
+}
+
+[Test]
+void test_secp256k1_rejects_tampered_message() {
+    byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    byte[] msg = Utf8.GetBytes("original");
+    byte[] sig = EcdsaSecp256k1.Sign(d, msg);
+    byte[] tampered = Utf8.GetBytes("originaL");
+    Assert.True(!EcdsaSecp256k1.Verify(pk, tampered, sig));
+}
+
+[Test]
+void test_secp256k1_rejects_p256_signature_under_secp256k1_curve() {
+    // Sanity check: signatures from a different curve must not validate
+    // under secp256k1, even if both use 64-byte (r || s) encoding.
+    // We use a known-valid secp256k1 public key and a known-valid P-256
+    // signature; the verifier should reject.
+    byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    byte[] msg = Utf8.GetBytes("sample");
+    byte[] p256Sig = Hex.Decode("efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8");
+    Assert.True(!EcdsaSecp256k1.Verify(pk, msg, p256Sig));
+}
+
+[Test]
+void test_secp256k1_rejects_off_curve_public_key() {
+    byte[] pk = new byte[64];
+    int i = 0;
+    while (i < 64) { pk[i] = (byte)(i * 7 + 3); i = i + 1; }
+    byte[] msg = Utf8.GetBytes("anything");
+    byte[] sig = new byte[64];
+    sig[31] = (byte)0x01;   // r=1
+    sig[63] = (byte)0x01;   // s=1
+    Assert.True(!EcdsaSecp256k1.Verify(pk, msg, sig));
+}
+
+// ── Length validation ───────────────────────────────────────────────────
+
+[Test]
+void test_secp256k1_rejects_wrong_signature_length() {
+    byte[] d = new byte[32];
+    d[31] = (byte)0x01;
+    byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
+    byte[] bad = new byte[63];
+    bool threw = false;
+    try { EcdsaSecp256k1.Verify(pk, new byte[0], bad); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_secp256k1_rejects_wrong_scalar_length() {
+    byte[] bad = new byte[31];
+    bool threw = false;
+    try { EcdsaSecp256k1.Sign(bad, new byte[0]); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}

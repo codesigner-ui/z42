@@ -72,6 +72,13 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - State held as `long[25]` (flat `state[x + 5*y]`); little-endian lane interpretation per FIPS 202 §B.1
   - Verified against FIPS 202 §A.5 sample vectors ("abc" + 56-byte alphabet message) for all four output lengths + NIST CAVS empty-string vectors
 
+- ECDSA over secp256k1 (Bitcoin/Ethereum, RFC 6979) — `Std.Crypto.EcdsaSecp256k1` (add-ecdsa-secp256k1, 2026-05-28)
+  - Same API surface as `EcdsaP256` (`GeneratePublicKey` / `Sign` / `Verify`); only the curve constants differ
+  - Curve `y² = x³ + 7 mod p` (Koblitz form, a=0); SEC2-defined generator + order
+  - Point-doubling specialised for a=0 (no `-3` term); add formula same as P-256
+  - Use cases: Bitcoin transaction signing, Ethereum sender recovery (via ecrecover-style), Lightning Network channel announcements, BIP-32 hierarchical-deterministic key derivation
+  - Verified against SEC2 generator (d=1 → G) + 2G doubling reference + cross-curve signature rejection (P-256 sig invalid under secp256k1) + sign/verify round trips + determinism
+
 - ECDSA over NIST P-256 (FIPS 186-4 + RFC 6979) — `Std.Crypto.EcdsaP256` (add-ecdsa-p256, 2026-05-28)
   - `GeneratePublicKey(byte[32] privateScalar) -> byte[64]` — uncompressed `X || Y` encoding
   - `Sign(byte[32] privateScalar, byte[] message) -> byte[64]` — `r || s` (32 bytes each, BE); deterministic via RFC 6979 HMAC-SHA-256 nonce derivation

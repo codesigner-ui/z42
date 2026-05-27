@@ -1,0 +1,325 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+using Std.Numerics;
+
+// add-ecdsa-secp256k1 (2026-05-28): ECDSA over the secp256k1 curve per
+// SEC2 + RFC 6979 deterministic nonce. Used by Bitcoin, Ethereum,
+// Lightning Network, most blockchain protocols.
+//
+// Curve: short Weierstrass `y² = x³ + 7 mod p`, a = 0 (Bitcoin chose this
+// "Koblitz" form for endomorphism-based fast scalar mul, not used here).
+//   p  = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+//   b  = 7
+//   Gx = 79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+//   Gy = 483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+//   n  = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+//
+// API surface mirrors `EcdsaP256` exactly — only the curve constants
+// + the point-doubling formula differ (a = 0 simplifies λ).
+//
+// Tested against well-known Bitcoin/Ethereum reference vectors.
+
+public static class EcdsaSecp256k1 {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    public static byte[] GeneratePublicKey(byte[] privateScalar) {
+        if (privateScalar.Length != 32) {
+            throw new ArgumentException(
+                "EcdsaSecp256k1: private scalar must be 32 bytes, got " + privateScalar.Length.ToString());
+        }
+        BigInt n = EcdsaSecp256k1._curveOrder();
+        BigInt d = EcdsaSecp256k1._readBEBigInt(privateScalar);
+        if (d.IsZero() || d.CompareTo(n) >= 0) {
+            throw new ArgumentException("EcdsaSecp256k1: private scalar must be in [1, n-1]");
+        }
+        BigInt[] Q = EcdsaSecp256k1._scalarMultBase(d);
+        if (Q == null) {
+            throw new ArgumentException("EcdsaSecp256k1: degenerate public key (scalar produced identity)");
+        }
+        return EcdsaSecp256k1._pointToBytes(Q);
+    }
+
+    public static byte[] Sign(byte[] privateScalar, byte[] message) {
+        if (privateScalar.Length != 32) {
+            throw new ArgumentException(
+                "EcdsaSecp256k1: private scalar must be 32 bytes, got " + privateScalar.Length.ToString());
+        }
+        BigInt n = EcdsaSecp256k1._curveOrder();
+        BigInt d = EcdsaSecp256k1._readBEBigInt(privateScalar);
+        if (d.IsZero() || d.CompareTo(n) >= 0) {
+            throw new ArgumentException("EcdsaSecp256k1: private scalar must be in [1, n-1]");
+        }
+        byte[] hash = Sha256.Hash(message);
+        BigInt e = EcdsaSecp256k1._truncateHash(hash, n);
+        int attempt = 0;
+        while (attempt < 16) {
+            BigInt k = EcdsaSecp256k1._deterministicK(d, hash, n, attempt);
+            BigInt[] R = EcdsaSecp256k1._scalarMultBase(k);
+            if (R != null) {
+                BigInt r = EcdsaSecp256k1._modN(R[0], n);
+                if (!r.IsZero()) {
+                    BigInt kInv = k.ModInverse(n);
+                    BigInt s = EcdsaSecp256k1._modN(kInv.Multiply(e.Add(r.Multiply(d))), n);
+                    if (!s.IsZero()) {
+                        byte[] sig = new byte[64];
+                        byte[] rBytes = EcdsaSecp256k1._writeBEBigInt(r, 32);
+                        byte[] sBytes = EcdsaSecp256k1._writeBEBigInt(s, 32);
+                        int i = 0;
+                        while (i < 32) { sig[i] = rBytes[i]; sig[32 + i] = sBytes[i]; i = i + 1; }
+                        return sig;
+                    }
+                }
+            }
+            attempt = attempt + 1;
+        }
+        throw new InvalidOperationException(
+            "EcdsaSecp256k1.Sign: RFC 6979 candidate exhaustion (astronomically improbable)");
+    }
+
+    public static bool Verify(byte[] publicKey, byte[] message, byte[] signature) {
+        if (publicKey.Length != 64) {
+            throw new ArgumentException(
+                "EcdsaSecp256k1.Verify: public key must be 64 bytes (X || Y), got " + publicKey.Length.ToString());
+        }
+        if (signature.Length != 64) {
+            throw new ArgumentException(
+                "EcdsaSecp256k1.Verify: signature must be 64 bytes (r || s), got " + signature.Length.ToString());
+        }
+        BigInt n = EcdsaSecp256k1._curveOrder();
+        BigInt p = EcdsaSecp256k1._curvePrime();
+        byte[] xBytes = new byte[32];
+        byte[] yBytes = new byte[32];
+        int i = 0;
+        while (i < 32) { xBytes[i] = publicKey[i]; yBytes[i] = publicKey[32 + i]; i = i + 1; }
+        BigInt qx = EcdsaSecp256k1._readBEBigInt(xBytes);
+        BigInt qy = EcdsaSecp256k1._readBEBigInt(yBytes);
+        if (qx.CompareTo(p) >= 0 || qy.CompareTo(p) >= 0) { return false; }
+        BigInt[] Q = new BigInt[2];
+        Q[0] = qx; Q[1] = qy;
+        if (!EcdsaSecp256k1._isOnCurve(Q)) { return false; }
+        byte[] rBytes = new byte[32];
+        byte[] sBytes = new byte[32];
+        int j = 0;
+        while (j < 32) { rBytes[j] = signature[j]; sBytes[j] = signature[32 + j]; j = j + 1; }
+        BigInt r = EcdsaSecp256k1._readBEBigInt(rBytes);
+        BigInt s = EcdsaSecp256k1._readBEBigInt(sBytes);
+        if (r.IsZero() || r.CompareTo(n) >= 0) { return false; }
+        if (s.IsZero() || s.CompareTo(n) >= 0) { return false; }
+        byte[] hash = Sha256.Hash(message);
+        BigInt e = EcdsaSecp256k1._truncateHash(hash, n);
+        BigInt sInv = s.ModInverse(n);
+        BigInt u1 = EcdsaSecp256k1._modN(e.Multiply(sInv), n);
+        BigInt u2 = EcdsaSecp256k1._modN(r.Multiply(sInv), n);
+        BigInt[] u1G = EcdsaSecp256k1._scalarMultBase(u1);
+        BigInt[] u2Q = EcdsaSecp256k1._scalarMult(u2, Q);
+        BigInt[] R = EcdsaSecp256k1._pointAdd(u1G, u2Q);
+        if (R == null) { return false; }
+        BigInt x1ModN = EcdsaSecp256k1._modN(R[0], n);
+        return x1ModN.CompareTo(r) == 0;
+    }
+
+    // ── Curve constants ──────────────────────────────────────────────────────
+
+    static BigInt _curvePrime() {
+        return BigInt.ParseHex("fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f");
+    }
+    static BigInt _curveOrder() {
+        return BigInt.ParseHex("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141");
+    }
+    static BigInt[] _basePoint() {
+        BigInt[] G = new BigInt[2];
+        G[0] = BigInt.ParseHex("79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798");
+        G[1] = BigInt.ParseHex("483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8");
+        return G;
+    }
+
+    // ── Field helpers ────────────────────────────────────────────────────────
+
+    static BigInt _modP(BigInt a) {
+        BigInt p = EcdsaSecp256k1._curvePrime();
+        BigInt r = a.Mod(p);
+        if (r._sign < 0) { r = r.Add(p); }
+        return r;
+    }
+    static BigInt _modN(BigInt a, BigInt n) {
+        BigInt r = a.Mod(n);
+        if (r._sign < 0) { r = r.Add(n); }
+        return r;
+    }
+
+    /// `(x, y)` lies on `y² = x³ + 7 mod p` (a = 0, b = 7).
+    static bool _isOnCurve(BigInt[] P) {
+        if (P == null) { return false; }
+        BigInt x = P[0]; BigInt y = P[1];
+        BigInt lhs = EcdsaSecp256k1._modP(y.Multiply(y));
+        BigInt rhs = EcdsaSecp256k1._modP(x.Multiply(x).Multiply(x).Add(new BigInt(7L)));
+        return lhs.CompareTo(rhs) == 0;
+    }
+
+    static BigInt _truncateHash(byte[] hash, BigInt n) {
+        BigInt e = EcdsaSecp256k1._readBEBigInt(hash);
+        if (e.CompareTo(n) >= 0) { e = e.Mod(n); }
+        return e;
+    }
+
+    // ── Short Weierstrass point arithmetic (affine, a = 0) ───────────────────
+
+    /// Doubling specialised for a = 0 — λ = 3x² / (2y), no `-3` term.
+    static BigInt[] _pointDouble(BigInt[] P) {
+        if (P == null) { return null; }
+        BigInt y = P[1];
+        if (y.IsZero()) { return null; }
+        BigInt p = EcdsaSecp256k1._curvePrime();
+        BigInt x = P[0];
+        BigInt three = new BigInt(3L);
+        BigInt num = EcdsaSecp256k1._modP(three.Multiply(x.Multiply(x)));
+        BigInt den = EcdsaSecp256k1._modP(y.Multiply(new BigInt(2L)));
+        BigInt lam = EcdsaSecp256k1._modP(num.Multiply(den.ModInverse(p)));
+        BigInt x3 = EcdsaSecp256k1._modP(lam.Multiply(lam).Subtract(x.Multiply(new BigInt(2L))));
+        BigInt y3 = EcdsaSecp256k1._modP(lam.Multiply(x.Subtract(x3)).Subtract(y));
+        BigInt[] R = new BigInt[2];
+        R[0] = x3; R[1] = y3;
+        return R;
+    }
+
+    /// Point addition — same formula as P-256 (curve `a` doesn't appear).
+    static BigInt[] _pointAdd(BigInt[] P, BigInt[] Q) {
+        if (P == null) { return Q; }
+        if (Q == null) { return P; }
+        BigInt px = P[0]; BigInt py = P[1];
+        BigInt qx = Q[0]; BigInt qy = Q[1];
+        if (px.CompareTo(qx) == 0) {
+            BigInt sumY = EcdsaSecp256k1._modP(py.Add(qy));
+            if (sumY.IsZero()) { return null; }
+            return EcdsaSecp256k1._pointDouble(P);
+        }
+        BigInt p = EcdsaSecp256k1._curvePrime();
+        BigInt num = EcdsaSecp256k1._modP(qy.Subtract(py));
+        BigInt den = EcdsaSecp256k1._modP(qx.Subtract(px));
+        BigInt lam = EcdsaSecp256k1._modP(num.Multiply(den.ModInverse(p)));
+        BigInt x3 = EcdsaSecp256k1._modP(lam.Multiply(lam).Subtract(px).Subtract(qx));
+        BigInt y3 = EcdsaSecp256k1._modP(lam.Multiply(px.Subtract(x3)).Subtract(py));
+        BigInt[] R = new BigInt[2];
+        R[0] = x3; R[1] = y3;
+        return R;
+    }
+
+    static BigInt[] _scalarMult(BigInt k, BigInt[] P) {
+        BigInt[] result = null;
+        BigInt[] cur = P;
+        int bitLen = k.BitLength();
+        int i = 0;
+        while (i < bitLen) {
+            if (k.TestBit(i)) {
+                result = EcdsaSecp256k1._pointAdd(result, cur);
+            }
+            cur = EcdsaSecp256k1._pointDouble(cur);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    static BigInt[] _scalarMultBase(BigInt k) {
+        return EcdsaSecp256k1._scalarMult(k, EcdsaSecp256k1._basePoint());
+    }
+
+    static byte[] _pointToBytes(BigInt[] P) {
+        byte[] out_ = new byte[64];
+        byte[] xBytes = EcdsaSecp256k1._writeBEBigInt(P[0], 32);
+        byte[] yBytes = EcdsaSecp256k1._writeBEBigInt(P[1], 32);
+        int i = 0;
+        while (i < 32) { out_[i] = xBytes[i]; out_[32 + i] = yBytes[i]; i = i + 1; }
+        return out_;
+    }
+
+    // ── RFC 6979 deterministic nonce (HMAC-SHA-256) ──────────────────────────
+
+    static BigInt _deterministicK(BigInt privateScalar, byte[] msgHash, BigInt n, int attempt) {
+        byte[] x = EcdsaSecp256k1._writeBEBigInt(privateScalar, 32);
+        byte[] h1 = EcdsaSecp256k1._writeBEBigInt(EcdsaSecp256k1._truncateHash(msgHash, n), 32);
+        byte[] V = new byte[32];
+        byte[] K = new byte[32];
+        int i = 0;
+        while (i < 32) { V[i] = (byte)0x01; i = i + 1; }
+        byte[] inp = EcdsaSecp256k1._concat4(V, EcdsaSecp256k1._oneByte(0x00), x, h1);
+        K = HmacSha256.Compute(K, inp);
+        V = HmacSha256.Compute(K, V);
+        inp = EcdsaSecp256k1._concat4(V, EcdsaSecp256k1._oneByte(0x01), x, h1);
+        K = HmacSha256.Compute(K, inp);
+        V = HmacSha256.Compute(K, V);
+        int retry = 0;
+        while (true) {
+            V = HmacSha256.Compute(K, V);
+            BigInt cand = EcdsaSecp256k1._readBEBigInt(V);
+            if (cand.CompareTo(n) >= 0) { cand = cand.Mod(n); }
+            if (!cand.IsZero() && retry >= attempt) { return cand; }
+            byte[] retryInp = EcdsaSecp256k1._concat2(V, EcdsaSecp256k1._oneByte(0x00));
+            K = HmacSha256.Compute(K, retryInp);
+            V = HmacSha256.Compute(K, V);
+            retry = retry + 1;
+            if (retry > 256) {
+                throw new InvalidOperationException("EcdsaSecp256k1: RFC 6979 retry overflow");
+            }
+        }
+        return BigInt.Zero;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    static byte[] _oneByte(int v) {
+        byte[] b = new byte[1];
+        b[0] = (byte)(v & 0xFF);
+        return b;
+    }
+
+    static byte[] _concat2(byte[] a, byte[] b) {
+        byte[] r = new byte[a.Length + b.Length];
+        int i = 0;
+        while (i < a.Length) { r[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < b.Length) { r[a.Length + j] = b[j]; j = j + 1; }
+        return r;
+    }
+
+    static byte[] _concat4(byte[] a, byte[] b, byte[] c, byte[] d) {
+        byte[] r = new byte[a.Length + b.Length + c.Length + d.Length];
+        int i = 0;
+        while (i < a.Length) { r[i] = a[i]; i = i + 1; }
+        int off = a.Length;
+        int j = 0;
+        while (j < b.Length) { r[off + j] = b[j]; j = j + 1; }
+        off = off + b.Length;
+        int k = 0;
+        while (k < c.Length) { r[off + k] = c[k]; k = k + 1; }
+        off = off + c.Length;
+        int m = 0;
+        while (m < d.Length) { r[off + m] = d[m]; m = m + 1; }
+        return r;
+    }
+
+    static BigInt _readBEBigInt(byte[] bytes) {
+        BigInt acc = BigInt.Zero;
+        int i = 0;
+        while (i < bytes.Length) {
+            acc = acc.ShiftLeft(8).Add(new BigInt((long)((int)bytes[i] & 0xFF)));
+            i = i + 1;
+        }
+        return acc;
+    }
+
+    static byte[] _writeBEBigInt(BigInt v, int n) {
+        byte[] out_ = new byte[n];
+        BigInt mask8 = new BigInt(255L);
+        BigInt cur = v;
+        int i = n - 1;
+        while (i >= 0) {
+            BigInt low = cur.And(mask8);
+            out_[i] = (byte)(low.ToInt64() & 0xFFL);
+            cur = cur.ShiftRight(8);
+            i = i - 1;
+        }
+        return out_;
+    }
+}
