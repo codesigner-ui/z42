@@ -1,0 +1,63 @@
+// add-sha512-to-crypto (2026-05-27): NIST FIPS 180-2 vectors for SHA-512.
+namespace Z42CryptoSha512VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+
+[Test]
+void test_sha512_empty() {
+    Assert.Equal(
+        "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e",
+        Sha512.HashStringHex("")
+    );
+}
+
+[Test]
+void test_sha512_abc() {
+    Assert.Equal(
+        "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+        Sha512.HashStringHex("abc")
+    );
+}
+
+[Test]
+void test_sha512_alphabet_segments() {
+    // FIPS 180-2 §B.2 — 112-byte input that crosses block boundary.
+    string s = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    Assert.Equal(
+        "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909",
+        Sha512.HashStringHex(s)
+    );
+}
+
+[Test]
+void test_sha512_output_length_64() {
+    Assert.Equal(64, Sha512.Hash(new byte[0]).Length);
+    Assert.Equal(64, Sha512.HashString("abc").Length);
+}
+
+[Test]
+void test_sha512_distinct_short_inputs() {
+    string h1 = Sha512.HashStringHex("a");
+    string h2 = Sha512.HashStringHex("b");
+    Assert.True(h1 != h2);
+}
+
+[Test]
+void test_sha512_block_boundary_55_bytes() {
+    // 55 bytes — just under one-block padding boundary.
+    string s = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcde";
+    Assert.Equal(55, s.Length);
+    byte[] digest = Sha512.HashString(s);
+    Assert.Equal(64, digest.Length);
+}
+
+[Test]
+void test_sha512_block_boundary_112_bytes() {
+    // 112 bytes — exactly at the padding boundary for a 128-byte block.
+    string s = "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijab";
+    Assert.Equal(112, s.Length);
+    byte[] digest = Sha512.HashString(s);
+    Assert.Equal(64, digest.Length);
+}

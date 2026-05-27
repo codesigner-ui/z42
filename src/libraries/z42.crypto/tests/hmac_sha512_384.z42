@@ -1,0 +1,178 @@
+// add-hmac-sha512-sha384 (2026-05-27): RFC 4231 test vectors for HMAC-SHA-512 / 384.
+namespace Z42CryptoHmacSha512Sha384Tests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── Helpers ────────────────────────────────────────────────────────────
+
+// Build a byte[] of given length, every byte = `b`.
+static byte[] _bytesOf(int len, int b) {
+    byte[] r = new byte[len];
+    int i = 0;
+    while (i < len) { r[i] = (byte)b; i = i + 1; }
+    return r;
+}
+
+// ── HMAC-SHA-512 vectors (RFC 4231 §4.2-4.7) ───────────────────────────
+
+[Test]
+void test_hmacsha512_rfc4231_case1() {
+    // key = 20 × 0x0b, data = "Hi There"
+    byte[] key  = _bytesOf(20, 0x0b);
+    byte[] data = Utf8.GetBytes("Hi There");
+    Assert.Equal(
+        "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854",
+        HmacSha512.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha512_rfc4231_case2() {
+    // key = "Jefe", data = "what do ya want for nothing?"
+    Assert.Equal(
+        "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737",
+        HmacSha512.ComputeStringHex("Jefe", "what do ya want for nothing?")
+    );
+}
+
+[Test]
+void test_hmacsha512_rfc4231_case3() {
+    // key = 20 × 0xaa, data = 50 × 0xdd
+    byte[] key  = _bytesOf(20, 0xaa);
+    byte[] data = _bytesOf(50, 0xdd);
+    Assert.Equal(
+        "fa73b0089d56a284efb0f0756c890be9b1b5dbdd8ee81a3655f83e33b2279d39bf3e848279a722c806b485a47e67c807b946a337bee8942674278859e13292fb",
+        HmacSha512.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha512_rfc4231_case4() {
+    // 25-byte ascending key (0x01..0x19), data = 50 × 0xcd
+    byte[] key = new byte[25];
+    int i = 0;
+    while (i < 25) { key[i] = (byte)(i + 1); i = i + 1; }
+    byte[] data = _bytesOf(50, 0xcd);
+    Assert.Equal(
+        "b0ba465637458c6990e5a8c5f61d4af7e576d97ff94b872de76f8050361ee3dba91ca5c11aa25eb4d679275cc5788063a5f19741120c4f2de2adebeb10a298dd",
+        HmacSha512.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha512_rfc4231_case6_long_key() {
+    // 131-byte key (all 0xaa), data = "Test Using Larger Than Block-Size Key - Hash Key First"
+    // This exercises the "key longer than block size → hash first" path.
+    byte[] key = _bytesOf(131, 0xaa);
+    byte[] data = Utf8.GetBytes("Test Using Larger Than Block-Size Key - Hash Key First");
+    Assert.Equal(
+        "80b24263c7c1a3ebb71493c1dd7be8b49b46d1f41b4aeec1121b013783f8f3526b56d037e05f2598bd0fd2215d6a1e5295e64f73f63f0aec8b915a985d786598",
+        HmacSha512.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha512_rfc4231_case7_long_key_long_message() {
+    byte[] key = _bytesOf(131, 0xaa);
+    byte[] data = Utf8.GetBytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.");
+    Assert.Equal(
+        "e37b6a775dc87dbaa4dfa9f96e5e3ffddebd71f8867289865df5a32d20cdc944b6022cac3c4982b10d5eeb55c3e4de15134676fb6de0446065c97440fa8c6a58",
+        HmacSha512.ComputeHex(key, data)
+    );
+}
+
+// ── HMAC-SHA-384 vectors (RFC 4231 §4.2-4.7) ───────────────────────────
+
+[Test]
+void test_hmacsha384_rfc4231_case1() {
+    byte[] key  = _bytesOf(20, 0x0b);
+    byte[] data = Utf8.GetBytes("Hi There");
+    Assert.Equal(
+        "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6",
+        HmacSha384.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha384_rfc4231_case2() {
+    Assert.Equal(
+        "af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e8e2240ca5e69e2c78b3239ecfab21649",
+        HmacSha384.ComputeStringHex("Jefe", "what do ya want for nothing?")
+    );
+}
+
+[Test]
+void test_hmacsha384_rfc4231_case3() {
+    byte[] key  = _bytesOf(20, 0xaa);
+    byte[] data = _bytesOf(50, 0xdd);
+    Assert.Equal(
+        "88062608d3e6ad8a0aa2ace014c8a86f0aa635d947ac9febe83ef4e55966144b2a5ab39dc13814b94e3ab6e101a34f27",
+        HmacSha384.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha384_rfc4231_case4() {
+    byte[] key = new byte[25];
+    int i = 0;
+    while (i < 25) { key[i] = (byte)(i + 1); i = i + 1; }
+    byte[] data = _bytesOf(50, 0xcd);
+    Assert.Equal(
+        "3e8a69b7783c25851933ab6290af6ca77a9981480850009cc5577c6e1f573b4e6801dd23c4a7d679ccf8a386c674cffb",
+        HmacSha384.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha384_rfc4231_case6_long_key() {
+    byte[] key = _bytesOf(131, 0xaa);
+    byte[] data = Utf8.GetBytes("Test Using Larger Than Block-Size Key - Hash Key First");
+    Assert.Equal(
+        "4ece084485813e9088d2c63a041bc5b44f9ef1012a2b588f3cd11f05033ac4c60c2ef6ab4030fe8296248df163f44952",
+        HmacSha384.ComputeHex(key, data)
+    );
+}
+
+[Test]
+void test_hmacsha384_rfc4231_case7_long_key_long_message() {
+    byte[] key = _bytesOf(131, 0xaa);
+    byte[] data = Utf8.GetBytes("This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.");
+    Assert.Equal(
+        "6617178e941f020d351e2f254e8fd32c602420feb0b8fb9adccebb82461e99c5a678cc31e799176d3860e6110c46523e",
+        HmacSha384.ComputeHex(key, data)
+    );
+}
+
+// ── Sanity / edge cases ────────────────────────────────────────────────
+
+[Test]
+void test_hmacsha512_output_length_64() {
+    Assert.Equal(64, HmacSha512.ComputeString("k", "m").Length);
+}
+
+[Test]
+void test_hmacsha384_output_length_48() {
+    Assert.Equal(48, HmacSha384.ComputeString("k", "m").Length);
+}
+
+[Test]
+void test_hmacsha512_differs_from_hmacsha384_first_48_bytes() {
+    byte[] k = _bytesOf(16, 0x42);
+    byte[] m = Utf8.GetBytes("compare");
+    byte[] h512 = HmacSha512.Compute(k, m);
+    byte[] h384 = HmacSha384.Compute(k, m);
+    // Different block sizes? No — both are 128 bytes. But different
+    // compression-function IV (SHA-384 vs SHA-512 inner hash) means the
+    // 48-byte HMAC-SHA-384 should not match the first 48 bytes of
+    // HMAC-SHA-512 (the inner hash is computed with different IV).
+    bool anyDifferent = false;
+    int i = 0;
+    while (i < 48) {
+        if ((int)h512[i] != (int)h384[i]) { anyDifferent = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDifferent);
+}

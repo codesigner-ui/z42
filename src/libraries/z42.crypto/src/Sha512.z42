@@ -1,0 +1,234 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-sha512-to-crypto (2026-05-27): SHA-512 hash (FIPS 180-4).
+//
+// Pure-script implementation. State held as `long` (i64) — SHA-512 words
+// are 64-bit so z42's signed i64 fits naturally; the only friction is
+// that `>>` on negative values sign-extends, so we use `_lshr64` for
+// logical right shift wherever the high bit may be set.
+//
+// Block size 128 bytes (16 × 64-bit words). Output 64 bytes.
+// 80 rounds (vs SHA-256's 64).
+//
+// SHA-384 (Sha384.z42) shares the compression function via the
+// `_compressBlock` helper exposed here; only the IV and output
+// truncation differ.
+//
+// Tested against NIST FIPS 180-2 test vectors + RFC 4231 §4 vectors
+// for HMAC-SHA-384 / HMAC-SHA-512 (transitively).
+public static class Sha512 {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    public static byte[] Hash(byte[] data) {
+        byte[] padded = Sha512._pad(data);
+        long[] h = Sha512._initialHash();
+        int blocks = padded.Length / 128;
+        int b = 0;
+        while (b < blocks) {
+            Sha512._compressBlock(h, padded, b * 128);
+            b = b + 1;
+        }
+        byte[] digest = new byte[64];
+        int i = 0;
+        while (i < 8) {
+            Sha512._writeBE64(digest, i * 8, h[i]);
+            i = i + 1;
+        }
+        return digest;
+    }
+
+    public static byte[] HashString(string s) { return Sha512.Hash(Utf8.GetBytes(s)); }
+    public static string HashHex(byte[] data) { return Hex.Encode(Sha512.Hash(data)); }
+    public static string HashStringHex(string s) {
+        if (s.Length == 0) return Hex.Encode(Sha512.Hash(new byte[0]));
+        return Hex.Encode(Sha512.Hash(Utf8.GetBytes(s)));
+    }
+
+    // ── FIPS 180-4 constants ─────────────────────────────────────────────────
+
+    public static long[] _initialHash() {
+        long[] h = new long[8];
+        h[0] = 0x6A09E667F3BCC908L; h[1] = 0xBB67AE8584CAA73BL;
+        h[2] = 0x3C6EF372FE94F82BL; h[3] = 0xA54FF53A5F1D36F1L;
+        h[4] = 0x510E527FADE682D1L; h[5] = 0x9B05688C2B3E6C1FL;
+        h[6] = 0x1F83D9ABFB41BD6BL; h[7] = 0x5BE0CD19137E2179L;
+        return h;
+    }
+
+    /// SHA-512 round constants K[0..79] — first 64 bits of the fractional
+    /// parts of the cube roots of the first 80 primes (FIPS 180-4 §4.2.3).
+    static long[] _roundConstants() {
+        long[] k = new long[80];
+        k[0]  = 0x428A2F98D728AE22L; k[1]  = 0x7137449123EF65CDL;
+        k[2]  = 0xB5C0FBCFEC4D3B2FL; k[3]  = 0xE9B5DBA58189DBBCL;
+        k[4]  = 0x3956C25BF348B538L; k[5]  = 0x59F111F1B605D019L;
+        k[6]  = 0x923F82A4AF194F9BL; k[7]  = 0xAB1C5ED5DA6D8118L;
+        k[8]  = 0xD807AA98A3030242L; k[9]  = 0x12835B0145706FBEL;
+        k[10] = 0x243185BE4EE4B28CL; k[11] = 0x550C7DC3D5FFB4E2L;
+        k[12] = 0x72BE5D74F27B896FL; k[13] = 0x80DEB1FE3B1696B1L;
+        k[14] = 0x9BDC06A725C71235L; k[15] = 0xC19BF174CF692694L;
+        k[16] = 0xE49B69C19EF14AD2L; k[17] = 0xEFBE4786384F25E3L;
+        k[18] = 0x0FC19DC68B8CD5B5L; k[19] = 0x240CA1CC77AC9C65L;
+        k[20] = 0x2DE92C6F592B0275L; k[21] = 0x4A7484AA6EA6E483L;
+        k[22] = 0x5CB0A9DCBD41FBD4L; k[23] = 0x76F988DA831153B5L;
+        k[24] = 0x983E5152EE66DFABL; k[25] = 0xA831C66D2DB43210L;
+        k[26] = 0xB00327C898FB213FL; k[27] = 0xBF597FC7BEEF0EE4L;
+        k[28] = 0xC6E00BF33DA88FC2L; k[29] = 0xD5A79147930AA725L;
+        k[30] = 0x06CA6351E003826FL; k[31] = 0x142929670A0E6E70L;
+        k[32] = 0x27B70A8546D22FFCL; k[33] = 0x2E1B21385C26C926L;
+        k[34] = 0x4D2C6DFC5AC42AEDL; k[35] = 0x53380D139D95B3DFL;
+        k[36] = 0x650A73548BAF63DEL; k[37] = 0x766A0ABB3C77B2A8L;
+        k[38] = 0x81C2C92E47EDAEE6L; k[39] = 0x92722C851482353BL;
+        k[40] = 0xA2BFE8A14CF10364L; k[41] = 0xA81A664BBC423001L;
+        k[42] = 0xC24B8B70D0F89791L; k[43] = 0xC76C51A30654BE30L;
+        k[44] = 0xD192E819D6EF5218L; k[45] = 0xD69906245565A910L;
+        k[46] = 0xF40E35855771202AL; k[47] = 0x106AA07032BBD1B8L;
+        k[48] = 0x19A4C116B8D2D0C8L; k[49] = 0x1E376C085141AB53L;
+        k[50] = 0x2748774CDF8EEB99L; k[51] = 0x34B0BCB5E19B48A8L;
+        k[52] = 0x391C0CB3C5C95A63L; k[53] = 0x4ED8AA4AE3418ACBL;
+        k[54] = 0x5B9CCA4F7763E373L; k[55] = 0x682E6FF3D6B2B8A3L;
+        k[56] = 0x748F82EE5DEFB2FCL; k[57] = 0x78A5636F43172F60L;
+        k[58] = 0x84C87814A1F0AB72L; k[59] = 0x8CC702081A6439ECL;
+        k[60] = 0x90BEFFFA23631E28L; k[61] = 0xA4506CEBDE82BDE9L;
+        k[62] = 0xBEF9A3F7B2C67915L; k[63] = 0xC67178F2E372532BL;
+        k[64] = 0xCA273ECEEA26619CL; k[65] = 0xD186B8C721C0C207L;
+        k[66] = 0xEADA7DD6CDE0EB1EL; k[67] = 0xF57D4F7FEE6ED178L;
+        k[68] = 0x06F067AA72176FBAL; k[69] = 0x0A637DC5A2C898A6L;
+        k[70] = 0x113F9804BEF90DAEL; k[71] = 0x1B710B35131C471BL;
+        k[72] = 0x28DB77F523047D84L; k[73] = 0x32CAAB7B40C72493L;
+        k[74] = 0x3C9EBE0A15C9BEBCL; k[75] = 0x431D67C49C100D4CL;
+        k[76] = 0x4CC5D4BECB3E42B6L; k[77] = 0x597F299CFC657E2AL;
+        k[78] = 0x5FCB6FAB3AD6FAECL; k[79] = 0x6C44198C4A475817L;
+        return k;
+    }
+
+    // ── Pre-processing: pad + length-encode ──────────────────────────────────
+
+    /// Public for Sha384 reuse. Padding rule mirrors SHA-256 but with
+    /// block size 128 and length field 16 bytes (we use upper 8 = 0
+    /// since z42 byte-length × 8 always fits in i64).
+    public static byte[] _pad(byte[] data) {
+        long bitLen = (long)data.Length * 8L;
+        int padZeros = (112 - (data.Length + 1) % 128 + 128) % 128;
+        int totalLen = data.Length + 1 + padZeros + 16;
+        byte[] padded = new byte[totalLen];
+        int i = 0;
+        while (i < data.Length) { padded[i] = data[i]; i = i + 1; }
+        padded[data.Length] = (byte)0x80;
+        int lenOffset = totalLen - 16;
+        // Upper 8 bytes of the 128-bit length are always 0 in z42.
+        i = lenOffset;
+        while (i < lenOffset + 8) { padded[i] = (byte)0; i = i + 1; }
+        Sha512._writeBE64(padded, lenOffset + 8, bitLen);
+        return padded;
+    }
+
+    // ── Per-block compression (shared with Sha384) ───────────────────────────
+
+    /// Compress one 128-byte block into h[0..7]. Exposed (`_` prefix
+    /// signals internal) so Sha384 can reuse with its own IV.
+    public static void _compressBlock(long[] h, byte[] block, int offset) {
+        long[] k = Sha512._roundConstants();
+        long[] w = new long[80];
+
+        // Message schedule W[0..15]: big-endian 8-byte words from the block.
+        int t = 0;
+        while (t < 16) {
+            w[t] = Sha512._readBE64(block, offset + t * 8);
+            t = t + 1;
+        }
+        // W[16..79]: extension.
+        while (t < 80) {
+            long sigma0 = Sha512._lowSigma0(w[t - 15]);
+            long sigma1 = Sha512._lowSigma1(w[t - 2]);
+            w[t] = w[t - 16] + sigma0 + w[t - 7] + sigma1;
+            t = t + 1;
+        }
+
+        long a = h[0]; long b = h[1]; long c = h[2]; long d = h[3];
+        long e = h[4]; long f = h[5]; long g = h[6]; long hh = h[7];
+
+        int i = 0;
+        while (i < 80) {
+            long S1 = Sha512._highSigma1(e);
+            long ch = (e & f) ^ ((~e) & g);
+            long t1 = hh + S1 + ch + k[i] + w[i];
+            long S0 = Sha512._highSigma0(a);
+            long maj = (a & b) ^ (a & c) ^ (b & c);
+            long t2 = S0 + maj;
+
+            hh = g;  g = f;  f = e;
+            e = d + t1;
+            d = c;   c = b;  b = a;
+            a = t1 + t2;
+
+            i = i + 1;
+        }
+
+        h[0] = h[0] + a; h[1] = h[1] + b; h[2] = h[2] + c; h[3] = h[3] + d;
+        h[4] = h[4] + e; h[5] = h[5] + f; h[6] = h[6] + g; h[7] = h[7] + hh;
+    }
+
+    // ── SHA-512 sigma / Sigma functions (FIPS 180-4 §4.1.3) ──────────────────
+
+    static long _highSigma0(long x) {
+        return Sha512._rotr64(x, 28) ^ Sha512._rotr64(x, 34) ^ Sha512._rotr64(x, 39);
+    }
+
+    static long _highSigma1(long x) {
+        return Sha512._rotr64(x, 14) ^ Sha512._rotr64(x, 18) ^ Sha512._rotr64(x, 41);
+    }
+
+    static long _lowSigma0(long x) {
+        return Sha512._rotr64(x, 1) ^ Sha512._rotr64(x, 8) ^ Sha512._lshr64(x, 7);
+    }
+
+    static long _lowSigma1(long x) {
+        return Sha512._rotr64(x, 19) ^ Sha512._rotr64(x, 61) ^ Sha512._lshr64(x, 6);
+    }
+
+    // ── 64-bit shift / rotate helpers ────────────────────────────────────────
+
+    /// Logical right shift on i64. Arithmetic `>>` sign-extends negative
+    /// values; XOR off the introduced 1s using the same mask that was
+    /// added (`-1L << (64-n)`).
+    public static long _lshr64(long x, int n) {
+        if (n == 0) return x;
+        if (x >= 0L) return x >> n;
+        return (x >> n) ^ ((-1L) << (64 - n));
+    }
+
+    /// Right rotation by n bits on i64 (n in [1, 63]).
+    public static long _rotr64(long x, int n) {
+        return Sha512._lshr64(x, n) | (x << (64 - n));
+    }
+
+    // ── Byte-order helpers ───────────────────────────────────────────────────
+
+    public static long _readBE64(byte[] data, int offset) {
+        long b0 = (long)((int)data[offset]     & 0xFF);
+        long b1 = (long)((int)data[offset + 1] & 0xFF);
+        long b2 = (long)((int)data[offset + 2] & 0xFF);
+        long b3 = (long)((int)data[offset + 3] & 0xFF);
+        long b4 = (long)((int)data[offset + 4] & 0xFF);
+        long b5 = (long)((int)data[offset + 5] & 0xFF);
+        long b6 = (long)((int)data[offset + 6] & 0xFF);
+        long b7 = (long)((int)data[offset + 7] & 0xFF);
+        return (b0 << 56) | (b1 << 48) | (b2 << 40) | (b3 << 32)
+             | (b4 << 24) | (b5 << 16) | (b6 << 8)  | b7;
+    }
+
+    public static void _writeBE64(byte[] data, int offset, long v) {
+        data[offset]     = (byte)(Sha512._lshr64(v, 56) & 0xFFL);
+        data[offset + 1] = (byte)(Sha512._lshr64(v, 48) & 0xFFL);
+        data[offset + 2] = (byte)(Sha512._lshr64(v, 40) & 0xFFL);
+        data[offset + 3] = (byte)(Sha512._lshr64(v, 32) & 0xFFL);
+        data[offset + 4] = (byte)(Sha512._lshr64(v, 24) & 0xFFL);
+        data[offset + 5] = (byte)(Sha512._lshr64(v, 16) & 0xFFL);
+        data[offset + 6] = (byte)(Sha512._lshr64(v, 8)  & 0xFFL);
+        data[offset + 7] = (byte)(v & 0xFFL);
+    }
+}

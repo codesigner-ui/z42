@@ -184,3 +184,165 @@ public static class HmacSha1 {
         return padded;
     }
 }
+
+// add-hmac-sha512-sha384 (2026-05-27): HMAC-SHA-512 (RFC 2104).
+//
+// Block size 128 (vs SHA-256's 64); digest 64 bytes. Same naming
+// convention as HmacSha256 — distinct method names per param-type to
+// dodge z42's name-only overload resolution.
+//
+// Tested against RFC 4231 §4.2-4.8 test vectors.
+public static class HmacSha512 {
+    public static byte[] Compute(byte[] key, byte[] message) {
+        return HmacSha512._computeCore(key, message);
+    }
+
+    static byte[] _computeCore(byte[] key, byte[] message) {
+        byte[] paddedKey = HmacSha512._padKey(key);
+
+        // Inner: SHA512( (K' XOR ipad 128 bytes) || message )
+        byte[] inner = new byte[128 + message.Length];
+        int i = 0;
+        while (i < 128) {
+            inner[i] = (byte)((int)paddedKey[i] ^ 0x36);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < message.Length) {
+            inner[128 + i] = message[i];
+            i = i + 1;
+        }
+        byte[] innerHash = Sha512.Hash(inner);
+
+        // Outer: SHA512( (K' XOR opad 128 bytes) || innerHash 64 bytes )
+        byte[] outer = new byte[128 + 64];
+        i = 0;
+        while (i < 128) {
+            outer[i] = (byte)((int)paddedKey[i] ^ 0x5C);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < 64) {
+            outer[128 + i] = innerHash[i];
+            i = i + 1;
+        }
+        return Sha512.Hash(outer);
+    }
+
+    public static byte[] ComputeString(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return HmacSha512._computeCore(keyBytes, msgBytes);
+    }
+
+    public static string ComputeHex(byte[] key, byte[] message) {
+        return Hex.Encode(HmacSha512._computeCore(key, message));
+    }
+
+    public static string ComputeStringHex(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return Hex.Encode(HmacSha512._computeCore(keyBytes, msgBytes));
+    }
+
+    /// Normalise key to 128 bytes (SHA-512 block size):
+    /// - longer (> 128) → SHA-512 the key (64 bytes), zero-pad to 128
+    /// - shorter → right-pad with 0x00
+    static byte[] _padKey(byte[] key) {
+        byte[] padded = new byte[128];
+        if (key.Length > 128) {
+            byte[] digest = Sha512.Hash(key);
+            int i = 0;
+            while (i < 64) {
+                padded[i] = digest[i];
+                i = i + 1;
+            }
+        } else {
+            int i = 0;
+            while (i < key.Length) {
+                padded[i] = key[i];
+                i = i + 1;
+            }
+        }
+        return padded;
+    }
+}
+
+// add-hmac-sha512-sha384 (2026-05-27): HMAC-SHA-384 (RFC 2104).
+//
+// Same block size (128 bytes) as HMAC-SHA-512 — SHA-384 shares the
+// compression function. Inner / outer hashes use SHA-384 so the digest
+// is 48 bytes instead of 64.
+public static class HmacSha384 {
+    public static byte[] Compute(byte[] key, byte[] message) {
+        return HmacSha384._computeCore(key, message);
+    }
+
+    static byte[] _computeCore(byte[] key, byte[] message) {
+        byte[] paddedKey = HmacSha384._padKey(key);
+
+        byte[] inner = new byte[128 + message.Length];
+        int i = 0;
+        while (i < 128) {
+            inner[i] = (byte)((int)paddedKey[i] ^ 0x36);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < message.Length) {
+            inner[128 + i] = message[i];
+            i = i + 1;
+        }
+        byte[] innerHash = Sha384.Hash(inner);
+
+        // Outer: SHA384( (K' XOR opad) || innerHash 48 bytes )
+        byte[] outer = new byte[128 + 48];
+        i = 0;
+        while (i < 128) {
+            outer[i] = (byte)((int)paddedKey[i] ^ 0x5C);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < 48) {
+            outer[128 + i] = innerHash[i];
+            i = i + 1;
+        }
+        return Sha384.Hash(outer);
+    }
+
+    public static byte[] ComputeString(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return HmacSha384._computeCore(keyBytes, msgBytes);
+    }
+
+    public static string ComputeHex(byte[] key, byte[] message) {
+        return Hex.Encode(HmacSha384._computeCore(key, message));
+    }
+
+    public static string ComputeStringHex(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return Hex.Encode(HmacSha384._computeCore(keyBytes, msgBytes));
+    }
+
+    /// Same 128-byte block as HMAC-SHA-512; long key hashed via SHA-384
+    /// (48 bytes) then zero-padded.
+    static byte[] _padKey(byte[] key) {
+        byte[] padded = new byte[128];
+        if (key.Length > 128) {
+            byte[] digest = Sha384.Hash(key);
+            int i = 0;
+            while (i < 48) {
+                padded[i] = digest[i];
+                i = i + 1;
+            }
+        } else {
+            int i = 0;
+            while (i < key.Length) {
+                padded[i] = key[i];
+                i = i + 1;
+            }
+        }
+        return padded;
+    }
+}

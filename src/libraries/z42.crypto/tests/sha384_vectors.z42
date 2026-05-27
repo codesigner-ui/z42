@@ -1,0 +1,53 @@
+// add-sha512-to-crypto (2026-05-27): NIST FIPS 180-2 vectors for SHA-384.
+namespace Z42CryptoSha384VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+
+[Test]
+void test_sha384_empty() {
+    Assert.Equal(
+        "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b",
+        Sha384.HashStringHex("")
+    );
+}
+
+[Test]
+void test_sha384_abc() {
+    Assert.Equal(
+        "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7",
+        Sha384.HashStringHex("abc")
+    );
+}
+
+[Test]
+void test_sha384_alphabet_segments() {
+    // FIPS 180-2 §D.2 — same input as the SHA-512 long-input vector.
+    string s = "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    Assert.Equal(
+        "09330c33f71147e83d192fc782cd1b4753111b173b3b05d22fa08086e3b0f712fcc7c71a557e2db966c3e9fa91746039",
+        Sha384.HashStringHex(s)
+    );
+}
+
+[Test]
+void test_sha384_output_length_48() {
+    Assert.Equal(48, Sha384.Hash(new byte[0]).Length);
+    Assert.Equal(48, Sha384.HashString("abc").Length);
+}
+
+[Test]
+void test_sha384_differs_from_sha512_truncated() {
+    // SHA-384 IV is different, so the first 48 bytes of SHA-512 should
+    // NOT equal the SHA-384 output for the same input.
+    byte[] s512 = Sha512.HashString("abc");
+    byte[] s384 = Sha384.HashString("abc");
+    bool anyDifferent = false;
+    int i = 0;
+    while (i < 48) {
+        if ((int)s512[i] != (int)s384[i]) { anyDifferent = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDifferent);
+}
