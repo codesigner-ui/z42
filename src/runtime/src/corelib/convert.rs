@@ -97,7 +97,7 @@ pub fn value_to_str(v: &Value) -> String {
         // Spec impl-ref-out-in-runtime: Refs 应该在 frame.get/set 阶段透明
         // deref，不应到达 user-visible 字符串化路径。如果出现，说明代码漏了
         // 一处 deref —— 用占位字串避免 panic，但调试时容易识别。
-        Value::Ref { .. } => "<ref>".to_string(),
+        Value::Ref(_) => "<ref>".to_string(),
     }
 }
 

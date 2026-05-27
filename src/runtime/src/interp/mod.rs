@@ -224,7 +224,7 @@ impl Frame {
     #[allow(dead_code)]
     pub fn get_deref(&self, reg: u32, ctx: &VmContext) -> Result<Value> {
         match self.get(reg)? {
-            Value::Ref { kind } => deref_ref(kind, ctx),
+            Value::Ref(kind) => deref_ref(kind.as_ref(), ctx),
             other => Ok(other.clone()),
         }
     }
@@ -241,7 +241,7 @@ impl Frame {
             self.regs.resize(idx + 1, Value::Null);
         }
         let kind_to_store = match &self.regs[idx] {
-            Value::Ref { kind } => Some(kind.clone()),
+            Value::Ref(kind) => Some((**kind).clone()),
             _ => None,
         };
         match kind_to_store {
@@ -272,7 +272,7 @@ pub(crate) fn deref_ref(
                     "ref target slot %{slot} out of frame range"))?;
             // Sanity guard: ref-to-ref nesting not supported (codegen never
             // produces it; defend in case of malformed bytecode).
-            if let Value::Ref { .. } = v {
+            if let Value::Ref(_) = v {
                 anyhow::bail!("ref-to-ref nesting not supported");
             }
             Ok(v.clone())
@@ -398,8 +398,8 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
     // frame 尚未入栈，Ref::Stack { frame_idx } 指向 caller 的栈位置，
     // ctx.frame_state_at 能找到正确 regs 指针。
     for i in 0..(func.param_count as usize).min(frame.regs.len()) {
-        if let Value::Ref { kind } = &frame.regs[i] {
-            let kind_clone = kind.clone();
+        if let Value::Ref(kind) = &frame.regs[i] {
+            let kind_clone = (**kind).clone();
             let underlying = deref_ref(&kind_clone, ctx)?;
             frame.regs[i] = underlying;
             frame.ref_writebacks.push((i as u32, kind_clone));

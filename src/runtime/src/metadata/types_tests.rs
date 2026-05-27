@@ -93,7 +93,7 @@ fn is_heap_ref_true_for_closure() {
 #[test]
 fn is_heap_ref_true_for_ref_array() {
     let arr = GcRef::new(vec![Value::I64(0)]);
-    let v = Value::Ref { kind: RefKind::Array { gc_ref: arr, idx: 0 } };
+    let v = Value::Ref(Box::new(RefKind::Array { gc_ref: arr, idx: 0 }));
     assert!(v.is_heap_ref());
 }
 
@@ -105,7 +105,7 @@ fn is_heap_ref_true_for_ref_field() {
         native: NativeData::None,
         type_args: Box::new([]),
     });
-    let v = Value::Ref { kind: RefKind::Field { gc_ref: obj, field_name: "x".to_string() } };
+    let v = Value::Ref(Box::new(RefKind::Field { gc_ref: obj, field_name: "x".to_string() }));
     assert!(v.is_heap_ref());
 }
 
@@ -140,7 +140,7 @@ fn is_heap_ref_false_for_stack_closure() {
 
 #[test]
 fn is_heap_ref_false_for_ref_stack() {
-    let v = Value::Ref { kind: RefKind::Stack { frame_idx: 0, slot: 1 } };
+    let v = Value::Ref(Box::new(RefKind::Stack { frame_idx: 0, slot: 1 }));
     assert!(!v.is_heap_ref(), "stack ref points to stack location, not heap");
 }
 
@@ -167,11 +167,9 @@ fn value_size_observed() {
     // variants (review.md C1) should make this shrink. Update the expected
     // when an intentional shrink lands.
     //
-    // 2026-05-27 review.md C1 step 1 (PinnedView boxed): Value remains 48 B
-    // because Closure { env: GcRef (16 B), fn_name: String (24 B) } and
-    // Ref { kind: RefKind } both still carry 32-40 B payloads inline.
-    // Subsequent step boxes Closure → expected to drop to ~32 B; boxing
-    // Ref / FuncRef / StackClosure follows.
-    assert_eq!(std::mem::size_of::<Value>(), 48,
+    // 2026-05-27 review.md C1 chunks 1-4 (PinnedView / FuncRef /
+    // StackClosure / Ref boxed): Value shrunk 48 B → 40 B. Closure
+    // remains inline (chunk 5 boxes it → expected 24 B).
+    assert_eq!(std::mem::size_of::<Value>(), 40,
         "Value size changed: {}", std::mem::size_of::<Value>());
 }

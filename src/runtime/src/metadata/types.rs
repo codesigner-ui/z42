@@ -339,7 +339,12 @@ pub enum Value {
     /// 持有该 Value 的寄存器在 frame.get/set 时被透明 deref（单点 dispatch，
     /// 见 `interp/mod.rs::Frame::get`）。引用永远不离开调用栈帧（前置 spec
     /// design Decision 9 + R1），因此 Stack kind 的 frame_idx 不会 stale。
-    Ref { kind: RefKind },
+    ///
+    /// review.md C1 chunk 4 (2026-05-27): payload boxed because RefKind
+    /// is 32 B (Field variant) — biggest cold-path payload after
+    /// Closure. Refs only live in registers for a single call's
+    /// duration, so the box alloc is a tiny fraction of the call cost.
+    Ref(Box<RefKind>),
 }
 
 /// Spec impl-ref-out-in-runtime: 描述 `Value::Ref` 指向的底层位置类型。
@@ -398,13 +403,14 @@ impl Value {
     /// `is_heap_ref` is the predicate, `trace_children` is the traversal.
     #[inline]
     pub fn is_heap_ref(&self) -> bool {
-        matches!(
-            self,
-            Value::Object(_)
-                | Value::Array(_)
-                | Value::Closure { .. }
-                | Value::Ref { kind: RefKind::Array { .. } | RefKind::Field { .. } }
-        )
+        match self {
+            Value::Object(_) | Value::Array(_) | Value::Closure { .. } => true,
+            Value::Ref(kind) => matches!(
+                kind.as_ref(),
+                RefKind::Array { .. } | RefKind::Field { .. }
+            ),
+            _ => false,
+        }
     }
 
     /// **add-mark-sweep-collector P1 (2026-05-21)**: visit every direct
@@ -431,7 +437,7 @@ impl Value {
                 let arr = env.borrow();
                 for elem in arr.iter() { visit(elem); }
             }
-            Value::Ref { kind } => match kind {
+            Value::Ref(kind) => match kind.as_ref() {
                 RefKind::Stack { .. } => {}
                 RefKind::Array { gc_ref, .. } => {
                     let arr = gc_ref.borrow();
@@ -468,7 +474,7 @@ impl PartialEq for Value {
             // Spec impl-ref-out-in-runtime: Ref 比较按 RefKind 字段；
             // Array/Field kind 用 GcRef::ptr_eq（同 Object/Array 引用语义）；
             // Stack kind 比 frame_idx + slot（指向同一栈位置）。
-            (Value::Ref { kind: a }, Value::Ref { kind: b }) => match (a, b) {
+            (Value::Ref(a), Value::Ref(b)) => match (&**a, &**b) {
                 (RefKind::Stack { frame_idx: f1, slot: s1 },
                  RefKind::Stack { frame_idx: f2, slot: s2 }) => f1 == f2 && s1 == s2,
                 (RefKind::Array { gc_ref: g1, idx: i1 },

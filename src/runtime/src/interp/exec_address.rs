@@ -21,9 +21,9 @@ pub(super) fn load_local_addr(ctx: &VmContext, frame: &mut Frame, dst: u32, slot
     let depth = ctx.frame_stack_depth();
     // Current frame is the most recent push (depth - 1).
     let frame_idx = (depth.saturating_sub(1)) as u32;
-    frame.set(dst, Value::Ref {
-        kind: crate::metadata::types::RefKind::Stack { frame_idx, slot },
-    });
+    frame.set(dst, Value::Ref(Box::new(
+        crate::metadata::types::RefKind::Stack { frame_idx, slot },
+    )));
 }
 
 pub(super) fn load_elem_addr(frame: &mut Frame, dst: u32, arr: u32, idx: u32) -> Result<()> {
@@ -31,11 +31,11 @@ pub(super) fn load_elem_addr(frame: &mut Frame, dst: u32, arr: u32, idx: u32) ->
     let idx_val = to_usize(frame.get(idx)?, "LoadElemAddr index")?;
     match arr_val {
         Value::Array(rc) => {
-            frame.set(dst, Value::Ref {
-                kind: crate::metadata::types::RefKind::Array {
+            frame.set(dst, Value::Ref(Box::new(
+                crate::metadata::types::RefKind::Array {
                     gc_ref: rc.clone(), idx: idx_val,
                 }
-            });
+            )));
             Ok(())
         }
         other => bail!("LoadElemAddr: expected array, got {:?}", other),
@@ -46,12 +46,12 @@ pub(super) fn load_field_addr(frame: &mut Frame, dst: u32, obj: u32, field_name:
     let obj_val = frame.get(obj)?;
     match obj_val {
         Value::Object(rc) => {
-            frame.set(dst, Value::Ref {
-                kind: crate::metadata::types::RefKind::Field {
+            frame.set(dst, Value::Ref(Box::new(
+                crate::metadata::types::RefKind::Field {
                     gc_ref: rc.clone(),
                     field_name: field_name.to_string(),
                 }
-            });
+            )));
             Ok(())
         }
         other => bail!("LoadFieldAddr: expected object, got {:?}", other),

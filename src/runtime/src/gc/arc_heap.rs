@@ -585,7 +585,7 @@ impl ArcMagrGC {
                 Value::Object(gc) => GcRef::mark(gc),
                 Value::Array(gc)  => GcRef::mark(gc),
                 Value::Closure { env, .. } => GcRef::mark(env),
-                Value::Ref { kind } => match kind {
+                Value::Ref(kind) => match kind.as_ref() {
                     crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::mark(gc_ref),
                     crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::mark(gc_ref),
                     crate::metadata::types::RefKind::Stack { .. } => false,
@@ -614,7 +614,7 @@ impl ArcMagrGC {
             Value::Object(gc) => GcRef::mark(gc),
             Value::Array(gc)  => GcRef::mark(gc),
             Value::Closure { env, .. } => GcRef::mark(env),
-            Value::Ref { kind } => match kind {
+            Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::mark(gc_ref),
                 crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::mark(gc_ref),
                 crate::metadata::types::RefKind::Stack { .. } => false,
@@ -631,7 +631,7 @@ impl ArcMagrGC {
             Value::Object(gc) => GcRef::gen_age(gc),
             Value::Array(gc)  => GcRef::gen_age(gc),
             Value::Closure { env, .. } => GcRef::gen_age(env),
-            Value::Ref { kind } => match kind {
+            Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::gen_age(gc_ref),
                 crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::gen_age(gc_ref),
                 crate::metadata::types::RefKind::Stack { .. } => 0,
@@ -861,7 +861,7 @@ impl ArcMagrGC {
             Value::Object(gc) => GcRef::gen_age(gc),
             Value::Array(gc)  => GcRef::gen_age(gc),
             Value::Closure { env, .. } => GcRef::gen_age(env),
-            Value::Ref { kind } => match kind {
+            Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::gen_age(gc_ref),
                 crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::gen_age(gc_ref),
                 crate::metadata::types::RefKind::Stack { .. } => return,
@@ -1630,7 +1630,7 @@ impl MagrGC for ArcMagrGC {
             // Spec impl-ref-out-in-runtime: Ref 仅存索引或 GcRef；底层
             // Vec/Object 已被本身的 Value::Array / Value::Object 计入，
             // Ref 只额外计入自己的 enum tag + RefKind 数据。
-            Value::Ref { kind } => match kind {
+            Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Stack { .. } => size_of::<Value>(),
                 crate::metadata::types::RefKind::Array { .. } => size_of::<Value>(),
                 crate::metadata::types::RefKind::Field { field_name, .. } =>
@@ -1659,7 +1659,7 @@ impl MagrGC for ArcMagrGC {
             // Spec impl-ref-out-in-runtime: Ref::Array / Ref::Field 持 GcRef，
             // GC 必须跟随让 caller 数组 / 对象在调用期间不被回收。
             // Stack kind 不持 GcRef（frame 在调用栈上自然存活）。
-            Value::Ref { kind } => match kind {
+            Value::Ref(kind) => match kind.as_ref() {
                 crate::metadata::types::RefKind::Stack { .. } => {}
                 crate::metadata::types::RefKind::Array { gc_ref, .. } => {
                     let arr = gc_ref.borrow();
