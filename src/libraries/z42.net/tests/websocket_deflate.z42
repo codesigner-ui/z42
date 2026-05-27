@@ -1,0 +1,229 @@
+// add-z42-net-websocket-deflate (2026-05-28): per-message-deflate
+// (RFC 7692) wire-format + frame-codec tests.
+//
+// Network-side e2e tests would race the same hung-WebSocket runner
+// pattern that's blocked the full test suite all session — so we
+// exercise the codec / compression path directly.
+namespace Z42NetWebSocketDeflateTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+using Std.Compression;
+using Std.Net.WebSockets;
+
+// ── Frame codec RSV1 bit ────────────────────────────────────────────────
+
+[Test]
+void test_client_frame_with_rsv1_sets_byte0_bit6() {
+    byte[] payload = Utf8.GetBytes("hello");
+    byte[] mask    = new byte[4];   // all-zero mask = identity
+    byte[] frame   = _FrameCodec.EncodeFrameRsv1(_FrameCodec.OpText, payload, payload.Length, mask);
+    // Byte 0 = FIN (0x80) | RSV1 (0x40) | opcode 1 (text) = 0xC1
+    Assert.Equal(0xC1, (int)frame[0] & 0xFF);
+    // Byte 1 = MASK (0x80) | length 5 = 0x85
+    Assert.Equal(0x85, (int)frame[1] & 0xFF);
+}
+
+[Test]
+void test_server_frame_with_rsv1_sets_byte0_bit6() {
+    byte[] payload = Utf8.GetBytes("world");
+    byte[] frame   = _FrameCodec.EncodeServerFrameRsv1(_FrameCodec.OpBinary, payload, payload.Length);
+    // Byte 0 = FIN (0x80) | RSV1 (0x40) | opcode 2 (binary) = 0xC2
+    Assert.Equal(0xC2, (int)frame[0] & 0xFF);
+    // Byte 1 = length 5 (server frame, no MASK)
+    Assert.Equal(0x05, (int)frame[1] & 0xFF);
+}
+
+[Test]
+void test_normal_frame_keeps_rsv1_cleared() {
+    // Non-Rsv1 variant must produce byte 0 = 0x81 (FIN + text), not 0xC1.
+    byte[] payload = Utf8.GetBytes("x");
+    byte[] mask    = new byte[4];
+    byte[] frame   = _FrameCodec.EncodeFrame(_FrameCodec.OpText, payload, payload.Length, mask);
+    Assert.Equal(0x81, (int)frame[0] & 0xFF);
+}
+
+// ── Deflate round trip via WebSocketConnection helpers ──────────────────
+// We exercise the deflate/inflate pipeline by sending through one
+// connection (with permessage-deflate enabled) into an in-memory Stream
+// pair and reading on the other side.
+
+// Helper: paired in-memory Stream — write to A goes into B's read buffer.
+public class _PairedStream : Stream {
+    private byte[] _buf;
+    private int    _writePos;
+    private int    _readPos;
+    public _PairedStream() {
+        this._buf = new byte[65536];
+        this._writePos = 0;
+        this._readPos = 0;
+    }
+    public override int Read(byte[] dest, int offset, int count) {
+        int available = this._writePos - this._readPos;
+        if (available <= 0) return 0;
+        int toCopy = count;
+        if (toCopy > available) { toCopy = available; }
+        int i = 0;
+        while (i < toCopy) {
+            dest[offset + i] = this._buf[this._readPos + i];
+            i = i + 1;
+        }
+        this._readPos = this._readPos + toCopy;
+        return toCopy;
+    }
+    public override void Write(byte[] src, int offset, int count) {
+        // Grow if needed.
+        if (this._writePos + count > this._buf.Length) {
+            int newCap = this._buf.Length * 2;
+            while (newCap < this._writePos + count) { newCap = newCap * 2; }
+            byte[] grown = new byte[newCap];
+            int j = 0;
+            while (j < this._writePos) { grown[j] = this._buf[j]; j = j + 1; }
+            this._buf = grown;
+        }
+        int i = 0;
+        while (i < count) {
+            this._buf[this._writePos + i] = src[offset + i];
+            i = i + 1;
+        }
+        this._writePos = this._writePos + count;
+    }
+    public override void Flush() { /* nothing buffered */ }
+    public override bool CanRead() { return true; }
+    public override bool CanWrite() { return true; }
+    public override bool CanSeek() { return false; }
+    public override long Position() { return (long)this._readPos; }
+    public override long Length() { return (long)this._writePos; }
+    public override long Seek(long offset, int origin) { return (long)this._readPos; }
+    public override void Close() { /* no-op */ }
+}
+
+// Read one server-side WebSocket frame from a _PairedStream and verify
+// it's RSV1-compressed text matching the expected plaintext after
+// decompression.
+
+[Test]
+void test_compressed_text_frame_round_trip_via_paired_stream() {
+    var pipe = new _PairedStream();
+    var conn = new WebSocketConnection(null, pipe);
+    conn.SetPermessageDeflate(true);
+    string msg = "Hello, deflate compression world! Hello, deflate compression world!";
+    conn.SendText(msg);
+    // Read the frame back via the same pipe.
+    _DecodedFrame f = _FrameCodec.ReadFrame(pipe);
+    Assert.True(f.Rsv1);
+    Assert.Equal(_FrameCodec.OpText, f.Opcode);
+    // Manually inflate the payload (append 00 00 FF FF + Deflate.Decompress).
+    byte[] withTail = new byte[f.Payload.Length + 4];
+    int i = 0;
+    while (i < f.Payload.Length) { withTail[i] = f.Payload[i]; i = i + 1; }
+    withTail[f.Payload.Length]     = (byte)0x00;
+    withTail[f.Payload.Length + 1] = (byte)0x00;
+    withTail[f.Payload.Length + 2] = (byte)0xFF;
+    withTail[f.Payload.Length + 3] = (byte)0xFF;
+    byte[] decoded = Deflate.Decompress(withTail);
+    Assert.Equal(msg, Utf8.GetString(decoded));
+}
+
+[Test]
+void test_compressed_binary_frame_round_trip() {
+    var pipe = new _PairedStream();
+    var conn = new WebSocketConnection(null, pipe);
+    conn.SetPermessageDeflate(true);
+    byte[] msg = new byte[256];
+    int i = 0;
+    while (i < 256) { msg[i] = (byte)(i & 0xFF); i = i + 1; }
+    conn.SendBinary(msg, msg.Length);
+    _DecodedFrame f = _FrameCodec.ReadFrame(pipe);
+    Assert.True(f.Rsv1);
+    Assert.Equal(_FrameCodec.OpBinary, f.Opcode);
+    byte[] withTail = new byte[f.Payload.Length + 4];
+    int j = 0;
+    while (j < f.Payload.Length) { withTail[j] = f.Payload[j]; j = j + 1; }
+    withTail[f.Payload.Length]     = (byte)0x00;
+    withTail[f.Payload.Length + 1] = (byte)0x00;
+    withTail[f.Payload.Length + 2] = (byte)0xFF;
+    withTail[f.Payload.Length + 3] = (byte)0xFF;
+    byte[] decoded = Deflate.Decompress(withTail);
+    Assert.Equal(msg.Length, decoded.Length);
+    int k = 0;
+    while (k < 256) {
+        Assert.Equal((int)msg[k] & 0xFF, (int)decoded[k] & 0xFF);
+        k = k + 1;
+    }
+}
+
+[Test]
+void test_deflate_disabled_sends_uncompressed_frame() {
+    var pipe = new _PairedStream();
+    var conn = new WebSocketConnection(null, pipe);
+    // Default: permessage-deflate off.
+    conn.SendText("plain");
+    _DecodedFrame f = _FrameCodec.ReadFrame(pipe);
+    Assert.True(!f.Rsv1);
+    Assert.Equal("plain", Utf8.GetString(f.Payload));
+}
+
+// ── Receive-side: inflate when peer sends RSV1 ──────────────────────────
+
+[Test]
+void test_inbound_rsv1_frame_is_decompressed_when_deflate_enabled() {
+    // Build the frame as a deflate-capable peer would: use the same
+    // sender-side helper logic (compress + conditional strip of the
+    // 00 00 FF FF sync-flush tail). For the inverse round-trip via the
+    // receiver, send through a peer connection so both sides use the
+    // matching strip/append rules.
+    string plain = "The quick brown fox jumps over the lazy dog";
+    var senderPipe = new _PairedStream();
+    var sender = new WebSocketConnection(null, senderPipe);
+    sender.SetPermessageDeflate(true);
+    sender.SendText(plain);
+    // senderPipe now holds the framed bytes; pipe them into the receiver.
+    byte[] frameBuf = new byte[senderPipe.Length()];
+    int got = senderPipe.Read(frameBuf, 0, frameBuf.Length);
+    Assert.Equal(frameBuf.Length, got);
+    var recvPipe = new _PairedStream();
+    recvPipe.Write(frameBuf, 0, frameBuf.Length);
+    var receiver = new WebSocketConnection(null, recvPipe);
+    receiver.SetPermessageDeflate(true);
+    WebSocketMessage msg = receiver.Receive();
+    Assert.Equal(WebSocketMessageType.Text, msg.MessageType);
+    Assert.Equal(plain, Utf8.GetString(msg.Buffer));
+}
+
+[Test]
+void test_inbound_rsv1_frame_rejected_when_deflate_disabled() {
+    byte[] stripped = new byte[1];
+    stripped[0] = (byte)0x00;
+    byte[] frame = _FrameCodec.EncodeServerFrameRsv1(_FrameCodec.OpText,
+                                                     stripped, stripped.Length);
+    var pipe = new _PairedStream();
+    pipe.Write(frame, 0, frame.Length);
+    var conn = new WebSocketConnection(null, pipe);
+    // Deflate NOT enabled — must reject.
+    bool threw = false;
+    try { conn.Receive(); }
+    catch (WebSocketProtocolException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Compression actually shrinks repetitive data ────────────────────────
+
+[Test]
+void test_deflate_compresses_repetitive_payload() {
+    var pipe = new _PairedStream();
+    var conn = new WebSocketConnection(null, pipe);
+    conn.SetPermessageDeflate(true);
+    // 1 KiB of 'a' — should compress to a tiny payload.
+    char[] repeating = new char[1024];
+    int i = 0;
+    while (i < 1024) { repeating[i] = 'a'; i = i + 1; }
+    string msg = String.FromChars(repeating);
+    conn.SendText(msg);
+    _DecodedFrame f = _FrameCodec.ReadFrame(pipe);
+    Assert.True(f.Rsv1);
+    // Compressed payload should be MUCH smaller than 1024 (deflate
+    // handles runs trivially — typical < 20 bytes).
+    Assert.True(f.Payload.Length < 50);
+}

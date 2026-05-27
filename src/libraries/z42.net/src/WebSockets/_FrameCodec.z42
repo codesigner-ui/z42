@@ -46,8 +46,19 @@ public static class _FrameCodec {
     /// Encode a single frame (FIN=1, no fragmentation) with client masking
     /// to a wire byte[]. Caller writes this directly to the TCP stream.
     /// `maskingKey` is a 4-byte random value (caller-supplied so tests can
-    /// pin it).
+    /// pin it). RSV1 stays cleared — see `EncodeFrameRsv1` for the
+    /// per-message-deflate-compressed-frame variant.
     public static byte[] EncodeFrame(int opcode, byte[] payload, int payloadLen, byte[] maskingKey) {
+        return _FrameCodec._encodeFrameInternal(opcode, payload, payloadLen, maskingKey, false);
+    }
+
+    /// add-z42-net-websocket-deflate (2026-05-28): client→server compressed
+    /// frame — same wire format but RSV1 bit set. RFC 7692 §7.2.3.
+    public static byte[] EncodeFrameRsv1(int opcode, byte[] payload, int payloadLen, byte[] maskingKey) {
+        return _FrameCodec._encodeFrameInternal(opcode, payload, payloadLen, maskingKey, true);
+    }
+
+    static byte[] _encodeFrameInternal(int opcode, byte[] payload, int payloadLen, byte[] maskingKey, bool rsv1) {
         if (maskingKey == null || maskingKey.Length != 4) {
             throw new WebSocketProtocolException("masking key must be 4 bytes");
         }
@@ -66,8 +77,10 @@ public static class _FrameCodec {
         }
         int totalLen = 2 + extLenBytes + 4 + payloadLen;
         byte[] frame = new byte[totalLen];
-        // Byte 0: FIN=1 + RSV1-3=0 + opcode (4 bits)
-        frame[0] = (byte)(0x80 | (opcode & 0x0F));
+        // Byte 0: FIN=1 + RSV1 (optional) + RSV2/3=0 + opcode (4 bits)
+        int b0 = 0x80 | (opcode & 0x0F);
+        if (rsv1) { b0 = b0 | 0x40; }
+        frame[0] = (byte)b0;
         // Byte 1: MASK=1 + 7-bit length field
         frame[1] = (byte)(0x80 | hdrLen2);
         int off = 2;
@@ -110,8 +123,19 @@ public static class _FrameCodec {
     /// encoder. RFC 6455 §5.1: "A server MUST NOT mask any frames that
     /// it sends to the client." Same wire layout as `EncodeFrame` but
     /// MASK bit cleared, no 4-byte masking key, payload written
-    /// unmodified.
+    /// unmodified. RSV1 stays cleared — see `EncodeServerFrameRsv1`
+    /// for the per-message-deflate-compressed variant.
     public static byte[] EncodeServerFrame(int opcode, byte[] payload, int payloadLen) {
+        return _FrameCodec._encodeServerFrameInternal(opcode, payload, payloadLen, false);
+    }
+
+    /// add-z42-net-websocket-deflate (2026-05-28): server→client compressed
+    /// frame — same wire format but RSV1 bit set. RFC 7692 §7.2.3.
+    public static byte[] EncodeServerFrameRsv1(int opcode, byte[] payload, int payloadLen) {
+        return _FrameCodec._encodeServerFrameInternal(opcode, payload, payloadLen, true);
+    }
+
+    static byte[] _encodeServerFrameInternal(int opcode, byte[] payload, int payloadLen, bool rsv1) {
         int extLenBytes;
         int hdrLen2;
         if (payloadLen < 126) {
@@ -126,8 +150,10 @@ public static class _FrameCodec {
         }
         int totalLen = 2 + extLenBytes + payloadLen;
         byte[] frame = new byte[totalLen];
-        // Byte 0: FIN=1 + RSV1-3=0 + opcode (4 bits)
-        frame[0] = (byte)(0x80 | (opcode & 0x0F));
+        // Byte 0: FIN=1 + RSV1 (optional) + RSV2/3=0 + opcode (4 bits)
+        int b0 = 0x80 | (opcode & 0x0F);
+        if (rsv1) { b0 = b0 | 0x40; }
+        frame[0] = (byte)b0;
         // Byte 1: MASK=0 + 7-bit length field
         frame[1] = (byte)(hdrLen2);
         int off = 2;
@@ -153,13 +179,16 @@ public static class _FrameCodec {
         return frame;
     }
 
-    /// Decoded inbound frame fields.
+    /// Decoded inbound frame fields. RSV1 is surfaced for per-message-
+    /// deflate; v0 doesn't care about RSV2/RSV3 (their use is reserved
+    /// for future extensions).
     public static _DecodedFrame ReadFrame(Stream stream) {
         // Read 2 base bytes
         byte[] hdr = _FrameCodec._readExactly(stream, 2);
         int b0 = (int)hdr[0] & 0xFF;
         int b1 = (int)hdr[1] & 0xFF;
         bool fin    = (b0 & 0x80) != 0;
+        bool rsv1   = (b0 & 0x40) != 0;
         int  opcode = b0 & 0x0F;
         bool mask   = (b1 & 0x80) != 0;
         int  len7   = b1 & 0x7F;
@@ -188,7 +217,7 @@ public static class _FrameCodec {
         }
         int payLen32 = (int)payloadLen;
         byte[] payload = _FrameCodec._readExactly(stream, payLen32);
-        return new _DecodedFrame(fin, opcode, payload);
+        return new _DecodedFrame(fin, opcode, payload, rsv1);
     }
 
     static byte[] _readExactly(Stream stream, int n) {
@@ -213,10 +242,12 @@ public class _DecodedFrame {
     public bool   Fin;
     public int    Opcode;
     public byte[] Payload;
+    public bool   Rsv1;     // per-message-deflate compressed-payload flag
 
-    public _DecodedFrame(bool fin, int opcode, byte[] payload) {
+    public _DecodedFrame(bool fin, int opcode, byte[] payload, bool rsv1) {
         this.Fin     = fin;
         this.Opcode  = opcode;
         this.Payload = payload;
+        this.Rsv1    = rsv1;
     }
 }

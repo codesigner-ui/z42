@@ -3,6 +3,7 @@ namespace Std.Net.WebSockets;
 using Std;
 using Std.IO;
 using Std.Encoding;
+using Std.Compression;
 using Std.Net.Sockets;
 
 // add-z42-net-websocket-server (2026-05-27): per-client connection
@@ -20,33 +21,72 @@ using Std.Net.Sockets;
 public class WebSocketConnection {
     private TcpClient _tcp;
     private Stream    _stream;
-    private int       _state;   // mirrors WebSocketState (0=Connecting, 1=Open, 2=CloseSent, 3=Closed)
+    private int       _state;
+    // add-z42-net-websocket-deflate (2026-05-28): per-message-deflate flag.
+    // When true, outgoing Text/Binary frames are compressed (raw deflate,
+    // trailing 00-00-FF-FF stripped) and RSV1 set; inbound frames with RSV1
+    // are decompressed (00-00-FF-FF re-appended before inflate). Each
+    // message is independent (`*_no_context_takeover` — no LZ77 state
+    // carried across messages; simpler + the safe default).
+    private bool      _permessageDeflate;
 
     /// Constructed by `WebSocketServer.Accept` — not part of the public
     /// API for direct instantiation (handshake must have already run).
     public WebSocketConnection(TcpClient tcp, Stream stream) {
-        this._tcp    = tcp;
-        this._stream = stream;
-        this._state  = WebSocketState.Open;
+        this._tcp                = tcp;
+        this._stream             = stream;
+        this._state              = WebSocketState.Open;
+        this._permessageDeflate  = false;
     }
 
     public int State() { return this._state; }
+
+    /// Enable / disable per-message-deflate (RFC 7692). In real WebSocket
+    /// use this is set by the server after handshake negotiation succeeds
+    /// (`Sec-WebSocket-Extensions: permessage-deflate; ...`). For
+    /// programmatic use callers can toggle it directly; both peers MUST
+    /// agree, otherwise the other side will reject frames with RSV1 set
+    /// per RFC 6455 §5.2.
+    public void SetPermessageDeflate(bool enable) { this._permessageDeflate = enable; }
+    public bool GetPermessageDeflate() { return this._permessageDeflate; }
 
     /// Send a UTF-8 text frame.
     public void SendText(string text) {
         this._ensureOpen();
         byte[] payload = Utf8.GetBytes(text);
-        byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpText,
-                                                     payload, payload.Length);
-        this._stream.Write(frame, 0, frame.Length);
+        if (this._permessageDeflate) {
+            byte[] compressed = WebSocketConnection._deflateStripTail(payload);
+            byte[] frame = _FrameCodec.EncodeServerFrameRsv1(_FrameCodec.OpText,
+                                                             compressed, compressed.Length);
+            this._stream.Write(frame, 0, frame.Length);
+        } else {
+            byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpText,
+                                                         payload, payload.Length);
+            this._stream.Write(frame, 0, frame.Length);
+        }
     }
 
     /// Send a binary frame of `length` bytes from `data[0..length]`.
     public void SendBinary(byte[] data, int length) {
         this._ensureOpen();
-        byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpBinary,
-                                                     data, length);
-        this._stream.Write(frame, 0, frame.Length);
+        if (this._permessageDeflate) {
+            byte[] slice;
+            if (length == data.Length) {
+                slice = data;
+            } else {
+                slice = new byte[length];
+                int i = 0;
+                while (i < length) { slice[i] = data[i]; i = i + 1; }
+            }
+            byte[] compressed = WebSocketConnection._deflateStripTail(slice);
+            byte[] frame = _FrameCodec.EncodeServerFrameRsv1(_FrameCodec.OpBinary,
+                                                             compressed, compressed.Length);
+            this._stream.Write(frame, 0, frame.Length);
+        } else {
+            byte[] frame = _FrameCodec.EncodeServerFrame(_FrameCodec.OpBinary,
+                                                         data, length);
+            this._stream.Write(frame, 0, frame.Length);
+        }
     }
 
     /// Send a ping control frame with the given payload (≤ 125 bytes per
@@ -75,10 +115,26 @@ public class WebSocketConnection {
             _DecodedFrame f = _FrameCodec.ReadFrame(this._stream);
             int op = f.Opcode;
             if (op == _FrameCodec.OpText) {
-                return new WebSocketMessage(WebSocketMessageType.Text, f.Payload);
+                byte[] payload = f.Payload;
+                if (f.Rsv1) {
+                    if (!this._permessageDeflate) {
+                        throw new WebSocketProtocolException(
+                            "received RSV1 frame but per-message-deflate not enabled");
+                    }
+                    payload = WebSocketConnection._inflateAppendTail(payload);
+                }
+                return new WebSocketMessage(WebSocketMessageType.Text, payload);
             }
             if (op == _FrameCodec.OpBinary) {
-                return new WebSocketMessage(WebSocketMessageType.Binary, f.Payload);
+                byte[] payload = f.Payload;
+                if (f.Rsv1) {
+                    if (!this._permessageDeflate) {
+                        throw new WebSocketProtocolException(
+                            "received RSV1 frame but per-message-deflate not enabled");
+                    }
+                    payload = WebSocketConnection._inflateAppendTail(payload);
+                }
+                return new WebSocketMessage(WebSocketMessageType.Binary, payload);
             }
             if (op == _FrameCodec.OpPing) {
                 // Auto-Pong with the same payload (RFC §5.5.3).
@@ -139,5 +195,42 @@ public class WebSocketConnection {
         if (this._state == WebSocketState.Closed) {
             throw new InvalidOperationException("WebSocketConnection: already closed");
         }
+    }
+
+    // ── per-message-deflate helpers (RFC 7692 §7.2.1 / §7.2.2) ───────────────
+    //
+    // The wire format for compressed frames is RFC 1951 raw deflate with
+    // the synchronization-flush trailer `00 00 FF FF` REMOVED on the
+    // sender side (it's a constant 4-byte tail that every deflate empty
+    // BTYPE-0 block produces). The receiver re-appends it before inflate.
+
+    static byte[] _deflateStripTail(byte[] data) {
+        byte[] compressed = Deflate.Compress(data);
+        // The trailing 4 bytes 00 00 FF FF MUST be present for stripping;
+        // if for some reason they're not (e.g. caller compressed via a
+        // non-flushing path) we still emit what we have — receiver would
+        // then fail to inflate, surfacing the issue cleanly.
+        if (compressed.Length >= 4
+            && (int)compressed[compressed.Length - 4] == 0
+            && (int)compressed[compressed.Length - 3] == 0
+            && ((int)compressed[compressed.Length - 2] & 0xFF) == 0xFF
+            && ((int)compressed[compressed.Length - 1] & 0xFF) == 0xFF) {
+            byte[] stripped = new byte[compressed.Length - 4];
+            int i = 0;
+            while (i < stripped.Length) { stripped[i] = compressed[i]; i = i + 1; }
+            return stripped;
+        }
+        return compressed;
+    }
+
+    static byte[] _inflateAppendTail(byte[] data) {
+        byte[] withTail = new byte[data.Length + 4];
+        int i = 0;
+        while (i < data.Length) { withTail[i] = data[i]; i = i + 1; }
+        withTail[data.Length]     = (byte)0x00;
+        withTail[data.Length + 1] = (byte)0x00;
+        withTail[data.Length + 2] = (byte)0xFF;
+        withTail[data.Length + 3] = (byte)0xFF;
+        return Deflate.Decompress(withTail);
     }
 }
