@@ -172,4 +172,75 @@ fn value_size_observed() {
     // Str(Arc<str>) = 16 B → +1 B tag + 7 B align = 24 B.
     assert_eq!(std::mem::size_of::<Value>(), 24,
         "Value size changed: {}", std::mem::size_of::<Value>());
+    assert_eq!(std::mem::align_of::<Value>(), 8, "Value alignment changed");
+}
+
+// ── review.md C2 P1 step 0 (2026-05-28): Value layout pin ──────────────
+//
+// `Value` uses `#[repr(C, u8)]` so the JIT can load/store register
+// payloads via raw memory access. These tests pin the discriminant
+// values + payload offset so drift fails CI before bad JIT loads emit.
+//
+// Pinned layout (x86-64 / aarch64, alignment 8):
+//   * offset 0  — u8 discriminant (explicit assignments in Value enum)
+//   * offset 8  — payload (max 16 B, e.g. Arc<str> for Str)
+
+#[test]
+fn value_discriminants_pinned() {
+    fn tag(v: &Value) -> u8 {
+        unsafe { *(v as *const Value as *const u8) }
+    }
+    assert_eq!(tag(&Value::I64(0)),                            0, "I64 tag");
+    assert_eq!(tag(&Value::F64(0.0)),                          1, "F64 tag");
+    assert_eq!(tag(&Value::Bool(false)),                       2, "Bool tag");
+    assert_eq!(tag(&Value::Char('\0')),                        3, "Char tag");
+    assert_eq!(tag(&Value::Str(std::sync::Arc::from(""))),     4, "Str tag");
+    assert_eq!(tag(&Value::Null),                              5, "Null tag");
+    // Heap variants (Array/Object tags 6/7) need a GcRef — skip cheap test.
+    assert_eq!(tag(&Value::PinnedView(Box::new(PinnedViewData {
+        ptr: 0, len: 0, kind: PinSourceKind::Str,
+    }))), 8, "PinnedView tag");
+    assert_eq!(tag(&Value::FuncRef("".into())),                9, "FuncRef tag");
+    // Closure tag 10 — needs GcRef, skip.
+    assert_eq!(tag(&Value::StackClosure(Box::new(StackClosureData {
+        env_idx: 0, fn_name: String::new(),
+    }))), 11, "StackClosure tag");
+    assert_eq!(tag(&Value::Ref(Box::new(RefKind::Stack {
+        frame_idx: 0, slot: 0,
+    }))), 12, "Ref tag");
+}
+
+#[test]
+fn value_i64_payload_at_offset_8() {
+    // I64 payload at offset 8 (after u8 tag + 7 B padding to align(8)).
+    // C2 P1 JIT will emit `iadd` against values loaded from this offset;
+    // drift breaks the fast path silently.
+    let v = Value::I64(0x1234_5678_9ABC_DEF0);
+    unsafe {
+        let base = &v as *const Value as *const u8;
+        let payload_ptr = base.add(8) as *const i64;
+        assert_eq!(*payload_ptr, 0x1234_5678_9ABC_DEF0_i64);
+    }
+}
+
+#[test]
+fn value_f64_payload_at_offset_8() {
+    let v = Value::F64(std::f64::consts::PI);
+    unsafe {
+        let base = &v as *const Value as *const u8;
+        let payload_ptr = base.add(8) as *const f64;
+        assert_eq!(*payload_ptr, std::f64::consts::PI);
+    }
+}
+
+#[test]
+fn value_bool_payload_at_offset_8() {
+    let v_true  = Value::Bool(true);
+    let v_false = Value::Bool(false);
+    unsafe {
+        let base_true  = &v_true  as *const Value as *const u8;
+        let base_false = &v_false as *const Value as *const u8;
+        assert_eq!(*base_true.add(8),  1);
+        assert_eq!(*base_false.add(8), 0);
+    }
 }

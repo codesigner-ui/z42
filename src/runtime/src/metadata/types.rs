@@ -278,12 +278,25 @@ pub struct ScriptObject {
 /// 2026-04-29 remove-dead-value-map: 删除了 `Value::Map` variant —— 自从
 /// 2026-04-26 extern-audit-wave0 把 `Std.Collections.Dictionary` 改为纯 z42
 /// 脚本类（基于 `T[]`），Map variant 已无创建路径，作为 dead variant 一并清理。
+/// review.md C2 P1 step 0 (2026-05-28): `#[repr(C, u8)]` locks the
+/// discriminant + payload memory layout so the JIT can emit raw
+/// `load`/`store` Cranelift instructions against register slots
+/// without going through `extern "C"` helpers. Layout invariants:
+///   * offset 0 — u8 discriminant (explicit assignments below)
+///   * offset 8 — payload (aligned to max-payload alignment = 8)
+///   * total size — 24 B (max payload = `Str(Arc<str>)` at 16 B)
+/// Niche optimisation on `Option<Value>` is lost vs natural enum
+/// layout, but `Value` is never stored as `Option<Value>` on hot
+/// paths — `Frame::ret: Option<Value>` is the sole site and is
+/// touched once per function return. Layout is pinned by
+/// `value_layout_tests.rs`; drift fails CI before bad JIT code emits.
 #[derive(Debug, Clone)]
+#[repr(C, u8)]
 pub enum Value {
-    I64(i64),
-    F64(f64),
-    Bool(bool),
-    Char(char),
+    I64(i64)        = 0,
+    F64(f64)        = 1,
+    Bool(bool)      = 2,
+    Char(char)      = 3,
     /// Immutable string primitive.  `s.Length` → virtual field dispatch in FieldGet.
     ///
     /// review.md C1+C3 (2026-05-27): `Arc<str>` instead of `String`. Saves
@@ -292,12 +305,12 @@ pub enum Value {
     /// hot-path win for string-heavy interp / format / concat loops.
     /// Arc not Rc because `Value: Send + Sync` (see
     /// `gc/arc_heap_tests/send_sync.rs::assert_send_sync::<Value>()`).
-    Str(Arc<str>),
-    Null,
+    Str(Arc<str>)               = 4,
+    Null                        = 5,
     /// Heap-allocated dynamic array with reference semantics.
-    Array(GcRef<Vec<Value>>),
+    Array(GcRef<Vec<Value>>)    = 6,
     /// Heap-allocated managed class instance with reference semantics.
-    Object(GcRef<ScriptObject>),
+    Object(GcRef<ScriptObject>) = 7,
     /// Spec C4 — borrowed view of a `String` / `Array<u8>` for native FFI.
     /// Created by `PinPtr`, released by `UnpinPtr`. The `ptr` is an
     /// untyped raw address — consumers must know the source `kind` to
@@ -308,7 +321,7 @@ pub enum Value {
     /// inline `Value` size — `PinnedView` is created on the rare
     /// `PinPtr` opcode and immediately consumed by the next native
     /// call, so the heap-alloc cost is dominated by the FFI it enables.
-    PinnedView(Box<PinnedViewData>),
+    PinnedView(Box<PinnedViewData>) = 8,
     /// Function reference value. Currently used by L2 no-capture lambda
     /// literals (see docs/design/language/closure.md §6). Indirect call dispatches
     /// to the named function in the loaded module.
@@ -317,7 +330,7 @@ pub enum Value {
     /// Saves 8 B/instance (Box<str> = 16 B vs String = 24 B; no `cap` word).
     /// FuncRef names are write-once at creation and read-only thereafter
     /// (immutable identity → no append/grow operation needed).
-    FuncRef(Box<str>),
+    FuncRef(Box<str>) = 9,
     /// L3 capturing closure value: pairs a heap-allocated env (Vec<Value>)
     /// with the lifted function's qualified name. CallIndirect on a Closure
     /// passes `env` as the callee's first implicit parameter and copies user
@@ -327,7 +340,7 @@ pub enum Value {
     /// biggest cold-path variant — 40 B inline = GcRef(16 B) + String(24 B)).
     /// Boxing drops Value enum to ~24 B; capturing closures pay one heap
     /// alloc per `MkClos` but that's dwarfed by the env's own GC alloc.
-    Closure(Box<ClosureData>),
+    Closure(Box<ClosureData>) = 10,
     /// 2026-05-02 impl-closure-l3-escape-stack: 栈分配的 capturing closure 值。
     /// `env_idx` 索引创建该 closure 的 frame 的 `env_arena: Vec<Vec<Value>>`；
     /// CallIndirect 时由 dispatch 端通过当前帧的 arena 解 env。compiler 经
@@ -339,7 +352,7 @@ pub enum Value {
     /// inline `Value` size — StackClosure is created on the rare
     /// non-escaping closure path and only consumed by the next
     /// `CallIndirect` before the creating frame returns.
-    StackClosure(Box<StackClosureData>),
+    StackClosure(Box<StackClosureData>) = 11,
     /// Spec impl-ref-out-in-runtime: `ref` / `out` / `in` 参数运行时表达。
     /// 持有该 Value 的寄存器在 frame.get/set 时被透明 deref（单点 dispatch，
     /// 见 `interp/mod.rs::Frame::get`）。引用永远不离开调用栈帧（前置 spec
@@ -349,7 +362,7 @@ pub enum Value {
     /// is 32 B (Field variant) — biggest cold-path payload after
     /// Closure. Refs only live in registers for a single call's
     /// duration, so the box alloc is a tiny fraction of the call cost.
-    Ref(Box<RefKind>),
+    Ref(Box<RefKind>) = 12,
 }
 
 /// Spec impl-ref-out-in-runtime: 描述 `Value::Ref` 指向的底层位置类型。
