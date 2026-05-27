@@ -198,6 +198,119 @@ public static class Tar {
         }
     }
 
+    // ── ExtractStream (add-tar-extract-stream 2026-05-27) ───────────────
+    //
+    // Streaming variant of ExtractTo: reads tar blocks from `src` 512
+    // bytes at a time instead of requiring the entire archive in memory.
+    // Pairs naturally with the now-streaming `Gzip.WrapRead` for
+    // `.tar.gz` extraction:
+    //
+    //   FileStream tgz = new FileStream(path, FileMode.Read);
+    //   try { Tar.ExtractStream(Gzip.WrapRead(tgz), destDir); }
+    //   finally { tgz.Close(); }
+    //
+    // Avoids the ~250 MB peak working set that `ExtractTo` produces on
+    // 30 MB tarballs (whole archive + per-entry Content byte[] all live
+    // at once).
+    //
+    // Same Zip-Slip protection as `ExtractTo`. Returns number of entries
+    // extracted. Throws `ArchiveException` on truncated input / unsupported
+    // typeflag, `IOException` on stream read failure.
+    public static int ExtractStream(Stream src, string destDir) {
+        Directory.Create(destDir);
+        byte[] header = new byte[512];
+        byte[] dataBuf = new byte[512];
+        int written = 0;
+        while (true) {
+            int n = _ReadFull(src, header, 0, 512);
+            if (n == 0) {
+                // Premature EOF (no zero-trailer). Some tarballs omit
+                // the explicit end marker; treat as clean stop.
+                break;
+            }
+            if (n < 512) {
+                throw new ArchiveException("tar: truncated header (got "
+                    + n.ToString() + " of 512 bytes)");
+            }
+            // EOF marker: zero block. Don't strictly require a second
+            // zero block since some writers (busybox) emit only one.
+            if (_IsZeroBlock(header, 0)) {
+                break;
+            }
+
+            string name    = _ReadStr(header, 0, 100);
+            int    mode    = _ReadOctal(header, 100, 8);
+            long   size    = _ReadOctalLong(header, 124, 12);
+            byte   typeflag = header[156];
+            string prefix  = _ReadStr(header, 345, 155);
+
+            string fullName;
+            if (prefix.Length > 0) { fullName = prefix + "/" + name; }
+            else { fullName = name; }
+
+            byte zero = 48;  // '0'
+            byte nul  = 0;
+            if (typeflag != zero && typeflag != nul) {
+                throw new ArchiveException(
+                    "tar: unsupported entry typeflag for " + fullName);
+            }
+            _EnsureSafeEntryName(fullName);
+
+            string targetPath = Path.Join(destDir, fullName);
+            string parent     = Path.GetDirectoryName(targetPath);
+            if (parent.Length > 0) {
+                Directory.Create(parent);
+            }
+
+            // Stream the file contents in 512-byte chunks. Skip trailing
+            // padding bytes (tar pads to the next 512 boundary).
+            FileStream outFs = new FileStream(targetPath, FileMode.Write);
+            try {
+                long remaining = size;
+                while (remaining > 0L) {
+                    int chunk = remaining > 512L ? 512 : (int)remaining;
+                    int got = _ReadFull(src, dataBuf, 0, chunk);
+                    if (got < chunk) {
+                        throw new ArchiveException(
+                            "tar: truncated entry '" + fullName + "' (wanted "
+                            + chunk.ToString() + " more bytes, got "
+                            + got.ToString() + ")");
+                    }
+                    outFs.Write(dataBuf, 0, chunk);
+                    remaining = remaining - (long)chunk;
+                }
+                // Consume padding to next 512 boundary.
+                long padded = ((size + 511L) / 512L) * 512L;
+                long padBytes = padded - size;
+                if (padBytes > 0L) {
+                    _ReadFull(src, dataBuf, 0, (int)padBytes);
+                }
+            } finally {
+                outFs.Close();
+            }
+            if ((mode & 0x49) != 0) {  // any exec bit
+                File.MakeExecutable(targetPath);
+            }
+            written = written + 1;
+        }
+        return written;
+    }
+
+    /// Read exactly `count` bytes from `s` into `buf[offset..]`, looping
+    /// over short reads. Returns the number actually read (less than
+    /// count only at EOF). Mirrors `Stream.ReadExactly` semantics but
+    /// returns the count instead of throwing on EOF — caller decides if
+    /// short = error or clean stop.
+    private static int _ReadFull(Stream s, byte[] buf, int offset, int count) {
+        int total = 0;
+        while (total < count) {
+            int n = s.Read(buf, offset + total, count - total);
+            if (n <= 0) break;
+            total = total + n;
+        }
+        return total;
+    }
+
     // Zip-Slip 防御：entry name 不允许绝对路径 / `..` segment。
     // 通过把 path 按 `/` 拆开逐段检查，避免 `..` 偷出 destDir。
     private static void _EnsureSafeEntryName(string name) {

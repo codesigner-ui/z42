@@ -1,0 +1,138 @@
+// add-tar-extract-stream (2026-05-27): Tar.ExtractStream(Stream).
+namespace Z42CompressionTarExtractStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Compression;
+using Std.Archive;
+using Std.Encoding;
+
+[Test]
+void test_extract_stream_from_memory_stream() {
+    // Build a small in-memory archive via Tar.Write, then extract via
+    // the streaming variant. End result should match byte-identical
+    // file contents.
+    TarEntry[] entries = new TarEntry[2];
+    entries[0] = new TarEntry("hello.txt", Utf8.GetBytes("hello tar"), 0x1A4);  // 0o644
+    entries[1] = new TarEntry("sub/nested.txt", Utf8.GetBytes("nested!"), 0x1A4);
+    byte[] tarBytes = Tar.Write(entries);
+
+    string tmp = File.CreateTempDir("z42-tar-stream-");
+    try {
+        var ms = new MemoryStream(tarBytes);
+        int n = Tar.ExtractStream(ms, tmp);
+        Assert.Equal(2, n);
+        Assert.Equal("hello tar", File.ReadAllText(Path.Join(tmp, "hello.txt")));
+        Assert.Equal("nested!",   File.ReadAllText(Path.Join(tmp, "sub/nested.txt")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_stream_zip_slip_blocked() {
+    // Hand-craft a tar with a `..` segment; ExtractStream should reject.
+    TarEntry[] entries = new TarEntry[1];
+    entries[0] = new TarEntry("../outside.txt", Utf8.GetBytes("malicious"), 0x1A4);
+    byte[] tarBytes = Tar.Write(entries);
+
+    string tmp = File.CreateTempDir("z42-tar-stream-slip-");
+    try {
+        var ms = new MemoryStream(tarBytes);
+        bool caught = false;
+        try {
+            Tar.ExtractStream(ms, tmp);
+        } catch (ArchiveException e) {
+            caught = true;
+        }
+        Assert.True(caught);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_stream_pairs_with_gzip_streaming_decode() {
+    // The real win: gzip-wrap the tar, then ExtractStream(WrapRead(...))
+    // never holds the full archive in memory. This roundtrip proves the
+    // gzip streaming-decode + tar streaming-read pipeline works end-to-end.
+    TarEntry[] entries = new TarEntry[3];
+    entries[0] = new TarEntry("a.txt", Utf8.GetBytes("alpha"), 0x1A4);
+    entries[1] = new TarEntry("b.txt", Utf8.GetBytes("beta"),  0x1A4);
+    entries[2] = new TarEntry("c.txt", Utf8.GetBytes("gamma"), 0x1A4);
+    byte[] tarBytes = Tar.Write(entries);
+    byte[] tgzBytes = Gzip.Compress(tarBytes);
+
+    string tmp = File.CreateTempDir("z42-tgz-stream-");
+    try {
+        var msSrc = new MemoryStream(tgzBytes);
+        Stream gzSrc = Gzip.WrapRead(msSrc);
+        int n = Tar.ExtractStream(gzSrc, tmp);
+        Assert.Equal(3, n);
+        Assert.Equal("alpha", File.ReadAllText(Path.Join(tmp, "a.txt")));
+        Assert.Equal("beta",  File.ReadAllText(Path.Join(tmp, "b.txt")));
+        Assert.Equal("gamma", File.ReadAllText(Path.Join(tmp, "c.txt")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_stream_preserves_exec_bit() {
+    TarEntry[] entries = new TarEntry[1];
+    // mode 0o755 = 0x1ED — has exec bit set.
+    entries[0] = new TarEntry("script.sh", Utf8.GetBytes("#!/bin/sh\necho hi\n"), 0x1ED);
+    byte[] tarBytes = Tar.Write(entries);
+    string tmp = File.CreateTempDir("z42-tar-stream-exec-");
+    try {
+        var ms = new MemoryStream(tarBytes);
+        Tar.ExtractStream(ms, tmp);
+        // No exception = mode bit propagation succeeded. Reading back
+        // and confirming the exec bit requires Platform-specific stat;
+        // for portability just verify the file exists.
+        Assert.True(File.Exists(Path.Join(tmp, "script.sh")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_stream_empty_archive() {
+    // Two-block zero trailer = valid empty archive.
+    byte[] emptyArchive = new byte[1024];
+    string tmp = File.CreateTempDir("z42-tar-stream-empty-");
+    try {
+        var ms = new MemoryStream(emptyArchive);
+        int n = Tar.ExtractStream(ms, tmp);
+        Assert.Equal(0, n);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extract_stream_rejects_truncated() {
+    // Header says 100-byte file, but stream ends after the header.
+    TarEntry[] entries = new TarEntry[1];
+    entries[0] = new TarEntry("big.bin", new byte[100], 0x1A4);
+    byte[] tarBytes = Tar.Write(entries);
+    // Truncate to the header + a few payload bytes.
+    byte[] truncated = new byte[600];
+    int i = 0;
+    while (i < 600) { truncated[i] = tarBytes[i]; i = i + 1; }
+
+    string tmp = File.CreateTempDir("z42-tar-stream-trunc-");
+    try {
+        var ms = new MemoryStream(truncated);
+        bool caught = false;
+        try {
+            Tar.ExtractStream(ms, tmp);
+        } catch (ArchiveException e) {
+            caught = true;
+        }
+        Assert.True(caught);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}

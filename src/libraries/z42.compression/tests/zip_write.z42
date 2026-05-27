@@ -1,0 +1,160 @@
+// add-zip-write (2026-05-27): Zip.Write round-trip + spec compliance.
+namespace Z42CompressionZipWriteTests;
+
+using Std;
+using Std.Test;
+using Std.Text;
+using Std.IO;
+using Std.Archive;
+using Std.Encoding;
+
+[Test]
+void test_write_then_read_round_trip_single_entry_store() {
+    ZipEntry[] entries = new ZipEntry[1];
+    entries[0] = new ZipEntry("hello.txt", Utf8.GetBytes("hello zip"), 0);
+    byte[] archive = Zip.Write(entries);
+
+    ZipEntry[] back = Zip.Read(archive);
+    Assert.Equal(1, back.Length);
+    Assert.Equal("hello.txt", back[0].Name);
+    Assert.Equal("hello zip", Utf8.GetString(back[0].Content));
+    Assert.Equal(0, back[0].CompressionMethod);
+}
+
+[Test]
+void test_write_then_read_round_trip_single_entry_deflate() {
+    string payload = "the quick brown fox jumps over the lazy dog";
+    ZipEntry[] entries = new ZipEntry[1];
+    entries[0] = new ZipEntry("fox.txt", Utf8.GetBytes(payload), 8);
+    byte[] archive = Zip.Write(entries);
+
+    ZipEntry[] back = Zip.Read(archive);
+    Assert.Equal(1, back.Length);
+    Assert.Equal(payload, Utf8.GetString(back[0].Content));
+    Assert.Equal(8, back[0].CompressionMethod);
+}
+
+[Test]
+void test_write_multiple_entries_mixed_methods() {
+    ZipEntry[] entries = new ZipEntry[3];
+    entries[0] = new ZipEntry("a.txt", Utf8.GetBytes("alpha"), 0);  // STORE
+    entries[1] = new ZipEntry("b.txt", Utf8.GetBytes("beta"),  8);  // DEFLATE
+    entries[2] = new ZipEntry("c.txt", Utf8.GetBytes("gamma"), 0);  // STORE
+    byte[] archive = Zip.Write(entries);
+    ZipEntry[] back = Zip.Read(archive);
+
+    Assert.Equal(3, back.Length);
+    Assert.Equal("alpha", Utf8.GetString(back[0].Content));
+    Assert.Equal("beta",  Utf8.GetString(back[1].Content));
+    Assert.Equal("gamma", Utf8.GetString(back[2].Content));
+    Assert.Equal(0, back[0].CompressionMethod);
+    Assert.Equal(8, back[1].CompressionMethod);
+    Assert.Equal(0, back[2].CompressionMethod);
+}
+
+[Test]
+void test_write_zero_entries_empty_archive() {
+    // Zero-entry archive — just an EOCD record. Read should succeed
+    // with an empty array.
+    ZipEntry[] entries = new ZipEntry[0];
+    byte[] archive = Zip.Write(entries);
+    // Minimum size = 22 (EOCD alone).
+    Assert.Equal(22, archive.Length);
+    ZipEntry[] back = Zip.Read(archive);
+    Assert.Equal(0, back.Length);
+}
+
+[Test]
+void test_write_magic_bytes() {
+    ZipEntry[] entries = new ZipEntry[1];
+    entries[0] = new ZipEntry("x", Utf8.GetBytes("y"), 0);
+    byte[] archive = Zip.Write(entries);
+    // Local file header: "PK\x03\x04" at offset 0.
+    Assert.Equal((byte)'P',  archive[0]);
+    Assert.Equal((byte)'K',  archive[1]);
+    Assert.Equal((byte)0x03, archive[2]);
+    Assert.Equal((byte)0x04, archive[3]);
+    // EOCD: "PK\x05\x06" near end (22-byte trailer).
+    int eocdOff = archive.Length - 22;
+    Assert.Equal((byte)'P',  archive[eocdOff]);
+    Assert.Equal((byte)'K',  archive[eocdOff + 1]);
+    Assert.Equal((byte)0x05, archive[eocdOff + 2]);
+    Assert.Equal((byte)0x06, archive[eocdOff + 3]);
+}
+
+[Test]
+void test_write_rejects_unsupported_method() {
+    ZipEntry[] entries = new ZipEntry[1];
+    entries[0] = new ZipEntry("bz.txt", Utf8.GetBytes("data"), 12);  // bzip2 — unsupported
+    bool caught = false;
+    try {
+        Zip.Write(entries);
+    } catch (ArchiveException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_write_then_extract_all_to_dir() {
+    ZipEntry[] entries = new ZipEntry[2];
+    entries[0] = new ZipEntry("readme.txt", Utf8.GetBytes("hello readme"), 8);
+    entries[1] = new ZipEntry("data/values.txt", Utf8.GetBytes("v1\nv2\nv3"), 0);
+    byte[] archive = Zip.Write(entries);
+
+    string tmp = File.CreateTempDir("z42-zip-write-");
+    try {
+        int n = Zip.ExtractAllTo(archive, tmp);
+        Assert.Equal(2, n);
+        Assert.Equal("hello readme", File.ReadAllText(Path.Join(tmp, "readme.txt")));
+        Assert.Equal("v1\nv2\nv3",   File.ReadAllText(Path.Join(tmp, "data/values.txt")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_write_handles_empty_content() {
+    ZipEntry[] entries = new ZipEntry[1];
+    entries[0] = new ZipEntry("empty.txt", new byte[0], 0);
+    byte[] archive = Zip.Write(entries);
+    ZipEntry[] back = Zip.Read(archive);
+    Assert.Equal(1, back.Length);
+    Assert.Equal(0, back[0].Content.Length);
+}
+
+[Test]
+void test_write_utf8_filename_roundtrips_as_bytes() {
+    // Zip.Write emits UTF-8-encoded filenames (GPBF bit 11 set) per spec.
+    // Read currently doesn't decode UTF-8 back into z42 string (it
+    // takes one byte per char), so a CJK filename round-trips through
+    // a different in-memory string but the same raw bytes. Verify the
+    // ASCII portion of the filename + the entry content survive intact;
+    // proper UTF-8 decode in Read is a follow-up.
+    ZipEntry[] entries = new ZipEntry[1];
+    entries[0] = new ZipEntry("こんにちは.txt", Utf8.GetBytes("hello"), 0);
+    byte[] archive = Zip.Write(entries);
+    ZipEntry[] back = Zip.Read(archive);
+    Assert.Equal(1, back.Length);
+    Assert.True(back[0].Name.EndsWith(".txt"));
+    Assert.Equal("hello", Utf8.GetString(back[0].Content));
+}
+
+[Test]
+void test_write_deflate_repetitive_input_shrinks() {
+    // 1 KB of repeated "abcdef" → DEFLATE should beat STORE significantly.
+    StringBuilder sb = new StringBuilder();
+    int i = 0;
+    while (i < 200) { sb.Append("abcdef"); i = i + 1; }
+    byte[] payload = Utf8.GetBytes(sb.ToString());
+
+    ZipEntry[] e1 = new ZipEntry[1];
+    e1[0] = new ZipEntry("a.txt", payload, 0);  // STORE
+    byte[] stored = Zip.Write(e1);
+
+    ZipEntry[] e2 = new ZipEntry[1];
+    e2[0] = new ZipEntry("a.txt", payload, 8);  // DEFLATE
+    byte[] deflated = Zip.Write(e2);
+
+    Assert.True(deflated.Length < stored.Length);
+}
