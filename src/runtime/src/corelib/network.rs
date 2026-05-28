@@ -778,6 +778,12 @@ mod imp {
     pub fn builtin_net_udp_set_ttl(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(unsupported(ctx))
     }
+    pub fn builtin_net_tcp_socket_set_read_timeout(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_set_write_timeout(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
 }
 
 pub use imp::*;
