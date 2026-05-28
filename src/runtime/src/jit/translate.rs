@@ -476,21 +476,47 @@ pub fn translate_function(
         // ── Instruction translation ───────────────────────────────────────────
         for (instr_idx, instr) in z42_block.instructions.iter().enumerate() {
             match instr {
+                // C2 P1 step 5 (2026-05-28): ConstI32/I64/F64/Bool/Char/Null
+                // inline directly when dst is typed-compatible — no helper
+                // call. ConstStr still goes through the helper because it
+                // needs ctx.string_pool lookup + bounds check + Arc::clone.
+                //
+                // Safety: previous slot value at `dst` is statically known
+                // by reg_types to be the matching primitive type (or Null
+                // for first-write), so raw bit-copy is sound. If reg_types
+                // is `Unknown` (legacy zbc / pre-REGT path), we fall back
+                // to the helper which handles arbitrary old values via Drop.
                 Instruction::ConstI32 { dst, val } => {
-                    let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i64);
-                    builder.ins().call(hr_const_i32, &[frame_val, ctx_val, d, v]);
+                    if is_typed(z42_func, *dst, IrType::I64) {
+                        emit_const_i64(&mut builder, regs_base, *dst, *val as i64);
+                    } else {
+                        let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i64);
+                        builder.ins().call(hr_const_i32, &[frame_val, ctx_val, d, v]);
+                    }
                 }
                 Instruction::ConstI64 { dst, val } => {
-                    let d = ri!(*dst); let v = builder.ins().iconst(types::I64, *val);
-                    builder.ins().call(hr_const_i64, &[frame_val, ctx_val, d, v]);
+                    if is_typed(z42_func, *dst, IrType::I64) {
+                        emit_const_i64(&mut builder, regs_base, *dst, *val);
+                    } else {
+                        let d = ri!(*dst); let v = builder.ins().iconst(types::I64, *val);
+                        builder.ins().call(hr_const_i64, &[frame_val, ctx_val, d, v]);
+                    }
                 }
                 Instruction::ConstF64 { dst, val } => {
-                    let d = ri!(*dst); let v = builder.ins().f64const(*val);
-                    builder.ins().call(hr_const_f64, &[frame_val, ctx_val, d, v]);
+                    if is_typed(z42_func, *dst, IrType::F64) {
+                        emit_const_f64(&mut builder, regs_base, *dst, *val);
+                    } else {
+                        let d = ri!(*dst); let v = builder.ins().f64const(*val);
+                        builder.ins().call(hr_const_f64, &[frame_val, ctx_val, d, v]);
+                    }
                 }
                 Instruction::ConstBool { dst, val } => {
-                    let d = ri!(*dst); let v = builder.ins().iconst(types::I8, if *val { 1 } else { 0 });
-                    builder.ins().call(hr_const_bool, &[frame_val, ctx_val, d, v]);
+                    if is_typed(z42_func, *dst, IrType::Bool) {
+                        emit_const_bool(&mut builder, regs_base, *dst, *val);
+                    } else {
+                        let d = ri!(*dst); let v = builder.ins().iconst(types::I8, if *val { 1 } else { 0 });
+                        builder.ins().call(hr_const_bool, &[frame_val, ctx_val, d, v]);
+                    }
                 }
                 Instruction::ConstChar { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i32 as i64);
@@ -1251,4 +1277,63 @@ fn emit_bool_not(
     let tag = builder.ins().iconst(types::I8, TAG_BOOL as i64);
     builder.ins().store(MemFlags::trusted(), tag,    addr_dst, 0);
     builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Predicate: `reg_types[reg]` is `expected`. Used by const-emit fast paths.
+#[inline]
+fn is_typed(func: &Function, reg: u32, expected: IrType) -> bool {
+    func.reg_types.get(reg as usize).copied() == Some(expected)
+}
+
+/// Emit native `frame.regs[dst] = Value::I64(val)` — store TAG_I64 + i64
+/// payload at known offsets, no helper call. Caller must have verified
+/// `reg_types[dst] == I64` (so the old slot value is Null or I64 = Drop-free).
+fn emit_const_i64(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, val: i64,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_I64:        u8  = 0;
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let v        = builder.ins().iconst(types::I64, val);
+    let tag      = builder.ins().iconst(types::I8, TAG_I64 as i64);
+    builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), v,   addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native `frame.regs[dst] = Value::F64(val)`.
+fn emit_const_f64(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, val: f64,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_F64:        u8  = 1;
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let v        = builder.ins().f64const(val);
+    let tag      = builder.ins().iconst(types::I8, TAG_F64 as i64);
+    builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), v,   addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native `frame.regs[dst] = Value::Bool(val)`.
+fn emit_const_bool(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, val: bool,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_BOOL:       u8  = 2;
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let v        = builder.ins().iconst(types::I8, if val { 1 } else { 0 });
+    let tag      = builder.ins().iconst(types::I8, TAG_BOOL as i64);
+    builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), v,   addr_dst, PAYLOAD_OFFSET);
 }
