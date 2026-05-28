@@ -1,23 +1,32 @@
 namespace Std.Net.Http;
 
 using Std;
+using Std.IO;
 
 // add-z42-net-http K3 (2026-05-25): incoming HTTP response container.
 //
-// Constructed by `HttpClient.Send` after parsing status line + headers +
-// body. Body is a single `byte[]` (decoded out of chunked transfer encoding
-// if applicable). Streaming body is `add-z42-net-http-stream-body` follow-up.
+// Constructed by `HttpClient.Send` (drained body in `Body: byte[]`) or
+// `HttpClient.SendStreaming` (lazy body in `BodyStream: Stream`; `Body`
+// stays empty). Callers using SendStreaming MUST eventually
+// `BodyStream.Close()` or fully drain the stream to release the
+// underlying TCP socket.
 public class HttpResponse {
-    public int         StatusCode;     // numeric status (200 / 404 / etc.)
-    public string      ReasonPhrase;   // human reason ("OK" / "Not Found")
+    public int         StatusCode;
+    public string      ReasonPhrase;
     public HttpHeaders Headers;
-    public byte[]      Body;           // empty array if no body (0 length)
+    public byte[]      Body;            // empty array if streaming (use BodyStream)
+    // add-z42-net-http-stream-body (2026-05-28): non-null when caller
+    // used HttpClient.SendStreaming; null for the traditional drained-
+    // body path. Mutually exclusive with `Body` (Body is empty when
+    // BodyStream is set).
+    public Stream      BodyStream;
 
     public HttpResponse(int statusCode, string reasonPhrase, HttpHeaders headers, byte[] body) {
         this.StatusCode   = statusCode;
         this.ReasonPhrase = reasonPhrase;
         this.Headers      = headers;
         this.Body         = body;
+        this.BodyStream   = null;
     }
 
     /// True if status is in [200, 300) range — typical client success check.
@@ -25,7 +34,9 @@ public class HttpResponse {
         return this.StatusCode >= 200 && this.StatusCode < 300;
     }
 
-    /// Decode body as UTF-8 string. Convenience for text APIs.
+    /// Decode body as UTF-8 string. Convenience for text APIs. For
+    /// streaming responses this returns the empty string — drain the
+    /// `BodyStream` and decode yourself.
     public string BodyAsString() {
         return Utf8.GetString(this.Body);
     }

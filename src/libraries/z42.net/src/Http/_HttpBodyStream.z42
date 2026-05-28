@@ -1,0 +1,208 @@
+namespace Std.Net.Http;
+
+using Std;
+using Std.IO;
+using Std.Net.Sockets;
+
+// add-z42-net-http-stream-body (2026-05-28): framing-aware body stream
+// returned by `HttpClient.SendStreaming`. Implements the `Stream` Read
+// contract, decoding chunked transfer encoding (RFC 7230 §4.1) and
+// honouring Content-Length / connection-close framing as appropriate.
+//
+// Lifecycle: the stream owns the underlying TcpClient + _LineReader.
+// `Close()` disposes the socket. Reading past the framing terminator
+// returns 0 (EOF) cleanly.
+//
+// Three framing modes (set at construction):
+//   - MODE_LENGTH:  read exactly `_remaining` bytes from the socket
+//   - MODE_CHUNKED: chunked decoding with current-chunk-bytes-left counter
+//   - MODE_EOF:     read until socket EOF (HTTP/1.0 close-delimited body)
+
+public class _HttpBodyStream : Stream {
+    static int MODE_LENGTH  = 0;
+    static int MODE_CHUNKED = 1;
+    static int MODE_EOF     = 2;
+
+    private TcpClient   _tcp;
+    private Stream      _stream;
+    private _LineReader _lr;
+    private int         _mode;
+    private long        _remaining;   // bytes left in current chunk (chunked)
+                                       // OR total bytes left (length)
+    private bool        _firstChunk;  // chunked: true before any chunk read
+    private bool        _atEof;
+    private bool        _closed;
+
+    /// Content-Length mode constructor.
+    public static _HttpBodyStream OfLength(TcpClient tcp, Stream stream, _LineReader lr, int length) {
+        var s = new _HttpBodyStream(tcp, stream, lr);
+        s._mode = _HttpBodyStream.MODE_LENGTH;
+        s._remaining = (long)length;
+        if (length == 0) { s._atEof = true; }
+        return s;
+    }
+
+    /// Chunked-encoding mode constructor.
+    public static _HttpBodyStream OfChunked(TcpClient tcp, Stream stream, _LineReader lr) {
+        var s = new _HttpBodyStream(tcp, stream, lr);
+        s._mode = _HttpBodyStream.MODE_CHUNKED;
+        s._firstChunk = true;
+        s._remaining = 0L;
+        return s;
+    }
+
+    /// Read-until-EOF mode (HTTP/1.0 close-delimited).
+    public static _HttpBodyStream OfEof(TcpClient tcp, Stream stream, _LineReader lr) {
+        var s = new _HttpBodyStream(tcp, stream, lr);
+        s._mode = _HttpBodyStream.MODE_EOF;
+        return s;
+    }
+
+    private _HttpBodyStream(TcpClient tcp, Stream stream, _LineReader lr) {
+        this._tcp = tcp;
+        this._stream = stream;
+        this._lr = lr;
+        this._mode = 0;
+        this._remaining = 0L;
+        this._firstChunk = false;
+        this._atEof = false;
+        this._closed = false;
+    }
+
+    public override bool CanRead() { return !this._closed; }
+    public override bool CanWrite() { return false; }
+    public override bool CanSeek() { return false; }
+
+    public override int Read(byte[] buffer, int offset, int count) {
+        if (this._closed) {
+            throw new InvalidOperationException("_HttpBodyStream: stream is closed");
+        }
+        if (count == 0) { return 0; }
+        if (this._atEof) { return 0; }
+        if (this._mode == _HttpBodyStream.MODE_LENGTH) {
+            return this._readLength(buffer, offset, count);
+        }
+        if (this._mode == _HttpBodyStream.MODE_CHUNKED) {
+            return this._readChunked(buffer, offset, count);
+        }
+        // MODE_EOF
+        return this._readUntilEof(buffer, offset, count);
+    }
+
+    private int _readLength(byte[] buffer, int offset, int count) {
+        int want = count;
+        if ((long)want > this._remaining) { want = (int)this._remaining; }
+        if (want == 0) { this._atEof = true; return 0; }
+        int got = this._fillFromBufferThenStream(buffer, offset, want);
+        if (got == 0) {
+            // Premature EOF — the server promised more bytes but closed early.
+            // Per HTTP/1.1 we'd raise; for simplicity we surface EOF.
+            this._atEof = true;
+            return 0;
+        }
+        this._remaining = this._remaining - (long)got;
+        if (this._remaining == 0L) { this._atEof = true; }
+        return got;
+    }
+
+    private int _readChunked(byte[] buffer, int offset, int count) {
+        // If current chunk has bytes left, read from it.
+        if (this._remaining > 0L) {
+            int want = count;
+            if ((long)want > this._remaining) { want = (int)this._remaining; }
+            int got = this._fillFromBufferThenStream(buffer, offset, want);
+            if (got == 0) { this._atEof = true; return 0; }
+            this._remaining = this._remaining - (long)got;
+            if (this._remaining == 0L) {
+                // Consume the chunk's trailing CRLF.
+                this._lr.ReadLine();
+            }
+            return got;
+        }
+        // No bytes left in current chunk — need to read next chunk size.
+        // For the first chunk we read directly; for subsequent chunks the
+        // trailing CRLF was already consumed above.
+        if (this._firstChunk) {
+            this._firstChunk = false;
+        }
+        string sizeLine = this._lr.ReadLine();
+        if (sizeLine == null) {
+            this._atEof = true;
+            return 0;
+        }
+        // Strip chunk extensions: "1a;foo=bar" → "1a"
+        int semi = -1;
+        int i = 0;
+        while (i < sizeLine.Length) {
+            if (sizeLine.CharAt(i) == ';') { semi = i; i = sizeLine.Length; }
+            i = i + 1;
+        }
+        string sizeStr;
+        if (semi < 0) {
+            sizeStr = sizeLine;
+        } else {
+            char[] tmp = new char[semi];
+            int j = 0;
+            while (j < semi) { tmp[j] = sizeLine.CharAt(j); j = j + 1; }
+            sizeStr = String.FromChars(tmp);
+        }
+        int size = _HttpBodyStream._parseHex(sizeStr);
+        if (size < 0) {
+            throw new HttpProtocolException("_HttpBodyStream: invalid chunk size '" + sizeStr + "'");
+        }
+        if (size == 0) {
+            // Trailing headers (may be empty) — read until empty line.
+            while (true) {
+                string t = this._lr.ReadLine();
+                if (t == null || t.Length == 0) { break; }
+            }
+            this._atEof = true;
+            return 0;
+        }
+        this._remaining = (long)size;
+        // Recurse to read from this chunk.
+        return this._readChunked(buffer, offset, count);
+    }
+
+    private int _readUntilEof(byte[] buffer, int offset, int count) {
+        int got = this._fillFromBufferThenStream(buffer, offset, count);
+        if (got == 0) { this._atEof = true; }
+        return got;
+    }
+
+    /// Fill `buffer[offset..]` with up to `count` bytes — drain the
+    /// _LineReader's read-ahead buffer first, then read from the
+    /// underlying socket Stream.
+    private int _fillFromBufferThenStream(byte[] buffer, int offset, int count) {
+        int filled = this._lr.DrainBuffered(buffer, offset, count);
+        if (filled >= count) { return filled; }
+        int more = this._stream.Read(buffer, offset + filled, count - filled);
+        return filled + more;
+    }
+
+    public override void Close() {
+        if (this._closed) { return; }
+        this._closed = true;
+        if (this._tcp != null) {
+            try { this._tcp.Dispose(); } catch (Exception e) { /* swallow */ }
+            this._tcp = null;
+        }
+    }
+
+    static int _parseHex(string s) {
+        if (s == null || s.Length == 0) { return -1; }
+        int result = 0;
+        int i = 0;
+        while (i < s.Length) {
+            int ch = (int)s.CharAt(i);
+            int digit;
+            if (ch >= 48 && ch <= 57) { digit = ch - 48; }
+            else if (ch >= 97 && ch <= 102) { digit = ch - 97 + 10; }
+            else if (ch >= 65 && ch <= 70) { digit = ch - 65 + 10; }
+            else { return -1; }
+            result = result * 16 + digit;
+            i = i + 1;
+        }
+        return result;
+    }
+}

@@ -329,6 +329,72 @@ public class HttpClient {
         return true;
     }
 
+    /// add-z42-net-http-stream-body (2026-05-28): send a request and
+    /// return a response with body still pending in `BodyStream`. Caller
+    /// MUST eventually `Close()` the stream (or fully drain it) to
+    /// release the underlying socket — the streaming path doesn't pool
+    /// the connection back even when keep-alive is enabled.
+    ///
+    /// Use case: large downloads where `Send`'s drain-to-byte[] would
+    /// OOM. Caller can incrementally read from `response.BodyStream`
+    /// into a file / processor pipeline. Auto-decompress and auto-
+    /// follow-redirect are bypassed (callers wanting compressed bodies
+    /// can wrap the stream via `Gzip.WrapRead(response.BodyStream)`).
+    public HttpResponse SendStreaming(HttpRequest request) {
+        HttpUrl url = HttpUrl.Parse(request.Url);
+        // Inject required headers (same as _sendOnce).
+        if (!request.Headers.Contains("Host")) {
+            string hostHeader = url.Host;
+            if (url.Port != 80) {
+                hostHeader = hostHeader + ":" + Int32.ToString(url.Port);
+            }
+            request.Headers.Set("Host", hostHeader);
+        }
+        if (!request.Headers.Contains("User-Agent")) {
+            request.Headers.Set("User-Agent", this._userAgent);
+        }
+        if (!request.Headers.Contains("Connection")) {
+            // Streaming responses never get pooled — emit close.
+            request.Headers.Set("Connection", "close");
+        }
+        if (request.Body != null) {
+            request.Headers.Set("Content-Length", Int32.ToString(request.Body.Length));
+        }
+        byte[] reqBytes = HttpClient._serialiseRequest(request, url);
+        var client = new TcpClient();
+        client.Connect(url.Host, url.Port);
+        if (this._timeoutMs > 0) {
+            client.SetReadTimeout(this._timeoutMs);
+            client.SetWriteTimeout(this._timeoutMs);
+        }
+        var stream = client.GetStream();
+        stream.Write(reqBytes, 0, reqBytes.Length);
+        _HttpResponseHead head = HttpClient._readResponseHead(stream);
+        // Build a framing-aware BodyStream.
+        Stream bodyStream = HttpClient._buildBodyStream(client, stream, head.Reader, head.Headers);
+        HttpResponse resp = new HttpResponse(head.StatusCode, head.ReasonPhrase, head.Headers, new byte[0]);
+        resp.BodyStream = bodyStream;
+        return resp;
+    }
+
+    static Stream _buildBodyStream(TcpClient client, Stream stream, _LineReader lr, HttpHeaders headers) {
+        string te = headers.Get("Transfer-Encoding");
+        if (te != null && te.ToLower() == "chunked") {
+            return _HttpBodyStream.OfChunked(client, stream, lr);
+        }
+        string cl = headers.Get("Content-Length");
+        if (cl != null) {
+            int len;
+            try {
+                len = Int32.Parse(cl);
+            } catch (Exception e) {
+                throw new HttpProtocolException("invalid Content-Length: '" + cl + "'");
+            }
+            return _HttpBodyStream.OfLength(client, stream, lr, len);
+        }
+        return _HttpBodyStream.OfEof(client, stream, lr);
+    }
+
     /// One-shot send (no redirect handling). Used by `Send` and tests.
     private HttpResponse _sendOnce(HttpRequest request) {
         HttpUrl url = HttpUrl.Parse(request.Url);
@@ -502,6 +568,58 @@ public class HttpClient {
     }
 
     // ── Response parsing ─────────────────────────────────────────────────
+
+    // Parse status line + headers; leave body in the stream. Returns
+    // the head with the line-reader (which may have read-ahead bytes
+    // belonging to the body — body readers must drain via DrainBuffered
+    // before pulling from the stream directly).
+    static _HttpResponseHead _readResponseHead(Stream stream) {
+        _LineReader lr = new _LineReader(stream);
+        string statusLine = lr.ReadLine();
+        if (statusLine == null) {
+            throw new HttpProtocolException("unexpected EOF reading status line");
+        }
+        int sp1 = HttpClient._indexOfChar(statusLine, ' ', 0);
+        if (sp1 < 0) {
+            throw new HttpProtocolException("malformed status line: '" + statusLine + "'");
+        }
+        string version = HttpClient._substring(statusLine, 0, sp1);
+        if (!HttpClient._startsWith(version, "HTTP/1.")) {
+            throw new HttpProtocolException("unsupported HTTP version: '" + version + "'");
+        }
+        int sp2 = HttpClient._indexOfChar(statusLine, ' ', sp1 + 1);
+        string codeStr;
+        string reason;
+        if (sp2 < 0) {
+            codeStr = HttpClient._substring(statusLine, sp1 + 1, statusLine.Length);
+            reason  = "";
+        } else {
+            codeStr = HttpClient._substring(statusLine, sp1 + 1, sp2);
+            reason  = HttpClient._substring(statusLine, sp2 + 1, statusLine.Length);
+        }
+        int statusCode;
+        try {
+            statusCode = Int32.Parse(codeStr);
+        } catch (Exception e) {
+            throw new HttpProtocolException("invalid status code: '" + codeStr + "'");
+        }
+        var headers = new HttpHeaders();
+        while (true) {
+            string line = lr.ReadLine();
+            if (line == null) {
+                throw new HttpProtocolException("unexpected EOF in headers");
+            }
+            if (line.Length == 0) break;
+            int colon = HttpClient._indexOfChar(line, ':', 0);
+            if (colon < 0) {
+                throw new HttpProtocolException("malformed header line: '" + line + "'");
+            }
+            string name  = HttpClient._substring(line, 0, colon);
+            string value = HttpClient._trimSpaces(HttpClient._substring(line, colon + 1, line.Length));
+            headers.Add(name, value);
+        }
+        return new _HttpResponseHead(statusCode, reason, headers, lr);
+    }
 
     static HttpResponse _readResponse(Stream stream) {
         _LineReader lr = new _LineReader(stream);
@@ -740,6 +858,28 @@ public class HttpClient {
             i = i + 1;
         }
         return result;
+    }
+}
+
+// ── Response-head carrier (internal) ────────────────────────────────────
+//
+// add-z42-net-http-stream-body (2026-05-28): tuple-shaped return for
+// `_readResponseHead` so SendStreaming can take the line-reader and
+// hand its buffered bytes to `_HttpBodyStream`. z42 has no tuple
+// literals; a `public class` is the standard carrier shape (matches
+// `_DecodedFrame`, `_MagDivModResult`, etc).
+
+public class _HttpResponseHead {
+    public int         StatusCode;
+    public string      ReasonPhrase;
+    public HttpHeaders Headers;
+    public _LineReader Reader;
+
+    public _HttpResponseHead(int statusCode, string reasonPhrase, HttpHeaders headers, _LineReader reader) {
+        this.StatusCode   = statusCode;
+        this.ReasonPhrase = reasonPhrase;
+        this.Headers      = headers;
+        this.Reader       = reader;
     }
 }
 

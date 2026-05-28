@@ -1,0 +1,250 @@
+// add-z42-net-http-stream-body (2026-05-28): tests for
+// HttpClient.SendStreaming + HttpResponse.BodyStream framing-aware
+// incremental Read.
+namespace Z42NetHttpStreamBodyTests;
+
+using Std;
+using Std.IO;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+// Helper: drain one HTTP request from a Stream (stops at \r\n\r\n).
+static void _drainReq(Stream s) {
+    byte[] buf = new byte[8192];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) return;
+        total = total + got;
+        int i = 3;
+        while (i < total) {
+            if (buf[i - 3] == (byte)13 && buf[i - 2] == (byte)10
+                && buf[i - 1] == (byte)13 && buf[i] == (byte)10) { return; }
+            i = i + 1;
+        }
+    }
+}
+
+[Test]
+void test_send_streaming_content_length_incremental_read() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/stream";
+
+    string body = "Hello, streaming HTTP world!";   // 28 bytes
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainReq(s);
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "Content-Length: " + Int32.ToString(body.Length) + "\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+            + body;
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var c = new HttpClient();
+    HttpResponse r = c.SendStreaming(new HttpRequest(HttpMethod.Get, url));
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal(0, r.Body.Length);   // empty — body in stream
+    Assert.True(r.BodyStream != null);
+
+    // Read body incrementally in 5-byte chunks.
+    byte[] buf = new byte[5];
+    byte[] accum = new byte[64];
+    int total = 0;
+    while (true) {
+        int got = r.BodyStream.Read(buf, 0, buf.Length);
+        if (got == 0) break;
+        int i = 0;
+        while (i < got) { accum[total + i] = buf[i]; i = i + 1; }
+        total = total + got;
+    }
+    r.BodyStream.Close();
+    Assert.Equal(body.Length, total);
+    byte[] result = new byte[total];
+    int j = 0;
+    while (j < total) { result[j] = accum[j]; j = j + 1; }
+    Assert.Equal(body, Utf8.GetString(result));
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_send_streaming_chunked_decode() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/chunked";
+
+    // 3 chunks: "Hello, " (7) + "chunked " (8) + "world!" (6) = 21 bytes total
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainReq(s);
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "Transfer-Encoding: chunked\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+            + "7\r\nHello, \r\n"
+            + "8\r\nchunked \r\n"
+            + "6\r\nworld!\r\n"
+            + "0\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var c = new HttpClient();
+    HttpResponse r = c.SendStreaming(new HttpRequest(HttpMethod.Get, url));
+    Assert.Equal(200, r.StatusCode);
+    Assert.True(r.BodyStream != null);
+
+    // Read all at once.
+    byte[] buf = new byte[64];
+    int total = 0;
+    while (true) {
+        int got = r.BodyStream.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+    }
+    r.BodyStream.Close();
+    Assert.Equal(21, total);
+    byte[] result = new byte[total];
+    int i = 0;
+    while (i < total) { result[i] = buf[i]; i = i + 1; }
+    Assert.Equal("Hello, chunked world!", Utf8.GetString(result));
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_send_streaming_chunked_read_across_chunk_boundaries() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/c";
+
+    // Two 4-byte chunks: "AAAA" + "BBBB" = 8 bytes total
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainReq(s);
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Transfer-Encoding: chunked\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+            + "4\r\nAAAA\r\n"
+            + "4\r\nBBBB\r\n"
+            + "0\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var c = new HttpClient();
+    HttpResponse r = c.SendStreaming(new HttpRequest(HttpMethod.Get, url));
+    // Read 3 bytes at a time — forces reads to span chunk boundaries.
+    byte[] buf = new byte[3];
+    byte[] accum = new byte[16];
+    int total = 0;
+    while (true) {
+        int got = r.BodyStream.Read(buf, 0, buf.Length);
+        if (got == 0) break;
+        int i = 0;
+        while (i < got) { accum[total + i] = buf[i]; i = i + 1; }
+        total = total + got;
+    }
+    r.BodyStream.Close();
+    Assert.Equal(8, total);
+    byte[] result = new byte[8];
+    int j = 0;
+    while (j < 8) { result[j] = accum[j]; j = j + 1; }
+    Assert.Equal("AAAABBBB", Utf8.GetString(result));
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_send_streaming_zero_content_length_empty_body() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/empty";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainReq(s);
+        string resp = "HTTP/1.1 204 No Content\r\n"
+            + "Content-Length: 0\r\n"
+            + "Connection: close\r\n"
+            + "\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var c = new HttpClient();
+    HttpResponse r = c.SendStreaming(new HttpRequest(HttpMethod.Get, url));
+    Assert.Equal(204, r.StatusCode);
+    byte[] buf = new byte[16];
+    int got = r.BodyStream.Read(buf, 0, buf.Length);
+    Assert.Equal(0, got);
+    r.BodyStream.Close();
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_send_streaming_eof_framing() {
+    // HTTP/1.0-style: no Content-Length, no Transfer-Encoding → read
+    // until socket close.
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/eof";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainReq(s);
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+            + "until-eof";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();   // close the socket → EOF signal
+    });
+
+    var c = new HttpClient();
+    HttpResponse r = c.SendStreaming(new HttpRequest(HttpMethod.Get, url));
+    byte[] buf = new byte[32];
+    int total = 0;
+    while (true) {
+        int got = r.BodyStream.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+    }
+    r.BodyStream.Close();
+    byte[] result = new byte[total];
+    int i = 0;
+    while (i < total) { result[i] = buf[i]; i = i + 1; }
+    Assert.Equal("until-eof", Utf8.GetString(result));
+
+    srv.Join();
+    server.Stop();
+}
