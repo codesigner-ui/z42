@@ -178,9 +178,16 @@ fn park_until_idle(ctx: &VmContext) {
     while matches!(*phase, GcPhase::Requested | GcPhase::Marking) {
         ctx.core.gc_phase_cv.wait(&mut phase);
     }
-    drop(phase);
-
+    // Decrement BEFORE releasing the phase lock. This closes a race with
+    // request_handshake_pause: if we decrement after drop(phase), the
+    // collector can acquire the lock, observe the stale elevated
+    // parked_count, satisfy parked_count >= need, and exit its wait loop
+    // while this thread is still between drop(phase) and fetch_sub —
+    // i.e., the thread is resuming but the collector thinks it is parked.
+    // By decrementing under the lock, the collector sees the correct count
+    // on any subsequent re-check.
     ctx.core.parked_count.fetch_sub(1, Ordering::AcqRel);
+    drop(phase);
 }
 
 /// RAII guard returned by [`request_gc_pause`]. While held, the collector
