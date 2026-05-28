@@ -42,7 +42,7 @@ for arg in "$@"; do
         *)             POSITIONAL+=("$arg") ;;
     esac
 done
-if [ "${#POSITIONAL[@]+x}" = "x" ] && [ "${#POSITIONAL[@]}" -ge 1 ]; then
+if [ "${#POSITIONAL[@]}" -ge 1 ]; then
     MODES="${POSITIONAL[0]}"
 fi
 
