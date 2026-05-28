@@ -171,21 +171,36 @@ fn check_safepoint_slow(ctx: &VmContext) {
 /// the final STW handshake (`Marking`) re-parks them.
 fn park_until_idle(ctx: &VmContext) {
     ctx.core.parked_count.fetch_add(1, Ordering::AcqRel);
-    // Notify the collector in case it's polling parked_count vs threshold.
-    ctx.core.gc_phase_cv.notify_all();
-
+    // Acquire the phase lock BEFORE calling notify_all.
+    //
+    // parking_lot::Condvar does NOT buffer notifications: if notify_all
+    // is sent when no thread is sleeping in wait(), the wake is lost.
+    // Sending without the lock opens this window:
+    //
+    //   Worker: fetch_add → notify_all (no lock) → [blocked on lock]
+    //   Collector: [checks condition — unsatisfied] → wait()  ← sleeps forever
+    //
+    // By acquiring the lock first, either:
+    //   (a) Collector is in wait() (lock released) → we acquire it, notify,
+    //       wake the collector correctly.
+    //   (b) Collector holds the lock (in its loop body) → we block here.
+    //       The collector will next call wait() or break. If it breaks
+    //       (condition satisfied), our block ends when it releases the lock
+    //       and we enter the wait loop, which exits immediately (Idle).
+    //       If it calls wait(), we acquire the lock, notify, and wake it.
+    //
+    // In both cases the notification is never lost.
     let mut phase = ctx.core.gc_phase.lock();
+    ctx.core.gc_phase_cv.notify_all();
     while matches!(*phase, GcPhase::Requested | GcPhase::Marking) {
         ctx.core.gc_phase_cv.wait(&mut phase);
     }
-    // Decrement BEFORE releasing the phase lock. This closes a race with
-    // request_handshake_pause: if we decrement after drop(phase), the
-    // collector can acquire the lock, observe the stale elevated
-    // parked_count, satisfy parked_count >= need, and exit its wait loop
-    // while this thread is still between drop(phase) and fetch_sub —
-    // i.e., the thread is resuming but the collector thinks it is parked.
-    // By decrementing under the lock, the collector sees the correct count
-    // on any subsequent re-check.
+    // Decrement BEFORE releasing the phase lock. This closes a second race
+    // with request_handshake_pause: decrementing after drop(phase) lets the
+    // collector observe a stale elevated parked_count and break out of its
+    // wait loop while this thread is still resuming (between drop and
+    // fetch_sub). Decrementing under the lock serializes the count update
+    // against the collector's next re-check.
     ctx.core.parked_count.fetch_sub(1, Ordering::AcqRel);
     drop(phase);
 }
