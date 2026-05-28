@@ -107,9 +107,17 @@ public sealed class SymbolTable
     /// `Std.KeyValuePair` 而非 `Std.Collections.KeyValuePair`，运行期找不到
     /// 类型，构造器不写字段，`.Value` 全是 null）。修复：传入 per-class
     /// namespace map，缺省时回退到 namespaceName。
+    /// fix-intra-package-resolved-ns (2026-05-28): callers can pass
+    /// `intraPkgNamespaces` to seed `ResolvedNamespaces` with the set of
+    /// sibling namespaces declared by other units in the same package
+    /// being compiled. Without this, the TypeChecker's E0602 check fires
+    /// on a clean build where no stale .zpkg yet exists for the current
+    /// package; locally the test passes only because prior-run zpkgs
+    /// happen to live in the libs flat view.
     public ImportedSymbols ExtractIntraSymbols(
         string namespaceName,
-        IReadOnlyDictionary<string, string>? classNamespaces = null)
+        IReadOnlyDictionary<string, string>? classNamespaces = null,
+        IReadOnlyCollection<string>? intraPkgNamespaces = null)
     {
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
         var classNs    = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -177,6 +185,21 @@ public sealed class SymbolTable
             fnDecls[name] = decl;
         }
 
+        // Seed ResolvedNamespaces with the intra-package sibling namespaces
+        // so the TypeChecker's E0602 check (and the warner emit pipeline)
+        // sees them as "loaded". Fall back to ClassNamespaces.Values for
+        // packages whose sibling namespaces all contain at least one
+        // class — covers stdlib reality.
+        HashSet<string>? resolvedNs = null;
+        if (intraPkgNamespaces is not null && intraPkgNamespaces.Count > 0)
+        {
+            resolvedNs = new HashSet<string>(intraPkgNamespaces, StringComparer.Ordinal);
+        }
+        else if (classNs.Count > 0)
+        {
+            resolvedNs = new HashSet<string>(classNs.Values, StringComparer.Ordinal);
+        }
+
         return new ImportedSymbols(
             Classes:          classes,
             Functions:        funcs,
@@ -188,7 +211,8 @@ public sealed class SymbolTable
             FuncConstraints:  null,
             ClassInterfaces:  classInterfaces,
             Delegates:        delegates.Count > 0 ? delegates : null,
-            FuncDecls:        fnDecls.Count > 0 ? fnDecls : null);
+            FuncDecls:        fnDecls.Count > 0 ? fnDecls : null,
+            ResolvedNamespaces: resolvedNs);
     }
 
     /// Build ancestor set for each class by walking the inheritance chain once per class.

@@ -211,4 +211,82 @@ public sealed class UsingResolutionTests
         PreludePackages.IsStdlibPackage("z42").Should().BeFalse(
             because: "必须 z42. 前缀（含点），不是 z42 本身");
     }
+
+    /// fix-intra-package-resolved-ns (2026-05-28): a `using` declaration
+    /// targeting a SIBLING namespace declared by another unit in the same
+    /// package being compiled must NOT raise E0602. Previously the
+    /// TypeChecker's resolvedNs set only included the unit's own
+    /// namespace plus external dep namespaces; intra-package siblings
+    /// were invisible on a clean build (no stale .zpkg yet). The fix
+    /// seeds ResolvedNamespaces on intraSymbols with every namespace
+    /// declared by the units being compiled.
+    [Fact]
+    public void TypeChecker_NoE0602_For_IntraPackageSiblingUsing()
+    {
+        // Unit B declares Std.Net.Http and uses Std.Net.Sockets (sibling
+        // namespace declared by Unit A in the same package). Clean build
+        // means no z42.net.zpkg yet → tsigCache has no entry for either
+        // namespace. Only an ImportedSymbols whose ResolvedNamespaces
+        // includes Std.Net.Sockets keeps E0602 silent.
+        var src = @"
+            namespace Std.Net.Http;
+            using Std.Net.Sockets;
+            void Main() {}
+        ";
+        var (cu, diags) = Parse(src);
+        diags.HasErrors.Should().BeFalse(because: "parse should succeed");
+
+        var coreMod = Module("Std", Class("Object"));
+        var packageOf = new Dictionary<ExportedModule, string> { [coreMod] = "z42.core" };
+        // Simulate intraSymbols seeded with sibling namespaces via the
+        // ResolvedNamespaces parameter on the loader (the production
+        // path threads this through ExtractIntraSymbols).
+        var imported = ImportedSymbolLoader.Load(
+            new[] { coreMod }, packageOf,
+            activatedPackages: new HashSet<string>(),
+            preludePackages:   PreludePackages.Names);
+        var withSibling = imported with
+        {
+            ResolvedNamespaces = new HashSet<string>(StringComparer.Ordinal)
+            {
+                "Std",
+                "Std.Net.Sockets",   // declared by sibling unit
+                "Std.Net.Http",      // own namespace
+            },
+        };
+
+        var tc = new TypeChecker(diags, LanguageFeatures.Phase1);
+        tc.Check(cu, withSibling);
+
+        diags.All.Should().NotContain(d => d.Code == DiagnosticCodes.UnresolvedUsing,
+            because: "intra-package sibling namespace is now in ResolvedNamespaces");
+    }
+
+    /// Regression guard for the original E0602 case: when ResolvedNamespaces
+    /// does NOT include the sibling (the broken state before the fix),
+    /// E0602 still fires. Ensures the fix didn't accidentally hide all
+    /// E0602 errors.
+    [Fact]
+    public void TypeChecker_StillE0602_When_NamespaceNotInResolvedSet()
+    {
+        var src = @"
+            namespace Std.Net.Http;
+            using Truly.Bogus;
+            void Main() {}
+        ";
+        var (cu, diags) = Parse(src);
+
+        var coreMod = Module("Std", Class("Object"));
+        var packageOf = new Dictionary<ExportedModule, string> { [coreMod] = "z42.core" };
+        var imported = ImportedSymbolLoader.Load(
+            new[] { coreMod }, packageOf,
+            activatedPackages: new HashSet<string>(),
+            preludePackages:   PreludePackages.Names);
+
+        var tc = new TypeChecker(diags, LanguageFeatures.Phase1);
+        tc.Check(cu, imported);
+
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.UnresolvedUsing && d.Message.Contains("Truly.Bogus"));
+    }
 }

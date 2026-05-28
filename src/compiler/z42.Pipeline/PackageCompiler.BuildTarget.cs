@@ -466,10 +466,18 @@ public static partial class PackageCompiler
         foreach (var (_, _, cu, ns) in parsedCus)
             foreach (var cls in cu.Classes)
                 classNamespaces.TryAdd(cls.Name, ns);
+        // fix-intra-package-resolved-ns (2026-05-28): collect every namespace
+        // declared by any unit in this package (including impl-only files
+        // with no classes — they wouldn't show up in classNamespaces).
+        // Without this, a unit's `using` declaration referencing a sibling
+        // namespace within the same package raises E0602 on a clean build.
+        var intraPkgNs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (_, _, _, ns) in parsedCus)
+            if (ns is not null) intraPkgNs.Add(ns);
         var intraSymbols = sharedSymbols is null
             ? ImportedSymbolLoader.Empty()
             : sharedSymbols.ExtractIntraSymbols(
-                parsedCus.FirstOrDefault().ns ?? "main", classNamespaces);
+                parsedCus.FirstOrDefault().ns ?? "main", classNamespaces, intraPkgNs);
 
         // ── Phase 2: full compile each CU with combined imports ──
         var combined = ImportedSymbolLoader.Combine(externalImported, intraSymbols);
