@@ -263,6 +263,8 @@ pub struct ArcMagrGC {
     /// `write_barrier_array_elem` collapses to a true no-op.
     #[cfg(test)]
     barrier_observer: Mutex<Option<std::sync::Arc<BarrierObserver>>>,
+    #[cfg(debug_assertions)]
+    debug_stw_no_push: std::sync::atomic::AtomicBool,
 }
 
 /// **add-concurrent-gc P0 (2026-05-22)**: manual `Default` impl so the
@@ -281,6 +283,8 @@ impl Default for ArcMagrGC {
             pause_histogram: Mutex::new(super::types::PauseHistogram::default()),
             #[cfg(test)]
             barrier_observer: Mutex::new(None),
+            #[cfg(debug_assertions)]
+            debug_stw_no_push: std::sync::atomic::AtomicBool::new(false),
         }
     }
 }
@@ -1030,6 +1034,13 @@ impl ArcMagrGC {
     /// `Std.GC.Finalize(x)` builtin (added by P2) provides a separate
     /// path for prompt resource release outside sweep.
     fn sweep_phase(&self) -> u64 {
+        #[cfg(debug_assertions)]
+        self.debug_stw_no_push.store(true, std::sync::atomic::Ordering::SeqCst);
+        #[cfg(debug_assertions)]
+        {
+            let q = self.mark_queue.lock().len();
+            assert_eq!(q, 0, "BUG: sweep_phase entered with non-empty mark_queue ({q} items) — push happened between P5 drain and sweep start");
+        }
         let mut freed_bytes: u64 = 0;
 
         // Object region.
@@ -1051,9 +1062,19 @@ impl ArcMagrGC {
                 }
             });
         }
+        #[cfg(debug_assertions)]
+        {
+            let q = self.mark_queue.lock().len();
+            assert_eq!(q, 0, "BUG: mark_queue non-empty after object region scan ({q} items)");
+        }
         // Fire finalizers + clear inner refs + tombstone.
         for (h, fin, size) in tombstones_object {
             if let Some(f) = fin { f(); }
+            #[cfg(debug_assertions)]
+            {
+                let q = self.mark_queue.lock().len();
+                assert_eq!(q, 0, "BUG: mark_queue non-empty after finalizer (h={:?}, {q} items)", h);
+            }
             freed_bytes += size;
             // Break inner refs to release any cycles for the region's
             // bookkeeping (iterate_live_objects, future child traversal
@@ -1072,7 +1093,22 @@ impl ArcMagrGC {
                     }
                 }
             }
+            #[cfg(debug_assertions)]
+            {
+                let q = self.mark_queue.lock().len();
+                assert_eq!(q, 0, "BUG: mark_queue non-empty after slot clearing (h={:?}, {q} items)", h);
+            }
             self.region_object.lock().tombstone(h);
+            #[cfg(debug_assertions)]
+            {
+                let q = self.mark_queue.lock().len();
+                assert_eq!(q, 0, "BUG: mark_queue non-empty after tombstone (h={:?}, {q} items)", h);
+            }
+        }
+        #[cfg(debug_assertions)]
+        {
+            let q = self.mark_queue.lock().len();
+            assert_eq!(q, 0, "BUG: mark_queue non-empty after object tombstone loop ({q} items)");
         }
 
         // Array region.
@@ -1106,6 +1142,8 @@ impl ArcMagrGC {
             self.region_array.lock().tombstone(h);
         }
 
+        #[cfg(debug_assertions)]
+        self.debug_stw_no_push.store(false, std::sync::atomic::Ordering::SeqCst);
         freed_bytes
     }
 
@@ -1543,6 +1581,12 @@ impl MagrGC for ArcMagrGC {
                     "write_barrier_field caller must filter primitives via Value::is_heap_ref"
                 );
                 if Self::mark_if_unmarked(new) {
+                    #[cfg(debug_assertions)]
+                    debug_assert!(
+                        !self.debug_stw_no_push.load(std::sync::atomic::Ordering::SeqCst),
+                        "BUG: write_barrier_field pushing to mark_queue while debug_stw_no_push=true (STW sweep is active!) — thread {:?}",
+                        std::thread::current().id()
+                    );
                     self.mark_queue.lock().push(new.clone());
                 }
             }
@@ -1784,6 +1828,12 @@ impl MagrGC for ArcMagrGC {
 
                 // Phase 6: STW sweep (mutators still parked).
                 let freed_bytes = self.sweep_phase();
+                #[cfg(debug_assertions)]
+                {
+                    let post_sweep = self.mark_queue.lock().len();
+                    assert_eq!(post_sweep, 0,
+                        "BUG: mark_queue non-empty after sweep ({post_sweep} items) — something during sweep pushed to queue");
+                }
                 {
                     let mut i = self.inner.lock();
                     i.stats.gc_cycles += 1;
@@ -1795,6 +1845,12 @@ impl MagrGC for ArcMagrGC {
                 self.fire_event(GcEvent::AfterCollect {
                     kind: GcKind::CycleCollector, freed_bytes, pause_us,
                 });
+                #[cfg(debug_assertions)]
+                {
+                    let post_events = self.mark_queue.lock().len();
+                    assert_eq!(post_events, 0,
+                        "BUG: mark_queue non-empty after fire_event ({post_events} items) — observer pushed to queue");
+                }
 
                 // Validate heap invariants while world is still stopped
                 // (before pause Drop wakes workers and write-barriers resume).
