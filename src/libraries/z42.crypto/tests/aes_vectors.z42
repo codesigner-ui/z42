@@ -427,6 +427,106 @@ void test_gcm_empty_aad_and_plaintext_round_trip() {
     Assert.Equal(0, dec.Length);
 }
 
+// ── AES-CCM (RFC 3610 Appendix B test vectors) ──────────────────────────
+
+[Test]
+void test_aes128_ccm_rfc3610_packet1() {
+    // RFC 3610 §B.1 Packet Vector #1
+    byte[] key   = Hex.Decode("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    byte[] nonce = Hex.Decode("00000003020100a0a1a2a3a4a5");
+    byte[] aad   = Hex.Decode("0001020304050607");
+    byte[] pt    = Hex.Decode("08090a0b0c0d0e0f101112131415161718191a1b1c1d1e");
+    byte[] enc   = Aes.EncryptCcm(key, nonce, aad, pt, 8);
+    Assert.Equal(
+        "588c979a61c663d2f066d0c2c0f989806d5f6b61dac38417e8d12cfdf926e0",
+        Hex.Encode(enc)
+    );
+}
+
+[Test]
+void test_aes128_ccm_rfc3610_packet1_decrypt() {
+    byte[] key   = Hex.Decode("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    byte[] nonce = Hex.Decode("00000003020100a0a1a2a3a4a5");
+    byte[] aad   = Hex.Decode("0001020304050607");
+    byte[] enc   = Hex.Decode("588c979a61c663d2f066d0c2c0f989806d5f6b61dac38417e8d12cfdf926e0");
+    byte[] pt    = Aes.DecryptCcm(key, nonce, aad, enc, 8);
+    Assert.Equal(
+        "08090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+        Hex.Encode(pt)
+    );
+}
+
+[Test]
+void test_aes128_ccm_rfc3610_packet2() {
+    // RFC 3610 §B.1 Packet Vector #2 — 24-byte plaintext
+    byte[] key   = Hex.Decode("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    byte[] nonce = Hex.Decode("00000004030201a0a1a2a3a4a5");
+    byte[] aad   = Hex.Decode("0001020304050607");
+    byte[] pt    = Hex.Decode("08090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f");
+    byte[] enc   = Aes.EncryptCcm(key, nonce, aad, pt, 8);
+    Assert.Equal(
+        "72c91a36e135f8cf291ca894085c87e3cc15c439c9e43a3ba091d56e10400916",
+        Hex.Encode(enc)
+    );
+}
+
+[Test]
+void test_aes128_ccm_round_trip_tag16() {
+    byte[] key   = Hex.Decode("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    byte[] nonce = Hex.Decode("00000006050403a0a1a2a3a4a5");
+    byte[] aad   = Hex.Decode("aabbccddeeff");
+    byte[] pt    = Utf8.GetBytes("CCM with 16-byte tag round trip!");
+    byte[] enc   = Aes.EncryptCcm(key, nonce, aad, pt, 16);
+    Assert.Equal(pt.Length + 16, enc.Length);
+    byte[] dec   = Aes.DecryptCcm(key, nonce, aad, enc, 16);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+[Test]
+void test_aes128_ccm_round_trip_empty_aad() {
+    byte[] key   = Hex.Decode("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    byte[] nonce = Hex.Decode("000000070605040a0b0c0d0e0f");
+    byte[] aad   = new byte[0];
+    byte[] pt    = Hex.Decode("1122334455");
+    byte[] enc   = Aes.EncryptCcm(key, nonce, aad, pt, 8);
+    byte[] dec   = Aes.DecryptCcm(key, nonce, aad, enc, 8);
+    Assert.Equal(Hex.Encode(pt), Hex.Encode(dec));
+}
+
+[Test]
+void test_aes128_ccm_detects_tampering() {
+    byte[] key   = Hex.Decode("c0c1c2c3c4c5c6c7c8c9cacbcccdcecf");
+    byte[] nonce = Hex.Decode("00000003020100a0a1a2a3a4a5");
+    byte[] aad   = Hex.Decode("0001020304050607");
+    byte[] pt    = Hex.Decode("08090a0b0c0d0e0f");
+    byte[] enc   = Aes.EncryptCcm(key, nonce, aad, pt, 8);
+    enc[0] = (byte)((int)enc[0] ^ 0x01);
+    bool threw = false;
+    try { Aes.DecryptCcm(key, nonce, aad, enc, 8); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_aes128_ccm_rejects_short_nonce() {
+    byte[] key   = new byte[16];
+    byte[] nonce = new byte[6];   // must be 7..13
+    bool threw = false;
+    try { Aes.EncryptCcm(key, nonce, new byte[0], new byte[8], 8); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_aes128_ccm_rejects_odd_tag_length() {
+    byte[] key   = new byte[16];
+    byte[] nonce = new byte[12];
+    bool threw = false;
+    try { Aes.EncryptCcm(key, nonce, new byte[0], new byte[8], 7); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
 [Test]
 void test_cbc_decrypt_detects_corrupted_padding() {
     byte[] key  = Hex.Decode("2b7e151628aed2a6abf7158809cf4f3c");

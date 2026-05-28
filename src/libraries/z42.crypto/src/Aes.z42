@@ -221,6 +221,266 @@ public static class Aes {
         return out_;
     }
 
+    // ── AES-CCM AEAD (NIST SP 800-38C / RFC 3610) ────────────────────────
+    //
+    // add-aes-ccm (2026-05-28): authenticated encryption with associated
+    // data using CTR mode + CBC-MAC over a structured authentication
+    // header. The "Counter with CBC-MAC" name describes the two-piece
+    // construction.
+    //
+    // Used in: WPA2-CCMP (Wi-Fi link encryption), Bluetooth LE Secure
+    // Connections, Zigbee, IEEE 802.15.4, TLS_PSK_WITH_AES_128_CCM_8,
+    // many constrained-device protocols. Simpler than GCM (no GHASH
+    // polynomial — uses standard CBC-MAC) which makes it more attractive
+    // for resource-constrained hardware.
+    //
+    // Parameters:
+    //   nonce   — N bytes, N in [7..13]. Length N determines max
+    //             payload size: 2^(8*(15-N)) - 1 bytes
+    //             (e.g. 13-byte nonce → max 65535 bytes payload).
+    //   tagLen  — M bytes, M in {4, 6, 8, 10, 12, 14, 16}. RFC 3610
+    //             permits these even values only.
+    //   aad     — associated data of any length (authenticated, not
+    //             encrypted).
+    //
+    // Output = ciphertext (len(plaintext) bytes) || tag (tagLen bytes).
+
+    /// Encrypt + authenticate via AES-CCM. `nonce` length determines
+    /// max payload size; `tagLen` controls auth-tag truncation.
+    public static byte[] EncryptCcm(byte[] key, byte[] nonce, byte[] aad, byte[] plaintext, int tagLen) {
+        Aes._ccmValidate(nonce, tagLen, plaintext.Length, aad.Length);
+        byte[] tag = Aes._ccmComputeTag(key, nonce, aad, plaintext, tagLen);
+        // S_0 = AES(key, CTR0); S_i = AES(key, CTRi) for i >= 1.
+        // Ciphertext = plaintext XOR keystream (CTR0 reserved for tag).
+        byte[] ciphertext = Aes._ccmCtrEncrypt(key, nonce, plaintext);
+        // Encrypted tag = tag XOR S_0[0..tagLen]
+        byte[] s0 = Aes._ccmCounterBlock(nonce, 0);
+        byte[] s0enc = Aes.EncryptBlock(key, s0);
+        byte[] encTag = new byte[tagLen];
+        int t = 0;
+        while (t < tagLen) {
+            encTag[t] = (byte)((int)tag[t] ^ (int)s0enc[t]);
+            t = t + 1;
+        }
+        byte[] out_ = new byte[ciphertext.Length + tagLen];
+        int p = 0;
+        while (p < ciphertext.Length) { out_[p] = ciphertext[p]; p = p + 1; }
+        int q = 0;
+        while (q < tagLen) { out_[ciphertext.Length + q] = encTag[q]; q = q + 1; }
+        return out_;
+    }
+
+    /// Decrypt + verify via AES-CCM. Input = `ciphertext || encTag`
+    /// where encTag is tagLen bytes. Throws `ArgumentException` on
+    /// tag mismatch (do NOT swallow — tampering signal).
+    public static byte[] DecryptCcm(byte[] key, byte[] nonce, byte[] aad, byte[] ctAndTag, int tagLen) {
+        if (ctAndTag.Length < tagLen) {
+            throw new ArgumentException("AES.DecryptCcm: input shorter than tag");
+        }
+        int ctLen = ctAndTag.Length - tagLen;
+        Aes._ccmValidate(nonce, tagLen, ctLen, aad.Length);
+        byte[] ciphertext = new byte[ctLen];
+        int i = 0;
+        while (i < ctLen) { ciphertext[i] = ctAndTag[i]; i = i + 1; }
+        byte[] encTag = new byte[tagLen];
+        int j = 0;
+        while (j < tagLen) { encTag[j] = ctAndTag[ctLen + j]; j = j + 1; }
+        // Decrypt ciphertext via CTR (same keystream as encrypt — CTR is
+        // symmetric).
+        byte[] plaintext = Aes._ccmCtrEncrypt(key, nonce, ciphertext);
+        // Decrypt tag: expected = encTag XOR S_0[0..tagLen]
+        byte[] s0 = Aes._ccmCounterBlock(nonce, 0);
+        byte[] s0enc = Aes.EncryptBlock(key, s0);
+        byte[] expected = new byte[tagLen];
+        int t = 0;
+        while (t < tagLen) {
+            expected[t] = (byte)((int)encTag[t] ^ (int)s0enc[t]);
+            t = t + 1;
+        }
+        byte[] actual = Aes._ccmComputeTag(key, nonce, aad, plaintext, tagLen);
+        int diff = 0;
+        int u = 0;
+        while (u < tagLen) {
+            diff = diff | ((int)expected[u] ^ (int)actual[u]);
+            u = u + 1;
+        }
+        if (diff != 0) {
+            throw new ArgumentException(
+                "AES.DecryptCcm: authentication tag mismatch — ciphertext or AAD tampered");
+        }
+        return plaintext;
+    }
+
+    /// Input validation. nonce in [7..13]; tagLen in {4,6,8,10,12,14,16}.
+    /// Plaintext-length cap = 2^(8 * (15 - nonceLen)) - 1.
+    static void _ccmValidate(byte[] nonce, int tagLen, int ptLen, int aadLen) {
+        int nLen = nonce.Length;
+        if (nLen < 7 || nLen > 13) {
+            throw new ArgumentException(
+                "AES.CCM: nonce must be 7..13 bytes, got " + nLen.ToString());
+        }
+        bool tagOk = tagLen == 4 || tagLen == 6 || tagLen == 8 || tagLen == 10
+                  || tagLen == 12 || tagLen == 14 || tagLen == 16;
+        if (!tagOk) {
+            throw new ArgumentException(
+                "AES.CCM: tag length must be in {4,6,8,10,12,14,16}, got " + tagLen.ToString());
+        }
+        int qBytes = 15 - nLen;
+        // Max ptLen = 2^(8 * qBytes) - 1. For qBytes >= 4 this is > 2^31 and
+        // can't be exceeded by an int-sized length. For smaller qBytes:
+        if (qBytes < 4) {
+            long maxPt = (1L << (8 * qBytes)) - 1L;
+            if ((long)ptLen > maxPt) {
+                throw new ArgumentException(
+                    "AES.CCM: plaintext length " + ptLen.ToString()
+                    + " exceeds max " + maxPt.ToString() + " for nonce length " + nLen.ToString());
+            }
+        }
+    }
+
+    /// Build counter block: 1-byte flags || nonce || counter (qBytes BE).
+    /// Flags byte for counters (RFC 3610 §2.3): top 3 bits 0; bottom 3 bits
+    /// = qBytes - 1 (length-of-length-of-payload field).
+    static byte[] _ccmCounterBlock(byte[] nonce, int counter) {
+        int nLen  = nonce.Length;
+        int qLen  = 15 - nLen;
+        byte[] cb = new byte[16];
+        cb[0] = (byte)(qLen - 1);   // flags
+        int i = 0;
+        while (i < nLen) { cb[1 + i] = nonce[i]; i = i + 1; }
+        // Counter in last qLen bytes, big-endian. For our int counter
+        // we only fill the low 4 bytes (rest stay zero).
+        int p = qLen - 1;
+        int j = 0;
+        while (j < 4 && p >= 0) {
+            cb[1 + nLen + p] = (byte)((counter >> (j * 8)) & 0xFF);
+            p = p - 1;
+            j = j + 1;
+        }
+        return cb;
+    }
+
+    /// CTR encryption / decryption with the CCM counter format.
+    /// Counter starts at 1 (counter 0 is reserved for tag encryption).
+    static byte[] _ccmCtrEncrypt(byte[] key, byte[] nonce, byte[] data) {
+        byte[] out_ = new byte[data.Length];
+        int blocks = (data.Length + 15) / 16;
+        int b = 0;
+        while (b < blocks) {
+            byte[] cb = Aes._ccmCounterBlock(nonce, b + 1);
+            byte[] ks = Aes.EncryptBlock(key, cb);
+            int off = b * 16;
+            int blockLen = data.Length - off;
+            if (blockLen > 16) { blockLen = 16; }
+            int j = 0;
+            while (j < blockLen) {
+                out_[off + j] = (byte)((int)data[off + j] ^ (int)ks[j]);
+                j = j + 1;
+            }
+            b = b + 1;
+        }
+        return out_;
+    }
+
+    /// Compute the un-encrypted CCM authentication tag via CBC-MAC over
+    /// the formatted authentication blocks (B_0 || L(aad) || aad ||
+    /// pad || plaintext || pad).
+    static byte[] _ccmComputeTag(byte[] key, byte[] nonce, byte[] aad, byte[] plaintext, int tagLen) {
+        int nLen = nonce.Length;
+        int qLen = 15 - nLen;
+        // B_0: flags || nonce || Q (qLen bytes, BE plaintext length).
+        // Flags byte: bit 6 = adata-flag (set if aad non-empty); bits 3-5 =
+        // (tagLen - 2) / 2; bits 0-2 = qLen - 1.
+        byte[] b0 = new byte[16];
+        int flags = 0;
+        if (aad.Length > 0) { flags = flags | 0x40; }
+        flags = flags | (((tagLen - 2) / 2) << 3);
+        flags = flags | (qLen - 1);
+        b0[0] = (byte)flags;
+        int i = 0;
+        while (i < nLen) { b0[1 + i] = nonce[i]; i = i + 1; }
+        // Plaintext length in last qLen bytes, big-endian.
+        int ptLen = plaintext.Length;
+        int p = qLen - 1;
+        int j = 0;
+        while (j < 4 && p >= 0) {
+            b0[1 + nLen + p] = (byte)((ptLen >> (j * 8)) & 0xFF);
+            p = p - 1;
+            j = j + 1;
+        }
+        // CBC-MAC: X_0 = 0; X_{i+1} = AES(key, X_i XOR B_i)
+        byte[] x = Aes.EncryptBlock(key, b0);
+        // AAD blocks: prefix with length encoding per RFC 3610 §2.2:
+        //   - 0 < L < 2^16 - 2^8:    2 bytes BE
+        //   - 2^16 - 2^8 ≤ L < 2^32: 6 bytes 0xFFFE || 4-byte BE
+        //   - L >= 2^32:             10 bytes 0xFFFF || 8-byte BE
+        // Then the aad bytes themselves, then zero-pad to 16-byte boundary.
+        if (aad.Length > 0) {
+            byte[] aadBlock = Aes._ccmFormatAad(aad);
+            int abks = aadBlock.Length / 16;
+            int ai = 0;
+            while (ai < abks) {
+                int k = 0;
+                while (k < 16) { x[k] = (byte)((int)x[k] ^ (int)aadBlock[ai * 16 + k]); k = k + 1; }
+                x = Aes.EncryptBlock(key, x);
+                ai = ai + 1;
+            }
+        }
+        // Plaintext blocks: zero-pad to 16-byte boundary.
+        int ptBlocks = (plaintext.Length + 15) / 16;
+        int pi = 0;
+        while (pi < ptBlocks) {
+            int off = pi * 16;
+            int remaining = plaintext.Length - off;
+            if (remaining > 16) { remaining = 16; }
+            int k = 0;
+            while (k < remaining) { x[k] = (byte)((int)x[k] ^ (int)plaintext[off + k]); k = k + 1; }
+            // Bytes beyond `remaining` XOR with 0 — no-op.
+            x = Aes.EncryptBlock(key, x);
+            pi = pi + 1;
+        }
+        // Truncate to tagLen.
+        byte[] tag = new byte[tagLen];
+        int t = 0;
+        while (t < tagLen) { tag[t] = x[t]; t = t + 1; }
+        return tag;
+    }
+
+    /// Format AAD with length prefix per RFC 3610 §2.2, then pad to
+    /// 16-byte boundary. Returns the padded block array.
+    static byte[] _ccmFormatAad(byte[] aad) {
+        int aLen = aad.Length;
+        int prefixLen;
+        byte[] prefix;
+        if (aLen < 0xFF00) {
+            // 2-byte BE length.
+            prefixLen = 2;
+            prefix = new byte[2];
+            prefix[0] = (byte)((aLen >> 8) & 0xFF);
+            prefix[1] = (byte)(aLen & 0xFF);
+        } else {
+            // 0xFF 0xFE || 4-byte BE length. (z42 int max is 2^31, so the
+            // 8-byte variant for L >= 2^32 isn't reachable.)
+            prefixLen = 6;
+            prefix = new byte[6];
+            prefix[0] = (byte)0xFF;
+            prefix[1] = (byte)0xFE;
+            prefix[2] = (byte)((aLen >> 24) & 0xFF);
+            prefix[3] = (byte)((aLen >> 16) & 0xFF);
+            prefix[4] = (byte)((aLen >> 8)  & 0xFF);
+            prefix[5] = (byte)(aLen & 0xFF);
+        }
+        int total = prefixLen + aLen;
+        int padded = ((total + 15) / 16) * 16;
+        byte[] out_ = new byte[padded];
+        int i = 0;
+        while (i < prefixLen) { out_[i] = prefix[i]; i = i + 1; }
+        int j = 0;
+        while (j < aLen) { out_[prefixLen + j] = aad[j]; j = j + 1; }
+        // Pad bytes already zero.
+        return out_;
+    }
+
     // ── AES-GCM AEAD (NIST SP 800-38D) ───────────────────────────────────
     //
     // add-aes-gcm (2026-05-27): authenticated encryption with associated
