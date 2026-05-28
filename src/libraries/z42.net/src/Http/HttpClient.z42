@@ -377,7 +377,7 @@ public class HttpClient {
         return resp;
     }
 
-    static Stream _buildBodyStream(TcpClient client, Stream stream, _LineReader lr, HttpHeaders headers) {
+    static Stream _buildBodyStream(object client, Stream stream, object lr, HttpHeaders headers) {
         string te = headers.Get("Transfer-Encoding");
         if (te != null && te.ToLower() == "chunked") {
             return _HttpBodyStream.OfChunked(client, stream, lr);

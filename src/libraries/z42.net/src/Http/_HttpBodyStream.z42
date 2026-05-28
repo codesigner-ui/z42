@@ -23,9 +23,14 @@ public class _HttpBodyStream : Stream {
     static int MODE_CHUNKED = 1;
     static int MODE_EOF     = 2;
 
-    private TcpClient   _tcp;
+    // TcpClient and _LineReader stored as `object` to dodge z42's
+    // cross-file class-token mismatch (the same workaround the
+    // HttpClient `var resp = ...` pattern uses — see _initialResp
+    // comment in HttpClient.z42). Casts on use give us back the
+    // typed values within this file's compilation token scope.
+    private object      _tcp;
     private Stream      _stream;
-    private _LineReader _lr;
+    private object      _lr;
     private int         _mode;
     private long        _remaining;   // bytes left in current chunk (chunked)
                                        // OR total bytes left (length)
@@ -34,7 +39,7 @@ public class _HttpBodyStream : Stream {
     private bool        _closed;
 
     /// Content-Length mode constructor.
-    public static _HttpBodyStream OfLength(TcpClient tcp, Stream stream, _LineReader lr, int length) {
+    public static _HttpBodyStream OfLength(object tcp, Stream stream, object lr, int length) {
         var s = new _HttpBodyStream(tcp, stream, lr);
         s._mode = _HttpBodyStream.MODE_LENGTH;
         s._remaining = (long)length;
@@ -43,7 +48,7 @@ public class _HttpBodyStream : Stream {
     }
 
     /// Chunked-encoding mode constructor.
-    public static _HttpBodyStream OfChunked(TcpClient tcp, Stream stream, _LineReader lr) {
+    public static _HttpBodyStream OfChunked(object tcp, Stream stream, object lr) {
         var s = new _HttpBodyStream(tcp, stream, lr);
         s._mode = _HttpBodyStream.MODE_CHUNKED;
         s._firstChunk = true;
@@ -52,13 +57,13 @@ public class _HttpBodyStream : Stream {
     }
 
     /// Read-until-EOF mode (HTTP/1.0 close-delimited).
-    public static _HttpBodyStream OfEof(TcpClient tcp, Stream stream, _LineReader lr) {
+    public static _HttpBodyStream OfEof(object tcp, Stream stream, object lr) {
         var s = new _HttpBodyStream(tcp, stream, lr);
         s._mode = _HttpBodyStream.MODE_EOF;
         return s;
     }
 
-    private _HttpBodyStream(TcpClient tcp, Stream stream, _LineReader lr) {
+    private _HttpBodyStream(object tcp, Stream stream, object lr) {
         this._tcp = tcp;
         this._stream = stream;
         this._lr = lr;
@@ -115,7 +120,8 @@ public class _HttpBodyStream : Stream {
             this._remaining = this._remaining - (long)got;
             if (this._remaining == 0L) {
                 // Consume the chunk's trailing CRLF.
-                this._lr.ReadLine();
+                _LineReader lrTrail = (_LineReader)this._lr;
+                lrTrail.ReadLine();
             }
             return got;
         }
@@ -125,7 +131,8 @@ public class _HttpBodyStream : Stream {
         if (this._firstChunk) {
             this._firstChunk = false;
         }
-        string sizeLine = this._lr.ReadLine();
+        _LineReader lr = (_LineReader)this._lr;
+        string sizeLine = lr.ReadLine();
         if (sizeLine == null) {
             this._atEof = true;
             return 0;
@@ -153,7 +160,7 @@ public class _HttpBodyStream : Stream {
         if (size == 0) {
             // Trailing headers (may be empty) — read until empty line.
             while (true) {
-                string t = this._lr.ReadLine();
+                string t = lr.ReadLine();
                 if (t == null || t.Length == 0) { break; }
             }
             this._atEof = true;
@@ -174,7 +181,8 @@ public class _HttpBodyStream : Stream {
     /// _LineReader's read-ahead buffer first, then read from the
     /// underlying socket Stream.
     private int _fillFromBufferThenStream(byte[] buffer, int offset, int count) {
-        int filled = this._lr.DrainBuffered(buffer, offset, count);
+        _LineReader lr = (_LineReader)this._lr;
+        int filled = lr.DrainBuffered(buffer, offset, count);
         if (filled >= count) { return filled; }
         int more = this._stream.Read(buffer, offset + filled, count - filled);
         return filled + more;
@@ -184,7 +192,8 @@ public class _HttpBodyStream : Stream {
         if (this._closed) { return; }
         this._closed = true;
         if (this._tcp != null) {
-            try { this._tcp.Dispose(); } catch (Exception e) { /* swallow */ }
+            TcpClient tcp = (TcpClient)this._tcp;
+            try { tcp.Dispose(); } catch (Exception e) { /* swallow */ }
             this._tcp = null;
         }
     }
