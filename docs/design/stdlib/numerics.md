@@ -142,17 +142,29 @@ tests cover small + large exp, edge cases (modulus 1, exp 0, base 0),
 toy RSA round-trip (p=11, q=13, e=7, d=103), negative-arg rejection,
 negative-base normalisation.
 
-Montgomery / Barrett reduction (constant-factor speedups) deferred as
-`bigint-future-modpow-montgomery`.
+Montgomery REDC fast path shipped 2026-05-28 (next entry).
 
-### `bigint-future-modpow-montgomery`
+### ~~`bigint-future-modpow-montgomery`~~ — **✅ 已落地 2026-05-28 (add-bigint-modpow-montgomery)**
 
-- **来源**：add-bigint-modpow v0 scope cut
-- **触发原因**：v0 ModPow does naïve `Multiply().Mod()` per bit;
-  Montgomery / Barrett reduction skips the per-iteration trial
-  division for ~2-3× speedup on cryptographic-size operands
-- **触发条件**：real-world crypto perf needs (RSA-2048 ~ 1ms target)
-- **当前 workaround**：v0 correctness is fine; speed is the issue
+`ModPow` now auto-routes to Montgomery REDC when `modulus._mag[0] & 1 ==
+1` (i.e. odd modulus — the cryptographic-common case). Even-modulus
+callers continue on the legacy square-and-multiply + per-step divmod
+path (Montgomery requires `gcd(R, n) = 1` which holds iff n is odd).
+
+Algorithm: precompute `n' = -n[0]^(-1) mod 2^31` (via 5-iteration
+Newton inverse-mod-power-of-two) + `R^2 mod n` (via one regular Mod).
+Convert base to Montgomery form once, iterate square-and-multiply
+using `MontMul` (which replaces per-step `Multiply().Mod()` divmod
+with a CIOS-style fused multiply-and-reduce), convert result out.
+
+Replaces the per-step O(n*m) `_magDivModGeneral` call with a single
+O(n²) MontMul, eliminating the most expensive operation in
+RSA / X25519 / Ed25519 / ECDSA hot paths. Caller-side API unchanged;
+all existing ModPow callers benefit transparently.
+
+All 14 BigInt + 1 RSA + 1 X25519 + 1 Ed25519 + 2 ECDSA test files
+GREEN with the new path (cross-validated against the old code's
+output via the existing test vectors).
 
 ### ~~`bigint-future-modpow-negexp`~~ — **✅ 已落地 2026-05-25 (add-bigint-modpow-negexp)**
 
