@@ -227,8 +227,10 @@ mod tests {
     }
 
     #[test]
-    fn from_getter_path_splits_colon() {
-        let cfg = RuntimeConfig::from_getter(fake_env(&[("Z42_PATH", "/a:/b:/c")]));
+    fn from_getter_path_splits_on_platform_separator() {
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        let input = format!("/a{sep}/b{sep}/c");
+        let cfg = RuntimeConfig::from_getter(fake_env(&[("Z42_PATH", &input)]));
         assert_eq!(
             cfg.module_path,
             vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]
@@ -237,7 +239,9 @@ mod tests {
 
     #[test]
     fn from_getter_path_skips_empty_segments() {
-        let cfg = RuntimeConfig::from_getter(fake_env(&[("Z42_PATH", "/a::/b: : /c")]));
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        let input = format!("/a{sep}{sep}/b{sep} {sep} /c");
+        let cfg = RuntimeConfig::from_getter(fake_env(&[("Z42_PATH", &input)]));
         assert_eq!(
             cfg.module_path,
             vec![PathBuf::from("/a"), PathBuf::from("/b"), PathBuf::from("/c")]
