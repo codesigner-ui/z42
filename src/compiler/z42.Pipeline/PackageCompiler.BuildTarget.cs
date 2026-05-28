@@ -528,43 +528,77 @@ public static partial class PackageCompiler
             preludePackages: PreludePackages.Names);
     }
 
-    /// Emit warnings for `using` declarations that cannot be resolved.
-    ///
-    /// fix-warn-unresolved-intrapkg (2026-05-28): when the current package
-    /// declares multiple namespaces (e.g. z42.net hosts Std.Net.Sockets +
-    /// Std.Net.Http + Std.Net.WebSockets), a `using` that references a
-    /// SIBLING namespace inside the same package is legitimate — symbols
-    /// resolve via intra-package fall-through. Skip the warning for those.
-    /// Previously we only checked the external `nsMap`, which caused a
-    /// torrent of spurious warnings on z42.net + z42.compression.
+    /// Two-kind warning for `using` declarations:
+    ///   - UNRESOLVED: namespace not provided by any library (and not
+    ///     declared intra-package). Likely a typo or missing dep.
+    ///   - UNUSED:     namespace IS resolved (external) but no symbol from
+    ///     it was actually referenced. Likely a dead import.
+    /// Intra-package usings are always exempt — they're load-bearing for
+    /// the name-only method resolver (see HttpServer.Stop comment).
     static void WarnUnresolvedUsings(
         IReadOnlyList<CompiledUnit>  units,
         Dictionary<string, string>   nsMap)
     {
-        foreach (var (unit, usingNs) in FindUnresolvedUsings(units, nsMap))
+        foreach (var diag in FindUsingDiagnostics(units, nsMap))
+        {
+            string kind = diag.Kind == UsingDiagKind.Unresolved
+                        ? "namespace not found in any library"
+                        : "imported namespace is not used";
             Console.Error.WriteLine(
-                $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
+                $"warning: using '{diag.UsingNs}' in {Path.GetFileName(diag.Unit.SourceFile)}: {kind}");
+        }
     }
 
+    internal enum UsingDiagKind { Unresolved, Unused }
+
+    internal readonly record struct UsingDiag(CompiledUnit Unit, string UsingNs, UsingDiagKind Kind);
+
     /// Decision-logic half of `WarnUnresolvedUsings`, exposed for unit testing.
-    /// Yields each (unit, usingNs) pair that the warner would emit, after
-    /// filtering out intra-package self-references.
-    internal static IEnumerable<(CompiledUnit Unit, string UsingNs)> FindUnresolvedUsings(
+    /// fix-warn-unresolved-intrapkg (2026-05-28) + fix-warn-unused-import
+    /// (2026-05-28).
+    ///
+    /// Rules:
+    ///   - intra-package using   → no warning
+    ///   - external + in nsMap + used → no warning
+    ///   - external + in nsMap + NOT in UsedDepNamespaces → Unused
+    ///   - external + NOT in nsMap → Unresolved
+    internal static IEnumerable<UsingDiag> FindUsingDiagnostics(
         IReadOnlyList<CompiledUnit>          units,
         IReadOnlyDictionary<string, string>  nsMap)
     {
-        // Build the intra-package namespace set from the units being compiled.
-        // A using that hits any of these is an in-package self-reference
-        // (legitimate, no warning).
         var intraPkgNs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var unit in units)
             intraPkgNs.Add(unit.Namespace);
 
-        if (nsMap.Count == 0 && intraPkgNs.Count == 0) yield break;
         foreach (var unit in units)
+        {
+            // Per-unit set of usings that actually contributed symbols.
+            var usedNs = new HashSet<string>(unit.UsedDepNamespaces, StringComparer.Ordinal);
+            // The unit's own namespace is implicitly "used" (members reference
+            // each other without needing a `using` declaration).
+            usedNs.Add(unit.Namespace);
             foreach (var usingNs in unit.Usings)
-                if (!nsMap.ContainsKey(usingNs) && !intraPkgNs.Contains(usingNs))
-                    yield return (unit, usingNs);
+            {
+                if (intraPkgNs.Contains(usingNs)) continue;   // always OK
+                if (!nsMap.ContainsKey(usingNs))
+                {
+                    yield return new UsingDiag(unit, usingNs, UsingDiagKind.Unresolved);
+                    continue;
+                }
+                if (!usedNs.Contains(usingNs))
+                    yield return new UsingDiag(unit, usingNs, UsingDiagKind.Unused);
+            }
+        }
+    }
+
+    /// Back-compat alias for tests that only care about unresolved (not unused).
+    internal static IEnumerable<(CompiledUnit Unit, string UsingNs)> FindUnresolvedUsings(
+        IReadOnlyList<CompiledUnit>          units,
+        IReadOnlyDictionary<string, string>  nsMap)
+    {
+        foreach (var d in FindUsingDiagnostics(units, nsMap))
+            if (d.Kind == UsingDiagKind.Unresolved)
+                yield return (d.Unit, d.UsingNs);
     }
 
     /// Build the dependency list (file → namespaces) from resolved usings and dependency calls.

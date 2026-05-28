@@ -22,6 +22,17 @@ public class WarnUnresolvedUsingsTests
             Usings:            [.. usings],
             UsedDepNamespaces: []);
 
+    static CompiledUnit MakeUnitWithUsage(
+        string sourceFile, string ns, string[] usings, string[] usedDepNs) =>
+        new CompiledUnit(
+            SourceFile:        sourceFile,
+            Namespace:         ns,
+            SourceHash:        "stub",
+            Exports:           [],
+            Module:            new IrModule(sourceFile, [], [], []),
+            Usings:            [.. usings],
+            UsedDepNamespaces: [.. usedDepNs]);
+
     [Fact]
     public void UsingExternalNamespace_ResolvedViaNsMap_NoWarning()
     {
@@ -111,5 +122,97 @@ public class WarnUnresolvedUsingsTests
     {
         PackageCompiler.FindUnresolvedUsings([], new Dictionary<string, string>())
             .Should().BeEmpty();
+    }
+
+    // ── unused-import diagnostic (fix-warn-unused-import) ───────────────────
+
+    /// External `using` that's resolved AND used by codegen → no diagnostic.
+    [Fact]
+    public void ExternalUsing_Resolved_AndUsed_NoDiagnostic()
+    {
+        var unit = MakeUnitWithUsage(
+            "Foo.z42", "Std.MyApp",
+            usings:   new[] { "Std.Encoding" },
+            usedDepNs:new[] { "Std.Encoding" });
+        var nsMap = new Dictionary<string, string> { ["Std.Encoding"] = "z42.encoding.zpkg" };
+
+        PackageCompiler.FindUsingDiagnostics([unit], nsMap).Should().BeEmpty();
+    }
+
+    /// External `using` that's resolved but NOT used by codegen → Unused.
+    [Fact]
+    public void ExternalUsing_Resolved_NotUsed_EmitsUnused()
+    {
+        var unit = MakeUnitWithUsage(
+            "Foo.z42", "Std.MyApp",
+            usings:   new[] { "Std.Encoding" },
+            usedDepNs:Array.Empty<string>());
+        var nsMap = new Dictionary<string, string> { ["Std.Encoding"] = "z42.encoding.zpkg" };
+
+        var diags = PackageCompiler.FindUsingDiagnostics([unit], nsMap).ToList();
+        diags.Should().HaveCount(1);
+        diags[0].Kind.Should().Be(PackageCompiler.UsingDiagKind.Unused);
+        diags[0].UsingNs.Should().Be("Std.Encoding");
+    }
+
+    /// Mixed: one used + one unused + one unresolved → 2 distinct diagnostics.
+    [Fact]
+    public void Mixed_UsedUnusedUnresolved_EmitsTwoDistinct()
+    {
+        var unit = MakeUnitWithUsage(
+            "Foo.z42", "Std.MyApp",
+            usings:   new[] { "Std.Encoding", "Std.Random", "Std.Bogus" },
+            usedDepNs:new[] { "Std.Encoding" });
+        var nsMap = new Dictionary<string, string>
+        {
+            ["Std.Encoding"] = "z42.encoding.zpkg",
+            ["Std.Random"]   = "z42.random.zpkg",
+        };
+
+        var diags = PackageCompiler.FindUsingDiagnostics([unit], nsMap).ToList();
+        diags.Should().HaveCount(2);
+        diags.Single(d => d.UsingNs == "Std.Random").Kind
+            .Should().Be(PackageCompiler.UsingDiagKind.Unused);
+        diags.Single(d => d.UsingNs == "Std.Bogus").Kind
+            .Should().Be(PackageCompiler.UsingDiagKind.Unresolved);
+    }
+
+    /// Intra-package using exempt from BOTH unresolved and unused checks.
+    /// Verifies the HttpServer pattern: HttpClient does `using Std.Net.Sockets`
+    /// for TcpListener type-token threading even though codegen-level symbol
+    /// tracking might not register it as "used" in the dep-namespace sense.
+    [Fact]
+    public void IntraPackageUsing_NeverEmits_EvenIfUnusedByCodegen()
+    {
+        var sockets = MakeUnit("TcpClient.z42", "Std.Net.Sockets");
+        var http    = MakeUnitWithUsage(
+            "HttpClient.z42", "Std.Net.Http",
+            usings:   new[] { "Std.Net.Sockets" },
+            usedDepNs:Array.Empty<string>());   // codegen didn't mark it used
+
+        PackageCompiler.FindUsingDiagnostics([sockets, http], new Dictionary<string, string>())
+            .Should().BeEmpty();
+    }
+
+    /// Real-world unused-import-only-warning case: HKDF-SHA-1 example —
+    /// imports Std.Encoding for Hex helpers but the specific file under
+    /// review never calls them.
+    [Fact]
+    public void MultipleUnits_EachCheckedIndependently()
+    {
+        var usingHex  = MakeUnitWithUsage(
+            "Hkdf.z42", "Std.Crypto",
+            usings:   new[] { "Std.Encoding" },
+            usedDepNs:new[] { "Std.Encoding" });
+        var deadHex   = MakeUnitWithUsage(
+            "Aes.z42", "Std.Crypto",
+            usings:   new[] { "Std.Encoding" },
+            usedDepNs:Array.Empty<string>());
+        var nsMap = new Dictionary<string, string> { ["Std.Encoding"] = "z42.encoding.zpkg" };
+
+        var diags = PackageCompiler.FindUsingDiagnostics([usingHex, deadHex], nsMap).ToList();
+        diags.Should().HaveCount(1);
+        diags[0].Unit.SourceFile.Should().Be("Aes.z42");
+        diags[0].Kind.Should().Be(PackageCompiler.UsingDiagKind.Unused);
     }
 }
