@@ -576,6 +576,100 @@ jit/helpers/
 
 ---
 
+## JIT type specialization（2026-05-28 jit-type-specialization C2 P1）
+
+位置：`src/runtime/src/jit/translate.rs` 的 `emit_i64_binop` / `emit_i64_cmp` /
+`emit_bool_binop` / `emit_bool_not` / `emit_const_*` + `is_*_typed` 谓词。
+依赖：`Function.reg_types: Box<[IrType]>`（来自 zbc REGT section）+
+`Value` enum 锁布局（`#[repr(C, u8)]`，24 B，pinned by
+`metadata::types_tests::value_*_payload_at_offset_8`）。
+
+**问题**: JIT-compiled 代码每条算术 / 比较 / 逻辑 op 都 call 一个
+`extern "C"` helper（`jit_add` / `jit_eq` / ...）。helper 内部走
+`match (Value::I64(x), Value::I64(y)) => ...` 模式匹配 + 回退 clone
++ 类型错误异常。在已知静态类型的热路径上这层 dispatch 是纯开销。
+
+**策略**: zbc 携带每寄存器的静态 `IrType`（C2 P0：新增 REGT section，
+zbc 1.7→1.8 / zpkg 0.8→0.9）。translate.rs 在 emit 每条 op 前查
+`reg_types[dst]`、`reg_types[a]`、`reg_types[b]`；当三者都是 I64
+（算术）/ I64（比较输入）/ Bool（逻辑）时，直接 emit 原生 Cranelift
+指令 + 对 `frame.regs[idx]` 的原始 load/store，跳过 helper call ABI
++ variant match + clone。其它情况落回原有 helper。
+
+**Decision tree**（每条 op 重复一次该判断）：
+
+```
+                 ┌──────────────────────────────────────────────┐
+                 │ Instruction::<arith/cmp/logical>              │
+                 └──────────────┬───────────────────────────────┘
+                                ▼
+                  ┌─────────────────────────────┐
+                  │ is_X_typed(z42_func, regs)? │
+                  └────────┬────────────────────┘
+                  ┌────────┴────────┐
+              YES │                 │ NO（含 Unknown / Str / mixed）
+                  ▼                 ▼
+        ┌──────────────────┐  ┌────────────────────┐
+        │ raw load i64/i8  │  │ call hr_<op>       │
+        │ from regs_base + │  │ (existing slow     │
+        │   idx * 24 + 8   │  │  path; helper does │
+        │ native op        │  │  match + clone +   │
+        │ raw store TAG +  │  │  exception)        │
+        │   payload        │  │                    │
+        └──────────────────┘  └────────────────────┘
+```
+
+**Raw memory access invariants**:
+
+- `frame.regs` 是 `Vec<Value>`；data pointer 在 JitFrame 构造时分配
+  并稳定到函数结束（`take_pooled_regs(max_reg + 1)` 不会再 grow）。
+  `jit_regs_ptr(frame)` helper 在 translate 入口调一次，缓存 SSA
+  `regs_base`。
+- Slot 地址 `= regs_base + idx * 24`（VALUE_STRIDE = `size_of::<Value>()`，
+  pinned by `value_size_observed` test）。
+- 写时只写 1 B discriminant + 8 B payload；不调 `drop` 因为前任 slot
+  值在 `reg_types[dst]` 静态类型下必是 Null（首次写）或同类型 primitive
+  （I64 / Bool / F64 都无 Drop）。
+- 读时取 payload @ offset 8（VPALUE/I64/F64/Bool 用同一 offset；u8
+  discriminant 不参与计算）。
+
+**为什么不全程 inline**: helper 仍负责（且会持续负责）：
+1. Div / Rem — i64 /0 必须抛 catchable z42 exception，原生 sdiv 触
+   SIGFPE 不行；
+2. Str concat — 需要 `Arc::clone` + alloc，非 inline-able；
+3. Mixed / Unknown 类型 — `Value::Str + i64`、`Value::Object.ToString` 等
+   user-visible coercion 路径；
+4. Object / Array / Closure 路径 — heap allocation / vcall dispatch /
+   IC slot 管理，complexity 远超 inline 阈值。
+
+**性能验证**: `bench/scenarios/04_c2_p1_arith_loop.z42` 跑 10M-iter
+SumSquares loop（每 iter 一次 mul + 两次 add + 一次 lt + 一次 brif），
+M-series macOS 5-run 平均：
+
+| 阶段 | 时间 | 相对 baseline |
+|------|------|--------------|
+| pre-P1 (all helpers) | ~456 ms | 1.00× |
+| arith + cmp 内联 (`98426e40` / `fc3936f0`) | ~392 ms | 1.16× |
+| + BrCond i8 load (`3727e469`) | ~302 ms | **1.51×** |
+
+低于 spec 2× 上限的主要原因：`jit_check_safepoint` 仍是 helper call
+（在每个 backward branch 上 GC cooperation）。Inline 该 atomic fast
+path 是后续 spec 的事，~1-2 day 工作量推到 ~1.8×。
+
+**与 CoreCLR / Java JIT 对照**: 这是 monomorphic specialization 的
+基础形态——所有跨类型 op 都退到 helper，所有静态已知类型 op 都 inline。
+CoreCLR 在此之上还有：tier-1 type-feedback 收集 + tier-2 多型/单型
+IC + 内联 String.Concat + escape analysis 删 box——都是 z42 当前规模
+不需要的。我们的 reg_types 已经是"全局 monomorphic"，覆盖率约 80-
+90%（per spot-check on stdlib zbc），剩余在 generic / `default(T)` /
+变量重命名等场景。
+
+**Out of band**: `Value::I64` 内联 fast path 仍保留在 `jit_add` 等
+helper 内（C2 P2 task 2.1 评估后决定不删）——因为 helper 仍被 ~10%
+mixed-type sites 调用，删除会让那些 sites 慢一档。
+
+---
+
 ## Method token system（2026-05-08 introduce-method-token Phase 1）
 
 位置：`src/runtime/src/metadata/tokens.rs` + `metadata/resolver.rs` + `vm_context.rs::resolve_static_field_id` + 各 `interp/exec_*.rs` 热路径
