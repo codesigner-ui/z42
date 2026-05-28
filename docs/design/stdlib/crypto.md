@@ -125,6 +125,15 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - Verified against RFC 7748 §5.2 single-step vectors + §6.1 Alice/Bob ECDH (both sides converge to same shared secret)
   - Performance note: pure-script BigInt-backed ~150 ms per ScalarMult; adequate for one-handshake-per-connection use; bulk ECDH wants cdylib
 
+- BLAKE3 — `Std.Crypto.Blake3` (add-blake3, 2026-05-28)
+  - `Hash(byte[]) -> byte[32]` (256-bit default), `Hash256` alias, `HashString` / `HashHex` / `HashStringHex` convenience
+  - `HashLen(byte[] data, int outLen) -> byte[outLen]` — XOF mode for arbitrary output length
+  - Merkle-tree structure: 1024-byte chunks → 32-byte CV per chunk → binary tree → ROOT compression
+  - Compression: 32-bit words, 7 rounds (BLAKE2s-style G mixer, different SIGMA), counter / flags injection
+  - Use cases: Cargo crate verification (since 2021), IPFS, age file format integrity, modern hash-tree protocols
+  - Verified against canonical `b3sum` vectors for "" / "abc" / "a" / "The quick brown fox..." inputs; structural tests cover multi-block / multi-chunk tree / XOF squeeze
+  - **Out of scope (v0)**: keyed-hash mode, `DeriveKey(context, key_material, len)`, streaming/incremental hash, parallel chunk hashing (would need worker pool)
+
 - BLAKE2s (RFC 7693 §B) — `Std.Crypto.Blake2s` (add-blake2s, 2026-05-28)
   - `Hash(byte[]) -> byte[32]` — 256-bit default
   - `HashLen(byte[] data, byte[] key, int outLen) -> byte[outLen]` — variable output 1..32 + optional key 0..32 bytes

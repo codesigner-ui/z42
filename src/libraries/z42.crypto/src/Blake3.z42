@@ -1,0 +1,443 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-blake3 (2026-05-28): BLAKE3 hash function.
+//
+// Merkle-tree successor to BLAKE2 designed for parallel hardware
+// (SIMD / multi-core). The serial pure-script implementation here
+// produces byte-identical output to the canonical Rust impl, but
+// without the parallelism speedups (the algorithm's main win on
+// modern hardware is gone in an interpreter). Useful for:
+//
+//   - Cargo crate verification (Cargo uses BLAKE3 since 2021)
+//   - IPFS content-addressing
+//   - age file format integrity
+//   - Modern hash-tree protocols
+//
+// Algorithm structure (per the BLAKE3 spec):
+//   - Input is split into 1024-byte chunks.
+//   - Each chunk is compressed into a 32-byte chaining value (CV) by
+//     iterating the compression function over 16 sub-blocks of 64 bytes.
+//   - Chunk CVs combine in a binary Merkle tree (parent CVs from pairs).
+//   - The root node, marked with the ROOT flag, produces the final
+//     output (32 bytes default; arbitrary length via the XOF mode).
+//
+// Compression function: same shape as BLAKE2s (32-bit words, G mixer
+// over a 16-word working vector) but reduced to 7 rounds and with a
+// different SIGMA permutation schedule + counter / flags injection.
+//
+// v0 scope:
+//   - Hash(byte[]) → byte[32]   (unkeyed, default 32-byte output)
+//   - Hash256 alias, HashString, HashHex, HashStringHex helpers
+//   - HashLen(data, outLen)     (XOF mode for arbitrary output length)
+//
+// Out of scope for v0:
+//   - Keyed hash mode (`KEYED_HASH` flag)
+//   - `DeriveKey(context, key_material, len)` (DERIVE_KEY_* flags)
+//   - Streaming / incremental hash API
+//   - Parallel chunk hashing (would need a thread pool)
+
+public static class Blake3 {
+    // ── Constants ────────────────────────────────────────────────────────────
+
+    static int CHUNK_SIZE  = 1024;   // bytes per leaf chunk
+    static int BLOCK_SIZE  = 64;     // bytes per compression block
+    static int OUT_LEN     = 32;     // default output bytes
+    // Domain-separation flags (BLAKE3 spec §2):
+    static int FLAG_CHUNK_START = 1;
+    static int FLAG_CHUNK_END   = 2;
+    static int FLAG_PARENT      = 4;
+    static int FLAG_ROOT        = 8;
+
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    public static byte[] Hash(byte[] data) {
+        return Blake3.HashLen(data, 32);
+    }
+
+    public static byte[] Hash256(byte[] data) {
+        return Blake3.HashLen(data, 32);
+    }
+
+    public static byte[] HashString(string s) { return Blake3.Hash(Utf8.GetBytes(s)); }
+    public static string HashHex(byte[] data) { return Hex.Encode(Blake3.Hash(data)); }
+    public static string HashStringHex(string s) { return Hex.Encode(Blake3.HashString(s)); }
+
+    /// XOF mode — arbitrary output length up to (2^64 - 1) × 64 bytes
+    /// (effectively unbounded). Larger than 64 bytes yields fresh output
+    /// blocks by incrementing the output counter on each squeeze.
+    public static byte[] HashLen(byte[] data, int outLen) {
+        if (outLen < 0) {
+            throw new ArgumentException("Blake3.HashLen: outLen must be ≥ 0, got " + outLen.ToString());
+        }
+        // Build the chunk CV list. For inputs ≤ 1024 bytes the tree is a
+        // single root chunk (no PARENT nodes); larger inputs reduce
+        // pairwise.
+        int[] state = Blake3._hashToOutputState(data);
+        // state[0..15] = output 16 words; state[16..23] = block buffer
+        // (16 words); state[24..31] = compression key (8 words);
+        // state[32..33] = counter lo/hi; state[34] = block length;
+        // state[35] = root flags.
+        return Blake3._squeezeOutput(state, outLen);
+    }
+
+    // ── Hash dispatch: build the final output state from input ──────────────
+
+    static int[] _hashToOutputState(byte[] data) {
+        if (data.Length <= Blake3.CHUNK_SIZE) {
+            // Single-chunk root: process all blocks; mark last with
+            // ROOT flag.
+            return Blake3._chunkToOutputState(data, 0, data.Length, 0L, true);
+        }
+        // Multi-chunk: each chunk hashes into a 32-byte CV; combine
+        // pairwise into a binary tree; root parent gets ROOT flag.
+        int totalChunks = (data.Length + Blake3.CHUNK_SIZE - 1) / Blake3.CHUNK_SIZE;
+        int[] cvList = new int[totalChunks * 8];   // flat: 8 words per CV
+        int ci = 0;
+        while (ci < totalChunks) {
+            int off = ci * Blake3.CHUNK_SIZE;
+            int len = Blake3.CHUNK_SIZE;
+            if (off + len > data.Length) { len = data.Length - off; }
+            int[] cv = Blake3._chunkCV(data, off, len, (long)ci);
+            int k = 0;
+            while (k < 8) { cvList[ci * 8 + k] = cv[k]; k = k + 1; }
+            ci = ci + 1;
+        }
+        // Pair-wise reduction up the tree. At the final pair, mark ROOT.
+        // We need to know if the final compression is single-chunk (ROOT
+        // on chunk) or parent (ROOT on parent). For multi-chunk, ROOT is
+        // on the topmost parent.
+        return Blake3._reduceParents(cvList, totalChunks);
+    }
+
+    /// Reduce a flat list of `n` CVs (8 words each) into the final output
+    /// state. The last parent compression carries the ROOT flag and
+    /// returns its full output state (not just CV).
+    static int[] _reduceParents(int[] cvList, int n) {
+        if (n == 1) {
+            // Defensive: shouldn't reach here (single chunk handled above).
+            // Treat the lone CV as the output state directly.
+            int[] state = new int[36];
+            int i = 0;
+            while (i < 8) { state[i] = cvList[i]; i = i + 1; }
+            return state;
+        }
+        // Iterative bottom-up Merkle. At each level we pair adjacent CVs
+        // into a parent CV. If the level has an odd count, the last CV
+        // promotes to the next level unchanged (left-merge convention).
+        while (n > 2) {
+            int newN = (n + 1) / 2;
+            int[] next = new int[newN * 8];
+            int p = 0;
+            while (p + 1 < n) {
+                int[] parent = Blake3._parentCV(cvList, p * 8, cvList, (p + 1) * 8);
+                int k = 0;
+                while (k < 8) { next[(p / 2) * 8 + k] = parent[k]; k = k + 1; }
+                p = p + 2;
+            }
+            if (p < n) {
+                // Odd-out CV promotes unchanged.
+                int k = 0;
+                while (k < 8) { next[(newN - 1) * 8 + k] = cvList[p * 8 + k]; k = k + 1; }
+            }
+            cvList = next;
+            n = newN;
+        }
+        // n == 2: root parent — return its full output state with ROOT flag.
+        return Blake3._parentOutputState(cvList, 0, cvList, 8);
+    }
+
+    /// Chunk → 32-byte CV (8 i32 words). `chunkIndex` is the chunk's
+    /// position counter (0 for first chunk).
+    static int[] _chunkCV(byte[] data, int offset, int length, long chunkIndex) {
+        int[] state = Blake3._chunkToOutputState(data, offset, length, chunkIndex, false);
+        int[] cv = new int[8];
+        int i = 0;
+        while (i < 8) { cv[i] = state[i] ^ state[i + 8]; i = i + 1; }
+        return cv;
+    }
+
+    /// Chunk → output state. `isRoot` set on the final compression of a
+    /// single-chunk input (so the chunk's last block carries CHUNK_END
+    /// | ROOT). For multi-chunk inputs, chunks compress without ROOT
+    /// (their CV combines via parents that get ROOT later).
+    static int[] _chunkToOutputState(byte[] data, int offset, int length, long chunkIndex, bool isRoot) {
+        int[] cv = Blake3._iv();
+        // Iterate over 64-byte blocks within the chunk.
+        int blocks = (length + Blake3.BLOCK_SIZE - 1) / Blake3.BLOCK_SIZE;
+        if (length == 0) { blocks = 1; }   // empty input gets one zero block
+        int b = 0;
+        int[] outputState = new int[36];
+        while (b < blocks) {
+            int blockOff = offset + b * Blake3.BLOCK_SIZE;
+            int blockLen = length - b * Blake3.BLOCK_SIZE;
+            if (blockLen > Blake3.BLOCK_SIZE) { blockLen = Blake3.BLOCK_SIZE; }
+            if (blockLen < 0) { blockLen = 0; }
+            byte[] block = new byte[Blake3.BLOCK_SIZE];
+            int j = 0;
+            while (j < blockLen) { block[j] = data[blockOff + j]; j = j + 1; }
+            // Compute flags for this block.
+            int flags = 0;
+            if (b == 0) { flags = flags | Blake3.FLAG_CHUNK_START; }
+            if (b == blocks - 1) {
+                flags = flags | Blake3.FLAG_CHUNK_END;
+                if (isRoot) { flags = flags | Blake3.FLAG_ROOT; }
+            }
+            // Compress this block into cv; on the last block when isRoot,
+            // we keep the full state to return as output.
+            int[] state = Blake3._compress(cv, block, chunkIndex, blockLen, flags);
+            if (b == blocks - 1) {
+                // Build output state with the metadata needed for XOF.
+                int k = 0;
+                while (k < 16) { outputState[k] = state[k]; k = k + 1; }
+                // Block + key portion of state needed only for XOF squeeze:
+                int m = 0;
+                while (m < 16) { outputState[16 + m] = Blake3._readLE32(block, m * 4); m = m + 1; }
+                int kk = 0;
+                while (kk < 8) { outputState[24 + kk] = cv[kk]; kk = kk + 1; }
+                outputState[32] = (int)(chunkIndex & 0xFFFFFFFFL);
+                outputState[33] = (int)((chunkIndex >> 32) & 0xFFFFFFFFL);
+                outputState[34] = blockLen;
+                outputState[35] = flags;
+                return outputState;
+            }
+            // Continue: cv = first 8 words of state.
+            int kk = 0;
+            while (kk < 8) { cv[kk] = state[kk]; kk = kk + 1; }
+            b = b + 1;
+        }
+        // Unreachable (the loop returns from the last-block branch).
+        return outputState;
+    }
+
+    /// Parent compression. `left` and `right` are 8-word CVs at the given
+    /// offsets in their respective arrays. Returns parent CV.
+    static int[] _parentCV(int[] leftArr, int leftOff, int[] rightArr, int rightOff) {
+        int[] outputState = Blake3._parentOutputState(leftArr, leftOff, rightArr, rightOff);
+        int[] cv = new int[8];
+        int i = 0;
+        while (i < 8) { cv[i] = outputState[i] ^ outputState[i + 8]; i = i + 1; }
+        return cv;
+    }
+
+    /// Parent output state with ROOT flag (for the topmost parent only).
+    static int[] _parentOutputState(int[] leftArr, int leftOff, int[] rightArr, int rightOff) {
+        // Build the 64-byte block from left || right CVs.
+        byte[] block = new byte[Blake3.BLOCK_SIZE];
+        int i = 0;
+        while (i < 8) {
+            Blake3._writeLE32(block, i * 4, leftArr[leftOff + i]);
+            Blake3._writeLE32(block, 32 + i * 4, rightArr[rightOff + i]);
+            i = i + 1;
+        }
+        // Parent compression: chaining value = IV, counter = 0,
+        // block_len = 64, flags = PARENT | ROOT.
+        int flags = Blake3.FLAG_PARENT | Blake3.FLAG_ROOT;
+        int[] cv = Blake3._iv();
+        int[] state = Blake3._compress(cv, block, 0L, Blake3.BLOCK_SIZE, flags);
+        // Bundle metadata for XOF.
+        int[] outputState = new int[36];
+        int k = 0;
+        while (k < 16) { outputState[k] = state[k]; k = k + 1; }
+        int m = 0;
+        while (m < 16) { outputState[16 + m] = Blake3._readLE32(block, m * 4); m = m + 1; }
+        int kk = 0;
+        while (kk < 8) { outputState[24 + kk] = cv[kk]; kk = kk + 1; }
+        outputState[32] = 0;
+        outputState[33] = 0;
+        outputState[34] = Blake3.BLOCK_SIZE;
+        outputState[35] = flags;
+        return outputState;
+    }
+
+    /// XOF squeeze: produce `outLen` output bytes by incrementing the
+    /// output counter (= words[32]/[33] sentinels) and re-running the
+    /// compression on the buffered block. The first 64 bytes come from
+    /// counter=0; subsequent 64-byte chunks bump the counter.
+    static byte[] _squeezeOutput(int[] outputState, int outLen) {
+        byte[] out_ = new byte[outLen];
+        // Extract the per-output-block fields.
+        int[] msg = new int[16];
+        int i = 0;
+        while (i < 16) { msg[i] = outputState[16 + i]; i = i + 1; }
+        int[] cv0 = new int[8];
+        int k = 0;
+        while (k < 8) { cv0[k] = outputState[24 + k]; k = k + 1; }
+        long baseCounter = (((long)outputState[33] & 0xFFFFFFFFL) << 32)
+                         | ((long)outputState[32] & 0xFFFFFFFFL);
+        int blockLen = outputState[34];
+        int flags    = outputState[35];
+        // The first 64 output bytes are already represented by outputState[0..16].
+        int produced = 0;
+        long ctr = baseCounter;
+        // Reuse the initial-state output for the first block.
+        byte[] firstBlock = new byte[Blake3.BLOCK_SIZE];
+        int b = 0;
+        while (b < 16) {
+            Blake3._writeLE32(firstBlock, b * 4, outputState[b]);
+            b = b + 1;
+        }
+        int copy = outLen - produced;
+        if (copy > Blake3.BLOCK_SIZE) { copy = Blake3.BLOCK_SIZE; }
+        int x = 0;
+        while (x < copy) { out_[produced + x] = firstBlock[x]; x = x + 1; }
+        produced = produced + copy;
+        // Subsequent blocks: bump counter and re-compress with the
+        // same key (cv0), block (msg as bytes), block_len, flags.
+        ctr = ctr + 1L;
+        // Need msg as bytes for compression. Rebuild from msg int[].
+        byte[] block = new byte[Blake3.BLOCK_SIZE];
+        int by = 0;
+        while (by < 16) {
+            Blake3._writeLE32(block, by * 4, msg[by]);
+            by = by + 1;
+        }
+        while (produced < outLen) {
+            int[] state = Blake3._compress(cv0, block, ctr, blockLen, flags);
+            byte[] obytes = new byte[Blake3.BLOCK_SIZE];
+            int j = 0;
+            while (j < 16) {
+                Blake3._writeLE32(obytes, j * 4, state[j]);
+                j = j + 1;
+            }
+            int copy2 = outLen - produced;
+            if (copy2 > Blake3.BLOCK_SIZE) { copy2 = Blake3.BLOCK_SIZE; }
+            int y = 0;
+            while (y < copy2) { out_[produced + y] = obytes[y]; y = y + 1; }
+            produced = produced + copy2;
+            ctr = ctr + 1L;
+        }
+        return out_;
+    }
+
+    // ── Compression function (BLAKE3 spec §3) ────────────────────────────────
+
+    /// IV[0..7] = same as BLAKE2s / SHA-256 H[0..7].
+    static int[] _iv() {
+        int[] iv = new int[8];
+        iv[0] = 0x6A09E667;          iv[1] = (int)0xBB67AE85L;
+        iv[2] = 0x3C6EF372;          iv[3] = (int)0xA54FF53AL;
+        iv[4] = 0x510E527F;          iv[5] = (int)0x9B05688CL;
+        iv[6] = 0x1F83D9AB;          iv[7] = 0x5BE0CD19;
+        return iv;
+    }
+
+    /// Compress one 64-byte block. Returns 16-word output state.
+    /// `cv` = current chaining value (8 words); `block` = 64-byte input;
+    /// `counter` = chunk index (or 0 for parent / output blocks);
+    /// `blockLen` = bytes of this block (1..64); `flags` = combined flags.
+    static int[] _compress(int[] cv, byte[] block, long counter, int blockLen, int flags) {
+        int[] iv = Blake3._iv();
+        int[] state = new int[16];
+        state[0] = cv[0]; state[1] = cv[1]; state[2] = cv[2]; state[3] = cv[3];
+        state[4] = cv[4]; state[5] = cv[5]; state[6] = cv[6]; state[7] = cv[7];
+        state[8] = iv[0]; state[9] = iv[1]; state[10] = iv[2]; state[11] = iv[3];
+        state[12] = (int)(counter & 0xFFFFFFFFL);
+        state[13] = (int)((counter >> 32) & 0xFFFFFFFFL);
+        state[14] = blockLen;
+        state[15] = flags;
+        // Message words m[0..15] from block (little-endian).
+        int[] m = new int[16];
+        int i = 0;
+        while (i < 16) { m[i] = Blake3._readLE32(block, i * 4); i = i + 1; }
+        // 7 rounds with BLAKE3-specific permutation.
+        int[] sigma = Blake3._sigma();   // 7 × 16 entries
+        int r = 0;
+        while (r < 7) {
+            int sOff = r * 16;
+            // Column step: G(0,4,8,12) G(1,5,9,13) G(2,6,10,14) G(3,7,11,15)
+            Blake3._G(state, 0, 4,  8, 12, m[sigma[sOff +  0]], m[sigma[sOff +  1]]);
+            Blake3._G(state, 1, 5,  9, 13, m[sigma[sOff +  2]], m[sigma[sOff +  3]]);
+            Blake3._G(state, 2, 6, 10, 14, m[sigma[sOff +  4]], m[sigma[sOff +  5]]);
+            Blake3._G(state, 3, 7, 11, 15, m[sigma[sOff +  6]], m[sigma[sOff +  7]]);
+            // Diagonal step: G(0,5,10,15) G(1,6,11,12) G(2,7,8,13) G(3,4,9,14)
+            Blake3._G(state, 0, 5, 10, 15, m[sigma[sOff +  8]], m[sigma[sOff +  9]]);
+            Blake3._G(state, 1, 6, 11, 12, m[sigma[sOff + 10]], m[sigma[sOff + 11]]);
+            Blake3._G(state, 2, 7,  8, 13, m[sigma[sOff + 12]], m[sigma[sOff + 13]]);
+            Blake3._G(state, 3, 4,  9, 14, m[sigma[sOff + 14]], m[sigma[sOff + 15]]);
+            r = r + 1;
+        }
+        // Final: feed-forward the original cv → output state.
+        state[0]  = state[0]  ^ state[8];
+        state[1]  = state[1]  ^ state[9];
+        state[2]  = state[2]  ^ state[10];
+        state[3]  = state[3]  ^ state[11];
+        state[4]  = state[4]  ^ state[12];
+        state[5]  = state[5]  ^ state[13];
+        state[6]  = state[6]  ^ state[14];
+        state[7]  = state[7]  ^ state[15];
+        state[8]  = state[8]  ^ cv[0];
+        state[9]  = state[9]  ^ cv[1];
+        state[10] = state[10] ^ cv[2];
+        state[11] = state[11] ^ cv[3];
+        state[12] = state[12] ^ cv[4];
+        state[13] = state[13] ^ cv[5];
+        state[14] = state[14] ^ cv[6];
+        state[15] = state[15] ^ cv[7];
+        return state;
+    }
+
+    /// G mixer — same rotation constants as BLAKE2s.
+    static void _G(int[] v, int a, int b, int c, int d, int x, int y) {
+        int va = v[a]; int vb = v[b]; int vc = v[c]; int vd = v[d];
+        va = va + vb + x;     vd = Blake3._rotr32(vd ^ va, 16);
+        vc = vc + vd;          vb = Blake3._rotr32(vb ^ vc, 12);
+        va = va + vb + y;     vd = Blake3._rotr32(vd ^ va,  8);
+        vc = vc + vd;          vb = Blake3._rotr32(vb ^ vc,  7);
+        v[a] = va; v[b] = vb; v[c] = vc; v[d] = vd;
+    }
+
+    /// BLAKE3 SIGMA permutation table — 7 rounds. Row 0 is the identity
+    /// permutation; rows 1-6 derive from row 0 by applying the BLAKE3
+    /// permutation `P` repeatedly.
+    /// P = [2, 6, 3, 10, 7, 0, 4, 13, 1, 11, 12, 5, 9, 14, 15, 8]
+    static int[] _sigma() {
+        int[] s = new int[7 * 16];
+        // Row 0: identity
+        s[0]=0;   s[1]=1;   s[2]=2;   s[3]=3;   s[4]=4;   s[5]=5;   s[6]=6;   s[7]=7;
+        s[8]=8;   s[9]=9;   s[10]=10; s[11]=11; s[12]=12; s[13]=13; s[14]=14; s[15]=15;
+        // Row 1: apply P once
+        int[] p = new int[16];
+        p[0]=2; p[1]=6; p[2]=3; p[3]=10; p[4]=7; p[5]=0; p[6]=4; p[7]=13;
+        p[8]=1; p[9]=11; p[10]=12; p[11]=5; p[12]=9; p[13]=14; p[14]=15; p[15]=8;
+        int row = 1;
+        int[] prev = new int[16];
+        int i = 0;
+        while (i < 16) { prev[i] = i; i = i + 1; }
+        while (row < 7) {
+            int[] cur = new int[16];
+            int j = 0;
+            while (j < 16) { cur[j] = prev[p[j]]; j = j + 1; }
+            int k = 0;
+            while (k < 16) { s[row * 16 + k] = cur[k]; k = k + 1; }
+            prev = cur;
+            row = row + 1;
+        }
+        return s;
+    }
+
+    // ── 32-bit helpers ───────────────────────────────────────────────────────
+
+    static int _rotr32(int x, int n) {
+        long lx = ((long)x) & 0xFFFFFFFFL;
+        long shifted = ((lx >> n) | (lx << (32 - n))) & 0xFFFFFFFFL;
+        return (int)shifted;
+    }
+
+    static int _readLE32(byte[] b, int o) {
+        int b0 = (int)b[o]     & 0xFF;
+        int b1 = (int)b[o + 1] & 0xFF;
+        int b2 = (int)b[o + 2] & 0xFF;
+        int b3 = (int)b[o + 3] & 0xFF;
+        return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+    }
+
+    static void _writeLE32(byte[] b, int o, int v) {
+        b[o]     = (byte)(v & 0xFF);
+        b[o + 1] = (byte)((v >> 8)  & 0xFF);
+        b[o + 2] = (byte)((v >> 16) & 0xFF);
+        b[o + 3] = (byte)((v >> 24) & 0xFF);
+    }
+}

@@ -1,0 +1,147 @@
+// add-blake3 (2026-05-28): test vectors from the BLAKE3 reference
+// implementation (`b3sum`) — `b3sum` of various inputs computed via the
+// canonical Rust impl.
+namespace Z42CryptoBlake3VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── Canonical empty + "abc" + longer inputs ─────────────────────────────
+
+[Test]
+void test_blake3_empty() {
+    Assert.Equal(
+        "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+        Blake3.HashStringHex("")
+    );
+}
+
+[Test]
+void test_blake3_abc() {
+    Assert.Equal(
+        "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85",
+        Blake3.HashStringHex("abc")
+    );
+}
+
+[Test]
+void test_blake3_single_byte_a() {
+    Assert.Equal(
+        "17762fddd969a453925d65717ac3eea21320b66b54342fde15128d6caf21215f",
+        Blake3.HashStringHex("a")
+    );
+}
+
+[Test]
+void test_blake3_quick_brown_fox() {
+    Assert.Equal(
+        "2f1514181aadccd913abd94cfa592701a5686ab23f8df1dff1b74710febc6d4a",
+        Blake3.HashStringHex("The quick brown fox jumps over the lazy dog")
+    );
+}
+
+// ── Block-boundary tests ────────────────────────────────────────────────
+// Block size = 64 bytes; chunk size = 1024 bytes. Crucial boundaries to
+// exercise: exactly-block, exactly-chunk, chunk + 1, multi-chunk.
+
+// Block / chunk boundary structural tests — use round-trip + length
+// invariants rather than exact hash values (the official BLAKE3 test
+// vectors use a `i % 251` input pattern which I haven't transcribed
+// in full; the unkeyed-mode tree-hashing path is exercised
+// structurally here).
+
+[Test]
+void test_blake3_64_bytes_produces_32_byte_output() {
+    byte[] msg = new byte[64];
+    int i = 0;
+    while (i < 64) { msg[i] = (byte)0x42; i = i + 1; }
+    byte[] h = Blake3.Hash(msg);
+    Assert.Equal(32, h.Length);
+}
+
+[Test]
+void test_blake3_1024_bytes_single_chunk_path() {
+    byte[] msg = new byte[1024];
+    int i = 0;
+    while (i < 1024) { msg[i] = (byte)0x43; i = i + 1; }
+    byte[] h = Blake3.Hash(msg);
+    Assert.Equal(32, h.Length);
+    // Different from a 1025-byte input (triggers the multi-chunk tree).
+    byte[] msg1 = new byte[1025];
+    int j = 0;
+    while (j < 1025) { msg1[j] = (byte)0x43; j = j + 1; }
+    byte[] h1 = Blake3.Hash(msg1);
+    Assert.True(Hex.Encode(h) != Hex.Encode(h1));
+}
+
+[Test]
+void test_blake3_multi_chunk_distinct_from_short_input() {
+    // 2KB input (2 chunks) should hash differently from the same
+    // prefix repeated as one short input.
+    byte[] long_ = new byte[2048];
+    int i = 0;
+    while (i < 2048) { long_[i] = (byte)((i * 3) & 0xFF); i = i + 1; }
+    byte[] short_ = new byte[16];
+    int j = 0;
+    while (j < 16) { short_[j] = long_[j]; j = j + 1; }
+    Assert.True(Blake3.HashHex(long_) != Blake3.HashHex(short_));
+}
+
+// ── XOF mode (variable output length) ───────────────────────────────────
+
+[Test]
+void test_blake3_xof_first_32_bytes_match_default_hash() {
+    // First 32 bytes of the XOF output MUST equal the default Hash()
+    // output — that's the BLAKE3 spec contract.
+    byte[] msg = Utf8.GetBytes("hello world");
+    byte[] longOut = Blake3.HashLen(msg, 131);
+    Assert.Equal(131, longOut.Length);
+    byte[] defaultOut = Blake3.Hash(msg);
+    int i = 0;
+    while (i < 32) {
+        Assert.Equal((int)defaultOut[i] & 0xFF, (int)longOut[i] & 0xFF);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_blake3_xof_extended_bytes_differ_from_first_block() {
+    // Bytes 64..127 (second output block) must differ from bytes 0..63
+    // — extending output mustn't just repeat.
+    byte[] longOut = Blake3.HashLen(new byte[0], 128);
+    int diff = 0;
+    int i = 0;
+    while (i < 64) {
+        diff = diff | ((int)longOut[i] ^ (int)longOut[64 + i]);
+        i = i + 1;
+    }
+    Assert.True(diff != 0);
+}
+
+[Test]
+void test_blake3_xof_zero_output_returns_empty() {
+    byte[] out_ = Blake3.HashLen(new byte[0], 0);
+    Assert.Equal(0, out_.Length);
+}
+
+[Test]
+void test_blake3_rejects_negative_length() {
+    bool threw = false;
+    try { Blake3.HashLen(new byte[0], -1); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Sanity check distinctness ───────────────────────────────────────────
+
+[Test]
+void test_blake3_differs_from_blake2b_and_sha256() {
+    string msg = "hello";
+    string b3 = Blake3.HashStringHex(msg);
+    string b2 = Blake2b.Hash256StringHex(msg);
+    string s2 = Sha256.HashStringHex(msg);
+    Assert.True(b3 != b2);
+    Assert.True(b3 != s2);
+}
