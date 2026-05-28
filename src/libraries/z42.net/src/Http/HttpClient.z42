@@ -1,8 +1,6 @@
 namespace Std.Net.Http;
 
 using Std;
-using Std.IO;
-using Std.Collections;
 using Std.Compression;
 using Std.Net.Sockets;
 

@@ -2,7 +2,6 @@ namespace Std.Net.Http;
 
 using Std;
 using Std.IO;
-using Std.Text;
 
 // add-z42-net-http-cookies (2026-05-26): cookie storage + Set-Cookie parsing.
 //
