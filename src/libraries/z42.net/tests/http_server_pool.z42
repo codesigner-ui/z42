@@ -1,0 +1,98 @@
+// add-z42-net-http-server-pool (2026-05-28): bounded worker-pool variant
+// of HttpServer.ServeThreaded.
+namespace Z42NetHttpServerPoolTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+[Test]
+void test_serve_with_pool_handles_concurrent_clients() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    // 2 workers + capacity 8 — enough for 4 concurrent clients.
+    Thread srv = Thread.Start(() => {
+        server.ServeWithPool((HttpServerContext ctx) => {
+            ctx.SendText(200, "echo:" + ctx.Request.Url);
+        }, 2, 8);
+    });
+
+    int N = 4;
+    Thread[] clients = new Thread[N];
+    int i = 0;
+    while (i < N) {
+        int idx = i;
+        clients[i] = Thread.Start(() => {
+            var c = new HttpClient();
+            HttpResponse r = c.Get(url + "client" + Int32.ToString(idx));
+            Assert.Equal(200, r.StatusCode);
+            Assert.Equal("echo:/client" + Int32.ToString(idx), r.BodyAsString());
+        });
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < N) {
+        clients[j].Join();
+        j = j + 1;
+    }
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_serve_with_pool_sequential_calls() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/seq";
+
+    Thread srv = Thread.Start(() => {
+        server.ServeWithPool((HttpServerContext ctx) => {
+            ctx.SendText(200, "ok");
+        }, 1, 4);
+    });
+
+    var c = new HttpClient();
+    int i = 0;
+    while (i < 3) {
+        HttpResponse r = c.Get(url);
+        Assert.Equal(200, r.StatusCode);
+        Assert.Equal("ok", r.BodyAsString());
+        i = i + 1;
+    }
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_serve_with_pool_rejects_bad_worker_count() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    bool threw = false;
+    try {
+        server.ServeWithPool((HttpServerContext ctx) => { /* no-op */ }, 0, 4);
+    } catch (ArgumentException) {
+        threw = true;
+    }
+    Assert.True(threw);
+    server.Stop();
+}
+
+[Test]
+void test_serve_with_pool_rejects_bad_queue_size() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    bool threw = false;
+    try {
+        server.ServeWithPool((HttpServerContext ctx) => { /* no-op */ }, 2, 0);
+    } catch (ArgumentException) {
+        threw = true;
+    }
+    Assert.True(threw);
+    server.Stop();
+}

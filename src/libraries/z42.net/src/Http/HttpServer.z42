@@ -175,6 +175,94 @@ public class HttpServer {
         }
     }
 
+    /// add-z42-net-http-server-pool (2026-05-28): accept-loop with
+    /// bounded worker pool. Pre-spawns `workerCount` worker threads
+    /// reading from a bounded `Channel<TcpClient>` of capacity
+    /// `queueSize`. When the queue is full, the accept loop drops the
+    /// connection (immediately Disposes the TcpClient — caller sees a
+    /// connection-reset rather than a delayed processing).
+    ///
+    /// Trade-off vs ServeThreaded:
+    ///   - ServeThreaded: unbounded thread spawn. Spikes can OOM the
+    ///     process (each Thread carries a stack — easy to spawn 10k+
+    ///     during a flood).
+    ///   - ServeWithPool: bounded concurrency, predictable resource
+    ///     footprint. Excess connections are dropped early instead of
+    ///     queuing → backpressure-friendly + DoS-resistant.
+    ///
+    /// `workerCount`: typically 2-4× CPU cores. Each worker is a
+    /// `Std.Threading.Thread` consuming from the channel.
+    /// `queueSize`: how many accepted connections can wait for a free
+    /// worker. Larger absorbs spikes; smaller drops earlier under load.
+    ///
+    /// `Stop()` closes the channel; workers drain pending work then
+    /// exit on the next `Recv` (which throws `ChannelDisconnectedException`).
+    public void ServeWithPool(Action<HttpServerContext> handler, int workerCount, int queueSize) {
+        if (workerCount < 1) {
+            throw new ArgumentException(
+                "HttpServer.ServeWithPool: workerCount must be ≥ 1, got " + workerCount.ToString());
+        }
+        if (queueSize < 1) {
+            throw new ArgumentException(
+                "HttpServer.ServeWithPool: queueSize must be ≥ 1, got " + queueSize.ToString());
+        }
+        var queue = new Channel<TcpClient>(queueSize);
+        // Spawn worker pool. Each worker loops Recv → handle until the
+        // channel is closed (Stop() path).
+        int w = 0;
+        while (w < workerCount) {
+            Thread.Start(() => {
+                while (true) {
+                    TcpClient peer;
+                    try {
+                        peer = queue.Recv();
+                    } catch (ChannelDisconnectedException e) {
+                        return;
+                    } catch (Exception e) {
+                        ConsoleError.WriteLine("HttpServer.ServeWithPool: worker recv error: " + e.Message);
+                        return;
+                    }
+                    if (peer != null) {
+                        this._workerHandle(peer, handler);
+                    }
+                }
+            });
+            w = w + 1;
+        }
+        // Accept loop on the calling thread. Enqueues peers; drops if
+        // the pool is saturated.
+        while (!this._stopped) {
+            if (this._listener == null) {
+                queue.Close();
+                return;
+            }
+            TcpClient peer;
+            try {
+                peer = this._listener.AcceptTcpClient();
+            } catch (SocketClosedException e) {
+                queue.Close();
+                return;
+            } catch (Exception e) {
+                ConsoleError.WriteLine("HttpServer.ServeWithPool: accept error: " + e.Message);
+                continue;
+            }
+            if (this._stopped) {
+                try { peer.Dispose(); } catch (Exception e) { }
+                queue.Close();
+                return;
+            }
+            // TrySend instead of Send so the accept loop doesn't block
+            // when the pool is saturated — drops the connection instead.
+            // The DoS-resistance trade-off rationale lives in the
+            // docstring above.
+            bool enqueued = queue.TrySend(peer);
+            if (!enqueued) {
+                try { peer.Dispose(); } catch (Exception e) { }
+            }
+        }
+        queue.Close();
+    }
+
     /// Signal the serve loop to exit + close the listener. Idempotent.
     /// If `Serve` / `ServeThreaded` is running in another thread, this also
     /// connects a one-shot probe to the listener port so the in-flight
