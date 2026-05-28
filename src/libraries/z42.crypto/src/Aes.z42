@@ -243,16 +243,19 @@ public static class Aes {
 
     /// Encrypt + authenticate. Output = ciphertext (same length as
     /// `plaintext`) || tag (16 bytes appended at the end).
+    ///
+    /// IV length: 12 bytes (96-bit) is the recommended common case and
+    /// gets the fast J0 = IV || 0x00000001 path. Other IV lengths route
+    /// through the GHASH-derived J0 formula per NIST SP 800-38D §7.1 —
+    /// adds 1 extra GHASH chain pass over the IV. IV.Length == 0 is
+    /// rejected (the all-zero J0 case is a security pitfall — same key
+    /// across messages would all use the same counter stream).
     public static byte[] EncryptGcm(byte[] key, byte[] iv, byte[] aad, byte[] plaintext) {
-        if (iv.Length != 12) {
-            throw new ArgumentException(
-                "AES.EncryptGcm: IV must be 12 bytes (96-bit IV path; non-96-bit deferred to aes-future-hw-accel)");
+        if (iv.Length == 0) {
+            throw new ArgumentException("AES.EncryptGcm: IV must be non-empty");
         }
         byte[] h = Aes.EncryptBlock(key, new byte[16]);
-        byte[] j0 = new byte[16];
-        int i = 0;
-        while (i < 12) { j0[i] = iv[i]; i = i + 1; }
-        j0[15] = (byte)1;
+        byte[] j0 = Aes._gcmDeriveJ0(h, iv);
         // Encrypt with counter incremented from J0.
         byte[] counter = new byte[16];
         int k = 0;
@@ -273,9 +276,8 @@ public static class Aes {
     /// `ArgumentException` if the tag mismatches (DO NOT swallow this —
     /// a tag failure means the ciphertext or AAD was tampered with).
     public static byte[] DecryptGcm(byte[] key, byte[] iv, byte[] aad, byte[] ctAndTag) {
-        if (iv.Length != 12) {
-            throw new ArgumentException(
-                "AES.DecryptGcm: IV must be 12 bytes (96-bit IV path)");
+        if (iv.Length == 0) {
+            throw new ArgumentException("AES.DecryptGcm: IV must be non-empty");
         }
         if (ctAndTag.Length < 16) {
             throw new ArgumentException("AES.DecryptGcm: input shorter than 16-byte tag");
@@ -289,10 +291,7 @@ public static class Aes {
         while (j < 16) { expected[j] = ctAndTag[ctLen + j]; j = j + 1; }
 
         byte[] h = Aes.EncryptBlock(key, new byte[16]);
-        byte[] j0 = new byte[16];
-        int k = 0;
-        while (k < 12) { j0[k] = iv[k]; k = k + 1; }
-        j0[15] = (byte)1;
+        byte[] j0 = Aes._gcmDeriveJ0(h, iv);
 
         byte[] actual = Aes._gcmComputeTag(key, h, j0, aad, ciphertext);
         // Constant-time compare to avoid leaking position of mismatch.
@@ -312,6 +311,46 @@ public static class Aes {
         while (m < 16) { counter[m] = j0[m]; m = m + 1; }
         Aes._gcmInc32(counter);
         return Aes._gcmCtr(key, counter, ciphertext);
+    }
+
+    /// Derive J0 from a variable-length IV per NIST SP 800-38D §7.1.
+    /// 96-bit IV (12 bytes): fast path J0 = IV || 0x00000001.
+    /// Other lengths: J0 = GHASH_H(IV || pad-zeros || len(IV)_64-bit-BE
+    /// in bits). The GHASH-derived path adds one extra chain pass over
+    /// the IV but otherwise composes with the same downstream code.
+    static byte[] _gcmDeriveJ0(byte[] h, byte[] iv) {
+        if (iv.Length == 12) {
+            byte[] j0 = new byte[16];
+            int i = 0;
+            while (i < 12) { j0[i] = iv[i]; i = i + 1; }
+            j0[15] = (byte)1;
+            return j0;
+        }
+        // GHASH derivation path. Construct the input: IV padded to
+        // 128-bit boundary || 8 zero bytes || len(IV)_64-bit-BE in bits.
+        int ivPad = (16 - (iv.Length % 16)) % 16;
+        int total = iv.Length + ivPad + 16;
+        byte[] buf = new byte[total];
+        int i = 0;
+        while (i < iv.Length) { buf[i] = iv[i]; i = i + 1; }
+        // Pad bytes already zero.
+        // Length field: bits 0..63 = 0; bits 64..127 = iv length in bits, BE.
+        long ivBits = ((long)iv.Length) * 8L;
+        Aes._gcmWriteBE64(buf, total - 8, ivBits);
+        // Run GHASH over the buffer.
+        long[] hLong = Aes._gcmBytesToLongs(h);
+        long[] y = new long[2];
+        int blocks = total / 16;
+        int b = 0;
+        while (b < blocks) {
+            long[] x = Aes._gcmBytesToLongs128(buf, b * 16);
+            y[0] = y[0] ^ x[0];
+            y[1] = y[1] ^ x[1];
+            long[] r = Aes._gcmGfMul(y, hLong);
+            y[0] = r[0]; y[1] = r[1];
+            b = b + 1;
+        }
+        return Aes._gcmLongsToBytes(y);
     }
 
     /// 32-bit big-endian increment of the last 4 bytes of `block`.

@@ -172,7 +172,7 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `DecryptCtr(byte[] key, byte[8] nonce, byte[] data) -> byte[]` — symmetric, same as encrypt
   - `EncryptCbcPkcs7(byte[] key, byte[16] iv, byte[] data) -> byte[]` — CBC mode with PKCS#7 padding (RFC 5652 §6.3); output length is always a positive multiple of 16, full padding block appended when input is already aligned
   - `DecryptCbcPkcs7(byte[] key, byte[16] iv, byte[] data) -> byte[]` — validates + strips PKCS#7 padding; throws `ArgumentException` on malformed padding (likely wrong key/IV/corrupted ciphertext)
-  - `EncryptGcm(byte[] key, byte[12] iv, byte[] aad, byte[] plaintext) -> byte[]` — AEAD per NIST SP 800-38D; output is `ciphertext || 16-byte tag`. 96-bit IV path only (other lengths require GHASH-derived J0 — deferred to cdylib backend)
+  - `EncryptGcm(byte[] key, byte[] iv, byte[] aad, byte[] plaintext) -> byte[]` — AEAD per NIST SP 800-38D; output is `ciphertext || 16-byte tag`. IV length: 12 bytes (96-bit) takes the fast J0 = IV \|\| 0x00000001 path; other lengths route through `GHASH_H(IV \|\| pad \|\| len(IV)_64bit)` per §7.1; empty IV rejected
   - `DecryptGcm(byte[] key, byte[12] iv, byte[] aad, byte[] ctAndTag) -> byte[]` — verifies tag with constant-time compare; throws `ArgumentException` if tampered (do NOT swallow this — failure means ciphertext or AAD was modified). Tag length fixed at 16 bytes (NIST recommends ≥ 12; shorter tags are a footgun per RFC 5116 §5.3 and not exposed)
   - Key length selects variant: 16 bytes = AES-128, 24 = AES-192, 32 = AES-256
   - Pure-script implementation (matches Sha256 / Hmac / Hkdf pattern): KeyExpansion + SubBytes / ShiftRows / MixColumns over GF(2^8); flat `int[]` round-key layout because z42 lacks `int[][]` jagged arrays
@@ -203,13 +203,6 @@ of overload-by-arg-type. z42 当前 overload 解析对 `byte[]` vs `string`
 （HMAC-SHA-256-128 truncation）跳过，用户需要时可 `result[:16]`。
 
 ## Deferred / Future Work
-
-### aes-future-gcm-non96iv: AES-GCM with non-96-bit IV
-
-- **来源**：add-aes-gcm (2026-05-27)；GCM with 96-bit IV shipped, other IV lengths route through `GHASH_H(IV || pad || len(IV))` to derive J0
-- **触发原因**：96-bit IV is by far the most common form (TLS 1.3, WireGuard, AES-GCM-SIV all use 96-bit) — keeps v0 surface minimal
-- **前置依赖**：无（pure-script extension to existing GCM)
-- **触发条件**：spec compliance for legacy GCM consumers, or AES-GCM-SIV implementation
 
 ### aes-future-hw-accel: AES-NI / ARMv8 Crypto Extensions
 
