@@ -161,3 +161,70 @@ public static class HkdfSha512 {
         return Hex.Encode(HkdfSha512.Derive(salt, ikm, info, length));
     }
 }
+
+// add-hkdf-sha1 (2026-05-28): HKDF-SHA-1 — same algorithm, 20-byte
+// HashLen. Used by legacy / IoT protocols where SHA-1 is still on the
+// wire (TLS 1.2 PRF in some cipher suites; older mobile-device key
+// derivation; IETF KDF-1 / KDF-2 ANSI X9.63). New designs should use
+// HkdfSha256 or HkdfSha512 — SHA-1's collision resistance is broken,
+// but HKDF derivations only need PRF security which SHA-1 still has.
+public static class HkdfSha1 {
+    static int HashLen = 20;
+    static int MaxLength = 255 * 20;  // 5100
+
+    public static byte[] Derive(byte[] salt, byte[] ikm, byte[] info, int length) {
+        if (length < 0 || length > HkdfSha1.MaxLength) {
+            throw new ArgumentException(
+                "HkdfSha1.Derive: length out of range [0, " + HkdfSha1.MaxLength.ToString() + "]");
+        }
+        byte[] prk = HkdfSha1.Extract(salt, ikm);
+        return HkdfSha1.Expand(prk, info, length);
+    }
+
+    public static byte[] Extract(byte[] salt, byte[] ikm) {
+        byte[] key;
+        if (salt == null || salt.Length == 0) {
+            key = new byte[HkdfSha1.HashLen];
+        } else {
+            key = salt;
+        }
+        return HmacSha1.Compute(key, ikm);
+    }
+
+    public static byte[] Expand(byte[] prk, byte[] info, int length) {
+        if (length < 0 || length > HkdfSha1.MaxLength) {
+            throw new ArgumentException(
+                "HkdfSha1.Expand: length out of range [0, " + HkdfSha1.MaxLength.ToString() + "]");
+        }
+        byte[] infoBytes;
+        if (info == null) { infoBytes = new byte[0]; } else { infoBytes = info; }
+        int n = (length + HkdfSha1.HashLen - 1) / HkdfSha1.HashLen;
+        byte[] okm = new byte[length];
+        byte[] prev = new byte[0];
+        int written = 0;
+        int i = 1;
+        while (i <= n) {
+            int inputLen = prev.Length + infoBytes.Length + 1;
+            byte[] input = new byte[inputLen];
+            int k = 0;
+            while (k < prev.Length) { input[k] = prev[k]; k = k + 1; }
+            int p = prev.Length;
+            int j = 0;
+            while (j < infoBytes.Length) { input[p + j] = infoBytes[j]; j = j + 1; }
+            input[inputLen - 1] = (byte)i;
+            byte[] t = HmacSha1.Compute(prk, input);
+            int copy = length - written;
+            if (copy > HkdfSha1.HashLen) { copy = HkdfSha1.HashLen; }
+            int x = 0;
+            while (x < copy) { okm[written + x] = t[x]; x = x + 1; }
+            written = written + copy;
+            prev = t;
+            i = i + 1;
+        }
+        return okm;
+    }
+
+    public static string DeriveHex(byte[] salt, byte[] ikm, byte[] info, int length) {
+        return Hex.Encode(HkdfSha1.Derive(salt, ikm, info, length));
+    }
+}
