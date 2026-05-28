@@ -223,11 +223,14 @@ public static partial class PackageCompiler
         }
 
         // 当前 workspace 布局：<root>/artifacts/build/libraries/<member>/<profile>/dist/
+        // common-pitfalls.md §1: EnumerateDirectories 顺序随 OS / FS 变化，必须显式
+        // 排序——否则 dirs 顺序非确定，下游 ScanLibsForNamespaces 的 first-wins
+        // (nsMap.TryAdd) 在不同平台解析到不同 zpkg，导致跨平台编译结果漂移。
         void AddNewWorkspaceLayout(string baseDir)
         {
             if (!Directory.Exists(baseDir)) return;
-            foreach (var memberDir in Directory.EnumerateDirectories(baseDir))
-                foreach (var profileDir in Directory.EnumerateDirectories(memberDir))
+            foreach (var memberDir in Directory.EnumerateDirectories(baseDir).OrderBy(p => p, StringComparer.Ordinal))
+                foreach (var profileDir in Directory.EnumerateDirectories(memberDir).OrderBy(p => p, StringComparer.Ordinal))
                     AddDirIfExists(Path.Combine(profileDir, "dist"));
         }
 
@@ -235,7 +238,7 @@ public static partial class PackageCompiler
         void AddPackagesLayout(string baseDir)
         {
             if (!Directory.Exists(baseDir)) return;
-            foreach (var pkgDir in Directory.EnumerateDirectories(baseDir))
+            foreach (var pkgDir in Directory.EnumerateDirectories(baseDir).OrderBy(p => p, StringComparer.Ordinal))
                 AddDirIfExists(Path.Combine(pkgDir, "libs"));
         }
 
@@ -244,7 +247,7 @@ public static partial class PackageCompiler
         {
             AddDirIfExists(baseDir);
             if (Directory.Exists(baseDir))
-                foreach (var sub in Directory.EnumerateDirectories(baseDir))
+                foreach (var sub in Directory.EnumerateDirectories(baseDir).OrderBy(p => p, StringComparer.Ordinal))
                     AddDirIfExists(Path.Combine(sub, "dist"));
         }
 
@@ -318,7 +321,17 @@ public static partial class PackageCompiler
                         }
                     }
                 }
-                catch { /* skip malformed zpkg */ }
+                catch (Exception ex)
+                {
+                    // Do NOT silently swallow: a failed read of a stdlib zpkg
+                    // (e.g. z42.core providing `Std`) makes its namespaces
+                    // vanish from nsMap, which surfaces downstream as a
+                    // confusing `E0602: using Std: no loaded package provides
+                    // this namespace` cascade in dependent packages. Surface
+                    // the real cause so CI shows WHY a namespace went missing.
+                    Console.Error.WriteLine(
+                        $"warning: failed to read zpkg metadata from `{zpkgFile}`: {ex.Message}");
+                }
             }
         }
         return nsMap;
@@ -343,7 +356,8 @@ public static partial class PackageCompiler
         foreach (var dir in dirs)
         {
             if (!Directory.Exists(dir)) continue;
-            foreach (var zbcFile in Directory.EnumerateFiles(dir, "*.zbc"))
+            // common-pitfalls.md §1: sort for cross-platform determinism.
+            foreach (var zbcFile in Directory.EnumerateFiles(dir, "*.zbc").OrderBy(p => p, StringComparer.Ordinal))
             {
                 try
                 {
