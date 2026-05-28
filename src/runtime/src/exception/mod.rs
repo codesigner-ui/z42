@@ -248,7 +248,18 @@ pub fn read_stack_trace(value: &Value, module: &Module) -> Option<String> {
 /// three entry points produce consistent uncaught output.
 pub fn format_uncaught(value: &Value, module: &Module) -> String {
     let header = match read_message(value, module) {
-        Some(msg) => format!("uncaught exception: {}", msg),
+        // Prefix with the FQ type name: "<FQ_TYPE>: <msg>". Tooling
+        // (the test-runner's `[ShouldThrow<E>]` matcher) extracts the
+        // thrown type from this line — without the type prefix it would
+        // parse the first word of the message instead. `read_message`
+        // only returns Some for Exception-subclass Objects, so the
+        // Object match below always succeeds on that path; the fallback
+        // keeps the bare message for any non-Object edge case.
+        Some(msg) => match value {
+            Value::Object(rc) =>
+                format!("uncaught exception: {}: {}", rc.borrow().type_desc.name, msg),
+            _ => format!("uncaught exception: {}", msg),
+        },
         None      => format!("uncaught exception: {}", crate::corelib::convert::value_to_str(value)),
     };
     match read_stack_trace(value, module) {
