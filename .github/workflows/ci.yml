@@ -95,8 +95,16 @@ jobs:
       # process dump + fails fast. Catches stdout/stderr pipe-buffer deadlocks
       # (the historic Windows hang root cause) instead of letting them burn the
       # 3 h job budget. Without this the job hangs until concurrency cancel.
+      # RUST_MIN_STACK=8388608: Windows defaults test threads to a 1 MB stack
+      # while Linux/macOS give 8 MB. Crypto/BigInt/JIT tests run on the test
+      # thread itself (not spawned), and a single deep call (RSA ModPow,
+      # Cranelift codegen, Blake3 Merkle recursion) exhausts 1 MB → silent
+      # STATUS_ACCESS_VIOLATION (0xc0000005) on the guard page. Match the
+      # other platforms' 8 MB to remove this class of cross-platform flake.
       - name: Smoke test (Windows)
         if: matrix.os == 'windows-latest'
+        env:
+          RUST_MIN_STACK: '8388608'
         run: |
           dotnet test src/compiler/z42.Tests/z42.Tests.csproj --blame-hang-timeout 5m --blame-hang-dump-type mini
           cargo test --manifest-path src/runtime/Cargo.toml
