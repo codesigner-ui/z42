@@ -40,6 +40,34 @@ public static partial class PackageCompiler
         var depIndex    = BuildDepIndex(libsDirs, declaredDeps);
         ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
+        // Conclusive diagnostic for the cross-platform "E0602: using `Std`:
+        // no loaded package provides this namespace" build failures that
+        // reproduce only on CI. When a declared dependency package was NOT
+        // discovered by the libs scan (its name never appears as a zpkg in
+        // any scanned dir), dump exactly what WAS scanned so the next CI run
+        // pinpoints the cause (wrong cwd / walk-up miss / unwritten dist /
+        // parse failure already warned above) instead of a baffling E0602.
+        if (declaredDeps is { IsDeclared: true })
+        {
+            var foundPkgs = libsDirs
+                .Where(Directory.Exists)
+                .SelectMany(d => Directory.EnumerateFiles(d, "*.zpkg"))
+                .Select(Path.GetFileNameWithoutExtension)
+                .ToHashSet(StringComparer.Ordinal);
+            var missing = declaredDeps.Entries
+                .Select(e => e.Name)
+                .Where(n => !foundPkgs.Contains(n))
+                .ToList();
+            if (missing.Count > 0)
+            {
+                Console.Error.WriteLine(
+                    $"warning: package `{name}` declares dependencies {string.Join(", ", missing)} " +
+                    $"but no matching .zpkg was found in any scanned libs dir. " +
+                    $"Scanned dirs: [{string.Join(", ", libsDirs)}]. " +
+                    $"This is the root cause of any subsequent `E0602: no loaded package provides this namespace`.");
+            }
+        }
+
         // C5: 增量编译查询 —— 比对上次 zpkg 与 cache zbc 的 source_hash
         string cacheDir  = explicitCacheDir ?? Path.Combine(projectDir, ".cache");
         string lastZpkg  = Path.Combine(outDir, $"{name}.zpkg");
