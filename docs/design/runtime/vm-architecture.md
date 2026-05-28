@@ -724,8 +724,10 @@ pub struct ResolvedTokens {
 - **Builtin**: 直接 `BUILTINS[id]`（无 fallback；100% 命中）
 - **ObjNew**: 仍走 `type_registry`（HashMap by name）；TypeId cache 用作 cross-zpkg observability
 - **StaticGet/Set**: 命中 → `static_fields[id]`；UNRESOLVED → name lookup + 回填
-- **VCall**: 单态 IC 命中（`recv.type_desc.id == cached_type_id`）→ 直调 `module.functions[cached_fn_idx]`；miss → 走原 4 段 dispatch + 在 vtable_index hit 时填 IC
-- **FieldGet/Set**: 单态 IC 命中 → 直读/写 `obj.slots[cached_slot]`；miss → `field_index` 查 + 填 IC
+- **VCall**: PIC 命中（4-slot 线性扫描；`recv.type_desc.id` 匹配任一槽位的 `type_id`）→ 直调 `module.functions[entry.fn_idx]`；miss → 走原 4 段 dispatch + 在 vtable_index hit 时通过 `vcall_ic_install` 填入第一个空槽（或 round-robin 牺牲一个槽）
+- **FieldGet/Set**: PIC 命中（4-slot 线性扫描）→ 直读/写 `obj.slots[entry.slot]`；miss → `field_index` 查 + 通过 `field_ic_install` 填槽
+
+> **C4 P2 + C5 P2 (jit-polymorphic-ic, 2026-05-28)**：原单态 IC（一对 `(type_id, slot, fn_idx)`）升级为 4-slot polymorphic IC。线性扫描使用 `UNRESOLVED` sentinel 提前退出（mono 站点首槽命中即返回，0 额外开销）。超过 4 个 receiver type 的站点用 round-robin counter 牺牲槽位（`ic.round_robin.fetch_add(1, Relaxed) % 4`）。所有 atomic 操作均为 `Relaxed` —— `type_id` 守门 payload，torn-read 等价于"刚好遇到迁移中的同型 dispatch"，下一次会收敛到稳定态。Helpers `field_ic_lookup` / `field_ic_install` / `vcall_ic_lookup` / `vcall_ic_install` 在 `metadata::resolver` 公开，供 interp + JIT helpers 共用。
 
 ### 跨 zpkg 时序
 

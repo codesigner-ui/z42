@@ -81,7 +81,6 @@ pub(super) fn vcall(
     // (single u32 compare + direct module.functions index).
     vcall_ic: Option<&crate::metadata::resolver::VCallIC>,
 ) -> Result<Option<Value>> {
-    use std::sync::atomic::Ordering;
     let obj_val = frame.get(obj)?.clone();
     let mut extra_args = collect_args(&frame.regs, args)?;
 
@@ -97,9 +96,10 @@ pub(super) fn vcall(
             other => value_synthetic_type_id(other)
                 .unwrap_or(crate::metadata::tokens::UNRESOLVED),
         };
-        let cached_type = ic.cached_type_id.load(Ordering::Relaxed);
-        if recv_type != crate::metadata::tokens::UNRESOLVED && recv_type == cached_type {
-            let fn_idx = ic.cached_fn_idx.load(Ordering::Relaxed);
+        // PIC fast path: 4-slot linear scan
+        if let Some((_slot, fn_idx)) =
+            crate::metadata::resolver::vcall_ic_lookup(ic, recv_type)
+        {
             if fn_idx != crate::metadata::tokens::UNRESOLVED {
                 if let Some(callee) = module.functions.get(fn_idx as usize) {
                     let mut call_args = vec![obj_val.clone()];
@@ -148,8 +148,13 @@ pub(super) fn vcall(
                     if let (Some(ic), Some(synth_id)) =
                         (vcall_ic, value_synthetic_type_id(&obj_val))
                     {
-                        ic.cached_type_id.store(synth_id, Ordering::Relaxed);
-                        ic.cached_fn_idx.store(idx as u32, Ordering::Relaxed);
+                        // PIC install — slot is UNRESOLVED for primitives
+                        // (they don't have vtables; we go direct to fn_idx).
+                        crate::metadata::resolver::vcall_ic_install(
+                            ic, synth_id,
+                            crate::metadata::tokens::UNRESOLVED,
+                            idx as u32,
+                        );
                     }
                     let outcome = super::exec_function(ctx, module, callee, &call_args)?;
                     return match outcome {
@@ -206,11 +211,9 @@ pub(super) fn vcall(
             // synthetic descriptors where id == UNRESOLVED).
             if let Some(ic) = vcall_ic {
                 let recv_type = type_desc.id.0;
-                if recv_type != crate::metadata::tokens::UNRESOLVED {
-                    ic.cached_type_id.store(recv_type, Ordering::Relaxed);
-                    ic.cached_slot.store(slot as u32, Ordering::Relaxed);
-                    ic.cached_fn_idx.store(idx as u32, Ordering::Relaxed);
-                }
+                crate::metadata::resolver::vcall_ic_install(
+                    ic, recv_type, slot as u32, idx as u32,
+                );
             }
         } else if let Some(fn_) = ctx.try_lookup_function(&n) {
             callee_lazy = Some(fn_);

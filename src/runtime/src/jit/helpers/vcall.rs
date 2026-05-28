@@ -27,7 +27,6 @@ pub unsafe extern "C" fn jit_vcall(
     caller_line: u32,   // 2026-05-10 jit-stack-trace
     caller_col:  u32,   // 2026-05-10 span-column-propagate
 ) -> u8 {
-    use std::sync::atomic::Ordering;
 
     let method    = std::str::from_utf8(std::slice::from_raw_parts(method_ptr, method_len))
         .unwrap_or("<invalid>");
@@ -51,9 +50,10 @@ pub unsafe extern "C" fn jit_vcall(
     if !ic_ptr.is_null() {
         if let Value::Object(ref rc) = obj_val {
             let recv_type = rc.borrow().type_desc.id.0;
-            let cached_type = (*ic_ptr).cached_type_id.load(Ordering::Relaxed);
-            if recv_type != crate::metadata::tokens::UNRESOLVED && recv_type == cached_type {
-                let fn_idx = (*ic_ptr).cached_fn_idx.load(Ordering::Relaxed);
+            // PIC fast path (review.md C5 P2 — 4-slot linear scan).
+            if let Some((_slot, fn_idx)) =
+                crate::metadata::resolver::vcall_ic_lookup(&*ic_ptr, recv_type)
+            {
                 if fn_idx != crate::metadata::tokens::UNRESOLVED {
                     if let Some(entry) = ctx_ref.fn_entries_by_id.get(fn_idx as usize).cloned().flatten() {
                         let mut call_args: Vec<Value> = vec![obj_val.clone()];
@@ -148,14 +148,17 @@ pub unsafe extern "C" fn jit_vcall(
         Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); return 1; }
     };
 
-    // IC update: cache (recv_type_id, fn_idx) for next time this site sees
-    // the same receiver type. Slot index isn't tracked here (resolve_virtual
-    // walks by name, not vtable index) — store UNRESOLVED so the slot is
-    // visible-but-unused; the IC fast path only consults `cached_fn_idx`.
+    // PIC install: cache (recv_type_id, fn_idx) in the next available slot
+    // for next time this site sees the same receiver type. Slot index is
+    // UNRESOLVED (resolve_virtual walks by name, not vtable index — the
+    // PIC fast path only consults fn_idx for native dispatch).
     if !ic_ptr.is_null() && recv_type_id != crate::metadata::tokens::UNRESOLVED {
         if let Some(&fn_idx) = module.func_index.get(&func_name) {
-            (*ic_ptr).cached_type_id.store(recv_type_id, Ordering::Relaxed);
-            (*ic_ptr).cached_fn_idx.store(fn_idx as u32, Ordering::Relaxed);
+            crate::metadata::resolver::vcall_ic_install(
+                &*ic_ptr, recv_type_id,
+                crate::metadata::tokens::UNRESOLVED,
+                fn_idx as u32,
+            );
         }
     }
 

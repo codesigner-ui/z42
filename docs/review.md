@@ -447,7 +447,7 @@ ee_alloc_context {
 | ✅ | ~~**`Value::Str(String) → Str(Arc<str>)`**~~（C1+C3）— landed in ae23fb60 (2026-05-27, bundled with edition 2024 upgrade); Arc not Rc because `Value: Send + Sync` | 1-2 天 | clone 从 O(n) byte copy 变 O(1) atomic incr | 代码 |
 | **P1** | **Field / Method name → token id**（C4+C5）— `HashMap<String> → Vec<(u32, slot)>` | 3-4 天 | poly site 提速 + 内存省 | 代码 |
 | **P2** | **Prestub / lazy JIT** —— 上半部分 P1 | 3-5 天 | 启动延迟 | 架构 |
-| **P2** | **Polymorphic IC（PIC）**（C4+C5）— 4-slot cache | 2-3 天 | poly site 不再退到 HashMap | 代码 |
+| ✅ | ~~**Polymorphic IC（PIC）**（C4 P2 + C5 P2）— 4-slot cache~~ — landed 2026-05-28 (jit-polymorphic-ic spec). FieldIC / VCallIC 升级为 4-slot 线性扫描 + round-robin 牺牲；mono 路径零开销；共享 lookup/install helper 在 interp + JIT helpers 复用。bench `05_polymorphic_dispatch.z42` 验证多 receiver 站点 hit | 2-3 天 | poly site 不再退到 HashMap | 代码 |
 | **P3** | **String literal interning**（C3）— `Value::Str(StringId)` 复用 `Module.string_pool` | 3-4 天 | 内存 + 加速 string == | 代码 |
 | **P3** | **PAL 抽象层** —— 上半部分 P2 | 5-7 天 | 多线程 + 移植 | 架构 |
 | **P4** | **`Value` 拆 hot/cold variants**（C1）— enum 从 48B → 16B | 5-7 天 | reg move 3x + cache locality | 代码 |
@@ -951,7 +951,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
 | ✅ | ~~`RuntimeObserver` (D3 Phase 1 + 2)~~ — add-runtime-observer (2026-05-26) + Phase 2 emit sites (JitModuleCompiled / ExceptionThrown / ExceptionCaught / NativeCallEntered) + lazy-load ModuleLoaded (2026-05-27) | 4 | done | ops |
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
-| **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
+| ✅ | ~~Polymorphic IC~~ (C4 P2 + C5 P2) — landed 2026-05-28 (jit-polymorphic-ic) | 2 | done | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
 | **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
 | **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
@@ -1383,7 +1383,7 @@ pub struct ScriptObject {
 | **P2** | **`interfaces/` 契约层**（E1.P3）— 对齐 CoreCLR `inc/` | 5 | 7-10 天 | arch |
 | ✅ | ~~Function 热 / 冷拆分~~（E2.P5）— 2026-05-27. `FunctionCold` boxed behind `Option<Box>`; 6 immutable slice fields (param_types / exception_table / line_table / local_vars / type_params / type_param_constraints) moved off the hot struct. Reads via accessor methods returning `&[T]`; mutations via `cold_mut()` lazy-init. Functions with no debug / try-catch / generics carry 8 B null ptr instead of 96 B inline. | 5 | done | data |
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
-| **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
+| ✅ | ~~Polymorphic IC~~ (C4 P2 + C5 P2) — landed 2026-05-28 (jit-polymorphic-ic) | 2 | done | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
 | **P3** | **ScriptObject header 瘦身**（E2.P6）— 64B → ~52B | 5 | 2-3 天 | data |
 | **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |

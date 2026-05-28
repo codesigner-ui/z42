@@ -132,30 +132,22 @@ pub(super) fn field_get(
     frame: &mut Frame, dst: u32, obj: u32, field_name: &str,
     field_ic: Option<&crate::metadata::resolver::FieldIC>,
 ) -> Result<()> {
-    use std::sync::atomic::Ordering;
+    use crate::metadata::resolver::{field_ic_lookup, field_ic_install};
     let val = match frame.get(obj)? {
         Value::Object(rc) => {
             let borrowed = rc.borrow();
-            // IC fast path
+            // PIC fast path: 4-slot linear scan with UNRESOLVED early-exit.
             if let Some(ic) = field_ic {
                 let recv_type = borrowed.type_desc.id.0;
-                if recv_type != crate::metadata::tokens::UNRESOLVED
-                    && ic.cached_type_id.load(Ordering::Relaxed) == recv_type
-                {
-                    let slot = ic.cached_slot.load(Ordering::Relaxed) as usize;
-                    return {
-                        let v = borrowed.slots.get(slot).cloned().unwrap_or(Value::Null);
-                        drop(borrowed);
-                        frame.set(dst, v);
-                        Ok(())
-                    };
+                if let Some(slot) = field_ic_lookup(ic, recv_type) {
+                    let v = borrowed.slots.get(slot as usize).cloned().unwrap_or(Value::Null);
+                    drop(borrowed);
+                    frame.set(dst, v);
+                    return Ok(());
                 }
-                // Miss: walk + update IC
+                // Miss: walk field_index + install in PIC.
                 if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
-                    if recv_type != crate::metadata::tokens::UNRESOLVED {
-                        ic.cached_type_id.store(recv_type, Ordering::Relaxed);
-                        ic.cached_slot.store(slot as u32, Ordering::Relaxed);
-                    }
+                    field_ic_install(ic, recv_type, slot as u32);
                     borrowed.slots.get(slot).cloned().unwrap_or(Value::Null)
                 } else {
                     Value::Null
@@ -200,19 +192,17 @@ pub(super) fn field_set(
     ctx: &VmContext, frame: &mut Frame, obj: u32, field_name: &str, val: u32,
     field_ic: Option<&crate::metadata::resolver::FieldIC>,
 ) -> Result<()> {
-    use std::sync::atomic::Ordering;
+    use crate::metadata::resolver::{field_ic_lookup, field_ic_install};
     let v = frame.get(val)?.clone();
     let owner = frame.get(obj)?.clone();
     match &owner {
         Value::Object(rc) => {
             let mut borrowed = rc.borrow_mut();
-            // IC fast path
+            // PIC fast path
             if let Some(ic) = field_ic {
                 let recv_type = borrowed.type_desc.id.0;
-                if recv_type != crate::metadata::tokens::UNRESOLVED
-                    && ic.cached_type_id.load(Ordering::Relaxed) == recv_type
-                {
-                    let slot = ic.cached_slot.load(Ordering::Relaxed) as usize;
+                if let Some(slot) = field_ic_lookup(ic, recv_type) {
+                    let slot = slot as usize;
                     if slot < borrowed.slots.len() {
                         borrowed.slots[slot] = v.clone();
                         drop(borrowed);
@@ -222,13 +212,10 @@ pub(super) fn field_set(
                     }
                     return Ok(());
                 }
-                // Miss: walk + update IC
+                // Miss: walk + install in PIC
                 let slot_opt = borrowed.type_desc.field_index.get(field_name).copied();
                 if let Some(slot) = slot_opt {
-                    if recv_type != crate::metadata::tokens::UNRESOLVED {
-                        ic.cached_type_id.store(recv_type, Ordering::Relaxed);
-                        ic.cached_slot.store(slot as u32, Ordering::Relaxed);
-                    }
+                    field_ic_install(ic, recv_type, slot as u32);
                     if slot < borrowed.slots.len() {
                         borrowed.slots[slot] = v.clone();
                         drop(borrowed);

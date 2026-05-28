@@ -1,0 +1,73 @@
+// review.md C4 P2 + C5 P2 microbench (jit-polymorphic-ic, 2026-05-28):
+// polymorphic virtual dispatch through 4 receiver types at a single call
+// site. Pre-PIC each iteration thrashed the monomorphic IC and fell
+// through to the vtable HashMap lookup; PIC's 4-slot linear scan now
+// hits in the cache on every call.
+//
+// Each iteration calls `arr[i % 4].Speak()` where the array holds
+// distinct subclass instances (Cat / Dog / Cow / Pig). With a mono IC
+// only one of the four hits the fast path — the rest take the slow
+// HashMap-lookup path. With the 4-slot PIC, all four hit linearly.
+//
+// Tight numeric workload deliberately avoided so the dispatch cost
+// dominates total run time. Body of each `Speak()` returns a single
+// int constant — observable side effect is `total +=` so the JIT can't
+// dead-code-eliminate the call.
+//
+// Expected output (deterministic): 25000000
+
+namespace Bench.PolymorphicDispatch;
+
+[Native("__bench_now_ns")]
+extern long NowNs();
+
+[Native("__println")]
+extern void PrintLn(string s);
+
+class Animal {
+    public virtual int Speak() { return 0; }
+}
+
+class Cat : Animal {
+    public override int Speak() { return 1; }
+}
+
+class Dog : Animal {
+    public override int Speak() { return 2; }
+}
+
+class Cow : Animal {
+    public override int Speak() { return 3; }
+}
+
+class Pig : Animal {
+    public override int Speak() { return 4; }
+}
+
+long Drive(Animal[] arr, long n) {
+    long total = 0L;
+    long i = 0L;
+    while (i < n) {
+        // i % 4 cycles through all 4 receiver types — PIC should
+        // hit one of 4 cached slots on every call; mono IC sees
+        // 75% miss rate.
+        Animal a = arr[(int)(i % 4L)];
+        total = total + (long)a.Speak();
+        i = i + 1L;
+    }
+    return total;
+}
+
+void Main() {
+    Animal[] arr = new Animal[4];
+    arr[0] = new Cat();
+    arr[1] = new Dog();
+    arr[2] = new Cow();
+    arr[3] = new Pig();
+
+    long t0 = NowNs();
+    long result = Drive(arr, 10000000L);
+    long t1 = NowNs();
+    PrintLn(result.ToString());
+    PrintLn((t1 - t0).ToString());
+}
