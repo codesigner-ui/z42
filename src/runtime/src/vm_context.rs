@@ -1159,6 +1159,13 @@ impl Drop for VmContext {
     fn drop(&mut self) {
         let ptr = self as *const Self;
         self.core.vm_contexts.lock().retain(|p| p.0 != ptr);
+        // Wake any collector sleeping in request_handshake_pause so it
+        // re-evaluates the required park count. Our removal from vm_contexts
+        // may lower vm_contexts.len()-1 below the current parked_count,
+        // satisfying the wait condition. Must hold gc_phase lock to prevent
+        // a missed-wakeup between the condition re-check and the wait call.
+        let _g = self.core.gc_phase.lock();
+        self.core.gc_phase_cv.notify_all();
     }
 }
 
