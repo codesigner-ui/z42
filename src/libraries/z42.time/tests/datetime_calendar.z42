@@ -1,0 +1,307 @@
+// add-datetime-calendar (2026-05-28): tests for Year / Month / Day +
+// time-of-day decomposition, calendar arithmetic (AddDays / AddMonths /
+// AddYears), DayOfWeek / DayOfYear, IsLeapYear / DaysInMonth, and the
+// explicit Utc(...) constructor.
+namespace Z42TimeDateTimeCalendarTests;
+
+using Std;
+using Std.Test;
+using Std.Time;
+
+// ── Known reference moments ─────────────────────────────────────────────
+// 2023-11-15T07:13:20.000Z corresponds to unix ms 1700031200000.
+
+[Test]
+void test_year_month_day_for_known_moment() {
+    DateTime dt = DateTime.FromUnixMs(1700032400000L);
+    Assert.Equal(2023, dt.Year());
+    Assert.Equal(11,   dt.Month());
+    Assert.Equal(15,   dt.Day());
+}
+
+[Test]
+void test_hour_minute_second_for_known_moment() {
+    DateTime dt = DateTime.FromUnixMs(1700032400000L);
+    Assert.Equal(7,  dt.Hour());
+    Assert.Equal(13, dt.Minute());
+    Assert.Equal(20, dt.Second());
+    Assert.Equal(0,  dt.Millisecond());
+}
+
+[Test]
+void test_millisecond_preserved() {
+    DateTime dt = DateTime.FromUnixMs(1700032400123L);
+    Assert.Equal(123, dt.Millisecond());
+}
+
+[Test]
+void test_unix_epoch_decomposes_to_1970_01_01() {
+    DateTime dt = DateTime.UnixEpoch();
+    Assert.Equal(1970, dt.Year());
+    Assert.Equal(1,    dt.Month());
+    Assert.Equal(1,    dt.Day());
+    Assert.Equal(0,    dt.Hour());
+    Assert.Equal(0,    dt.Minute());
+    Assert.Equal(0,    dt.Second());
+}
+
+// ── DayOfWeek (Sunday = 0) ──────────────────────────────────────────────
+// 1970-01-01 was a Thursday → 4.
+// 2026-05-28 (today) is a Thursday → 4.
+
+[Test]
+void test_dayofweek_unix_epoch_is_thursday() {
+    DateTime dt = DateTime.UnixEpoch();
+    Assert.Equal(4, dt.DayOfWeek());
+}
+
+[Test]
+void test_dayofweek_known_sunday() {
+    // 2023-11-19 was a Sunday → 0.
+    DateTime dt = DateTime.UtcDate(2023, 11, 19);
+    Assert.Equal(0, dt.DayOfWeek());
+}
+
+[Test]
+void test_dayofweek_known_monday() {
+    // 2023-11-20 was a Monday → 1.
+    DateTime dt = DateTime.UtcDate(2023, 11, 20);
+    Assert.Equal(1, dt.DayOfWeek());
+}
+
+[Test]
+void test_dayofweek_known_saturday() {
+    // 2023-11-25 was a Saturday → 6.
+    DateTime dt = DateTime.UtcDate(2023, 11, 25);
+    Assert.Equal(6, dt.DayOfWeek());
+}
+
+// ── DayOfYear ───────────────────────────────────────────────────────────
+
+[Test]
+void test_dayofyear_jan_1_is_1() {
+    Assert.Equal(1, DateTime.UtcDate(2024, 1, 1).DayOfYear());
+}
+
+[Test]
+void test_dayofyear_dec_31_non_leap() {
+    Assert.Equal(365, DateTime.UtcDate(2023, 12, 31).DayOfYear());
+}
+
+[Test]
+void test_dayofyear_dec_31_leap() {
+    Assert.Equal(366, DateTime.UtcDate(2024, 12, 31).DayOfYear());
+}
+
+[Test]
+void test_dayofyear_after_leap_day() {
+    // 2024-03-01 → day 61 (jan 31 + feb 29 + 1)
+    Assert.Equal(61, DateTime.UtcDate(2024, 3, 1).DayOfYear());
+    // 2023-03-01 (non-leap) → day 60
+    Assert.Equal(60, DateTime.UtcDate(2023, 3, 1).DayOfYear());
+}
+
+// ── IsLeapYear ──────────────────────────────────────────────────────────
+
+[Test]
+void test_isleapyear_typical_cases() {
+    Assert.True(DateTime.IsLeapYear(2024));   // divisible by 4
+    Assert.True(!DateTime.IsLeapYear(2023));
+    Assert.True(!DateTime.IsLeapYear(1900));  // divisible by 100, not 400
+    Assert.True(DateTime.IsLeapYear(2000));   // divisible by 400
+    Assert.True(!DateTime.IsLeapYear(2100));  // century not divisible by 400
+}
+
+// ── DaysInMonth ─────────────────────────────────────────────────────────
+
+[Test]
+void test_daysinmonth_january_31() {
+    Assert.Equal(31, DateTime.DaysInMonth(2024, 1));
+}
+
+[Test]
+void test_daysinmonth_february_28_or_29() {
+    Assert.Equal(28, DateTime.DaysInMonth(2023, 2));
+    Assert.Equal(29, DateTime.DaysInMonth(2024, 2));
+    Assert.Equal(29, DateTime.DaysInMonth(2000, 2));
+    Assert.Equal(28, DateTime.DaysInMonth(1900, 2));
+}
+
+[Test]
+void test_daysinmonth_april_30() {
+    Assert.Equal(30, DateTime.DaysInMonth(2024, 4));
+    Assert.Equal(30, DateTime.DaysInMonth(2024, 9));
+    Assert.Equal(30, DateTime.DaysInMonth(2024, 11));
+}
+
+[Test]
+void test_daysinmonth_rejects_bad_month() {
+    bool threw = false;
+    try { DateTime.DaysInMonth(2024, 13); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Utc(...) constructor round trip ─────────────────────────────────────
+
+[Test]
+void test_utc_round_trip_through_decomposers() {
+    DateTime dt = DateTime.Utc(2024, 6, 15, 14, 30, 45, 123);
+    Assert.Equal(2024, dt.Year());
+    Assert.Equal(6,    dt.Month());
+    Assert.Equal(15,   dt.Day());
+    Assert.Equal(14,   dt.Hour());
+    Assert.Equal(30,   dt.Minute());
+    Assert.Equal(45,   dt.Second());
+    Assert.Equal(123,  dt.Millisecond());
+}
+
+[Test]
+void test_utc_rejects_february_31() {
+    bool threw = false;
+    try { DateTime.Utc(2023, 2, 31, 0, 0, 0, 0); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_utc_rejects_february_29_non_leap() {
+    bool threw = false;
+    try { DateTime.Utc(2023, 2, 29, 0, 0, 0, 0); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_utc_accepts_february_29_leap() {
+    DateTime dt = DateTime.Utc(2024, 2, 29, 0, 0, 0, 0);
+    Assert.Equal(2024, dt.Year());
+    Assert.Equal(2,    dt.Month());
+    Assert.Equal(29,   dt.Day());
+}
+
+[Test]
+void test_utc_rejects_hour_24() {
+    bool threw = false;
+    try { DateTime.Utc(2024, 1, 1, 24, 0, 0, 0); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── AddDays / AddHours / AddMinutes / AddSeconds ────────────────────────
+
+[Test]
+void test_adddays_simple() {
+    DateTime dt = DateTime.UtcDate(2024, 1, 1).AddDays(31);
+    Assert.Equal(2024, dt.Year());
+    Assert.Equal(2,    dt.Month());
+    Assert.Equal(1,    dt.Day());
+}
+
+[Test]
+void test_adddays_negative() {
+    DateTime dt = DateTime.UtcDate(2024, 1, 1).AddDays(-1);
+    Assert.Equal(2023, dt.Year());
+    Assert.Equal(12,   dt.Month());
+    Assert.Equal(31,   dt.Day());
+}
+
+[Test]
+void test_adddays_across_leap_day() {
+    DateTime dt = DateTime.UtcDate(2024, 2, 28).AddDays(1);
+    Assert.Equal(29, dt.Day());
+    DateTime dt2 = DateTime.UtcDate(2024, 2, 29).AddDays(1);
+    Assert.Equal(3, dt2.Month());
+    Assert.Equal(1, dt2.Day());
+}
+
+[Test]
+void test_addhours_wraps_day() {
+    DateTime dt = DateTime.Utc(2024, 1, 1, 22, 0, 0, 0).AddHours(5);
+    Assert.Equal(2,  dt.Day());
+    Assert.Equal(3,  dt.Hour());
+}
+
+// ── AddMonths month-end clamping ────────────────────────────────────────
+
+[Test]
+void test_addmonths_simple() {
+    DateTime dt = DateTime.UtcDate(2024, 1, 15).AddMonths(2);
+    Assert.Equal(2024, dt.Year());
+    Assert.Equal(3,    dt.Month());
+    Assert.Equal(15,   dt.Day());
+}
+
+[Test]
+void test_addmonths_clamps_march_31_to_april_30() {
+    DateTime dt = DateTime.UtcDate(2024, 3, 31).AddMonths(1);
+    Assert.Equal(4,  dt.Month());
+    Assert.Equal(30, dt.Day());
+}
+
+[Test]
+void test_addmonths_clamps_jan_31_to_feb_29_in_leap_year() {
+    DateTime dt = DateTime.UtcDate(2024, 1, 31).AddMonths(1);
+    Assert.Equal(2,  dt.Month());
+    Assert.Equal(29, dt.Day());
+}
+
+[Test]
+void test_addmonths_clamps_jan_31_to_feb_28_in_non_leap_year() {
+    DateTime dt = DateTime.UtcDate(2023, 1, 31).AddMonths(1);
+    Assert.Equal(2,  dt.Month());
+    Assert.Equal(28, dt.Day());
+}
+
+[Test]
+void test_addmonths_crosses_year_boundary() {
+    DateTime dt = DateTime.UtcDate(2024, 11, 15).AddMonths(2);
+    Assert.Equal(2025, dt.Year());
+    Assert.Equal(1,    dt.Month());
+    Assert.Equal(15,   dt.Day());
+}
+
+[Test]
+void test_addmonths_negative() {
+    DateTime dt = DateTime.UtcDate(2024, 3, 15).AddMonths(-4);
+    Assert.Equal(2023, dt.Year());
+    Assert.Equal(11,   dt.Month());
+    Assert.Equal(15,   dt.Day());
+}
+
+[Test]
+void test_addmonths_preserves_time_of_day() {
+    DateTime dt = DateTime.Utc(2024, 1, 31, 14, 30, 45, 123).AddMonths(1);
+    Assert.Equal(2,   dt.Month());
+    Assert.Equal(29,  dt.Day());
+    Assert.Equal(14,  dt.Hour());
+    Assert.Equal(30,  dt.Minute());
+    Assert.Equal(45,  dt.Second());
+    Assert.Equal(123, dt.Millisecond());
+}
+
+// ── AddYears ────────────────────────────────────────────────────────────
+
+[Test]
+void test_addyears_simple() {
+    DateTime dt = DateTime.UtcDate(2020, 6, 15).AddYears(4);
+    Assert.Equal(2024, dt.Year());
+    Assert.Equal(6,    dt.Month());
+    Assert.Equal(15,   dt.Day());
+}
+
+[Test]
+void test_addyears_feb_29_to_non_leap_year_clamps_to_feb_28() {
+    DateTime dt = DateTime.UtcDate(2024, 2, 29).AddYears(1);
+    Assert.Equal(2025, dt.Year());
+    Assert.Equal(2,    dt.Month());
+    Assert.Equal(28,   dt.Day());
+}
+
+[Test]
+void test_addyears_feb_29_to_leap_year_preserves_29() {
+    DateTime dt = DateTime.UtcDate(2024, 2, 29).AddYears(4);
+    Assert.Equal(2028, dt.Year());
+    Assert.Equal(2,    dt.Month());
+    Assert.Equal(29,   dt.Day());
+}
