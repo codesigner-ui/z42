@@ -528,17 +528,43 @@ public static partial class PackageCompiler
             preludePackages: PreludePackages.Names);
     }
 
-    /// Emit warnings for `using` declarations that cannot be resolved in <paramref name="nsMap"/>.
+    /// Emit warnings for `using` declarations that cannot be resolved.
+    ///
+    /// fix-warn-unresolved-intrapkg (2026-05-28): when the current package
+    /// declares multiple namespaces (e.g. z42.net hosts Std.Net.Sockets +
+    /// Std.Net.Http + Std.Net.WebSockets), a `using` that references a
+    /// SIBLING namespace inside the same package is legitimate — symbols
+    /// resolve via intra-package fall-through. Skip the warning for those.
+    /// Previously we only checked the external `nsMap`, which caused a
+    /// torrent of spurious warnings on z42.net + z42.compression.
     static void WarnUnresolvedUsings(
         IReadOnlyList<CompiledUnit>  units,
         Dictionary<string, string>   nsMap)
     {
-        if (nsMap.Count == 0) return;
+        foreach (var (unit, usingNs) in FindUnresolvedUsings(units, nsMap))
+            Console.Error.WriteLine(
+                $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
+    }
+
+    /// Decision-logic half of `WarnUnresolvedUsings`, exposed for unit testing.
+    /// Yields each (unit, usingNs) pair that the warner would emit, after
+    /// filtering out intra-package self-references.
+    internal static IEnumerable<(CompiledUnit Unit, string UsingNs)> FindUnresolvedUsings(
+        IReadOnlyList<CompiledUnit>          units,
+        IReadOnlyDictionary<string, string>  nsMap)
+    {
+        // Build the intra-package namespace set from the units being compiled.
+        // A using that hits any of these is an in-package self-reference
+        // (legitimate, no warning).
+        var intraPkgNs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var unit in units)
+            intraPkgNs.Add(unit.Namespace);
+
+        if (nsMap.Count == 0 && intraPkgNs.Count == 0) yield break;
         foreach (var unit in units)
             foreach (var usingNs in unit.Usings)
-                if (!nsMap.ContainsKey(usingNs))
-                    Console.Error.WriteLine(
-                        $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
+                if (!nsMap.ContainsKey(usingNs) && !intraPkgNs.Contains(usingNs))
+                    yield return (unit, usingNs);
     }
 
     /// Build the dependency list (file → namespaces) from resolved usings and dependency calls.

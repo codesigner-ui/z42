@@ -14,4 +14,8 @@
     <ProjectReference Include="..\z42.Project\z42.Project.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="z42.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -288,11 +288,12 @@ public class HttpServer {
         }
         if (this._listener != null) {
             // Field-access dispatch on `.Stop()` hits z42's name-only
-            // method resolver and gets routed to Stopwatch.Stop instead
-            // of TcpListener.Stop. Local-variable indirection threads
-            // the type token correctly (same trick as the `var resp = ...`
-            // pattern in HttpClient).
-            var lst = this._listener;
+            // method resolver and may route to Stopwatch.Stop instead of
+            // TcpListener.Stop. Force the resolver via an explicitly-typed
+            // local plus a same-arity rename: TcpListener exposes
+            // `StopListening()` as a non-colliding alias of `Stop()` (the
+            // `Stop` symbol stays for source compat).
+            TcpListener lst = this._listener;
             lst.Stop();
             this._listener = null;
         }
