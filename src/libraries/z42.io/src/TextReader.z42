@@ -1,0 +1,139 @@
+namespace Std.IO;
+
+using Std;
+
+// add-textreader-base (2026-05-28): unified char-oriented reader base.
+//
+// Concrete base + throw-stubs pattern matching `Std.IO.Stream`
+// (z42 still has no `abstract` keyword). Single-arity-per-name virtual
+// methods (z42's current method-resolution doesn't disambiguate
+// overloads in the v-table; see `compiler-future-typed-overload-
+// resolution`), so the bulk `Read(char[], int, int)` and `ReadLine` /
+// `ReadToEnd` are NON-virtual default impls composed on `Read()` —
+// subclasses with a faster bulk path declare their own `Read(char[],
+// int, int)` that callers reach via the concrete type (StringReader,
+// StreamReader).
+//
+// Polymorphic surface a caller can rely on against `TextReader`:
+//   - Peek() / Read()           — virtual core
+//   - ReadLineBase()            — line read using Read() + Peek
+//   - ReadToEndBase()           — drain using Read()
+//   - Close() / Dispose()       — lifecycle
+//
+// Concrete subclasses (StringReader, StreamReader) typically expose
+// their own ReadLine / ReadToEnd / Read(buf, ...) with the same shape
+// for direct-typed callers — the "Base" suffix here lets polymorphic
+// callers reach the default-impl variants when needed.
+
+public class TextReader {
+    // ── Core (subclasses override) ──────────────────────────────────────────
+
+    public virtual int Peek() {
+        throw new NotSupportedException("Peek not supported on this TextReader");
+    }
+
+    public virtual int Read() {
+        throw new NotSupportedException("Read not supported on this TextReader");
+    }
+
+    public virtual void Close() {
+        // Base class default: no resources held. Subclasses override.
+    }
+
+    /// Alias for `Close()` — mirrors the future `IDisposable` shape.
+    public virtual void Dispose() {
+        this.Close();
+    }
+
+    // ── Default-impl helpers (NON-virtual; compose on Read()) ───────────────
+    //
+    // These are NOT virtual because z42's current override resolver doesn't
+    // disambiguate same-name overloads across inheritance. Concrete subclasses
+    // with bulk-optimised paths expose their own `Read(char[], int, int)` /
+    // `ReadLine` / `ReadToEnd` directly on the concrete type instead of
+    // overriding here.
+
+    /// Default bulk read: loops over `Read()`. Returns count actually placed
+    /// (0 = EOF).
+    public int ReadBufferBase(char[] buffer, int offset, int count) {
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("ReadBufferBase: buffer / offset / count out of range");
+        }
+        if (count == 0) { return 0; }
+        int got = 0;
+        while (got < count) {
+            int c = this.Read();
+            if (c < 0) { break; }
+            buffer[offset + got] = (char)c;
+            got = got + 1;
+        }
+        return got;
+    }
+
+    /// Default line read using `Read()` + `Peek()`. Returns:
+    ///   - line content (may be empty for a blank line)
+    ///   - `null` at EOF
+    /// `\n`, `\r\n`, and lone `\r` all terminate a line.
+    public string ReadLineBase() {
+        char[] buf = new char[128];
+        int len = 0;
+        bool any = false;
+        while (true) {
+            int c = this.Read();
+            if (c < 0) {
+                if (!any) { return null; }
+                return TextReader._finish(buf, len);
+            }
+            any = true;
+            if (c == 10) { return TextReader._finish(buf, len); }
+            if (c == 13) {
+                // Try to skip a following LF via Peek if subclass supports it.
+                int next = -1;
+                bool peeked = false;
+                try { next = this.Peek(); peeked = true; }
+                catch (NotSupportedException e) { /* fall through */ }
+                if (peeked && next == 10) { this.Read(); }
+                return TextReader._finish(buf, len);
+            }
+            if (len == buf.Length) {
+                char[] grown = new char[buf.Length * 2];
+                int i = 0;
+                while (i < len) { grown[i] = buf[i]; i = i + 1; }
+                buf = grown;
+            }
+            buf[len] = (char)c;
+            len = len + 1;
+        }
+        return TextReader._finish(buf, len);
+    }
+
+    /// Default drain using `Read()`. Returns everything remaining.
+    public string ReadToEndBase() {
+        char[] buf = new char[256];
+        int len = 0;
+        while (true) {
+            int c = this.Read();
+            if (c < 0) { break; }
+            if (len == buf.Length) {
+                char[] grown = new char[buf.Length * 2];
+                int i = 0;
+                while (i < len) { grown[i] = buf[i]; i = i + 1; }
+                buf = grown;
+            }
+            buf[len] = (char)c;
+            len = len + 1;
+        }
+        return TextReader._finish(buf, len);
+    }
+
+    // ── Internal helper ──────────────────────────────────────────────────────
+
+    static string _finish(char[] buf, int len) {
+        if (len == 0) { return ""; }
+        if (len == buf.Length) { return String.FromChars(buf); }
+        char[] trimmed = new char[len];
+        int i = 0;
+        while (i < len) { trimmed[i] = buf[i]; i = i + 1; }
+        return String.FromChars(trimmed);
+    }
+}

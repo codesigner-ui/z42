@@ -1,0 +1,75 @@
+namespace Std.IO;
+
+using Std;
+
+// add-textwriter-base (2026-05-28): unified char-oriented writer base.
+//
+// Concrete base + throw-stubs pattern matching `Std.IO.Stream`.
+// Single-arity-per-name virtual methods only (z42's override resolver
+// doesn't disambiguate overloads in the v-table). The bulk
+// `Write(char[], int, int)` / `WriteLine` / `Write(char)` are NON-
+// virtual default impls composed on `Write(string)`; concrete
+// subclasses with bulk-optimised paths expose their own overloads of
+// the same names on the concrete type directly.
+//
+// Polymorphic surface a caller can rely on against `TextWriter`:
+//   - Write(string)             — virtual core
+//   - WriteCharsBase / WriteCharBase / WriteLineBase — default impls
+//   - Flush() / Close() / Dispose()
+//
+// Line-ending convention: `WriteLineBase()` / `WriteLineBase(string)`
+// emit `\n` regardless of platform. Callers wanting CRLF should write
+// `"line\r\n"` explicitly.
+
+public class TextWriter {
+    // ── Core (subclasses override) ──────────────────────────────────────────
+
+    public virtual void Write(string s) {
+        throw new NotSupportedException("Write not supported on this TextWriter");
+    }
+
+    public virtual void Flush() {
+        // Base class default: no buffered state. Subclasses override.
+    }
+
+    public virtual void Close() {
+        // Base class default: no resources held. Subclasses override.
+    }
+
+    /// Alias for `Close()` — mirrors the future `IDisposable` shape.
+    public virtual void Dispose() {
+        this.Close();
+    }
+
+    // ── Default-impl helpers (NON-virtual; compose on Write(string)) ────────
+
+    public void WriteCharsBase(char[] buffer, int offset, int count) {
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("WriteCharsBase: buffer / offset / count out of range");
+        }
+        if (count == 0) { return; }
+        char[] slice;
+        if (offset == 0 && count == buffer.Length) {
+            slice = buffer;
+        } else {
+            slice = new char[count];
+            int i = 0;
+            while (i < count) { slice[i] = buffer[offset + i]; i = i + 1; }
+        }
+        this.Write(String.FromChars(slice));
+    }
+
+    public void WriteCharBase(char c) {
+        char[] buf = new char[1];
+        buf[0] = c;
+        this.Write(String.FromChars(buf));
+    }
+
+    public void WriteLineBase() {
+        this.Write("\n");
+    }
+
+    public void WriteLineBase(string s) {
+        this.Write(s + "\n");
+    }
+}

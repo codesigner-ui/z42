@@ -1,0 +1,224 @@
+// add-textreader-base / add-textwriter-base (2026-05-28): tests for the
+// unified TextReader / TextWriter abstract bases. Verifies the default-
+// impl helpers (ReadLineBase / ReadToEndBase / ReadBufferBase /
+// WriteCharsBase / WriteCharBase / WriteLineBase) compose correctly on
+// the single-arity virtual core (Read() / Write(string)).
+namespace Z42IoTextReaderWriterTests;
+
+using Std;
+using Std.IO;
+using Std.Test;
+
+// ── Minimal concrete subclass of TextReader backed by a string ──────────
+//
+// Lets us exercise the inherited default-impl helpers without depending
+// on the concrete StringReader / StreamReader (which keep their own
+// standalone shape — see TextReader.z42 header for the z42-overload-
+// resolution rationale).
+
+public class _StringTextReader : TextReader {
+    private string _src;
+    private int    _pos;
+    public _StringTextReader(string src) {
+        this._src = src;
+        this._pos = 0;
+    }
+    public override int Peek() {
+        if (this._pos >= this._src.Length) { return -1; }
+        return (int)this._src.CharAt(this._pos);
+    }
+    public override int Read() {
+        if (this._pos >= this._src.Length) { return -1; }
+        int c = (int)this._src.CharAt(this._pos);
+        this._pos = this._pos + 1;
+        return c;
+    }
+}
+
+// ── Minimal concrete subclass of TextWriter that appends to a string ────
+
+public class _StringTextWriter : TextWriter {
+    public string Buf;
+    public _StringTextWriter() { this.Buf = ""; }
+    public override void Write(string s) { this.Buf = this.Buf + s; }
+}
+
+// ── TextReader: ReadLineBase / ReadToEndBase / ReadBufferBase ───────────
+
+[Test]
+void test_textreader_readlinebase_splits_lf() {
+    var r = new _StringTextReader("alpha\nbeta\ngamma");
+    Assert.Equal("alpha", r.ReadLineBase());
+    Assert.Equal("beta",  r.ReadLineBase());
+    Assert.Equal("gamma", r.ReadLineBase());
+    Assert.True(r.ReadLineBase() == null);   // EOF
+}
+
+[Test]
+void test_textreader_readlinebase_handles_crlf() {
+    var r = new _StringTextReader("alpha\r\nbeta\r\n");
+    Assert.Equal("alpha", r.ReadLineBase());
+    Assert.Equal("beta",  r.ReadLineBase());
+    Assert.True(r.ReadLineBase() == null);
+}
+
+[Test]
+void test_textreader_readlinebase_handles_lone_cr() {
+    var r = new _StringTextReader("alpha\rbeta");
+    Assert.Equal("alpha", r.ReadLineBase());
+    Assert.Equal("beta",  r.ReadLineBase());
+    Assert.True(r.ReadLineBase() == null);
+}
+
+[Test]
+void test_textreader_readlinebase_empty_blank_lines() {
+    var r = new _StringTextReader("\n\nx\n");
+    Assert.Equal("",  r.ReadLineBase());
+    Assert.Equal("",  r.ReadLineBase());
+    Assert.Equal("x", r.ReadLineBase());
+    Assert.True(r.ReadLineBase() == null);
+}
+
+[Test]
+void test_textreader_readlinebase_no_trailing_newline_returns_tail() {
+    var r = new _StringTextReader("only line, no newline");
+    Assert.Equal("only line, no newline", r.ReadLineBase());
+    Assert.True(r.ReadLineBase() == null);
+}
+
+[Test]
+void test_textreader_readtoendbase_drains_remainder() {
+    var r = new _StringTextReader("hello world");
+    Assert.Equal("hello world", r.ReadToEndBase());
+    Assert.Equal("", r.ReadToEndBase());   // already drained
+}
+
+[Test]
+void test_textreader_readbufferbase_partial_then_full() {
+    var r = new _StringTextReader("abcdef");
+    char[] buf = new char[10];
+    int n1 = r.ReadBufferBase(buf, 0, 3);
+    Assert.Equal(3, n1);
+    Assert.Equal('a', buf[0]);
+    Assert.Equal('b', buf[1]);
+    Assert.Equal('c', buf[2]);
+    int n2 = r.ReadBufferBase(buf, 3, 5);
+    Assert.Equal(3, n2);   // only "def" left, less than asked
+    Assert.Equal('d', buf[3]);
+    Assert.Equal('e', buf[4]);
+    Assert.Equal('f', buf[5]);
+    int n3 = r.ReadBufferBase(buf, 0, 5);
+    Assert.Equal(0, n3);   // EOF
+}
+
+[Test]
+void test_textreader_readbufferbase_rejects_bad_args() {
+    var r = new _StringTextReader("abc");
+    char[] buf = new char[4];
+    bool threw = false;
+    try { r.ReadBufferBase(buf, 0, 10); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── TextReader Peek: peek doesn't advance ───────────────────────────────
+
+[Test]
+void test_textreader_peek_doesnt_advance() {
+    var r = new _StringTextReader("xy");
+    Assert.Equal((int)'x', r.Peek());
+    Assert.Equal((int)'x', r.Peek());
+    Assert.Equal((int)'x', r.Read());
+    Assert.Equal((int)'y', r.Peek());
+    Assert.Equal((int)'y', r.Read());
+    Assert.Equal(-1, r.Peek());
+    Assert.Equal(-1, r.Read());
+}
+
+// ── TextWriter: WriteCharsBase / WriteCharBase / WriteLineBase ──────────
+
+[Test]
+void test_textwriter_writelinebase_appends_lf() {
+    var w = new _StringTextWriter();
+    w.WriteLineBase();
+    w.WriteLineBase("hi");
+    Assert.Equal("\nhi\n", w.Buf);
+}
+
+[Test]
+void test_textwriter_writecharsbase_writes_slice() {
+    var w = new _StringTextWriter();
+    char[] buf = new char[5];
+    buf[0] = 'a'; buf[1] = 'b'; buf[2] = 'c'; buf[3] = 'd'; buf[4] = 'e';
+    w.WriteCharsBase(buf, 1, 3);   // "bcd"
+    Assert.Equal("bcd", w.Buf);
+}
+
+[Test]
+void test_textwriter_writecharbase_writes_one() {
+    var w = new _StringTextWriter();
+    w.WriteCharBase('z');
+    Assert.Equal("z", w.Buf);
+}
+
+[Test]
+void test_textwriter_writecharsbase_rejects_bad_args() {
+    var w = new _StringTextWriter();
+    char[] buf = new char[2];
+    bool threw = false;
+    try { w.WriteCharsBase(buf, 0, 5); }
+    catch (ArgumentException) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── TextWriter Dispose calls Close (chain) ──────────────────────────────
+
+public class _CloseTrackingTextWriter : TextWriter {
+    public int CloseCalls;
+    public _CloseTrackingTextWriter() { this.CloseCalls = 0; }
+    public override void Write(string s) { /* no-op */ }
+    public override void Close() { this.CloseCalls = this.CloseCalls + 1; }
+}
+
+[Test]
+void test_textwriter_dispose_chains_to_close() {
+    var w = new _CloseTrackingTextWriter();
+    w.Dispose();
+    Assert.Equal(1, w.CloseCalls);
+}
+
+// ── TextReader Dispose chains to Close ──────────────────────────────────
+
+public class _CloseTrackingTextReader : TextReader {
+    public int CloseCalls;
+    public _CloseTrackingTextReader() { this.CloseCalls = 0; }
+    public override int Read() { return -1; }
+    public override void Close() { this.CloseCalls = this.CloseCalls + 1; }
+}
+
+[Test]
+void test_textreader_dispose_chains_to_close() {
+    var r = new _CloseTrackingTextReader();
+    r.Dispose();
+    Assert.Equal(1, r.CloseCalls);
+}
+
+// ── Base-class throw stubs ──────────────────────────────────────────────
+
+[Test]
+void test_textreader_base_read_throws() {
+    var r = new TextReader();
+    bool threw = false;
+    try { r.Read(); }
+    catch (NotSupportedException) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_textwriter_base_write_throws() {
+    var w = new TextWriter();
+    bool threw = false;
+    try { w.Write("x"); }
+    catch (NotSupportedException) { threw = true; }
+    Assert.True(threw);
+}
