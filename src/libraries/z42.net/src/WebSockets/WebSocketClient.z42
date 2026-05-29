@@ -1,8 +1,10 @@
 namespace Std.Net.WebSockets;
 
 using Std;
+using Std.IO;
 using Std.Crypto;
 using Std.Encoding;
+using Std.Random;
 using Std.Net.Sockets;
 
 // add-z42-net-websocket K4 (2026-05-25): RFC 6455 WebSocket client over TCP.
