@@ -1,6 +1,5 @@
 namespace Std.Json;
 using Std;
-using Std.IO;
 
 // add-z42-json (2026-05-14)：JSON 值的运行时表示 + 入口点。
 //
