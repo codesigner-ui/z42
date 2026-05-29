@@ -1,6 +1,7 @@
 namespace Std.Compression;
 
 using Std;
+using Std.IO;
 
 // add-z42-compression (2026-05-22): RFC 1950 zlib container. Same
 // DEFLATE engine as Gzip / Deflate, different framing (2-byte CMF/FLG

@@ -1,5 +1,6 @@
 namespace Std.Toml;
 
+using Std.IO;
 
 // add-z42-toml (2026-05-14)：TOML 值的运行时表示。
 //

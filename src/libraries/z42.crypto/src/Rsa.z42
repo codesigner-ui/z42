@@ -1,5 +1,6 @@
 namespace Std.Crypto;
 
+using Std.Numerics;
 
 // add-rsa (2026-05-28): RSA primitive (RFC 8017 / PKCS#1 v2.2).
 //

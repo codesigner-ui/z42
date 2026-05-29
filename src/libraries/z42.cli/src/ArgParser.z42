@@ -1,5 +1,6 @@
 namespace Std.Cli;
 using Std;
+using Std.Text;
 using Std.IO;
 
 // add-z42-cli (2026-05-16)：CLI argv 解析器。最小子集 — flag + option + positional。

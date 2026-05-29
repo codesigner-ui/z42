@@ -1,6 +1,7 @@
 namespace Std.Yaml;
 
 using Std;
+using Std.IO;
 using Std.Time;
 
 // add-z42-yaml (2026-05-24): YAML 值的运行时表示。

@@ -1,6 +1,7 @@
 namespace Std.Compression;
 
 using Std;
+using Std.IO;
 
 // add-z42-compression (2026-05-22): Zstandard (RFC 8478 / RFC 8878).
 // Better compression ratio than gzip at similar speed; the modern
