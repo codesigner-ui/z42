@@ -5,12 +5,24 @@
 //! from monolithic `main.rs`. Behavior unchanged from R3a.
 
 use anyhow::{bail, Result};
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
-use std::time::Instant;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::discover::DiscoveredTest;
 use crate::result::Outcome;
+
+/// Per-test wallclock cap. Anything beyond this is treated as a hang —
+/// z42vm gets SIGKILL'd and the test reports as `Failed { reason: "timed
+/// out after Xs ..." }` instead of locking the whole runner. Generous
+/// vs. observed legitimate test durations (most [Test] methods complete
+/// in milliseconds; the slowest JIT/crypto/compression ones are ~30 s
+/// on cold caches) so this only catches genuine hangs — network tests
+/// that race on TCP loopback close handshake (`ws_close` /
+/// `ws_ping_pong` under high parallel load on macOS in particular) are
+/// the motivating case (Z42-CI-2026-05-29 GREEN-up).
+const TEST_TIMEOUT_SECS: u64 = 120;
 
 pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
     if let Some(reason) = &test.skip_reason {
@@ -18,22 +30,80 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     }
 
     let start = Instant::now();
-    let output = Command::new(z42vm)
+    let mut child = match Command::new(z42vm)
         .arg(zbc_path)
         .arg(test.method_name)
-        .output();
-
-    let duration_ms = start.elapsed().as_millis() as u64;
-
-    let output = match output {
-        Ok(o) => o,
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
         Err(e) => return Outcome::Failed {
             reason: format!("failed to spawn z42vm: {e}")
         },
     };
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Drain stdout/stderr in background threads so the child never
+    // blocks on a full OS pipe buffer (default 64 KB on Linux). Without
+    // this, a test that prints a lot of diagnostic output before
+    // exiting would deadlock against our try_wait loop instead of
+    // exiting normally.
+    let mut stdout_pipe = child.stdout.take().expect("stdout was piped");
+    let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+    let out_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout_pipe.read_to_end(&mut buf);
+        buf
+    });
+    let err_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr_pipe.read_to_end(&mut buf);
+        buf
+    });
+
+    // Poll-with-deadline loop. Sleep granularity (50 ms) balances
+    // responsiveness for fast tests against syscall overhead — most
+    // tests exit in 1-2 sleeps; the timeout path only fires for genuine
+    // hangs at the upper bound.
+    let deadline = Instant::now() + Duration::from_secs(TEST_TIMEOUT_SECS);
+    let mut timed_out = false;
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(s)) => break Some(s),
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    timed_out = true;
+                    break child.wait().ok();
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Outcome::Failed {
+                reason: format!("error waiting for z42vm: {e}"),
+            },
+        }
+    };
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+    let stdout_buf = out_handle.join().unwrap_or_default();
+    let stderr_buf = err_handle.join().unwrap_or_default();
+    let stderr = String::from_utf8_lossy(&stderr_buf);
+    let stdout = String::from_utf8_lossy(&stdout_buf);
+
+    if timed_out {
+        let mut reason = format!(
+            "timed out after {}s — z42vm killed (likely hung)",
+            TEST_TIMEOUT_SECS
+        );
+        if !stderr.trim().is_empty() {
+            reason.push_str("\n--- stderr (partial) ---\n");
+            reason.push_str(stderr.trim_end());
+        }
+        return Outcome::Failed { reason };
+    }
+
+    let status = exit_status.expect("non-timeout path always has a status");
 
     // R4.B / A2 — [ShouldThrow<E>] inverts the success/failure semantics:
     // success means "the expected type was thrown" rather than "no exception".
@@ -45,7 +115,7 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     if let Some(expected) = &test.expected_throw {
         let candidates: Vec<&str> = expected.split(';').filter(|s| !s.is_empty()).collect();
         let display = candidates.first().copied().unwrap_or(expected);
-        if output.status.success() {
+        if status.success() {
             return Outcome::Failed {
                 reason: format!(
                     "expected to throw `{display}`, but no exception was thrown"
@@ -73,7 +143,7 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
         }
     }
 
-    if output.status.success() {
+    if status.success() {
         return Outcome::Passed { duration_ms };
     }
 
@@ -97,7 +167,7 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
         reason.push_str(stderr.trim_end());
     }
     if reason.is_empty() {
-        reason = format!("z42vm exited with status {}", output.status);
+        reason = format!("z42vm exited with status {}", status);
     }
     Outcome::Failed { reason }
 }
