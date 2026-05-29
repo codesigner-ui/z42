@@ -101,13 +101,24 @@ jobs:
       # Cranelift codegen, Blake3 Merkle recursion) exhausts 1 MB → silent
       # STATUS_ACCESS_VIOLATION (0xc0000005) on the guard page. Match the
       # other platforms' 8 MB to remove this class of cross-platform flake.
+      #
+      # --test-threads=1: the runtime --lib unit tests have a pre-existing
+      # cross-thread memory-corruption race (reproducible on macOS too:
+      # `cargo test --lib corelib` SIGSEGVs under parallel scheduling while
+      # `--test-threads=1` passes 736/736). RUST_MIN_STACK=8 MB only lowers
+      # the crash probability, it does not eliminate it — the corruption is
+      # not a pure stack overflow. cargo test is run ONLY on this Windows
+      # step (Linux/macOS exercise the VM via test-all.sh goldens, not the
+      # Rust unit harness), so serializing here is the targeted stopgap.
+      # TODO: root-cause the race (suspect: GC region raw-pointer Send/Sync
+      # unsoundness with multiple concurrent VmCores) and restore parallelism.
       - name: Smoke test (Windows)
         if: matrix.os == 'windows-latest'
         env:
           RUST_MIN_STACK: '8388608'
         run: |
           dotnet test src/compiler/z42.Tests/z42.Tests.csproj --blame-hang-timeout 5m --blame-hang-dump-type mini
-          cargo test --manifest-path src/runtime/Cargo.toml
+          cargo test --manifest-path src/runtime/Cargo.toml -- --test-threads=1
 
       # ── host RID SDK package smoke ──
       # Run scripts/package.sh release for the host RID (stdlib already built above).
