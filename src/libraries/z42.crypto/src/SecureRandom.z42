@@ -1,5 +1,6 @@
 namespace Std.Crypto;
 
+using Std;
 
 // add-csprng-to-crypto (2026-05-26): OS-backed cryptographically secure
 // random number generator. Bridges to `__crypto_random_bytes` builtin which
