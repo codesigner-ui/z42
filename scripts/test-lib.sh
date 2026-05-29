@@ -77,6 +77,13 @@ if ! $NO_BUILD; then
     "$SCRIPT_DIR/build-stdlib.sh" >/dev/null
     cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
     cargo build --manifest-path src/toolchain/test-runner/Cargo.toml --release --quiet
+    # fix-test-lib-dotnet-run-race (2026-05-29): pre-build Driver in Release
+    # so per-file `dotnet run --no-build -c Release` invocations below have
+    # the matching configuration already on disk. Without this, the
+    # build-stdlib.sh step above only produces Debug outputs and the per-file
+    # --no-build invocations would fail. With it, every per-file z42c run
+    # skips MSBuild's lock-contended rebuild check.
+    dotnet build "$ROOT/src/compiler/z42.Driver/z42.Driver.csproj" -c Release --nologo -v quiet >/dev/null
 fi
 
 RUNNER="$ROOT/artifacts/build/runtime/release/z42-test-runner"
@@ -114,11 +121,21 @@ run_test_file() {
     local name
     name=$(basename "$test_file" .z42)
 
-    if ! dotnet run --project "$ROOT/src/compiler/z42.Driver" -c Release -- \
+    # fix-test-lib-dotnet-run-race (2026-05-29): use --no-build so each
+    # parallel z42c invocation skips MSBuild's "do I need to rebuild?"
+    # check. The build is already done upfront via the toolchain step
+    # above (build-stdlib.sh → dotnet build z42.Driver.csproj). With
+    # --jobs=4, four concurrent dotnet run invocations were racing
+    # MSBuild's file locks even when no rebuild was actually needed,
+    # causing intermittent COMPILE ERROR on a random test file per run
+    # (cli_env_fallback_and_mutex, cli_help, scrypt_vectors,
+    # parse_numeric_bases all observed) while the .zbc was actually
+    # produced successfully — the race only affected exit code.
+    if ! dotnet run --no-build --project "$ROOT/src/compiler/z42.Driver" -c Release -- \
             "$test_file" --emit zbc -o "$zbc" >/dev/null 2>&1; then
         echo ""
         echo "✗ COMPILE ERROR: $name"
-        dotnet run --project "$ROOT/src/compiler/z42.Driver" -c Release -- \
+        dotnet run --no-build --project "$ROOT/src/compiler/z42.Driver" -c Release -- \
             "$test_file" --emit zbc -o "$zbc" 2>&1 | tail -10
         return 1
     fi
