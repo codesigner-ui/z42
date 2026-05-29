@@ -158,8 +158,22 @@ public static class ZpkgBuilder
 
     /// Build the flat ZpkgExport list from all ZbcFile exports, qualifying each
     /// symbol with its namespace.
+    ///
+    /// Idempotent qualification: an export `e` (the IR function name) can arrive
+    /// either short (`LinkedList.IsEmpty`) or already fully-qualified
+    /// (`Std.Collections.LinkedList.IsEmpty`, depending on whether the upstream
+    /// SemanticModel func key was qualified — which is order/CU-dependent).
+    /// Blindly prepending the namespace doubled it to
+    /// `Std.Collections.Std.Collections.LinkedList.IsEmpty`, so the runtime
+    /// lazy-loader's single-prefix lookup missed → cross-platform-flaky
+    /// "VCall: function ... not found". Only prepend when not already prefixed.
     static List<ZpkgExport> BuildExports(IReadOnlyList<ZbcFile> zbcFiles) =>
         zbcFiles
-            .SelectMany(z => z.Exports.Select(e => new ZpkgExport($"{z.Namespace}.{e}", "func")))
+            .SelectMany(z => z.Exports.Select(e => new ZpkgExport(QualifyExport(z.Namespace, e), "func")))
             .ToList();
+
+    static string QualifyExport(string ns, string export) =>
+        string.IsNullOrEmpty(ns) || export.StartsWith(ns + ".", StringComparison.Ordinal)
+            ? export
+            : $"{ns}.{export}";
 }
