@@ -450,6 +450,19 @@ fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
                     Instruction::Builtin { name, .. } => name,
                     Instruction::StaticGet { field, .. } => field,
                     Instruction::StaticSet { field, .. } => field,
+                    // fix-objnew-import-ns (2026-05-29): `new Foo()` on an imported
+                    // class emits ObjNew (not Call), and the subsequent method
+                    // calls are VCall (vtable) — neither was scanned, so the
+                    // providing zpkg's namespace was never inferred and the lazy
+                    // loader never declared/loaded it → `VCall: function not
+                    // found` on the first method. Use `class_name` so the
+                    // constructed type's namespace (e.g. `Std.Collections` from
+                    // `Std.Collections.LinkedList`) is registered; loading the
+                    // zpkg then makes every method resolvable. Previously masked
+                    // when the method happened to compile to a Call (DepIndex
+                    // shortcut) instead of a VCall — order-dependent, hence the
+                    // cross-platform-flaky failures.
+                    Instruction::ObjNew { class_name, .. } if !defined.contains(class_name.as_str()) => class_name,
                     _ => continue,
                 };
                 for ns in infer_namespace_candidates(target) {

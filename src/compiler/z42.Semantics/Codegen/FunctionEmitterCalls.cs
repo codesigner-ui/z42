@@ -184,6 +184,21 @@ internal sealed partial class FunctionEmitter
     /// — imported classes whose FuncParams aren't in scope).
     private TypedReg EmitInstanceVCallFallback(BoundCall call, List<TypedReg> argRegs, TypedReg objReg)
     {
+        // fix-vcall-dep-tracking (2026-05-29): record the receiver class's
+        // dependency namespace so the runtime registers this zpkg as a
+        // dependency and can lazy-load it at the VCall site. Without this, an
+        // instance call that routes here (because ReceiverChainHasMethod
+        // matched an imported class's own method — e.g. `list.IsEmpty()` on
+        // Std.Collections.LinkedList) never records the dep, and the runtime
+        // fails with "VCall: function not found" because the providing zpkg
+        // was never declared. The DepIndex shortcut in EmitInstanceBoundCall
+        // already tracks deps (line ~139); this is the missing mirror for the
+        // VCall path. Non-deterministic before the fix: whether a call lands
+        // here vs the DepIndex shortcut depends on import-registration order.
+        if (call.ReceiverClass is not null
+            && _ctx.ImportedClassNamespaces.TryGetValue(call.ReceiverClass, out var depNs))
+            _ctx.TrackDepNamespace(depNs);
+
         var vcallKey = _ctx.FindVcallParamsKey(call.MethodName!, argRegs.Count);
         if (vcallKey is not null)
         {

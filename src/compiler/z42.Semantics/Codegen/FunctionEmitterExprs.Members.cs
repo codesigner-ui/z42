@@ -133,6 +133,16 @@ internal sealed partial class FunctionEmitter
         // scope. Local classes win over same-named imports (handled in QualifyClassName).
         var argRegs = n.Args.Select(EmitExpr).ToList();
         string qualCls = _ctx.QualifyClassName(n.QualName);
+        // fix-vcall-dep-tracking (2026-05-29): record the constructed class's
+        // dependency namespace so the runtime declares + lazy-loads its zpkg.
+        // `new LinkedList<int>()` on Std.Collections must register z42.collections
+        // as a dependency; otherwise the runtime never loads it and the first
+        // method VCall (`list.IsEmpty()`) fails "function not found". Without
+        // this, a CU that only touches an imported class via `new` + virtual
+        // methods (never a DepIndex-static call) records no dependency at all —
+        // the root cause of the cross-platform-flaky "VCall not found".
+        if (_ctx.ImportedClassNamespaces.TryGetValue(n.QualName, out var ctorDepNs))
+            _ctx.TrackDepNamespace(ctorDepNs);
         // FQ ctor name = "{qualifiedClass}.{methodKey}" — TypeChecker
         // 已在 BoundNew.CtorName 提供 method key（含 $N suffix 如有）。
         string fqCtor = $"{qualCls}.{n.CtorName}";
