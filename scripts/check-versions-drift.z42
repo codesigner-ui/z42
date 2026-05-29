@@ -45,14 +45,23 @@ void Main() {
     // ── iOS ──────────────────────────────────────────────────────────────
     Console.WriteLine("── iOS ───────────────────────────────────────────────────────────────────");
     string helpersText = File.ReadAllText(Path.Join(root, "scripts/_lib/package_helpers.sh"));
+    // fix-versions-drift-ios-anchor (2026-05-29): the previous check
+    // looked at `ios-deployment-target = "X.Y"` in the SDK manifest
+    // section. Commit 930c3a4f refactored that line to read from
+    // versions.toml at runtime via $(versions_get ...), so the regex
+    // can no longer find a literal version — drift is structurally
+    // impossible at that line. Switch the anchor to the Package.swift
+    // template literal `.iOS(.v<major>)`, which IS still hardcoded
+    // and IS a real drift point with versions.toml.
     string wantIos = _tomlScalarToString(toml.Get("platform").Get("ios").Get("min_ios"));
-    string gotIos  = _firstMatchGroup(helpersText, "ios-deployment-target\\s*=\\s*\"([0-9]+\\.[0-9]+)\"", 1);
-    failCount = failCount + _check("package_helpers.sh  ios-deployment-target", wantIos, gotIos);
+    string gotIosMajor = _firstMatchGroup(helpersText, "\\.iOS\\(\\.v([0-9]+)\\)", 1);
+    string gotIos = gotIosMajor + ".0";
+    failCount = failCount + _check("package_helpers.sh  Package.swift .iOS(.v<major>)", wantIos, gotIos);
 
     string wantMac = _tomlScalarToString(toml.Get("platform").Get("ios").Get("min_macos"));
     string gotMacMajor = _firstMatchGroup(helpersText, "\\.macOS\\(\\.v([0-9]+)\\)", 1);
     string gotMac = gotMacMajor + ".0";
-    failCount = failCount + _check("package_helpers.sh  macOS deployment target", wantMac, gotMac);
+    failCount = failCount + _check("package_helpers.sh  Package.swift .macOS(.v<major>)", wantMac, gotMac);
 
     // ── wasm presence checks ────────────────────────────────────────────
     Console.WriteLine("── wasm ──────────────────────────────────────────────────────────────────");
