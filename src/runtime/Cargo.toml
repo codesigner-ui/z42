@@ -139,6 +139,10 @@ android              = ["interp-only", "aot", "native-interop", "bundled-compres
 # wasm32-unknown-unknown; our crypto.rs cfg-gates that path to throw
 # NotSupportedException instead (add-csprng-wasm-bridge follow-up).
 getrandom = "0.2"
+# add-net-socket-options-extended (2026-05-30): cross-platform setsockopt
+# for SO_REUSEADDR / SO_KEEPALIVE. Rust networking working group crate;
+# only deps libc on Unix; ships Winsock bindings on Windows.
+socket2 = "0.5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -271,6 +271,30 @@ public class UdpClient {
         if (kind != 0) { UdpDecode.Throw(raw, kind); }
     }
 
+    /// add-net-socket-options-extended (2026-05-30): UDP recv timeout.
+    /// `millis <= 0` clears the timeout (blocking forever). Throws
+    /// `InvalidOperationException` if called before Bind — the socket
+    /// option is per-fd, so there's no socket to set the option on yet.
+    public void SetReadTimeout(int millis) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._bound) {
+            throw new InvalidOperationException("SetReadTimeout before Bind");
+        }
+        object[] raw = UdpNative.SetReadTimeout(this._slotId, millis);
+        long kind = (long)raw[0];
+        if (kind != 0) { UdpDecode.Throw(raw, kind); }
+    }
+
+    public void SetWriteTimeout(int millis) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._bound) {
+            throw new InvalidOperationException("SetWriteTimeout before Bind");
+        }
+        object[] raw = UdpNative.SetWriteTimeout(this._slotId, millis);
+        long kind = (long)raw[0];
+        if (kind != 0) { UdpDecode.Throw(raw, kind); }
+    }
+
     /// Local bound port — useful after `Bind(host, 0)` to discover the
     /// OS-assigned port. Throws `InvalidOperationException` if not bound.
     public int LocalPort() {

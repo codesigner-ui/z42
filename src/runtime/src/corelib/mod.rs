@@ -371,6 +371,13 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__net_tcp_socket_set_ttl",      network::builtin_net_tcp_socket_set_ttl),
     ("__net_tcp_listener_set_ttl",    network::builtin_net_tcp_listener_set_ttl),
     ("__net_udp_set_ttl",             network::builtin_net_udp_set_ttl),
+
+    // ── add-net-socket-options-extended (2026-05-30) — connect/UDP timeout, SO_REUSEADDR, SO_KEEPALIVE ──
+    ("__net_tcp_connect_with_timeout", network::builtin_net_tcp_connect_with_timeout),
+    ("__net_tcp_socket_set_keepalive", network::builtin_net_tcp_socket_set_keepalive),
+    ("__net_tcp_listen_with_options",  network::builtin_net_tcp_listen_with_options),
+    ("__net_udp_set_read_timeout",     network::builtin_net_udp_set_read_timeout),
+    ("__net_udp_set_write_timeout",    network::builtin_net_udp_set_write_timeout),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

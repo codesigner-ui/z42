@@ -45,6 +45,14 @@ public static class UdpNative {
     /// add-z42-net-socket-options (2026-05-27): IP_TTL for unicast sends.
     [Native("__net_udp_set_ttl")]
     public static extern object[] SetTtl(long slotId, int ttl);
+
+    // add-net-socket-options-extended (2026-05-30): UDP read/write timeouts.
+    // `millis <= 0` clears the timeout (back to blocking I/O).
+    [Native("__net_udp_set_read_timeout")]
+    public static extern object[] SetReadTimeout(long slotId, int millis);
+
+    [Native("__net_udp_set_write_timeout")]
+    public static extern object[] SetWriteTimeout(long slotId, int millis);
 }
 
 // add-z42-net-udp K2 (2026-05-25): decode helpers — kind-tag → typed value

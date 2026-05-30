@@ -46,6 +46,17 @@ public static class NetTcpNative {
 
     [Native("__net_tcp_listener_set_ttl")]
     public static extern object[] ListenerSetTtl(long slotId, int ttl);
+
+    // add-net-socket-options-extended (2026-05-30): connect-with-timeout,
+    // SO_KEEPALIVE, SO_REUSEADDR via Listen-with-options.
+    [Native("__net_tcp_connect_with_timeout")]
+    public static extern object[] ConnectWithTimeout(string host, int port, int millis);
+
+    [Native("__net_tcp_socket_set_keepalive")]
+    public static extern object[] SocketSetKeepalive(long slotId, bool enable);
+
+    [Native("__net_tcp_listen_with_options")]
+    public static extern object[] ListenWithOptions(string host, int port, bool reuseAddr);
 }
 
 // add-z42-net K1 (2026-05-24): decode helpers for the kind-tagged tuple

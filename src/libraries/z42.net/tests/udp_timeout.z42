@@ -1,0 +1,101 @@
+// add-net-socket-options-extended (2026-05-30): UdpClient.SetReadTimeout
+// + SetWriteTimeout — mirrors TcpClient timeout semantics.
+namespace Z42NetUdpTimeoutTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_receive_with_short_timeout_throws() {
+    // No sender → Receive blocks → after 200 ms the OS returns EAGAIN
+    // which the corelib maps to a SocketException with "timed out" /
+    // "Resource temporarily unavailable".
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    u.SetReadTimeout(200);
+
+    bool threw = false;
+    try {
+        u.Receive();
+    } catch (SocketException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    u.Dispose();
+}
+
+[Test]
+void test_receive_within_timeout_succeeds() {
+    // Sender sends BEFORE Receive's 5 s window expires; Receive should
+    // succeed with the datagram, not throw.
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    int port = u.LocalPort();
+    u.SetReadTimeout(5000);
+
+    var sender = new UdpClient();
+    sender.Bind("127.0.0.1", 0);
+    byte[] msg = new byte[3];
+    msg[0] = (byte)'h'; msg[1] = (byte)'i'; msg[2] = (byte)'!';
+    sender.Send(msg, 3, "127.0.0.1", port);
+
+    UdpReceiveResult got = u.Receive();
+    Assert.Equal(3, got.Buffer.Length);
+    sender.Dispose();
+    u.Dispose();
+}
+
+[Test]
+void test_set_write_timeout_send_loopback_succeeds() {
+    // SetWriteTimeout doesn't break a normal Send on loopback (writes
+    // complete near-instantly on loopback; nothing to time out).
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    u.SetWriteTimeout(5000);
+
+    var peer = new UdpClient();
+    peer.Bind("127.0.0.1", 0);
+    int peerPort = peer.LocalPort();
+
+    byte[] one = new byte[1];
+    one[0] = (byte)7;
+    int sent = u.Send(one, 1, "127.0.0.1", peerPort);
+    Assert.Equal(1, sent);
+    u.Dispose();
+    peer.Dispose();
+}
+
+[Test]
+void test_set_read_timeout_pre_bind_throws() {
+    var u = new UdpClient();
+    bool threw = false;
+    try {
+        u.SetReadTimeout(500);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_set_read_timeout_zero_clears() {
+    // millis <= 0 routes to None (blocking). Verify call doesn't throw +
+    // a subsequent send-then-receive on loopback still works (i.e.
+    // timeout was actually cleared / never applied as 0 ms).
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    int port = u.LocalPort();
+    u.SetReadTimeout(0);   // explicit clear / no timeout
+
+    var sender = new UdpClient();
+    sender.Bind("127.0.0.1", 0);
+    byte[] m = new byte[1];
+    m[0] = (byte)9;
+    sender.Send(m, 1, "127.0.0.1", port);
+
+    UdpReceiveResult got = u.Receive();
+    Assert.Equal(1, got.Buffer.Length);
+    sender.Dispose();
+    u.Dispose();
+}

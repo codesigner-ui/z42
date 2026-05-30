@@ -1,0 +1,114 @@
+// add-net-socket-options-extended (2026-05-30): SO_KEEPALIVE on connected
+// TcpClient + SO_REUSEADDR pre-bind on TcpListener.
+namespace Z42NetTcpKeepaliveReuseaddrTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+
+// ── SO_KEEPALIVE ───────────────────────────────────────────────────────
+
+[Test]
+void test_set_keepalive_on_connected_socket_succeeds() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        // Read until EOF so we keep the connection alive long enough
+        // for the client to flip keepalive on.
+        byte[] discard = new byte[16];
+        peer.GetStream().Read(discard, 0, 16);
+        peer.Dispose();
+    });
+
+    var c = new TcpClient();
+    c.Connect("127.0.0.1", port);
+    c.SetKeepAlive(true);
+    // Socket should remain usable after setsockopt — write a byte then close.
+    byte[] one = new byte[1];
+    one[0] = (byte)42;
+    c.GetStream().Write(one, 0, 1);
+    c.Dispose();
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_set_keepalive_can_disable() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        peer.Dispose();
+    });
+
+    var c = new TcpClient();
+    c.Connect("127.0.0.1", port);
+    c.SetKeepAlive(true);
+    c.SetKeepAlive(false);   // toggle off — must not throw
+    c.Dispose();
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_set_keepalive_pre_connect_throws() {
+    var c = new TcpClient();
+    bool threw = false;
+    try {
+        c.SetKeepAlive(true);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── SO_REUSEADDR ──────────────────────────────────────────────────────
+
+[Test]
+void test_set_reuse_address_pre_bind_succeeds() {
+    var l = new TcpListener();
+    l.SetReuseAddress(true);
+    l.Bind("127.0.0.1", 0);
+    Assert.True(l.LocalPort() > 0);
+    l.Stop();
+}
+
+[Test]
+void test_set_reuse_address_post_bind_throws() {
+    var l = new TcpListener();
+    l.Bind("127.0.0.1", 0);
+    bool threw = false;
+    try {
+        l.SetReuseAddress(true);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    l.Stop();
+}
+
+[Test]
+void test_reuse_address_allows_rebind_after_stop() {
+    // First listener picks a port; immediately Stop and re-bind the same
+    // port with SO_REUSEADDR enabled. Without REUSEADDR the second bind
+    // could fail with EADDRINUSE during TIME_WAIT — REUSEADDR lets us
+    // grab the port immediately. This is the canonical server-restart
+    // use case.
+    var first = new TcpListener();
+    first.SetReuseAddress(true);
+    first.Bind("127.0.0.1", 0);
+    int port = first.LocalPort();
+    first.Stop();
+
+    var second = new TcpListener();
+    second.SetReuseAddress(true);
+    second.Bind("127.0.0.1", port);
+    Assert.Equal(port, second.LocalPort());
+    second.Stop();
+}

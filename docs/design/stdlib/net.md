@@ -21,6 +21,12 @@ public class TcpClient {
     public NetworkStream GetStream();                            // lazy + cached
     public string RemoteHost();
     public int RemotePort();
+    public void SetReadTimeout(int millis);                      // post-Connect; <=0 clears
+    public void SetWriteTimeout(int millis);                     // post-Connect
+    public void SetNoDelay(bool enable);                         // TCP_NODELAY
+    public void SetTtl(int ttl);                                 // IP_TTL
+    public void SetConnectTimeout(int millis);                   // applies to next Connect; <=0 clears
+    public void SetKeepAlive(bool enable);                       // post-Connect; SO_KEEPALIVE bool toggle
     public void Dispose();
     public void Close();   // alias for Dispose
 }
@@ -32,6 +38,8 @@ public class TcpListener {
     public TcpClient AcceptTcpClient();          // blocks
     public int LocalPort();                      // post-Bind discover
     public string BindHost();
+    public void SetTtl(int ttl);                 // post-Bind; IP_TTL
+    public void SetReuseAddress(bool enable);    // pre-Bind only; post-Bind throws
     public void Stop();                          // alias for Dispose
     public void Dispose();
 }
@@ -53,6 +61,9 @@ public class UdpClient {
     public UdpReceiveResult Receive();                                          // blocking
     public int  LocalPort();                                                    // post-Bind
     public string BindHost();
+    public void SetTtl(int ttl);                                                // post-Bind; IP_TTL unicast
+    public void SetReadTimeout(int millis);                                     // post-Bind; <=0 clears
+    public void SetWriteTimeout(int millis);                                    // post-Bind
     public void Dispose();
     public void Close();        // alias for Dispose
 }
@@ -165,12 +176,18 @@ Out of scope (now their own follow-up specs):
 - **触发条件**：HTTP client 需要 SRV/MX 等高级 lookup
 - **当前 workaround**：用 `TcpClient.Connect("host", port)` 间接 DNS
 
-### `net-future-timeout` — read/write/connect timeout
+### ~~`net-future-timeout`~~ — **✅ 已落地 2026-05-30 (add-net-socket-options-extended)**
 
-- **来源**：K1 同步阻塞，无超时
-- **触发原因**：与 `ProcessHandle.Wait` 阻塞模型一致；超时是独立维度
-- **触发条件**：网络分区 / 慢响应攻击防御用例
-- **当前 workaround**：调用方用线程 + Kill 自行超时
+Shipped:
+- `TcpClient.SetConnectTimeout(int millis)` — routes next `Connect()`
+  through `__net_tcp_connect_with_timeout` → Rust `TcpStream::connect_timeout`
+- `UdpClient.SetReadTimeout(int millis)` / `SetWriteTimeout(int millis)` —
+  mirror the existing TCP `SetReadTimeout` / `SetWriteTimeout` shape against
+  `udp_sockets` slot table
+- `millis <= 0` clears the preset (back to blocking I/O), matching BCL
+  semantics
+
+TCP read/write timeout already landed 2026-05-27 (`add-httpclient-timeout`).
 
 ### `net-future-tls` — TLS / HTTPS
 
@@ -207,12 +224,25 @@ Out of scope (now their own follow-up specs):
 - **触发条件**：L3 stage 解锁
 - **当前 workaround**：用 `Std.Threading.Thread.Start` 每连接一线程
 
-### `net-future-socket-options` — SO_REUSEADDR / SO_KEEPALIVE / Nagle / etc.
+### ~~`net-future-socket-options`~~ — **✅ 已落地 2026-05-30 (add-net-socket-options-extended)**
 
-- **来源**：K1 用 std::net 默认值
-- **触发原因**：高性能服务 / 短连接重启场景需要 tuning
-- **触发条件**：bench 揭示瓶颈或 production 配置需求
-- **当前 workaround**：默认值满足大部分用例
+Shipped (combined with the earlier 2026-05-27 Nagle / IP_TTL pieces):
+- `TcpClient.SetKeepAlive(bool)` — SO_KEEPALIVE on connected socket via
+  `socket2::SockRef`. OS default idle / interval / probe counts apply.
+- `TcpListener.SetReuseAddress(bool)` — SO_REUSEADDR set on a freshly-
+  built `socket2::Socket` **before** bind (POSIX requires pre-bind);
+  post-Bind throws `InvalidOperationException` (mirrors BCL
+  `ExclusiveAddressUse` pre-Start enforcement). Routes through new
+  `__net_tcp_listen_with_options` builtin only when the user opts in.
+
+The `socket2 = "0.5"` crate landed alongside in `src/runtime/Cargo.toml`
+to give cross-platform setsockopt (libc on Unix, Winsock bindings on
+Windows). wasm32 stubs throw `NetUnsupportedException`.
+
+Still deferred — split out as their own follow-up specs:
+- `net-future-keepalive-tuning` — `SetKeepAlive(bool, idle, interval, probes)`
+  variants tying down OS-specific TCP_KEEPIDLE / TCP_KEEPINTVL / TCP_KEEPCNT
+- `TcpClient.SetReuseAddress` (outgoing client) — rare use case; not in v0
 
 ### `net-future-wasm-wasi-sockets` — wasm32 真实 socket
 

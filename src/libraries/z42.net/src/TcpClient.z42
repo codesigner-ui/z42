@@ -25,6 +25,9 @@ public class TcpClient {
     private NetworkStream _stream;
     private string _remoteHost;
     private int _remotePort;
+    // add-net-socket-options-extended (2026-05-30): value > 0 routes the
+    // next Connect() through __net_tcp_connect_with_timeout. 0 = no preset.
+    private int _connectTimeoutMs;
 
     public TcpClient() {
         this._slotId    = -1;
@@ -33,6 +36,7 @@ public class TcpClient {
         this._stream    = null;
         this._remoteHost = "";
         this._remotePort = 0;
+        this._connectTimeoutMs = 0;
     }
 
     /// Static factory equivalent to `new TcpClient()` + `.Connect(host, port)`.
@@ -55,12 +59,28 @@ public class TcpClient {
         if (this._connected) {
             throw new InvalidOperationException("TcpClient already connected");
         }
-        object[] raw = NetTcpNative.Connect(host, port);
+        // add-net-socket-options-extended (2026-05-30): route through the
+        // timeout-aware builtin when SetConnectTimeout(>0) was called.
+        object[] raw;
+        if (this._connectTimeoutMs > 0) {
+            raw = NetTcpNative.ConnectWithTimeout(host, port, this._connectTimeoutMs);
+        } else {
+            raw = NetTcpNative.Connect(host, port);
+        }
         long slotId = NetTcpDecode.ToSlot(raw);
         this._slotId     = slotId;
         this._connected  = true;
         this._remoteHost = host;
         this._remotePort = port;
+    }
+
+    /// add-net-socket-options-extended (2026-05-30): cap how long the next
+    /// `Connect()` will wait for the TCP handshake before throwing
+    /// `SocketException`. `millis <= 0` clears the preset (= blocking).
+    /// Call before `Connect` — applies to the NEXT Connect call only; the
+    /// value persists across re-connects on the same TcpClient instance.
+    public void SetConnectTimeout(int millis) {
+        this._connectTimeoutMs = millis;
     }
 
     /// Get the byte-oriented NetworkStream over this socket. Lazy + cached:
@@ -143,6 +163,20 @@ public class TcpClient {
             throw new InvalidOperationException("TcpClient not connected — call Connect first");
         }
         object[] raw = NetTcpNative.SocketSetTtl(this._slotId, ttl);
+        long kind = (long)raw[0];
+        if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
+    }
+
+    /// add-net-socket-options-extended (2026-05-30): SO_KEEPALIVE on the
+    /// connected socket. Uses OS default idle / interval / probe-count;
+    /// fine-grained tuning is deferred to `net-future-keepalive-tuning`.
+    /// Must be called AFTER `Connect()` — pre-connect there's no socket.
+    public void SetKeepAlive(bool enable) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        object[] raw = NetTcpNative.SocketSetKeepalive(this._slotId, enable);
         long kind = (long)raw[0];
         if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
     }

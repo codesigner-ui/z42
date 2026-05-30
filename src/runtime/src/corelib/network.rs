@@ -394,6 +394,127 @@ mod imp {
         }
     }
 
+    // ── add-net-socket-options-extended (2026-05-30) ──────────────────────
+    // Connect-with-timeout + SO_KEEPALIVE + SO_REUSEADDR. The first uses
+    // std::net::TcpStream::connect_timeout; the latter two need cross-
+    // platform setsockopt via the `socket2` crate (libc on Unix; Winsock
+    // bindings on Windows).
+
+    /// `__net_tcp_connect_with_timeout(host, port, millis) -> [0, slot] | err`
+    /// `millis <= 0` is treated as "no preset" — fall back to a very long
+    /// duration (matches BCL semantics where 0 means "infinite"). The
+    /// stdlib wrapper only routes through this builtin when the user
+    /// explicitly called `SetConnectTimeout(>0)`, so the long-fallback
+    /// branch is a defensive guard, not a normal path.
+    pub fn builtin_net_tcp_connect_with_timeout(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_connect_with_timeout";
+        let host = arg_str(args, 0, NAME)?.to_string();
+        let port = require_port(args, 1, NAME)?;
+        let millis = arg_i64(args, 2, NAME)?;
+        let dur = if millis > 0 {
+            std::time::Duration::from_millis(millis as u64)
+        } else {
+            std::time::Duration::from_secs(u32::MAX as u64)
+        };
+
+        let addr = format!("{}:{}", host, port);
+        let socket_addr = match addr.to_socket_addrs().and_then(|mut it| {
+            it.next().ok_or_else(|| std::io::Error::new(
+                std::io::ErrorKind::AddrNotAvailable, "no addresses"))
+        }) {
+            Ok(a) => a,
+            Err(e) => return Ok(socket_err(ctx, format!("connect to {}: {}", addr, e))),
+        };
+        match TcpStream::connect_timeout(&socket_addr, dur) {
+            Ok(stream) => {
+                let slot_id = ctx.alloc_tcp_socket_slot(stream);
+                Ok(ok_value(ctx, slot_id as i64))
+            }
+            Err(e) => Ok(socket_err(ctx, format!(
+                "connect to {} (timeout {}ms): {}", addr, millis, e))),
+        }
+    }
+
+    /// `__net_tcp_socket_set_keepalive(slot, enable) -> [0] | err | invalid`
+    /// Toggle SO_KEEPALIVE on a connected socket. OS default idle / interval
+    /// / probe counts apply — fine-grained tuning is deferred to a future
+    /// `net-future-keepalive-tuning` spec.
+    pub fn builtin_net_tcp_socket_set_keepalive(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_set_keepalive";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let enable = match args.get(1) {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::I64(n))  => *n != 0,
+            other => bail!("{}: arg 1 expected bool, got {:?}", NAME, other),
+        };
+        let stream = {
+            let map = ctx.core.tcp_sockets.lock();
+            match map.get(&slot_id) {
+                Some(s) => s.try_clone(),
+                None => return Ok(handle_invalid(ctx)),
+            }
+        };
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => return Ok(socket_err(ctx, format!("set_keepalive: try_clone: {}", e))),
+        };
+        let sref = socket2::SockRef::from(&stream);
+        match sref.set_keepalive(enable) {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_keepalive: {}", e))),
+        }
+    }
+
+    /// `__net_tcp_listen_with_options(host, port, reuse_addr) -> [0, slot, actual_port] | err`
+    /// Create a TcpListener with SO_REUSEADDR optionally set BEFORE bind
+    /// (POSIX requires the option be applied pre-bind). When `reuse_addr`
+    /// is false the result is observationally equivalent to plain
+    /// `__net_tcp_listen` — the stdlib wrapper only routes through here
+    /// when the user opts in with `SetReuseAddress(true)`.
+    pub fn builtin_net_tcp_listen_with_options(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_listen_with_options";
+        let host = arg_str(args, 0, NAME)?.to_string();
+        let port = require_port(args, 1, NAME)?;
+        let reuse_addr = match args.get(2) {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::I64(n))  => *n != 0,
+            other => bail!("{}: arg 2 expected bool, got {:?}", NAME, other),
+        };
+
+        let bind_target = format!("{}:{}", host, port);
+        let socket_addr: SocketAddr = match bind_target.to_socket_addrs()
+            .and_then(|mut it| it.next().ok_or_else(|| std::io::Error::new(
+                std::io::ErrorKind::AddrNotAvailable, "no addresses"))) {
+            Ok(a) => a,
+            Err(e) => return Ok(socket_err(ctx, format!("bind {}: {}", bind_target, e))),
+        };
+
+        let domain = if socket_addr.is_ipv4() {
+            socket2::Domain::IPV4
+        } else {
+            socket2::Domain::IPV6
+        };
+        let sock = match socket2::Socket::new(domain, socket2::Type::STREAM, None) {
+            Ok(s) => s,
+            Err(e) => return Ok(socket_err(ctx, format!("bind {}: socket: {}", bind_target, e))),
+        };
+        if reuse_addr {
+            if let Err(e) = sock.set_reuse_address(true) {
+                return Ok(socket_err(ctx, format!("bind {}: set_reuse_address: {}", bind_target, e)));
+            }
+        }
+        if let Err(e) = sock.bind(&socket_addr.into()) {
+            return Ok(socket_err(ctx, format!("bind {}: {}", bind_target, e)));
+        }
+        if let Err(e) = sock.listen(128) {
+            return Ok(socket_err(ctx, format!("bind {}: listen: {}", bind_target, e)));
+        }
+        let listener: TcpListener = sock.into();
+        let actual_port = listener.local_addr().map(|a| a.port()).unwrap_or(port);
+        let slot_id = ctx.alloc_tcp_listener_slot(listener);
+        Ok(ok_two(ctx, slot_id as i64, actual_port as i64))
+    }
+
     // ── UDP builtins (add-z42-net-udp K2, 2026-05-25) ────────────────────
     use std::net::UdpSocket;
 
@@ -708,6 +829,52 @@ mod imp {
             Err(e) => Ok(socket_err(ctx, format!("udp recv_into: {}", e))),
         }
     }
+
+    // ── add-net-socket-options-extended (2026-05-30) ──────────────────────
+    // UDP read / write timeout mirrors the TCP `apply_timeout` shape but
+    // operates on the udp_sockets slot table. std::net::UdpSocket exposes
+    // `set_read_timeout` / `set_write_timeout` natively.
+
+    fn apply_udp_timeout(
+        ctx: &VmContext,
+        slot_id: u64,
+        millis: i64,
+        which: &'static str,
+    ) -> Result<Value> {
+        let dur = if millis > 0 {
+            Some(std::time::Duration::from_millis(millis as u64))
+        } else {
+            None
+        };
+        let map = ctx.core.udp_sockets.lock();
+        let sock = match map.get(&slot_id) {
+            Some(s) => s,
+            None => return Ok(handle_invalid(ctx)),
+        };
+        let result = if which == "set_read_timeout" {
+            sock.set_read_timeout(dur)
+        } else {
+            sock.set_write_timeout(dur)
+        };
+        match result {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("{}: {}", which, e))),
+        }
+    }
+
+    pub fn builtin_net_udp_set_read_timeout(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_set_read_timeout";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let millis = arg_i64(args, 1, NAME)?;
+        apply_udp_timeout(ctx, slot_id, millis, "set_read_timeout")
+    }
+
+    pub fn builtin_net_udp_set_write_timeout(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_set_write_timeout";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let millis = arg_i64(args, 1, NAME)?;
+        apply_udp_timeout(ctx, slot_id, millis, "set_write_timeout")
+    }
 }
 
 // ── wasm32: all builtins return KIND_UNSUPPORTED tuple ────────────────────
@@ -782,6 +949,23 @@ mod imp {
         Ok(unsupported(ctx))
     }
     pub fn builtin_net_tcp_socket_set_write_timeout(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+
+    // add-net-socket-options-extended (2026-05-30) wasm32 stubs
+    pub fn builtin_net_tcp_connect_with_timeout(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_set_keepalive(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_listen_with_options(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_set_read_timeout(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_set_write_timeout(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(unsupported(ctx))
     }
 }
