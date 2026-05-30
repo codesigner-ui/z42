@@ -89,6 +89,24 @@ struct Cli {
     /// add-test-skip-platform-feature-eval (2026-05-30).
     #[arg(long, value_name = "NAME")]
     platform: Option<String>,
+
+    /// Print the discovered test names (one per line) to stdout and exit.
+    /// Filter (--filter) still applies. Useful for CI sharding —
+    /// `runner suite.zbc --list | sort -u | split -n l/$N` partitions the
+    /// test set across N jobs. Wins over `--dry-run` when both are set.
+    /// add-runner-list-and-dry-run-flags (2026-05-31).
+    #[arg(long)]
+    list: bool,
+
+    /// Walk discovery + filter + skip evaluation as usual, then synthesize
+    /// `Passed { duration_ms: 0 }` for every test that survives — no actual
+    /// body invocation. `[Skip(...)]` entries still report as Skipped
+    /// (skip eval runs). Useful for verifying filter / platform / feature
+    /// gating logic without paying execution cost. Cannot be combined with
+    /// `--list` (which short-circuits earlier).
+    /// add-runner-list-and-dry-run-flags (2026-05-31).
+    #[arg(long)]
+    dry_run: bool,
 }
 
 fn main() {
@@ -149,6 +167,22 @@ fn run(cli: &Cli) -> Result<i32> {
                 println!("{}", "no tests found".yellow());
             }
             return Ok(3);
+        }
+        // add-runner-list-and-dry-run-flags (2026-05-31): short-circuit
+        // before subprocess fork costs.
+        if cli.list {
+            for t in &report.tests { println!("{}", t.method_name); }
+            return Ok(0);
+        }
+        if cli.dry_run {
+            let results: Vec<TestResult> = report.tests.iter()
+                .map(|t| TestResult::from_outcome(
+                    t.method_name.to_string(),
+                    dry_run_outcome(t, &skip_env),
+                    t.is_benchmark))
+                .collect();
+            emit(&format, &module_name, &results)?;
+            return Ok(0);
         }
         let z42vm = exec::resolve_z42vm(cli.z42vm.as_ref())
             .context("locating z42vm binary (use --z42vm to override)")?;
@@ -229,6 +263,36 @@ fn run(cli: &Cli) -> Result<i32> {
         return Ok(3);
     }
 
+    // add-runner-list-and-dry-run-flags (2026-05-31): short-circuit before
+    // the per-test runner::run_one loop costs.
+    if cli.list {
+        for t in &report_tests { println!("{}", t.method_name); }
+        return Ok(0);
+    }
+    if cli.dry_run {
+        let results: Vec<TestResult> = report_tests.iter()
+            .map(|t| {
+                let dt = discover::DiscoveredTest {
+                    method_id: t.method_id,
+                    method_name: &t.method_name,
+                    flags: t.flags,
+                    is_benchmark: t.is_benchmark,
+                    skip_reason: t.skip_reason.clone(),
+                    skip_platform: t.skip_platform.clone(),
+                    skip_feature: t.skip_feature.clone(),
+                    expected_throw: t.expected_throw.clone(),
+                    timeout_ms: t.timeout_ms,
+                };
+                TestResult::from_outcome(
+                    t.method_name.clone(),
+                    dry_run_outcome(&dt, &skip_env),
+                    t.is_benchmark)
+            })
+            .collect();
+        emit(&format, &module_name, &results)?;
+        return Ok(0);
+    }
+
     let mut results: Vec<TestResult> = Vec::with_capacity(report_tests.len());
     for test in &report_tests {
         // Borrow as DiscoveredTest<'_> for runner API compat.
@@ -284,6 +348,21 @@ fn emit(format: &Format, module_name: &str, results: &[TestResult]) -> Result<()
         Format::Json   => format::json::print(module_name, results)?,
     }
     Ok(())
+}
+
+/// add-runner-list-and-dry-run-flags (2026-05-31): synthesize an Outcome
+/// for `--dry-run` without invoking the test body.
+///
+/// Skip evaluation still runs — a `[Skip(platform: "ios")]` test on iOS
+/// reports as Skipped (with the proper reason string), matching real-run
+/// behavior. Tests that survive skip eval report as Passed with zero
+/// duration. Useful for verifying filter / platform / feature gating
+/// in CI before paying execution cost.
+fn dry_run_outcome(test: &discover::DiscoveredTest<'_>, env: &skip_eval::SkipEnv) -> result::Outcome {
+    if let Some(reason) = skip_eval::decide_skip(test, env) {
+        return result::Outcome::Skipped { reason };
+    }
+    result::Outcome::Passed { duration_ms: 0 }
 }
 
 /// add-test-runner-parallel (2026-05-27): resolve --jobs N.

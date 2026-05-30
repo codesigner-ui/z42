@@ -255,6 +255,20 @@ YAML diagnostic 块仅在 `not ok` 后输出（`ok` 不带 reason）；skip 用 
 
 substring match 而非 regex；不引入 `regex` 依赖。`test.method_name.contains(filter)` 为 true 即保留。如未来需 regex，独立 spec 升级。
 
+### --list / --dry-run（add-runner-list-and-dry-run-flags, 2026-05-31）
+
+- `--list` — 打印发现到的 test 名（每行一个），exit 0；不执行 body。
+  与 `--filter` 组合可用。**CI sharding 典型用法**：
+  ```bash
+  z42-test-runner suite.zbc --list \
+    | awk "NR % $N == ($JOB % $N)" \
+    | xargs -I{} z42-test-runner suite.zbc --filter {}
+  ```
+- `--dry-run` — 走完 discovery + filter + skip evaluation，但不调 test body。
+  通过 test → `Passed { duration_ms: 0 }`；`[Skip(...)]` 仍正确报 Skipped
+  (skip_eval 跑)。验证 filter / platform / feature gating 不付执行成本。
+- 两者同时设置 → `--list` 胜出（短路更早）。
+
 ### 退出码
 
 - `0` — 全部通过 / 仅 skipped
