@@ -659,7 +659,10 @@ public static partial class ZbcReader
     // ── TIDX section (R1: compile-time test metadata) ────────────────────────
     // Reads the section payload written by ZbcWriter.BuildTidxSection.
     // Layout mirror; see ZbcWriter.BuildTidxSection for the byte-level contract.
-    private const byte TidxExpectedVersion = 2;
+    // 2026-05-30 add-test-timeout-attribute: v=3 appends trailing timeout_ms i32
+    // per entry (after the TestCase array). Pre-1.0 strict-pin policy — old v=2
+    // payloads not supported; users must regen.
+    private const byte TidxExpectedVersion = 3;
 
     private static IReadOnlyList<TestEntry> ReadTidxSection(ReadOnlySpan<byte> sec)
     {
@@ -700,6 +703,11 @@ public static partial class ZbcReader
                 testCases.Add(new TestCase((int)argReprStrIdx));
             }
 
+            // v=3: trailing timeout_ms i32 (0 = no override). add-test-timeout-attribute.
+            if (sec.Length < pos + 4)
+                throw new InvalidDataException("TIDX section: truncated (no timeout_ms)");
+            int timeoutMs = BitConverter.ToInt32(sec.Slice(pos, 4)); pos += 4;
+
             entries.Add(new TestEntry(
                 MethodId:             (int)methodId,
                 Kind:                 (TestEntryKind)kindByte,
@@ -708,7 +716,8 @@ public static partial class ZbcReader
                 SkipPlatformStrIdx:   (int)skipPlatformStrIdx,
                 SkipFeatureStrIdx:    (int)skipFeatureStrIdx,
                 ExpectedThrowTypeIdx: (int)expectedThrowIdx,
-                TestCases:            testCases));
+                TestCases:            testCases,
+                TimeoutMs:            timeoutMs));
         }
 
         return entries;

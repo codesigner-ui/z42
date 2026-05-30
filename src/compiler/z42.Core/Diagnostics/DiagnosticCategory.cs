@@ -68,7 +68,7 @@ public static class DiagnosticCategories
 
         // Special single-code carve-outs inside the E09xx range.
         if (code == DiagnosticCodes.InternalCompilerError) return DiagnosticCategory.InternalCompilerError;
-        if (code is "E0911" or "E0912" or "E0913" or "E0914" or "E0915")
+        if (code is "E0911" or "E0912" or "E0913" or "E0914" or "E0915" or "E0917")
             return DiagnosticCategory.Test;
 
         return code[2] switch

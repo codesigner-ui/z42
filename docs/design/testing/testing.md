@@ -519,6 +519,34 @@ R4 计划新增的 attribute（**目前 parser 不识别**）：
 - `[ShouldThrow<E>]` — 期望函数抛 `E` 类型异常（需先实现 attribute 泛型语法）
 - `[TestCase(args)]` — 参数化测试，可重复多次（需先实现 typed args 语法）
 
+### `[Timeout(milliseconds: N)]` — Per-test wallclock budget (2026-05-30)
+
+由 [add-test-timeout-attribute](../../spec/changes/add-test-timeout-attribute/) 引入，
+首个接受**整数字面量** named-arg 的 test attribute：
+
+```z42
+[Test]
+[Timeout(milliseconds: 60_000)]
+void test_secp256k1_roundtrip() { ... }
+```
+
+要点：
+- 必须与 `[Test]` 或 `[Benchmark]` 同时出现；不可重复
+- `milliseconds:` 值必须 `> 0` 且 `≤ i32::MaxValue`；否则 **E0917**
+- runner 把请求 budget 与 `TIMEOUT_HARD_CEILING_SECS = 2 × DEFAULT_TIMEOUT_SECS = 600s` 比较，
+  超出时 clamp 到 ceiling 并打一行 `note:` 警告（保护 hang detector，
+  防止 `60_000_000` 这种 typo 完全禁用超时机制）
+- 无 `[Timeout]` 时 runner 使用 `DEFAULT_TIMEOUT_SECS = 300`，origin 标为
+  `"runner default"`；超时失败 reason 字段会显示 budget 来源便于分辨
+- TIDX section 在 v=3 起每条 entry 追加 `timeout_ms: i32`（`0` = no override）
+
+> **AttributeArg discriminator**：为承载整数 named-arg，parser 把
+> `TestAttribute.NamedArgs` 从 `Dictionary<string, string>` 升级为
+> `Dictionary<string, AttributeArg>`，其中 `AttributeArg` 是
+> `AttributeArgString | AttributeArgInt` sealed-record 判别联合。未来
+> 加 `AttributeArgIdent` / `AttributeArgFloat` 形态时只需新增 record +
+> parser 分支 + 消费侧 pattern。
+
 ---
 
 ## TIDX 二进制格式（R1）
@@ -527,7 +555,7 @@ R4 计划新增的 attribute（**目前 parser 不识别**）：
 
 要点：
 - Section tag 4 字节 ASCII：`TIDX`
-- 当前版本 `v=2`（R1.C，2026-04-29）
+- 当前版本 `v=3`（add-test-timeout-attribute，2026-05-30；v=2 → v=3 追加 trailing `timeout_ms: i32`）
 - 仅当模块含至少一个测试 attribute 时由 `ZbcWriter.BuildTidxSection` 写入；
   缺失 = 该 .zbc 无测试
 - 字符串引用为 **1-based** 索引到 `module.string_pool`，`0` 表示无值

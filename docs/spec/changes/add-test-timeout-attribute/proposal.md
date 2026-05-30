@@ -58,7 +58,7 @@ cap and false-failing the legit-slow tests.
   - `TestAttributeValidator` enforces: `milliseconds > 0`,
     fits in `i32`, attribute requires `[Test]` or `[Benchmark]`,
     at most one `[Timeout]` per method.
-  - New diagnostic **E0916 `TimeoutValueInvalid`** for `<= 0`,
+  - New diagnostic **E0917 `TimeoutValueInvalid`** for `<= 0`,
     overflow, missing arg, wrong arg type, or wrong target.
     (E0915 is already taken by `SetupTeardownSignatureInvalid`.)
 - zbc TIDX section:
@@ -95,11 +95,11 @@ cap and false-failing the legit-slow tests.
 
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `src/compiler/z42.Core/Diagnostics/Diagnostic.cs` | MODIFY | 加 `TimeoutValueInvalid = "E0916"` 常量（E0915 已被 SetupTeardownSignatureInvalid 占用）|
-| `src/compiler/z42.Core/Diagnostics/DiagnosticCatalog.cs` | MODIFY | E0916 描述条目 |
+| `src/compiler/z42.Core/Diagnostics/Diagnostic.cs` | MODIFY | 加 `TimeoutValueInvalid = "E0917"` 常量（E0915 已被 SetupTeardownSignatureInvalid 占用；E0916 已被 NativeImportSynthesisFailure 占用 — 实施期发现，spec 修正）|
+| `src/compiler/z42.Core/Diagnostics/DiagnosticCatalog.cs` | MODIFY | E0917 描述条目 |
 | `src/compiler/z42.Syntax/Parser/Ast.cs` | MODIFY | 新增 `AttributeArg` 抽象 record + `AttributeArgString` / `AttributeArgInt` 两个 sealed record；`TestAttribute.NamedArgs` 类型 `Dictionary<string, string>` → `Dictionary<string, AttributeArg>` |
 | `src/compiler/z42.Syntax/Parser/TopLevelParser.Helpers.cs` | MODIFY | `ParseTestAttributeBody` 接受 IntegerLiteral；把 `[Timeout]` 加入 `TestAttributeNames` 白名单 |
-| `src/compiler/z42.Semantics/TestAttributeValidator.cs` | MODIFY | (a) E0914 [Skip] reason 读取改用 `RequireStringArg`；(b) 新增 [Timeout] 校验分支报 E0916 |
+| `src/compiler/z42.Semantics/TestAttributeValidator.cs` | MODIFY | (a) E0914 [Skip] reason 读取改用 `RequireStringArg`；(b) 新增 [Timeout] 校验分支报 E0917 |
 | `src/compiler/z42.Semantics/Codegen/IrGen.Tests.cs` | MODIFY | `BuildTestEntry` 读 `AttributeArg` 类型；[Skip] reason/platform/feature 改用 string-arg helper；[Timeout] milliseconds → `TestEntry.TimeoutMs` |
 | `src/compiler/z42.IR/TestEntry.cs` | MODIFY | 加 `int TimeoutMs` 字段（0 = 无 override）放在 `TestCases` 之后；ctor 参数顺序保持向后追加 |
 | `src/compiler/z42.IR/BinaryFormat/ZbcWriter.cs` | MODIFY | `VersionMinor++` + 写 TIDX `timeout_ms i32` 槽（紧跟 expected_throw_type 之后）|
@@ -150,10 +150,12 @@ cap and false-failing the legit-slow tests.
       `[Timeout(milliseconds: <int>)]`。
 - [x] **已裁决**：单位 = ms。与 `Std.Threading.Thread.Sleep(long millis)` /
       `TimeSpan.FromMilliseconds` 一致。
-- [x] **已裁决**：sentinel = `0`。`> 0` 由 E0916 编译期保证，沿用现有
+- [x] **已裁决**：sentinel = `0`。`> 0` 由 E0917 编译期保证，沿用现有
       TIDX 的 `expected_throw_type=""` 零值习惯。
-- [x] **已裁决**：诊断码 = E0916（E0915 已被
-      `SetupTeardownSignatureInvalid` 占用）。
+- [x] **已裁决**：诊断码 = E0917（E0915 已被
+      `SetupTeardownSignatureInvalid` 占用；E0916 已被
+      `NativeImportSynthesisFailure` 占用 — 实施期发现 collision，
+      原拟 E0916 上移到 E0917）。
 - [ ] **保留**：`AttributeArg` discriminator 第三种 `AttributeArgIdent`
       (unquoted identifier 形如 `[Skip(platform: ios)]`) 是否在本 spec
       引入？建议**不**：留给 add-test-skip-platform-feature spec

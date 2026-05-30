@@ -102,7 +102,14 @@
       "Bash(curl -sIL \"https://github.com/codesigner-ui/z42/actions/runs/26234263530/job/77203081654\")",
       "Bash(curl -s \"https://api.github.com/repos/codesigner-ui/z42/actions/runs?branch=main&per_page=3\")",
       "Bash(kill -9 40908)",
-      "Read(//Users/d.s.qiu/Documents/codesigner-ui/**)"
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/**)",
+      "Bash(./artifacts/build/runtime/release/z42vm /tmp/dogfood_fresh.zbc test_assert_fail_throws_testfailure)",
+      "Bash(sed -i '' '/^using Std;$/d' __TRACKED_VAR__.z42)",
+      "Bash(sed -i '' '/^using Std\\\\.Encoding;$/d' __TRACKED_VAR__.z42)",
+      "Bash(lldb -b -o 'run corelib' -o bt -o quit artifacts/build/runtime/debug/deps/z42-4e2fd2eb09a87273)",
+      "Bash(lldb -b -o 'run corelib --test-threads=8' -o 'thread backtrace' -o quit artifacts/build/runtime/debug/deps/z42-4e2fd2eb09a87273)",
+      "Bash(lldb -b -o 'run corelib --test-threads=8' -o 'bt all' -o quit artifacts/build/runtime/debug/deps/z42-4e2fd2eb09a87273)",
+      "Bash(RUST_MIN_STACK=8388608 cargo test --manifest-path src/runtime/Cargo.toml --lib corelib)"
     ],
     "additionalDirectories": [
       "/tmp",

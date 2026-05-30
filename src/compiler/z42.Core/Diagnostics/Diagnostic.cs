@@ -129,7 +129,7 @@ public static class DiagnosticCodes
     public const string ShouldThrowTypeInvalid        = "E0913"; // [ShouldThrow<E>] — reserved (R4.B needs generic attribute syntax)
     public const string SkipReasonMissing             = "E0914"; // [Skip] missing/empty reason; [Skip]/[Ignore] used standalone
     public const string SetupTeardownSignatureInvalid = "E0915"; // [Setup]/[Teardown] signature wrong / mutually exclusive with [Test]/[Benchmark]
-    public const string TimeoutValueInvalid           = "E0916"; // [Timeout(milliseconds: ...)] missing/wrong arg, value out of range, or wrong target attribute (add-test-timeout-attribute, 2026-05-30)
+    public const string TimeoutValueInvalid           = "E0917"; // [Timeout(milliseconds: ...)] missing/wrong arg, value out of range, or wrong target attribute (add-test-timeout-attribute, 2026-05-30) — E0916 already taken by NativeImportSynthesisFailure
 
     // ── E10xx: Call-site argument binding (spec add-named-arguments) ──────────
     public const string PositionalAfterNamed     = "E1001"; // positional arg appears after a named arg in same call

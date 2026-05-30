@@ -177,7 +177,7 @@ public static class TestAttributeValidator
             }
         }
 
-        // ── E0916 [Timeout(milliseconds: ...)] validation ─────────────────
+        // ── E0917 [Timeout(milliseconds: ...)] validation ─────────────────
         // add-test-timeout-attribute (2026-05-30)
         if (hasTimeout && timeoutAttr is not null)
         {
@@ -204,7 +204,7 @@ public static class TestAttributeValidator
         }
     }
 
-    /// add-test-timeout-attribute (2026-05-30) — full E0916 check for
+    /// add-test-timeout-attribute (2026-05-30) — full E0917 check for
     /// `[Timeout(milliseconds: <int>)]`. Emits one diagnostic per
     /// independent failure (caller is OK seeing multiple — e.g. "no [Test]"
     /// AND "value out of range" together) so the user can fix everything

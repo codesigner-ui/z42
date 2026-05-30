@@ -43,7 +43,14 @@ void test_secp256k1_scalar_2_yields_2g() {
 
 // ── Sign / verify round trip ────────────────────────────────────────────
 
+// add-test-timeout-attribute (2026-05-30): in-tree demo of the new
+// [Timeout(milliseconds: N)] attribute. Observed durations on this test:
+// ~60-180 s on 3-4 vCPU CI runners and ~60 s on local Apple Silicon. We cap
+// at 240 s — tighter than the 300 s runner default to demonstrate the
+// per-method override actually flows compile → TIDX → reader → runner, but
+// with comfortable margin over real-world worst case.
 [Test]
+[Timeout(milliseconds: 240000)]
 void test_secp256k1_sign_verify_round_trip() {
     byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
     byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);

@@ -183,7 +183,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 
 **Strict-pin 政策**：reader 仅接受 `major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor`。pre-1.0 z42 阶段不为旧 zpkg minor 提供兼容；每次 minor bump = 所有现存 zpkg artifacts 必须 regen（`./scripts/build-stdlib.sh`）。
 
-- **当前版本**：`major=0, minor=9`（详见下方 Minor changelog）
+- **当前版本**：`major=0, minor=10`（详见下方 Minor changelog）
 - **触发 minor bump** 的事项：新增 section id / 已定义 section 字段语义变化 / **任意 zbc minor bump（强耦合）**
 - **触发 major bump** 的事项（迄今未发生）：改 magic / 改 16B header layout / 改 section directory 12B 条目格式 / 弃用 packed 或 indexed 模式之一
 - **zbc inner 与 zpkg outer minor 强耦合**：zbc minor 任意 bump → zpkg minor 必须同步 +1。历史唯一例外是 zbc 1.4 → 1.5（漏 bump），freeze-zpkg-v0 通过 0.5 → 0.6 catch-up 修正。
@@ -201,6 +201,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.7 | 2026-05-19 | [fix-array-default-init](../../spec/archive/2026-05-19-fix-array-default-init/) | inner zbc 1.6（`ArrayNew` opcode 追加 element type tag byte，驱动 per-type 默认值）|
 | 0.8 | 2026-05-27 | [align-zbc-reader-writer-asymmetry](../../spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) | inner zbc 1.7（SIGS / TYPE 在 u8 TypeTag 之后追加 u32 type_str_idx）+ zpkg outer SIGS 同步加 ret_type str_idx。修 Read→Write byte parity |
 | 0.9 | 2026-05-27 | [jit-type-specialization](../../spec/changes/jit-type-specialization/) P0 step 0.3/0.4 | inner zbc 1.8（新 REGT section 承载 per-register `IrType`）+ zpkg packed module 在 DbugData 之后追加 `u32 RegtLen + bytes RegtData`，承载该 module 的 REGT 字节流。 |
+| 0.10 | 2026-05-30 | [add-test-timeout-attribute](../../spec/changes/add-test-timeout-attribute/) | inner zbc 1.9（TIDX v=3 每条 TestEntry 追加 `timeout_ms: i32` 承载 `[Timeout(milliseconds: N)]`）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 

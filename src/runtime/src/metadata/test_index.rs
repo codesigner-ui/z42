@@ -240,7 +240,7 @@ pub fn read_test_index(payload: &[u8]) -> Result<Vec<TestEntry>> {
             test_cases.push(TestCase { arg_repr_str_idx });
         }
         // add-test-timeout-attribute (2026-05-30): TIDX v=3 trailing
-        // `timeout_ms i32`. Negative not expected (compile-time E0916
+        // `timeout_ms i32`. Negative not expected (compile-time E0917
         // enforces > 0), but defensively saturate to 0 = "no override"
         // so an old-format / corrupt file degrades to runner default
         // instead of integer-underflow on the u32 cast.

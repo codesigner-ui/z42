@@ -34,6 +34,27 @@ const DEFAULT_TIMEOUT_SECS: u64 = 300;
 /// add-test-timeout-attribute (2026-05-30).
 const TIMEOUT_HARD_CEILING_SECS: u64 = DEFAULT_TIMEOUT_SECS * 2;
 
+/// Resolve a per-test wallclock budget from the optional override carried in
+/// `DiscoveredTest.timeout_ms`. Returned tuple is `(budget, origin, clamped)`:
+/// - `origin` is a human label for diagnostic messages.
+/// - `clamped == true` means the requested override exceeded
+///   `TIMEOUT_HARD_CEILING_SECS` and was reduced to the ceiling.
+///
+/// add-test-timeout-attribute (2026-05-30) — extracted from `run_one` for
+/// unit testability.
+pub(crate) fn compute_budget(timeout_ms: Option<u32>) -> (Duration, &'static str, bool) {
+    let ceiling = Duration::from_secs(TIMEOUT_HARD_CEILING_SECS);
+    let requested = timeout_ms
+        .map(|ms| Duration::from_millis(ms as u64))
+        .unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT_SECS));
+    let origin = if timeout_ms.is_some() { "per-method [Timeout]" } else { "runner default" };
+    if requested > ceiling {
+        (ceiling, origin, true)
+    } else {
+        (requested, origin, false)
+    }
+}
+
 pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
     if let Some(reason) = &test.skip_reason {
         return Outcome::Skipped { reason: reason.clone() };
@@ -83,22 +104,15 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     //   else `DEFAULT_TIMEOUT_SECS`.
     // A `TIMEOUT_HARD_CEILING_SECS = 2 × default` clamp protects against
     // typos that would otherwise disable the hang detector.
-    let ceiling = Duration::from_secs(TIMEOUT_HARD_CEILING_SECS);
-    let requested = test
-        .timeout_ms
-        .map(|ms| Duration::from_millis(ms as u64))
-        .unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT_SECS));
-    let budget = if requested > ceiling {
+    let (budget, _origin, clamped) = compute_budget(test.timeout_ms);
+    if clamped {
         eprintln!(
             "note: [Timeout] for `{}` requested {} ms exceeds hard ceiling {} ms — clamped",
             test.method_name,
-            requested.as_millis(),
-            ceiling.as_millis(),
+            test.timeout_ms.unwrap_or(0),
+            Duration::from_secs(TIMEOUT_HARD_CEILING_SECS).as_millis(),
         );
-        ceiling
-    } else {
-        requested
-    };
+    }
     let deadline = Instant::now() + budget;
     let mut timed_out = false;
     let mut stack_trace: Option<String> = None;
@@ -138,7 +152,7 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
 
     if timed_out {
         let budget_secs = budget.as_secs_f64();
-        let budget_origin = if test.timeout_ms.is_some() { "per-method [Timeout]" } else { "runner default" };
+        let (_, budget_origin, _) = compute_budget(test.timeout_ms);
         let mut reason = format!(
             "timed out after {:.2}s ({}) — z42vm killed (likely hung)\n\
              test:   {}\n\
@@ -491,5 +505,44 @@ mod tests {
     fn list_skips_empty_segments() {
         assert!(list_match("Exception;;", "Std.Exception"));
         assert!(!list_match(";;", "Std.Exception"));
+    }
+
+    // ── add-test-timeout-attribute (2026-05-30) — compute_budget ──────────
+
+    use super::{compute_budget, DEFAULT_TIMEOUT_SECS, TIMEOUT_HARD_CEILING_SECS};
+    use std::time::Duration;
+
+    #[test]
+    fn budget_no_override_uses_default_origin() {
+        let (budget, origin, clamped) = compute_budget(None);
+        assert_eq!(budget, Duration::from_secs(DEFAULT_TIMEOUT_SECS));
+        assert_eq!(origin, "runner default");
+        assert!(!clamped);
+    }
+
+    #[test]
+    fn budget_override_within_ceiling_passes_through() {
+        let (budget, origin, clamped) = compute_budget(Some(5_000));
+        assert_eq!(budget, Duration::from_millis(5_000));
+        assert_eq!(origin, "per-method [Timeout]");
+        assert!(!clamped);
+    }
+
+    #[test]
+    fn budget_override_at_ceiling_does_not_clamp() {
+        let at_ceiling_ms = (TIMEOUT_HARD_CEILING_SECS * 1_000) as u32;
+        let (budget, _, clamped) = compute_budget(Some(at_ceiling_ms));
+        assert_eq!(budget, Duration::from_secs(TIMEOUT_HARD_CEILING_SECS));
+        assert!(!clamped, "exact-ceiling value is allowed");
+    }
+
+    #[test]
+    fn budget_override_above_ceiling_is_clamped() {
+        // A typo like 60_000_000 ms (~16 h) would otherwise disable the
+        // hang detector entirely under the GitHub Actions 6 h job limit.
+        let (budget, origin, clamped) = compute_budget(Some(60_000_000));
+        assert_eq!(budget, Duration::from_secs(TIMEOUT_HARD_CEILING_SECS));
+        assert_eq!(origin, "per-method [Timeout]");
+        assert!(clamped);
     }
 }

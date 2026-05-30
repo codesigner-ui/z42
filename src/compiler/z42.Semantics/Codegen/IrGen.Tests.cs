@@ -30,7 +30,7 @@ public sealed partial class IrGen
                 case "Teardown":  kind = TestEntryKind.Teardown;  break;
                 case "Ignore":    flags |= TestFlags.Ignored;     break;
                 case "Timeout":
-                    // add-test-timeout-attribute (2026-05-30): E0916 in
+                    // add-test-timeout-attribute (2026-05-30): E0917 in
                     // TestAttributeValidator already guarantees the named arg
                     // exists, is AttributeArgInt, > 0, and fits i32. Defensive
                     // guards here only trip when the validator was skipped

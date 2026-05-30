@@ -41,39 +41,39 @@
 
 - **WHEN** the attribute is `[Timeout]` (no parens) or `[Timeout()]`
   (empty parens)
-- **THEN** the compiler emits **E0916 `TimeoutValueInvalid`** with
+- **THEN** the compiler emits **E0917 `TimeoutValueInvalid`** with
   message `[Timeout] requires a single named arg "milliseconds: <int>"`
 
 #### Scenario: attribute on a non-`[Test]` / non-`[Benchmark]` method is rejected
 
 - **WHEN** the method has `[Timeout(milliseconds: 1000)]` but neither
   `[Test]` nor `[Benchmark]`
-- **THEN** the compiler emits **E0916** with message
+- **THEN** the compiler emits **E0917** with message
   `[Timeout] requires [Test] or [Benchmark] on the same method`
 
 #### Scenario: zero / negative milliseconds is rejected
 
 - **WHEN** the value is `0` or negative literal
-- **THEN** the compiler emits **E0916** with message
+- **THEN** the compiler emits **E0917** with message
   `[Timeout] milliseconds must be > 0 (got <value>)`
 
 #### Scenario: value that overflows i32 is rejected
 
 - **WHEN** the value > `i32::MaxValue` (2 147 483 647 ms ≈ 24.8 days)
-- **THEN** the compiler emits **E0916** with message
+- **THEN** the compiler emits **E0917** with message
   `[Timeout] milliseconds must fit in i32 (got <value>)`
 
 #### Scenario: non-integer argument is rejected
 
 - **WHEN** the value is a string literal (`milliseconds: "5000"`) or
   any non-integer literal
-- **THEN** the compiler emits **E0916** with message
+- **THEN** the compiler emits **E0917** with message
   `[Timeout] milliseconds must be an integer literal (got string)`
 
 #### Scenario: duplicate `[Timeout]` on one method is rejected
 
 - **WHEN** a method carries two `[Timeout(...)]` attributes
-- **THEN** the compiler emits **E0916** with message
+- **THEN** the compiler emits **E0917** with message
   `[Timeout] applied more than once on the same method`
 
 ### Requirement: test runner honours the per-method override
