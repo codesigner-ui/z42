@@ -1,0 +1,170 @@
+// add-regex-word-boundary-multiline (2026-05-30): `(?m)` inline flag.
+// Under `(?m)`:
+//   ^  matches pos == 0 OR after `\n`
+//   $  matches pos == input.Length OR before `\n`
+// Without `(?m)`, `^` / `$` only match input endpoints (regression check).
+namespace Z42RegexMultilineTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+// ── Default (single-line) anchors — regression ────────────────────────
+
+[Test]
+void test_default_caret_locked_to_input_start() {
+    Regex r = Regex.Compile("^foo");
+    Assert.True(r.Find("bar\nfoo") == null);
+}
+
+[Test]
+void test_default_dollar_locked_to_input_end() {
+    Regex r = Regex.Compile("foo$");
+    Assert.True(r.Find("foo\nbar") == null);
+}
+
+[Test]
+void test_default_caret_matches_input_start() {
+    Regex r = Regex.Compile("^foo");
+    Match m = r.Find("foo bar");
+    Assert.True(m != null);
+    Assert.Equal(0, m.Start());
+}
+
+// ── Multiline: ^ after \n ─────────────────────────────────────────────
+
+[Test]
+void test_multiline_caret_matches_after_newline() {
+    Regex r = Regex.Compile("(?m)^foo");
+    Match m = r.Find("bar\nfoo");
+    Assert.True(m != null);
+    Assert.Equal(4, m.Start());
+    Assert.Equal(7, m.End());
+}
+
+[Test]
+void test_multiline_caret_also_matches_at_input_start() {
+    Regex r = Regex.Compile("(?m)^x");
+    Match m = r.Find("x\ny");
+    Assert.True(m != null);
+    Assert.Equal(0, m.Start());
+}
+
+[Test]
+void test_multiline_caret_findall_each_line() {
+    Regex r = Regex.Compile("(?m)^.");
+    Match[] all = r.FindAll("a\nb\nc");
+    Assert.Equal(3, all.Length);
+    Assert.Equal("a", all[0].Group(0));
+    Assert.Equal("b", all[1].Group(0));
+    Assert.Equal("c", all[2].Group(0));
+}
+
+// ── Multiline: $ before \n ────────────────────────────────────────────
+
+[Test]
+void test_multiline_dollar_matches_before_newline() {
+    Regex r = Regex.Compile("(?m)foo$");
+    Match m = r.Find("foo\nbar");
+    Assert.True(m != null);
+    Assert.Equal(0, m.Start());
+    Assert.Equal(3, m.End());
+}
+
+[Test]
+void test_multiline_dollar_also_matches_input_end() {
+    Regex r = Regex.Compile("(?m)bar$");
+    Match m = r.Find("foo\nbar");
+    Assert.True(m != null);
+    Assert.Equal(4, m.Start());
+    Assert.Equal(7, m.End());
+}
+
+// ── Multiline: full line patterns ─────────────────────────────────────
+
+[Test]
+void test_multiline_full_line_findall() {
+    Regex r = Regex.Compile("(?m)^\\w+$");
+    Match[] all = r.FindAll("foo\nbar\nbaz");
+    Assert.Equal(3, all.Length);
+    Assert.Equal("foo", all[0].Group(0));
+    Assert.Equal("bar", all[1].Group(0));
+    Assert.Equal("baz", all[2].Group(0));
+}
+
+// ── Multiline + empty / boundary cases ────────────────────────────────
+
+[Test]
+void test_multiline_empty_string_caret_matches_pos_zero() {
+    Regex r = Regex.Compile("(?m)^");
+    Match m = r.Find("");
+    Assert.True(m != null);
+    Assert.Equal(0, m.Start());
+    Assert.Equal(0, m.End());
+}
+
+[Test]
+void test_multiline_trailing_newline_dollar_matches_before_and_at_end() {
+    // Pattern $ matches both before the trailing \n AND at input end.
+    Regex r = Regex.Compile("(?m)$");
+    Match[] all = r.FindAll("a\n");
+    // Engine guarantees non-overlapping advance, so we get one $ match per
+    // distinct end position (pos=1 before \n, pos=2 at end).
+    Assert.True(all.Length >= 1);
+}
+
+// ── Combined (?im) / (?mi) ────────────────────────────────────────────
+
+[Test]
+void test_combined_im_flag_order_independent() {
+    Regex r1 = Regex.Compile("(?im)^foo$");
+    Match m1 = r1.Find("BAR\nFOO");
+    Assert.True(m1 != null);
+    Assert.Equal(4, m1.Start());
+    Assert.Equal("FOO", m1.Group(0));
+
+    Regex r2 = Regex.Compile("(?mi)^foo$");
+    Match m2 = r2.Find("BAR\nFOO");
+    Assert.True(m2 != null);
+    Assert.Equal(4, m2.Start());
+}
+
+[Test]
+void test_combined_im_default_remains_case_sensitive_singleline() {
+    // Plain `^foo$` still strict-case + single-line.
+    Regex r = Regex.Compile("^foo$");
+    Assert.True(r.Find("FOO") == null);
+    Assert.True(r.Find("BAR\nfoo") == null);
+}
+
+// ── Multiline does NOT change `.` behaviour ───────────────────────────
+
+[Test]
+void test_multiline_dot_still_matches_newline() {
+    // z42 v0 ANY (k=2) includes \n; `(?s)` DOTALL was out of scope for
+    // this spec, so `(?m).` behaves identically to `.` — regression check.
+    Regex r = Regex.Compile("(?m)a.b");
+    Match m = r.Find("a\nb");
+    Assert.True(m != null);
+}
+
+// ── (?ii) tolerated (repeated flag) ───────────────────────────────────
+
+[Test]
+void test_repeated_flag_char_tolerated() {
+    Regex r = Regex.Compile("(?ii)Hello");
+    Assert.True(r.Find("HELLO") != null);
+}
+
+// ── Real-world: extract log-line headers ──────────────────────────────
+
+[Test]
+void test_multiline_log_header_extraction() {
+    string log = "INFO ready\nWARN fallback\nERROR died\n";
+    Regex r = Regex.Compile("(?m)^(\\w+) ");
+    Match[] all = r.FindAll(log);
+    Assert.Equal(3, all.Length);
+    Assert.Equal("INFO", all[0].Group(1));
+    Assert.Equal("WARN", all[1].Group(1));
+    Assert.Equal("ERROR", all[2].Group(1));
+}

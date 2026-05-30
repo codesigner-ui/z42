@@ -16,11 +16,13 @@ using Std;
 //   1 = LIT          字符字面（_ch）
 //   2 = ANY          `.`（match 任意单字符；v0 包括换行）
 //   3 = CHARSET      `[...]`（_negated, _rangeStarts/_rangeEnds 配对成区间）
-//   4 = ANCHOR_START `^`
-//   5 = ANCHOR_END   `$`
+//   4 = ANCHOR_START `^`（`(?m)` 下 `\n` 后也匹配）
+//   5 = ANCHOR_END   `$`（`(?m)` 下 `\n` 前也匹配）
 //   6 = ALT          `a|b`（_leftSeq/_leftCount, _rightSeq/_rightCount）
 //   7 = QUANT        `?`/`*`/`+`/`{n,m}`（_childSeq/_childCount, _min, _max；_max=-1 unbounded）
 //   8 = GROUP        capturing `()`（_childSeq/_childCount, _groupIndex 1-based）
+//   9 = WORD_BOUNDARY      `\b`（零宽，两侧 word-ness 不同时匹配）
+//  10 = WORD_NON_BOUNDARY  `\B`（零宽，两侧 word-ness 相同时匹配）
 public class RegexNode {
     public int _kind;
     public int _ch;                    // LIT — codepoint
@@ -83,6 +85,15 @@ public class RegexNode {
 
     public static RegexNode AnchorStart() { return new RegexNode(4); }
     public static RegexNode AnchorEnd()   { return new RegexNode(5); }
+
+    /// `\b` — zero-width word boundary: matches when one side of `pos` is
+    /// an ASCII word char (`[A-Za-z0-9_]`) and the other is not (or absent).
+    /// add-regex-word-boundary-multiline (2026-05-30).
+    public static RegexNode WordBoundary()    { return new RegexNode(9); }
+
+    /// `\B` — inverse of `\b`: matches when both sides have the same
+    /// word-ness (both word, both non-word, or both absent).
+    public static RegexNode WordNonBoundary() { return new RegexNode(10); }
 
     public static RegexNode Alt(RegexNode[] left, int leftCount,
                                 RegexNode[] right, int rightCount) {

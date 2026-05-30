@@ -8,7 +8,7 @@
 
 正则 pattern 编译 + 匹配 / 搜索 / 替换 / split。子集语法：字面字符 + `.` +
 quantifier (`?` `*` `+` `{n,m}`) + 字符类 (`[...]` `\d \w \s`) + group `()`
-+ alternation `|` + anchor `^$`。
++ alternation `|` + anchor `^$` + 零宽词边界 `\b` `\B` + inline flag `(?i)` / `(?m)` / `(?im)`。
 
 **对标**：C# `System.Text.RegularExpressions.Regex` + Python `re` +
 JavaScript `RegExp` + Java `java.util.regex`（语义子集，行为基本同）。
@@ -50,8 +50,8 @@ class RegexException : Exception     // in Std namespace
 | 3. Compile vs runtime check | compile-time / lazy | compile-time | fail-fast |
 | 4. 字符类存储 | 区间逐对 / bitset 256 | 区间逐对 | N 通常 < 10；O(N) 查找够快 |
 | 5. Greedy 实现 | max-then-backoff / lazy | max-then-backoff | greedy 默认；non-greedy 留 Deferred |
-| 6. 大小写敏感 | sensitive only / flag | sensitive only | i flag 留 Deferred |
-| 7. Multiline `^$` | 始终首末 / m flag | 始终首末 | 多行匹配留 Deferred |
+| 6. 大小写敏感 | sensitive only / flag | flag via `(?i)` | ASCII fold；add-regex-inline-flags (2026-05-26) |
+| 7. Multiline `^$` | 始终首末 / m flag | flag via `(?m)` | `^` 后 `\n` / `$` 前 `\n`；add-regex-word-boundary-multiline (2026-05-30) |
 | 8. 异常类 | RegexException 在 `Std` namespace | yes | 同 UriException / TomlException 模式 |
 | 9. Namespace | `Std.Text.Regex` / `Std.Regex` | `Std.Regex` | 避免三段 namespace bug（z42.io.binary 经验）；text 包占位类可后续 deprecate |
 | 10. Group 0 语义 | 0 = entire / 1 = first | 0 = entire | 同 C#/Python/Java |
@@ -290,12 +290,40 @@ case substring; URL-scheme common pattern (`(?i)(https?)`); digits
 unaffected by flag; `\w+` escape class unaffected (regression).
 
 Still deferred — `regex-future-flags-extras`:
-- `(?m)` multiline — `^` / `$` match line boundaries (currently only
-  match input start/end)
 - `(?s)` dotall — `.` also matches `\n` (currently matches anything;
   the dotall vs not distinction is implementation-dependent here)
 - `(?x)` extended — whitespace + comments in pattern stripped
 - Mid-pattern flag changes `(?-i)…` or scoped `(?i:…)`
+
+### ~~regex-future-word-boundary-multiline~~ — **✅ 已落地 2026-05-30 (add-regex-word-boundary-multiline)**
+
+Shipped:
+- `\b` (WORD_BOUNDARY, RegexNode kind 9) — zero-width assertion that
+  succeeds when one side of `pos` is an ASCII word char (`[A-Za-z0-9_]`)
+  and the other is not (or absent at input endpoints)
+- `\B` (WORD_NON_BOUNDARY, kind 10) — inverse of `\b`
+- `(?m)` multiline flag — `^` matches at pos 0 or after `\n`; `$`
+  matches at input end or before `\n`
+- Combined `(?im)` / `(?mi)` — inline-flag stripper generalised from
+  exact `(?i)` to `(?[im]+)`; flag char order + repetition tolerated
+  (matches .NET `RegexOptions` semantics)
+- `Regex.FindFrom` anchor-start fast-fail disabled under `_multiline`
+  to allow `^` after `\n` to be tried at non-zero positions
+
+31 new tests (`tests/regex_word_boundary.z42` + `tests/regex_multiline.z42`)
+cover: isolated word match / substring rejection; input endpoints; `\B`
+inverse; underscore + digit word membership; `(?i)\b` combination;
+default `^`/`$` lock-to-endpoints regression; `(?m)^` after `\n`;
+`(?m)$` before `\n`; full-line `(?m)^\w+$` FindAll; `(?im)` order
+independence; `(?ii)` repeated tolerance; charset `[\b]` retains
+literal `b` (PCRE-vs-z42 documented divergence); real-world log-line
+header extraction.
+
+Still deferred:
+- Charset-internal `\b` as ASCII BS 0x08 (PCRE behaviour) — v0 keeps
+  literal `b`
+- Unicode word membership for `\b` / `\B` (waits on
+  `regex-future-unicode-classes`)
 
 ### ~~regex-future-replace-backreference~~ — **✅ 已落地 2026-05-26 (add-regex-replace-backreference)**
 

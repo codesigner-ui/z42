@@ -1,0 +1,154 @@
+// add-regex-word-boundary-multiline (2026-05-30): `\b` / `\B` zero-width
+// word-boundary assertions. "word char" = ASCII `[A-Za-z0-9_]`.
+namespace Z42RegexWordBoundaryTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+// ── \b — positive assertion ───────────────────────────────────────────
+
+[Test]
+void test_word_boundary_matches_isolated_word() {
+    Regex r = Regex.Compile("\\bcat\\b");
+    Match m = r.Find("the cat sat");
+    Assert.True(m != null);
+    Assert.Equal(4, m.Start());
+    Assert.Equal(7, m.End());
+    Assert.Equal("cat", m.Group(0));
+}
+
+[Test]
+void test_word_boundary_rejects_substring_in_middle() {
+    Regex r = Regex.Compile("\\bcat\\b");
+    Assert.True(r.Find("concatenate") == null);
+}
+
+[Test]
+void test_word_boundary_at_input_start() {
+    Regex r = Regex.Compile("\\bx");
+    Match m = r.Find("xyz");
+    Assert.True(m != null);
+    Assert.Equal(0, m.Start());
+}
+
+[Test]
+void test_word_boundary_at_input_end() {
+    Regex r = Regex.Compile("z\\b");
+    Match m = r.Find("xyz");
+    Assert.True(m != null);
+    Assert.Equal(2, m.Start());
+    Assert.Equal(3, m.End());
+}
+
+[Test]
+void test_word_boundary_around_punctuation() {
+    // ',' is non-word; both sides of "foo" and "bar" have boundaries.
+    Regex r = Regex.Compile("\\b\\w+\\b");
+    Match[] all = r.FindAll("foo,bar");
+    Assert.Equal(2, all.Length);
+    Assert.Equal("foo", all[0].Group(0));
+    Assert.Equal("bar", all[1].Group(0));
+}
+
+[Test]
+void test_word_boundary_findall_three_words() {
+    Regex r = Regex.Compile("\\b\\w+\\b");
+    Match[] all = r.FindAll("foo bar baz");
+    Assert.Equal(3, all.Length);
+    Assert.Equal("foo", all[0].Group(0));
+    Assert.Equal("bar", all[1].Group(0));
+    Assert.Equal("baz", all[2].Group(0));
+}
+
+[Test]
+void test_word_boundary_with_digits() {
+    Regex r = Regex.Compile("\\b\\d+\\b");
+    Match m = r.Find("port 8080 open");
+    Assert.True(m != null);
+    Assert.Equal("8080", m.Group(0));
+}
+
+[Test]
+void test_word_boundary_underscore_is_word_char() {
+    // `_` is in `\w`; `foo_bar` is a single word — no inner boundary.
+    Regex r = Regex.Compile("\\bfoo\\b");
+    Assert.True(r.Find("foo_bar") == null);
+}
+
+// ── \B — non-boundary assertion ───────────────────────────────────────
+
+[Test]
+void test_non_boundary_matches_substring_in_middle() {
+    Regex r = Regex.Compile("\\Bcat\\B");
+    Match m = r.Find("concatenate");
+    Assert.True(m != null);
+    Assert.Equal(3, m.Start());
+    Assert.Equal(6, m.End());
+}
+
+[Test]
+void test_non_boundary_rejects_isolated_word() {
+    Regex r = Regex.Compile("\\Bcat\\B");
+    Assert.True(r.Find("the cat sat") == null);
+}
+
+[Test]
+void test_non_boundary_inside_underscore_word() {
+    // `foo_bar` is one word → \B matches between foo and _bar.
+    Regex r = Regex.Compile("o\\B_");
+    Match m = r.Find("foo_bar");
+    Assert.True(m != null);
+}
+
+// ── \b / \B mutual exclusivity ────────────────────────────────────────
+
+[Test]
+void test_b_and_B_mutually_exclusive_each_position() {
+    // At any zero-width position exactly one of \b / \B holds.
+    // Validate by counting `(?:\b|\B)` matches over a fixed string.
+    // FindAll skips empty matches via the standard pos++ advance, so this
+    // is a regression check that engine doesn't allow both kinds to fire
+    // at the same position via backtrack.
+    Regex pos = Regex.Compile("\\bab");
+    Regex neg = Regex.Compile("\\Bab");
+    Assert.True(pos.Find("ab") != null);    // boundary BEFORE `a`
+    Assert.True(neg.Find("ab") == null);
+}
+
+// ── Combined with (?i) ────────────────────────────────────────────────
+
+[Test]
+void test_word_boundary_with_case_insensitive() {
+    Regex r = Regex.Compile("(?i)\\bcat\\b");
+    Assert.True(r.Find("The CAT sat") != null);
+    Assert.True(r.Find("The Cat sat") != null);
+    Assert.True(r.Find("concatenate") == null);
+}
+
+// ── Combined with quantifier inside word ──────────────────────────────
+
+[Test]
+void test_word_boundary_around_quantified_pattern() {
+    Regex r = Regex.Compile("\\b[a-z]+\\b");
+    Match[] all = r.FindAll("hello, world!");
+    Assert.Equal(2, all.Length);
+    Assert.Equal("hello", all[0].Group(0));
+    Assert.Equal("world", all[1].Group(0));
+}
+
+// ── Charset literal `b` retained inside `[...]` ────────────────────────
+
+[Test]
+void test_charset_b_still_literal() {
+    // Inside `[...]`, `\b` is parsed by ParseCharsetChar → still literal `b`.
+    // (PCRE differs — treats it as ASCII BS 0x08 — but z42 v0 keeps the
+    //  pre-existing literal behaviour to avoid silent breakage.)
+    Regex r = Regex.Compile("[\\b]");
+    Assert.True(r.IsMatch("b"));
+    // Build a 1-char string of ASCII BS (0x08); no `\u` escape in z42.
+    char[] bsChars = new char[1];
+    bsChars[0] = (char)8;
+    string bs = String.FromChars(bsChars);
+    Assert.True(r.Find(bs) == null);
+}

@@ -294,6 +294,11 @@ public class RegexParser {
             s[3] = 13; f[3] = 13;   // \r
             return RegexNode.Charset(e == 'S', s, f, 4);
         }
+        // add-regex-word-boundary-multiline (2026-05-30): zero-width word
+        // boundary assertions. Inside `[...]` the parser still routes
+        // through ParseCharsetChar where `\b` remains literal `b`.
+        if (e == 'b') { return RegexNode.WordBoundary(); }
+        if (e == 'B') { return RegexNode.WordNonBoundary(); }
         // metachar literal escape：\. \\ \* 等
         return RegexNode.Lit((int)e);
     }

@@ -30,10 +30,14 @@ public class Regex {
     // pattern starts with `(?i)`. Pattern-wide; mid-pattern scope changes
     // not yet supported.
     private bool _caseInsensitive;
+    // add-regex-word-boundary-multiline (2026-05-30): multiline mode when
+    // pattern starts with `(?m)` (or combined `(?im)` / `(?mi)`).
+    // Changes `^` / `$` to also match after / before `\n`.
+    private bool _multiline;
 
     private Regex(RegexNode[] seq, int seqCount, int groupCount,
                   string[] groupNames, int[] groupIndices, int namedGroupCount,
-                  bool caseInsensitive) {
+                  bool caseInsensitive, bool multiline) {
         this._seq             = seq;
         this._seqCount        = seqCount;
         this._groupCount      = groupCount;
@@ -41,27 +45,46 @@ public class Regex {
         this._groupIndices    = groupIndices;
         this._namedGroupCount = namedGroupCount;
         this._caseInsensitive = caseInsensitive;
+        this._multiline       = multiline;
     }
 
     public static Regex Compile(string pattern) {
-        // Inline flag stripper: leading `(?i)` enables case-insensitive
-        // matching for the whole pattern. Stripped before handing the
-        // remainder to RegexParser. add-regex-inline-flags (2026-05-26).
+        // Inline flag stripper: leading `(?[im]+)` enables case-insensitive
+        // / multiline matching for the whole pattern. Stripped before
+        // handing the remainder to RegexParser.
+        // add-regex-word-boundary-multiline (2026-05-30) generalises the
+        // 2026-05-26 `(?i)`-only path to accept any combination of `i` / `m`
+        // flag chars in any order, with repetition tolerated (matches .NET
+        // RegexOptions semantics).
         bool caseInsensitive = false;
-        string body = pattern;
+        bool multiline       = false;
+        string body          = pattern;
         if (pattern.Length >= 4
                 && pattern.CharAt(0) == '('
-                && pattern.CharAt(1) == '?'
-                && pattern.CharAt(2) == 'i'
-                && pattern.CharAt(3) == ')') {
-            caseInsensitive = true;
-            body = pattern.Substring(4, pattern.Length - 4);
+                && pattern.CharAt(1) == '?') {
+            int j = 2;
+            bool ci = false;
+            bool ml = false;
+            bool ok = true;
+            while (j < pattern.Length && pattern.CharAt(j) != ')') {
+                char fc = pattern.CharAt(j);
+                if (fc == 'i')      { ci = true; }
+                else if (fc == 'm') { ml = true; }
+                else { ok = false; break; }
+                j = j + 1;
+            }
+            // Need ≥ 1 flag char + matching `)`; `(?)` alone does NOT strip.
+            if (ok && j < pattern.Length && pattern.CharAt(j) == ')' && j > 2) {
+                caseInsensitive = ci;
+                multiline       = ml;
+                body            = pattern.Substring(j + 1, pattern.Length - j - 1);
+            }
         }
         var p = new RegexParser(body);
         p.ParsePattern();
         return new Regex(p.ResultNodes, p.ResultCount, 1 + p.GroupCount,
                          p.GroupNames, p.GroupIndices, p.NamedGroupCount,
-                         caseInsensitive);
+                         caseInsensitive, multiline);
     }
 
     /// ASCII case fold (A-Z → a-z); other chars unchanged. Used by the
@@ -234,7 +257,11 @@ public class Regex {
 
     private Match FindFrom(string input, int startPos) {
         // ^ anchored 优化：若第一个 atom 是 ANCHOR_START，仅尝试 startPos == 0
-        bool anchoredStart = (this._seqCount > 0 && this._seq[0]._kind == 4);
+        // add-regex-word-boundary-multiline (2026-05-30): under `(?m)`,
+        // `^` also matches after `\n`, so this fast-fail bail is unsafe —
+        // disable the optimisation entirely when multiline is on.
+        bool anchoredStart = (this._seqCount > 0 && this._seq[0]._kind == 4)
+                          && !this._multiline;
         int from = startPos;
         while (from <= input.Length) {
             this.ResetState(input);
@@ -311,10 +338,22 @@ public class Regex {
         }
         if (k == 4) {  // ANCHOR_START
             if (pos == 0) { return this.Match(seq, count, idx + 1, pos); }
+            // add-regex-word-boundary-multiline (2026-05-30): under `(?m)`,
+            // `^` additionally matches just after any `\n`.
+            if (this._multiline && pos > 0
+                && (int)this._input.CharAt(pos - 1) == 10) {
+                return this.Match(seq, count, idx + 1, pos);
+            }
             return -1;
         }
         if (k == 5) {  // ANCHOR_END
             if (pos == this._input.Length) { return this.Match(seq, count, idx + 1, pos); }
+            // add-regex-word-boundary-multiline (2026-05-30): under `(?m)`,
+            // `$` additionally matches immediately before any `\n`.
+            if (this._multiline && pos < this._input.Length
+                && (int)this._input.CharAt(pos) == 10) {
+                return this.Match(seq, count, idx + 1, pos);
+            }
             return -1;
         }
         if (k == 6) {  // ALT — try left subseq then idx+1; on fail restore and try right
@@ -357,7 +396,39 @@ public class Regex {
             this.RestoreEnds(savE);
             return -1;
         }
+        // add-regex-word-boundary-multiline (2026-05-30): zero-width
+        // `\b` (WORD_BOUNDARY) / `\B` (WORD_NON_BOUNDARY) assertions.
+        if (k == 9) {
+            if (this._AtWordBoundary(pos)) { return this.Match(seq, count, idx + 1, pos); }
+            return -1;
+        }
+        if (k == 10) {
+            if (!this._AtWordBoundary(pos)) { return this.Match(seq, count, idx + 1, pos); }
+            return -1;
+        }
         return -1;
+    }
+
+    /// True iff position `pos` lies between an ASCII word char and a
+    /// non-word char (or the input boundary on the non-word side). Input
+    /// endpoints count as non-word, so `\b` matches at pos 0 / Length when
+    /// the adjacent char is a word char.
+    /// add-regex-word-boundary-multiline (2026-05-30).
+    private bool _AtWordBoundary(int pos) {
+        bool leftWord  = pos > 0
+                      && Regex._IsWordChar((int)this._input.CharAt(pos - 1));
+        bool rightWord = pos < this._input.Length
+                      && Regex._IsWordChar((int)this._input.CharAt(pos));
+        return leftWord != rightWord;
+    }
+
+    /// ASCII `\w` membership: `[A-Za-z0-9_]`. Case-insensitive flag has
+    /// no effect (both cases are already in the set).
+    private static bool _IsWordChar(int ch) {
+        return (ch >= 48 && ch <= 57)    // 0-9
+            || (ch >= 65 && ch <= 90)    // A-Z
+            || (ch >= 97 && ch <= 122)   // a-z
+            || ch == 95;                 // _
     }
 
     // greedy quantifier with backtracking
