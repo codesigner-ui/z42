@@ -473,8 +473,8 @@ ee_alloc_context {
 
 1. ✅ ~~**`String.Length` 加 cache** 或改 byte semantics~~ — adopted option 4 (2026-05-27): non-breaking sibling `Std.String.ByteLength` (extern `__str_byte_length`, O(1) UTF-8 byte count) added; `Length` keeps existing O(n) char-count (Unicode scalar) semantics. Golden test `src/tests/strings/string_byte_length/` covers ASCII / 2-byte / 3-byte / 4-byte / mixed boundaries.
 2. ✅ ~~**`__str_char_at` 错误路径减少一次 `chars().count()`**~~ — single-pass impl (2026-05-25), [`corelib/string.rs:21`](../src/runtime/src/corelib/string.rs#L21)
-3. ⚡ **JIT bool 类 helper（jit_and / jit_or / jit_not）走 Cranelift native** —— Bool 类型 IR 已知，不需要 helper
-4. ⚡ **`jit_const_*` 完全 inline emit** —— Cranelift 原生支持 const，不需要 helper call
+3. ✅ ~~**JIT bool 类 helper（jit_and / jit_or / jit_not）走 Cranelift native**~~ — landed via C2 P1 step 2 (`fc3936f0`, 2026-05-28): `Instruction::And` / `Or` / `Not` inline via `emit_bool_binop` / `emit_bool_not` when `reg_types[dst] == Bool`.
+4. ✅ ~~**`jit_const_*` 完全 inline emit**~~ — landed in two waves: C2 P1 step 5 (`6b76130a`, 2026-05-28) covered ConstI32 / I64 / F64 / Bool when `reg_types[dst]` matches; review.md C11 #4 follow-up (`5ba109ea`, 2026-05-30) covered ConstChar (`reg_types[dst] == Char`) and ConstNull (`reg_types[dst]` is drop-free primitive). ConstStr keeps the helper because it needs `ctx.string_pool` lookup + Arc clone.
 5. ✅ ~~**`Frame::regs: Vec<Value>` → 函数入口预分配 `with_capacity(max_reg+1)`**~~ — `Frame::new` pre-sizes via `vec![Value::Null; max_reg]` (no per-set push)
 
 每项独立 commit、独立 spec（fix/refactor 类型，不需要完整 spec 流程）。
