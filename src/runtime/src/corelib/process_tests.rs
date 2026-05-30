@@ -288,8 +288,11 @@ fn spawn_nonexistent_program_returns_start_err() {
 #[test]
 fn try_wait_returns_null_while_running_then_result_after() {
     let ctx = VmContext::new();
-    // Sleep 100ms so we can observe both states.
-    let args = spawn_args(&ctx, "sh", &["-c", "sleep 0.15; echo done"]);
+    // Long enough that even a slow CI's `sh` startup + first try_wait still
+    // observes "running" before the child's `sleep` returns. Was 0.15s →
+    // intermittent on Windows/macOS CI where sh + spawn overhead could
+    // push first try_wait past the child's exit window.
+    let args = spawn_args(&ctx, "sh", &["-c", "sleep 1; echo done"]);
     let spawn_r = builtin_process_spawn(&ctx, &args).unwrap();
     let slot = slot_id_from(&spawn_r);
 
@@ -298,9 +301,17 @@ fn try_wait_returns_null_while_running_then_result_after() {
     assert!(matches!(first, Value::Null), "expected Null, got {first:?}");
     assert_eq!(ctx.process_slot_count(), 1);
 
-    // Block-wait via std until exit.
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    let second = builtin_process_handle_try_wait(&ctx, &[i(slot as i64)]).unwrap();
+    // Poll-loop until child reaps (avoid a fixed sleep that could time out
+    // on heavily-loaded CI). Capped at 5 s.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let second = loop {
+        let r = builtin_process_handle_try_wait(&ctx, &[i(slot as i64)]).unwrap();
+        if !matches!(r, Value::Null) { break r; }
+        if std::time::Instant::now() >= deadline {
+            panic!("try_wait did not observe child exit within 5 s");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
     assert_eq!(result_kind(&second), KIND_OK);
     let Value::Str(out) = result_at(&second, 2) else { panic!() };
     assert_eq!(out, "done\n".into());
