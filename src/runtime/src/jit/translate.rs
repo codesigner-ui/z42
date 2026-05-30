@@ -684,11 +684,17 @@ pub fn translate_function(
                     }
                 }
 
-                // Unary arithmetic
+                // Unary arithmetic — review.md C2 P1 follow-up (2026-05-30):
+                // I64-typed Neg emits native Cranelift `ineg` (wrapping,
+                // matches helper's `Value::I64(-n)`).
                 Instruction::Neg { dst, src } => {
-                    let d = ri!(*dst); let s = ri!(*src);
-                    let inst = builder.ins().call(hr_neg, &[frame_val, ctx_val, d, s]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed_unary(z42_func, *dst, *src) {
+                        emit_i64_neg(&mut builder, regs_base, *dst, *src);
+                    } else {
+                        let d = ri!(*dst); let s = ri!(*src);
+                        let inst = builder.ins().call(hr_neg, &[frame_val, ctx_val, d, s]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
 
                 // Bitwise — review.md C2 P1 follow-up (2026-05-30): inline
@@ -1236,6 +1242,29 @@ fn emit_i64_binop(
     // Store discriminant (u8 0 = TAG_I64) then i64 payload.
     let tag = builder.ins().iconst(types::I8, TAG_I64 as i64);
     builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native `frame.regs[dst] = Value::I64(-src)` — integer negate
+/// via Cranelift `ineg` (wrapping; `ineg(i64::MIN) == i64::MIN` matching
+/// the helper's release-mode `-n` semantics). Caller must have verified
+/// `reg_types[dst] == reg_types[src] == I64`.
+fn emit_i64_neg(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, src: u32,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_I64:        u8  = 0;
+    let off_src  = builder.ins().iconst(types::I64, (src as i64) * VALUE_STRIDE);
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_src = builder.ins().iadd(regs_base, off_src);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let si       = builder.ins().load(types::I64, MemFlags::trusted(), addr_src, PAYLOAD_OFFSET);
+    let result   = builder.ins().ineg(si);
+    let tag      = builder.ins().iconst(types::I8, TAG_I64 as i64);
+    builder.ins().store(MemFlags::trusted(), tag,    addr_dst, 0);
     builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
 }
 
