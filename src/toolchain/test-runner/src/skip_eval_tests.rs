@@ -39,6 +39,7 @@ fn test_with(
         method_id: 0,
         method_name: "t",
         flags,
+        is_benchmark: false,
         skip_reason: skip_reason.map(|s| s.to_string()),
         skip_platform: skip_platform.map(|s| s.to_string()),
         skip_feature: skip_feature.map(|s| s.to_string()),

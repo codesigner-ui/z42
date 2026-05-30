@@ -312,47 +312,62 @@ public sealed class TestAttributeTests
         entry.Flags.HasFlag(TestFlags.ShouldThrow).Should().BeFalse();
     }
 
-    // ── R2 完整版 — E0912 [Benchmark] full signature ──────────────────────────
+    // ── E0912 [Benchmark] signature ──────────────────────────────────────────
+    // add-benchmark-runner-dispatch (2026-05-31): contract flipped from
+    // `void f(Bencher b)` (pre-spec, but runner silently dropped these) to
+    // `void f()` (zero-arg, dispatched alongside [Test]; user constructs
+    // Bencher inside body). See ValidateBenchmarkFullSignature.
 
     [Fact]
-    public void Validate_BenchmarkWithBencherParam_PassesValidation()
+    public void Validate_BenchmarkZeroArg_PassesValidation()
     {
         var (diags, _) = Validate(BencherStub + """
-            [Benchmark] void f(Bencher b) {}
+            [Benchmark] void f() {}
             """);
         diags.HasErrors.Should().BeFalse(because: string.Join("\n", diags.All));
     }
 
     [Fact]
-    public void Validate_BenchmarkNoParams_ReportsE0912()
+    public void Validate_BenchmarkWithBencherParam_ReportsE0912()
     {
         var (diags, _) = Validate(BencherStub + """
-            [Benchmark] void f() {}
+            [Benchmark] void f(Bencher b) {}
             """);
         diags.All.Should().Contain(d =>
             d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
-            d.Message.Contains("first parameter of type"));
+            d.Message.Contains("must take no parameters"));
     }
 
     [Fact]
-    public void Validate_BenchmarkWrongParamType_ReportsE0912()
+    public void Validate_BenchmarkWithAnyParam_ReportsE0912()
     {
         var (diags, _) = Validate(BencherStub + """
             [Benchmark] void f(int x) {}
             """);
         diags.All.Should().Contain(d =>
             d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
-            d.Message.Contains("must be `Bencher`"));
+            d.Message.Contains("must take no parameters"));
     }
 
     [Fact]
-    public void Validate_BenchmarkExtraParams_ReportsE0912()
+    public void Validate_BenchmarkNonVoidReturn_ReportsE0912()
     {
         var (diags, _) = Validate(BencherStub + """
-            [Benchmark] void f(Bencher b, int extra) {}
+            [Benchmark] int f() { return 0; }
             """);
         diags.All.Should().Contain(d =>
             d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
-            d.Message.Contains("exactly one parameter"));
+            d.Message.Contains("must return void"));
+    }
+
+    [Fact]
+    public void Validate_BenchmarkGeneric_ReportsE0912()
+    {
+        var (diags, _) = Validate(BencherStub + """
+            [Benchmark] void f<T>() {}
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
+            d.Message.Contains("must not be generic"));
     }
 }

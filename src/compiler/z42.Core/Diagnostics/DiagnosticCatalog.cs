@@ -352,11 +352,19 @@ public static class DiagnosticCatalog
 
         [DiagnosticCodes.BenchmarkSignatureInvalid] = new(
             "Benchmark attribute signature invalid",
-            "A function decorated with `[Benchmark]` does not satisfy the bench runner's calling contract. " +
-            "Phase R4.A only catches obviously-wrong shapes (non-void return, generic type params); the full " +
-            "first-parameter-is-Bencher check lands when the Bencher type ships in R2.C (closure-dependent). " +
-            "Until then, runtime errors will surface for malformed [Benchmark] bodies.",
-            "[Benchmark] int Bench() { return 0; }  // void return required → E0912"),
+            "A function decorated with `[Benchmark]` must be `fn() -> void` with no parameters and no generic " +
+            "type parameters — same shape as `[Test]`. The runner dispatches benchmarks via the same in-process " +
+            "execution path; the test author constructs a `Std.Test.Bencher` inside the body to measure work. " +
+            "add-benchmark-runner-dispatch (2026-05-31) flipped the contract from `void f(Bencher b)` after " +
+            "discovering the runner-side Bencher construction would need infrastructure not yet built; the " +
+            "Bencher-arg form may return in a future spec via compiler-generated trampolines.",
+            "[Benchmark] int Bench() { return 0; }            // void return required → E0912\n" +
+            "[Benchmark] void Bench(Bencher b) { … }          // zero params required → E0912 (post-2026-05-31)\n" +
+            "[Benchmark] void Bench() {\n" +
+            "    var b = new Bencher();\n" +
+            "    b.iter(() => doWork());\n" +
+            "    b.printSummary(\"work\");\n" +
+            "}                                                 // OK"),
 
         [DiagnosticCodes.ShouldThrowTypeInvalid] = new(
             "ShouldThrow<E> attribute invalid (placeholder)",

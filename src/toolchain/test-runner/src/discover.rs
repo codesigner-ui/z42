@@ -14,6 +14,12 @@ pub struct DiscoveredTest<'a> {
     pub method_id: u32,
     pub method_name: &'a str,
     pub flags: TestFlags,
+    /// add-benchmark-runner-dispatch (2026-05-31): true when this entry
+    /// came from `TestEntryKind::Benchmark`. Execution path is identical
+    /// to a regular `[Test]` (zero-arg call) — the flag only affects
+    /// display labeling in the pretty formatter and the
+    /// `TestResult.is_benchmark` field in JSON output.
+    pub is_benchmark: bool,
     /// User-written `reason:` arg from `[Skip(reason: "...")]` — surfaced
     /// verbatim. Decoupled from `skip_platform` / `skip_feature` so the
     /// runner's conditional evaluator can compose its own "skipped on X
@@ -46,7 +52,11 @@ impl<'a> TestReport<'a> {
     pub fn from_artifact(artifact: &'a LoadedArtifact) -> Self {
         let mut tests = Vec::new();
         for entry in &artifact.test_index {
-            if entry.kind != TestEntryKind::Test { continue; }
+            // add-benchmark-runner-dispatch (2026-05-31): accept both Test
+            // and Benchmark kinds; Setup/Teardown/Doctest still filtered.
+            if !matches!(entry.kind, TestEntryKind::Test | TestEntryKind::Benchmark) {
+                continue;
+            }
             if entry.flags.contains(TestFlags::IGNORED) {
                 // [Ignore] — silently omit per design.
                 continue;
@@ -77,6 +87,7 @@ impl<'a> TestReport<'a> {
                 method_id: entry.method_id,
                 method_name: &method.name,
                 flags: entry.flags,
+                is_benchmark: entry.kind == TestEntryKind::Benchmark,
                 skip_reason,
                 skip_platform,
                 skip_feature,

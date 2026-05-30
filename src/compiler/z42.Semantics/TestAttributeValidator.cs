@@ -369,51 +369,35 @@ public static class TestAttributeValidator
         return false;
     }
 
-    /// R2 完整版 — full [Benchmark] signature check.
+    /// add-benchmark-runner-dispatch (2026-05-31) — [Benchmark] signature
+    /// matches [Test]: `fn() -> void`, no parameters, not generic.
     ///
-    /// Rules:
-    ///   1. return type is void
-    ///   2. not generic
-    ///   3. exactly one parameter, of type `Bencher` (short name match;
-    ///      Bencher class lives in `Std.Test`)
+    /// Pre-spec the contract required `void f(Bencher b)` and the runner
+    /// silently skipped every [Benchmark] entry because there was no
+    /// infrastructure to construct a Bencher from Rust and pass it. This
+    /// spec routes [Benchmark] through the same in-process execution path
+    /// as [Test] (zero-arg call) so users opt into benchmarking with one
+    /// attribute change; the user constructs Bencher inside the body:
+    ///
+    ///   [Benchmark]
+    ///   void bench_foo() {
+    ///       var b = new Bencher();
+    ///       b.iter(() => doWork());
+    ///       b.printSummary("foo");
+    ///   }
+    ///
+    /// Future spec `add-benchmark-bencher-arg-trampoline` will reintroduce
+    /// the `void f(Bencher b)` shape via compiler-generated trampolines
+    /// once the runner can read Bencher fields back from a Value object.
     private static void ValidateBenchmarkFullSignature(FunctionDecl fn, DiagnosticBag diags)
     {
-        if (fn.ReturnType is not VoidType)
-        {
-            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
-                $"function `{fn.Name}` decorated with `[Benchmark]` must return void",
-                fn.Span);
-        }
+        ValidateNoArgVoidSignature(fn, "[Benchmark]", DiagnosticCodes.BenchmarkSignatureInvalid, diags);
 
         if (fn.TypeParams is { Count: > 0 })
         {
             diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
                 $"function `{fn.Name}` decorated with `[Benchmark]` must not be generic",
                 fn.Span);
-        }
-
-        if (fn.Params.Count == 0)
-        {
-            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
-                $"function `{fn.Name}` decorated with `[Benchmark]` must have first parameter of type `Bencher`",
-                fn.Span);
-            return;
-        }
-
-        if (fn.Params.Count > 1)
-        {
-            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
-                $"function `{fn.Name}` decorated with `[Benchmark]` must take exactly one parameter (the Bencher); got {fn.Params.Count}",
-                fn.Span);
-            // Don't return — still validate the first param's type below.
-        }
-
-        var firstParamTypeName = ExtractTypeName(fn.Params[0].Type);
-        if (firstParamTypeName != "Bencher")
-        {
-            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
-                $"function `{fn.Name}` decorated with `[Benchmark]` first parameter must be `Bencher`, got `{firstParamTypeName}`",
-                fn.Params[0].Span);
         }
     }
 

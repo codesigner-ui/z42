@@ -17,7 +17,7 @@ R 系列基础设施已落（R1 / R2 minimal / R2 完整版 / R3 minimal+R3a+R3c
 | TestIO（捕获 console） | ✅ R2 完整版 | captureStdout / captureStderr / captureBoth |
 | Bencher（基准测量） | ✅ R2 完整版 | Bencher.iter(Action) / printSummary / Min·Max·Median·Total·Samples + BenchHelpers.blackBox |
 | Imperative TestRunner（旧） | ✅ v0 保留 | Begin / Fail / Summary（lambda 前的兼容路径）|
-| Runner [Benchmark] 调度 | 📋 待开 spec | runner 当前 skip [Benchmark]；用户在 [Test] 内手动构造 Bencher |
+| Runner [Benchmark] 调度 | ✅ add-benchmark-runner-dispatch (zero-arg form) | `[Benchmark] void f()` 与 `[Test]` 同执行路径；pretty 输出 `bench:<name>` 前缀；JSON 含 `is_benchmark: true`。用户在 body 内构造 Bencher。Bencher-arg 形态 (`void f(Bencher b)`) 留待 trampoline spec |
 
 ## 推荐用法（lambda 时代）
 

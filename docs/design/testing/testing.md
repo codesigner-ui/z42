@@ -360,7 +360,10 @@ public class CaptureResult {
 
 ## Bencher（R2 完整版，2026-05-05）
 
-`Std.Test.Bencher` 给代码段做 wall-clock 测量。当前 runner 不调度 [Benchmark] 方法（独立 spec），用户在 [Test] 里手动 `var b = new Bencher(); b.iter(() => ...);` 即可。
+`Std.Test.Bencher` 给代码段做 wall-clock 测量。
+2026-05-31 起 runner 已支持调度 `[Benchmark]` 方法（见
+[add-benchmark-runner-dispatch](../../spec/archive/2026-05-31-add-benchmark-runner-dispatch/)）— 在 body 内构造 `var b = new Bencher(); b.iter(() => ...);` 即可。
+两种写法都可用：`[Benchmark] void name() { ... }`（runner 显示为 `bench:name`）或继续在 `[Test]` 内构造（pre-spec 写法仍兼容）。
 
 ```z42
 public class Bencher {
@@ -385,13 +388,46 @@ public static class BenchHelpers {
 - `__bench_now_ns` — `OnceLock<Instant>` epoch + `Instant::now().elapsed().as_nanos()`，单调性由 `std::time::Instant` 保证
 - `__bench_black_box` — interp 端 `args[0].clone()`；future JIT 端可挂钩防止 dead-code elimination
 
-### TestAttributeValidator E0912 完整化（R2 完整版）
+### Runner [Benchmark] 调度（add-benchmark-runner-dispatch, 2026-05-31）
 
-R4.A 留的"first-parameter-is-Bencher"检查现在补齐：`[Benchmark]` 方法必须 `void f(Bencher b)`（exactly 1 个参数；类型短名 `Bencher`）。0 / 多余参数 / 错类型都报 E0912。
+#### 用法（usage）
 
-### Runner [Benchmark] 调度（未做）
+```z42
+[Benchmark]
+void bench_addition() {
+    var b = new Bencher();              // warmup=10, samples=100 (defaults)
+    b.iter(() => 1 + 2 + 3);
+    b.printSummary("addition");         // → bench[addition] min=… median=… max=… samples=100
+}
+```
 
-当前 runner `entry.kind != TestEntryKind::Test { continue; }`：[Benchmark] 函数被 discovery 过滤掉。运行 / JSON 输出 / criterion-style baseline diff 留给独立 spec。
+Runner 执行后 pretty 输出形如:
+
+```
+  ✓ bench:bench_addition  (12ms)
+```
+
+JSON 输出 `is_benchmark: true` field, 便于消费者按 group 过滤. TAP 与 [Test] 同形态（不区分；用 name 前缀辨识）.
+
+`[Benchmark]` 与 `[Skip(...)]` / `[Timeout(...)]` 等其它 attribute 自由组合（同 `[Test]`）.
+
+#### Signature contract（v1）
+
+`[Benchmark]` 方法必须 `void f()` — **零参数**, void 返回, 不带泛型. validator 报 E0912 if not.
+
+> Pre-spec contract 要求 `void f(Bencher b)` — runner 一直缺 Bencher 构造的基础设施所以悄悄 drop 了这种 entry. 本 spec flip 到 zero-arg form, migration cost zero (`grep [Benchmark]` 整个 repo 返回零结果). `void f(Bencher b)` 形态 deferred 到未来 spec `add-benchmark-bencher-arg-trampoline` (需要 compiler-generated trampoline 或 runner-side ObjNew API).
+
+#### 设计思路（design rationale）
+
+完整决策见
+[design.md](../../spec/archive/2026-05-31-add-benchmark-runner-dispatch/design.md)。
+
+| 维度 | 选择 | 拒绝的备选 + 理由 |
+|------|------|--------------------|
+| Signature shape | `void f()` (zero-arg) | `void f(Bencher b)` 需要 runner 从 Rust 构造 Bencher Value (ObjNew 是 IR instruction, 无 public Rust API); 不在 v1 scope. 用户在 body 内 `new Bencher()` 等价 |
+| Execution path | 与 [Test] 同路径 (in-process / subprocess / parallel 全部复用) | 单独路径会重复 Skip/Timeout/Setup-Teardown 逻辑; 共享路径让 [Benchmark] 自动继承所有现有特性 |
+| Output 区分 | pretty `bench:` 前缀 + JSON `is_benchmark: true` field | 新 TestStatus 变体 (e.g. `Benchmarked`) 会破坏所有现有 status-grouping 消费者; 加 flag 是 backward-compatible |
+| 公开 API 直接 break | 不引入 versioned alias | 零现存用户; 引入 alias 是不必要复杂性 |
 
 ---
 

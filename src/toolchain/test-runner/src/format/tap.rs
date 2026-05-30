@@ -67,17 +67,20 @@ mod tests {
                 name: "M.test_pass".into(), status: TestStatus::Passed,
                 duration_ms: 12, reason: None,
                 failure_location: None, stack_trace: None,
+                is_benchmark: false,
             },
             TestResult {
                 name: "M.test_skip".into(), status: TestStatus::Skipped,
                 duration_ms: 0, reason: Some("platform=ios".into()),
                 failure_location: None, stack_trace: None,
+                is_benchmark: false,
             },
             TestResult {
                 name: "M.test_fail".into(), status: TestStatus::Failed,
                 duration_ms: 7,
                 reason: Some("expected `Foo`, got `Bar`".into()),
                 failure_location: None, stack_trace: None,
+                is_benchmark: false,
             },
         ]
     }
@@ -148,6 +151,7 @@ mod tests {
                 "  at MyTests.test_fail (my_test.z42:42)\n  at Std.Test.Assert.Equal (Assert.z42:38)"
                     .into(),
             ),
+            is_benchmark: false,
         }];
 
         let mut buf = Vec::new();

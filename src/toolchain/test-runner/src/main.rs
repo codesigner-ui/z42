@@ -160,7 +160,8 @@ fn run(cli: &Cli) -> Result<i32> {
             report.tests.iter()
                 .map(|t| TestResult::from_outcome(
                     t.method_name.to_string(),
-                    exec::run_one(&z42vm, zbc_path, t, &skip_env)))
+                    exec::run_one(&z42vm, zbc_path, t, &skip_env),
+                    t.is_benchmark))
                 .collect()
         };
         emit(&format, &module_name, &results)?;
@@ -177,7 +178,15 @@ fn run(cli: &Cli) -> Result<i32> {
     // user_func_names, but run_one needs &mut loaded).
     let report_tests: Vec<DiscoveredTestOwned> = loaded.test_index.iter()
         .filter_map(|entry| {
-            if entry.kind != z42::metadata::TestEntryKind::Test { return None; }
+            // add-benchmark-runner-dispatch (2026-05-31): accept both Test
+            // and Benchmark; Benchmark is dispatched identically (zero-arg)
+            // but labelled separately in pretty output.
+            if !matches!(
+                entry.kind,
+                z42::metadata::TestEntryKind::Test | z42::metadata::TestEntryKind::Benchmark
+            ) {
+                return None;
+            }
             if entry.flags.contains(z42::metadata::TestFlags::IGNORED) { return None; }
             let name = loaded.user_func_names.get(entry.method_id as usize)?.clone();
             if let Some(needle) = &cli.filter {
@@ -203,6 +212,7 @@ fn run(cli: &Cli) -> Result<i32> {
                 method_id: entry.method_id,
                 method_name: name,
                 flags: entry.flags,
+                is_benchmark: entry.kind == z42::metadata::TestEntryKind::Benchmark,
                 skip_reason,
                 skip_platform,
                 skip_feature,
@@ -226,6 +236,7 @@ fn run(cli: &Cli) -> Result<i32> {
             method_id: test.method_id,
             method_name: &test.method_name,
             flags: test.flags,
+            is_benchmark: test.is_benchmark,
             skip_reason: test.skip_reason.clone(),
             skip_platform: test.skip_platform.clone(),
             skip_feature: test.skip_feature.clone(),
@@ -233,7 +244,11 @@ fn run(cli: &Cli) -> Result<i32> {
             timeout_ms: test.timeout_ms,
         };
         let outcome = runner::run_one(&mut loaded, &dt, &skip_env);
-        results.push(TestResult::from_outcome(test.method_name.clone(), outcome));
+        results.push(TestResult::from_outcome(
+            test.method_name.clone(),
+            outcome,
+            test.is_benchmark,
+        ));
     }
     emit(&format, &module_name, &results)?;
     let exit_code = if results.iter().any(|r| r.status == TestStatus::Failed) { 1 } else { 0 };
@@ -247,6 +262,9 @@ struct DiscoveredTestOwned {
     #[allow(dead_code)] method_id: u32,
     method_name: String,
     flags: z42::metadata::TestFlags,
+    /// add-benchmark-runner-dispatch (2026-05-31): kind=Benchmark routed
+    /// through the same execution path as Test, but tagged for display.
+    is_benchmark: bool,
     skip_reason: Option<String>,
     /// add-test-skip-platform-feature-eval (2026-05-30): split out so the
     /// runner can evaluate `[Skip(platform: …)]` against the current host

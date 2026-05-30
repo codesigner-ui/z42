@@ -59,9 +59,11 @@ public sealed class TimeoutAttributeBinderTests
     [Fact]
     public void Validate_BenchmarkPlusTimeout_PassesValidation()
     {
+        // add-benchmark-runner-dispatch (2026-05-31): [Benchmark] signature
+        // is now `void f()` (was `void f(Bencher b)`).
         var (diags, _) = Validate(ExceptionStub + BencherStub + """
             using Std.Test;
-            [Benchmark] [Timeout(milliseconds: 10000)] void f(Bencher b) {}
+            [Benchmark] [Timeout(milliseconds: 10000)] void f() {}
             """);
         diags.HasErrors.Should().BeFalse(because: string.Join("\n", diags.All));
     }

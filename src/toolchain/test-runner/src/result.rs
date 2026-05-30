@@ -37,24 +37,35 @@ pub struct TestResult {
     /// `failure_location`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stack_trace: Option<String>,
+    /// add-benchmark-runner-dispatch (2026-05-31): true for entries that
+    /// originated from `TestEntryKind::Benchmark`. Execution path is
+    /// identical to a regular `[Test]` (zero-arg call, same Outcome
+    /// semantics); this flag only changes display labeling — pretty
+    /// formatter prefixes the test name with `bench:`, JSON consumers
+    /// can filter / group benchmark results separately.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_benchmark: bool,
 }
 
 impl TestResult {
-    pub fn from_outcome(name: String, outcome: Outcome) -> Self {
+    pub fn from_outcome(name: String, outcome: Outcome, is_benchmark: bool) -> Self {
         match outcome {
             Outcome::Passed { duration_ms } => Self {
                 name, status: TestStatus::Passed, duration_ms,
                 reason: None, failure_location: None, stack_trace: None,
+                is_benchmark,
             },
             Outcome::Skipped { reason } => Self {
                 name, status: TestStatus::Skipped, duration_ms: 0,
                 reason: Some(reason), failure_location: None, stack_trace: None,
+                is_benchmark,
             },
             Outcome::Failed { reason, location, stack_trace } => Self {
                 name, status: TestStatus::Failed, duration_ms: 0,
                 reason: Some(reason),
                 failure_location: location,
                 stack_trace,
+                is_benchmark,
             },
         }
     }
@@ -112,17 +123,20 @@ mod tests {
                 name: "M.test_pass".into(), status: TestStatus::Passed,
                 duration_ms: 12, reason: None,
                 failure_location: None, stack_trace: None,
+                is_benchmark: false,
             },
             TestResult {
                 name: "M.test_skip".into(), status: TestStatus::Skipped,
                 duration_ms: 0, reason: Some("platform=ios".into()),
                 failure_location: None, stack_trace: None,
+                is_benchmark: false,
             },
             TestResult {
                 name: "M.test_fail".into(), status: TestStatus::Failed,
                 duration_ms: 7,
                 reason: Some("expected `Foo`, got `Bar`".into()),
                 failure_location: None, stack_trace: None,
+                is_benchmark: false,
             },
         ]
     }
@@ -143,6 +157,7 @@ mod tests {
             name: "M.t".into(), status: TestStatus::Passed,
             duration_ms: 5, reason: None,
             failure_location: None, stack_trace: None,
+            is_benchmark: false,
         };
         let s = serde_json::to_string(&r).unwrap();
         assert!(!s.contains("\"reason\""),
@@ -151,6 +166,8 @@ mod tests {
             "passed test should not serialize `failure_location`");
         assert!(!s.contains("\"stack_trace\""),
             "passed test should not serialize `stack_trace`");
+        assert!(!s.contains("\"is_benchmark\""),
+            "is_benchmark=false should be omitted from JSON");
     }
 
     #[test]
@@ -161,11 +178,25 @@ mod tests {
             reason: Some("values not equal".into()),
             failure_location: Some("my_test.z42:42".into()),
             stack_trace: Some("  at M.t (my_test.z42:42)".into()),
+            is_benchmark: false,
         };
         let s = serde_json::to_string(&r).unwrap();
         assert!(s.contains("\"failure_location\":\"my_test.z42:42\""),
             "got: {s}");
         assert!(s.contains("\"stack_trace\":\"  at M.t (my_test.z42:42)\""),
             "got: {s}");
+    }
+
+    #[test]
+    fn json_benchmark_emits_is_benchmark_true() {
+        let r = TestResult {
+            name: "M.bench".into(), status: TestStatus::Passed,
+            duration_ms: 42, reason: None,
+            failure_location: None, stack_trace: None,
+            is_benchmark: true,
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains("\"is_benchmark\":true"),
+            "is_benchmark=true should serialize; got: {s}");
     }
 }

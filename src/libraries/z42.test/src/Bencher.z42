@@ -11,9 +11,21 @@ using Std.IO;
 //   b.iter(() => doWork());
 //   b.printSummary("doWork");           // bench[doWork] min=... median=... max=...
 //
-// API surface stable; `[Benchmark]` test runner mode (auto-discover and run
-// Bencher-typed methods) is a future spec — for now use Bencher inside a
-// regular `[Test]`.
+// add-benchmark-runner-dispatch (2026-05-31): `[Benchmark]` runner mode
+// ships — decorate a zero-arg `void` function and the runner dispatches
+// it alongside `[Test]` (pretty output labels as `bench:<name>`). The
+// test author constructs the Bencher inside the body:
+//
+//   [Benchmark]
+//   void bench_addition() {
+//       var b = new Bencher();
+//       b.iter(() => 1 + 2 + 3);
+//       b.printSummary("addition");
+//   }
+//
+// Bencher-arg signature (`void f(Bencher b)`) is deferred to a future
+// spec (compiler-side trampoline needed); the zero-arg pattern above is
+// the supported form.
 //
 // blackBox: identity wrapper to opt out of dead-code elimination. Interp
 // path is no-op today; JIT path will hook here once cranelift learns to
