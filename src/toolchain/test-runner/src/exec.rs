@@ -48,6 +48,7 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
             reason: format!("failed to spawn z42vm: {e}")
         },
     };
+    let child_pid = child.id();
 
     // Drain stdout/stderr in background threads so the child never
     // blocks on a full OS pipe buffer (default 64 KB on Linux). Without
@@ -73,11 +74,23 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     // hangs at the upper bound.
     let deadline = Instant::now() + Duration::from_secs(TEST_TIMEOUT_SECS);
     let mut timed_out = false;
+    let mut stack_trace: Option<String> = None;
     let exit_status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break Some(s),
             Ok(None) => {
                 if Instant::now() >= deadline {
+                    // diag-timeout-stack-trace (2026-05-30): before SIGKILL,
+                    // try to snapshot the hung process's thread stacks via
+                    // the platform's native sampler (`sample` on macOS,
+                    // `gdb --batch` on Linux). Windows has no widely-
+                    // available command-line equivalent; we fall back to
+                    // "stack trace not captured" there. Best-effort — if
+                    // the tool is missing or fails (CI runners without
+                    // sudo to attach to processes, etc.), we just note it
+                    // and proceed with the kill so the timeout still
+                    // surfaces as TIMEOUT instead of a hang.
+                    stack_trace = capture_stack_trace(child_pid);
                     let _ = child.kill();
                     timed_out = true;
                     break child.wait().ok();
@@ -98,9 +111,29 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
 
     if timed_out {
         let mut reason = format!(
-            "timed out after {}s — z42vm killed (likely hung)",
-            TEST_TIMEOUT_SECS
+            "timed out after {}s — z42vm killed (likely hung)\n\
+             test:   {}\n\
+             zbc:    {}\n\
+             pid:    {}\n\
+             wall:   {} ms",
+            TEST_TIMEOUT_SECS,
+            test.method_name,
+            zbc_path,
+            child_pid,
+            duration_ms,
         );
+        if let Some(ref bt) = stack_trace {
+            reason.push_str("\n--- thread backtrace (pre-kill) ---\n");
+            reason.push_str(bt.trim_end());
+        } else {
+            reason.push_str(
+                "\n--- thread backtrace ---\n(not captured — platform sampler unavailable)",
+            );
+        }
+        if !stdout.trim().is_empty() {
+            reason.push_str("\n--- stdout (partial) ---\n");
+            reason.push_str(stdout.trim_end());
+        }
         if !stderr.trim().is_empty() {
             reason.push_str("\n--- stderr (partial) ---\n");
             reason.push_str(stderr.trim_end());
@@ -179,6 +212,65 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
 
 /// Extract the (possibly fully-qualified) thrown type name from z42vm's stderr.
 ///
+/// Best-effort thread-stack snapshot of a hung child process, used by the
+/// timeout path in [`run_one`] to give CI logs enough context to diagnose
+/// whether the test is deadlocked in z42 user code, a stdlib builtin, or a
+/// VM-internal lock.
+///
+/// Tooling per OS (all stdout captured, stderr discarded for brevity):
+///   - macOS:  `sample <pid> 1 -mayDie` — 1 s wall-clock window, then
+///             snapshot. Apple-supplied tool, present on every runner.
+///   - Linux:  `gdb --batch -p <pid> -ex "thread apply all bt 30"` —
+///             attaches via `ptrace`, dumps all threads' top-30 frames.
+///             Requires `gdb` + `ptrace_scope` permissive enough to attach
+///             to a sibling pid; GitHub Actions ubuntu runners default to
+///             `kernel.yama.ptrace_scope=0` so this works without sudo.
+///   - Windows: no widely-shipped command-line stack sampler. Skip.
+///
+/// Returns `None` if the tool is missing or fails — in that case the
+/// timeout reason just notes "not captured" rather than failing the test
+/// for a different reason. Caps captured output at 32 KB so a runaway
+/// trace doesn't blow up the test runner's per-test reason field.
+fn capture_stack_trace(pid: u32) -> Option<String> {
+    const CAP_BYTES: usize = 32 * 1024;
+
+    let (cmd, args): (&str, Vec<String>) = if cfg!(target_os = "macos") {
+        ("sample", vec![pid.to_string(), "1".into(), "-mayDie".into()])
+    } else if cfg!(target_os = "linux") {
+        (
+            "gdb",
+            vec![
+                "--batch".into(),
+                "-p".into(),
+                pid.to_string(),
+                "-ex".into(),
+                "set pagination off".into(),
+                "-ex".into(),
+                "thread apply all bt 30".into(),
+            ],
+        )
+    } else {
+        return None;
+    };
+
+    let mut cmd_builder = Command::new(cmd);
+    for a in &args { cmd_builder.arg(a); }
+    cmd_builder.stdin(Stdio::null());
+    cmd_builder.stdout(Stdio::piped());
+    cmd_builder.stderr(Stdio::null());
+
+    let output = cmd_builder.output().ok()?;
+    if !output.status.success() && output.stdout.is_empty() {
+        return None;
+    }
+    let mut s = String::from_utf8_lossy(&output.stdout).into_owned();
+    if s.len() > CAP_BYTES {
+        s.truncate(CAP_BYTES);
+        s.push_str("\n... (truncated)");
+    }
+    Some(s)
+}
+
 /// z42vm prints uncaught exceptions in one of two shapes (kept consistent with
 /// `interp::format_uncaught_exception`):
 ///   `Error: uncaught exception: <FQ_TYPE>: <msg>`        — string-message form
