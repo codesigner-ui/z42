@@ -6,8 +6,17 @@
 
 use super::*;
 
+/// Serialize tests that read or mutate the process-global
+/// `Z42_GC_PAUSE_WINDOW` env var. Without this, parallel runs of
+/// `pause_window_cap_from_env_clamps_and_falls_back` (sets the var to
+/// various values) race with `default_*` tests (call
+/// `PauseHistogram::default()` which reads the env via
+/// `pause_window_cap_from_env`) and the latter sees garbage caps.
+static PAUSE_WINDOW_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn default_is_empty() {
+    let _env_guard = PAUSE_WINDOW_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let h = PauseHistogram::default();
     assert_eq!(h.buckets, [0; 8]);
     assert_eq!(h.min_us, u64::MAX, "empty sentinel");
@@ -21,6 +30,7 @@ fn default_is_empty() {
 
 #[test]
 fn default_has_empty_window_with_default_capacity() {
+    let _env_guard = PAUSE_WINDOW_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("Z42_GC_PAUSE_WINDOW");
     let h = PauseHistogram::default();
     assert_eq!(h.recent_pauses.len(), 0);
@@ -53,6 +63,7 @@ fn window_evicts_oldest_at_capacity() {
 
 #[test]
 fn pause_window_cap_from_env_clamps_and_falls_back() {
+    let _env_guard = PAUSE_WINDOW_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     // Valid numeric → adopted.
     std::env::set_var("Z42_GC_PAUSE_WINDOW", "42");
     assert_eq!(pause_window_cap_from_env(), 42);
