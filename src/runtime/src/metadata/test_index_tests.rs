@@ -1,8 +1,11 @@
-//! Tests for `test_index` decoder (v=2 layout).
+//! Tests for `test_index` decoder (v=3 layout).
+//!
+//! v=3 (add-test-timeout-attribute, 2026-05-30) appends a trailing
+//! `timeout_ms: i32` to each TestEntry, after the TestCase array.
 
 use super::*;
 
-/// Helper to build a TIDX payload with `entries` (fixed-width LE, v=2),
+/// Helper to build a TIDX payload with `entries` (fixed-width LE, v=3),
 /// matching the C# ZbcWriter side.
 fn build_payload(entries: &[TestEntry]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -22,6 +25,8 @@ fn build_payload(entries: &[TestEntry]) -> Vec<u8> {
         for tc in &e.test_cases {
             out.extend_from_slice(&tc.arg_repr_str_idx.to_le_bytes());
         }
+        // v=3 add-test-timeout-attribute: trailing timeout_ms i32
+        out.extend_from_slice(&(e.timeout_ms as i32).to_le_bytes());
     }
     out
 }
@@ -38,6 +43,7 @@ fn entry(method_id: u32, kind: TestEntryKind) -> TestEntry {
         skip_feature_str_idx: 0,
         expected_throw_type_idx: 0,
         test_cases: vec![],
+        timeout_ms: 0,
         skip_reason: None,
         skip_platform: None,
         skip_feature: None,
@@ -86,6 +92,7 @@ fn decodes_flags_and_indices() {
         skip_feature_str_idx: 0,
         expected_throw_type_idx: 22,
         test_cases: vec![],
+        timeout_ms: 0,
         skip_reason: None,
         skip_platform: None,
         skip_feature: None,
@@ -111,6 +118,7 @@ fn decodes_skip_platform_and_feature() {
         skip_feature_str_idx: 300,   // e.g. pool[300] = "jit"
         expected_throw_type_idx: 0,
         test_cases: vec![],
+        timeout_ms: 0,
         skip_reason: None,
         skip_platform: None,
         skip_feature: None,
@@ -138,6 +146,7 @@ fn decodes_test_cases() {
             TestCase { arg_repr_str_idx: 101 },
             TestCase { arg_repr_str_idx: 102 },
         ],
+        timeout_ms: 0,
         skip_reason: None,
         skip_platform: None,
         skip_feature: None,

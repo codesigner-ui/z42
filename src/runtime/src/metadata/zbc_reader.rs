@@ -30,7 +30,11 @@ use super::types::ExecMode;
 // See docs/design/runtime/zbc.md + .claude/rules/workflow.md for the full procedure.
 
 pub const ZBC_VERSION_MAJOR: u16 = 1;
-pub const ZBC_VERSION_MINOR: u16 = 8;
+// 2026-05-30 add-test-timeout-attribute: TIDX v=3 carries per-test
+// `timeout_ms: i32` after each TestEntry's TestCase array. 0 = no
+// override (runner default applies); positive = per-test wallclock
+// cap in ms. Strict-pin policy: pre-1.9 zbc no longer readable.
+pub const ZBC_VERSION_MINOR: u16 = 9;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //

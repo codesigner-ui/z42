@@ -19,6 +19,10 @@ pub struct DiscoveredTest<'a> {
     /// Populated only when SHOULD_THROW flag is set and the type was resolved.
     /// `None` means the test has no ShouldThrow expectation.
     pub expected_throw: Option<String>,
+    /// add-test-timeout-attribute (2026-05-30): per-test wallclock budget
+    /// override from `[Timeout(milliseconds: N)]`. `None` = no override
+    /// (runner applies its built-in default). `Some(ms)` = explicit cap.
+    pub timeout_ms: Option<u32>,
 }
 
 pub struct TestReport<'a> {
@@ -53,6 +57,9 @@ impl<'a> TestReport<'a> {
                 flags: entry.flags,
                 skip_reason,
                 expected_throw,
+                // add-test-timeout-attribute (2026-05-30): 0 on-wire = None
+                // (use runner default); positive = Some(N) per-test override.
+                timeout_ms: if entry.timeout_ms == 0 { None } else { Some(entry.timeout_ms) },
             });
         }
         Self { tests }

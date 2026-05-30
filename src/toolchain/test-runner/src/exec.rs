@@ -13,21 +13,26 @@ use std::time::{Duration, Instant};
 use crate::discover::DiscoveredTest;
 use crate::result::Outcome;
 
-/// Per-test wallclock cap. Anything beyond this is treated as a hang —
-/// z42vm gets SIGKILL'd and the test reports as `Failed { reason: "timed
-/// out after Xs ..." }` instead of locking the whole runner. The cap is
-/// generous vs. observed legitimate test durations:
+/// Per-test wallclock cap used when a method does NOT carry an explicit
+/// `[Timeout(milliseconds: N)]`. Generous vs. observed legitimate test
+/// durations:
 ///   - Most [Test] methods complete in milliseconds
 ///   - Slowest JIT/compression ones ~30 s on cold caches
 ///   - **ECDSA secp256k1 sign / verify round-trips on CI runners (3-4
 ///     vCPU) take 60-180 s** because the z42-stdlib BigInt path is pure
 ///     z42 + does naive modular exponentiation (no Montgomery / no
 ///     windowed mul yet). 120 s caught these as false-positive
-///     "timeouts" on ubuntu/macos/arm CI. Bumping to 300 s leaves
-///     headroom for slow runners without weakening the hang detector
-///     (genuine hangs go forever, so any finite cap above legitimate
-///     max suffices).
-const TEST_TIMEOUT_SECS: u64 = 300;
+///     "timeouts" on ubuntu/macos/arm CI. 300 s leaves headroom for slow
+///     runners without weakening the hang detector (genuine hangs go
+///     forever, so any finite cap above legitimate max suffices).
+const DEFAULT_TIMEOUT_SECS: u64 = 300;
+
+/// Hard ceiling for any per-test override. A typo like `[Timeout(milliseconds:
+/// 60_000_000)]` (intended `60_000`) would otherwise disable the hang detector
+/// entirely under the GitHub Actions 6 h job limit. We clamp to 2× default and
+/// print a one-line warning so the user sees the override didn't fully land.
+/// add-test-timeout-attribute (2026-05-30).
+const TIMEOUT_HARD_CEILING_SECS: u64 = DEFAULT_TIMEOUT_SECS * 2;
 
 pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
     if let Some(reason) = &test.skip_reason {
@@ -72,7 +77,29 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     // responsiveness for fast tests against syscall overhead — most
     // tests exit in 1-2 sleeps; the timeout path only fires for genuine
     // hangs at the upper bound.
-    let deadline = Instant::now() + Duration::from_secs(TEST_TIMEOUT_SECS);
+    //
+    // add-test-timeout-attribute (2026-05-30): budget resolution is
+    //   per-test override (`[Timeout(milliseconds: N)]`)  if present,
+    //   else `DEFAULT_TIMEOUT_SECS`.
+    // A `TIMEOUT_HARD_CEILING_SECS = 2 × default` clamp protects against
+    // typos that would otherwise disable the hang detector.
+    let ceiling = Duration::from_secs(TIMEOUT_HARD_CEILING_SECS);
+    let requested = test
+        .timeout_ms
+        .map(|ms| Duration::from_millis(ms as u64))
+        .unwrap_or_else(|| Duration::from_secs(DEFAULT_TIMEOUT_SECS));
+    let budget = if requested > ceiling {
+        eprintln!(
+            "note: [Timeout] for `{}` requested {} ms exceeds hard ceiling {} ms — clamped",
+            test.method_name,
+            requested.as_millis(),
+            ceiling.as_millis(),
+        );
+        ceiling
+    } else {
+        requested
+    };
+    let deadline = Instant::now() + budget;
     let mut timed_out = false;
     let mut stack_trace: Option<String> = None;
     let exit_status = loop {
@@ -110,13 +137,16 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     let stdout = String::from_utf8_lossy(&stdout_buf);
 
     if timed_out {
+        let budget_secs = budget.as_secs_f64();
+        let budget_origin = if test.timeout_ms.is_some() { "per-method [Timeout]" } else { "runner default" };
         let mut reason = format!(
-            "timed out after {}s — z42vm killed (likely hung)\n\
+            "timed out after {:.2}s ({}) — z42vm killed (likely hung)\n\
              test:   {}\n\
              zbc:    {}\n\
              pid:    {}\n\
              wall:   {} ms",
-            TEST_TIMEOUT_SECS,
+            budget_secs,
+            budget_origin,
             test.method_name,
             zbc_path,
             child_pid,

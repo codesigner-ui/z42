@@ -172,6 +172,7 @@ fn run(cli: &Cli) -> Result<i32> {
                 flags: entry.flags,
                 skip_reason,
                 expected_throw,
+                timeout_ms: if entry.timeout_ms == 0 { None } else { Some(entry.timeout_ms) },
             })
         })
         .collect();
@@ -192,6 +193,7 @@ fn run(cli: &Cli) -> Result<i32> {
             flags: test.flags,
             skip_reason: test.skip_reason.clone(),
             expected_throw: test.expected_throw.clone(),
+            timeout_ms: test.timeout_ms,
         };
         let outcome = runner::run_one(&mut loaded, &dt);
         results.push(TestResult::from_outcome(test.method_name.clone(), outcome));
@@ -210,6 +212,9 @@ struct DiscoveredTestOwned {
     flags: z42::metadata::TestFlags,
     skip_reason: Option<String>,
     expected_throw: Option<String>,
+    /// add-test-timeout-attribute (2026-05-30): per-test override from
+    /// `[Timeout(milliseconds: N)]`. None = use runner default.
+    timeout_ms: Option<u32>,
 }
 
 fn emit(format: &Format, module_name: &str, results: &[TestResult]) -> Result<()> {

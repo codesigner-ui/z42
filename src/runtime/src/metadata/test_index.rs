@@ -60,7 +60,10 @@ use bitflags::bitflags;
 pub const TEST_INDEX_MAGIC: u32 = 0x58_44_49_54;
 
 /// Current TIDX section format version. Bumped on incompatible payload changes.
-pub const TEST_INDEX_VERSION: u8 = 2;
+/// v=3 (add-test-timeout-attribute, 2026-05-30): TestEntry gains a trailing
+/// `timeout_ms: i32` after its TestCase array. 0 = no override (runner uses
+/// its built-in default); positive = per-test wallclock cap in ms.
+pub const TEST_INDEX_VERSION: u8 = 3;
 
 /// Test-method classification, mirrored from C# `TestEntryKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +156,12 @@ pub struct TestEntry {
     pub expected_throw_type_idx: u32,
     /// Empty when not parameterized; one element per `[TestCase(...)]`.
     pub test_cases: Vec<TestCase>,
+    /// add-test-timeout-attribute (2026-05-30): per-test wallclock budget
+    /// in milliseconds. 0 = no override (runner uses its built-in default —
+    /// currently 300 s); positive = explicit cap from
+    /// `[Timeout(milliseconds: N)]`. Always > 0 when non-zero (compile-time
+    /// E0916 enforces 0 &lt; N ≤ i32::MaxValue).
+    pub timeout_ms: u32,
 
     // ── Resolved strings (populated by loader::resolve_test_index_strings) ──
     /// Resolved [Skip(reason: ...)] string. None when `skip_reason_str_idx == 0`
@@ -230,6 +239,13 @@ pub fn read_test_index(payload: &[u8]) -> Result<Vec<TestEntry>> {
             let arg_repr_str_idx = cursor.read_u32_le()?;
             test_cases.push(TestCase { arg_repr_str_idx });
         }
+        // add-test-timeout-attribute (2026-05-30): TIDX v=3 trailing
+        // `timeout_ms i32`. Negative not expected (compile-time E0916
+        // enforces > 0), but defensively saturate to 0 = "no override"
+        // so an old-format / corrupt file degrades to runner default
+        // instead of integer-underflow on the u32 cast.
+        let timeout_ms_i32 = cursor.read_i32_le()?;
+        let timeout_ms = if timeout_ms_i32 > 0 { timeout_ms_i32 as u32 } else { 0 };
         entries.push(TestEntry {
             method_id,
             kind,
@@ -239,6 +255,7 @@ pub fn read_test_index(payload: &[u8]) -> Result<Vec<TestEntry>> {
             skip_feature_str_idx,
             expected_throw_type_idx,
             test_cases,
+            timeout_ms,
             // Resolved fields populated by loader::resolve_test_index_strings
             skip_reason: None,
             skip_platform: None,
@@ -294,6 +311,12 @@ impl<'a> TidxCursor<'a> {
         Ok(v)
     }
 
+    /// add-test-timeout-attribute (2026-05-30): signed 32-bit reader for
+    /// `timeout_ms`. C# writer emits `BinaryWriter.Write(int)` which is
+    /// little-endian two's-complement; matching read here.
+    fn read_i32_le(&mut self) -> Result<i32> {
+        Ok(self.read_u32_le()? as i32)
+    }
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
