@@ -102,7 +102,8 @@ public static class DiagnosticCodes
     // Package / import resolution (strict-using-resolution, 2026-04-28)
     public const string NamespaceCollision   = "E0601";  // 两个包同 (ns, class-name) 同时激活
     public const string UnresolvedUsing      = "E0602";  // using 指向不存在的 namespace
-    public const string ReservedNamespace    = "W0603";  // 非 prelude 包声明 Std.* 前缀（warn-only）
+    public const string ReservedNamespace             = "W0603";  // 非 prelude 包声明 Std.* 前缀（warn-only）
+    public const string CapturedValueSnapshotAssign   = "W0604";  // 闭包写值类型 captured var — 写入 closure 局部副本，外部不见（warn-only；closure.md §4.1 是合法语义，但易踩）
 
     // Internal compiler error
     public const string InternalCompilerError = "E0900";

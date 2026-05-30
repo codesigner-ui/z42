@@ -126,6 +126,24 @@ public sealed partial class TypeChecker
                 assign.Target.Span);
         }
 
+        // add-warn-captured-value-snapshot-assign (2026-05-30): writing to a
+        // value-type captured variable mutates only the closure's local copy
+        // (closure.md §4.1 — captures are by-snapshot). Silent footgun for
+        // anyone expecting C#-style shared semantics; emit W0604 to nudge
+        // toward the §4.4 class-wrap / array-cell pattern.
+        if (target is BoundCapturedIdent ci
+            && !Z42Type.IsReferenceType(ci.Type))
+        {
+            _diags.Warning(
+                DiagnosticCodes.CapturedValueSnapshotAssign,
+                $"assignment to captured value-type variable `{ci.Name}` is " +
+                "local to the closure; outer scope keeps its original value. " +
+                "To share mutable state across the closure boundary, wrap in a " +
+                "class (see docs/design/language/closure.md §4.4) or use a " +
+                "single-element array as a cell.",
+                assign.Span);
+        }
+
         return new BoundAssign(target, value2, value2.Type, assign.Span);
     }
 

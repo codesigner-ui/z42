@@ -178,6 +178,48 @@ z42 **不引入** Rust 风格的 `Ref<T>` / `Box<T>` 堆包装类——刻意保
 
 > **C# `ref` 关键字**是函数参数级特性（pass-by-reference 调用），与闭包**不相关**——它不可被 lambda 捕获（生命周期不允许，与 C# 一致）。本规范不规定 `ref`，那是独立 feature 提案 `add-ref-params` 的范畴。
 
+### 4.5 编译期诊断：W0604 "写入值类型 captured var"
+
+§4.1 的"值快照捕获"是 design feature，但调用方期望 C# 风格的引用共享时
+是 silent footgun ——尤其是 `Thread.Start(() => { result = ...; })` 这类
+跨线程发布结果的模式：写的是 closure 局部副本，主线程读不到。
+
+z42 编译器在 TypeCheck 阶段对"闭包内写值类型 captured var"emit
+`W0604` warning（add-warn-captured-value-snapshot-assign, 2026-05-30）：
+
+```text
+warning W0604: assignment to captured value-type variable `seen` is
+local to the closure; outer scope keeps its original value. To share
+mutable state across the closure boundary, wrap in a class (see
+docs/design/language/closure.md §4.4) or use a single-element array
+as a cell.
+```
+
+修复有两条路：
+
+```z42
+// 路 A — class wrap（§4.4 推荐）
+class Cell { public bool seen = false; }
+var cell = new Cell();
+Thread t = Thread.Start(() => { cell.seen = true; });
+t.Join();
+// cell.seen 是 true（共享对象身份）
+
+// 路 B — 1-element array cell（轻量惯用法，stdlib 测试常用）
+bool[] seen = new bool[1];
+Thread t = Thread.Start(() => { seen[0] = true; });
+t.Join();
+// seen[0] 是 true（array 是引用类型）
+```
+
+写**引用类型** captured var 的 field（`cell.seen = ...`）或 array element
+（`seen[0] = ...`）**不触发** W0604 —— 那是在写已捕获对象的内部状态，
+正是 §4.2 推荐的共享模式。仅"赋值到 captured var 自身"才报警。
+
+W0604 是 warning 而非 error：§4.1 把"局部副本"行为定为合法语义，可能
+有罕见用例确实想要 closure-local effect；warning 提示常见误用又不阻塞
+编译。`z42c explain W0604` 给出详细文档。
+
 ---
 
 ## 5. 单目标闭包（无多播）

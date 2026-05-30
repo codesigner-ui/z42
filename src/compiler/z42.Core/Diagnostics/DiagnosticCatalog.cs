@@ -269,6 +269,26 @@ public static class DiagnosticCatalog
             "// in some-third-party.zpkg:\n" +
             "namespace Std.Acme;  // W0603: `Std` is reserved"),
 
+        [DiagnosticCodes.CapturedValueSnapshotAssign] = new(
+            "Assignment to captured value-type variable is local to the closure",
+            "A closure body writes to a captured value-type variable (int / bool / float / " +
+            "char / struct / enum). Captures of value types are by-snapshot (closure.md §4.1), " +
+            "so the write only mutates the closure's local copy — the outer scope's slot keeps " +
+            "its original value. This is almost always a silent bug (e.g. a thread lambda " +
+            "trying to publish a result back to the calling test). To actually share mutable " +
+            "state across the boundary use a class field (closure.md §4.4) or a single-element " +
+            "array as a cell. This is a warning, not an error: the language explicitly allows " +
+            "by-snapshot capture as a semantic feature.",
+            "bool seen = false;\n" +
+            "Thread t = Thread.Start(() => { seen = true; });   // W0604: lost write\n" +
+            "t.Join();\n" +
+            "// `seen` is still false here.\n" +
+            "\n" +
+            "// Fix — cell pattern:\n" +
+            "bool[] seen = new bool[1];\n" +
+            "Thread t = Thread.Start(() => { seen[0] = true; }); // ok\n" +
+            "t.Join();"),
+
         // ── E09xx: Internal compiler error ──────────────────────────────────
 
         [DiagnosticCodes.InternalCompilerError] = new(
