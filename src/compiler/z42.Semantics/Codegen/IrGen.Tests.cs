@@ -18,6 +18,7 @@ public sealed partial class IrGen
         int platformIdx  = 0;
         int featureIdx   = 0;
         int expectedThrowTypeIdx = 0;
+        int timeoutMs    = 0;     // 0 = no override (add-test-timeout-attribute, 2026-05-30)
 
         foreach (var attr in attrs)
         {
@@ -28,16 +29,40 @@ public sealed partial class IrGen
                 case "Setup":     kind = TestEntryKind.Setup;     break;
                 case "Teardown":  kind = TestEntryKind.Teardown;  break;
                 case "Ignore":    flags |= TestFlags.Ignored;     break;
+                case "Timeout":
+                    // add-test-timeout-attribute (2026-05-30): E0916 in
+                    // TestAttributeValidator already guarantees the named arg
+                    // exists, is AttributeArgInt, > 0, and fits i32. Defensive
+                    // guards here only trip when the validator was skipped
+                    // (e.g. synthetic IR-only test fixtures).
+                    if (attr.NamedArgs is not null
+                        && attr.NamedArgs.TryGetValue("milliseconds", out var msArg)
+                        && msArg is AttributeArgInt msInt
+                        && msInt.Value > 0
+                        && msInt.Value <= int.MaxValue)
+                    {
+                        timeoutMs = (int)msInt.Value;
+                    }
+                    break;
                 case "Skip":
                     flags |= TestFlags.Skipped;
                     if (attr.NamedArgs is not null)
                     {
-                        if (attr.NamedArgs.TryGetValue("reason", out var reason))
-                            reasonIdx = Intern(reason) + 1;     // 1-based
-                        if (attr.NamedArgs.TryGetValue("platform", out var platform))
-                            platformIdx = Intern(platform) + 1;
-                        if (attr.NamedArgs.TryGetValue("feature", out var feature))
-                            featureIdx = Intern(feature) + 1;
+                        // add-test-timeout-attribute (2026-05-30): NamedArgs
+                        // is now Dictionary<string, AttributeArg>. [Skip]'s
+                        // three keys are all string-valued; wrong-type was
+                        // already reported by TestAttributeValidator
+                        // (RequireStringArg helper), so we just silently
+                        // skip non-string variants here.
+                        if (attr.NamedArgs.TryGetValue("reason", out var reasonArg)
+                            && reasonArg is AttributeArgString reasonStr)
+                            reasonIdx = Intern(reasonStr.Value) + 1;     // 1-based
+                        if (attr.NamedArgs.TryGetValue("platform", out var platformArg)
+                            && platformArg is AttributeArgString platformStr)
+                            platformIdx = Intern(platformStr.Value) + 1;
+                        if (attr.NamedArgs.TryGetValue("feature", out var featureArg)
+                            && featureArg is AttributeArgString featureStr)
+                            featureIdx = Intern(featureStr.Value) + 1;
                     }
                     break;
                 case "ShouldThrow":
@@ -63,8 +88,9 @@ public sealed partial class IrGen
             SkipReasonStrIdx:     reasonIdx,
             SkipPlatformStrIdx:   platformIdx,
             SkipFeatureStrIdx:    featureIdx,
-            ExpectedThrowTypeIdx: expectedThrowTypeIdx,          // R4.B
-            TestCases:            Array.Empty<TestCase>());     // R4 (TestCase parser pending)
+            ExpectedThrowTypeIdx: expectedThrowTypeIdx,         // R4.B
+            TestCases:            Array.Empty<TestCase>(),      // R4 (TestCase parser pending)
+            TimeoutMs:            timeoutMs);                   // add-test-timeout-attribute (2026-05-30)
     }
 
     /// A3 — Build the `;`-delimited expected-throw chain for `[ShouldThrow<E>]`.

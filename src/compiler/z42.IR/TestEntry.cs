@@ -27,7 +27,12 @@ public sealed record TestEntry(
     /// <summary>0 = none; otherwise 1-based pool index for [ShouldThrow&lt;E&gt;] (R4 fills).</summary>
     int                    ExpectedThrowTypeIdx,
     /// <summary>Empty for non-parameterized methods; one entry per [TestCase(...)].</summary>
-    IReadOnlyList<TestCase> TestCases);
+    IReadOnlyList<TestCase> TestCases,
+    /// <summary>0 = no override (runner uses its built-in default — currently 300 s).
+    /// Otherwise wall-clock cap in milliseconds for this single test method,
+    /// from `[Timeout(milliseconds: N)]`. Compile-time guarantees 0 &lt; N ≤ i32::MaxValue
+    /// (E0916). Added by add-test-timeout-attribute (2026-05-30).</summary>
+    int                    TimeoutMs = 0);
 
 /// <summary>One <c>[TestCase(args)]</c> instance. R1 stores args as a single
 /// string-pool index (textual representation); R4 will replace with typed encoding.</summary>

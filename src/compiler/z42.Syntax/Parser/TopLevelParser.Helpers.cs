@@ -223,9 +223,11 @@ internal static partial class TopLevelParser
     /// Spec R1 — known `z42.test.*` attribute names. Parser recognises bare
     /// identifier matches (e.g. `[Test]`); semantic validation lives in R4.
     /// `ShouldThrow` added in R4.B (generic attribute syntax `[ShouldThrow&lt;E&gt;]`).
+    /// `Timeout` added by add-test-timeout-attribute (2026-05-30) — first
+    /// attribute to accept an integer-literal named arg (`milliseconds: <int>`).
     private static readonly HashSet<string> TestAttributeNames = new(StringComparer.Ordinal)
     {
-        "Test", "Benchmark", "Setup", "Teardown", "Ignore", "Skip", "ShouldThrow"
+        "Test", "Benchmark", "Setup", "Teardown", "Ignore", "Skip", "ShouldThrow", "Timeout"
     };
 
     /// Parses any bracketed attribute `[...]` and dispatches by name. Returns
@@ -315,35 +317,63 @@ internal static partial class TopLevelParser
             ExpectKind(ref cursor, TokenKind.Gt);
         }
 
-        Dictionary<string, string>? namedArgs = null;
+        Dictionary<string, AttributeArg>? namedArgs = null;
         if (cursor.Current.Kind == TokenKind.LParen)
         {
             cursor = cursor.Advance(); // (
-            namedArgs = new Dictionary<string, string>(StringComparer.Ordinal);
+            namedArgs = new Dictionary<string, AttributeArg>(StringComparer.Ordinal);
             while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
             {
                 if (cursor.Current.Kind != TokenKind.Identifier
                     || cursor.Peek(1).Kind != TokenKind.Colon)
                 {
                     throw new ParseException(
-                        $"`[{name}(...)]` requires named arguments of the form `key: \"value\"`",
+                        $"`[{name}(...)]` requires named arguments of the form `key: <value>`",
                         cursor.Current.Span,
                         DiagnosticCodes.UnexpectedToken);
                 }
 
                 var keyTok = ExpectKind(ref cursor, TokenKind.Identifier);
                 ExpectKind(ref cursor, TokenKind.Colon);
-                if (cursor.Current.Kind != TokenKind.StringLiteral)
+
+                // add-test-timeout-attribute (2026-05-30): named-arg value
+                // accepts string literal OR integer literal (optionally
+                // negated). Future variants (identifier, float, bool) added
+                // as new AttributeArg sealed records — pattern-match by
+                // the consumer.
+                AttributeArg argVal;
+                if (cursor.Current.Kind == TokenKind.StringLiteral)
+                {
+                    var raw = cursor.Current.Text;
+                    var stripped = raw.Length >= 2 ? raw[1..^1] : raw;
+                    argVal = new AttributeArgString(stripped, cursor.Current.Span);
+                    cursor = cursor.Advance(); // string
+                }
+                else if (cursor.Current.Kind == TokenKind.IntLiteral
+                         || (cursor.Current.Kind == TokenKind.Minus
+                             && cursor.Peek(1).Kind == TokenKind.IntLiteral))
+                {
+                    bool negate = false;
+                    var startSpan = cursor.Current.Span;
+                    if (cursor.Current.Kind == TokenKind.Minus)
+                    {
+                        negate = true;
+                        cursor = cursor.Advance(); // -
+                    }
+                    var litTok = cursor.Current;
+                    long value = ParseAttributeIntLiteral(litTok.Text);
+                    if (negate) value = -value;
+                    argVal = new AttributeArgInt(value, startSpan);
+                    cursor = cursor.Advance(); // int
+                }
+                else
                 {
                     throw new ParseException(
-                        $"`[{name}(...)]`: value for `{keyTok.Text}` must be a string literal",
+                        $"`[{name}(...)]`: value for `{keyTok.Text}` must be a string or integer literal",
                         cursor.Current.Span,
                         DiagnosticCodes.UnexpectedToken);
                 }
-                var raw = cursor.Current.Text;
-                var val = raw.Length >= 2 ? raw[1..^1] : raw;
-                namedArgs[keyTok.Text] = val;
-                cursor = cursor.Advance(); // string
+                namedArgs[keyTok.Text] = argVal;
 
                 if (cursor.Current.Kind == TokenKind.Comma)
                     cursor = cursor.Advance();
@@ -357,6 +387,24 @@ internal static partial class TopLevelParser
             TypeArg:   typeArg,
             NamedArgs: namedArgs,
             Span:      attrSpan);
+    }
+
+    /// Parse an integer literal token's text into a `long`. Mirrors the
+    /// hex / binary / `_` separator handling in
+    /// `ExprParser.Atoms.ParseIntLit` but lives here so attribute parsing
+    /// has no cross-file private dependency. Supported forms:
+    ///   - decimal:   `5000`, `5_000`, `1L`, `1u`
+    ///   - hex:       `0x1F`, `0X1f`, `0x1_F`
+    ///   - binary:    `0b1010`, `0B1_010`
+    /// Suffix letters (`L`/`l`/`u`/`U`) and `_` underscores are stripped.
+    private static long ParseAttributeIntLiteral(string text)
+    {
+        var trimmed = text.Replace("_", "").TrimEnd('L', 'l', 'u', 'U');
+        if (trimmed.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return Convert.ToInt64(trimmed[2..], 16);
+        if (trimmed.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+            return Convert.ToInt64(trimmed[2..], 2);
+        return long.Parse(trimmed);
     }
 
     /// Body of `[Native(...)]`. Caller has already consumed `[` and is

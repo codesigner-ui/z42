@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 8;   // 2026-05-27 jit-type-specialization C2 P0 step 0.3: new REGT section carries per-function register IrType bytes; reader populates Function.reg_types. Pre-1.8 not readable.
+    public const ushort VersionMinor = 9;   // 2026-05-30 add-test-timeout-attribute: TIDX TestEntry adds `timeout_ms: i32` slot after expected_throw_type. 0 = no override (runner default). Pre-1.9 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -602,20 +602,24 @@ public static partial class ZbcWriter
     // ── TIDX section (R1: compile-time test metadata) ────────────────────────
     // Layout (fixed-width LE, mirrored by Rust src/runtime/src/metadata/test_index.rs):
     //   u32   magic = "TIDX" (54 49 44 58 on disk)
-    //   u8    version = 1
+    //   u8    version
     //   u32   entry_count
     //   TestEntry[]:
     //     u32 method_id, u8 kind, u16 flags,
-    //     u32 skip_reason_str_idx, u32 expected_throw_type_idx,
     //     u32 skip_reason_str_idx,
     //     u32 skip_platform_str_idx,    // R1.C: runner skips on this platform only
     //     u32 skip_feature_str_idx,     // R1.C: runner skips when feature missing
-    //     u32 expected_throw_type_idx,  // (reserved for R4)
+    //     u32 expected_throw_type_idx,  // R4
     //     u32 test_case_count,
-    //     TestCase[]: u32 arg_repr_str_idx
+    //     TestCase[]: u32 arg_repr_str_idx,
+    //     i32 timeout_ms                // v=3 (add-test-timeout-attribute, 2026-05-30):
+    //                                   //  0 = no override (use runner default);
+    //                                   //  positive = per-test wallclock cap in ms.
     //
     // v=2 (R1.C) bumped from v=1 before any v=1 file existed in the wild.
-    private const byte TidxFormatVersion = 2;
+    // v=3 (2026-05-30) add `timeout_ms i32` after the TestCase array. Bumps
+    //   zbc minor 8 → 9; pre-1.9 zbc cannot be read.
+    private const byte TidxFormatVersion = 3;
 
     // ── REGT section (per-function register IrType bytes) ────────────────────
     //
@@ -712,6 +716,8 @@ public static partial class ZbcWriter
             w.Write((uint)entry.TestCases.Count);
             foreach (var tc in entry.TestCases)
                 w.Write(RemapTidxStrIdx(tc.ArgReprStrIdx, strRemap));
+            // v=3 add-test-timeout-attribute (2026-05-30)
+            w.Write(entry.TimeoutMs);
         }
 
         return ms.ToArray();

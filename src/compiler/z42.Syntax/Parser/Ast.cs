@@ -229,21 +229,44 @@ public sealed record Param(
 
 // ── Test attributes (spec R1) ────────────────────────────────────────────────
 
+/// <summary>A typed value supplied as a named-argument of a test attribute.
+/// add-test-timeout-attribute (2026-05-30) introduced this discriminator so
+/// attribute named args can carry typed values beyond the original
+/// string-only restriction. New variants (identifier, float, bool) can be
+/// added without changing existing consumer APIs — they pattern-match on
+/// the variant they accept and rely on the validator to reject mismatches
+/// with a clear diagnostic.</summary>
+public abstract record AttributeArg(Span Span);
+
+/// <summary>A string-literal value. Existing pre-2026-05-30 attribute args
+/// were all of this shape; the byte-for-byte string content (after quote
+/// stripping) is identical to what consumers used to receive from the old
+/// <c>Dictionary&lt;string, string&gt;</c> form.</summary>
+public sealed record AttributeArgString(string Value, Span Span) : AttributeArg(Span);
+
+/// <summary>An integer-literal value. Stored as <c>long</c> so the parser
+/// can losslessly carry whatever the lexer produces; the consumer narrows
+/// to its expected width (i32 for <c>[Timeout]</c>) and reports diagnostics
+/// on overflow.</summary>
+public sealed record AttributeArgInt(long Value, Span Span) : AttributeArg(Span);
+
 /// <summary>One occurrence of a <c>z42.test.*</c> attribute on a function. The
 /// parser collects these as-is; semantic validation (mutual exclusion,
 /// signature checks) is done in R4.</summary>
 public sealed record TestAttribute(
     /// <summary>Attribute name without brackets: "Test" / "Benchmark" / "Setup" /
-    /// "Teardown" / "Ignore" / "Skip" / "ShouldThrow".</summary>
+    /// "Teardown" / "Ignore" / "Skip" / "ShouldThrow" / "Timeout".</summary>
     string Name,
     /// <summary>Single type argument from `[Name&lt;TypeArg&gt;]` syntax (R4.B).
     /// Null when the attribute has no `&lt;...&gt;` clause. Currently only
     /// `[ShouldThrow&lt;E&gt;]` uses this; validator (E0913) gates which
     /// attribute names accept it.</summary>
     string? TypeArg,
-    /// <summary>Named arguments (e.g. for [Skip(reason: "x", platform: "ios", feature: "jit")]).
-    /// Null when the attribute has no parens or empty parens.</summary>
-    IReadOnlyDictionary<string, string>? NamedArgs,
+    /// <summary>Named arguments (e.g. for [Skip(reason: "x", platform: "ios", feature: "jit")]
+    /// or [Timeout(milliseconds: 5000)]). Each value is a typed
+    /// <see cref="AttributeArg"/> — string-literal or integer-literal so
+    /// far. Null when the attribute has no parens or empty parens.</summary>
+    IReadOnlyDictionary<string, AttributeArg>? NamedArgs,
     Span Span);
 
 // ── Type expressions ──────────────────────────────────────────────────────────

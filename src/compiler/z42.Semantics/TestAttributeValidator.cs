@@ -71,8 +71,10 @@ public static class TestAttributeValidator
         bool hasSkip        = false;
         bool hasIgnore      = false;
         bool hasShouldThrow = false;
+        bool hasTimeout     = false;
         TestAttribute? skipAttr        = null;
         TestAttribute? shouldThrowAttr = null;
+        TestAttribute? timeoutAttr     = null;
 
         foreach (var attr in fn.TestAttributes)
         {
@@ -85,6 +87,21 @@ public static class TestAttributeValidator
                 case "Skip":         hasSkip = true; skipAttr = attr; break;
                 case "Ignore":       hasIgnore = true;    break;
                 case "ShouldThrow":  hasShouldThrow = true; shouldThrowAttr = attr; break;
+                case "Timeout":
+                    // add-test-timeout-attribute (2026-05-30): detect duplicate
+                    // [Timeout] eagerly here rather than waiting for the
+                    // post-loop check, so the diagnostic is anchored at the
+                    // SECOND occurrence (closer to user error).
+                    if (hasTimeout)
+                    {
+                        diags.Error(
+                            DiagnosticCodes.TimeoutValueInvalid,
+                            $"function `{fn.Name}` `[Timeout]` applied more than once on the same method",
+                            attr.Span);
+                    }
+                    hasTimeout = true;
+                    timeoutAttr = attr;
+                    break;
             }
         }
 
@@ -143,8 +160,14 @@ public static class TestAttributeValidator
         // ── E0914 [Skip] missing/empty reason ─────────────────────────────
         if (hasSkip && skipAttr is not null)
         {
-            string? reason = null;
-            skipAttr.NamedArgs?.TryGetValue("reason", out reason);
+            // add-test-timeout-attribute (2026-05-30): named-arg value is
+            // now a typed AttributeArg discriminator. RequireStringArg
+            // emits a clear "must be string" diagnostic on wrong-type, then
+            // returns null so the empty/missing branch reports the
+            // original "reason: required" message.
+            var reason = RequireStringArg(
+                skipAttr, "reason", fn.Name,
+                DiagnosticCodes.SkipReasonMissing, diags);
             if (string.IsNullOrEmpty(reason))
             {
                 diags.Error(
@@ -152,6 +175,13 @@ public static class TestAttributeValidator
                     $"function `{fn.Name}` `[Skip(...)]` requires a non-empty `reason:` argument explaining why the test is skipped",
                     skipAttr.Span);
             }
+        }
+
+        // ── E0916 [Timeout(milliseconds: ...)] validation ─────────────────
+        // add-test-timeout-attribute (2026-05-30)
+        if (hasTimeout && timeoutAttr is not null)
+        {
+            ValidateTimeoutAttribute(fn, timeoutAttr, hasTest, hasBenchmark, diags);
         }
 
         // ── E0911 [Test] signature ────────────────────────────────────────
@@ -172,6 +202,85 @@ public static class TestAttributeValidator
             string label = hasSetup ? "[Setup]" : "[Teardown]";
             ValidateNoArgVoidSignature(fn, label, DiagnosticCodes.SetupTeardownSignatureInvalid, diags);
         }
+    }
+
+    /// add-test-timeout-attribute (2026-05-30) — full E0916 check for
+    /// `[Timeout(milliseconds: <int>)]`. Emits one diagnostic per
+    /// independent failure (caller is OK seeing multiple — e.g. "no [Test]"
+    /// AND "value out of range" together) so the user can fix everything
+    /// in one pass.
+    private static void ValidateTimeoutAttribute(
+        FunctionDecl fn, TestAttribute attr, bool hasTest, bool hasBenchmark,
+        DiagnosticBag diags)
+    {
+        if (!hasTest && !hasBenchmark)
+        {
+            diags.Error(
+                DiagnosticCodes.TimeoutValueInvalid,
+                $"function `{fn.Name}` `[Timeout(...)]` requires `[Test]` or `[Benchmark]` on the same method",
+                attr.Span);
+        }
+
+        if (attr.NamedArgs is null
+            || !attr.NamedArgs.TryGetValue("milliseconds", out var arg))
+        {
+            diags.Error(
+                DiagnosticCodes.TimeoutValueInvalid,
+                $"function `{fn.Name}` `[Timeout(...)]` requires a single named arg \"milliseconds: <int>\"",
+                attr.Span);
+            return;
+        }
+
+        if (arg is not AttributeArgInt intArg)
+        {
+            diags.Error(
+                DiagnosticCodes.TimeoutValueInvalid,
+                $"function `{fn.Name}` `[Timeout(milliseconds: ...)]` value must be an integer literal (got string)",
+                arg.Span);
+            return;
+        }
+
+        if (intArg.Value <= 0)
+        {
+            diags.Error(
+                DiagnosticCodes.TimeoutValueInvalid,
+                $"function `{fn.Name}` `[Timeout(milliseconds: ...)]` value must be > 0 (got {intArg.Value})",
+                arg.Span);
+        }
+        else if (intArg.Value > int.MaxValue)
+        {
+            diags.Error(
+                DiagnosticCodes.TimeoutValueInvalid,
+                $"function `{fn.Name}` `[Timeout(milliseconds: ...)]` value must fit in i32 (got {intArg.Value})",
+                arg.Span);
+        }
+    }
+
+    /// Read a string-valued named arg from a test attribute, reporting a
+    /// type-mismatch diagnostic under <paramref name="code"/> when the arg
+    /// is present but not an <see cref="AttributeArgString"/>.
+    ///
+    /// Returns:
+    ///   - the unwrapped string when present + correctly typed
+    ///   - <c>null</c> when the key is absent (caller handles "missing")
+    ///   - <c>null</c> + emits diagnostic when present but wrong-type
+    ///
+    /// add-test-timeout-attribute (2026-05-30): introduced alongside the
+    /// AttributeArg discriminator so existing string-arg consumers keep
+    /// reading their values via a single uniform helper. Future
+    /// int/float/ident variants will get parallel <c>RequireXxxArg</c>
+    /// helpers as needed.
+    private static string? RequireStringArg(
+        TestAttribute attr, string key, string fnName,
+        string code, DiagnosticBag diags)
+    {
+        if (attr.NamedArgs is null) return null;
+        if (!attr.NamedArgs.TryGetValue(key, out var arg)) return null;
+        if (arg is AttributeArgString s) return s.Value;
+        diags.Error(code,
+            $"function `{fnName}` `[{attr.Name}({key}:...)]` value must be a string literal",
+            arg.Span);
+        return null;
     }
 
     /// Common shape for [Test] / [Setup] / [Teardown]: fn() -> void, no
