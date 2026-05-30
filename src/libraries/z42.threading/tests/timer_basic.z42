@@ -1,0 +1,133 @@
+// add-z42-threading-timer (2026-05-30): Std.Threading.Timer
+// — periodic + one-shot background callback over Thread + Sleep.
+namespace Z42ThreadingTimerTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Time;
+
+[Test]
+void test_periodic_fires_multiple_times() {
+    int[] fires = new int[1];
+    fires[0] = 0;
+    Timer t = Timer.StartPeriodic(50, () => {
+        fires[0] = fires[0] + 1;
+    });
+    // Four 50ms windows in 220ms → expect 3-4 fires (allow scheduling jitter).
+    Thread.Sleep(220);
+    t.StopAndJoin();
+    Assert.True(fires[0] >= 3);
+}
+
+[Test]
+void test_start_once_fires_exactly_once() {
+    int[] fires = new int[1];
+    fires[0] = 0;
+    Timer t = Timer.StartOnce(50, () => {
+        fires[0] = fires[0] + 1;
+    });
+    Thread.Sleep(150);
+    Assert.Equal(1, fires[0]);
+    Assert.False(t.IsRunning());
+}
+
+[Test]
+void test_start_once_cancelled_before_fire() {
+    int[] fires = new int[1];
+    fires[0] = 0;
+    Timer t = Timer.StartOnce(500, () => {
+        fires[0] = 1;
+    });
+    // Immediate stop — callback should not fire.
+    t.StopAndJoin();
+    Thread.Sleep(600);
+    Assert.Equal(0, fires[0]);
+}
+
+[Test]
+void test_stop_responsive_for_large_interval() {
+    Timer t = Timer.StartPeriodic(10000, () => {
+        // never expected to fire within the test window
+    });
+    Thread.Sleep(50);
+    // StopAndJoin should complete in ≤ 200ms (100ms chunk granularity +
+    // some scheduling slack), NOT wait the full 10s.
+    Stopwatch sw = Stopwatch.StartNew();
+    t.StopAndJoin();
+    sw.Stop();
+    long elapsedMs = sw.Elapsed().TotalMilliseconds();
+    Assert.True(elapsedMs < 250);
+}
+
+[Test]
+void test_stop_idempotent() {
+    Timer t = Timer.StartPeriodic(50, () => { });
+    Thread.Sleep(80);
+    t.Stop();
+    t.Stop();
+    t.Stop();
+    t.StopAndJoin();
+    Assert.False(t.IsRunning());
+}
+
+[Test]
+void test_callback_exception_does_not_kill_timer() {
+    int[] fires = new int[1];
+    fires[0] = 0;
+    Timer t = Timer.StartPeriodic(50, () => {
+        fires[0] = fires[0] + 1;
+        if (fires[0] == 1) {
+            throw new Exception("first fire intentionally fails");
+        }
+    });
+    // 220ms / 50ms = ~4 windows. First fire throws but Timer keeps going.
+    Thread.Sleep(220);
+    t.StopAndJoin();
+    Assert.True(fires[0] >= 2);
+}
+
+[Test]
+void test_stop_and_join_waits_for_in_flight_callback() {
+    bool[] done = new bool[1];
+    done[0] = false;
+    Timer t = Timer.StartPeriodic(10, () => {
+        Thread.Sleep(200);
+        done[0] = true;
+    });
+    // Give the first callback a chance to start.
+    Thread.Sleep(50);
+    t.StopAndJoin();
+    // Once StopAndJoin returns, the in-flight callback must have finished.
+    Assert.True(done[0]);
+}
+
+[Test]
+void test_is_running_reflects_state() {
+    Timer t = Timer.StartPeriodic(100, () => { });
+    Assert.True(t.IsRunning());
+    t.StopAndJoin();
+    Assert.False(t.IsRunning());
+}
+
+[Test]
+void test_zero_interval_throws_argument_exception() {
+    bool threw = false;
+    try {
+        Timer.StartPeriodic(0, () => { });
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_negative_delay_once_throws() {
+    bool threw = false;
+    try {
+        Timer.StartOnce(-1, () => { });
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

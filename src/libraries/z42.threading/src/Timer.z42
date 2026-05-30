@@ -1,0 +1,153 @@
+namespace Std.Threading;
+
+using Std;
+using Std.Diagnostics;
+
+// add-z42-threading-timer (2026-05-30): periodic + one-shot background
+// callback scheduler. Pure-script over `Std.Threading.Thread` +
+// `Thread.Sleep` — no new VM builtin.
+//
+// API mirrors BCL `System.Threading.Timer` with a more z42-idiomatic
+// shape (static factories instead of overloaded constructors; explicit
+// `StartPeriodic` vs `StartOnce`).
+//
+// Lifecycle:
+//   var t = Timer.StartPeriodic(1000, () => DoHeartbeat());
+//   // ... eventually ...
+//   t.StopAndJoin();   // signal + wait for current callback to finish
+//
+// Stop signal:
+//   - Background thread polls the `_stopped[0]` cell at 100ms granularity,
+//     so Stop() takes effect within ≤ 100ms regardless of intervalMs.
+//   - The `bool[1]` cell pattern is W0604-clean (closure.md §4.4) — a
+//     plain `bool` would be captured by snapshot and the thread's write
+//     would never reach the outer scope.
+//
+// Callback safety:
+//   - Exceptions thrown by `_callback` are swallowed and logged via
+//     `Log.Error` so one bad fire never kills the Timer thread. Periodic
+//     timers keep firing on subsequent ticks.
+//   - Callbacks are NEVER overlapped: each fire completes before the next
+//     sleep window begins (matches BCL `Timer` with `AutoReset=true`).
+//
+// Implementation note: the Thread.Start lambda captures `this` (a class
+// reference — ReferenceShare per closure.md §4.2) and invokes the loop
+// method on it. Capturing the `Action callback` parameter directly in
+// the static factory's lambda hits z42's parameter-capture limitation
+// ("undefined variable callback" at TypeCheck), so we route everything
+// through instance fields.
+public sealed class Timer {
+    private Thread _thread;
+    // bool[1] cell so the background thread's `_stopped[0] = true` write
+    // is visible to the outer scope (W0604).
+    private bool[] _stopped;
+    private Action _callback;
+    private long _intervalMs;
+    private bool _periodic;
+
+    private Timer(bool[] stopped, Action callback, long intervalMs, bool periodic) {
+        this._stopped    = stopped;
+        this._callback   = callback;
+        this._intervalMs = intervalMs;
+        this._periodic   = periodic;
+        this._thread     = null;
+    }
+
+    /// Fire `callback` every `intervalMs` until `Stop()` is called. First
+    /// fire is at +intervalMs (not immediate). Each callback runs to
+    /// completion before the next sleep starts.
+    public static Timer StartPeriodic(long intervalMs, Action callback) {
+        if (intervalMs <= 0) {
+            throw new ArgumentException("Timer.StartPeriodic: intervalMs must be > 0");
+        }
+        bool[] stopped = new bool[1];
+        stopped[0] = false;
+        Timer t = new Timer(stopped, callback, intervalMs, true);
+        Timer self = t;
+        t._thread = Thread.Start(() => { self._runPeriodic(); });
+        return t;
+    }
+
+    /// Fire `callback` once after `delayMs`, then auto-stop. Calling
+    /// `Stop()` before the delay elapses cancels the fire.
+    public static Timer StartOnce(long delayMs, Action callback) {
+        if (delayMs < 0) {
+            throw new ArgumentException("Timer.StartOnce: delayMs must be >= 0");
+        }
+        bool[] stopped = new bool[1];
+        stopped[0] = false;
+        Timer t = new Timer(stopped, callback, delayMs, false);
+        Timer self = t;
+        t._thread = Thread.Start(() => { self._runOnce(); });
+        return t;
+    }
+
+    /// Signal the Timer thread to exit. Returns immediately; the current
+    /// callback (if mid-flight) keeps running to completion. Use
+    /// `StopAndJoin` if you need to wait. Idempotent.
+    public void Stop() {
+        this._stopped[0] = true;
+    }
+
+    /// Signal stop and wait for the Timer thread to exit. If a callback
+    /// is currently running, this blocks until it returns. Safe to call
+    /// before disposing resources the callback touches.
+    public void StopAndJoin() {
+        this._stopped[0] = true;
+        this._thread.Join();
+    }
+
+    /// `false` once `Stop` / `StopAndJoin` has been called, or after a
+    /// `StartOnce` Timer has fired its single callback.
+    public bool IsRunning() {
+        return !this._stopped[0];
+    }
+
+    // ── Background thread bodies ──────────────────────────────────────────
+
+    private void _runPeriodic() {
+        while (!this._stopped[0]) {
+            Timer._chunkSleep(this._intervalMs, this._stopped);
+            if (this._stopped[0]) break;
+            try {
+                // z42 doesn't support `this.field()` direct delegate
+                // invocation (see Std.Disposable.Dispose for the same
+                // pattern); hoist to a local first.
+                var cb = this._callback;
+                cb();
+            } catch (Exception e) {
+                Log.Error("Timer.StartPeriodic: callback threw: " + e.Message);
+            }
+        }
+    }
+
+    private void _runOnce() {
+        Timer._chunkSleep(this._intervalMs, this._stopped);
+        if (!this._stopped[0]) {
+            try {
+                // z42 doesn't support `this.field()` direct delegate
+                // invocation (see Std.Disposable.Dispose for the same
+                // pattern); hoist to a local first.
+                var cb = this._callback;
+                cb();
+            } catch (Exception e) {
+                Log.Error("Timer.StartOnce: callback threw: " + e.Message);
+            }
+        }
+        // Self-stop so IsRunning reflects "done".
+        this._stopped[0] = true;
+    }
+
+    /// Sleep `totalMs` in 100ms chunks, returning early as soon as
+    /// `stopped[0]` becomes true. The 100ms granularity keeps `Stop()`
+    /// responsive even for long-interval timers (e.g. 60s heartbeat).
+    private static void _chunkSleep(long totalMs, bool[] stopped) {
+        long remaining = totalMs;
+        while (remaining > 0 && !stopped[0]) {
+            long chunk = 100;
+            if (remaining < chunk) { chunk = remaining; }
+            Thread.Sleep(chunk);
+            remaining = remaining - chunk;
+        }
+    }
+}
