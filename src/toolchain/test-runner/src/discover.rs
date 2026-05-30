@@ -7,14 +7,27 @@
 //! out [Ignore]-marked entries, materializes [Skip] reason and
 //! [ShouldThrow<E>] expected type per (R4.B / A2 / A3 chain expansion).
 
-use z42::metadata::{LoadedArtifact, TestEntry, TestEntryKind, TestFlags};
+use z42::metadata::{LoadedArtifact, TestEntryKind, TestFlags};
 
 #[allow(dead_code)] // method_id reserved for full-impl filtering
 pub struct DiscoveredTest<'a> {
     pub method_id: u32,
     pub method_name: &'a str,
     pub flags: TestFlags,
+    /// User-written `reason:` arg from `[Skip(reason: "...")]` — surfaced
+    /// verbatim. Decoupled from `skip_platform` / `skip_feature` so the
+    /// runner's conditional evaluator can compose its own "skipped on X
+    /// because Y" message.
     pub skip_reason: Option<String>,
+    /// User-written `platform:` arg from `[Skip(platform: "ios")]` — the
+    /// runner skips only when this matches the current host platform.
+    /// add-test-skip-platform-feature-eval (2026-05-30): semantic now
+    /// actually evaluated (previously emitted but ignored).
+    pub skip_platform: Option<String>,
+    /// User-written `feature:` arg from `[Skip(feature: "jit")]` — the
+    /// runner skips only when this feature is not in its capability set
+    /// (`SkipEnv.available_features`). Deny-by-default for unknown names.
+    pub skip_feature: Option<String>,
     /// Resolved [ShouldThrow<E>] expected exception type name (R4.B / A2).
     /// Populated only when SHOULD_THROW flag is set and the type was resolved.
     /// `None` means the test has no ShouldThrow expectation.
@@ -39,11 +52,20 @@ impl<'a> TestReport<'a> {
                 continue;
             }
             let method = &artifact.module.functions[entry.method_id as usize];
-            let skip_reason = if entry.flags.contains(TestFlags::SKIPPED) {
-                Some(format_skip_reason(entry))
-            } else {
-                None
-            };
+            // add-test-skip-platform-feature-eval (2026-05-30): three skip
+            // segments are kept independent so the runtime evaluator can
+            // decide *whether* to skip based on platform/feature match;
+            // string composition moves into `skip_eval::format_reason`.
+            let (skip_reason, skip_platform, skip_feature) =
+                if entry.flags.contains(TestFlags::SKIPPED) {
+                    (
+                        entry.skip_reason.clone(),
+                        entry.skip_platform.clone(),
+                        entry.skip_feature.clone(),
+                    )
+                } else {
+                    (None, None, None)
+                };
             // R4.B / A2 — only populate when SHOULD_THROW is set AND the type
             // resolved (str_idx == 0 leaves expected_throw_type as None).
             let expected_throw = if entry.flags.contains(TestFlags::SHOULD_THROW) {
@@ -56,6 +78,8 @@ impl<'a> TestReport<'a> {
                 method_name: &method.name,
                 flags: entry.flags,
                 skip_reason,
+                skip_platform,
+                skip_feature,
                 expected_throw,
                 // add-test-timeout-attribute (2026-05-30): 0 on-wire = None
                 // (use runner default); positive = Some(N) per-test override.
@@ -64,12 +88,4 @@ impl<'a> TestReport<'a> {
         }
         Self { tests }
     }
-}
-
-pub fn format_skip_reason(entry: &TestEntry) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    if let Some(p) = &entry.skip_platform { parts.push(format!("platform={p}")); }
-    if let Some(f) = &entry.skip_feature  { parts.push(format!("feature={f}"));  }
-    if let Some(r) = &entry.skip_reason   { parts.push(r.clone()); }
-    if parts.is_empty() { "skipped".into() } else { parts.join("; ") }
 }

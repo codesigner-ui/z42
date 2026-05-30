@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use crate::discover::DiscoveredTest;
 use crate::result::Outcome;
+use crate::skip_eval::{decide_skip, SkipEnv};
 
 /// Per-test wallclock cap used when a method does NOT carry an explicit
 /// `[Timeout(milliseconds: N)]`. Generous vs. observed legitimate test
@@ -55,9 +56,16 @@ pub(crate) fn compute_budget(timeout_ms: Option<u32>) -> (Duration, &'static str
     }
 }
 
-pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
-    if let Some(reason) = &test.skip_reason {
-        return Outcome::Skipped { reason: reason.clone() };
+pub fn run_one(
+    z42vm: &PathBuf,
+    zbc_path: &str,
+    test: &DiscoveredTest,
+    skip_env: &SkipEnv,
+) -> Outcome {
+    // add-test-skip-platform-feature-eval (2026-05-30): conditional skip
+    // (see runner.rs for the in-process twin of this branch).
+    if let Some(reason) = decide_skip(test, skip_env) {
+        return Outcome::Skipped { reason };
     }
 
     let start = Instant::now();

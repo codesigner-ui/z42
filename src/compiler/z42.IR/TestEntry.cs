@@ -18,11 +18,17 @@ public sealed record TestEntry(
     TestFlags              Flags,
     /// <summary>0 = none; otherwise 1-based string-pool index for [Skip(reason: ...)].</summary>
     int                    SkipReasonStrIdx,
-    /// <summary>0 = always-skipped; otherwise 1-based pool index for [Skip(platform: ...)]:
-    /// runner skips this test only when running on the named platform (e.g. "ios", "wasm").</summary>
+    /// <summary>0 = always-skipped (no platform gate); otherwise 1-based pool index for
+    /// [Skip(platform: ...)]: runner skips this test only when the named platform matches
+    /// the current host (e.g. "ios", "wasm"). Evaluated by `skip_eval::decide_skip` since
+    /// add-test-skip-platform-feature-eval (2026-05-30); pre-spec the runner ignored the
+    /// gate and unconditionally skipped, contradicting this docstring.</summary>
     int                    SkipPlatformStrIdx,
     /// <summary>0 = no feature gate; otherwise 1-based pool index for [Skip(feature: ...)]:
-    /// runner skips this test when the named feature is unavailable (e.g. "jit", "multithreading").</summary>
+    /// runner skips this test when the named feature is unavailable (e.g. "jit", "multithreading").
+    /// Unknown feature names are deny-by-default — they cause a skip with a one-time
+    /// stderr `note:` warning. Evaluated since add-test-skip-platform-feature-eval
+    /// (2026-05-30).</summary>
     int                    SkipFeatureStrIdx,
     /// <summary>0 = none; otherwise 1-based pool index for [ShouldThrow&lt;E&gt;] (R4 fills).</summary>
     int                    ExpectedThrowTypeIdx,

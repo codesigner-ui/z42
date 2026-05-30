@@ -26,10 +26,19 @@ use z42::vm_context::VmContext;
 use crate::bootstrap::LoadedRunner;
 use crate::discover::DiscoveredTest;
 use crate::result::Outcome;
+use crate::skip_eval::{decide_skip, SkipEnv};
 
-pub fn run_one(loaded: &mut LoadedRunner, test: &DiscoveredTest<'_>) -> Outcome {
-    if let Some(reason) = &test.skip_reason {
-        return Outcome::Skipped { reason: reason.clone() };
+pub fn run_one(
+    loaded: &mut LoadedRunner,
+    test: &DiscoveredTest<'_>,
+    skip_env: &SkipEnv,
+) -> Outcome {
+    // add-test-skip-platform-feature-eval (2026-05-30): consult the
+    // conditional evaluator instead of unconditionally skipping any flagged
+    // test. `decide_skip` honors `[Skip(platform: …)]` / `[Skip(feature: …)]`
+    // against the current host; returns None when the test should run.
+    if let Some(reason) = decide_skip(test, skip_env) {
+        return Outcome::Skipped { reason };
     }
 
     let start = Instant::now();

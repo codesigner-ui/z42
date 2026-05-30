@@ -12,18 +12,26 @@ namespace TestDemo;
 [Test]
 void test_simple() { }
 
+// Unconditional skip — runner skips on every host (preserved R1.A semantic).
 [Test]
 [Skip(reason: "blocked by issue #123")]
 void test_skipped_unconditional() { }
 
+// Conditional skip on iOS only — since 2026-05-30 (add-test-skip-platform-
+// feature-eval) the runner actually evaluates `platform:` against the host:
+// skipped only on iOS, runs (and passes) on every other platform.
 [Test]
 [Skip(platform: "ios", reason: "JIT not supported on iOS")]
 void test_skipped_on_ios() { }
 
+// Conditional skip when feature unavailable — wasm build lacks
+// `multithreading`, so this skips on wasm and runs on every native host.
 [Test]
 [Skip(feature: "multithreading", reason: "single-threaded build")]
 void test_skipped_without_feature() { }
 
+// Compound — OR semantics: skipped on wasm OR when `filesystem` feature is
+// unavailable. wasm host satisfies both; native hosts satisfy neither → runs.
 [Test]
 [Skip(platform: "wasm", feature: "filesystem", reason: "wasm sandbox has no fs")]
 void test_skipped_combined() { }

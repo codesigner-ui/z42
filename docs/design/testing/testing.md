@@ -547,6 +547,100 @@ void test_secp256k1_roundtrip() { ... }
 > 加 `AttributeArgIdent` / `AttributeArgFloat` 形态时只需新增 record +
 > parser 分支 + 消费侧 pattern。
 
+### `[Skip(platform:)] / [Skip(feature:)]` — Conditional skip semantics (2026-05-30)
+
+由 [add-test-skip-platform-feature-eval](../../spec/archive/2026-05-30-add-test-skip-platform-feature-eval/) 引入。R1.C 起 compiler 就把
+`platform: / feature: / reason:` 三段写入 TIDX，但**直到本 spec 落地之前 runner 都
+无条件跳过**任何带 `[Skip]` flag 的 test —— 把 "iOS-only 测试" 在所有平台都跳掉。
+本 spec 把"按条件跳过"的语义补齐。
+
+#### 用法（usage）
+
+```z42
+// 仅在 iOS host 上跳过；linux / macos / windows 上正常跑
+[Test]
+[Skip(platform: "ios", reason: "WebGL backend unimplemented on iOS")]
+void test_render_pipeline() { ... }
+
+// 在不支持 multithreading 的 host 上跳过（wasm 单线程 → 跳；native → 跑）
+[Test]
+[Skip(feature: "multithreading", reason: "needs worker pool")]
+void test_concurrent_index() { ... }
+
+// 复合：在 iOS **或** filesystem 不可用时跳过（OR 语义）
+[Test]
+[Skip(platform: "ios", feature: "filesystem", reason: "ios sandbox + browser fallback")]
+void test_load_from_disk() { ... }
+
+// 无条件跳过（保留 R1.A 旧用法）
+[Test]
+[Skip(reason: "tracker #4711 — fix in next sprint")]
+void test_known_broken() { ... }
+```
+
+#### 支持的 platform 值（精确字符串比较，case-sensitive）
+
+`"linux" | "macos" | "windows" | "android" | "ios" | "wasm" | "freebsd"`
+
+值来自 Rust `std::env::consts::OS`，与 stdlib `Std.Platform.OS()` 同源。
+不在列表中的字符串永远不匹配（写 `[Skip(platform: "atari")]` 不会在任何
+host 上跳过 —— 用于占位 / future-OS 测试）。
+
+#### 支持的 feature 值（v1 minimal 注册表）
+
+| Feature 名 | Available 时机 | 说明 |
+|-----------|----------------|------|
+| `interp`  | 始终 true | interp 解释器始终编译进 z42vm |
+| `jit`     | 始终 true | JIT 也编译进；执行模式选择是 per-method 而非 build-time |
+| `multithreading` | 非 wasm 时 true | wasm 单线程 sandbox |
+| `filesystem` | 非 wasm 时 true | wasm 沙箱无 host fs |
+
+**未知 feature 名 → deny-by-default 跳过** + stderr `note: unknown feature
+"X" — treating as unavailable`（一次跑里同名只 warn 一次）。把 typo
+（`"multi-threading"` → 应为 `"multithreading"`）当成"我们这环境也不支持"
+处理，比 fail-open 静默吞 typo 安全。
+
+#### CLI / env 覆盖（验证用）
+
+```bash
+# Linux host 上验证 iOS 跳过路径
+z42-test-runner suite.zbc --platform ios
+
+# env var 等价（CLI 优先于 env）
+Z42_TEST_PLATFORM=ios z42-test-runner suite.zbc
+```
+
+> feature 没有对应 CLI override；编译期 cfg 决定。需要测试"feature
+> unavailable" 路径时，写一个 unknown feature 名（自动 deny）即可。
+
+#### 设计思路（design rationale）
+
+完整决策记录见
+[`design.md`](../../spec/archive/2026-05-30-add-test-skip-platform-feature-eval/design.md)。
+关键选择简述：
+
+| 维度 | 选择 | 拒绝的备选 + 理由 |
+|------|------|--------------------|
+| Platform 来源 | runner Rust 端直读 `std::env::consts::OS` | 不通过 z42 bootstrap 调 `Std.Platform.OS()` — 引入额外 VM call 依赖且 stdlib 未链接时挂；两者本就源于同一 Rust const，无信息差 |
+| Compound (`platform: + feature:`) | OR — 任一成立就跳 | AND 会让 "在 iOS 但 JIT 可用" 环境意外跑过去；OR 对齐 pytest `@skipif(c1 or c2)` 直觉 |
+| Unknown feature | Deny-by-default + warn | Fail-open 静默吞 typo（`multi-threading` → 该跳没跳挂掉）；硬 error 让测试代码 typo 阻塞整个 run，破坏 "runner 是工具" 期望 |
+| Feature 初始集 | 4 个 (`interp/jit/multithreading/filesystem`) | 与 `examples/test_demo.z42` 已用案例对齐 + 常见诉求；其他（async / gc-precise / network）按需扩 |
+| Reason 字符串 | 触发条件 + 用户 reason 拼接（`"skipped on ios: WebGL bug"`） | 仅显示 user reason 会让排查者必须查源码反推"为什么这次跳了"；触发条件直接显示是 debugging 体验关键 |
+| `SkipEnv` 通过参数传 | 显式参数，不进 thread-local / global | 单元测试可自由构造任意 env 做矩阵参数化；clarity over magic |
+
+#### 实施 (implementation)
+
+- 核心模块：[`src/toolchain/test-runner/src/skip_eval.rs`](../../../src/toolchain/test-runner/src/skip_eval.rs)
+  纯函数 `decide_skip(test, env) -> Option<String>`，三条执行路径
+  （`runner.rs` in-process / `exec.rs` subprocess / `parallel.rs` parallel-subprocess）
+  共享同一决策权威
+- 单元测试矩阵：[`src/toolchain/test-runner/src/skip_eval_tests.rs`](../../../src/toolchain/test-runner/src/skip_eval_tests.rs)
+  18 用例覆盖 design.md "Testing Strategy" 表 1-14 + unknown-feature 行
+  为 + `SkipEnv::detect` smoke
+- E2E demo：[`src/libraries/z42.test/tests/skip_platform_demo.z42`](../../../src/libraries/z42.test/tests/skip_platform_demo.z42)
+  9 用例（7 platform + 1 永不匹配 + 1 unknown feature）— 由 stdlib test
+  wave 跑过验证 end-to-end 行为
+
 ---
 
 ## TIDX 二进制格式（R1）

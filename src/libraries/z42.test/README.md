@@ -8,7 +8,7 @@ R 系列基础设施已落（R1 / R2 minimal / R2 完整版 / R3 minimal+R3a+R3c
 
 | 能力 | 状态 | API |
 |---|---|---|
-| Attribute 注解 | ✅ R1.C / R4.A / R4.B / add-test-timeout-attribute | `[Test]` / `[Skip(reason:)]` / `[Ignore]` / `[Setup]` / `[Teardown]` / `[Benchmark]` / `[ShouldThrow<E>]` / `[Timeout(milliseconds: N)]` |
+| Attribute 注解 | ✅ R1.C / R4.A / R4.B / add-test-timeout-attribute / add-test-skip-platform-feature-eval | `[Test]` / `[Skip(reason:, platform?:, feature?:)]` (平台/特性条件实际生效) / `[Ignore]` / `[Setup]` / `[Teardown]` / `[Benchmark]` / `[ShouldThrow<E>]` / `[Timeout(milliseconds: N)]` |
 | Assert 基础（9 方法） | ✅ R2 minimal | Equal / NotEqual / True / False / Null / NotNull / Contains / Fail / Skip |
 | Assert 扩展（lambda） | ✅ R2 完整版 | Throws / DoesNotThrow / EqualApprox |
 | TestIO（捕获 console） | ✅ R2 完整版 | captureStdout / captureStderr / captureBoth |

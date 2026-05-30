@@ -25,14 +25,20 @@ use std::thread;
 use crate::discover::DiscoveredTest;
 use crate::exec;
 use crate::result::TestResult;
+use crate::skip_eval::SkipEnv;
 
 /// Fork-per-test parallel execution. Returns results in original
 /// declaration order. `jobs` is clamped to `[1, tests.len()]`.
+///
+/// `skip_env` is built once on the main thread (so CLI `--platform`
+/// override applies uniformly) and passed by reference into every worker;
+/// `SkipEnv` is `Send + Sync` because it owns its strings and hashset.
 pub fn run_tests(
     z42vm: &PathBuf,
     zbc_path: &str,
     tests: &[DiscoveredTest<'_>],
     jobs: usize,
+    skip_env: &SkipEnv,
 ) -> Vec<TestResult> {
     let n = tests.len();
     if n == 0 {
@@ -56,7 +62,7 @@ pub fn run_tests(
                         return;
                     }
                     let test = &tests[idx];
-                    let outcome = exec::run_one(z42vm, zbc_path, test);
+                    let outcome = exec::run_one(z42vm, zbc_path, test, skip_env);
                     let tr = TestResult::from_outcome(test.method_name.to_string(), outcome);
                     let mut guard = results.lock().expect("results mutex poisoned");
                     guard[idx] = Some(tr);

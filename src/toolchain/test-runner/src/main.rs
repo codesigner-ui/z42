@@ -26,11 +26,12 @@
 
 mod bootstrap;
 mod discover;
-mod exec;     // legacy subprocess path (kept for `--legacy-subprocess` fallback)
+mod exec;       // legacy subprocess path (kept for `--legacy-subprocess` fallback)
 mod format;
-mod parallel; // add-test-runner-parallel: --jobs N >1 worker pool
+mod parallel;   // add-test-runner-parallel: --jobs N >1 worker pool
 mod result;
-mod runner;   // in-process Setup/Test/Teardown chain (R3b default)
+mod runner;     // in-process Setup/Test/Teardown chain (R3b default)
+mod skip_eval;  // add-test-skip-platform-feature-eval: conditional [Skip] evaluator
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -79,6 +80,15 @@ struct Cli {
     /// need them.
     #[arg(long, value_name = "N")]
     jobs: Option<usize>,
+
+    /// Override host platform detection for `[Skip(platform: ...)]`
+    /// evaluation (default: `std::env::consts::OS`). Useful when verifying
+    /// platform-gated tests across hosts without booting a second OS.
+    /// `Z42_TEST_PLATFORM` env var is consulted when this flag is absent;
+    /// the flag wins if both are set.
+    /// add-test-skip-platform-feature-eval (2026-05-30).
+    #[arg(long, value_name = "NAME")]
+    platform: Option<String>,
 }
 
 fn main() {
@@ -101,6 +111,19 @@ fn run(cli: &Cli) -> Result<i32> {
     let format = resolve_format(cli.format);
     let module_name = std::path::Path::new(zbc_path)
         .file_name().and_then(|s| s.to_str()).unwrap_or(zbc_path).to_string();
+
+    // add-test-skip-platform-feature-eval (2026-05-30): SkipEnv carries the
+    // current platform + available feature set used to evaluate
+    // `[Skip(platform: …)]` / `[Skip(feature: …)]` conditionally. CLI flag
+    // wins; otherwise env var; otherwise std::env::consts::OS.
+    let mut skip_env = skip_eval::SkipEnv::detect();
+    let override_platform = cli
+        .platform
+        .clone()
+        .or_else(|| std::env::var("Z42_TEST_PLATFORM").ok());
+    if let Some(p) = override_platform {
+        skip_env = skip_env.with_platform(p);
+    }
 
     // add-test-runner-parallel (2026-05-27): --jobs N (N>1) forces
     // subprocess mode since VmContext is !Send. Resolve N first so the
@@ -131,13 +154,13 @@ fn run(cli: &Cli) -> Result<i32> {
             .context("locating z42vm binary (use --z42vm to override)")?;
         let results: Vec<TestResult> = if jobs > 1 {
             // Parallel subprocess pool.
-            parallel::run_tests(&z42vm, zbc_path, &report.tests, jobs)
+            parallel::run_tests(&z42vm, zbc_path, &report.tests, jobs, &skip_env)
         } else {
             // Serial legacy path.
             report.tests.iter()
                 .map(|t| TestResult::from_outcome(
                     t.method_name.to_string(),
-                    exec::run_one(&z42vm, zbc_path, t)))
+                    exec::run_one(&z42vm, zbc_path, t, &skip_env)))
                 .collect()
         };
         emit(&format, &module_name, &results)?;
@@ -160,9 +183,19 @@ fn run(cli: &Cli) -> Result<i32> {
             if let Some(needle) = &cli.filter {
                 if !name.contains(needle.as_str()) { return None; }
             }
-            let skip_reason = if entry.flags.contains(z42::metadata::TestFlags::SKIPPED) {
-                Some(discover::format_skip_reason(entry))
-            } else { None };
+            // add-test-skip-platform-feature-eval (2026-05-30): preserve the
+            // three skip segments as separate fields so the in-process loop
+            // can hand them to skip_eval::decide_skip per test.
+            let (skip_reason, skip_platform, skip_feature) =
+                if entry.flags.contains(z42::metadata::TestFlags::SKIPPED) {
+                    (
+                        entry.skip_reason.clone(),
+                        entry.skip_platform.clone(),
+                        entry.skip_feature.clone(),
+                    )
+                } else {
+                    (None, None, None)
+                };
             let expected_throw = if entry.flags.contains(z42::metadata::TestFlags::SHOULD_THROW) {
                 entry.expected_throw_type.clone()
             } else { None };
@@ -171,6 +204,8 @@ fn run(cli: &Cli) -> Result<i32> {
                 method_name: name,
                 flags: entry.flags,
                 skip_reason,
+                skip_platform,
+                skip_feature,
                 expected_throw,
                 timeout_ms: if entry.timeout_ms == 0 { None } else { Some(entry.timeout_ms) },
             })
@@ -192,10 +227,12 @@ fn run(cli: &Cli) -> Result<i32> {
             method_name: &test.method_name,
             flags: test.flags,
             skip_reason: test.skip_reason.clone(),
+            skip_platform: test.skip_platform.clone(),
+            skip_feature: test.skip_feature.clone(),
             expected_throw: test.expected_throw.clone(),
             timeout_ms: test.timeout_ms,
         };
-        let outcome = runner::run_one(&mut loaded, &dt);
+        let outcome = runner::run_one(&mut loaded, &dt, &skip_env);
         results.push(TestResult::from_outcome(test.method_name.clone(), outcome));
     }
     emit(&format, &module_name, &results)?;
@@ -211,6 +248,11 @@ struct DiscoveredTestOwned {
     method_name: String,
     flags: z42::metadata::TestFlags,
     skip_reason: Option<String>,
+    /// add-test-skip-platform-feature-eval (2026-05-30): split out so the
+    /// runner can evaluate `[Skip(platform: …)]` against the current host
+    /// instead of unconditionally skipping every flagged test.
+    skip_platform: Option<String>,
+    skip_feature: Option<String>,
     expected_throw: Option<String>,
     /// add-test-timeout-attribute (2026-05-30): per-test override from
     /// `[Timeout(milliseconds: N)]`. None = use runner default.
