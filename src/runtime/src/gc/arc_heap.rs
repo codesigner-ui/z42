@@ -432,11 +432,45 @@ impl ArcMagrGC {
         }
 
         // 2. mark_queue must be empty post-collect.
-        let q_len = self.mark_queue.lock().len();
-        if q_len != 0 {
+        //
+        // diag-mark-queue-stale (2026-05-30): on failure, dump each
+        // stale entry's kind + (for heap refs) the GcRef pointer + the
+        // marked bit. This is the only way to tell whether the entry
+        // was pushed by a still-running mutator (write_barrier_field
+        // pushes pre-marked refs) vs. a buggy collector-internal push
+        // (would push unmarked, which would also indicate a different
+        // class of bug). Without the dump the assertion is opaque —
+        // we couldn't diagnose the windows-only flake (concurrent_gc_
+        // mode_stress_no_race_no_leak) before this commit.
+        let stale: Vec<Value> = self.mark_queue.lock().clone();
+        if !stale.is_empty() {
+            let summary: Vec<String> = stale.iter().take(8).map(|v| {
+                let kind = match v {
+                    Value::Object(_) => "Object",
+                    Value::Array(_)  => "Array",
+                    Value::Str(_)    => "Str",
+                    Value::I64(_)    => "I64",
+                    Value::F64(_)    => "F64",
+                    Value::Bool(_)   => "Bool",
+                    Value::Char(_)   => "Char",
+                    Value::Null      => "Null",
+                    _                => "Other",
+                };
+                let extra = match v {
+                    Value::Object(gc) => format!(" obj_borrow_type={}", gc.borrow().type_desc.name),
+                    Value::Array(gc)  => format!(" array_len={}", gc.borrow().len()),
+                    _                  => String::new(),
+                };
+                format!("    [kind={kind}{extra}]")
+            }).collect();
+            let extra = if stale.len() > 8 {
+                format!("\n    ... ({} more)", stale.len() - 8)
+            } else {
+                String::new()
+            };
             panic!(
-                "mark_queue stale post-collect: {} entries remaining",
-                q_len
+                "mark_queue stale post-collect: {} entries remaining\n{}{}",
+                stale.len(), summary.join("\n"), extra
             );
         }
 

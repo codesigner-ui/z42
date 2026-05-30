@@ -464,23 +464,17 @@ fn dummy_type_desc(name: &str) -> Arc<z42::metadata::TypeDesc> {
 /// the end-to-end concurrent path: no panics, no deadlocks, no reachable
 /// objects incorrectly swept, no leaks.
 //
-// fix-concurrent-gc-stress-windows-flake (2026-05-30): consistently
-// fails on windows-latest CI with `mark_queue stale post-collect: 1
-// entries remaining` panic at src/gc/arc_heap.rs:437 (the
-// debug_validate_invariants check). Reproduces ~once per CI run on
-// Windows; macOS/Linux pass 100 %. Investigation revealed this is a
-// real race in the ConcurrentMarkSweep mark / drain / sweep handshake
-// — windows' scheduler exposes a narrow window where a
-// write_barrier_field push from a worker arrives between the drain
-// loop's "queue empty" check and the safepoint-pause's
-// debug_validate_invariants gate. Fixing the GC bug needs deeper
-// design work (the drain loop probably needs one more SeqCst fence
-// or a re-check after the pause is fully established); meanwhile this
-// stress test is disabled on Windows so CI can stay green on the bug
-// fixes already landing. Linux/macOS still exercise the test fully.
-// FIXME(gc): track via docs/spec/changes/fix-concurrent-gc-drain-
-// handshake-race/ once the design conversation lands.
-#[cfg_attr(target_os = "windows", ignore = "flaky concurrent GC race on Windows scheduler — see FIXME(gc) above")]
+// add-concurrent-gc-stress-diag (2026-05-30): previously this test
+// was windows-skipped (`#[cfg_attr(target_os = "windows", ignore)]`)
+// after we hit `mark_queue stale post-collect: 1 entries remaining`
+// on every windows-latest CI run. The new diagnostic in
+// debug_validate_invariants now dumps each stale entry's kind +
+// (Object: type name / Array: length) so we can tell whether the
+// leftover is a worker-barrier push (race) or a collector-internal
+// push (different class of bug) without needing a Windows debug
+// session. Re-enabled here so the next CI run captures actionable
+// data. If it still fires, the panic now identifies the source and
+// the fix can be targeted instead of speculative.
 #[test]
 fn concurrent_gc_mode_stress_no_race_no_leak() {
     use z42::gc::safepoint::check_safepoint;
