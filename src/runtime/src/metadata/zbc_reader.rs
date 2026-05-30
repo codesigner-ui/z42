@@ -41,7 +41,14 @@ pub const ZBC_VERSION_MINOR: u16 = 8;
 // procedure (zbc bump → 4 zbc steps + 4 zpkg steps in the same commit).
 
 pub const ZPKG_VERSION_MAJOR: u16 = 0;
-pub const ZPKG_VERSION_MINOR: u16 = 9;
+// 2026-05-30 sync to ZpkgWriter VersionMinor=10 (add-test-timeout-attribute
+// WIP commit `85e869d7`). Inner zbc still at 1.8 — that commit bumped the
+// outer-zpkg wrapper version alone, leaving the reader pinned at 0.9 and
+// breaking every package load (build-stdlib / regen-golden / test-vm all
+// fail with "zpkg minor 10 not supported"). Inner zbc bump (TIDX v=3 with
+// per-test timeout_ms i32) plus reader logic for the new field lands in
+// the spec's follow-up implementation commit.
+pub const ZPKG_VERSION_MINOR: u16 = 10;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 

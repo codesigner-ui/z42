@@ -122,7 +122,7 @@ fn zbc_version_constants_pinned() {
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 9, "zpkg minor at 0.9 (catch-up to zbc 1.8 — per-member RegtData added to packed function table)");
+    assert_eq!(ZPKG_VERSION_MINOR, 10, "zpkg minor at 0.10 (catch-up to ZpkgWriter VersionMinor=10, add-test-timeout-attribute WIP commit 85e869d7; inner zbc still at 1.8 — the new TIDX v=3 timeout_ms field lands in the spec's follow-up implementation commit)");
 }
 
 #[test]
