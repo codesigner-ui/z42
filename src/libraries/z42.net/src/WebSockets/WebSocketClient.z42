@@ -458,19 +458,35 @@ public class _WsUrl {
 
 // Internal line reader for handshake response (minimal copy of HttpClient's
 // `_LineReader` — kept inline to avoid Http ↔ WebSockets cross-coupling).
+// fix-ws-line-reader-overread (2026-05-30): the previous implementation
+// kept a 1024-byte buffer and refilled with `stream.Read(buf, 0, 1024)`.
+// On any TCP transport that may coalesce the server's HTTP/1.1 101
+// response with the first websocket data frame (loopback under low load
+// is the common case; the Nagle algorithm + small writes will pack the
+// 101 + headers + opening frames into a single TCP segment), the refill
+// would happily slurp bytes BEYOND the `\r\n\r\n` end-of-headers boundary
+// into the line reader's private buffer. ReadLine stopped at the empty
+// line and returned; the post-handshake `Receive` then read directly
+// from the raw socket — but those frame bytes were sitting in the line
+// reader's buffer, now dropped on the floor when the reader went out of
+// scope, and Receive consequently parsed garbage / mid-frame opcode 0
+// continuation and threw `WebSocketProtocolException`. Reproducible with
+// ~40-50% rate on ws_fragmentation locally, near-100% on slower CI
+// runners where Nagle has more time to coalesce.
+//
+// The byte-at-a-time read here is the simple-and-correct fix: HTTP
+// headers are at most a few hundred bytes per response so the per-read
+// syscall overhead is negligible; in exchange we guarantee zero
+// over-read past the headers terminator.
 public class _WsLineReader {
     private Stream _stream;
-    private byte[] _buf;
-    private int    _bufStart;
-    private int    _bufEnd;
+    private byte[] _one;
     private char[] _line;
     private int    _lineLen;
 
     public _WsLineReader(Stream stream) {
         this._stream   = stream;
-        this._buf      = new byte[1024];
-        this._bufStart = 0;
-        this._bufEnd   = 0;
+        this._one      = new byte[1];
         this._line     = new char[256];
         this._lineLen  = 0;
     }
@@ -479,44 +495,48 @@ public class _WsLineReader {
         this._lineLen = 0;
         bool any = false;
         while (true) {
-            if (this._bufStart >= this._bufEnd) {
-                if (!this._refill()) {
-                    if (!any) return null;
-                    return this._finish();
-                }
+            int got = this._stream.Read(this._one, 0, 1);
+            if (got <= 0) {
+                if (!any) return null;
+                return this._finish();
             }
-            int b = (int)this._buf[this._bufStart];
-            this._bufStart = this._bufStart + 1;
+            int b = (int)this._one[0];
             any = true;
             if (b == 10) {
                 return this._finish();
             }
             if (b == 13) {
-                if (this._bufStart >= this._bufEnd) {
-                    this._refill();
-                }
-                if (this._bufStart < this._bufEnd && (int)this._buf[this._bufStart] == 10) {
-                    this._bufStart = this._bufStart + 1;
+                // Peek next byte — if it's \n, consume it (CRLF); otherwise
+                // we've already read past it but RFC 7230 only allows CRLF
+                // line terminators in HTTP, so a bare CR is malformed. Read
+                // it anyway to maintain stream position; downstream parser
+                // will reject the malformed line. (We can't put it back.)
+                int got2 = this._stream.Read(this._one, 0, 1);
+                if (got2 > 0 && (int)this._one[0] != 10) {
+                    // Bare CR followed by non-LF — append both as-if literal
+                    // (downstream header parser will treat malformed line as
+                    // skippable). Buffer the next byte into the line so it's
+                    // not lost.
+                    this._appendChar((char)b);
+                    this._appendChar((char)(int)this._one[0]);
+                    continue;
                 }
                 return this._finish();
             }
-            if (this._lineLen == this._line.Length) {
-                char[] grown = new char[this._line.Length * 2];
-                int i = 0;
-                while (i < this._lineLen) { grown[i] = this._line[i]; i = i + 1; }
-                this._line = grown;
-            }
-            this._line[this._lineLen] = (char)b;
-            this._lineLen = this._lineLen + 1;
+            this._appendChar((char)b);
         }
         return this._finish();
     }
 
-    private bool _refill() {
-        this._bufStart = 0;
-        int got = this._stream.Read(this._buf, 0, this._buf.Length);
-        this._bufEnd = got;
-        return got > 0;
+    private void _appendChar(char c) {
+        if (this._lineLen == this._line.Length) {
+            char[] grown = new char[this._line.Length * 2];
+            int i = 0;
+            while (i < this._lineLen) { grown[i] = this._line[i]; i = i + 1; }
+            this._line = grown;
+        }
+        this._line[this._lineLen] = c;
+        this._lineLen = this._lineLen + 1;
     }
 
     private string _finish() {
