@@ -93,6 +93,7 @@ jobs:
           path: |
             artifacts/ci-logs/
             /tmp/z42-test-all.*
+            /var/folders/*/*/T/z42-test-all.*
           retention-days: 7
           if-no-files-found: warn
 
