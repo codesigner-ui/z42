@@ -691,36 +691,63 @@ pub fn translate_function(
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
-                // Bitwise
+                // Bitwise — review.md C2 P1 follow-up (2026-05-30): inline
+                // native Cranelift band/bor/bxor/bnot/ishl/sshr when reg_types
+                // confirm I64 operands. Same payload load/store layout as
+                // arith; shift amount masked to low 6 bits.
                 Instruction::BitAnd { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_bit_and, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::BitAnd);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_bit_and, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::BitOr { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_bit_or, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::BitOr);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_bit_or, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::BitXor { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_bit_xor, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::BitXor);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_bit_xor, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::BitNot { dst, src } => {
-                    let d = ri!(*dst); let s = ri!(*src);
-                    let inst = builder.ins().call(hr_bit_not, &[frame_val, ctx_val, d, s]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed_unary(z42_func, *dst, *src) {
+                        emit_i64_bit_not(&mut builder, regs_base, *dst, *src);
+                    } else {
+                        let d = ri!(*dst); let s = ri!(*src);
+                        let inst = builder.ins().call(hr_bit_not, &[frame_val, ctx_val, d, s]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Shl { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_shl, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::Shl);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_shl, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
                 Instruction::Shr { dst, a, b } => {
-                    let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_shr, &[frame_val, ctx_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    if is_i64_typed(z42_func, *dst, *a, *b) {
+                        emit_i64_binop(&mut builder, regs_base, *dst, *a, *b, BinopKind::Shr);
+                    } else {
+                        let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
+                        let inst = builder.ins().call(hr_shr, &[frame_val, ctx_val, d, av, bv]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
 
                 // String
@@ -1100,8 +1127,12 @@ fn is_i64_typed(func: &Function, dst: u32, a: u32, b: u32) -> bool {
 
 /// Binary op kind passed to `emit_i64_binop`. Mirrors the subset of
 /// `Instruction` variants we specialize so far.
+///
+/// review.md C2 P1 follow-up (2026-05-30): bitwise + shift opcodes added.
+/// `Shl` / `Shr` mask the shift amount by 63 to match the helper
+/// `jit_shl` / `jit_shr` behavior (`x << (y & 63)`).
 #[derive(Clone, Copy)]
-enum BinopKind { Add, Sub, Mul }
+enum BinopKind { Add, Sub, Mul, BitAnd, BitOr, BitXor, Shl, Shr }
 
 /// Comparison op kind for `emit_i64_cmp`.
 #[derive(Clone, Copy)]
@@ -1134,6 +1165,14 @@ fn is_bool_typed_unary(func: &Function, dst: u32, src: u32) -> bool {
     let rt = &func.reg_types;
     let is_bool = |i: u32| rt.get(i as usize).copied() == Some(IrType::Bool);
     is_bool(dst) && is_bool(src)
+}
+
+/// I64 unary-op predicate (BitNot / Neg-i64-fast-path): both regs are I64.
+#[inline]
+fn is_i64_typed_unary(func: &Function, dst: u32, src: u32) -> bool {
+    let rt = &func.reg_types;
+    let is_i64 = |i: u32| rt.get(i as usize).copied() == Some(IrType::I64);
+    is_i64(dst) && is_i64(src)
 }
 
 /// Emit Cranelift native code for `frame.regs[dst] = Value::I64(op(a, b))`,
@@ -1174,14 +1213,51 @@ fn emit_i64_binop(
     // Compute (Cranelift `iadd`/`isub`/`imul` are wrapping by default —
     // matches z42's `vm-wrapping-int-arith` semantics).
     let result = match op {
-        BinopKind::Add => builder.ins().iadd(ai, bi),
-        BinopKind::Sub => builder.ins().isub(ai, bi),
-        BinopKind::Mul => builder.ins().imul(ai, bi),
+        BinopKind::Add    => builder.ins().iadd(ai, bi),
+        BinopKind::Sub    => builder.ins().isub(ai, bi),
+        BinopKind::Mul    => builder.ins().imul(ai, bi),
+        BinopKind::BitAnd => builder.ins().band(ai, bi),
+        BinopKind::BitOr  => builder.ins().bor(ai, bi),
+        BinopKind::BitXor => builder.ins().bxor(ai, bi),
+        BinopKind::Shl    => {
+            // Match `jit_shl` / `jit_shr`: shift amount masked to low 6 bits.
+            let mask = builder.ins().iconst(types::I64, 63);
+            let masked_bi = builder.ins().band(bi, mask);
+            builder.ins().ishl(ai, masked_bi)
+        }
+        BinopKind::Shr    => {
+            // Arithmetic shift (sign-extending) matches Rust's `i64 >>`.
+            let mask = builder.ins().iconst(types::I64, 63);
+            let masked_bi = builder.ins().band(bi, mask);
+            builder.ins().sshr(ai, masked_bi)
+        }
     };
 
     // Store discriminant (u8 0 = TAG_I64) then i64 payload.
     let tag = builder.ins().iconst(types::I8, TAG_I64 as i64);
     builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native `frame.regs[dst] = Value::I64(!src)` — bitwise NOT on i64
+/// via Cranelift `bnot`. Caller must have verified `reg_types[dst] ==
+/// reg_types[src] == I64` (review.md C2 P1 follow-up, 2026-05-30).
+fn emit_i64_bit_not(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, src: u32,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_I64:        u8  = 0;
+    let off_src  = builder.ins().iconst(types::I64, (src as i64) * VALUE_STRIDE);
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_src = builder.ins().iadd(regs_base, off_src);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let si       = builder.ins().load(types::I64, MemFlags::trusted(), addr_src, PAYLOAD_OFFSET);
+    let result   = builder.ins().bnot(si);
+    let tag      = builder.ins().iconst(types::I8, TAG_I64 as i64);
+    builder.ins().store(MemFlags::trusted(), tag,    addr_dst, 0);
     builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
 }
 
