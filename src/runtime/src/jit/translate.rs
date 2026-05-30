@@ -519,12 +519,20 @@ pub fn translate_function(
                     }
                 }
                 Instruction::ConstChar { dst, val } => {
-                    let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i32 as i64);
-                    builder.ins().call(hr_const_char, &[frame_val, ctx_val, d, v]);
+                    if is_typed(z42_func, *dst, IrType::Char) {
+                        emit_const_char(&mut builder, regs_base, *dst, *val);
+                    } else {
+                        let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i32 as i64);
+                        builder.ins().call(hr_const_char, &[frame_val, ctx_val, d, v]);
+                    }
                 }
                 Instruction::ConstNull { dst } => {
-                    let d = ri!(*dst);
-                    builder.ins().call(hr_const_null, &[frame_val, ctx_val, d]);
+                    if is_drop_free_primitive(z42_func, *dst) {
+                        emit_const_null(&mut builder, regs_base, *dst);
+                    } else {
+                        let d = ri!(*dst);
+                        builder.ins().call(hr_const_null, &[frame_val, ctx_val, d]);
+                    }
                 }
                 Instruction::ConstStr { dst, idx } => {
                     let d = ri!(*dst); let i = ri!(*idx);
@@ -1336,4 +1344,51 @@ fn emit_const_bool(
     let tag      = builder.ins().iconst(types::I8, TAG_BOOL as i64);
     builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
     builder.ins().store(MemFlags::trusted(), v,   addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native `frame.regs[dst] = Value::Char(val)` — store TAG_CHAR + 4 B
+/// codepoint payload. Caller must have verified `reg_types[dst] == Char`
+/// (review.md C11 #4, 2026-05-30).
+fn emit_const_char(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, val: char,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_CHAR:       u8  = 3;
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let v        = builder.ins().iconst(types::I32, val as u32 as i64);
+    let tag      = builder.ins().iconst(types::I8, TAG_CHAR as i64);
+    builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), v,   addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native `frame.regs[dst] = Value::Null` — just stores TAG_NULL.
+/// Caller must have verified the previous slot value is Drop-free (any
+/// primitive `IrType` — I64/F64/Bool/Char). For Ref/Str/Unknown dst we
+/// keep the helper path so the Drop runs (review.md C11 #4, 2026-05-30).
+fn emit_const_null(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32,
+) {
+    const VALUE_STRIDE: i64 = 24;
+    const TAG_NULL:     u8  = 5;
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let tag      = builder.ins().iconst(types::I8, TAG_NULL as i64);
+    builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    // Payload slot is left as-is; the discriminant alone defines `Null`.
+}
+
+/// True when `reg_types[reg]` is a primitive (drop-free) type — I64 / F64
+/// / Bool / Char. Used by inline `ConstNull` to verify the existing slot
+/// value is safe to overwrite without running Drop.
+fn is_drop_free_primitive(func: &Function, reg: u32) -> bool {
+    matches!(
+        func.reg_types.get(reg as usize).copied(),
+        Some(IrType::I64) | Some(IrType::F64) | Some(IrType::Bool) | Some(IrType::Char)
+    )
 }
