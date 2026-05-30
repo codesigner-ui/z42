@@ -162,4 +162,204 @@ public static class Assert {
                 expected.ToString());
         }
     }
+
+    // ── 数值排序 / 范围（extend-assert-numeric-and-collection-helpers, 2026-05-30）─
+    //
+    // 直接表达"应当大于 / 小于 / 在范围内"的断言，替代过往
+    // `Assert.True(x > N)` / `Assert.True(x > low && x < high)` 复合写法。
+    // 参数顺序为 (actual, expected) 反映读法："port greater than 0"；
+    // 这与 `Equal(expected, actual)` 的顺序*故意*不同 — equality 对称所以
+    // 顺序无关，ordering 有方向所以顺序就是被断言的不等式。
+    //
+    // double overload 对 NaN 显式 guard：IEEE-754 下 NaN 与任何值的 <,>
+    // 比较都是 false，朴素 `actual <= expected` 检查会让 `Greater(NaN, x)`
+    // 静默通过（断言被绕过）。我们在 double 路径上先 reject NaN。
+    //
+    // 何时用 Greater vs EqualApprox：
+    //   - strict ordering（端口号 > 0 / count > 0）→ Greater
+    //   - "approximately equal" / 浮点容差 → EqualApprox
+    // 不要把 ordering helper 偷塞容差语义。
+
+    public static void Greater(long actual, long expected) {
+        if (actual <= expected) {
+            throw new TestFailure(
+                $"expected {actual} > {expected}",
+                actual.ToString(),
+                $"> {expected}");
+        }
+    }
+
+    public static void Greater(double actual, double expected) {
+        if (actual != actual || expected != expected) {
+            throw new TestFailure(
+                $"Greater(double, double): NaN operand never satisfies ordering",
+                actual.ToString(),
+                $"> {expected}");
+        }
+        if (actual <= expected) {
+            throw new TestFailure(
+                $"expected {actual} > {expected}",
+                actual.ToString(),
+                $"> {expected}");
+        }
+    }
+
+    public static void Less(long actual, long expected) {
+        if (actual >= expected) {
+            throw new TestFailure(
+                $"expected {actual} < {expected}",
+                actual.ToString(),
+                $"< {expected}");
+        }
+    }
+
+    public static void Less(double actual, double expected) {
+        if (actual != actual || expected != expected) {
+            throw new TestFailure(
+                $"Less(double, double): NaN operand never satisfies ordering",
+                actual.ToString(),
+                $"< {expected}");
+        }
+        if (actual >= expected) {
+            throw new TestFailure(
+                $"expected {actual} < {expected}",
+                actual.ToString(),
+                $"< {expected}");
+        }
+    }
+
+    public static void GreaterOrEqual(long actual, long expected) {
+        if (actual < expected) {
+            throw new TestFailure(
+                $"expected {actual} >= {expected}",
+                actual.ToString(),
+                $">= {expected}");
+        }
+    }
+
+    public static void GreaterOrEqual(double actual, double expected) {
+        if (actual != actual || expected != expected) {
+            throw new TestFailure(
+                $"GreaterOrEqual(double, double): NaN operand never satisfies ordering",
+                actual.ToString(),
+                $">= {expected}");
+        }
+        if (actual < expected) {
+            throw new TestFailure(
+                $"expected {actual} >= {expected}",
+                actual.ToString(),
+                $">= {expected}");
+        }
+    }
+
+    public static void LessOrEqual(long actual, long expected) {
+        if (actual > expected) {
+            throw new TestFailure(
+                $"expected {actual} <= {expected}",
+                actual.ToString(),
+                $"<= {expected}");
+        }
+    }
+
+    public static void LessOrEqual(double actual, double expected) {
+        if (actual != actual || expected != expected) {
+            throw new TestFailure(
+                $"LessOrEqual(double, double): NaN operand never satisfies ordering",
+                actual.ToString(),
+                $"<= {expected}");
+        }
+        if (actual > expected) {
+            throw new TestFailure(
+                $"expected {actual} <= {expected}",
+                actual.ToString(),
+                $"<= {expected}");
+        }
+    }
+
+    // InRange — inclusive bounds: `min <= actual <= max` passes.
+    // Exclusive variant intentionally omitted — caller composes `Greater` +
+    // `Less` if needed.
+    public static void InRange(long actual, long min, long max) {
+        if (actual < min || actual > max) {
+            throw new TestFailure(
+                $"expected {actual} in [{min}, {max}]",
+                actual.ToString(),
+                $"[{min}, {max}]");
+        }
+    }
+
+    public static void InRange(double actual, double min, double max) {
+        if (actual != actual || min != min || max != max) {
+            throw new TestFailure(
+                $"InRange(double, double, double): NaN operand never satisfies range",
+                actual.ToString(),
+                $"[{min}, {max}]");
+        }
+        if (actual < min || actual > max) {
+            throw new TestFailure(
+                $"expected {actual} in [{min}, {max}]",
+                actual.ToString(),
+                $"[{min}, {max}]");
+        }
+    }
+
+    // ── 数组集合助手（extend-assert-numeric-and-collection-helpers, 2026-05-30）──
+    //
+    // 仅 `object[]` overload — z42 Phase 1 无泛型，无法表达
+    // `Contains<T>(T, ICollection<T>)`。`object[]` 通过 boxing 覆盖
+    // int[] / string[] / 对象引用数组等常见 stdlib 测试场景。
+    // List / Set / Dictionary 的对应 helper 留待 L2 泛型落地后引入。
+    //
+    // 比对用默认 `==`：reference-equal for objects, value-equal for boxed
+    // primitives — 与 List.Contains 等 stdlib 集合一致语义。
+    //
+    // **方法名前缀 `Array`**（不直接复用 Contains / IsEmpty）：z42 的
+    // DependencyIndex first-wins 解析在跨 package 时不做 overload
+    // resolution（见 .claude/rules/common-pitfalls.md §1）。z42.core 的
+    // `Std.Assert.Contains(string, string)` 会先 win，bare `Assert.Contains`
+    // 永远命中 z42.core 而看不到本文件的 `(object, object[])` overload。
+    // 实施期 spec Decision 6 升级 — 为避免该 collision，array 系列方法
+    // 加 `Array` 前缀，name space 在 z42.core 没人占。L2 加 generics 后
+    // 可以引入真正的 `Contains<T>(T, IList<T>)` 并把这些 alias 弃用。
+
+    public static void ArrayContains(object needle, object[] haystack) {
+        for (int i = 0; i < haystack.Length; i++) {
+            if (haystack[i] == needle) {
+                return;
+            }
+        }
+        throw new TestFailure(
+            $"array does not contain expected element",
+            $"<array of length {haystack.Length}>",
+            needle.ToString());
+    }
+
+    public static void ArrayDoesNotContain(object needle, object[] haystack) {
+        for (int i = 0; i < haystack.Length; i++) {
+            if (haystack[i] == needle) {
+                throw new TestFailure(
+                    $"array unexpectedly contains element",
+                    $"<contains {needle}>",
+                    $"<does not contain {needle}>");
+            }
+        }
+    }
+
+    public static void ArrayIsEmpty(object[] coll) {
+        if (coll.Length != 0) {
+            throw new TestFailure(
+                $"expected empty array but length = {coll.Length}",
+                coll.Length.ToString(),
+                "0");
+        }
+    }
+
+    public static void ArrayIsNotEmpty(object[] coll) {
+        if (coll.Length == 0) {
+            throw new TestFailure(
+                $"expected non-empty array but got empty",
+                "0",
+                "> 0");
+        }
+    }
 }

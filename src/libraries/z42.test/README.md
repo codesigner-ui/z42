@@ -10,6 +10,8 @@ R 系列基础设施已落（R1 / R2 minimal / R2 完整版 / R3 minimal+R3a+R3c
 |---|---|---|
 | Attribute 注解 | ✅ R1.C / R4.A / R4.B / add-test-timeout-attribute / add-test-skip-platform-feature-eval | `[Test]` / `[Skip(reason:, platform?:, feature?:)]` (平台/特性条件实际生效) / `[Ignore]` / `[Setup]` / `[Teardown]` / `[Benchmark]` / `[ShouldThrow<E>]` / `[Timeout(milliseconds: N)]` |
 | 失败位置展示 | ✅ surface-test-failure-source-location | runner pretty/TAP/JSON 均自动展示 `failure_location` + 完整 `stack_trace`；reason 字段保持向前兼容（in-process; subprocess + JIT 待跟进 spec） |
+| Assert 数值比较 | ✅ extend-assert-numeric-and-collection-helpers | `Greater` / `Less` / `GreaterOrEqual` / `LessOrEqual` / `InRange` × `{long, double}`；浮点 NaN guard |
+| Assert 数组集合助手 | ✅ 同上 | `ArrayContains` / `ArrayDoesNotContain` / `ArrayIsEmpty` / `ArrayIsNotEmpty` (`object[]`)；前缀 `Array` 避开 z42.core 跨包 overload-resolution 限制 |
 | Assert 基础（9 方法） | ✅ R2 minimal | Equal / NotEqual / True / False / Null / NotNull / Contains / Fail / Skip |
 | Assert 扩展（lambda） | ✅ R2 完整版 | Throws / DoesNotThrow / EqualApprox |
 | TestIO（捕获 console） | ✅ R2 完整版 | captureStdout / captureStderr / captureBoth |

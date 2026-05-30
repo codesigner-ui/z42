@@ -737,6 +737,78 @@ not ok 3 - MyTests.test_arithmetic
   catch 一个 Assert.Equal 失败、断言其 StackTrace 字段非空 + 包含 Assert 帧
   + 包含 test 方法名 → 验证 runtime 仍在跑 + user-frame 捕获正确
 
+### Std.Test.Assert API quick reference (2026-05-30, extended)
+
+由 [extend-assert-numeric-and-collection-helpers](../../spec/archive/2026-05-31-extend-assert-numeric-and-collection-helpers/)
+扩充。完整方法列表分组：
+
+| 分组 | 方法 |
+|------|------|
+| Equality | `Equal(o, o)`, `NotEqual(o, o)` |
+| Boolean | `True(b)`, `False(b)` |
+| Null | `Null(o?)`, `NotNull(o?)` |
+| String | `Contains(string, string)` |
+| Numeric ordering | `Greater`, `Less`, `GreaterOrEqual`, `LessOrEqual` × `{long, double}` |
+| Numeric range | `InRange(actual, min, max)` × `{long, double}` (inclusive bounds) |
+| Array containment | `ArrayContains(o, o[])`, `ArrayDoesNotContain(o, o[])` |
+| Array emptiness | `ArrayIsEmpty(o[])`, `ArrayIsNotEmpty(o[])` |
+| Exception | `Throws(typeName, action)`, `ThrowsAny(action)`, `DoesNotThrow(action)` |
+| Float approx | `EqualApprox(actual, expected, eps)` |
+| Control | `Fail(msg)`, `Skip(reason)` |
+
+#### 用法（usage）
+
+```z42
+using Std.Test;
+
+[Test]
+void test_port_in_range() {
+    var port = ServerFactory.NewPort();
+    Assert.Greater(port, 0);                  // strict ordering
+    Assert.InRange(port, 1024, 65535);        // inclusive range
+}
+
+[Test]
+void test_response_envelope() {
+    object[] headers = response.GetHeaders();
+    Assert.ArrayIsNotEmpty(headers);
+    Assert.ArrayContains("Content-Type", headers);
+    Assert.ArrayDoesNotContain("X-Internal-Trace", headers);
+}
+
+[Test]
+void test_pi_approximation() {
+    Assert.EqualApprox(MyMath.Pi(), 3.14159, 1.0e-4);  // tolerant
+    Assert.Greater(MyMath.Pi(), 3.0);                   // strict
+}
+```
+
+#### 设计思路（design rationale）
+
+完整决策见 [design.md](../../spec/archive/2026-05-31-extend-assert-numeric-and-collection-helpers/design.md)。
+关键选择：
+
+| 维度 | 选择 | 拒绝的备选 + 理由 |
+|------|------|--------------------|
+| 命名风格 | `Greater` (短) vs xUnit `GreaterThan` | 与 stdlib 既有 `NotEqual` / `Contains` 短形一致；4 字符 × 多调用点 = 显著降噪 |
+| 参数顺序 | `(actual, expected)` for ordering helpers | 与 `Equal(expected, actual)` *故意*不对称：equality 对称，ordering 有方向 — 顺序就是被断言的不等式（`Greater(port, 0)` 读为 "port 大于 0"）|
+| `InRange` 边界 | 包含 (`min <= x <= max`) | xUnit 同；半开区间不直觉；想要 exclusive 用 Greater + Less 两条 |
+| double overload | 不复用 `EqualApprox` 公差 | strict ordering vs tolerant comparison 是不同 assertion；混合两者会让 `Greater` 语义模糊 |
+| NaN 处理 | 显式 `if (x != x)` guard 抛 TestFailure | IEEE-754 让 `NaN <= 0` 为 false，朴素 ordering 会让 `Greater(NaN, 0)` 静默通过；guard 保证显式失败。**注：z42 当前从 `0.0/0.0` 不产生真 NaN（疑似常量折叠），guard 暂无法从 z42 source 触发，但保留作为 defensive 代码** |
+| 数组 helper 仅 `object[]` | 不引入 `List` / `Set` 重载 | z42 Phase 1 无泛型；`object[]` 通过 boxing 覆盖 6/6 观察用例；L2 generics 后扩展 |
+| **`Array*` 命名前缀** | 不复用 `Contains` / `IsEmpty` 短名 | z42 DependencyIndex first-wins **不做跨包 overload resolution**（[common-pitfalls.md §1](../../../.claude/rules/common-pitfalls.md#1-资源加载顺序必须显式排序2026-05-17-强化)）。bare `Assert.Contains` 永远先命中 z42.core 的 `(string, string)` overload，z42.test 的 `(object, object[])` overload 永远不可达。前缀消除 collision。L2 加 generics 后可引入真正的 `Contains<T>(T, IList<T>)` 与 `Array*` 并存或 deprecate alias |
+| 比对运算符 | `==` (z42 默认) | 与 List.Contains 等 stdlib 集合一致；不需要自定义 Equals dispatch |
+
+#### 实施 (implementation)
+
+- 核心扩展：[`src/libraries/z42.test/src/Assert.z42`](../../../src/libraries/z42.test/src/Assert.z42)
+  10 numeric methods (5 family × 2 overload) + 4 array methods
+- 单元测试：
+  - [`src/libraries/z42.test/tests/assert_numeric_helpers.z42`](../../../src/libraries/z42.test/tests/assert_numeric_helpers.z42)
+    22 cases (每方法 pass / fail / boundary 多个)
+  - [`src/libraries/z42.test/tests/assert_collection_helpers.z42`](../../../src/libraries/z42.test/tests/assert_collection_helpers.z42)
+    12 cases (int + string element 覆盖 + empty edge + regression for pre-spec string Contains)
+
 #### Deferred — upstream gaps observed during this spec
 
 观察到但不在本 spec scope 内的相关 gap，留待独立 spec：
