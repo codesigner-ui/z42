@@ -253,13 +253,18 @@ pub fn run_one(
         return Outcome::Skipped { reason: extract_exception_msg(&stderr) };
     }
     if stderr.contains("Std.TestFailure") {
+        // parse-subprocess-failure-location-from-stderr (2026-05-31):
+        // z42vm prints the populated stack trace right after the
+        // `uncaught exception:` header (see exception::format_uncaught).
+        // Scrape it back into the same Outcome::Failed shape the
+        // in-process path produces — gives IDE jump-to-source for
+        // parallel / legacy-subprocess execution.
+        let stack_trace = extract_stack_trace_from_stderr(&stderr);
+        let location = stack_trace.as_deref().and_then(crate::runner::first_user_frame);
         return Outcome::Failed {
             reason: extract_exception_msg(&stderr),
-            // Subprocess mode: parent only has stderr text, no thrown Value
-            // to call read_stack_trace on. Surfacing stack from stderr would
-            // require parsing z42vm's own exception printout — separate spec.
-            location: None,
-            stack_trace: None,
+            location,
+            stack_trace,
         };
     }
     // Other exception or VM error.
@@ -276,7 +281,11 @@ pub fn run_one(
     if reason.is_empty() {
         reason = format!("z42vm exited with status {}", status);
     }
-    Outcome::Failed { reason, location: None, stack_trace: None }
+    // Same parse for "other exception" branch — if z42vm printed an
+    // uncaught-exception stanza with frames, surface them.
+    let stack_trace = extract_stack_trace_from_stderr(&stderr);
+    let location = stack_trace.as_deref().and_then(crate::runner::first_user_frame);
+    Outcome::Failed { reason, location, stack_trace }
 }
 
 /// Extract the (possibly fully-qualified) thrown type name from z42vm's stderr.
@@ -377,6 +386,53 @@ pub fn type_matches(expected: &str, actual_fq: &str) -> bool {
     // Trailing-segment match: split on `.`, last piece is the short name.
     let actual_short = actual_fq.rsplit('.').next().unwrap_or(actual_fq);
     !expected.is_empty() && expected == actual_short
+}
+
+/// parse-subprocess-failure-location-from-stderr (2026-05-31): scrape the
+/// z42-native stack trace out of z42vm's stderr.
+///
+/// `z42::exception::format_uncaught` prints:
+///
+/// ```text
+/// Error: uncaught exception: <Type>: <msg>
+///   at <Func> (<file>:<line>[:<col>])
+///   at <Func> (<file>:<line>[:<col>])
+///   …
+/// ```
+///
+/// We locate the header line, then collect the contiguous run of `  at `
+/// frames that follow it. First non-frame line ends the run — this guards
+/// against unrelated log output mixing in. Returns `None` if there's no
+/// uncaught header or no frames after it.
+pub fn extract_stack_trace_from_stderr(stderr: &str) -> Option<String> {
+    let mut lines = stderr.lines();
+    // Find the header.
+    let mut found_header = false;
+    for line in &mut lines {
+        if line.trim_start().contains("uncaught exception:") {
+            found_header = true;
+            break;
+        }
+    }
+    if !found_header {
+        return None;
+    }
+    // Collect subsequent frame lines (allow any leading whitespace; require
+    // `at ` after trim_start).
+    let mut frames: Vec<&str> = Vec::new();
+    for line in lines {
+        if line.trim_start().starts_with("at ") {
+            frames.push(line);
+        } else {
+            // First non-frame line ends the run.
+            break;
+        }
+    }
+    if frames.is_empty() {
+        None
+    } else {
+        Some(frames.join("\n"))
+    }
 }
 
 pub fn extract_exception_msg(stderr: &str) -> String {
@@ -569,5 +625,51 @@ mod tests {
         assert_eq!(budget, Duration::from_secs(TIMEOUT_HARD_CEILING_SECS));
         assert_eq!(origin, "per-method [Timeout]");
         assert!(clamped);
+    }
+
+    // ── parse-subprocess-failure-location-from-stderr (2026-05-31) ────────
+
+    #[test]
+    fn extract_stack_trace_empty_stderr_returns_none() {
+        assert_eq!(extract_stack_trace_from_stderr(""), None);
+    }
+
+    #[test]
+    fn extract_stack_trace_no_uncaught_header_returns_none() {
+        let s = "warning: ignoring something\nrandom log line";
+        assert_eq!(extract_stack_trace_from_stderr(s), None);
+    }
+
+    #[test]
+    fn extract_stack_trace_two_frames_collected() {
+        let s = "Error: uncaught exception: Std.TestFailure: values not equal\n  \
+                 at MyTests.test_x (my_test.z42:42)\n  \
+                 at Std.Test.Assert.Equal (Assert.z42:38)";
+        let got = extract_stack_trace_from_stderr(s).expect("should extract");
+        assert!(got.contains("MyTests.test_x"));
+        assert!(got.contains("Std.Test.Assert.Equal"));
+        assert!(got.contains("my_test.z42:42"));
+        assert_eq!(got.lines().count(), 2);
+    }
+
+    #[test]
+    fn extract_stack_trace_stops_at_first_non_frame_line() {
+        // Trailing log noise (e.g. process exit message) must not be
+        // mistaken for stack frames.
+        let s = "Error: uncaught exception: T: m\n  \
+                 at A (f.z42:1)\n  \
+                 at B (f.z42:2)\n\
+                 [extra log line unrelated to stack]\n  \
+                 at NeverIncluded (f.z42:99)";
+        let got = extract_stack_trace_from_stderr(s).expect("should extract");
+        assert!(got.contains("at A"));
+        assert!(got.contains("at B"));
+        assert!(!got.contains("NeverIncluded"), "frames after non-frame line must NOT be collected; got: {got}");
+    }
+
+    #[test]
+    fn extract_stack_trace_no_frames_after_header_returns_none() {
+        let s = "Error: uncaught exception: Foo: just a message\n";
+        assert_eq!(extract_stack_trace_from_stderr(s), None);
     }
 }

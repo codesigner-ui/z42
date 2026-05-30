@@ -741,9 +741,11 @@ not ok 3 - MyTests.test_arithmetic
 > JIT-executed test 的 failure_location / stack_trace 会是 `None`。
 > 独立 spec tracking `2026-05-10-jit-stack-trace` 处理。
 >
-> **Subprocess (`--jobs N>1` 或 `--legacy-subprocess`) 暂不展示 stack**：
-> 子进程的 throw 发生在 z42vm 子进程，父进程只能拿到 stderr 文本而非
-> Value，无法调 `read_stack_trace`。stderr-text 反解析是独立 spec 的话题。
+> **Subprocess (`--jobs N>1` 或 `--legacy-subprocess`) 现支持** stack —
+> 2026-05-31 起父进程解析 z42vm stderr 里的
+> `Error: uncaught exception:` 后续 `  at <Func> (<file>:<line>)` 行
+> （`parse-subprocess-failure-location-from-stderr`），与 in-process
+> 路径同等展示 `failure_location` + `stack_trace`。
 
 #### 设计思路（design rationale）
 
@@ -856,7 +858,6 @@ void test_pi_approximation() {
 
 | ID | 标题 | 现状 | 影响 |
 |----|------|------|------|
-| `failloc-future-subprocess-stack` | subprocess (`--jobs N>1`) 路径 stack 解析 | 父进程当前只拿 stderr 文本而非 Value，无法调 `read_stack_trace`；stack 信息在 stderr 里但 location/stack 字段填 None | 串行 / in-process 路径（默认）不受影响；parallel 路径下 IDE-jump 失效。需要 stderr-文本反解析逻辑 |
 | `failloc-future-jit-stack` | JIT 模式 populate_stack_trace 接入 | JIT 现没填 StackTrace；JIT-执行的 test 失败时 StackTrace=None | 与 `2026-05-10-jit-stack-trace` 重叠；JIT 全套 stack trace 是该 spec 工作 |
 
 ---
