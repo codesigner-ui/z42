@@ -22,6 +22,13 @@ use super::*;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 
+/// Serialize tests that read or mutate the process-global `PATH` env var.
+/// Without this, parallel tests like `which_finds_in_custom_path` (sets
+/// PATH to a temp dir) race with tests like `run_working_directory_takes_effect`
+/// (spawns `pwd` — PATH lookup) and the latter intermittently fails because
+/// `pwd` can't be found in the temp PATH.
+static PATH_ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn s(v: &str) -> Value { Value::Str(v.into()) }
 fn i(n: i64) -> Value  { Value::I64(n) }
 fn b(v: bool) -> Value { Value::Bool(v) }
@@ -154,6 +161,7 @@ fn run_env_clear_strips_parent_env() {
 #[cfg(unix)]
 #[test]
 fn run_working_directory_takes_effect() {
+    let _path_guard = PATH_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let ctx = VmContext::new();
     let mut args = run_args(&ctx, "pwd", &[]);
     args[6] = s("/tmp");
@@ -430,6 +438,7 @@ fn which_returns_null_for_nonexistent_command() {
 #[test]
 fn which_finds_in_custom_path() {
     use std::os::unix::fs::PermissionsExt;
+    let _path_guard = PATH_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let ctx = VmContext::new();
     let tmp = tempdir_unique("z42-which-test");
     std::fs::create_dir_all(&tmp).unwrap();
@@ -452,6 +461,7 @@ fn which_finds_in_custom_path() {
 #[cfg(unix)]
 #[test]
 fn which_skips_non_executable_files() {
+    let _path_guard = PATH_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
     let ctx = VmContext::new();
     let tmp = tempdir_unique("z42-which-noexec");
     std::fs::create_dir_all(&tmp).unwrap();
