@@ -231,10 +231,23 @@ if $PARALLEL; then
     case "$SCOPE" in
         full)
             run_wave "$STAGE_DOTNET_BUILD" "$STAGE_CARGO_BUILD"        || exit 1
-            run_wave "$STAGE_DOTNET_TEST" "$STAGE_STDLIB"              || exit 1
+            # fix-dotnet-test-stdlib-race (2026-05-30): dotnet test must run
+            # BEFORE test-stdlib, not concurrently with it.
+            # IncrementalBuildIntegrationTests.StdlibBuild_SecondRun_AllCached
+            # calls `Directory.Delete("artifacts/build/libraries", recursive:
+            # true)` to validate fresh-vs-cached behaviour. When that ran in
+            # parallel with `build-stdlib.sh` (which writes into the same
+            # dir), it nuked partially-built stdlib zpkgs mid-flight and
+            # downstream members (z42.yaml/cli/compression/json/test/toml/
+            # io.binary/diagnostics/numerics) failed with "Scanned dirs: []
+            # → E0602: no loaded package provides this namespace". Run
+            # dotnet test alone first so it has exclusive access to the
+            # shared artifacts dir.
+            run_wave "$STAGE_DOTNET_TEST"                              || exit 1
+            run_wave "$STAGE_STDLIB"                                   || exit 1
             regen_step                                                 || exit 1
             run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
-            total_stages=7; total_waves=4 ;;
+            total_stages=7; total_waves=5 ;;
         runtime)
             run_wave "$STAGE_CARGO_BUILD"                              || exit 1
             run_wave "$STAGE_STDLIB"                                   || exit 1
@@ -243,10 +256,12 @@ if $PARALLEL; then
             total_stages=5; total_waves=4 ;;
         compiler)
             run_wave "$STAGE_DOTNET_BUILD"                             || exit 1
-            run_wave "$STAGE_DOTNET_TEST" "$STAGE_STDLIB"              || exit 1
+            # See fix-dotnet-test-stdlib-race comment in `full` scope above.
+            run_wave "$STAGE_DOTNET_TEST"                              || exit 1
+            run_wave "$STAGE_STDLIB"                                   || exit 1
             regen_step                                                 || exit 1
             run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
-            total_stages=6; total_waves=4 ;;
+            total_stages=6; total_waves=5 ;;
         stdlib)
             run_wave "$STAGE_STDLIB"                                   || exit 1
             regen_step                                                 || exit 1
