@@ -72,8 +72,29 @@ jobs:
       #   macos-15=3) even when two stages run concurrently in a wave.
       - name: Test (test-all.sh --parallel --jobs=4)
         if: matrix.os != 'windows-latest'
-        run: ./scripts/test-all.sh --parallel --jobs=4
+        run: |
+          mkdir -p artifacts/ci-logs
+          ./scripts/test-all.sh --parallel --jobs=4 2>&1 | tee artifacts/ci-logs/test-all.log
+          # Use PIPESTATUS to surface the script exit code (tee always
+          # succeeds). 0 = green, anything else = the actual failure.
+          exit "${PIPESTATUS[0]}"
         shell: bash
+
+      # diag-ci-test-log-upload (2026-05-30): the wave-failed stage prints
+      # `stage outputs preserved at: /tmp/...` paths that disappear when
+      # the runner is recycled. Capture them as an artifact so we can
+      # inspect failure mode without admin-only log access (the public
+      # actions/jobs API only surfaces "exit code 1" annotations).
+      - name: Upload test logs on failure
+        if: failure() && matrix.os != 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}
+          path: |
+            artifacts/ci-logs/
+            /tmp/z42-test-all.*
+          retention-days: 7
+          if-no-files-found: warn
 
       # Windows pre-test: regenerate golden source.zbc fixtures the same way
       # Linux/macOS do via test-vm.sh → regen-golden-tests.sh. The repo only
