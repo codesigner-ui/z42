@@ -1,0 +1,68 @@
+// surface-test-failure-source-location (2026-05-30) — in-tree e2e demo
+// proving the runtime → reader → runner chain populates and surfaces
+// `Std.Exception.StackTrace` correctly.
+//
+// The pre-spec behavior was: runtime fills `StackTrace` since 2026-05-10,
+// but the test-runner's `format_value` only read `Message`, throwing the
+// stack away. The spec rewires `runner::classify_thrown` to call
+// `format_failure_with_stack` which surfaces both. This demo verifies the
+// runtime *still* populates it (formatter-side wiring is covered by unit
+// tests in runner_tests.rs / format/*_tests).
+//
+// Strategy: catch a deliberate Assert.Equal failure inside the test, then
+// inspect the caught exception's StackTrace field directly. If the runtime
+// stopped populating it (or populated it with garbage), this test fails.
+
+namespace Z42TestFailureLocationDemo;
+
+using Std;
+using Std.Test;
+
+[Test]
+void test_runtime_populates_stack_trace_on_assert_failure() {
+    // Note on the catch type: `Assert.Equal` here resolves to z42.core's
+    // `Std.Assert.Equal` (not z42.test's `Std.Test.Assert.Equal`) because
+    // DependencyIndex first-wins on the `"Assert.Equal"` short key
+    // (.claude/rules/common-pitfalls.md §1; sorted load order picks
+    // z42.core which alphabetically precedes z42.test). z42.core's Assert
+    // throws a plain `Std.Exception`, not `Std.TestFailure`, so we catch
+    // `Exception` here. The interp populates `StackTrace` on every
+    // Exception-subclass throw regardless of which Assert flavor —
+    // that's exactly the invariant this test exercises.
+    bool caught = false;
+    try {
+        Assert.Equal(2, 3);
+    }
+    catch (Exception e) {
+        caught = true;
+        // The StackTrace string is built by Rust-side `format_stack_trace`
+        // (src/runtime/src/exception/mod.rs). Verified invariants:
+        //
+        //   1. Non-empty — `populate_stack_trace` ran at throw time
+        //   2. Contains "Assert" — the throwing framework frame is captured
+        //   3. Contains this test method's name — proves the user frame is
+        //      captured (even when file path is missing — see note below)
+        //
+        // Note on file path: current frame format is "(file:line[:col])"
+        // when LineEntry.file is populated, and "(line N, col M)" fallback
+        // when file is None. Many functions emit the fallback today because
+        // their LineEntry.file isn't always populated end-to-end through
+        // the compiler. The runner-side spec
+        // `surface-test-failure-source-location` (this spec) surfaces
+        // whatever the runtime gives; populating LineEntry.file consistently
+        // is a separate compiler/runtime gap tracked in testing.md Deferred.
+        Assert.NotNull(e.StackTrace);
+        if (e.StackTrace == "") {
+            Assert.Fail("StackTrace should be non-empty when populate_stack_trace ran");
+        }
+        if (!e.StackTrace.Contains("Assert")) {
+            Assert.Fail($"StackTrace should mention the throwing Assert frame; got: {e.StackTrace}");
+        }
+        if (!e.StackTrace.Contains("test_runtime_populates_stack_trace_on_assert_failure")) {
+            Assert.Fail($"StackTrace should include this test method's name; got: {e.StackTrace}");
+        }
+    }
+    if (!caught) {
+        Assert.Fail("expected to catch TestFailure from Assert.Equal(2, 3)");
+    }
+}

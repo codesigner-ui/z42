@@ -15,10 +15,25 @@ pub fn print(module_name: &str, results: &[TestResult]) {
                 "  {} {}  ({})", "⊘".yellow().bold(), r.name,
                 r.reason.as_deref().unwrap_or("skipped")),
             TestStatus::Failed => {
-                println!("  {} {}", "✗".red().bold(), r.name);
+                // surface-test-failure-source-location (2026-05-30): if a
+                // primary user-frame `(file:line)` is available, inline it
+                // next to the test name — first thing the eye lands on,
+                // clickable in IDE terminals.
+                match &r.failure_location {
+                    Some(loc) => println!("  {} {}  ({})", "✗".red().bold(), r.name, loc.dimmed()),
+                    None => println!("  {} {}", "✗".red().bold(), r.name),
+                }
                 if let Some(reason) = &r.reason {
                     for line in reason.lines() {
                         println!("      {}", line.red());
+                    }
+                }
+                // Full multi-line stack trace below the reason — dim color so
+                // it doesn't compete visually with the main failure summary.
+                if let Some(stack) = &r.stack_trace {
+                    println!("      {}", "stack:".dimmed());
+                    for line in stack.lines() {
+                        println!("        {}", line.dimmed());
                     }
                 }
             }

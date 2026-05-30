@@ -641,6 +641,112 @@ Z42_TEST_PLATFORM=ios z42-test-runner suite.zbc
   9 用例（7 platform + 1 永不匹配 + 1 unknown feature）— 由 stdlib test
   wave 跑过验证 end-to-end 行为
 
+### Failure source location in runner output (2026-05-30)
+
+由 [surface-test-failure-source-location](../../spec/archive/2026-05-30-surface-test-failure-source-location/)
+引入。Runtime 自 2026-05-10 起就在每次 throw 时往 `Std.Exception.StackTrace`
+字段填充 `(file:line[:col])` 的多帧栈（见 `src/runtime/src/exception/mod.rs:186-224
+populate_stack_trace`），但 runner `format_value` 之前**只读 Message 字段**，
+所有 stack 信息直接丢弃。用户看到的失败仅有 `"TestFailure: values not equal"`，
+没法定位到出错的 Assert 调用在哪一行。本 spec 把已有的 stack 信息接通到所有
+三种 formatter 的输出里。
+
+#### 用法（usage）
+
+测试代码无需任何改动。失败时 runner 自动展示：
+
+**Pretty (TTY)**:
+
+```
+  ✗ MyTests.test_arithmetic  (my_test.z42:42)
+      TestFailure: values not equal (expected 3, actual 2)
+      stack:
+        at MyTests.test_arithmetic (my_test.z42:42)
+        at Std.Test.Assert.Equal (Assert.z42:38)
+        at Std.Test.AssertCore.checkEqual (AssertCore.z42:17)
+```
+
+**TAP 13**:
+
+```
+not ok 3 - MyTests.test_arithmetic
+  ---
+  message: 'TestFailure: values not equal (expected 3, actual 2)'
+  location: 'my_test.z42:42'
+  stack: |
+      at MyTests.test_arithmetic (my_test.z42:42)
+      at Std.Test.Assert.Equal (Assert.z42:38)
+      at Std.Test.AssertCore.checkEqual (AssertCore.z42:17)
+  ...
+```
+
+**JSON**:
+
+```json
+{
+  "name": "MyTests.test_arithmetic",
+  "status": "failed",
+  "duration_ms": 7,
+  "reason": "TestFailure: values not equal (expected 3, actual 2)",
+  "failure_location": "my_test.z42:42",
+  "stack_trace": "  at MyTests.test_arithmetic (my_test.z42:42)\n  at Std.Test.Assert.Equal (Assert.z42:38)\n  at Std.Test.AssertCore.checkEqual (AssertCore.z42:17)"
+}
+```
+
+`failure_location` 适合 IDE / CI 工具直接消费，做 jump-to-source 快捷
+跳转。`reason` 字段保持向前兼容（pre-2026-05-30 CI 脚本继续工作）。
+
+> **JIT path 暂未覆盖**：JIT 模式尚未实现 `populate_stack_trace` 钩入，
+> JIT-executed test 的 failure_location / stack_trace 会是 `None`。
+> 独立 spec tracking `2026-05-10-jit-stack-trace` 处理。
+>
+> **Subprocess (`--jobs N>1` 或 `--legacy-subprocess`) 暂不展示 stack**：
+> 子进程的 throw 发生在 z42vm 子进程，父进程只能拿到 stderr 文本而非
+> Value，无法调 `read_stack_trace`。stderr-text 反解析是独立 spec 的话题。
+
+#### 设计思路（design rationale）
+
+完整决策记录见
+[`design.md`](../../spec/archive/2026-05-30-surface-test-failure-source-location/design.md)。
+关键选择：
+
+| 维度 | 选择 | 拒绝的备选 + 理由 |
+|------|------|--------------------|
+| Reason vs 独立字段 | location / stack 独立成 `TestResult` 字段 | 拼进 `reason` 会破坏既有 CI 脚本的 grep 解析；独立字段让 JSON consumer 直接做 IDE jump-to-source 无需 regex |
+| Framework-frame filter (primary 提取) | `Std.Test.*` prefix OR `.Assert.` substring → 跳过 | regex / 完整 trie 过 engineered；简单 startsWith / contains 覆盖 99% case，少量误判（`MyApp.AssertUtils` 误归 framework）可接受换取无依赖 + 易理解 |
+| Full stack 不过滤 | 即使全是 framework 帧也完整保留 | Assert 内部 bug 的诊断仍要看完整栈；`primary_location` 给主路径，full stack 给 deep-debug |
+| Pretty 默认展开 stack | 无 `--no-stack` flag | v1 红测试 = 用户主动想看 detail；噪声主要来自全绿 run（那里没 fail output） |
+| JSON 字段名 `failure_location` | 而非 `location` | 区分 "throw site" 与未来可能加的 "test method declaration site"；前缀 `failure_` 自描述 |
+| YAML literal block `\|` for stack | 而非单行 yaml_escape | 多行栈一行行 escape 拼成 `"l1 l2 l3"` 失去结构；literal block 是 TAP 13 + YAML 1.2 原生多行表达 |
+| Stack 解析无 regex 依赖 | 手写 `splitn` / `strip_prefix` | 增加 regex crate dep 不值；producer 是 z42-internal，shape 稳定可控 |
+
+#### 实施 (implementation)
+
+- 核心 helper：[`src/toolchain/test-runner/src/runner.rs`](../../../src/toolchain/test-runner/src/runner.rs)
+  `format_failure_with_stack(val, module) -> FailureDetails` + `first_user_frame(stack) -> Option<String>` + `is_framework_frame(func_name) -> bool`
+- 数据通道：`Outcome::Failed { reason, location, stack_trace }` →
+  `TestResult { reason, failure_location, stack_trace }` →
+  pretty / tap / json formatter
+- 单元测试：[`src/toolchain/test-runner/src/runner_tests.rs`](../../../src/toolchain/test-runner/src/runner_tests.rs)
+  12 用例覆盖 `first_user_frame` + `is_framework_frame` 全部分支（empty
+  input / all-framework / mixed / col-suffix-stripping / no-parens-locus /
+  line-only fallback / unicode paths / malformed line skip）
+- TAP / JSON formatter 测试：`format/tap.rs::tap_format_with_location_and_stack_includes_new_fields`
+  与 `format/json.rs::json_serialization_round_trip` 覆盖输出 byte shape
+- E2E demo：[`src/libraries/z42.test/tests/failure_location_demo.z42`](../../../src/libraries/z42.test/tests/failure_location_demo.z42)
+  catch 一个 Assert.Equal 失败、断言其 StackTrace 字段非空 + 包含 Assert 帧
+  + 包含 test 方法名 → 验证 runtime 仍在跑 + user-frame 捕获正确
+
+#### Deferred — upstream gaps observed during this spec
+
+观察到但不在本 spec scope 内的相关 gap，留待独立 spec：
+
+| ID | 标题 | 现状 | 影响 |
+|----|------|------|------|
+| `failloc-future-populate-file-strings` | 每帧 LineEntry 一致填 file 字符串 | 当前许多函数的 LineEntry.file 是 None，stack 退化为 `(line N, col M)` fallback 而非 `(file:line)`；first_user_frame 跳过这种帧 → primary_location 是 None | runner output 仍能显示完整 stack（line/col 信息存在），但 IDE jump-to-source 在 file 缺席时不可用。需要 compiler 端把每个 IR 函数的 source file 一致传到 LineEntry.file |
+| `failloc-future-subprocess-stack` | subprocess (`--jobs N>1`) 路径 stack 解析 | 父进程当前只拿 stderr 文本而非 Value，无法调 `read_stack_trace`；stack 信息在 stderr 里但 location/stack 字段填 None | 串行 / in-process 路径（默认）不受影响；parallel 路径下 IDE-jump 失效。需要 stderr-文本反解析逻辑 |
+| `failloc-future-jit-stack` | JIT 模式 populate_stack_trace 接入 | JIT 现没填 StackTrace；JIT-执行的 test 失败时 StackTrace=None | 与 `2026-05-10-jit-stack-trace` 重叠；JIT 全套 stack trace 是该 spec 工作 |
+
 ---
 
 ## TIDX 二进制格式（R1）

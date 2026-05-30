@@ -47,15 +47,19 @@ pub fn run_one(
     if let Err(e) = interp::init_static_fields(&loaded.ctx, &loaded.ctx.module().unwrap()) {
         return Outcome::Failed {
             reason: format!("static init error: {e}"),
+            location: None,
+            stack_trace: None,
         };
     }
 
     // 2. Setup methods (sequential; first failure short-circuits to test fail).
     let setup_names = collect_kind_names(&loaded.test_index, &loaded.user_func_names, TestEntryKind::Setup);
     for setup in &setup_names {
-        if let Some(Outcome::Failed { reason }) = exec_named(&loaded.ctx.module().unwrap(), &loaded.ctx, setup, "Setup") {
+        if let Some(Outcome::Failed { reason, location, stack_trace }) =
+            exec_named(&loaded.ctx.module().unwrap(), &loaded.ctx, setup, "Setup")
+        {
             run_teardowns(loaded);
-            return Outcome::Failed { reason };
+            return Outcome::Failed { reason, location, stack_trace };
         }
     }
 
@@ -88,11 +92,23 @@ fn exec_one(module: &Module, ctx: &VmContext, func: &Function, role: &str) -> Ou
     let args: &[Value] = &[];
     match interp::run_outcome(ctx, module, func, args) {
         Ok(ExecOutcome::Returned(_)) => Outcome::Passed { duration_ms: 0 },
-        Ok(ExecOutcome::Thrown(val)) => Outcome::Failed {
-            reason: format!("{role}: uncaught exception: {}", format_value(&val)),
-        },
+        Ok(ExecOutcome::Thrown(val)) => {
+            // surface-test-failure-source-location (2026-05-30): even Setup/
+            // Teardown failures get the full StackTrace surfaced — same value
+            // to triage.
+            let details = format_failure_with_stack(&val, module);
+            Outcome::Failed {
+                reason: format!("{role}: uncaught exception: {}", details.message),
+                location: details.primary_location,
+                stack_trace: details.stack_trace,
+            }
+        }
         Err(e) => Outcome::Failed {
+            // VM error path — Rust-side error, no z42 exception value, no
+            // populated StackTrace to surface.
             reason: format!("{role}: VM error: {e}"),
+            location: None,
+            stack_trace: None,
         },
     }
 }
@@ -103,6 +119,8 @@ fn exec_test_body(loaded: &LoadedRunner, test: &DiscoveredTest<'_>) -> Outcome {
         Some(f) => f,
         None => return Outcome::Failed {
             reason: format!("test function `{}` not found in merged module", test.method_name),
+            location: None,
+            stack_trace: None,
         },
     };
 
@@ -110,50 +128,78 @@ fn exec_test_body(loaded: &LoadedRunner, test: &DiscoveredTest<'_>) -> Outcome {
 
     // [ShouldThrow<E>] inverts pass/fail semantics.
     if let Some(expected) = &test.expected_throw {
-        return classify_should_throw(outcome, expected);
+        return classify_should_throw(outcome, expected, module);
     }
 
     match outcome {
         Ok(ExecOutcome::Returned(_)) => Outcome::Passed { duration_ms: 0 },
-        Ok(ExecOutcome::Thrown(val)) => classify_thrown(&val),
-        Err(e) => Outcome::Failed { reason: format!("VM error: {e}") },
+        Ok(ExecOutcome::Thrown(val)) => classify_thrown(&val, module),
+        Err(e) => Outcome::Failed {
+            reason: format!("VM error: {e}"),
+            location: None,
+            stack_trace: None,
+        },
     }
 }
 
-fn classify_should_throw(outcome: Result<ExecOutcome>, expected: &str) -> Outcome {
+fn classify_should_throw(
+    outcome: Result<ExecOutcome>,
+    expected: &str,
+    module: &Module,
+) -> Outcome {
     let candidates: Vec<&str> = expected.split(';').filter(|s| !s.is_empty()).collect();
     let display = candidates.first().copied().unwrap_or(expected);
 
     match outcome {
         Ok(ExecOutcome::Returned(_)) => Outcome::Failed {
             reason: format!("expected to throw `{display}`, but no exception was thrown"),
+            location: None,
+            stack_trace: None,
         },
         Err(e) => Outcome::Failed {
             reason: format!("expected to throw `{display}`, got VM error: {e}"),
+            location: None,
+            stack_trace: None,
         },
         Ok(ExecOutcome::Thrown(val)) => {
             let actual = type_of_value(&val);
             if candidates.iter().any(|c| crate::exec::type_matches(c, &actual)) {
                 Outcome::Passed { duration_ms: 0 }
             } else {
+                // Surface stack of the *unexpected* throw — helps debug why
+                // a different exception type leaked.
+                let details = format_failure_with_stack(&val, module);
                 Outcome::Failed {
                     reason: format!("expected to throw `{display}`, got `{actual}`"),
+                    location: details.primary_location,
+                    stack_trace: details.stack_trace,
                 }
             }
         }
     }
 }
 
-fn classify_thrown(val: &Value) -> Outcome {
+fn classify_thrown(val: &Value, module: &Module) -> Outcome {
     let type_name = type_of_value(val);
-    let formatted = format_value(val);
+    let details = format_failure_with_stack(val, module);
     if type_name.ends_with(".SkipSignal") || type_name == "SkipSignal" {
-        return Outcome::Skipped { reason: formatted };
+        // SkipSignal is a control flow signal, not a failure — don't expose
+        // its stack (would just be noise: every Assert.Skip throw site is
+        // legitimate).
+        return Outcome::Skipped { reason: details.message };
     }
     if type_name.ends_with(".TestFailure") || type_name == "TestFailure" {
-        return Outcome::Failed { reason: formatted };
+        return Outcome::Failed {
+            reason: details.message,
+            location: details.primary_location,
+            stack_trace: details.stack_trace,
+        };
     }
-    Outcome::Failed { reason: format!("uncaught exception: {formatted}") }
+    Outcome::Failed {
+        reason: format!("uncaught exception: {}", details.message),
+        location: details.primary_location,
+        stack_trace: details.stack_trace,
+    }
 }
 
 /// FQ class name of an exception Value. `Value::Object(rc)` → `rc.borrow().type_desc.name`.
@@ -167,9 +213,39 @@ fn type_of_value(val: &Value) -> String {
     }
 }
 
-/// Format an exception value for the failure reason. Uses Object's type +
-/// best-effort field summary; falls back to Debug.
-fn format_value(val: &Value) -> String {
+/// surface-test-failure-source-location (2026-05-30) — extracted from
+/// thrown-value summary into a structured tuple so failure metadata
+/// (location, stack) flows separately from the human-readable reason
+/// through Outcome → TestResult → formatters.
+pub(crate) struct FailureDetails {
+    /// Human-readable summary line — `"<Type>: <Message>"` or fallback.
+    /// Preserves the pre-spec `format_value` content for backward-compatible
+    /// `reason` field consumers.
+    pub message: String,
+    /// First non-framework `<file>:<line>` from the throw's stack trace.
+    /// `None` when the value has no populated StackTrace or the entire
+    /// stack is framework code (Std.Test.* / .Assert.).
+    pub primary_location: Option<String>,
+    /// Full multi-line stack trace as `format_stack_trace` produced it.
+    /// Unfiltered — full visibility for deep-debugging framework-internal
+    /// bugs.
+    pub stack_trace: Option<String>,
+}
+
+/// Convert a thrown Value into structured failure metadata. Combines the
+/// pre-spec `format_value` (Message extraction) with new stack-trace
+/// surfacing via `z42::exception::read_stack_trace`.
+pub(crate) fn format_failure_with_stack(val: &Value, module: &Module) -> FailureDetails {
+    let message = format_message_only(val);
+    let stack_trace = z42::exception::read_stack_trace(val, module);
+    let primary_location = stack_trace.as_deref().and_then(first_user_frame);
+    FailureDetails { message, primary_location, stack_trace }
+}
+
+/// Pre-spec `format_value` logic, preserved verbatim for backward-compatible
+/// `reason` output. Reads the `Message` field for Exception subclasses;
+/// falls back to a `Type{...}` placeholder or Debug repr.
+fn format_message_only(val: &Value) -> String {
     match val {
         Value::Object(rc) => {
             let b = rc.borrow();
@@ -184,6 +260,72 @@ fn format_value(val: &Value) -> String {
         Value::Str(s) => s.to_string(),
         _ => format!("{:?}", val),
     }
+}
+
+/// surface-test-failure-source-location (2026-05-30) — scan a multi-line
+/// stack trace (as produced by `z42::exception::format_stack_trace`) and
+/// return the first non-framework frame's `<file>:<line>` for IDE jump-to-
+/// source.
+///
+/// Frame line format (producer is z42-internal; we own both ends):
+/// `  at <func_name> (<file>:<line>[:<col>])`
+///
+/// Returns `None` when no parseable user frame is found.
+pub(crate) fn first_user_frame(stack: &str) -> Option<String> {
+    for raw_line in stack.lines() {
+        let line = raw_line.trim_start();
+        // Frame must look like "at <func> (<locus>)".
+        let after_at = match line.strip_prefix("at ") {
+            Some(s) => s,
+            None => continue,
+        };
+        let (func_name, locus) = match after_at.split_once(" (") {
+            Some((f, rest)) => (f, rest.trim_end_matches(')')),
+            None => continue, // frame has no location → unusable as primary
+        };
+        if is_framework_frame(func_name) {
+            continue;
+        }
+        // `locus` is one of:
+        //   "<file>:<line>"           (zbc 1.0–1.0)
+        //   "<file>:<line>:<col>"     (zbc 1.1+ when column > 0)
+        //   "line N" / "line N, col M" (no file, fallback shape)
+        // Strategy: split off trailing numeric segments and treat the
+        // remainder as the file. Drop column if present so primary stays
+        // terse and easy to click-through.
+        let segments: Vec<&str> = locus.rsplitn(3, ':').collect();
+        let location = match segments.as_slice() {
+            // "<file>:<line>:<col>" → segments = [col, line, file]
+            [col, line, file]
+                if col.chars().all(|c| c.is_ascii_digit())
+                    && line.chars().all(|c| c.is_ascii_digit()) =>
+            {
+                format!("{file}:{line}")
+            }
+            // "<file>:<line>" → segments = [line, file] (rsplitn yields 2)
+            [line, file] if line.chars().all(|c| c.is_ascii_digit()) => {
+                format!("{file}:{line}")
+            }
+            // No parseable file:line shape (e.g. "line 42" fallback). Skip
+            // — primary-location feature degrades gracefully to None.
+            _ => continue,
+        };
+        return Some(location);
+    }
+    None
+}
+
+/// surface-test-failure-source-location (2026-05-30) — predicate for "this
+/// stack frame is z42.test framework code we should hide when extracting
+/// the user's primary location".
+///
+/// Rules (Decision 2 in design.md):
+/// - func_name starts with `"Std.Test."` → framework
+/// - func_name contains `".Assert."` → framework (user namespaces like
+///   `MyApp.Asserts.foo` are intentionally caught when middle-named
+///   `Assert`; rare false positives traded for simpler rule)
+pub(crate) fn is_framework_frame(func_name: &str) -> bool {
+    func_name.starts_with("Std.Test.") || func_name.contains(".Assert.")
 }
 
 fn collect_kind_names(test_index: &[TestEntry], user_func_names: &[String], kind: TestEntryKind) -> Vec<String> {
@@ -201,3 +343,7 @@ fn run_teardowns(loaded: &mut LoadedRunner) {
         let _ = exec_named(&loaded.ctx.module().unwrap(), &loaded.ctx, name, "Teardown");
     }
 }
+
+#[cfg(test)]
+#[path = "runner_tests.rs"]
+mod runner_tests;

@@ -79,7 +79,9 @@ pub fn run_one(
     {
         Ok(c) => c,
         Err(e) => return Outcome::Failed {
-            reason: format!("failed to spawn z42vm: {e}")
+            reason: format!("failed to spawn z42vm: {e}"),
+            location: None,
+            stack_trace: None,
         },
     };
     let child_pid = child.id();
@@ -148,6 +150,8 @@ pub fn run_one(
             }
             Err(e) => return Outcome::Failed {
                 reason: format!("error waiting for z42vm: {e}"),
+                location: None,
+                stack_trace: None,
             },
         }
     };
@@ -190,7 +194,7 @@ pub fn run_one(
             reason.push_str("\n--- stderr (partial) ---\n");
             reason.push_str(stderr.trim_end());
         }
-        return Outcome::Failed { reason };
+        return Outcome::Failed { reason, location: None, stack_trace: None };
     }
 
     let status = exit_status.expect("non-timeout path always has a status");
@@ -210,6 +214,8 @@ pub fn run_one(
                 reason: format!(
                     "expected to throw `{display}`, but no exception was thrown"
                 ),
+                location: None,
+                stack_trace: None,
             };
         }
         let actual = extract_thrown_type(&stderr);
@@ -220,6 +226,8 @@ pub fn run_one(
             Some(a) => {
                 return Outcome::Failed {
                     reason: format!("expected to throw `{display}`, got `{a}`"),
+                    location: None,
+                    stack_trace: None,
                 };
             }
             None => {
@@ -228,6 +236,8 @@ pub fn run_one(
                         "expected to throw `{display}`, got non-exception failure: {}",
                         stderr.lines().next().unwrap_or("(empty stderr)").trim_end(),
                     ),
+                    location: None,
+                    stack_trace: None,
                 };
             }
         }
@@ -243,7 +253,14 @@ pub fn run_one(
         return Outcome::Skipped { reason: extract_exception_msg(&stderr) };
     }
     if stderr.contains("Std.TestFailure") {
-        return Outcome::Failed { reason: extract_exception_msg(&stderr) };
+        return Outcome::Failed {
+            reason: extract_exception_msg(&stderr),
+            // Subprocess mode: parent only has stderr text, no thrown Value
+            // to call read_stack_trace on. Surfacing stack from stderr would
+            // require parsing z42vm's own exception printout — separate spec.
+            location: None,
+            stack_trace: None,
+        };
     }
     // Other exception or VM error.
     let mut reason = String::new();
@@ -259,7 +276,7 @@ pub fn run_one(
     if reason.is_empty() {
         reason = format!("z42vm exited with status {}", status);
     }
-    Outcome::Failed { reason }
+    Outcome::Failed { reason, location: None, stack_trace: None }
 }
 
 /// Extract the (possibly fully-qualified) thrown type name from z42vm's stderr.

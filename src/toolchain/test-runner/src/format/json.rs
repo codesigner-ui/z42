@@ -38,15 +38,19 @@ mod tests {
             TestResult {
                 name: "M.test_pass".into(), status: TestStatus::Passed,
                 duration_ms: 12, reason: None,
+                failure_location: None, stack_trace: None,
             },
             TestResult {
                 name: "M.test_skip".into(), status: TestStatus::Skipped,
                 duration_ms: 0, reason: Some("platform=ios".into()),
+                failure_location: None, stack_trace: None,
             },
             TestResult {
                 name: "M.test_fail".into(), status: TestStatus::Failed,
                 duration_ms: 7,
                 reason: Some("expected `Foo`, got `Bar`".into()),
+                failure_location: Some("my_test.z42:42".into()),
+                stack_trace: Some("  at MyTests.test_fail (my_test.z42:42)".into()),
             },
         ]
     }
@@ -71,5 +75,19 @@ mod tests {
         assert!(s.contains("\"reason\":\"platform=ios\""));
         assert!(s.contains("\"total\":3"));
         assert!(s.contains("\"passed\":1"));
+        // surface-test-failure-source-location (2026-05-30): new fields land
+        // for failed tests and are omitted everywhere else.
+        assert!(s.contains("\"failure_location\":\"my_test.z42:42\""), "got: {s}");
+        assert!(
+            s.contains("\"stack_trace\":\"  at MyTests.test_fail (my_test.z42:42)\""),
+            "got: {s}"
+        );
+        // Passed / Skipped results must not pollute JSON with these keys.
+        assert_eq!(
+            s.matches("\"failure_location\"").count(),
+            1,
+            "failure_location should appear exactly once (the failed test)"
+        );
+        assert_eq!(s.matches("\"stack_trace\"").count(), 1);
     }
 }

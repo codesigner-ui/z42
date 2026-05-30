@@ -17,22 +17,44 @@ pub struct TestResult {
     /// `failed`; `0` (and meaningless) for synthesized `skipped` results that
     /// short-circuit before z42vm is spawned.
     pub duration_ms: u64,
-    /// Failure message or skip rationale. `None` for `passed`.
+    /// Failure message or skip rationale. `None` for `passed`. Backward-
+    /// compatible content — pre-2026-05-30 CI scripts that grep `reason`
+    /// continue to work unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// surface-test-failure-source-location (2026-05-30): first non-framework
+    /// stack frame's `<file>:<line>` for failed tests, extracted from the
+    /// thrown Exception's `StackTrace` field by `runner::first_user_frame`.
+    /// `None` when the throw site had no populated stack, no z42-side debug
+    /// info, or the trace contained only Std.Test / Assert framework frames.
+    /// IDE / CI tooling can jump to source via this field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_location: Option<String>,
+    /// surface-test-failure-source-location (2026-05-30): full multi-line
+    /// stack trace as produced by `z42::exception::format_stack_trace`. Not
+    /// filtered for framework frames — deep-debugging Assert-internal bugs
+    /// needs the complete view. `None` follows the same rules as
+    /// `failure_location`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stack_trace: Option<String>,
 }
 
 impl TestResult {
     pub fn from_outcome(name: String, outcome: Outcome) -> Self {
         match outcome {
             Outcome::Passed { duration_ms } => Self {
-                name, status: TestStatus::Passed, duration_ms, reason: None,
+                name, status: TestStatus::Passed, duration_ms,
+                reason: None, failure_location: None, stack_trace: None,
             },
             Outcome::Skipped { reason } => Self {
-                name, status: TestStatus::Skipped, duration_ms: 0, reason: Some(reason),
+                name, status: TestStatus::Skipped, duration_ms: 0,
+                reason: Some(reason), failure_location: None, stack_trace: None,
             },
-            Outcome::Failed { reason } => Self {
-                name, status: TestStatus::Failed, duration_ms: 0, reason: Some(reason),
+            Outcome::Failed { reason, location, stack_trace } => Self {
+                name, status: TestStatus::Failed, duration_ms: 0,
+                reason: Some(reason),
+                failure_location: location,
+                stack_trace,
             },
         }
     }
@@ -67,7 +89,16 @@ impl Summary {
 /// [`TestResult`] via [`TestResult::from_outcome`].
 pub enum Outcome {
     Passed { duration_ms: u64 },
-    Failed { reason: String },
+    /// surface-test-failure-source-location (2026-05-30): `location` carries
+    /// the first non-framework stack frame for IDE jump-to-source;
+    /// `stack_trace` carries the full multi-line trace for the formatter to
+    /// surface verbatim. Both are `None` for non-z42-side failures (e.g.
+    /// Setup/Teardown VM errors that don't go through a thrown Exception).
+    Failed {
+        reason: String,
+        location: Option<String>,
+        stack_trace: Option<String>,
+    },
     Skipped { reason: String },
 }
 
@@ -80,15 +111,18 @@ mod tests {
             TestResult {
                 name: "M.test_pass".into(), status: TestStatus::Passed,
                 duration_ms: 12, reason: None,
+                failure_location: None, stack_trace: None,
             },
             TestResult {
                 name: "M.test_skip".into(), status: TestStatus::Skipped,
                 duration_ms: 0, reason: Some("platform=ios".into()),
+                failure_location: None, stack_trace: None,
             },
             TestResult {
                 name: "M.test_fail".into(), status: TestStatus::Failed,
                 duration_ms: 7,
                 reason: Some("expected `Foo`, got `Bar`".into()),
+                failure_location: None, stack_trace: None,
             },
         ]
     }
@@ -108,9 +142,30 @@ mod tests {
         let r = TestResult {
             name: "M.t".into(), status: TestStatus::Passed,
             duration_ms: 5, reason: None,
+            failure_location: None, stack_trace: None,
         };
         let s = serde_json::to_string(&r).unwrap();
         assert!(!s.contains("\"reason\""),
             "passed test should not serialize a `reason` field");
+        assert!(!s.contains("\"failure_location\""),
+            "passed test should not serialize `failure_location`");
+        assert!(!s.contains("\"stack_trace\""),
+            "passed test should not serialize `stack_trace`");
+    }
+
+    #[test]
+    fn json_failed_includes_new_fields_when_present() {
+        let r = TestResult {
+            name: "M.t".into(), status: TestStatus::Failed,
+            duration_ms: 3,
+            reason: Some("values not equal".into()),
+            failure_location: Some("my_test.z42:42".into()),
+            stack_trace: Some("  at M.t (my_test.z42:42)".into()),
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains("\"failure_location\":\"my_test.z42:42\""),
+            "got: {s}");
+        assert!(s.contains("\"stack_trace\":\"  at M.t (my_test.z42:42)\""),
+            "got: {s}");
     }
 }
