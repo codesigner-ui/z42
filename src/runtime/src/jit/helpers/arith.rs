@@ -64,8 +64,79 @@ macro_rules! arith_op {
 
 arith_op!(jit_sub, i64::wrapping_sub, |x, y| x - y);
 arith_op!(jit_mul, i64::wrapping_mul, |x, y| x * y);
-arith_op!(jit_div, |x, y| x / y, |x, y| x / y);
-arith_op!(jit_rem, |x, y| x % y, |x, y| x % y);
+
+// Div / Rem: integer divide-by-zero must throw `Std.DivideByZeroException`
+// (catchable) rather than panic the VM via Rust's `x / 0` (which traps
+// SIGFPE on x86_64 in release / panics in debug). fix-jit-int-div-by-zero
+// (2026-05-30): pre-fix the helper macro called `int_op(x, y)` directly
+// in the I64 fast path; for y == 0 that panicked the VM, diverging from
+// interp behavior. Now matches `interp::exec_value::check_int_div_by_zero`.
+//
+// F64 / 0 → IEEE 754 Infinity (existing behavior preserved via the slow
+// path's `float_op`); only integer y == 0 hits the throw.
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_div(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, a: u32, b: u32,
+) -> u8 {
+    let regs = &(*frame).regs;
+    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+        if *y == 0 {
+            return throw_int_div_by_zero(ctx, "/");
+        }
+        (*frame).regs[dst as usize] = Value::I64(x / y);
+        return 0;
+    }
+    let va = regs[a as usize].clone();
+    let vb = regs[b as usize].clone();
+    if matches!(&vb, Value::I64(0)) {
+        return throw_int_div_by_zero(ctx, "/");
+    }
+    match int_binop_helper(&va, &vb, |x, y| x / y, |x, y| x / y) {
+        Ok(r)  => { (*frame).regs[dst as usize] = r; 0 }
+        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); 1 }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_rem(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, a: u32, b: u32,
+) -> u8 {
+    let regs = &(*frame).regs;
+    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+        if *y == 0 {
+            return throw_int_div_by_zero(ctx, "%");
+        }
+        (*frame).regs[dst as usize] = Value::I64(x % y);
+        return 0;
+    }
+    let va = regs[a as usize].clone();
+    let vb = regs[b as usize].clone();
+    if matches!(&vb, Value::I64(0)) {
+        return throw_int_div_by_zero(ctx, "%");
+    }
+    match int_binop_helper(&va, &vb, |x, y| x % y, |x, y| x % y) {
+        Ok(r)  => { (*frame).regs[dst as usize] = r; 0 }
+        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); 1 }
+    }
+}
+
+/// Stamp `Std.DivideByZeroException` via `make_stdlib_exception` then
+/// `set_exception`. Matches interp's `check_int_div_by_zero` flow.
+/// Returns 1 (the "thrown" sentinel) so the caller can `return` it
+/// directly.
+unsafe fn throw_int_div_by_zero(ctx: *const JitModuleCtx, op: &str) -> u8 {
+    let vm_ctx = vm_ctx_ref(ctx);
+    let module = &*(*ctx).module;
+    let exc = crate::exception::make_stdlib_exception(
+        vm_ctx, module, "Std.DivideByZeroException",
+        format!("integer {op} by zero"),
+    ).unwrap_or_else(|e| Value::Str(format!("{e}").into()));
+    set_exception(vm_ctx, exc);
+    1
+}
 
 // ── Comparison ───────────────────────────────────────────────────────────────
 

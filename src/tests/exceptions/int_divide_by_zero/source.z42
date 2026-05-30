@@ -1,0 +1,32 @@
+using Std.IO;
+
+// fix-jit-int-div-by-zero (2026-05-30): integer / 0 and % 0 must throw
+// `Std.DivideByZeroException` rather than panic the VM via Rust's `x / 0`
+// hardware trap. Regression coverage for both interp and JIT modes.
+void Main() {
+    // Integer divide-by-zero: distinct stages exercise both Div and Rem
+    // opcodes plus a non-zero divisor sanity-check.
+    try {
+        int x = 10;
+        int y = 0;
+        int z = x / y;
+        Console.WriteLine("UNREACHABLE: division returned " + Int32.ToString(z));
+    } catch (DivideByZeroException e) {
+        Console.WriteLine("div: " + e.Message);
+    }
+
+    try {
+        int x = 10;
+        int y = 0;
+        int z = x % y;
+        Console.WriteLine("UNREACHABLE: modulo returned " + Int32.ToString(z));
+    } catch (DivideByZeroException e) {
+        Console.WriteLine("rem: " + e.Message);
+    }
+
+    // Non-zero path still works.
+    int a = 10;
+    int b = 3;
+    Console.WriteLine("10 / 3 = " + Int32.ToString(a / b));
+    Console.WriteLine("10 % 3 = " + Int32.ToString(a % b));
+}

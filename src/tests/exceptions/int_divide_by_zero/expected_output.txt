@@ -1,0 +1,4 @@
+div: integer / by zero
+rem: integer % by zero
+10 / 3 = 3
+10 % 3 = 1
