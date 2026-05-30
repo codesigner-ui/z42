@@ -193,7 +193,7 @@ public class FormatGoldenTests
     private static ZbcFile CompileToZbcFile(string sourcePath)
     {
         string source = File.ReadAllText(sourcePath);
-        IrModule module = CompileSource(source);
+        IrModule module = CompileSource(source, sourcePath);
         // CRLF → LF before hashing: keeps SourceHash stable across
         // Windows/Linux/macOS checkouts (committed fixtures were generated
         // from LF source). Mirrors CompilerUtils.Sha256Hex normalization.
@@ -209,9 +209,12 @@ public class FormatGoldenTests
             Module:     module);
     }
 
-    private static IrModule CompileSource(string source)
+    private static IrModule CompileSource(string source, string sourcePath = "<fixture>")
     {
-        var tokens = new Lexer(source, "<fixture>").Tokenize();
+        // fix-line-entry-file-population (2026-05-31): pass the actual source
+        // path so emitted LineEntry.file matches what the on-disk fixture
+        // (regen via generate-fixtures.sh) records.
+        var tokens = new Lexer(source, sourcePath).Tokenize();
         var diags = new DiagnosticBag();
         CompilationUnit cu;
         try { cu = new Parser(tokens).ParseCompilationUnit(); }

@@ -40,13 +40,18 @@ internal sealed partial class FunctionEmitter
     /// Only emits a line table entry when the line number changes (RLE compression).
     /// 2026-05-10 span-column-propagate: also carries Span.Column so runtime
     /// stack traces can show `(file:line:col)` instead of `(file:line)`.
+    /// 2026-05-31 fix-line-entry-file-population: always stamp the enclosing
+    /// source file (was: only cross-file references). Without this, the
+    /// common case (function body all in one file) produced LineEntry.file =
+    /// null for every entry, so runtime stack traces fell back to the
+    /// no-file `(line N, col M)` shape and IDE jump-to-source was unusable.
     private void TrackLine(Core.Text.Span span)
     {
         if (span.Line <= 0 || span.Line == _lastLine) return;
         _lastLine = span.Line;
         int blockIdx = _blocks.Count; // current block = next to be sealed
         int instrIdx = _curInstrs.Count;
-        string? file = span.File != _sourceFile ? span.File : null;
+        string? file = span.File ?? _sourceFile;
         _lineTable.Add(new IrLineEntry(blockIdx, instrIdx, span.Line, file, span.Column));
     }
 

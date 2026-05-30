@@ -43,7 +43,7 @@ public class FormatGoldenTests
         var (sourceZ42, expectedZbc, _) = FixturePaths(fixture);
         File.Exists(expectedZbc).Should().BeTrue($"fixture `{fixture}` missing source.zbc — run generate-fixtures.sh");
 
-        IrModule module = Compile(File.ReadAllText(sourceZ42));
+        IrModule module = Compile(File.ReadAllText(sourceZ42), sourceZ42);
         byte[] actual = ZbcWriter.Write(module);
         byte[] expected = File.ReadAllBytes(expectedZbc);
 
@@ -59,7 +59,7 @@ public class FormatGoldenTests
         var (sourceZ42, _, expectedJson) = FixturePaths(fixture);
         File.Exists(expectedJson).Should().BeTrue($"fixture `{fixture}` missing expected.json — run generate-fixtures.sh");
 
-        IrModule module = Compile(File.ReadAllText(sourceZ42));
+        IrModule module = Compile(File.ReadAllText(sourceZ42), sourceZ42);
         byte[] bytes = ZbcWriter.Write(module);
         IrModule readBack = ZbcReader.Read(bytes);
         string actual = ZbcGoldenJsonFormatter.Format(bytes, readBack);
@@ -79,7 +79,7 @@ public class FormatGoldenTests
         // Protects against any new field whose hash / iteration order is non-deterministic.
         var (sourceZ42, _, _) = FixturePaths(fixture);
 
-        IrModule module = Compile(File.ReadAllText(sourceZ42));
+        IrModule module = Compile(File.ReadAllText(sourceZ42), sourceZ42);
         byte[] first = ZbcWriter.Write(module);
         byte[] second = ZbcWriter.Write(module);
 
@@ -115,9 +115,14 @@ public class FormatGoldenTests
         return string.Empty;
     }
 
-    private static IrModule Compile(string source)
+    private static IrModule Compile(string source, string sourcePath = "<fixture>")
     {
-        var tokens = new Lexer(source, "<fixture>").Tokenize();
+        // fix-line-entry-file-population (2026-05-31): pass the actual source
+        // path to the Lexer so emitted LineEntry.file matches what the on-
+        // disk fixture (regen via generate-fixtures.sh + z42c driver) records.
+        // Pre-spec we hardcoded "<fixture>" — fine when LineEntry.file was
+        // always null, breaks now that every entry carries the file string.
+        var tokens = new Lexer(source, sourcePath).Tokenize();
         var diags = new DiagnosticBag();
         CompilationUnit cu;
         try { cu = new Parser(tokens).ParseCompilationUnit(); }

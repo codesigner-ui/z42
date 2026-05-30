@@ -41,16 +41,12 @@ void test_runtime_populates_stack_trace_on_assert_failure() {
         //   1. Non-empty — `populate_stack_trace` ran at throw time
         //   2. Contains "Assert" — the throwing framework frame is captured
         //   3. Contains this test method's name — proves the user frame is
-        //      captured (even when file path is missing — see note below)
-        //
-        // Note on file path: current frame format is "(file:line[:col])"
-        // when LineEntry.file is populated, and "(line N, col M)" fallback
-        // when file is None. Many functions emit the fallback today because
-        // their LineEntry.file isn't always populated end-to-end through
-        // the compiler. The runner-side spec
-        // `surface-test-failure-source-location` (this spec) surfaces
-        // whatever the runtime gives; populating LineEntry.file consistently
-        // is a separate compiler/runtime gap tracked in testing.md Deferred.
+        //      captured
+        //   4. Contains this demo's file name — proves the user frame
+        //      carries `(file:line)` shape (post fix-line-entry-file-
+        //      population, 2026-05-31; pre-fix all frames fell back to
+        //      "(line N, col M)" because LineEntry.file was sparsely
+        //      populated by the C# IR emitter)
         Assert.NotNull(e.StackTrace);
         if (e.StackTrace == "") {
             Assert.Fail("StackTrace should be non-empty when populate_stack_trace ran");
@@ -60,6 +56,9 @@ void test_runtime_populates_stack_trace_on_assert_failure() {
         }
         if (!e.StackTrace.Contains("test_runtime_populates_stack_trace_on_assert_failure")) {
             Assert.Fail($"StackTrace should include this test method's name; got: {e.StackTrace}");
+        }
+        if (!e.StackTrace.Contains("failure_location_demo")) {
+            Assert.Fail($"StackTrace should include this demo's file path for IDE jump-to-source; got: {e.StackTrace}");
         }
     }
     if (!caught) {
