@@ -15,14 +15,19 @@ use crate::result::Outcome;
 
 /// Per-test wallclock cap. Anything beyond this is treated as a hang —
 /// z42vm gets SIGKILL'd and the test reports as `Failed { reason: "timed
-/// out after Xs ..." }` instead of locking the whole runner. Generous
-/// vs. observed legitimate test durations (most [Test] methods complete
-/// in milliseconds; the slowest JIT/crypto/compression ones are ~30 s
-/// on cold caches) so this only catches genuine hangs — network tests
-/// that race on TCP loopback close handshake (`ws_close` /
-/// `ws_ping_pong` under high parallel load on macOS in particular) are
-/// the motivating case (Z42-CI-2026-05-29 GREEN-up).
-const TEST_TIMEOUT_SECS: u64 = 120;
+/// out after Xs ..." }` instead of locking the whole runner. The cap is
+/// generous vs. observed legitimate test durations:
+///   - Most [Test] methods complete in milliseconds
+///   - Slowest JIT/compression ones ~30 s on cold caches
+///   - **ECDSA secp256k1 sign / verify round-trips on CI runners (3-4
+///     vCPU) take 60-180 s** because the z42-stdlib BigInt path is pure
+///     z42 + does naive modular exponentiation (no Montgomery / no
+///     windowed mul yet). 120 s caught these as false-positive
+///     "timeouts" on ubuntu/macos/arm CI. Bumping to 300 s leaves
+///     headroom for slow runners without weakening the hang detector
+///     (genuine hangs go forever, so any finite cap above legitimate
+///     max suffices).
+const TEST_TIMEOUT_SECS: u64 = 300;
 
 pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
     if let Some(reason) = &test.skip_reason {
