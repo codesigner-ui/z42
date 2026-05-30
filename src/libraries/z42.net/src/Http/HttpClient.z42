@@ -124,11 +124,10 @@ public class HttpClient {
     }
 
     /// add-z42-net-http-compression (2026-05-27): transparent gzip handling.
-    /// When on, requests advertise `Accept-Encoding: gzip` and gzip-encoded
-    /// responses are decompressed in-place — `HttpResponse.Body` exposes the
-    /// decoded payload, while `Content-Encoding` header is preserved for
-    /// inspection. Opt-in to keep default raw-body semantics unchanged. Only
-    /// gzip in v0; brotli waits on `compression-future-brotli`.
+    /// add-z42-net-http-brotli   (2026-05-30): same flag now also drives
+    /// brotli — `Accept-Encoding: gzip, br` is advertised, and either
+    /// encoding is auto-decoded into `HttpResponse.Body` (header preserved
+    /// for inspection). Opt-in to keep default raw-body semantics unchanged.
     public void SetAutoDecompress(bool enable) {
         this._autoDecompress = enable;
     }
@@ -418,7 +417,9 @@ public class HttpClient {
             }
         }
         if (this._autoDecompress && !request.Headers.Contains("Accept-Encoding")) {
-            request.Headers.Set("Accept-Encoding", "gzip");
+            // add-z42-net-http-brotli (2026-05-30): advertise both — server
+            // picks; equal quality means brotli when supported (better ratio).
+            request.Headers.Set("Accept-Encoding", "gzip, br");
         }
         if (request.Body != null) {
             request.Headers.Set("Content-Length", Int32.ToString(request.Body.Length));
@@ -485,15 +486,33 @@ public class HttpClient {
         }
         // add-z42-net-http-compression (2026-05-27): auto-decode gzip
         // response body before cookies / downstream observers see it.
+        // add-z42-net-http-brotli (2026-05-30): same path also decodes
+        // brotli (`Content-Encoding: br`).
         if (this._autoDecompress) {
-            string enc = resp.Headers.Get("Content-Encoding").ToLower();
-            if (enc == "gzip" && resp.Body != null && resp.Body.Length > 0) {
-                try {
-                    byte[] decoded = Gzip.Decompress(resp.Body);
-                    resp.Body = decoded;
-                } catch (Exception e) {
-                    throw new HttpException(
-                        "auto-decompress: gzip decode failed: " + e.Message);
+            // HttpHeaders.Get returns null when header absent — a server
+            // that ignored our Accept-Encoding sends back identity bytes
+            // and no Content-Encoding at all. Pre-brotli code crashed on
+            // `.ToLower()` here; null-check fix landed with the brotli
+            // wiring since the same path is now exercised more broadly.
+            string encRaw = resp.Headers.Get("Content-Encoding");
+            if (encRaw != null && resp.Body != null && resp.Body.Length > 0) {
+                string enc = encRaw.ToLower();
+                if (enc == "gzip") {
+                    try {
+                        byte[] decoded = Gzip.Decompress(resp.Body);
+                        resp.Body = decoded;
+                    } catch (Exception e) {
+                        throw new HttpException(
+                            "auto-decompress: gzip decode failed: " + e.Message);
+                    }
+                } else if (enc == "br") {
+                    try {
+                        byte[] decoded = Brotli.Decompress(resp.Body);
+                        resp.Body = decoded;
+                    } catch (Exception e) {
+                        throw new HttpException(
+                            "auto-decompress: brotli decode failed: " + e.Message);
+                    }
                 }
             }
         }
