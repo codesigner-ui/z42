@@ -982,12 +982,33 @@ pub fn translate_function(
                 }
 
                 // spec fix-numeric-cast-lowering (2026-05-13): explicit numeric cast
+                // review.md C2 P1 follow-up (2026-05-30): when src is I64 and
+                // to_tag is one of the integer widths (I8 / I16 / I32 / I64 /
+                // U8 / U16 / U32 / U64), emit the bit-mask / sign-extend
+                // directly. z42 stores all narrow ints as Value::I64 so the
+                // result layout is unchanged — just the payload bits change.
                 Instruction::Convert { dst, src, to_tag } => {
-                    let d = ri!(*dst);
-                    let s = ri!(*src);
-                    let t = builder.ins().iconst(types::I32, *to_tag as i64);
-                    let inst = builder.ins().call(hr_convert, &[frame_val, ctx_val, d, s, t]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    // exec_value tag constants — keep in sync.
+                    const T_I8:  u8 = 0x02;
+                    const T_I16: u8 = 0x03;
+                    const T_I32: u8 = 0x04;
+                    const T_I64: u8 = 0x05;
+                    const T_U8:  u8 = 0x06;
+                    const T_U16: u8 = 0x07;
+                    const T_U32: u8 = 0x08;
+                    const T_U64: u8 = 0x09;
+                    let inline_int = is_typed(z42_func, *src, IrType::I64)
+                        && matches!(*to_tag,
+                            T_I8 | T_I16 | T_I32 | T_I64 | T_U8 | T_U16 | T_U32 | T_U64);
+                    if inline_int {
+                        emit_i64_convert(&mut builder, regs_base, *dst, *src, *to_tag);
+                    } else {
+                        let d = ri!(*dst);
+                        let s = ri!(*src);
+                        let t = builder.ins().iconst(types::I32, *to_tag as i64);
+                        let inst = builder.ins().call(hr_convert, &[frame_val, ctx_val, d, s, t]);
+                        let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    }
                 }
 
                 // impl-lambda-l2: lambdas / function references — JIT support
@@ -1253,6 +1274,75 @@ fn emit_i64_binop(
     // Store discriminant (u8 0 = TAG_I64) then i64 payload.
     let tag = builder.ins().iconst(types::I8, TAG_I64 as i64);
     builder.ins().store(MemFlags::trusted(), tag, addr_dst, 0);
+    builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
+}
+
+/// Emit native I64-source integer convert (Convert opcode fast path).
+/// All narrow ints (I8/I16/I32/U8/U16/U32) are stored as Value::I64
+/// payload internally, so the conversion is just a sign-trunc or
+/// zero-trunc of the i64 bits — output type tag stays TAG_I64.
+///
+/// Caller must have verified `reg_types[src] == I64` and `to_tag` ∈
+/// {T_I8, T_I16, T_I32, T_I64, T_U8, T_U16, T_U32, T_U64}.
+fn emit_i64_convert(
+    builder: &mut FunctionBuilder,
+    regs_base: cranelift_codegen::ir::Value,
+    dst: u32, src: u32, to_tag: u8,
+) {
+    const VALUE_STRIDE:   i64 = 24;
+    const PAYLOAD_OFFSET: i32 = 8;
+    const TAG_I64:        u8  = 0;
+    let off_src  = builder.ins().iconst(types::I64, (src as i64) * VALUE_STRIDE);
+    let off_dst  = builder.ins().iconst(types::I64, (dst as i64) * VALUE_STRIDE);
+    let addr_src = builder.ins().iadd(regs_base, off_src);
+    let addr_dst = builder.ins().iadd(regs_base, off_dst);
+    let si       = builder.ins().load(types::I64, MemFlags::trusted(), addr_src, PAYLOAD_OFFSET);
+
+    // Tag constants — mirror exec_value module-private T_*.
+    const T_I8:  u8 = 0x02;
+    const T_I16: u8 = 0x03;
+    const T_I32: u8 = 0x04;
+    const T_I64: u8 = 0x05;
+    const T_U8:  u8 = 0x06;
+    const T_U16: u8 = 0x07;
+    const T_U32: u8 = 0x08;
+    const T_U64: u8 = 0x09;
+    let result = match to_tag {
+        // I64 / U64: no truncation — pass through.
+        T_I64 | T_U64 => si,
+        // Signed narrowing: ireduce → sextend back to i64 (sign-extend bits).
+        T_I8  => {
+            let low = builder.ins().ireduce(types::I8,  si);
+            builder.ins().sextend(types::I64, low)
+        }
+        T_I16 => {
+            let low = builder.ins().ireduce(types::I16, si);
+            builder.ins().sextend(types::I64, low)
+        }
+        T_I32 => {
+            let low = builder.ins().ireduce(types::I32, si);
+            builder.ins().sextend(types::I64, low)
+        }
+        // Unsigned narrowing: zero-extend low N bits — equivalent to
+        // bit-and with the mask.
+        T_U8  => {
+            let mask = builder.ins().iconst(types::I64, 0xFF);
+            builder.ins().band(si, mask)
+        }
+        T_U16 => {
+            let mask = builder.ins().iconst(types::I64, 0xFFFF);
+            builder.ins().band(si, mask)
+        }
+        T_U32 => {
+            let mask = builder.ins().iconst(types::I64, 0xFFFFFFFF);
+            builder.ins().band(si, mask)
+        }
+        // Caller's matches!() restricts to_tag — this is unreachable.
+        _ => si,
+    };
+
+    let tag = builder.ins().iconst(types::I8, TAG_I64 as i64);
+    builder.ins().store(MemFlags::trusted(), tag,    addr_dst, 0);
     builder.ins().store(MemFlags::trusted(), result, addr_dst, PAYLOAD_OFFSET);
 }
 
