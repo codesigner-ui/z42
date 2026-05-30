@@ -476,25 +476,44 @@ impl ArcMagrGC {
 
         // 3. No alive entry should carry marked=1 post-sweep.
         //    iterate_alive walks heap-registry-equivalent (regions).
+        //
+        // diag-stale-mark-bit (2026-05-30): on failure, dump the entry's
+        // type name + slot summary so we can tell whether the marked
+        // object is the freshly-allocated `Leaf` from the stress
+        // worker loop (race: barrier ran post-sweep) vs an `Owner` /
+        // older object (race: something re-marked it during STW).
         let region_object = self.region_object.lock();
+        let mut stale_obj: Option<(u32, u32, String, usize)> = None;
         region_object.iterate_alive(|h, e| {
+            if stale_obj.is_some() { return; }
             if e.is_marked() {
-                panic!(
-                    "stale mark bit in region_object after sweep: chunk={}, entry={}",
-                    h.chunk_idx, h.entry_idx
-                );
+                let obj = e.value.lock();
+                let ty = obj.type_desc.name.clone();
+                let nslots = obj.slots.len();
+                stale_obj = Some((h.chunk_idx as u32, h.entry_idx as u32, ty, nslots));
             }
         });
         drop(region_object);
+        if let Some((c, i, ty, n)) = stale_obj {
+            panic!(
+                "stale mark bit in region_object after sweep: chunk={c}, entry={i}, type={ty}, slots={n}"
+            );
+        }
         let region_array = self.region_array.lock();
+        let mut stale_arr: Option<(u32, u32, usize)> = None;
         region_array.iterate_alive(|h, e| {
+            if stale_arr.is_some() { return; }
             if e.is_marked() {
-                panic!(
-                    "stale mark bit in region_array after sweep: chunk={}, entry={}",
-                    h.chunk_idx, h.entry_idx
-                );
+                let arr = e.value.lock();
+                stale_arr = Some((h.chunk_idx as u32, h.entry_idx as u32, arr.len()));
             }
         });
+        drop(region_array);
+        if let Some((c, i, len)) = stale_arr {
+            panic!(
+                "stale mark bit in region_array after sweep: chunk={c}, entry={i}, array_len={len}"
+            );
+        }
     }
 
     #[cfg(test)]
