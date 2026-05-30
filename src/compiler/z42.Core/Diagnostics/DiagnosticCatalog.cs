@@ -406,6 +406,16 @@ public static class DiagnosticCatalog
             "These attributes are mutually exclusive with `[Test]`, `[Benchmark]`, `[Skip]`, and `[Ignore]` — " +
             "setup/teardown hooks are infrastructure, not tests themselves.",
             "[Setup] void Init(int seed) { }  // setup cannot take parameters → E0915"),
+
+        [DiagnosticCodes.TimeoutValueInvalid] = new(
+            "Timeout attribute argument invalid",
+            "The `[Timeout(milliseconds: <int>)]` attribute requires a single named-arg `milliseconds:` whose value " +
+            "is an integer literal in the range (0, int.MaxValue]. The attribute must be paired with `[Test]` or " +
+            "`[Benchmark]` on the same method, and cannot appear more than once.",
+            "[Test] [Timeout(milliseconds: 5000)] void slow_io() { ... }       // OK\n" +
+            "[Test] [Timeout(milliseconds: 0)]    void bad_zero() { }          // → E0916 (must be > 0)\n" +
+            "       [Timeout(milliseconds: 1000)] void lonely() { }            // → E0916 (no [Test])\n" +
+            "[Test] [Timeout(milliseconds: \"5000\")] void typo() { }           // → E0916 (must be integer literal)"),
     };
 
     // ── Public API ────────────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 9;   // 2026-05-27 jit-type-specialization C2 P0: inner zbc 1.8 (REGT section); per-module RegtData added to packed function table. Pre-0.9 not readable.
+    public const ushort VersionMinor = 10;  // 2026-05-30 add-test-timeout-attribute: inner zbc bumped to 1.9 (TIDX v=3 carries per-test timeout_ms i32). No new zpkg-only fields; minor bumps purely to track inner-zbc coupling per .claude/rules/version-bumping.md. Pre-0.10 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];
