@@ -45,14 +45,39 @@ internal sealed partial class FunctionEmitter
     /// common case (function body all in one file) produced LineEntry.file =
     /// null for every entry, so runtime stack traces fell back to the
     /// no-file `(line N, col M)` shape and IDE jump-to-source was unusable.
+    /// 2026-05-31 fix-dbug-file-basename: bake only the file BASENAME, not the
+    /// full source path. The path handed to the Lexer is absolute + machine-
+    /// /OS-specific (`/Users/…/source.z42` vs `D:\a\…\source.z42`), which made
+    /// DBUG bytes — and therefore the format golden fixtures — non-reproducible
+    /// across machines (CI on Windows/Linux mismatched fixtures generated on
+    /// macOS). Basename is stable everywhere and still gives `(source.z42:42)`
+    /// for stack traces / IDE jump. (Repo-relative remap is a future option if
+    /// basename ambiguity ever matters.)
     private void TrackLine(Core.Text.Span span)
     {
         if (span.Line <= 0 || span.Line == _lastLine) return;
         _lastLine = span.Line;
         int blockIdx = _blocks.Count; // current block = next to be sealed
         int instrIdx = _curInstrs.Count;
-        string? file = span.File ?? _sourceFile;
+        string? file = BaseName(span.File ?? _sourceFile);
         _lineTable.Add(new IrLineEntry(blockIdx, instrIdx, span.Line, file, span.Column));
+    }
+
+    /// Last path segment, splitting on BOTH `/` and `\` so the result is
+    /// identical regardless of the host OS that produced the path (we must
+    /// not use `Path.GetFileName`, which only splits on the host separator —
+    /// e.g. it leaves a Windows `\` path untouched on Unix). Empty/null →
+    /// null (no file info). fix-dbug-file-basename (2026-05-31).
+    private static string? BaseName(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        int cut = -1;
+        for (int i = path.Length - 1; i >= 0; i--)
+        {
+            if (path[i] == '/' || path[i] == '\\') { cut = i; break; }
+        }
+        string name = cut >= 0 ? path[(cut + 1)..] : path;
+        return name.Length == 0 ? null : name;
     }
 
     private TypedReg Alloc(IrType type = IrType.Unknown) => new(_nextReg++, type);
