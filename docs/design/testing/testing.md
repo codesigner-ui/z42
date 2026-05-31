@@ -518,11 +518,42 @@ JSON 输出 `is_benchmark: true` field, 便于消费者按 group 过滤. TAP 与
 
 `[Benchmark]` 与 `[Skip(...)]` / `[Timeout(...)]` 等其它 attribute 自由组合（同 `[Test]`）.
 
-#### Signature contract（v1）
+#### Signature contract（两种形态）
 
-`[Benchmark]` 方法必须 `void f()` — **零参数**, void 返回, 不带泛型. validator 报 E0912 if not.
+**形态 1 — zero-arg（add-benchmark-runner-dispatch, 2026-05-31）**：上面的
+`void f()`，作者在 body 内自构 Bencher。
 
-> Pre-spec contract 要求 `void f(Bencher b)` — runner 一直缺 Bencher 构造的基础设施所以悄悄 drop 了这种 entry. 本 spec flip 到 zero-arg form, migration cost zero (`grep [Benchmark]` 整个 repo 返回零结果). `void f(Bencher b)` 形态 deferred 到未来 spec `add-benchmark-bencher-arg-trampoline` (需要 compiler-generated trampoline 或 runner-side ObjNew API).
+**形态 2 — Bencher-arg（add-benchmark-bencher-arg-trampoline, 2026-05-31）**：
+
+```z42
+[Benchmark]
+void bench_add(Bencher b) {     // runner 给你一个现成的 Bencher
+    b.iter(() => 1 + 2 + 3);    // 只管测量，无 boilerplate
+}
+```
+
+编译器在 TypeCheck 前把它 desugar 成形态 1：
+
+```z42
+void bench_add$impl(Bencher b) { /* 原 body */ }   // 降级 helper，剥掉 attribute
+[Benchmark] void bench_add() {                      // 合成 wrapper
+    var b = new Bencher();
+    bench_add$impl(b);
+    b.printSummary("bench_add");                    // label = 原方法名
+}
+```
+
+合成 wrapper 与手写 zero-arg benchmark **完全同形**，所以 validator /
+runtime / runner 全部无改动即可处理它。`bench_stats.label` = 原方法名。
+`$` 是非法标识符字符 → `$impl` 后缀 collision-proof。
+
+`void f(Bencher b)` 用 `new Bencher()` 默认参数（warmup=10/samples=100）；
+需自定义 warmup/samples 用形态 1 的 `new Bencher(W, S)`。
+
+**仍报 E0912 的签名**（desugar 不触发 → validator 兜底）：多参数、单个
+非-Bencher 参数（`void f(int x)`）、非 void 返回、泛型。**class-method
+benchmark 暂不支持**（top-level only for v1；class-method Bencher-arg 仍
+E0912，同 pre-spec）。
 
 #### 设计思路（design rationale）
 
@@ -531,10 +562,22 @@ JSON 输出 `is_benchmark: true` field, 便于消费者按 group 过滤. TAP 与
 
 | 维度 | 选择 | 拒绝的备选 + 理由 |
 |------|------|--------------------|
-| Signature shape | `void f()` (zero-arg) | `void f(Bencher b)` 需要 runner 从 Rust 构造 Bencher Value (ObjNew 是 IR instruction, 无 public Rust API); 不在 v1 scope. 用户在 body 内 `new Bencher()` 等价 |
+| Signature shape | 支持 `void f()` + `void f(Bencher b)` 两形态 | 初版只 zero-arg（runner 缺 Bencher 构造设施）；Bencher-arg 经 add-benchmark-bencher-arg-trampoline 用 AST-desugar 补回 |
 | Execution path | 与 [Test] 同路径 (in-process / subprocess / parallel 全部复用) | 单独路径会重复 Skip/Timeout/Setup-Teardown 逻辑; 共享路径让 [Benchmark] 自动继承所有现有特性 |
 | Output 区分 | pretty `bench:` 前缀 + JSON `is_benchmark: true` field | 新 TestStatus 变体 (e.g. `Benchmarked`) 会破坏所有现有 status-grouping 消费者; 加 flag 是 backward-compatible |
 | 公开 API 直接 break | 不引入 versioned alias | 零现存用户; 引入 alias 是不必要复杂性 |
+
+#### Bencher-arg 实现：为什么 AST-desugar（add-benchmark-bencher-arg-trampoline, 2026-05-31）
+
+完整决策见 [design.md](../../spec/archive/2026-05-31-add-benchmark-bencher-arg-trampoline/design.md)。
+
+| 维度 | 选择 | 拒绝的备选 + 理由 |
+|------|------|--------------------|
+| 实现层 | AST-level desugar（pre-TypeCheck，`BenchmarkDesugar.Run`） | (a) runtime ObjNew API：把 Bencher 构造 + 字段读暴露给 Rust runner，耦合 interp 内部、要在 interp loop 外复刻 ctor-chain；(b) compiler IR-synthesis：IrGen 直接 emit trampoline IR，需 codegen 期跨包解析 Bencher ctor + printSummary，易错 |
+| 为何 AST 最干净 | 合成的 `new Bencher()` / `printSummary` 走**正常**管线解析 — 用户的 `Bencher b` 参数本就证明它们在 scope；validator / runtime / runner **零改动**（desugar 只产出它们已能处理的 zero-arg 形态）| — |
+| 注入点 | 单 chokepoint `PipelineCore.CheckAndGenerate` + `CheckOnly`（single-file + package 两路都经此） | 多处散注入易漏 |
+| 命名 | wrapper 保留原名（用户可见 clean），body 移到 `$impl` | `$` 非法标识符 → collision-proof；wrapper 同名让 TIDX/JSON/pretty 显示干净的原方法名 |
+| validator | **不改** | desugar 在 validate 前把 Bencher-arg 转 zero-arg，validator 永远只见 zero-arg；这把改动半径压到一个新文件 + 两行 pipeline 插入 |
 
 ---
 
@@ -967,11 +1010,12 @@ void test_pi_approximation() {
 
 #### Deferred — upstream gaps observed during this spec
 
-观察到但不在本 spec scope 内的相关 gap，留待独立 spec：
-
-| ID | 标题 | 现状 | 影响 |
-|----|------|------|------|
-| `bench-bencher-arg-trampoline` | `void f(Bencher b)` 签名形态 | 当前 validator 只接 zero-arg `void f()`; user 在 body 内自构 Bencher | 工效/boilerplate 小痛; 需要 compiler-generated trampoline 或 runner-side ObjNew API. trampoline 落地后可同时让 runner 自动构造 Bencher 并自动读 stats (无需 printSummary 调用) |
+（无）— 此前列的 `bench-bencher-arg-trampoline` 已由
+[add-benchmark-bencher-arg-trampoline (2026-05-31)](../../spec/archive/2026-05-31-add-benchmark-bencher-arg-trampoline/)
+落地（AST-desugar，见上文 Benchmark 章节）。其余测试框架延后项
+（`[TestCase(args)]` 参数化、`TestFailure.Location` 编译期注入）受 L2
+语言特性（泛型 / `[CallerLineNumber]` attribute infra）阻塞，登记在
+`docs/roadmap.md` Deferred Backlog Index。
 
 ---
 

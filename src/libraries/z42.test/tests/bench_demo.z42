@@ -32,6 +32,19 @@ void bench_addition_demo() {
     Assert.True(b.TotalNs > 0L);
 }
 
+// ── Bencher-arg form (add-benchmark-bencher-arg-trampoline, 2026-05-31) ──
+// The compiler desugars `[Benchmark] void f(Bencher b)` into a zero-arg
+// wrapper that constructs the Bencher + calls this body + printSummary("f").
+// The runner dispatches `bench_add_argform` and captures its stats.
+
+[Benchmark]
+void bench_add_argform(Bencher b) {
+    b.iter(() => {
+        int x = 1 + 2 + 3;
+        BenchHelpers.blackBox(x);
+    });
+}
+
 // ── Regression: Bencher inside [Test] still works (pre-spec pattern) ──
 
 [Test]

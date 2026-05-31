@@ -19,6 +19,9 @@ source.z42
   ├── Parser (Pratt + 组合子)                     [z42.Syntax/Parser]
   │      → CompilationUnit (AST, sealed record)
   │
+  ├── BenchmarkDesugar (AST→AST, pre-typecheck)   [z42.Semantics/Codegen]
+  │      → CompilationUnit (Bencher-arg [Benchmark] rewritten)
+  │
   ├── TypeChecker (SymbolCollector + SymbolTable) [z42.Semantics/TypeCheck]
   │      → SemanticModel
   │      ↑ 读：ImportedSymbolLoader from TsigCache
@@ -32,6 +35,17 @@ source.z42
 
 单文件模式走 `SingleFileCompiler`；项目模式（`.z42.toml`）走 `PackageCompiler`，
 两者共享 `PipelineCore` 的 TypeCheck + Codegen 阶段。
+
+> **BenchmarkDesugar**（add-benchmark-bencher-arg-trampoline, 2026-05-31）：
+> 纯 AST→AST 转换，在 `PipelineCore.CheckAndGenerate` / `CheckOnly` 内、
+> TypeChecker 之前运行。把 `[Benchmark] void f(Bencher b)` 重写为零参 wrapper
+> `[Benchmark] void f() { var b = new Bencher(); f$impl(b); b.printSummary("f"); }`
+> + 降级 helper `void f$impl(Bencher b)`（剥 attribute）。合成代码走正常管线
+> 解析/类型检查/codegen，故 validator/runtime/runner 零改动。放在 pre-typecheck
+> 是关键：validator 永远只见已支持的零参形态。详见
+> `docs/design/testing/testing.md` Benchmark 章节。这是目前唯一的 AST-level
+> desugar pass；未来若有更多 lowering（如 `throw;` rethrow desugar 已在
+> TypeChecker 内联做）可考虑提取统一的 desugar 阶段。
 
 Workspace 模式（`z42.workspace.toml`）走 `ManifestLoader` 发现 + 共享继承（C1）→
 后续 `WorkspaceBuildOrchestrator` 拓扑编译（C4）。

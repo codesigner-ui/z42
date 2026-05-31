@@ -90,6 +90,11 @@ public static class PipelineCore
     {
         var feats = features ?? LanguageFeatures.Phase1;
         var diags = new DiagnosticBag();
+        // add-benchmark-bencher-arg-trampoline (2026-05-31): rewrite
+        // `[Benchmark] void f(Bencher b)` into a zero-arg wrapper + `$impl`
+        // helper before TypeCheck, so the validator/checker only ever see
+        // the supported zero-arg form.
+        cu = Z42.Semantics.Codegen.BenchmarkDesugar.Run(cu);
         var sem   = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
         if (diags.HasErrors) return (null, diags);
         Z42.Semantics.TestAttributeValidator.Validate(cu, sem, diags);
@@ -107,6 +112,10 @@ public static class PipelineCore
         DiagnosticBag   diags,
         ImportedSymbols? imported = null)
     {
+        // add-benchmark-bencher-arg-trampoline (2026-05-31): desugar
+        // Bencher-arg benchmarks to the zero-arg wrapper + `$impl` form
+        // before any downstream stage observes the CompilationUnit.
+        cu = Z42.Semantics.Codegen.BenchmarkDesugar.Run(cu);
         var sem = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);

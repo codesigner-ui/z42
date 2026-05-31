@@ -386,9 +386,15 @@ public static class TestAttributeValidator
     ///       b.printSummary("foo");
     ///   }
     ///
-    /// Future spec `add-benchmark-bencher-arg-trampoline` will reintroduce
-    /// the `void f(Bencher b)` shape via compiler-generated trampolines
-    /// once the runner can read Bencher fields back from a Value object.
+    /// add-benchmark-bencher-arg-trampoline (2026-05-31): the `void
+    /// f(Bencher b)` shape is now ALSO accepted — but this validator never
+    /// sees it. `BenchmarkDesugar` (pre-TypeCheck, in PipelineCore) rewrites
+    /// a Bencher-arg benchmark into a synthesized zero-arg wrapper + a
+    /// demoted `$impl` helper before validation runs. So by the time this
+    /// method executes, every `[Benchmark]` is already zero-arg. This check
+    /// stays strict-zero-arg and still emits E0912 for genuinely-malformed
+    /// signatures the desugar declines to touch (multi-arg, single
+    /// non-Bencher arg, non-void return, generic).
     private static void ValidateBenchmarkFullSignature(FunctionDecl fn, DiagnosticBag diags)
     {
         ValidateNoArgVoidSignature(fn, "[Benchmark]", DiagnosticCodes.BenchmarkSignatureInvalid, diags);
