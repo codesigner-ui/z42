@@ -196,7 +196,15 @@ z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出：
 
 ## Runner 输出格式（R3a，2026-04-30）
 
-`z42-test-runner --format <pretty|tap|json>` 三选一。`--filter <SUBSTR>` 按方法名 substring 筛选；多个 `--format` 等价于最后一个。
+`z42-test-runner --format <pretty|tap|json|junit>` 四选一。`--filter <SUBSTR>` 按方法名 substring 筛选；多个 `--format` 等价于最后一个。
+
+> **stdout 纯净保证**（add-junit-xml-formatter, 2026-05-31）：runner 捕获
+> 每个 test body 的 stdout (Console.WriteLine) 并 re-emit 到 **stderr**，
+> 所以 machine formatter (json / junit / tap) 的 report 永远独占 stdout，
+> 不被 test 自身输出污染。`z42-test-runner suite.zbc --format junit >
+> report.xml` 总是产出合法 XML。test 输出 (含 benchmark 的 `bench[...]`
+> 行) 在 stderr 仍可见。in-process 与 subprocess 模式行为一致 (subprocess
+> 本就 pipe 子进程 stdout)。
 
 ### 默认 format 选择
 
@@ -250,6 +258,48 @@ YAML diagnostic 块仅在 `not ok` 后输出（`ok` 不带 reason）；skip 用 
 ```
 
 `reason` 字段对 `passed` 测试不输出（serde `skip_serializing_if`）。后续 R3b 加 `setup_duration_ms` / `teardown_duration_ms` 时不破坏现有消费者。
+
+### JUnit XML（add-junit-xml-formatter, 2026-05-31）
+
+`--format junit` 输出事实标准 JUnit XML，被 Jenkins (`junit` step)、
+GitLab CI (`artifacts:reports:junit`)、CircleCI、GitHub test-reporter 原生
+ingest（失败高亮 / 历史趋势 / flaky 检测）。一次 `.zbc` run = 一个 module =
+一个 `<testsuite>`，包在 `<testsuites>` root 里：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="3" failures="1" skipped="1" time="0.012">
+  <testsuite name="MyMod" tests="3" failures="1" skipped="1" time="0.012">
+    <testcase name="MyMod.test_pass" classname="MyMod" time="0.006"/>
+    <testcase name="MyMod.test_skip" classname="MyMod" time="0.000">
+      <skipped message="skipped on ios: WebGL bug"/>
+    </testcase>
+    <testcase name="MyMod.test_fail" classname="MyMod" time="0.000">
+      <failure message="values not equal (expected 3, actual 2)">values not equal (expected 3, actual 2)
+  at MyMod.test_fail (my_test.z42:42)
+  at Std.Test.Assert.Equal (Assert.z42:38)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+要点：
+- `classname` = module 名（CI 用它做 grouping）
+- `time` 秒数 3 位小数（duration_ms / 1000）
+- failure `message` 属性 = reason 首行；body = 完整 reason + stack_trace（若有），全部 XML-escaped
+- skipped 的 reason 进 `message` 属性
+- XML 转义 hand-rolled（attr: `& < > " '`；text: `& < >`），不引入 XML 库 — 与 tap.rs yaml_escape 同风格
+- benchmark entry 作普通 testcase（JUnit 无 benchmark 概念）；其 `bench_stats` 仍在 `--format json` 里
+
+CI 集成示例：
+```yaml
+# GitLab CI
+test:
+  script: z42-test-runner suite.zbc --format junit > report.xml
+  artifacts:
+    reports:
+      junit: report.xml
+```
 
 ### --filter
 

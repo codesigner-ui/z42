@@ -350,6 +350,7 @@ fn emit(format: &Format, module_name: &str, results: &[TestResult]) -> Result<()
         Format::Pretty => format::pretty::print(module_name, results),
         Format::Tap    => format::tap::print(module_name, results),
         Format::Json   => format::json::print(module_name, results)?,
+        Format::Junit  => format::junit::print(module_name, results),
     }
     Ok(())
 }

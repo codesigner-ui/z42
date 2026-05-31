@@ -69,26 +69,32 @@ pub fn run_one(
         }
     }
 
-    // 3. Test body — capture stdout for benchmarks so Bencher.printSummary
-    //    output can be parsed into TestResult.bench_stats. The captured
-    //    bytes are re-emitted to process stdout after capture so the user
-    //    still sees the output in their terminal (matching subprocess
-    //    behavior where stdout is captured + propagated by the parent).
-    let (outcome, bench_stats) = if test.is_benchmark {
+    // 3. Test body — capture stdout for EVERY test, re-emit to stderr.
+    //    Rationale: the subprocess path (exec.rs) pipes the child's stdout
+    //    and never re-emits it to the runner's own stdout, so machine
+    //    formatters (json / junit / tap) get a clean report stream. The
+    //    in-process path must match — otherwise a test that calls
+    //    Console.WriteLine would interleave with (and corrupt) the
+    //    `--format junit > report.xml` document. We capture via the
+    //    STDOUT_SINKS stack and re-emit to STDERR so the output stays
+    //    visible in terminals / CI logs without polluting stdout.
+    //
+    //    add-junit-xml-formatter (2026-05-31): generalised from
+    //    "capture only benchmarks" (spec #10) to "capture all tests" once
+    //    junit exposed the machine-format pollution. bench_stats parsing
+    //    still only applies to `is_benchmark` entries.
+    let (outcome, bench_stats) = {
         z42::corelib::io::push_stdout_sink();
         let outcome = exec_test_body(loaded, test);
         let captured = z42::corelib::io::take_stdout_sink();
-        // Re-emit so terminal/CI logs still see the bench output. Bytes
-        // are preserved as-is (the user's trailing \n is already in the
-        // buffer from Console.WriteLine).
         use std::io::Write as _;
-        let _ = std::io::stdout().write_all(&captured);
-        let stats = crate::exec::extract_bench_stats_from_stdout(
-            &String::from_utf8_lossy(&captured),
-        );
+        let _ = std::io::stderr().write_all(&captured);
+        let stats = if test.is_benchmark {
+            crate::exec::extract_bench_stats_from_stdout(&String::from_utf8_lossy(&captured))
+        } else {
+            None
+        };
         (outcome, stats)
-    } else {
-        (exec_test_body(loaded, test), None)
     };
 
     // 4. Teardown methods (always, even on test fail — mirrors xUnit).

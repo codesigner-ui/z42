@@ -1,4 +1,4 @@
-//! Output formatters: pretty (TTY) / TAP 13 / JSON.
+//! Output formatters: pretty (TTY) / TAP 13 / JSON / JUnit XML.
 //!
 //! Phase: rewrite-z42-test-runner-compile-time S1 (2026-05-10) — extracted
 //! from monolithic `main.rs`.
@@ -6,6 +6,7 @@
 pub mod pretty;
 pub mod tap;
 pub mod json;
+pub mod junit;
 
 use clap::ValueEnum;
 
@@ -18,6 +19,10 @@ pub enum Format {
     Tap,
     /// Self-describing JSON document (see `docs/design/testing/testing.md` for schema).
     Json,
+    /// JUnit XML — the de-facto CI test-report exchange format ingested
+    /// natively by Jenkins / GitLab CI / CircleCI / GitHub test reporters.
+    /// add-junit-xml-formatter (2026-05-31).
+    Junit,
 }
 
 pub fn resolve_format(explicit: Option<Format>) -> Format {
