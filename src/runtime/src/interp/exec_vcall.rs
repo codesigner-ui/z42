@@ -92,7 +92,7 @@ pub(super) fn vcall(
     // path, which also updates the IC for next time.
     if let Some(ic) = vcall_ic {
         let recv_type = match &obj_val {
-            Value::Object(rc) => rc.borrow().type_desc.id.0,
+            Value::Object(rc) => rc.type_desc().id.0,
             other => value_synthetic_type_id(other)
                 .unwrap_or(crate::metadata::tokens::UNRESOLVED),
         };
@@ -183,7 +183,7 @@ pub(super) fn vcall(
 
     // O(1) vtable dispatch using pre-computed TypeDesc.
     let type_desc = match &obj_val {
-        Value::Object(rc) => rc.borrow().type_desc.clone(),
+        Value::Object(rc) => rc.type_desc_arc().clone(),
         other => bail!("VCall: expected object, got {:?}", other),
     };
     // Try paths in order:

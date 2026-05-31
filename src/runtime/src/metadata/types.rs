@@ -260,6 +260,51 @@ pub struct ScriptObject {
     pub type_args: Box<[String]>,
 }
 
+impl crate::gc::GcRef<ScriptObject> {
+    /// **extract-typedesc-from-mutex (2026-05-31)**: lockless read of
+    /// the object's `type_desc`. type_desc is set by `alloc_object` and
+    /// never mutated for the object's lifetime — there's no concurrent
+    /// writer, so bypassing the per-entry Mutex is sound. Used by
+    /// hot-path IC scans (VCallIC, FieldIC, IsInstance) and the GC mark
+    /// traversal.
+    ///
+    /// Returns a `&TypeDesc` borrowed for the GcRef's lifetime. The
+    /// Arc itself stays alive through the entry's storage; the borrow
+    /// is to the inner TypeDesc directly (one fewer deref at the call
+    /// site than returning `&Arc<TypeDesc>`).
+    #[inline]
+    pub fn type_desc(&self) -> &TypeDesc {
+        // SAFETY: type_desc is write-once-at-alloc. Verified 0 mutation
+        // sites in the runtime via `grep -rn '.type_desc *=' src/`.
+        let obj_ptr: *const ScriptObject = self.data_ptr_unlocked();
+        unsafe { &(*obj_ptr).type_desc }
+    }
+
+    /// Lockless read of the object's `type_desc` as `&Arc<TypeDesc>`.
+    /// Use this only when the caller needs to clone the Arc for
+    /// ownership transfer (e.g. building a fallback TypeDesc, exception
+    /// stack frames). Most callers want [`type_desc`] (returns plain
+    /// `&TypeDesc`) which saves one deref.
+    #[inline]
+    pub fn type_desc_arc(&self) -> &Arc<TypeDesc> {
+        // SAFETY: see type_desc() — write-once invariant.
+        let obj_ptr: *const ScriptObject = self.data_ptr_unlocked();
+        unsafe { &(*obj_ptr).type_desc }
+    }
+
+    /// **extract-typedesc-from-mutex (2026-05-31)**: lockless read of
+    /// the object's `type_args` (generic type arguments at construction).
+    /// Same write-once invariant as `type_desc` — set by `alloc_object`
+    /// (per the spec, `alloc_object` accepts `type_args` and writes them
+    /// before returning the GcRef), never mutated after.
+    #[inline]
+    pub fn type_args(&self) -> &[String] {
+        // SAFETY: type_args is write-once-at-alloc; see type_desc().
+        let obj_ptr: *const ScriptObject = self.data_ptr_unlocked();
+        unsafe { &(*obj_ptr).type_args }
+    }
+}
+
 // ── Value ────────────────────────────────────────────────────────────────────
 
 /// Primitive and heap value types that the VM operates on at runtime.

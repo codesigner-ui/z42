@@ -264,6 +264,29 @@ storage —— chunks 是 `Box` 单位故 entry 地址在 chunk 生命周期内*
 `GcRef<T>` 是 12B 的 `NonNull<RegionEntry<T>>` + `u32 generation` handle：
 - Clone = memcpy 12 字节，**零原子 op**（vs 之前 `Arc::clone` 每次
   `fetch_add` 2-4 ns）
+
+#### extract-typedesc-from-mutex (2026-05-31)
+
+`ScriptObject.type_desc` 和 `type_args` 是 write-once-at-alloc 字段
+（`alloc_object` 写入 type_desc；`ObjNew` 写 type_args 都发生在 GcRef
+escape 之前），运行时其余地方**不可变**。读取它们走的是 `GcRef<ScriptObject>`
+上新增的 lockless accessor：
+
+- `GcRef::type_desc(&self) -> &TypeDesc`
+- `GcRef::type_desc_arc(&self) -> &Arc<TypeDesc>`（需要 clone Arc 时用）
+- `GcRef::type_args(&self) -> &[String]`
+
+实现原理是 `parking_lot::Mutex::data_ptr()` 暴露的 `*mut T`：跳过 `lock()`
+直读 UnsafeCell 内部。Safety 锚定在 "type_desc / type_args 永不 mutate"
+的全局 invariant（`grep -rn '.type_desc *=' src/runtime/` 0 命中验证）。
+
+为什么值：每次 PIC / IsInstance / IcCall 都要读 type_id，Mutex lock 即使
+uncontended 也是 ~5–10 ns 的 atomic CAS。lockless 后变成 3 条 native load。
+对照 CoreCLR `MethodTable*` 在 `ObjHeader` 固定偏移 / HotSpot `klass*` 在
+`oopDesc` 头部——属于业界成熟模式。
+
+`borrow()` / `borrow_mut()` 路径不变：slots / native 仍 mutable，必须
+走 Mutex。仅 type_desc / type_args 这两个 immutable 字段走 lockless。
 - Drop = no-op（无 refcount）
 - borrow / borrow_mut 走 `RegionEntry.value: Mutex<T>` 阻塞 lock
   （同 add-multithreading-foundation 并发模型）

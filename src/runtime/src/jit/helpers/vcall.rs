@@ -49,7 +49,7 @@ pub unsafe extern "C" fn jit_vcall(
     // resolves to an entry in `fn_entries_by_id`.
     if !ic_ptr.is_null() {
         if let Value::Object(ref rc) = obj_val {
-            let recv_type = rc.borrow().type_desc.id.0;
+            let recv_type = rc.type_desc().id.0;
             // PIC fast path (review.md C5 P2 — 4-slot linear scan).
             if let Some((_slot, fn_idx)) =
                 crate::metadata::resolver::vcall_ic_lookup(&*ic_ptr, recv_type)

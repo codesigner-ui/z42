@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// the runtime class of the argument.
 pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let class_name = match args.first() {
-        Some(Value::Object(rc)) => rc.borrow().type_desc.name.clone(),
+        Some(Value::Object(rc)) => rc.type_desc().name.clone(),
         // 2026-05-07 add-array-base-class: T[] 的 `GetType()` 返回 Std.Array
         // Type 对象。v1 不带元素类型（简单 `__name == "Array"`）；元素类型
         // 元数据留给 expand-type-metadata 后续 spec。
@@ -248,8 +248,8 @@ pub fn builtin_obj_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 pub fn builtin_obj_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Object(rc)) => {
-            let class_name = rc.borrow().type_desc.name.clone();
-            let simple = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
+            let td_name = &rc.type_desc().name;
+            let simple = td_name.split('.').next_back().unwrap_or(td_name).to_string();
             Ok(Value::Str(simple.into()))
         }
         // 2026-05-07 add-array-base-class: arrays ToString returns simple class name

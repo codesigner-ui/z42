@@ -728,6 +728,8 @@ pub struct ResolvedTokens {
 - **FieldGet/Set**: PIC 命中（4-slot 线性扫描）→ 直读/写 `obj.slots[entry.slot]`；miss → `field_index` 查 + 通过 `field_ic_install` 填槽
 
 > **C4 P2 + C5 P2 (jit-polymorphic-ic, 2026-05-28)**：原单态 IC（一对 `(type_id, slot, fn_idx)`）升级为 4-slot polymorphic IC。线性扫描使用 `UNRESOLVED` sentinel 提前退出（mono 站点首槽命中即返回，0 额外开销）。超过 4 个 receiver type 的站点用 round-robin counter 牺牲槽位（`ic.round_robin.fetch_add(1, Relaxed) % 4`）。所有 atomic 操作均为 `Relaxed` —— `type_id` 守门 payload，torn-read 等价于"刚好遇到迁移中的同型 dispatch"，下一次会收敛到稳定态。Helpers `field_ic_lookup` / `field_ic_install` / `vcall_ic_lookup` / `vcall_ic_install` 在 `metadata::resolver` 公开，供 interp + JIT helpers 共用。
+>
+> **extract-typedesc-from-mutex (2026-05-31)**：PIC scan 读 receiver `type_id` 不再走 Mutex lock。`GcRef<ScriptObject>::type_desc()` 通过 `parking_lot::Mutex::data_ptr()` 直接读 type_desc（write-once-at-alloc invariant 锁定 safety），跳过 ~5–10 ns 的 atomic CAS。详见 `docs/design/runtime/gc.md` "extract-typedesc-from-mutex" 节。这一步是 PIC inline 入 Cranelift IR（Phase 4 future）的前置条件 —— 之前 PIC 因为要 lock 不能 inline。
 
 ### 跨 zpkg 时序
 

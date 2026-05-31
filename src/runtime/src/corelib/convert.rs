@@ -87,7 +87,7 @@ pub fn value_to_str(v: &Value) -> String {
             let inner: Vec<String> = rc.borrow().iter().map(value_to_str).collect();
             format!("[{}]", inner.join(", "))
         }
-        Value::Object(rc) => format!("{}{{...}}", rc.borrow().type_desc.name),
+        Value::Object(rc) => format!("{}{{...}}", rc.type_desc().name),
         Value::PinnedView(pv) => {
             format!("PinnedView{{ptr=0x{:x}, len={}, kind={:?}}}", pv.ptr, pv.len, pv.kind)
         }

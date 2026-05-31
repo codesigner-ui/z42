@@ -54,12 +54,12 @@ pub unsafe extern "C" fn jit_match_catch_type(
         Some(v) => v,
         None    => return 0,
     };
-    let derived = match &exc {
-        Value::Object(rc) => rc.borrow().type_desc.name.clone(),
+    let derived: &str = match &exc {
+        Value::Object(rc) => &rc.type_desc().name,
         _                 => return 0, // primitives / null don't match typed catches
     };
     let module = &*(*ctx).module;
-    if crate::interp::dispatch::is_subclass_or_eq_td(vm_ctx, &module.type_registry, &derived, target) {
+    if crate::interp::dispatch::is_subclass_or_eq_td(vm_ctx, &module.type_registry, derived, target) {
         1
     } else {
         0

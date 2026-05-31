@@ -277,7 +277,7 @@ pub unsafe extern "C" fn jit_is_instance(
         .unwrap_or("<invalid>");
     let module = &*(*ctx).module;
     let result = match &(*frame).regs[obj as usize] {
-        Value::Object(rc) => is_subclass_or_eq(module, &rc.borrow().type_desc.name, class_name),
+        Value::Object(rc) => is_subclass_or_eq(module, &rc.type_desc().name, class_name),
         Value::Array(_)   => is_array_isa(class_name),
         _ => false,
     };
@@ -294,7 +294,7 @@ pub unsafe extern "C" fn jit_as_cast(
     let module = &*(*ctx).module;
     let val    = (*frame).regs[obj as usize].clone();
     let is_match = match &val {
-        Value::Object(rc) => is_subclass_or_eq(module, &rc.borrow().type_desc.name, class_name),
+        Value::Object(rc) => is_subclass_or_eq(module, &rc.type_desc().name, class_name),
         Value::Array(_)   => is_array_isa(class_name),
         Value::Null => true,
         _           => false,

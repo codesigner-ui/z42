@@ -257,7 +257,7 @@ pub fn format_uncaught(value: &Value, module: &Module) -> String {
         // keeps the bare message for any non-Object edge case.
         Some(msg) => match value {
             Value::Object(rc) =>
-                format!("uncaught exception: {}: {}", rc.borrow().type_desc.name, msg),
+                format!("uncaught exception: {}: {}", rc.type_desc().name, msg),
             _ => format!("uncaught exception: {}", msg),
         },
         None      => format!("uncaught exception: {}", crate::corelib::convert::value_to_str(value)),

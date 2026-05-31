@@ -116,7 +116,7 @@ fn zbc_version_constants_pinned() {
     // Sanity: writer's claimed version matches what the reader pins.
     // If this fails, the constants drifted out of sync with C# ZbcWriter.
     assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
-    assert_eq!(ZBC_VERSION_MINOR, 8, "zbc minor at 1.8 (jit-type-specialization C2 P0 step 0.3/0.4 — REGT section per function carries IrType bytes)");
+    assert_eq!(ZBC_VERSION_MINOR, 9, "zbc minor at 1.9 (add-test-timeout-attribute — TIDX v=3 TestEntry carries per-test timeout_ms i32 after expected_throw_type)");
 }
 
 #[test]

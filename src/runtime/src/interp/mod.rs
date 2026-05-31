@@ -625,7 +625,7 @@ fn exception_class_and_message(
 ) -> (String, String) {
     use crate::metadata::Value;
     let class = match val {
-        Value::Object(rc) => rc.borrow().type_desc.name.clone(),
+        Value::Object(rc) => rc.type_desc().name.clone(),
         _ => "<non-exception-value>".to_string(),
     };
     let message = crate::exception::read_message(val, module).unwrap_or_default();
@@ -669,7 +669,7 @@ fn find_handler(
     thrown: &Value,
 ) -> Option<usize> {
     let thrown_class: Option<String> = match thrown {
-        Value::Object(rc) => Some(rc.borrow().type_desc.name.clone()),
+        Value::Object(rc) => Some(rc.type_desc().name.clone()),
         _                 => None,
     };
 

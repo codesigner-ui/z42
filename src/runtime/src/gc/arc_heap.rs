@@ -457,7 +457,7 @@ impl ArcMagrGC {
                     _                => "Other",
                 };
                 let extra = match v {
-                    Value::Object(gc) => format!(" obj_borrow_type={}", gc.borrow().type_desc.name),
+                    Value::Object(gc) => format!(" obj_borrow_type={}", gc.type_desc().name),
                     Value::Array(gc)  => format!(" array_len={}", gc.borrow().len()),
                     _                  => String::new(),
                 };
@@ -562,7 +562,7 @@ impl ArcMagrGC {
     /// 取 Value 的"类型名"（用于 snapshot 聚合）。
     fn type_name_of(value: &Value) -> Option<String> {
         match value {
-            Value::Object(rc) => Some(rc.borrow().type_desc.name.clone()),
+            Value::Object(rc) => Some(rc.type_desc().name.clone()),
             Value::Array(_)   => Some("<Array>".to_string()),
             _ => None,
         }

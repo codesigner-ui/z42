@@ -151,6 +151,25 @@ impl<T> GcRef<T> {
         self.entry_ref().value.lock()
     }
 
+    /// **extract-typedesc-from-mutex (2026-05-31)**: lockless raw
+    /// pointer to the inner value. Used by typed accessor wrappers
+    /// (e.g. `ScriptObject::type_desc_unlocked`) for fields that are
+    /// write-once-at-alloc and never mutated — reading them through
+    /// the Mutex would pay the lock cost for no benefit.
+    ///
+    /// # Safety
+    ///
+    /// Caller must guarantee the read targets a field that is **never
+    /// mutated after `alloc_object` returns the GcRef**. Currently
+    /// applies to `ScriptObject::type_desc` and `ScriptObject::type_args`
+    /// (write-once verified by `grep -rn '.type_desc *=' src/runtime/`).
+    /// Reading mutable fields (slots / native) this way is undefined
+    /// behavior — use `borrow()` / `borrow_mut()` for those.
+    #[inline]
+    pub fn data_ptr_unlocked(&self) -> *mut T {
+        self.entry_ref().value.data_ptr()
+    }
+
     /// True iff `a` and `b` point to the same `RegionEntry`. Both
     /// pointer-equality AND generation-equality (so a stale GcRef
     /// pointing at a tombstoned slot does not equal a fresh GcRef

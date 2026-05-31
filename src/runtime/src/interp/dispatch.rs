@@ -47,7 +47,7 @@ pub fn is_subclass_or_eq_td(
 /// `__obj_to_str` builtin (simple name). All other value types use `value_to_str` directly.
 pub fn obj_to_string(ctx: &VmContext, module: &Module, val: &Value) -> Result<String> {
     if let Value::Object(rc) = val {
-        let type_desc = rc.borrow().type_desc.clone();
+        let type_desc = rc.type_desc_arc().clone();
         // Try vtable first (O(1))
         let func_name_opt = type_desc.vtable_index.get("ToString")
             .map(|&slot| type_desc.vtable[slot].1.clone());

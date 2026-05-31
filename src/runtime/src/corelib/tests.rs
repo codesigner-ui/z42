@@ -136,7 +136,7 @@ fn obj_get_type_returns_type_object() {
     let c = ctx();
     let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "Foo")]).unwrap();
     match result {
-        Value::Object(rc) => assert_eq!(rc.borrow().type_desc.name, "Std.Type"),
+        Value::Object(rc) => assert_eq!(rc.type_desc().name, "Std.Type"),
         other => panic!("expected Object, got {:?}", other),
     }
 }
