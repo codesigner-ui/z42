@@ -1,0 +1,134 @@
+// add-md5-to-crypto (2026-05-31): MD5 (RFC 1321) test vectors.
+//
+// Sources:
+//   - RFC 1321 §A.5 — seven canonical test vectors
+//   - NIST CAVP `MD5LongMsg` — million-'a' stream
+namespace Z42CryptoMd5VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+using Std.Crypto;
+
+// ── RFC 1321 §A.5 ────────────────────────────────────────────────────────
+
+[Test]
+void test_md5_empty_input() {
+    Assert.Equal("d41d8cd98f00b204e9800998ecf8427e", Md5.HashStringHex(""));
+}
+
+[Test]
+void test_md5_single_char_a() {
+    Assert.Equal("0cc175b9c0f1b6a831c399e269772661", Md5.HashStringHex("a"));
+}
+
+[Test]
+void test_md5_abc() {
+    Assert.Equal("900150983cd24fb0d6963f7d28e17f72", Md5.HashStringHex("abc"));
+}
+
+[Test]
+void test_md5_message_digest_phrase() {
+    Assert.Equal("f96b697d7cb7938d525a2f31aaf161d0",
+                 Md5.HashStringHex("message digest"));
+}
+
+[Test]
+void test_md5_alphabet() {
+    Assert.Equal("c3fcd3d76192e4007dfb496cca67e13b",
+                 Md5.HashStringHex("abcdefghijklmnopqrstuvwxyz"));
+}
+
+[Test]
+void test_md5_alphanum_mixed_case() {
+    Assert.Equal("d174ab98d277d9f5a5611c2c9f419d9f",
+                 Md5.HashStringHex(
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"));
+}
+
+[Test]
+void test_md5_eighty_digit_message() {
+    Assert.Equal("57edf4a22be3c955ac49da2e2107b67a",
+                 Md5.HashStringHex(
+                     "12345678901234567890123456789012345678901234567890"
+                     + "123456789012345678901234567890"));
+}
+
+// ── Block-boundary coverage (padding edge cases) ────────────────────────
+
+[Test]
+void test_md5_55_byte_input() {
+    // 55 bytes: fits in single block (data + 0x80 + 0-pad fits up to byte 55,
+    // then 8-byte length needs byte 56..63 — exactly one block).
+    string s = "";
+    int i = 0;
+    while (i < 55) { s = s + "a"; i = i + 1; }
+    Assert.Equal("ef1772b6dff9a122358552954ad0df65", Md5.HashStringHex(s));
+}
+
+[Test]
+void test_md5_56_byte_input() {
+    // 56 bytes: needs second block for length (0x80 fits in byte 56, then
+    // 0-pad through byte 119, length in 120..127 of second block).
+    string s = "";
+    int i = 0;
+    while (i < 56) { s = s + "a"; i = i + 1; }
+    Assert.Equal("3b0c8ac703f828b04c6c197006d17218", Md5.HashStringHex(s));
+}
+
+[Test]
+void test_md5_64_byte_input_exact_block() {
+    // Exactly one block of input → 2 blocks total after padding.
+    string s = "";
+    int i = 0;
+    while (i < 64) { s = s + "a"; i = i + 1; }
+    Assert.Equal("014842d480b571495a4a0363793f7367", Md5.HashStringHex(s));
+}
+
+// ── NIST CAVP MD5LongMsg (truncated) ────────────────────────────────────
+
+[Test]
+void test_md5_one_million_a_bytes() {
+    // CAVP-style "million a" — verifies multi-block streaming correctness.
+    byte[] buf = new byte[1000000];
+    int i = 0;
+    while (i < 1000000) { buf[i] = (byte)97; i = i + 1; }
+    Assert.Equal("7707d6ae4e027c70eea2a935c2296f21", Md5.HashHex(buf));
+}
+
+// ── HashHex output format ───────────────────────────────────────────────
+
+[Test]
+void test_hash_hex_is_32_lowercase_chars() {
+    string h = Md5.HashStringHex("test");
+    Assert.Equal(32, h.Length);
+    int i = 0;
+    while (i < h.Length) {
+        char c = h.CharAt(i);
+        bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        Assert.True(ok);
+        i = i + 1;
+    }
+}
+
+// ── Hash vs HashString byte-array consistency ───────────────────────────
+
+[Test]
+void test_hash_bytes_matches_hash_string_for_ascii() {
+    byte[] viaBytes  = Md5.Hash(Utf8.GetBytes("abc"));
+    byte[] viaString = Md5.HashString("abc");
+    Assert.Equal(viaBytes.Length, viaString.Length);
+    int i = 0;
+    while (i < viaBytes.Length) {
+        Assert.Equal(viaBytes[i], viaString[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_md5_utf8_multibyte_input() {
+    // "café" → 5 UTF-8 bytes (c=0x63 a=0x61 f=0x66 é=0xC3 0xA9)
+    // Reference: `echo -n "café" | md5` = 07117fe4a1ebd544965dc19573183da2
+    Assert.Equal("07117fe4a1ebd544965dc19573183da2",
+                 Md5.HashStringHex("café"));
+}

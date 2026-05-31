@@ -346,3 +346,90 @@ public static class HmacSha384 {
         return padded;
     }
 }
+
+// add-md5-to-crypto (2026-05-31): HMAC-MD5 (RFC 2104). Pure-script
+// mirror of HmacSha1 — same 64-byte block, MD5 digest is 16 bytes.
+//
+// ⚠️ HMAC-MD5 is still cryptographically reasonable as a MAC (Wang's
+// collision attack does NOT directly extend to HMAC because the outer
+// key randomises the H state — see Bellare 2006). But MD5 itself is
+// broken; use HMAC-MD5 only when the protocol you're interoperating
+// with mandates it (HTTP Digest-MD5 / CRAM-MD5 / APR1 / legacy SASL).
+// Prefer HMAC-SHA-256 for new designs.
+//
+// Tested against RFC 2202 §2 test cases 1-7.
+public static class HmacMd5 {
+    public static byte[] Compute(byte[] key, byte[] message) {
+        return HmacMd5._computeCore(key, message);
+    }
+
+    static byte[] _computeCore(byte[] key, byte[] message) {
+        byte[] paddedKey = HmacMd5._padKey(key);
+
+        // Inner: MD5( (K' XOR ipad) || message )
+        byte[] inner = new byte[64 + message.Length];
+        int i = 0;
+        while (i < 64) {
+            inner[i] = (byte)((int)paddedKey[i] ^ 0x36);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < message.Length) {
+            inner[64 + i] = message[i];
+            i = i + 1;
+        }
+        byte[] innerHash = Md5.Hash(inner);
+
+        // Outer: MD5( (K' XOR opad) || innerHash 16 bytes )
+        byte[] outer = new byte[64 + 16];
+        i = 0;
+        while (i < 64) {
+            outer[i] = (byte)((int)paddedKey[i] ^ 0x5C);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < 16) {
+            outer[64 + i] = innerHash[i];
+            i = i + 1;
+        }
+        return Md5.Hash(outer);
+    }
+
+    public static byte[] ComputeString(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return HmacMd5._computeCore(keyBytes, msgBytes);
+    }
+
+    public static string ComputeHex(byte[] key, byte[] message) {
+        return Hex.Encode(HmacMd5._computeCore(key, message));
+    }
+
+    public static string ComputeStringHex(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return Hex.Encode(HmacMd5._computeCore(keyBytes, msgBytes));
+    }
+
+    /// Normalise key to 64 bytes (MD5 block size):
+    /// - longer  → Md5(key) (16 bytes) then zero-pad to 64
+    /// - shorter → right-pad with 0x00
+    static byte[] _padKey(byte[] key) {
+        byte[] padded = new byte[64];
+        if (key.Length > 64) {
+            byte[] digest = Md5.Hash(key);
+            int i = 0;
+            while (i < 16) {
+                padded[i] = digest[i];
+                i = i + 1;
+            }
+        } else {
+            int i = 0;
+            while (i < key.Length) {
+                padded[i] = key[i];
+                i = i + 1;
+            }
+        }
+        return padded;
+    }
+}

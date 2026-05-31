@@ -1,0 +1,121 @@
+// add-md5-to-crypto (2026-05-31): HMAC-MD5 (RFC 2104) test vectors.
+//
+// Source: RFC 2202 §2 — the canonical HMAC-MD5 / HMAC-SHA-1 test suite.
+namespace Z42CryptoHmacMd5VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+using Std.Crypto;
+
+// Helper: build a `byte[n]` filled with the given byte value.
+static byte[] _fillBytes(int n, byte v) {
+    byte[] b = new byte[n];
+    int i = 0;
+    while (i < n) { b[i] = v; i = i + 1; }
+    return b;
+}
+
+// ── RFC 2202 §2 Test Case 1 ─────────────────────────────────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_1() {
+    // key  = 0x0b * 16
+    // data = "Hi There"
+    // hex  = 9294727a3638bb1c13f48ef8158bfc9d
+    byte[] key = _fillBytes(16, (byte)0x0B);
+    Assert.Equal("9294727a3638bb1c13f48ef8158bfc9d",
+                 HmacMd5.ComputeHex(key, Utf8.GetBytes("Hi There")));
+}
+
+// ── RFC 2202 §2 Test Case 2 ─────────────────────────────────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_2() {
+    // key  = "Jefe"
+    // data = "what do ya want for nothing?"
+    // hex  = 750c783e6ab0b503eaa86e310a5db738
+    Assert.Equal("750c783e6ab0b503eaa86e310a5db738",
+                 HmacMd5.ComputeStringHex("Jefe", "what do ya want for nothing?"));
+}
+
+// ── RFC 2202 §2 Test Case 3 ─────────────────────────────────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_3() {
+    // key  = 0xaa * 16
+    // data = 0xdd * 50
+    // hex  = 56be34521d144c88dbb8c733f0e8b3f6
+    byte[] key  = _fillBytes(16, (byte)0xAA);
+    byte[] data = _fillBytes(50, (byte)0xDD);
+    Assert.Equal("56be34521d144c88dbb8c733f0e8b3f6",
+                 HmacMd5.ComputeHex(key, data));
+}
+
+// ── RFC 2202 §2 Test Case 4 ─────────────────────────────────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_4() {
+    // key  = 0x01..0x19 (25 bytes)
+    // data = 0xcd * 50
+    // hex  = 697eaf0aca3a3aea3a75164746ffaa79
+    byte[] key = new byte[25];
+    int i = 0;
+    while (i < 25) { key[i] = (byte)(i + 1); i = i + 1; }
+    byte[] data = _fillBytes(50, (byte)0xCD);
+    Assert.Equal("697eaf0aca3a3aea3a75164746ffaa79",
+                 HmacMd5.ComputeHex(key, data));
+}
+
+// ── RFC 2202 §2 Test Case 5 ─────────────────────────────────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_5() {
+    // key  = 0x0c * 16
+    // data = "Test With Truncation"
+    // hex  = 56461ef2342edc00f9bab995690efd4c (full 16 bytes)
+    byte[] key = _fillBytes(16, (byte)0x0C);
+    Assert.Equal("56461ef2342edc00f9bab995690efd4c",
+                 HmacMd5.ComputeHex(key, Utf8.GetBytes("Test With Truncation")));
+}
+
+// ── RFC 2202 §2 Test Case 6 (long key triggers pre-hash) ────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_6_long_key() {
+    // key  = 0xaa * 80 (longer than 64-byte block)
+    // data = "Test Using Larger Than Block-Size Key - Hash Key First"
+    // hex  = 6b1ab7fe4bd7bf8f0b62e6ce61b9d0cd
+    byte[] key = _fillBytes(80, (byte)0xAA);
+    Assert.Equal("6b1ab7fe4bd7bf8f0b62e6ce61b9d0cd",
+                 HmacMd5.ComputeHex(
+                     key, Utf8.GetBytes("Test Using Larger Than Block-Size Key - Hash Key First")));
+}
+
+// ── RFC 2202 §2 Test Case 7 (long key + long data) ─────────────────────
+
+[Test]
+void test_hmac_md5_rfc2202_case_7_long_key_long_data() {
+    // key  = 0xaa * 80
+    // data = "Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data"
+    // hex  = 6f630fad67cda0ee1fb1f562db3aa53e
+    byte[] key = _fillBytes(80, (byte)0xAA);
+    Assert.Equal("6f630fad67cda0ee1fb1f562db3aa53e",
+                 HmacMd5.ComputeHex(
+                     key,
+                     Utf8.GetBytes("Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data")));
+}
+
+// ── ComputeStringHex (both UTF-8) ───────────────────────────────────────
+
+[Test]
+void test_hmac_md5_compute_string_hex_round_trip() {
+    // Cross-check ComputeStringHex against the bytes-key + bytes-data pathway:
+    // same MAC value either way (key + message both UTF-8).
+    string h1 = HmacMd5.ComputeStringHex("Jefe", "what do ya want for nothing?");
+    byte[] keyBytes = new byte[4];
+    keyBytes[0] = (byte)'J'; keyBytes[1] = (byte)'e';
+    keyBytes[2] = (byte)'f'; keyBytes[3] = (byte)'e';
+    string h2 = HmacMd5.ComputeHex(keyBytes, Utf8.GetBytes("what do ya want for nothing?"));
+    Assert.Equal(h1, h2);
+}

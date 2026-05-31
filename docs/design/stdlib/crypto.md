@@ -46,6 +46,18 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - 128-byte block size (vs HmacSha256's 64); HmacSha384 reuses the 128-byte block since SHA-384 shares SHA-512's compression
   - 27 NIST FIPS 180-2 + RFC 4231 vectors GREEN end-to-end
 
+- ⚠️ **MD5 (RFC 1321)** — `Std.Crypto.Md5` (add-md5-to-crypto, 2026-05-31)
+  - ⚠️ **MD5 is COMPROMISED for collision-resistant uses** (Wang et al 2004, chosen-prefix Stevens 2007). Provided **only for legacy-interop**: HTTP Digest auth (RFC 2617 / RFC 7616), HTTP ETag, git dumb HTTP proto, MySQL `OLD_PASSWORD`, APR1, CRAM-MD5, BitTorrent v1 info hashes
+  - Same `Hash / HashString / HashHex / HashStringHex` surface as Sha1
+  - Pure-script; little-endian word/length order (vs SHA-1/2 big-endian); 4-register state, 64 rounds, 4 round functions F/G/H/I per RFC 1321 §3.4
+  - 14 tests cover RFC 1321 §A.5 7 canonical vectors + block-boundary edges (55/56/64 byte) + NIST CAVP million-'a' + UTF-8 multibyte
+  - **Do NOT use for new content addressing / signature / password storage**
+
+- ⚠️ HMAC-MD5 (RFC 2104) — `Std.Crypto.HmacMd5` (add-md5-to-crypto, 2026-05-31)
+  - Same `Compute / ComputeString / ComputeHex / ComputeStringHex` surface as HmacSha256; 64-byte block (MD5 native), 16-byte digest
+  - HMAC-MD5 is still cryptographically reasonable as a MAC (outer key randomises H state — Bellare 2006), but the underlying MD5 is broken; use **only when the protocol mandates it** (HTTP Digest-MD5, CRAM-MD5, APR1, legacy SASL)
+  - 8 RFC 2202 §2 test cases GREEN
+
 - HKDF (RFC 5869) — `Std.Crypto.HkdfSha256` / `Std.Crypto.HkdfSha512` (add-hkdf, 2026-05-27)
   - `Derive(salt, ikm, info, length) -> byte[]` — one-shot Extract+Expand
   - `Extract(salt, ikm) -> byte[HashLen]` — pseudo-random key from input keying material
