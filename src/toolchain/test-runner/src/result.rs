@@ -45,6 +45,32 @@ pub struct TestResult {
     /// can filter / group benchmark results separately.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub is_benchmark: bool,
+    /// capture-benchmark-stats-in-testresult (2026-05-31): structured
+    /// stats parsed out of the user's `Bencher.printSummary(label)` line
+    /// in subprocess-captured stdout. `None` when the test isn't a
+    /// benchmark, didn't call printSummary, or runs in-process (stdout
+    /// not captured today). CI perf-tracking tools consume this to detect
+    /// regressions without parsing log output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bench_stats: Option<BenchStats>,
+}
+
+/// capture-benchmark-stats-in-testresult (2026-05-31): structured form of
+/// a single `Bencher.printSummary` line. All times in nanoseconds.
+///
+/// Source format (Bencher.z42:82-84):
+/// `bench[<label>] min=<n>ns median=<n>ns max=<n>ns samples=<n>`
+///
+/// `total_ns` is not currently emitted by printSummary; reserved 0 until
+/// a future Bencher format upgrade fills it.
+#[derive(Debug, Clone, Serialize)]
+pub struct BenchStats {
+    pub label: String,
+    pub min_ns: i64,
+    pub median_ns: i64,
+    pub max_ns: i64,
+    pub samples: i64,
+    pub total_ns: i64,
 }
 
 impl TestResult {
@@ -53,21 +79,30 @@ impl TestResult {
             Outcome::Passed { duration_ms } => Self {
                 name, status: TestStatus::Passed, duration_ms,
                 reason: None, failure_location: None, stack_trace: None,
-                is_benchmark,
+                is_benchmark, bench_stats: None,
             },
             Outcome::Skipped { reason } => Self {
                 name, status: TestStatus::Skipped, duration_ms: 0,
                 reason: Some(reason), failure_location: None, stack_trace: None,
-                is_benchmark,
+                is_benchmark, bench_stats: None,
             },
             Outcome::Failed { reason, location, stack_trace } => Self {
                 name, status: TestStatus::Failed, duration_ms: 0,
                 reason: Some(reason),
                 failure_location: location,
                 stack_trace,
-                is_benchmark,
+                is_benchmark, bench_stats: None,
             },
         }
+    }
+
+    /// capture-benchmark-stats-in-testresult (2026-05-31): attach parsed
+    /// `BenchStats` after constructing a TestResult. Caller side (exec.rs)
+    /// chains this when subprocess stdout contained a parseable
+    /// `bench[label] min=…` line.
+    pub fn with_bench_stats(mut self, stats: Option<BenchStats>) -> Self {
+        self.bench_stats = stats;
+        self
     }
 }
 
@@ -123,20 +158,20 @@ mod tests {
                 name: "M.test_pass".into(), status: TestStatus::Passed,
                 duration_ms: 12, reason: None,
                 failure_location: None, stack_trace: None,
-                is_benchmark: false,
+                is_benchmark: false, bench_stats: None,
             },
             TestResult {
                 name: "M.test_skip".into(), status: TestStatus::Skipped,
                 duration_ms: 0, reason: Some("platform=ios".into()),
                 failure_location: None, stack_trace: None,
-                is_benchmark: false,
+                is_benchmark: false, bench_stats: None,
             },
             TestResult {
                 name: "M.test_fail".into(), status: TestStatus::Failed,
                 duration_ms: 7,
                 reason: Some("expected `Foo`, got `Bar`".into()),
                 failure_location: None, stack_trace: None,
-                is_benchmark: false,
+                is_benchmark: false, bench_stats: None,
             },
         ]
     }
@@ -157,7 +192,7 @@ mod tests {
             name: "M.t".into(), status: TestStatus::Passed,
             duration_ms: 5, reason: None,
             failure_location: None, stack_trace: None,
-            is_benchmark: false,
+            is_benchmark: false, bench_stats: None,
         };
         let s = serde_json::to_string(&r).unwrap();
         assert!(!s.contains("\"reason\""),
@@ -168,6 +203,8 @@ mod tests {
             "passed test should not serialize `stack_trace`");
         assert!(!s.contains("\"is_benchmark\""),
             "is_benchmark=false should be omitted from JSON");
+        assert!(!s.contains("\"bench_stats\""),
+            "bench_stats=None should be omitted from JSON");
     }
 
     #[test]
@@ -178,7 +215,7 @@ mod tests {
             reason: Some("values not equal".into()),
             failure_location: Some("my_test.z42:42".into()),
             stack_trace: Some("  at M.t (my_test.z42:42)".into()),
-            is_benchmark: false,
+            is_benchmark: false, bench_stats: None,
         };
         let s = serde_json::to_string(&r).unwrap();
         assert!(s.contains("\"failure_location\":\"my_test.z42:42\""),
@@ -188,12 +225,51 @@ mod tests {
     }
 
     #[test]
+    fn json_benchmark_includes_bench_stats_when_present() {
+        let r = TestResult {
+            name: "M.bench_addition".into(), status: TestStatus::Passed,
+            duration_ms: 50, reason: None,
+            failure_location: None, stack_trace: None,
+            is_benchmark: true,
+            bench_stats: Some(BenchStats {
+                label: "addition".into(),
+                min_ns: 3875,
+                median_ns: 3958,
+                max_ns: 4666,
+                samples: 5,
+                total_ns: 0,
+            }),
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(s.contains("\"bench_stats\""), "bench_stats present; got: {s}");
+        assert!(s.contains("\"label\":\"addition\""), "got: {s}");
+        assert!(s.contains("\"min_ns\":3875"), "got: {s}");
+        assert!(s.contains("\"median_ns\":3958"), "got: {s}");
+        assert!(s.contains("\"max_ns\":4666"), "got: {s}");
+        assert!(s.contains("\"samples\":5"), "got: {s}");
+    }
+
+    #[test]
+    fn with_bench_stats_attaches_field() {
+        let r = TestResult::from_outcome(
+            "M.bench".into(),
+            Outcome::Passed { duration_ms: 10 },
+            true,
+        ).with_bench_stats(Some(BenchStats {
+            label: "x".into(),
+            min_ns: 1, median_ns: 2, max_ns: 3, samples: 4, total_ns: 5,
+        }));
+        assert!(r.bench_stats.is_some());
+        assert_eq!(r.bench_stats.as_ref().unwrap().label, "x");
+    }
+
+    #[test]
     fn json_benchmark_emits_is_benchmark_true() {
         let r = TestResult {
             name: "M.bench".into(), status: TestStatus::Passed,
             duration_ms: 42, reason: None,
             failure_location: None, stack_trace: None,
-            is_benchmark: true,
+            is_benchmark: true, bench_stats: None,
         };
         let s = serde_json::to_string(&r).unwrap();
         assert!(s.contains("\"is_benchmark\":true"),

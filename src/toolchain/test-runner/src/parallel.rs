@@ -62,12 +62,12 @@ pub fn run_tests(
                         return;
                     }
                     let test = &tests[idx];
-                    let outcome = exec::run_one(z42vm, zbc_path, test, skip_env);
+                    let (outcome, bench_stats) = exec::run_one(z42vm, zbc_path, test, skip_env);
                     let tr = TestResult::from_outcome(
                         test.method_name.to_string(),
                         outcome,
                         test.is_benchmark,
-                    );
+                    ).with_bench_stats(bench_stats);
                     let mut guard = results.lock().expect("results mutex poisoned");
                     guard[idx] = Some(tr);
                 }

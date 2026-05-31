@@ -39,13 +39,13 @@ mod tests {
                 name: "M.test_pass".into(), status: TestStatus::Passed,
                 duration_ms: 12, reason: None,
                 failure_location: None, stack_trace: None,
-                is_benchmark: false,
+                is_benchmark: false, bench_stats: None,
             },
             TestResult {
                 name: "M.test_skip".into(), status: TestStatus::Skipped,
                 duration_ms: 0, reason: Some("platform=ios".into()),
                 failure_location: None, stack_trace: None,
-                is_benchmark: false,
+                is_benchmark: false, bench_stats: None,
             },
             TestResult {
                 name: "M.test_fail".into(), status: TestStatus::Failed,
@@ -53,7 +53,7 @@ mod tests {
                 reason: Some("expected `Foo`, got `Bar`".into()),
                 failure_location: Some("my_test.z42:42".into()),
                 stack_trace: Some("  at MyTests.test_fail (my_test.z42:42)".into()),
-                is_benchmark: false,
+                is_benchmark: false, bench_stats: None,
             },
         ]
     }

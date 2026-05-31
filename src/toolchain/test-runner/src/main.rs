@@ -192,10 +192,14 @@ fn run(cli: &Cli) -> Result<i32> {
         } else {
             // Serial legacy path.
             report.tests.iter()
-                .map(|t| TestResult::from_outcome(
-                    t.method_name.to_string(),
-                    exec::run_one(&z42vm, zbc_path, t, &skip_env),
-                    t.is_benchmark))
+                .map(|t| {
+                    let (outcome, bench_stats) = exec::run_one(&z42vm, zbc_path, t, &skip_env);
+                    TestResult::from_outcome(
+                        t.method_name.to_string(),
+                        outcome,
+                        t.is_benchmark,
+                    ).with_bench_stats(bench_stats)
+                })
                 .collect()
         };
         emit(&format, &module_name, &results)?;

@@ -88,9 +88,19 @@ public class Bencher {
         this.TotalNs = total;
     }
 
-    // Human-readable single-line summary. Intentionally compact —
-    // machine-consumable JSON is a future spec (would also serialise the
-    // raw samples array).
+    // Human-readable single-line summary.
+    //
+    // **The output format is part of the runner contract** — z42-test-runner
+    // (subprocess mode) parses this line out of captured stdout and
+    // structurally surfaces the stats as `TestResult.bench_stats` in JSON
+    // output (capture-benchmark-stats-in-testresult, 2026-05-31). Format:
+    //
+    //   `bench[<label>] min=<n>ns median=<n>ns max=<n>ns samples=<n>`
+    //
+    // The runner parses fields in this exact order with `ns` unit suffixes
+    // on the time fields. If you change this format, update
+    // `src/toolchain/test-runner/src/exec.rs::extract_bench_stats_from_stdout`
+    // in the same commit (unit tests `bench_stats_*` will catch a mismatch).
     public void printSummary(string label) {
         Console.WriteLine($"bench[{label}] min={this.MinNs}ns median={this.MedianNs}ns max={this.MaxNs}ns samples={this.Samples}");
     }

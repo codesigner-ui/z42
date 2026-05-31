@@ -11,7 +11,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::discover::DiscoveredTest;
-use crate::result::Outcome;
+use crate::result::{BenchStats, Outcome};
 use crate::skip_eval::{decide_skip, SkipEnv};
 
 /// Per-test wallclock cap used when a method does NOT carry an explicit
@@ -61,11 +61,17 @@ pub fn run_one(
     zbc_path: &str,
     test: &DiscoveredTest,
     skip_env: &SkipEnv,
-) -> Outcome {
+) -> (Outcome, Option<BenchStats>) {
+    // capture-benchmark-stats-in-testresult (2026-05-31): return tuple so
+    // callers can attach BenchStats parsed from subprocess-captured stdout
+    // to the TestResult (only meaningful for `is_benchmark` entries, but
+    // we parse unconditionally — non-bench tests that happen to call
+    // printSummary still get their stats surfaced).
+
     // add-test-skip-platform-feature-eval (2026-05-30): conditional skip
     // (see runner.rs for the in-process twin of this branch).
     if let Some(reason) = decide_skip(test, skip_env) {
-        return Outcome::Skipped { reason };
+        return (Outcome::Skipped { reason }, None);
     }
 
     let start = Instant::now();
@@ -78,11 +84,11 @@ pub fn run_one(
         .spawn()
     {
         Ok(c) => c,
-        Err(e) => return Outcome::Failed {
+        Err(e) => return (Outcome::Failed {
             reason: format!("failed to spawn z42vm: {e}"),
             location: None,
             stack_trace: None,
-        },
+        }, None),
     };
     let child_pid = child.id();
 
@@ -148,11 +154,11 @@ pub fn run_one(
                 }
                 std::thread::sleep(Duration::from_millis(50));
             }
-            Err(e) => return Outcome::Failed {
+            Err(e) => return (Outcome::Failed {
                 reason: format!("error waiting for z42vm: {e}"),
                 location: None,
                 stack_trace: None,
-            },
+            }, None),
         }
     };
 
@@ -194,10 +200,13 @@ pub fn run_one(
             reason.push_str("\n--- stderr (partial) ---\n");
             reason.push_str(stderr.trim_end());
         }
-        return Outcome::Failed { reason, location: None, stack_trace: None };
+        return (Outcome::Failed { reason, location: None, stack_trace: None }, None);
     }
 
     let status = exit_status.expect("non-timeout path always has a status");
+    // capture-benchmark-stats-in-testresult (2026-05-31): parse the user's
+    // `Bencher.printSummary` line out of captured stdout once, reuse below.
+    let bench_stats = extract_bench_stats_from_stdout(&stdout);
 
     // R4.B / A2 — [ShouldThrow<E>] inverts the success/failure semantics:
     // success means "the expected type was thrown" rather than "no exception".
@@ -210,47 +219,47 @@ pub fn run_one(
         let candidates: Vec<&str> = expected.split(';').filter(|s| !s.is_empty()).collect();
         let display = candidates.first().copied().unwrap_or(expected);
         if status.success() {
-            return Outcome::Failed {
+            return (Outcome::Failed {
                 reason: format!(
                     "expected to throw `{display}`, but no exception was thrown"
                 ),
                 location: None,
                 stack_trace: None,
-            };
+            }, bench_stats);
         }
         let actual = extract_thrown_type(&stderr);
         match actual.as_deref() {
             Some(a) if candidates.iter().any(|c| type_matches(c, a)) => {
-                return Outcome::Passed { duration_ms };
+                return (Outcome::Passed { duration_ms }, bench_stats);
             }
             Some(a) => {
-                return Outcome::Failed {
+                return (Outcome::Failed {
                     reason: format!("expected to throw `{display}`, got `{a}`"),
                     location: None,
                     stack_trace: None,
-                };
+                }, bench_stats);
             }
             None => {
-                return Outcome::Failed {
+                return (Outcome::Failed {
                     reason: format!(
                         "expected to throw `{display}`, got non-exception failure: {}",
                         stderr.lines().next().unwrap_or("(empty stderr)").trim_end(),
                     ),
                     location: None,
                     stack_trace: None,
-                };
+                }, bench_stats);
             }
         }
     }
 
     if status.success() {
-        return Outcome::Passed { duration_ms };
+        return (Outcome::Passed { duration_ms }, bench_stats);
     }
 
     // Classify by stderr content. z42vm prints
     // "Error: uncaught exception: Std.TestFailure{...}" or similar.
     if stderr.contains("Std.SkipSignal") {
-        return Outcome::Skipped { reason: extract_exception_msg(&stderr) };
+        return (Outcome::Skipped { reason: extract_exception_msg(&stderr) }, bench_stats);
     }
     if stderr.contains("Std.TestFailure") {
         // parse-subprocess-failure-location-from-stderr (2026-05-31):
@@ -261,11 +270,11 @@ pub fn run_one(
         // parallel / legacy-subprocess execution.
         let stack_trace = extract_stack_trace_from_stderr(&stderr);
         let location = stack_trace.as_deref().and_then(crate::runner::first_user_frame);
-        return Outcome::Failed {
+        return (Outcome::Failed {
             reason: extract_exception_msg(&stderr),
             location,
             stack_trace,
-        };
+        }, bench_stats);
     }
     // Other exception or VM error.
     let mut reason = String::new();
@@ -285,7 +294,7 @@ pub fn run_one(
     // uncaught-exception stanza with frames, surface them.
     let stack_trace = extract_stack_trace_from_stderr(&stderr);
     let location = stack_trace.as_deref().and_then(crate::runner::first_user_frame);
-    Outcome::Failed { reason, location, stack_trace }
+    (Outcome::Failed { reason, location, stack_trace }, bench_stats)
 }
 
 /// Extract the (possibly fully-qualified) thrown type name from z42vm's stderr.
@@ -433,6 +442,75 @@ pub fn extract_stack_trace_from_stderr(stderr: &str) -> Option<String> {
     } else {
         Some(frames.join("\n"))
     }
+}
+
+/// capture-benchmark-stats-in-testresult (2026-05-31): parse the structured
+/// stats out of a `Bencher.printSummary(label)` line in captured stdout.
+///
+/// Source format (must match `src/libraries/z42.test/src/Bencher.z42:82-84`):
+///
+/// ```text
+/// bench[<label>] min=<n>ns median=<n>ns max=<n>ns samples=<n>
+/// ```
+///
+/// Selection rule: when multiple `bench[...]` lines exist (user called
+/// `printSummary` more than once), pick the **last** one — most recent
+/// measurement. `None` returned when no parseable line is present.
+///
+/// `total_ns` is reserved 0; current Bencher format doesn't emit it.
+/// A future Bencher upgrade can add `total=Nns` after `samples=N` and
+/// the parser will need a follow-up patch — fixed-field-order keeps the
+/// v1 parser simple (no JSON / no key lookup).
+pub fn extract_bench_stats_from_stdout(stdout: &str) -> Option<BenchStats> {
+    let mut latest: Option<BenchStats> = None;
+    for line in stdout.lines() {
+        if let Some(parsed) = parse_bench_line(line) {
+            latest = Some(parsed);
+        }
+    }
+    latest
+}
+
+fn parse_bench_line(line: &str) -> Option<BenchStats> {
+    // Expected: `bench[<label>] min=<n>ns median=<n>ns max=<n>ns samples=<n>`
+    // Tolerate any leading whitespace; reject trailing junk by requiring
+    // the line ends at samples=<digits> (with possibly trailing whitespace).
+    let trimmed = line.trim();
+    let after_bracket = trimmed.strip_prefix("bench[")?;
+    let close_bracket = after_bracket.find(']')?;
+    let label = &after_bracket[..close_bracket];
+    let rest = after_bracket[close_bracket + 1..].trim_start();
+
+    // Pull each `key=<digits>ns` (or trailing `samples=<digits>` without `ns`).
+    let min_ns    = pull_kv(rest, "min=")?;
+    let median_ns = pull_kv(rest, "median=")?;
+    let max_ns    = pull_kv(rest, "max=")?;
+    let samples   = pull_kv_no_unit(rest, "samples=")?;
+
+    Some(BenchStats {
+        label: label.to_string(),
+        min_ns,
+        median_ns,
+        max_ns,
+        samples,
+        total_ns: 0,
+    })
+}
+
+/// Find `<key><digits>ns` in `s`, return the digits as i64. None if absent
+/// or malformed. Tolerant of multiple keys on the same line (each pulled
+/// independently).
+fn pull_kv(s: &str, key: &str) -> Option<i64> {
+    let after_key = s.find(key).map(|i| &s[i + key.len()..])?;
+    let end = after_key.find("ns")?;
+    after_key[..end].parse::<i64>().ok()
+}
+
+fn pull_kv_no_unit(s: &str, key: &str) -> Option<i64> {
+    let after_key = s.find(key).map(|i| &s[i + key.len()..])?;
+    let end = after_key.find(|c: char| !c.is_ascii_digit()).unwrap_or(after_key.len());
+    if end == 0 { return None; }
+    after_key[..end].parse::<i64>().ok()
 }
 
 pub fn extract_exception_msg(stderr: &str) -> String {
@@ -671,5 +749,55 @@ mod tests {
     fn extract_stack_trace_no_frames_after_header_returns_none() {
         let s = "Error: uncaught exception: Foo: just a message\n";
         assert_eq!(extract_stack_trace_from_stderr(s), None);
+    }
+
+    // ── capture-benchmark-stats-in-testresult (2026-05-31) ────────────────
+
+    #[test]
+    fn bench_stats_canonical_format_parses() {
+        let s = "bench[addition] min=3875ns median=3958ns max=4666ns samples=5";
+        let got = extract_bench_stats_from_stdout(s).expect("should parse");
+        assert_eq!(got.label, "addition");
+        assert_eq!(got.min_ns, 3875);
+        assert_eq!(got.median_ns, 3958);
+        assert_eq!(got.max_ns, 4666);
+        assert_eq!(got.samples, 5);
+        assert_eq!(got.total_ns, 0, "total_ns reserved; not in current Bencher format");
+    }
+
+    #[test]
+    fn bench_stats_no_bench_line_returns_none() {
+        let s = "some test output\nlots of debug noise\nbut no bench[...] line";
+        assert!(extract_bench_stats_from_stdout(s).is_none());
+    }
+
+    #[test]
+    fn bench_stats_multiple_bench_lines_picks_last() {
+        let s = "bench[first] min=10ns median=20ns max=30ns samples=1\n\
+                 bench[second] min=100ns median=200ns max=300ns samples=2\n\
+                 bench[third] min=1000ns median=2000ns max=3000ns samples=3";
+        let got = extract_bench_stats_from_stdout(s).expect("should parse last");
+        assert_eq!(got.label, "third");
+        assert_eq!(got.min_ns, 1000);
+        assert_eq!(got.samples, 3);
+    }
+
+    #[test]
+    fn bench_stats_malformed_line_returns_none() {
+        // Missing `samples=` field.
+        let s = "bench[addition] min=3875ns median=3958ns max=4666ns";
+        assert!(extract_bench_stats_from_stdout(s).is_none(),
+            "incomplete line should not parse");
+    }
+
+    #[test]
+    fn bench_stats_interleaved_with_other_output_still_finds_bench() {
+        let s = "Running test...\n\
+                 doing some work\n\
+                 bench[hot_loop] min=42ns median=43ns max=44ns samples=100\n\
+                 test passed";
+        let got = extract_bench_stats_from_stdout(s).expect("should find bench among noise");
+        assert_eq!(got.label, "hot_loop");
+        assert_eq!(got.median_ns, 43);
     }
 }
