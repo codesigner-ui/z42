@@ -844,9 +844,15 @@ not ok 3 - MyTests.test_arithmetic
 `failure_location` 适合 IDE / CI 工具直接消费，做 jump-to-source 快捷
 跳转。`reason` 字段保持向前兼容（pre-2026-05-30 CI 脚本继续工作）。
 
-> **JIT path 暂未覆盖**：JIT 模式尚未实现 `populate_stack_trace` 钩入，
-> JIT-executed test 的 failure_location / stack_trace 会是 `None`。
-> 独立 spec tracking `2026-05-10-jit-stack-trace` 处理。
+> **JIT path 已覆盖**（更正 2026-05-31）：JIT 模式**已**在 throw 处钩入
+> `populate_stack_trace` —— 见 `src/runtime/src/jit/helpers/control.rs::jit_throw`
+> (2026-05-10 jit-stack-trace + span-column-propagate)。JIT 与 interp
+> 共用同一 `VmContext.call_stack`（unify-frame-chain），codegen 在每个
+> call site / throw site 预先 stamp `(line, col)` 常量。golden test
+> `src/tests/exceptions/stack_trace_field.z42`（断言 trace 含
+> `Demo.Inner/Outer/Main`）在 `test-vm.sh` 的 **jit pass** 下通过，证明
+> JIT-executed throw 的 StackTrace 正确填充。**早先版本此处误标"未覆盖"
+> —— 实为已实现，本次更正。**
 >
 > **Subprocess (`--jobs N>1` 或 `--legacy-subprocess`) 现支持** stack —
 > 2026-05-31 起父进程解析 z42vm stderr 里的
@@ -965,7 +971,6 @@ void test_pi_approximation() {
 
 | ID | 标题 | 现状 | 影响 |
 |----|------|------|------|
-| `failloc-future-jit-stack` | JIT 模式 populate_stack_trace 接入 | JIT 现没填 StackTrace；JIT-执行的 test 失败时 StackTrace=None | 与 `2026-05-10-jit-stack-trace` 重叠；JIT 全套 stack trace 是该 spec 工作 |
 | `bench-bencher-arg-trampoline` | `void f(Bencher b)` 签名形态 | 当前 validator 只接 zero-arg `void f()`; user 在 body 内自构 Bencher | 工效/boilerplate 小痛; 需要 compiler-generated trampoline 或 runner-side ObjNew API. trampoline 落地后可同时让 runner 自动构造 Bencher 并自动读 stats (无需 printSummary 调用) |
 
 ---
