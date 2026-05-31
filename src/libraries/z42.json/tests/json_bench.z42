@@ -1,0 +1,43 @@
+// Micro-benchmarks for z42.json hot paths (2026-05-31) — dogfoods the
+// [Benchmark] + Bencher machinery on parse + scalar access. Modest sample
+// counts keep the correctness wave fast; run benchmarks only via
+// `z42-test-runner <zbc> --filter bench_`.
+
+namespace Z42JsonBench;
+
+using Std;
+using Std.Test;
+using Std.Json;
+
+[Benchmark]
+void bench_parse_object() {
+    var b = new Bencher(2, 20);
+    string doc = "{\"name\":\"alice\",\"age\":30,\"active\":true,\"tags\":[1,2,3]}";
+    b.iter(() => {
+        var v = JsonValue.Parse(doc);
+        BenchHelpers.blackBox(v);
+    });
+    b.printSummary("parse_object");
+}
+
+[Benchmark]
+void bench_parse_scalar_access() {
+    var b = new Bencher(2, 20);
+    b.iter(() => {
+        var v = JsonValue.Parse("42");
+        long n = v.AsLong();
+        BenchHelpers.blackBox(n);
+    });
+    b.printSummary("parse_scalar_access");
+}
+
+[Test]
+void test_json_bench_bodies_run() {
+    var b = new Bencher(1, 3);
+    b.iter(() => {
+        var v = JsonValue.Parse("true");
+        BenchHelpers.blackBox(v.AsBool());
+    });
+    Assert.Equal(3, b.Samples);
+    Assert.True(b.TotalNs > 0L);
+}

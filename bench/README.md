@@ -2,17 +2,47 @@
 
 ## 职责
 
-跨编译器 / 运行时的性能基准基础设施。三层度量：
+跨编译器 / 运行时的性能基准基础设施。多层度量：
 
 | 层 | 工具 | 位置 | 状态 |
 |----|------|------|------|
 | Rust 微基准 | criterion | `src/runtime/benches/` | ✅ P1.A |
 | C# 编译器吞吐 | BenchmarkDotNet | `src/compiler/z42.Bench/` | ✅ P1.B |
 | z42 端到端 | hyperfine + 自建 harness | `bench/scenarios/` + `scripts/bench-run.sh` | ✅ P1.C |
+| **z42 进程内微基准** | **`[Benchmark]` + `Std.Test.Bencher`（test-runner 派发）** | **各 lib `tests/*_bench.z42`** | **✅ 2026-05-31** |
 | 基线对比 | `scripts/bench-diff.sh` | `bench/baselines/` | ✅ P1.D.1 |
 | CI bench smoke (artifact) | `.github/workflows/ci.yml` (`bench-e2e` job) | — | ✅ P1.D.2 |
 | 主分支 baseline 持久化 | `.github/workflows/bench-update.yml` → `bench-baselines` 分支 | — | ✅ P1.D.3 |
 | PR auto-diff (informational) | ci.yml fetch + bench-diff | — | ⏳ P1.D.4 |
+
+### micro vs e2e — 何时用哪个
+
+| | **micro (`[Benchmark]`)** | **e2e (`bench/scenarios`)** |
+|--|---------------------------|------------------------------|
+| 粒度 | 单个操作（`String.Replace` / `SortedSet.Add` / `JsonValue.Parse`），ns 级 | 整程序 wall-clock（VM 启动 + stdlib 加载 + 执行），ms 级 |
+| 用途 | 把回归**定位到具体函数**；守护 stdlib 热路径；量化单操作优化 | 捕获**全管线**回归（启动开销 / dispatch / 整体吞吐）|
+| 运行 | `z42-test-runner <lib-tests.zbc> --filter bench_ --format json`（本地/按需）| `just bench-e2e`（本地 + CI）|
+| CI | **不进 CI** — ns 量级对共享 runner 噪声过敏感，假阳性多 | ✅ informational diff（粗粒度，噪声可容忍）|
+
+> **为何 micro 不进 CI**：与 Rust criterion / C# BDN 两个微基准 tier 一致 ——
+> 它们同样只做本地/按需，不进 CI 门禁。微基准的价值在**稳定硬件上的本地对比**；
+> CI 共享 runner 噪声会让 ns 级测量产生大量假回归。CI 门禁留给粗粒度 e2e。
+
+### 运行 micro-benchmarks（本地）
+
+各 lib 的 `tests/*_bench.z42` 里的 `[Benchmark]` 方法由 test-runner 派发。
+单独跑某个 lib 的基准（不跑其它 [Test]）：
+
+```bash
+# 1. 编译某 lib 的 bench 测试到 .zbc（test 工具链自动做；或手动 z42c --emit zbc）
+# 2. 只跑 benchmark 方法，输出结构化 stats：
+z42-test-runner <lib-tests.zbc> --filter bench_ --format json
+#   → 每个 [Benchmark] 一条记录，含 bench_stats { label, min_ns, median_ns, max_ns, samples }
+```
+
+`bench_stats` 来自 `Bencher.printSummary(label)`，全模式（in-process /
+subprocess）均被 runner 捕获（capture-benchmark-stats-in-testresult）。
+人类可读的 `bench[label] min=… median=… max=…` 行同时打到 stderr。
 
 ## 目录结构
 
