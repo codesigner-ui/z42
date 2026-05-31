@@ -212,7 +212,7 @@ Out of scope (now their own follow-up specs):
 - `add-z42-net-http-stream-body` — `HttpResponse.GetStream() → Stream`
 - `add-z42-net-http-redirects` — auto-follow 3xx
 - `add-z42-net-http-cookies` — Set-Cookie + jar
-- `add-z42-net-http-auth` — Basic / Bearer / Digest helpers
+- ~~`add-z42-net-http-auth`~~ — **✅ landed**: Basic + Bearer via `add-z42-net-http-auth` (2026-05-27) `HttpRequest.WithBasicAuth(user, pass)` / `WithBearerToken(tok)`; Digest via `add-z42-net-http-digest-auth` (2026-05-31) `HttpRequest.WithDigestAuth(user, pass)` + `HttpClient` 401 auto-retry (RFC 2617 MD5 default, RFC 7616 SHA-256 via `algorithm=SHA-256`, qop=auth). Auth-int / MD5-sess / SHA-512-256 / userhash / stale / proxy Digest留 `net-future-http-digest-extras` follow-up
 - ~~`add-z42-net-http-compression`~~ — **✅ landed**: gzip via `add-z42-net-http-compression` (2026-05-27) + brotli via `add-z42-net-http-brotli` (2026-05-30); `SetAutoDecompress(true)` advertises `Accept-Encoding: gzip, br` and transparently decodes either
 - ~~`add-z42-net-http-server`~~ — **✅ landed 2026-05-25**: `HttpServer` + `HttpServerContext` + `_HttpRequestParser`. Single-threaded sequential v0; `add-z42-net-http-server-threaded` for concurrency follow-up.
 - `add-z42-net-http2` — HTTP/2 binary framing + HPACK

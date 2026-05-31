@@ -1,0 +1,320 @@
+// add-z42-net-http-digest-auth (2026-05-31): RFC 7616 / RFC 2617 Digest
+// MD5 auth — challenge-response 401 retry roundtrip.
+namespace Z42NetHttpDigestMd5Tests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Encoding;
+using Std.Crypto;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+// Helper: drain HTTP request bytes from `s` until \r\n\r\n.
+// Returns the raw byte sequence (header block only — no body parsing for
+// these GET-only fixtures). Closures capture `outBuf` via bool/int[1]
+// cells per closure.md §4.4.
+static byte[] _drainHttpRequest(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    byte[] r = new byte[total];
+    int i = 0;
+    while (i < total) { r[i] = buf[i]; i = i + 1; }
+    return r;
+}
+
+static string _bytesToAscii(byte[] b) {
+    char[] chars = new char[b.Length];
+    int i = 0;
+    while (i < b.Length) { chars[i] = (char)b[i]; i = i + 1; }
+    return String.FromChars(chars);
+}
+
+static bool _strContains(string hay, string needle) {
+    if (needle.Length == 0) return true;
+    int limit = hay.Length - needle.Length;
+    int i = 0;
+    while (i <= limit) {
+        bool match = true;
+        int k = 0;
+        while (k < needle.Length) {
+            if (hay.CharAt(i + k) != needle.CharAt(k)) { match = false; break; }
+            k = k + 1;
+        }
+        if (match) return true;
+        i = i + 1;
+    }
+    return false;
+}
+
+[Test]
+void test_digest_md5_round_trip_with_realm_and_qop() {
+    string[] secondAuth = new string[1];
+    secondAuth[0] = "";
+
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/dir/index.html";
+
+    Thread srv = Thread.Start(() => {
+        // ── First request: no Authorization → respond 401 with Digest
+        // challenge mirroring RFC 2617 §3.5 (realm/nonce/qop/opaque).
+        var peer1 = server.AcceptTcpClient();
+        var s1 = peer1.GetStream();
+        _drainHttpRequest(s1);
+        string resp1 = "HTTP/1.1 401 Unauthorized\r\n"
+            + "WWW-Authenticate: Digest realm=\"testrealm@host.com\","
+            + " qop=\"auth\","
+            + " nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\","
+            + " opaque=\"5ccc069c403ebaf9f0171e9517f40e41\"\r\n"
+            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        byte[] rb1 = Utf8.GetBytes(resp1);
+        s1.Write(rb1, 0, rb1.Length);
+        peer1.Dispose();
+
+        // ── Second request: must carry Authorization: Digest ...
+        var peer2 = server.AcceptTcpClient();
+        var s2 = peer2.GetStream();
+        byte[] req2 = _drainHttpRequest(s2);
+        secondAuth[0] = _bytesToAscii(req2);
+        string resp2 = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+            + "Connection: close\r\n\r\nok";
+        byte[] rb2 = Utf8.GetBytes(resp2);
+        s2.Write(rb2, 0, rb2.Length);
+        peer2.Dispose();
+    });
+
+    var client = new HttpClient();
+    var req = new HttpRequest("GET", url).WithDigestAuth("Mufasa", "Circle Of Life");
+    HttpResponse r = client.Send(req);
+    srv.Join();
+    server.Stop();
+
+    Assert.Equal(200, r.StatusCode);
+
+    // Second request should carry Authorization: Digest with the right
+    // fields. We don't recompute the full response hash here (cnonce is
+    // random) — verify the required fields are present + the response
+    // attribute is exactly the MD5 we expect for nc=00000001 + the
+    // cnonce the client used.
+    Assert.True(_strContains(secondAuth[0], "Authorization: Digest "));
+    Assert.True(_strContains(secondAuth[0], "username=\"Mufasa\""));
+    Assert.True(_strContains(secondAuth[0], "realm=\"testrealm@host.com\""));
+    Assert.True(_strContains(secondAuth[0], "nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\""));
+    Assert.True(_strContains(secondAuth[0], "uri=\"/dir/index.html\""));
+    Assert.True(_strContains(secondAuth[0], "qop=auth"));
+    Assert.True(_strContains(secondAuth[0], "nc=00000001"));
+    Assert.True(_strContains(secondAuth[0], "opaque=\"5ccc069c403ebaf9f0171e9517f40e41\""));
+    Assert.True(_strContains(secondAuth[0], "cnonce=\""));
+    Assert.True(_strContains(secondAuth[0], "response=\""));
+}
+
+[Test]
+void test_digest_response_hash_matches_rfc_2617_inputs() {
+    // RFC 2617 §3.5 hand-computed values to make sure our HA1 / HA2 /
+    // response chain is wired correctly. Mock server canned with a
+    // fixed cnonce-extraction so we can verify the response value.
+    string[] respHex = new string[1];
+    respHex[0] = "";
+    string[] cnonceVal = new string[1];
+    cnonceVal[0] = "";
+
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/dir/index.html";
+
+    Thread srv = Thread.Start(() => {
+        var peer1 = server.AcceptTcpClient();
+        var s1 = peer1.GetStream();
+        _drainHttpRequest(s1);
+        string resp1 = "HTTP/1.1 401 Unauthorized\r\n"
+            + "WWW-Authenticate: Digest realm=\"testrealm@host.com\","
+            + " qop=\"auth\","
+            + " nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\","
+            + " opaque=\"5ccc069c403ebaf9f0171e9517f40e41\"\r\n"
+            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        byte[] rb1 = Utf8.GetBytes(resp1);
+        s1.Write(rb1, 0, rb1.Length);
+        peer1.Dispose();
+
+        var peer2 = server.AcceptTcpClient();
+        var s2 = peer2.GetStream();
+        byte[] req2 = _drainHttpRequest(s2);
+        string auth = _bytesToAscii(req2);
+        // Pull out response="..." and cnonce="..." literally.
+        // Brute-force scan since z42 stdlib regex would add dep noise.
+        int rIdx = 0;
+        string rKey = "response=\"";
+        while (rIdx < auth.Length - rKey.Length) {
+            bool m = true;
+            int kk = 0;
+            while (kk < rKey.Length) {
+                if (auth.CharAt(rIdx + kk) != rKey.CharAt(kk)) { m = false; break; }
+                kk = kk + 1;
+            }
+            if (m) break;
+            rIdx = rIdx + 1;
+        }
+        int rStart = rIdx + rKey.Length;
+        int rEnd = rStart;
+        while (rEnd < auth.Length && auth.CharAt(rEnd) != '"') { rEnd = rEnd + 1; }
+        respHex[0] = auth.Substring(rStart, rEnd - rStart);
+
+        int cIdx = 0;
+        string cKey = "cnonce=\"";
+        while (cIdx < auth.Length - cKey.Length) {
+            bool m = true;
+            int kk = 0;
+            while (kk < cKey.Length) {
+                if (auth.CharAt(cIdx + kk) != cKey.CharAt(kk)) { m = false; break; }
+                kk = kk + 1;
+            }
+            if (m) break;
+            cIdx = cIdx + 1;
+        }
+        int cStart = cIdx + cKey.Length;
+        int cEnd = cStart;
+        while (cEnd < auth.Length && auth.CharAt(cEnd) != '"') { cEnd = cEnd + 1; }
+        cnonceVal[0] = auth.Substring(cStart, cEnd - cStart);
+
+        string resp2 = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+            + "Connection: close\r\n\r\nok";
+        byte[] rb2 = Utf8.GetBytes(resp2);
+        s2.Write(rb2, 0, rb2.Length);
+        peer2.Dispose();
+    });
+
+    var client = new HttpClient();
+    var req = new HttpRequest("GET", url).WithDigestAuth("Mufasa", "Circle Of Life");
+    client.Send(req);
+    srv.Join();
+    server.Stop();
+
+    // HA1 = MD5("Mufasa:testrealm@host.com:Circle Of Life")
+    string ha1 = Md5.HashStringHex("Mufasa:testrealm@host.com:Circle Of Life");
+    // HA2 = MD5("GET:/dir/index.html")
+    string ha2 = Md5.HashStringHex("GET:/dir/index.html");
+    // response = MD5(HA1:nonce:nc:cnonce:qop:HA2)
+    string expected = Md5.HashStringHex(
+        ha1 + ":dcd98b7102dd2f0e8b11d0f600bfb0c093:00000001:"
+        + cnonceVal[0] + ":auth:" + ha2);
+    Assert.Equal(expected, respHex[0]);
+}
+
+[Test]
+void test_digest_no_credentials_no_retry() {
+    // 401 without WithDigestAuth → returned as-is, no retry.
+    int[] acceptCount = new int[1];
+    acceptCount[0] = 0;
+
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        acceptCount[0] = acceptCount[0] + 1;
+        var s = peer.GetStream();
+        _drainHttpRequest(s);
+        string resp = "HTTP/1.1 401 Unauthorized\r\n"
+            + "WWW-Authenticate: Digest realm=\"x\", nonce=\"y\", qop=\"auth\"\r\n"
+            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);   // no WithDigestAuth
+    srv.Join();
+    server.Stop();
+
+    Assert.Equal(401, r.StatusCode);
+    Assert.Equal(1, acceptCount[0]);   // server saw exactly one connection
+}
+
+[Test]
+void test_digest_only_one_retry() {
+    // Server always returns 401 → client retries ONCE, then propagates
+    // the second 401 to the caller without further attempts.
+    int[] acceptCount = new int[1];
+    acceptCount[0] = 0;
+
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        int i = 0;
+        // Accept exactly 2 connections (first attempt + retry).
+        while (i < 2) {
+            var peer = server.AcceptTcpClient();
+            acceptCount[0] = acceptCount[0] + 1;
+            var s = peer.GetStream();
+            _drainHttpRequest(s);
+            string resp = "HTTP/1.1 401 Unauthorized\r\n"
+                + "WWW-Authenticate: Digest realm=\"x\", nonce=\"y\", qop=\"auth\"\r\n"
+                + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+            byte[] rb = Utf8.GetBytes(resp);
+            s.Write(rb, 0, rb.Length);
+            peer.Dispose();
+            i = i + 1;
+        }
+    });
+
+    var client = new HttpClient();
+    var req = new HttpRequest("GET", url).WithDigestAuth("alice", "wrong");
+    HttpResponse r = client.Send(req);
+    srv.Join();
+    server.Stop();
+
+    Assert.Equal(401, r.StatusCode);
+    Assert.Equal(2, acceptCount[0]);   // first + one retry, no third
+}
+
+[Test]
+void test_digest_unsupported_qop_auth_int_throws() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainHttpRequest(s);
+        string resp = "HTTP/1.1 401 Unauthorized\r\n"
+            + "WWW-Authenticate: Digest realm=\"x\", nonce=\"y\","
+            + " qop=\"auth-int\"\r\n"
+            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    var req = new HttpRequest("GET", url).WithDigestAuth("alice", "pwd");
+    bool threw = false;
+    try {
+        client.Send(req);
+    } catch (HttpProtocolException e) {
+        threw = e.Message.Contains("auth-int");
+    }
+    srv.Join();
+    server.Stop();
+    Assert.True(threw);
+}

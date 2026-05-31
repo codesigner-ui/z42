@@ -1,0 +1,175 @@
+// add-z42-net-http-digest-auth (2026-05-31): RFC 7616 SHA-256 Digest
+// — same challenge-response flow as MD5 but `algorithm=SHA-256` switches
+// HA1 / HA2 / response to SHA-256.
+namespace Z42NetHttpDigestSha256Tests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Encoding;
+using Std.Crypto;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+static byte[] _drainHttpRequest(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    byte[] r = new byte[total];
+    int i = 0;
+    while (i < total) { r[i] = buf[i]; i = i + 1; }
+    return r;
+}
+
+static string _bytesToAscii(byte[] b) {
+    char[] chars = new char[b.Length];
+    int i = 0;
+    while (i < b.Length) { chars[i] = (char)b[i]; i = i + 1; }
+    return String.FromChars(chars);
+}
+
+static string _extractField(string source, string key) {
+    int kIdx = 0;
+    int limit = source.Length - key.Length;
+    while (kIdx <= limit) {
+        bool m = true;
+        int kk = 0;
+        while (kk < key.Length) {
+            if (source.CharAt(kIdx + kk) != key.CharAt(kk)) { m = false; break; }
+            kk = kk + 1;
+        }
+        if (m) {
+            int vStart = kIdx + key.Length;
+            int vEnd = vStart;
+            while (vEnd < source.Length && source.CharAt(vEnd) != '"') {
+                vEnd = vEnd + 1;
+            }
+            return source.Substring(vStart, vEnd - vStart);
+        }
+        kIdx = kIdx + 1;
+    }
+    return "";
+}
+
+[Test]
+void test_digest_sha256_round_trip_uses_sha256_hash_chain() {
+    string[] authLine = new string[1];
+    authLine[0] = "";
+
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/dir/index.html";
+
+    Thread srv = Thread.Start(() => {
+        // First request: 401 + SHA-256 challenge.
+        var peer1 = server.AcceptTcpClient();
+        var s1 = peer1.GetStream();
+        _drainHttpRequest(s1);
+        // RFC 7616 §3.9.1 example values (nonce / opaque).
+        string resp1 = "HTTP/1.1 401 Unauthorized\r\n"
+            + "WWW-Authenticate: Digest realm=\"http-auth@example.org\","
+            + " qop=\"auth\","
+            + " algorithm=SHA-256,"
+            + " nonce=\"7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v\","
+            + " opaque=\"FQhe/qaU925kfnzjCev0ciny7QMkPqMAFRtzCUYo5tdS\"\r\n"
+            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        byte[] rb1 = Utf8.GetBytes(resp1);
+        s1.Write(rb1, 0, rb1.Length);
+        peer1.Dispose();
+
+        var peer2 = server.AcceptTcpClient();
+        var s2 = peer2.GetStream();
+        byte[] req2 = _drainHttpRequest(s2);
+        authLine[0] = _bytesToAscii(req2);
+        string resp2 = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n"
+            + "Connection: close\r\n\r\nok";
+        byte[] rb2 = Utf8.GetBytes(resp2);
+        s2.Write(rb2, 0, rb2.Length);
+        peer2.Dispose();
+    });
+
+    var client = new HttpClient();
+    var req = new HttpRequest("GET", url)
+        .WithDigestAuth("Mufasa", "Circle of Life");
+    HttpResponse r = client.Send(req);
+    srv.Join();
+    server.Stop();
+
+    Assert.Equal(200, r.StatusCode);
+
+    string response = _extractField(authLine[0], "response=\"");
+    string cnonce   = _extractField(authLine[0], "cnonce=\"");
+
+    Assert.True(response.Length == 64);   // SHA-256 hex = 64 chars
+    Assert.True(cnonce.Length == 32);
+
+    // Verify the hash chain matches SHA-256(HA1:nonce:nc:cnonce:qop:HA2)
+    string ha1 = Sha256.HashStringHex(
+        "Mufasa:http-auth@example.org:Circle of Life");
+    string ha2 = Sha256.HashStringHex("GET:/dir/index.html");
+    string expected = Sha256.HashStringHex(
+        ha1 + ":7ypf/xlj9XXwfDPEoM4URrv/xwf94BcCAzFZH4GiTo0v:00000001:"
+        + cnonce + ":auth:" + ha2);
+    Assert.Equal(expected, response);
+
+    // Header should also echo `algorithm=SHA-256` so the server can
+    // validate the variant the client picked.
+    int hasAlgo = 0;
+    string algoKey = "algorithm=SHA-256";
+    int p = 0;
+    while (p <= authLine[0].Length - algoKey.Length) {
+        bool m = true;
+        int kk = 0;
+        while (kk < algoKey.Length) {
+            if (authLine[0].CharAt(p + kk) != algoKey.CharAt(kk)) { m = false; break; }
+            kk = kk + 1;
+        }
+        if (m) { hasAlgo = 1; break; }
+        p = p + 1;
+    }
+    Assert.Equal(1, hasAlgo);
+}
+
+[Test]
+void test_digest_unsupported_algorithm_throws() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _drainHttpRequest(s);
+        string resp = "HTTP/1.1 401 Unauthorized\r\n"
+            + "WWW-Authenticate: Digest realm=\"x\", nonce=\"y\","
+            + " qop=\"auth\","
+            + " algorithm=SHA-512-256\r\n"
+            + "Content-Length: 0\r\nConnection: close\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    var req = new HttpRequest("GET", url).WithDigestAuth("alice", "pwd");
+    bool threw = false;
+    try {
+        client.Send(req);
+    } catch (HttpProtocolException e) {
+        threw = e.Message.Contains("sha-512-256");
+    }
+    srv.Join();
+    server.Stop();
+    Assert.True(threw);
+}

@@ -14,12 +14,20 @@ public class HttpRequest {
     public string      Url;        // full absolute URL, http:// only in v0
     public HttpHeaders Headers;
     public byte[]      Body;       // null if no body
+    // add-z42-net-http-digest-auth (2026-05-31): Digest credentials kept
+    // off-band — the Authorization header is computed by HttpClient only
+    // after the server returns its 401 challenge with realm + nonce.
+    // Empty strings ⇒ no Digest auth on this request.
+    public string DigestUser;
+    public string DigestPassword;
 
     public HttpRequest(string method, string url) {
-        this.Method  = method;
-        this.Url     = url;
-        this.Headers = new HttpHeaders();
-        this.Body    = null;
+        this.Method         = method;
+        this.Url            = url;
+        this.Headers        = new HttpHeaders();
+        this.Body           = null;
+        this.DigestUser     = "";
+        this.DigestPassword = "";
     }
 
     /// Convenience header setter (no-arg builder pattern).
@@ -60,6 +68,19 @@ public class HttpRequest {
     /// Overwrites any existing Authorization header.
     public HttpRequest WithBearerToken(string token) {
         this.Headers.Set("Authorization", "Bearer " + token);
+        return this;
+    }
+
+    /// add-z42-net-http-digest-auth (2026-05-31): RFC 7616 / RFC 2617 Digest.
+    /// Records credentials for `HttpClient` to use ONLY after the server
+    /// returns a 401 with a `WWW-Authenticate: Digest ...` challenge; the
+    /// first request goes out without an Authorization header. Supports
+    /// `algorithm=MD5` (default) and `algorithm=SHA-256`, `qop=auth`.
+    /// Auth-int, MD5-sess, SHA-256-sess, SHA-512-256, userhash, stale,
+    /// proxy Digest are all v0-out-of-scope.
+    public HttpRequest WithDigestAuth(string user, string password) {
+        this.DigestUser     = user;
+        this.DigestPassword = password;
         return this;
     }
 }

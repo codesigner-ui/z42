@@ -4,6 +4,8 @@ using Std;
 using Std.IO;
 using Std.Collections;
 using Std.Compression;
+using Std.Crypto;
+using Std.Encoding;
 using Std.Net.Sockets;
 
 // add-z42-net-http K3 (2026-05-25): HTTP/1.1 client over plaintext TCP.
@@ -217,8 +219,31 @@ public class HttpClient {
     public HttpResponse Send(HttpRequest request) {
         HttpRequest cur = request;
         int hops = 0;
+        // add-z42-net-http-digest-auth (2026-05-31): one-shot Digest 401
+        // retry per outer Send call. Tracked here (not on HttpClient) so
+        // concurrent calls don't clobber each other's flag.
+        bool digestRetried = false;
         while (true) {
             HttpResponse resp = this._sendOnce(cur);
+            // Digest auth: handle 401 challenge BEFORE redirect logic.
+            // Only attempt once — a second 401 from the server means our
+            // credentials are wrong (or the realm/nonce was rejected),
+            // so propagate the 401 to the caller instead of looping.
+            if (resp.StatusCode == 401
+                && cur.DigestUser.Length > 0
+                && !digestRetried) {
+                string challenge = resp.Headers.Get("WWW-Authenticate");
+                string digestPart = HttpClient._extractDigestChallenge(challenge);
+                if (digestPart != null) {
+                    HttpUrl u = HttpUrl.Parse(cur.Url);
+                    string authHeader = HttpClient._buildDigestAuthHeader(
+                        digestPart, cur.Method, u.Path,
+                        cur.DigestUser, cur.DigestPassword);
+                    cur.Headers.Set("Authorization", authHeader);
+                    digestRetried = true;
+                    continue;
+                }
+            }
             // Auto-follow disabled? Return immediately.
             if (this._maxRedirects <= 0) return resp;
             // Decide if this response should be followed.
@@ -326,6 +351,271 @@ public class HttpClient {
             i = i + 1;
         }
         return true;
+    }
+
+    // ── add-z42-net-http-digest-auth (2026-05-31) ─────────────────────────
+    // RFC 7616 / RFC 2617 Digest challenge parsing + response building.
+
+    /// Extract the `Digest <params>` portion from a `WWW-Authenticate`
+    /// header value. Returns `null` if no Digest scheme is present (header
+    /// missing entirely, or only Basic / Negotiate / ... offered).
+    ///
+    /// RFC 7235 lets `WWW-Authenticate` carry multiple comma-separated
+    /// challenges; we just pick the first one whose scheme is `Digest`
+    /// (case-insensitive). Inside the Digest part we keep the rest of the
+    /// header as-is — the per-param tokeniser handles quoted commas.
+    static string _extractDigestChallenge(string header) {
+        if (header == null) { return null; }
+        // Trim leading whitespace; find "Digest " token (case-insensitive).
+        string lower = header.ToLower();
+        int idx = HttpClient._indexOfStr(lower, "digest", 0);
+        if (idx < 0) { return null; }
+        // Must be at start or after a comma/space (avoid matching e.g.
+        // a realm value that happens to contain "digest").
+        if (idx > 0) {
+            char prev = header.CharAt(idx - 1);
+            if (prev != ' ' && prev != '\t' && prev != ',') { return null; }
+        }
+        // Skip past "Digest" + whitespace.
+        int p = idx + 6;
+        while (p < header.Length
+               && (header.CharAt(p) == ' ' || header.CharAt(p) == '\t')) {
+            p = p + 1;
+        }
+        if (p >= header.Length) { return ""; }
+        // The rest is the param list, possibly with trailing other-scheme
+        // challenges. We don't try to split further — Digest params end at
+        // the end of the header for v0 (multi-scheme stacking is rare).
+        return header.Substring(p, header.Length - p);
+    }
+
+    /// Tokenise a Digest param list ("realm=\"x\", nonce=\"y\", qop=auth")
+    /// into parallel `names` / `values` arrays. Quoted values strip the
+    /// outer quotes; unquoted values are taken verbatim up to the next
+    /// comma (RFC 7235 ABNF). Returns `[names, values]` packaged as a
+    /// 2-element object[] so the caller can pull both out.
+    static object[] _parseDigestParams(string params_) {
+        string[] names  = new string[16];
+        string[] values = new string[16];
+        int count = 0;
+        int p = 0;
+        while (p < params_.Length) {
+            // Skip whitespace + commas
+            while (p < params_.Length
+                   && (params_.CharAt(p) == ' '
+                       || params_.CharAt(p) == '\t'
+                       || params_.CharAt(p) == ',')) {
+                p = p + 1;
+            }
+            if (p >= params_.Length) break;
+            // Read key (up to '=' or end)
+            int keyStart = p;
+            while (p < params_.Length && params_.CharAt(p) != '='
+                   && params_.CharAt(p) != ',') {
+                p = p + 1;
+            }
+            string key = HttpClient._trimSpaces(
+                params_.Substring(keyStart, p - keyStart)).ToLower();
+            if (p >= params_.Length || params_.CharAt(p) != '=') {
+                // Malformed bare token — skip.
+                continue;
+            }
+            p = p + 1;  // consume '='
+            // Read value: quoted-string or token until comma
+            string value;
+            if (p < params_.Length && params_.CharAt(p) == '"') {
+                p = p + 1;
+                int valStart = p;
+                while (p < params_.Length && params_.CharAt(p) != '"') {
+                    // RFC quoted-string allows \" but real-world Digest
+                    // challenges never contain embedded quotes; treat
+                    // backslash literally for simplicity.
+                    p = p + 1;
+                }
+                value = params_.Substring(valStart, p - valStart);
+                if (p < params_.Length) p = p + 1;  // closing quote
+            } else {
+                int valStart = p;
+                while (p < params_.Length && params_.CharAt(p) != ',') {
+                    p = p + 1;
+                }
+                value = HttpClient._trimSpaces(
+                    params_.Substring(valStart, p - valStart));
+            }
+            if (count == names.Length) {
+                // Grow
+                string[] newNames  = new string[names.Length * 2];
+                string[] newValues = new string[values.Length * 2];
+                int i = 0;
+                while (i < count) {
+                    newNames[i]  = names[i];
+                    newValues[i] = values[i];
+                    i = i + 1;
+                }
+                names = newNames;
+                values = newValues;
+            }
+            names[count]  = key;
+            values[count] = value;
+            count = count + 1;
+        }
+        // Pack down to exact size (so caller's .Length is meaningful).
+        string[] outNames  = new string[count];
+        string[] outValues = new string[count];
+        int j = 0;
+        while (j < count) {
+            outNames[j]  = names[j];
+            outValues[j] = values[j];
+            j = j + 1;
+        }
+        object[] pair = new object[2];
+        pair[0] = outNames;
+        pair[1] = outValues;
+        return pair;
+    }
+
+    /// Lookup a param name (case-insensitive); return "" if absent.
+    static string _digestParamGet(string[] names, string[] values, string key) {
+        string lower = key.ToLower();
+        int i = 0;
+        while (i < names.Length) {
+            if (names[i] == lower) { return values[i]; }
+            i = i + 1;
+        }
+        return "";
+    }
+
+    /// Hash via the configured algorithm.
+    /// `algo` is one of "md5" / "sha-256" (lowercase, normalised by caller).
+    static string _digestHashHex(string algo, string input) {
+        if (algo == "sha-256") {
+            return Sha256.HashStringHex(input);
+        }
+        // Default + explicit MD5
+        return Md5.HashStringHex(input);
+    }
+
+    /// Build the `Authorization: Digest ...` header value for the given
+    /// challenge + request method + path. Throws `HttpProtocolException`
+    /// for v0-unsupported variants (algorithm / qop).
+    static string _buildDigestAuthHeader(
+            string challengeParams,
+            string method,
+            string uri,
+            string user,
+            string password) {
+        object[] parsed = HttpClient._parseDigestParams(challengeParams);
+        string[] names  = (string[])parsed[0];
+        string[] values = (string[])parsed[1];
+
+        string realm  = HttpClient._digestParamGet(names, values, "realm");
+        string nonce  = HttpClient._digestParamGet(names, values, "nonce");
+        string opaque = HttpClient._digestParamGet(names, values, "opaque");
+        string qop    = HttpClient._digestParamGet(names, values, "qop");
+        string algo   = HttpClient._digestParamGet(names, values, "algorithm").ToLower();
+        if (algo.Length == 0) { algo = "md5"; }
+
+        if (algo != "md5" && algo != "sha-256") {
+            throw new HttpProtocolException(
+                "unsupported Digest algorithm '" + algo
+                + "' (v0 supports MD5 + SHA-256 only)");
+        }
+
+        // qop may be comma-separated list (e.g. "auth,auth-int"). Pick
+        // `auth` if it's listed; otherwise the only one. If only auth-int
+        // is offered, reject.
+        string qopSelected = "auth";
+        if (qop.Length > 0) {
+            bool hasAuth = false;
+            bool hasAuthInt = false;
+            int p = 0;
+            while (p < qop.Length) {
+                int start = p;
+                while (p < qop.Length && qop.CharAt(p) != ',') { p = p + 1; }
+                string token = HttpClient._trimSpaces(
+                    qop.Substring(start, p - start)).ToLower();
+                if (token == "auth") hasAuth = true;
+                if (token == "auth-int") hasAuthInt = true;
+                if (p < qop.Length) p = p + 1;
+            }
+            if (!hasAuth && hasAuthInt) {
+                throw new HttpProtocolException(
+                    "unsupported Digest qop 'auth-int' (v0 supports auth only)");
+            }
+            if (!hasAuth && !hasAuthInt) {
+                throw new HttpProtocolException(
+                    "unrecognised Digest qop '" + qop + "'");
+            }
+            qopSelected = "auth";
+        }
+
+        // HA1 = H(user:realm:password)
+        string ha1 = HttpClient._digestHashHex(algo,
+            user + ":" + realm + ":" + password);
+
+        // HA2 = H(method:uri) — qop=auth (auth-int adds :H(body), v0 N/A)
+        string ha2 = HttpClient._digestHashHex(algo, method + ":" + uri);
+
+        // cnonce = 16 random bytes as hex (32 chars)
+        byte[] rnd = SecureRandom.GetBytes(16);
+        string cnonce = Hex.Encode(rnd);
+
+        // nc: 8-hex monotonic; v0 always restarts at 00000001 per Send
+        string nc = "00000001";
+
+        // response = H(HA1:nonce:nc:cnonce:qop:HA2)
+        string response;
+        if (qop.Length > 0) {
+            response = HttpClient._digestHashHex(algo,
+                ha1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qopSelected + ":" + ha2);
+        } else {
+            // Legacy RFC 2069 (no qop). response = H(HA1:nonce:HA2)
+            response = HttpClient._digestHashHex(algo, ha1 + ":" + nonce + ":" + ha2);
+        }
+
+        // Build header. Algorithm + opaque echoed back verbatim when present.
+        string h = "Digest username=\"" + user + "\""
+                 + ", realm=\"" + realm + "\""
+                 + ", nonce=\"" + nonce + "\""
+                 + ", uri=\"" + uri + "\""
+                 + ", response=\"" + response + "\"";
+        if (algo == "sha-256") {
+            h = h + ", algorithm=SHA-256";
+        }
+        // MD5 default: include explicit algorithm only if server sent it
+        // (some servers reject when echoed back; others require it).
+        // v0: echo when server sent any algorithm at all.
+        if (algo == "md5"
+            && HttpClient._digestParamGet(names, values, "algorithm").Length > 0) {
+            h = h + ", algorithm=MD5";
+        }
+        if (qop.Length > 0) {
+            h = h + ", qop=" + qopSelected
+                  + ", nc=" + nc
+                  + ", cnonce=\"" + cnonce + "\"";
+        }
+        if (opaque.Length > 0) {
+            h = h + ", opaque=\"" + opaque + "\"";
+        }
+        return h;
+    }
+
+    /// Substring search starting at `from`. Returns -1 if not found.
+    static int _indexOfStr(string s, string needle, int from) {
+        if (needle.Length == 0) return from;
+        int limit = s.Length - needle.Length;
+        int i = from;
+        while (i <= limit) {
+            bool match = true;
+            int k = 0;
+            while (k < needle.Length) {
+                if (s.CharAt(i + k) != needle.CharAt(k)) { match = false; break; }
+                k = k + 1;
+            }
+            if (match) return i;
+            i = i + 1;
+        }
+        return -1;
     }
 
     /// add-z42-net-http-stream-body (2026-05-28): send a request and
