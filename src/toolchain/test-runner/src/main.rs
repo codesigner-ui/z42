@@ -311,12 +311,12 @@ fn run(cli: &Cli) -> Result<i32> {
             expected_throw: test.expected_throw.clone(),
             timeout_ms: test.timeout_ms,
         };
-        let outcome = runner::run_one(&mut loaded, &dt, &skip_env);
+        let (outcome, bench_stats) = runner::run_one(&mut loaded, &dt, &skip_env);
         results.push(TestResult::from_outcome(
             test.method_name.clone(),
             outcome,
             test.is_benchmark,
-        ));
+        ).with_bench_stats(bench_stats));
     }
     emit(&format, &module_name, &results)?;
     let exit_code = if results.iter().any(|r| r.status == TestStatus::Failed) { 1 } else { 0 };

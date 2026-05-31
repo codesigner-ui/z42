@@ -404,7 +404,7 @@ public static class BenchHelpers {
 
 ### Stats in JSON output（capture-benchmark-stats-in-testresult, 2026-05-31）
 
-Runner subprocess 模式下 (`--legacy-subprocess` / `--jobs N>1`) 把
+Runner 全模式 (in-process / `--legacy-subprocess` / `--jobs N>1`) 把
 `Bencher.printSummary(label)` 的输出 line 解析为 `TestResult.bench_stats`
 结构化字段，CI 工具 (perf-regression dashboards / 基线 diff scripts) 无需
 grep 即可直接消费：
@@ -435,11 +435,15 @@ upgrade 加 `total=Nns` 后 parser patch 自动捕获 (单元测试 `bench_stats
 max=Zns samples=N`). 修改 `Bencher.printSummary` 输出必须同步更新
 `exec::extract_bench_stats_from_stdout` (commit 同时 ship).
 
-**In-process 路径目前不捕获 stdout**, 所以 in-process (default `--jobs 1`)
-模式下 `bench_stats` 始终 None — stats 仍会显示在 terminal (Console.WriteLine
-打在用户屏幕), 只是不进 JSON. 想拿 JSON stats: 显式 `--legacy-subprocess` 或
-`--jobs 2+`. Deferred entry `bench-stats-in-process-capture` 跟踪
-in-process stdout-capture infra.
+**In-process 路径** (`--jobs 1`, default) 由
+[bench-stats-in-process-capture (2026-05-31)](../../spec/archive/2026-05-31-bench-stats-in-process-capture/)
+落地：runner 在每个 `[Benchmark]` 调用前 push 一个 thread-local
+stdout sink (`z42::corelib::io::push_stdout_sink`), 调 body, pop, 解析
++ re-emit 到 process stdout (用户 terminal 仍看到原始输出)。所以 in-process 与
+subprocess 模式 `bench_stats` 行为一致。机制复用现有
+`STDOUT_SINKS` 栈 (originally built for `TestIO.captureStdout`); nested
+captures (user 在 benchmark body 内再调 `TestIO.captureStdout`) 仍按栈
+语义正确隔离。
 
 ### Runner [Benchmark] 调度（add-benchmark-runner-dispatch, 2026-05-31）
 
@@ -912,7 +916,6 @@ void test_pi_approximation() {
 | ID | 标题 | 现状 | 影响 |
 |----|------|------|------|
 | `failloc-future-jit-stack` | JIT 模式 populate_stack_trace 接入 | JIT 现没填 StackTrace；JIT-执行的 test 失败时 StackTrace=None | 与 `2026-05-10-jit-stack-trace` 重叠；JIT 全套 stack trace 是该 spec 工作 |
-| `bench-stats-in-process-capture` | In-process 路径 stdout capture 给 `bench_stats` | 当前 in-process runner Console.WriteLine 直写父进程 stdout, runner 看不到 → bench_stats=None for `--jobs 1` (default). subprocess 路径 (`--legacy-subprocess` / `--jobs N>1`) 已支持. | 默认模式下 CI 想拿结构化 stats 需切 `--legacy-subprocess`. 长期需要 thread-local stdout shim 或 captured-IO context |
 | `bench-bencher-arg-trampoline` | `void f(Bencher b)` 签名形态 | 当前 validator 只接 zero-arg `void f()`; user 在 body 内自构 Bencher | 工效/boilerplate 小痛; 需要 compiler-generated trampoline 或 runner-side ObjNew API. trampoline 落地后可同时让 runner 自动构造 Bencher 并自动读 stats (无需 printSummary 调用) |
 
 ---

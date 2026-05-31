@@ -178,13 +178,34 @@ pub fn builtin_eprint(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 }
 
 pub fn builtin_test_io_install_stdout_sink(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    STDOUT_SINKS.with(|s| s.borrow_mut().push(Vec::new()));
+    push_stdout_sink();
     Ok(Value::Null)
 }
 
 pub fn builtin_test_io_take_stdout_buffer(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    let bytes = STDOUT_SINKS.with(|s| s.borrow_mut().pop().unwrap_or_default());
+    let bytes = take_stdout_sink();
     Ok(Value::Str(String::from_utf8_lossy(&bytes).into_owned().into()))
+}
+
+/// bench-stats-in-process-capture (2026-05-31): Rust-side push of a
+/// stdout-capture sink. Mirror of `builtin_test_io_install_stdout_sink`
+/// for callers (test-runner) that don't have a z42 VmContext to invoke
+/// the builtin through.
+///
+/// While installed, any subsequent `println` / `print` from z42 code on
+/// this thread routes into the buffer instead of process stdout. Stack
+/// semantics: pushing while one is already active nests — the inner
+/// captures only its own output.
+pub fn push_stdout_sink() {
+    STDOUT_SINKS.with(|s| s.borrow_mut().push(Vec::new()));
+}
+
+/// bench-stats-in-process-capture (2026-05-31): Rust-side pop of the
+/// most-recent stdout sink. Returns the captured bytes (empty Vec when
+/// no sink was installed). Caller may re-emit to process stdout if it
+/// wants the user to still see the output in their terminal.
+pub fn take_stdout_sink() -> Vec<u8> {
+    STDOUT_SINKS.with(|s| s.borrow_mut().pop().unwrap_or_default())
 }
 
 pub fn builtin_test_io_install_stderr_sink(_ctx: &VmContext, _: &[Value]) -> Result<Value> {

@@ -32,24 +32,30 @@ pub fn run_one(
     loaded: &mut LoadedRunner,
     test: &DiscoveredTest<'_>,
     skip_env: &SkipEnv,
-) -> Outcome {
+) -> (Outcome, Option<crate::result::BenchStats>) {
+    // bench-stats-in-process-capture (2026-05-31): mirror exec::run_one's
+    // tuple return so the in-process path can hand BenchStats back to
+    // main.rs for TestResult.bench_stats. The Option is always None for
+    // non-benchmark entries (we don't install the sink) and may be Some
+    // for benchmarks whose body called `Bencher.printSummary(label)`.
+
     // add-test-skip-platform-feature-eval (2026-05-30): consult the
     // conditional evaluator instead of unconditionally skipping any flagged
     // test. `decide_skip` honors `[Skip(platform: …)]` / `[Skip(feature: …)]`
     // against the current host; returns None when the test should run.
     if let Some(reason) = decide_skip(test, skip_env) {
-        return Outcome::Skipped { reason };
+        return (Outcome::Skipped { reason }, None);
     }
 
     let start = Instant::now();
 
     // 1. Per-test isolation: clear static fields + re-run all __static_init__.
     if let Err(e) = interp::init_static_fields(&loaded.ctx, &loaded.ctx.module().unwrap()) {
-        return Outcome::Failed {
+        return (Outcome::Failed {
             reason: format!("static init error: {e}"),
             location: None,
             stack_trace: None,
-        };
+        }, None);
     }
 
     // 2. Setup methods (sequential; first failure short-circuits to test fail).
@@ -59,12 +65,31 @@ pub fn run_one(
             exec_named(&loaded.ctx.module().unwrap(), &loaded.ctx, setup, "Setup")
         {
             run_teardowns(loaded);
-            return Outcome::Failed { reason, location, stack_trace };
+            return (Outcome::Failed { reason, location, stack_trace }, None);
         }
     }
 
-    // 3. Test body.
-    let outcome = exec_test_body(loaded, test);
+    // 3. Test body — capture stdout for benchmarks so Bencher.printSummary
+    //    output can be parsed into TestResult.bench_stats. The captured
+    //    bytes are re-emitted to process stdout after capture so the user
+    //    still sees the output in their terminal (matching subprocess
+    //    behavior where stdout is captured + propagated by the parent).
+    let (outcome, bench_stats) = if test.is_benchmark {
+        z42::corelib::io::push_stdout_sink();
+        let outcome = exec_test_body(loaded, test);
+        let captured = z42::corelib::io::take_stdout_sink();
+        // Re-emit so terminal/CI logs still see the bench output. Bytes
+        // are preserved as-is (the user's trailing \n is already in the
+        // buffer from Console.WriteLine).
+        use std::io::Write as _;
+        let _ = std::io::stdout().write_all(&captured);
+        let stats = crate::exec::extract_bench_stats_from_stdout(
+            &String::from_utf8_lossy(&captured),
+        );
+        (outcome, stats)
+    } else {
+        (exec_test_body(loaded, test), None)
+    };
 
     // 4. Teardown methods (always, even on test fail — mirrors xUnit).
     run_teardowns(loaded);
@@ -73,10 +98,11 @@ pub fn run_one(
     //    accurate Bencher reporting).
     let duration_ms = start.elapsed().as_millis() as u64;
 
-    match outcome {
+    let final_outcome = match outcome {
         Outcome::Passed { .. } => Outcome::Passed { duration_ms },
         other => other, // Failed / Skipped already carries reason
-    }
+    };
+    (final_outcome, bench_stats)
 }
 
 /// Run a Setup / Teardown function by name. Returns:
