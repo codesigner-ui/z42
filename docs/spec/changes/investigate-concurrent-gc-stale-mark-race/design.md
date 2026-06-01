@@ -1,0 +1,92 @@
+# Design: ConcurrentMarkSweep 残留 mark bit race — 根因分析
+
+> 状态：分析中（2026-06-01）。本文记录代码级追踪结论 + 候选修复，待 User 裁决根因后进阶段 3。
+
+## 现象（CI 实测）
+
+- `concurrent_gc_mode_stress_no_race_no_leak` 在 **windows-latest** 上间歇失败，panic：
+  `stale mark bit in region_object after sweep: ... type=Leaf, slots=1`
+  （[`arc_heap.rs:498`](../../../src/runtime/src/gc/arc_heap.rs#L498) 的 `debug_validate_invariants`）。
+- **平台不对称**：windows (x86-64, **强**内存序) 复现；macOS-15 / ubuntu-arm (ARM, **弱**内存序) 通过；本地 Apple Silicon `--release` 也通过。
+- 诊断字段确认：残留对象是 worker 循环新分配的 `Leaf`（不是 `Owner` 或老对象）。
+
+## 关键推理
+
+### 1. 不是内存序 bug
+
+强序 x86 失败、弱序 ARM 通过 —— 与典型"缺 fence"bug 的表现**相反**（后者通常在弱序 ARM 上炸）。因此根因是**线程调度时序竞争**（windows CI runner 的调度让某 mutator 在错误的窗口跑了一次 write barrier），不是缺原子屏障。
+
+### 2. 为什么 push-assertion 没先炸
+
+sweep 期间有保护：`sweep_phase` 进入时 `debug_stw_no_push=true`（[`arc_heap.rs:1091`](../../../src/runtime/src/gc/arc_heap.rs#L1091)），退出时置 false（1199）。write barrier 在 **push 路径**上 `debug_assert!(!debug_stw_no_push)`（[1638-1642](../../../src/runtime/src/gc/arc_heap.rs#L1638)）。
+
+但 `mark_if_unmarked(new)`（[1636](../../../src/runtime/src/gc/arc_heap.rs#L1636)）**先**把 mark bit 置 1（CAS 0→1），**之后**才检查 `debug_stw_no_push` 并 push。所以：
+
+- 若 barrier 在 sweep 窗口 [1091,1199] 内 mark 了一个 unmarked 对象 → push-assertion 炸（我们没看到这个）。
+- 若 barrier 在 `debug_stw_no_push=false` 时（sweep 已返回）mark 了一个 live 对象 → **bit 被置 1 但不触发 push-assertion**，随后 `debug_validate_invariants`（[1911](../../../src/runtime/src/gc/arc_heap.rs#L1911)）看到 stale mark → 炸。
+
+观测到的是后者：**re-mark 落在 sweep 返回（1199）之后、pause drop（1914）之前的窗口**。
+
+### 3. 该窗口内不该有 mutator 在跑
+
+`collect_cycles_with_context` 的并发臂（[1847-1914](../../../src/runtime/src/gc/arc_heap.rs#L1847)）：Phase4 `request_handshake_pause` 应让所有其它 VmContext 在各自 safepoint park，Phase6 sweep + Phase debug_validate 全程 pause 持有（world stopped），直到 1914 `drop(pause)`。若 handshake 真的"所有 mutator 已 park 且保持到 pause 释放"，window 内不可能有 barrier。
+
+→ **根因候选：handshake 的 parked 保证存在漏洞，某 worker 在 sweep 后、pause 释放前仍能执行一次 write barrier，把一个新 `Leaf` 重新 shade。**
+
+## 候选根因（待 User 裁决细化）
+
+### 候选 A：barrier 不在 safepoint 临界区内，park 计数与"停止触碰堆"不同步
+write barrier（mark+push）发生在两次 `check_safepoint` 之间的任意点，不受 phase 锁保护。`request_handshake_pause` 等 `parked_count >= need`（[safepoint.rs:332-339](../../../src/runtime/src/gc/safepoint.rs#L332)）。理论上 collector 会等到每个 worker 到下一个 safepoint 才 park，但 `parked_count` 是跨 cycle 复用的单计数器，且 `park_until_idle` 在 ConcurrentMarking→Marking 的相变切换下，唤醒/重新 park 的时序可能让 collector 在某 worker"恰好处于 barrier 执行中、尚未抵达下一个 safepoint"时误判 `parked_count` 已满足。需对 `parked_count` 增减相对相变的 happens-before 再做一轮形式化核对。
+
+### 候选 B：sweep 的 mark-clear 与 barrier 的 mark-set 缺乏对"该 entry 是否在本轮 STW 内"的判定
+更稳健的设计：barrier 在 ConcurrentMarking 之外（即 Marking/STW 期间）根本不应 shade。可让 barrier 在 push 前检查 phase；若 phase==Marking，则该写本身充当 safepoint（先 park 再写），从根上保证 STW 窗口内无 barrier。代价：barrier 热路径加一次 phase 读。
+
+## 约束与障碍
+
+- **无法本地复现**（macOS/ARM 通过），任何修复只能靠 windows CI 反复验证（慢 + 概率性）—— 不满足"本地 GREEN 10/10"的常规验证门槛。
+- 属 `vm` 并发语义改动，**correctness-critical**；按 philosophy 不得"放宽 invariant 绕过"，也不得未经验证就推测性 patch 上主干。
+
+## 待 User 裁决
+
+1. 采 A（核 handshake 计数 happens-before，定位精确漏洞）还是 B（barrier 在 Marking 相变为 safepoint，从设计上消除窗口）？
+2. 既然本地无法复现：是否接受"在 windows 临时 `#[ignore]` + 本 spec 持续跟踪"作为恢复 CI 绿的过渡（注：与 philosophy"禁 #[ignore] 绕过"冲突，需 User 显式豁免），还是直接按选定根因改 + 用 CI 迭代验证？
+
+## 追加发现（2026-06-01，User 选定 B 后）
+
+### mark 原子序不是元凶
+[`region.rs:153-167`](../../../src/runtime/src/gc/region.rs#L153) 的 `mark/clear_mark/is_marked` 全用 `Ordering::Relaxed`。但 bug 在**强序 x86 (windows)** 现、**弱序 ARM** 不现 —— 若是 Relaxed 导致的重排，应在弱序 ARM 上更易现。方向相反 ⇒ 确认是**逻辑时序竞争**（某 mutator 在 STW 窗口跑了 barrier），不是缺 fence。B（结构性消除 STW 期 barrier）方向正确，但**不能靠加 fence**解决。
+
+### handshake 在纸面推演下"看起来是对的"
+逐步推演 `park_until_idle` (parked_count add→wait→sub under lock) 与 `request_handshake_pause` (set Marking→wait parked_count>=need) 的所有交错：每个 worker 的 barrier push 都发生在它 re-park 之前，应被 Phase5 drain 捕获；未 resume 的 worker 不跑 barrier。**纸面上 worker 应全程 parked 到 sweep+validate 结束。** 这说明真实漏洞比"候选 A/B 的朴素假设"更隐蔽（可能在：`force_safepoint`/throttle 交互、alloc_object 注册新 entry 与 sweep 的 lock 边界、或某个我尚未读到的相变窗口）。
+
+### 结论：必须先拿到 debug-mode 本地复现
+CI 跑的是 **debug**（`debug_validate_invariants` 等全是 `#[cfg(debug_assertions)]`）。先前本地 `--release` 跑当然过——release 下根本没有这条断言。
+
+### 关键新发现 1：本地（macOS/ARM）无法复现，即便极限放大
+debug 模式下把 test 放大到 **8 workers × 2000 iters × 4000 collect rounds + write→barrier 间插 yield_now**，单进程跑仍 0.47s 通过。macOS/ARM 调度就是不进窗口。⇒ **任何修复无法本地验证**；只能靠 windows CI（慢 + 概率性，"过一次"也不能证明修好）。
+
+### 关键新发现 2：朴素 B（barrier 在 Marking 期 park）不安全
+`alloc_object`（[arc_heap.rs:1485](../../../src/runtime/src/gc/arc_heap.rs#L1485)）**不给新对象染色**（region entry 出生 marked=0，白色）。当前正确性依赖 barrier **同步**把新装入的 ref 染灰。如果按朴素 B 让 barrier 在 Marking 期先 park 再染色，则：worker 已 `owner.slots[0]=leaf`（白）但尚未染色 → 进行中的 cycle sweep 把可达的 leaf 当垃圾 tombstone → **可达对象被回收**（比 stale-mark 更严重）。⇒ B 必须配合 **marking 期 allocate-black**，不能是单纯"park 再染"。
+
+### 精化根因
+真正的洞：**mutator 从 `new_with_core` 注册到它第一次 `check_safepoint` 之间，能跑 alloc+barrier，而此时 collector 可能已 STW sweep。** handshake 的 `need=vm_contexts.len()-1` 在 worker 惰性注册的时序下会漏掉"刚注册、尚未抵达首个 safepoint"的 worker。windows 线程调度更易暴露这个窗口。
+
+### 正确修复方向（需 loom/shuttle 验证）
+1. **marking 期 allocate-black**：phase ∈ {ConcurrentMarking, Marking} 时 `alloc_object`/`alloc_array` 出生即 marked=1（标准并发 GC 技术；新生对象本 cycle 保守存活，下 cycle 回收）。消除"可达新对象被 sweep"。
+2. **注册—首safepoint 窗口封闭**：`new_with_core` 注册时若 phase≠Idle，新 context 必须先 park（或注册 happens-before 任何 heap op，且被 handshake 计入）。消除"未 park 的 mutator 在 STW 跑 barrier"。
+3. **验证手段**：因硬件无法复现，应引入 **loom/shuttle** 对 alloc/barrier/handshake 交错做确定性模型检查——这是无法硬件复现的并发 bug 的正道。属独立、聚焦工作。
+
+### 给 User 的现实结论
+- 我能写出方向正确的修复，但**本地无法验证**，且 naive B 已被证伪——需 allocate-black + 注册封闭 + loom 验证，是一块独立的聚焦工作，非快速补丁。
+- CI 现状：4 平台已 3 绿，仅 windows 因本 race 间歇红。
+- **建议**：先用**已有的过渡手段**（windows `#[cfg_attr(target_os="windows", ignore)]` + 本 spec 跟踪）恢复 CI 绿，把"allocate-black + 注册封闭 + loom 验证"作为本 spec 的阶段 3 正式排期。该过渡与 philosophy"禁 #[ignore]"冲突，需 User 显式豁免；鉴于无法本地验证、且盲推 correctness-critical 改动风险高，这是当前最稳的路径。
+
+## 尝试记录：注册封闭 fix 被证实有副作用（2026-06-01）
+
+按 User 选定的方向实现了"注册封闭"：在 `safepoint.rs` 加 `park_if_collecting`，并在 `vm_context.rs::new_with_core` 注册后调用——若注册时 phase ∈ {Requested, Marking} 则 park。
+
+**结果：deadlock 了既有单测 `safepoint_tests::second_collector_falls_back_to_mutator_park_returns_none`。** 该测试手动设 phase=Marking + collector_active=true，worker 线程 `new_with_core` 后调 `request_gc_pause` 期望"输掉 collector 竞争返回 None"。加了注册封闭后，worker 改在**注册处** park（而非在 request_gc_pause 处）；主线程 release（collector_active=false, phase=Idle）后 worker 才醒来去 request_gc_pause，此时 collector_active 已是 false → worker **赢得** collector 角色 → 等其它 context park（主线程在 join，不参与）→ 永久 deadlock。
+
+**结论**：注册封闭改变了"谁成为 collector"的时序——这是对 handshake 协议的非局部影响，远不止"关一个窗口"。在**无法本地复现真 bug、无法本地验证**的前提下，盲推这种 correctness-critical 改动已经实测打破既有并发不变量。已 revert 代码改动（保留本分析）。
+
+**强烈建议**：不要再盲推。正道是引入 **loom/shuttle** 对 alloc/barrier/handshake/注册 的全交错做确定性模型检查（能同时复现 windows race 与本次 deadlock），在模型下设计并验证 fix。这是独立的聚焦工作。短期：windows `#[ignore]` 过渡解封 CI（需 User 豁免 philosophy 的禁 skip）。
