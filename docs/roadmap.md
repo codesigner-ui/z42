@@ -331,6 +331,15 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | `compiler-future-typed-overload-resolution` | mangling 改为类型编码键 + IR/zpkg/resolver 同步 + 类型 best-match 选择；解锁 stdlib 类的 `(byte[])` / `(Stream)` 等同元不同类型 ctor / method 重载（当前用 static factory workaround） | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-typed-overload-resolution) |
 | ~~`compiler-future-vcall-base-class-fallback`~~ ✅ | 已修复 (2026-05-26) — 三处协同修复：IrGen.Classes.cs `.base` 元数据用 QualifyClassName；FunctionEmitter.cs base ctor IR 名从 SemanticModel 推导；exec_vcall.rs lazy walk 对深层 base 用 ctx.try_lookup_type() | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-vcall-base-class-fallback-已修复-2026-05-26) |
 
+### 代码内临时绕过（in-code stopgaps，待正解）
+
+> 2026-06-01/02 修 CI 时落地的过渡手段 —— **代码里有临时绕过，正解在对应 active spec 里排期**。这两项不是 design-doc 延后，而是 `docs/spec/changes/` 下的进行中变更；列在此处供集中复查。
+
+| 绕过点（代码） | 正解 spec | 状态 |
+|------|------|------|
+| `src/runtime/tests/cross_thread_smoke.rs::concurrent_gc_mode_stress_no_race_no_leak` 在 **windows `#[ignore]`**（并发 GC stale-mark race；windows-only、本地不可复现）| [spec/changes/investigate-concurrent-gc-stale-mark-race](spec/changes/investigate-concurrent-gc-stale-mark-race/) 阶段 3：loom/shuttle 验证 + 协议修复 | ⏳ 待排期 |
+| `src/libraries/z42.crypto/tests/ecdsa_secp256k1_vectors.z42` 的 `[Timeout]` **放宽到 600s**（解释执行 EC 标量乘慢，原 240s 在 CI 争用下超时）| [spec/changes/optimize-ecdsa-jacobian-coords](spec/changes/optimize-ecdsa-jacobian-coords/)：Jacobian 坐标（每次标量乘 1 次求逆，~100×）；落地后收紧 timeout | ⏳ 待排期 |
+
 ### Backlog 项实施流程
 
 每条 deferred 项被实施时：
