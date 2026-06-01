@@ -43,14 +43,23 @@ void test_secp256k1_scalar_2_yields_2g() {
 
 // ── Sign / verify round trip ────────────────────────────────────────────
 
-// add-test-timeout-attribute (2026-05-30): in-tree demo of the new
-// [Timeout(milliseconds: N)] attribute. Observed durations on this test:
-// ~60-180 s on 3-4 vCPU CI runners and ~60 s on local Apple Silicon. We cap
-// at 240 s — tighter than the 300 s runner default to demonstrate the
-// per-method override actually flows compile → TIDX → reader → runner, but
-// with comfortable margin over real-world worst case.
+// add-test-timeout-attribute (2026-05-30): in-tree demo of the
+// [Timeout(milliseconds: N)] attribute — proves a per-method override
+// flows compile → TIDX → reader → runner.
+//
+// recalibrate-secp256k1-timeout (2026-06-01): the old 240 s cap was
+// miscalibrated. A full sign+verify round trip runs ~4 scalar mults of
+// affine EC math on the *interpreted* VM, each point op taking a 256-bit
+// ModInverse (~1500 inversions/round trip). Observed ~60 s on local Apple
+// Silicon but 60-180 s on shared CI runners — and under `test-all.sh
+// --parallel --jobs=4` contention on a 4-vCPU ubuntu-x64 runner it blew
+// past 240 s and got killed (wall=240564 ms). Raised to 600 s for honest
+// margin over worst-case contention. The real fix is projective/Jacobian
+// coordinates (1 inversion per scalar mult, ~100× faster) — tracked as a
+// separate spec; until then this test is inherently slow and needs a loose
+// per-method cap.
 [Test]
-[Timeout(milliseconds: 240000)]
+[Timeout(milliseconds: 600000)]
 void test_secp256k1_sign_verify_round_trip() {
     byte[] d = Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
     byte[] pk = EcdsaSecp256k1.GeneratePublicKey(d);
