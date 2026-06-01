@@ -1,0 +1,133 @@
+// add-console-ansi-color (2026-06-01): Std.IO.Ansi colour helpers.
+namespace Z42IoAnsiColorTests;
+
+using Std;
+using Std.IO;
+using Std.Test;
+
+// Build the ESC ([0x1B]) string once per test (z42 string literals
+// don't have a hex escape, so we go via String.FromChars).
+string _esc() {
+    char[] arr = new char[1];
+    arr[0] = (char)0x1B;
+    return String.FromChars(arr);
+}
+
+[Test]
+void test_red_wraps_when_enabled() {
+    Ansi.SetEnabled(true);
+    string got = Ansi.Red("error");
+    string want = _esc() + "[31merror" + _esc() + "[0m";
+    Assert.Equal(want, got);
+}
+
+[Test]
+void test_bright_green_uses_90_offset() {
+    Ansi.SetEnabled(true);
+    string got = Ansi.BrightGreen("ok");
+    string want = _esc() + "[92mok" + _esc() + "[0m";
+    Assert.Equal(want, got);
+}
+
+[Test]
+void test_bold_style_emits_code_1() {
+    Ansi.SetEnabled(true);
+    string got = Ansi.Bold("HEAD");
+    string want = _esc() + "[1mHEAD" + _esc() + "[0m";
+    Assert.Equal(want, got);
+}
+
+[Test]
+void test_nested_compose_red_bold() {
+    Ansi.SetEnabled(true);
+    string got = Ansi.Red(Ansi.Bold("X"));
+    string want = _esc() + "[31m" + _esc() + "[1mX" + _esc() + "[0m" + _esc() + "[0m";
+    Assert.Equal(want, got);
+}
+
+[Test]
+void test_disabled_passes_through_unchanged() {
+    Ansi.SetEnabled(false);
+    Assert.Equal("error", Ansi.Red("error"));
+    Assert.Equal("ok",    Ansi.Green("ok"));
+    Assert.Equal("X",     Ansi.Bold("X"));
+}
+
+[Test]
+void test_disabled_applies_to_every_method() {
+    Ansi.SetEnabled(false);
+    string s = "x";
+    Assert.Equal(s, Ansi.Black(s));
+    Assert.Equal(s, Ansi.Red(s));
+    Assert.Equal(s, Ansi.Green(s));
+    Assert.Equal(s, Ansi.Yellow(s));
+    Assert.Equal(s, Ansi.Blue(s));
+    Assert.Equal(s, Ansi.Magenta(s));
+    Assert.Equal(s, Ansi.Cyan(s));
+    Assert.Equal(s, Ansi.White(s));
+    Assert.Equal(s, Ansi.BrightBlack(s));
+    Assert.Equal(s, Ansi.BrightRed(s));
+    Assert.Equal(s, Ansi.BrightGreen(s));
+    Assert.Equal(s, Ansi.BrightYellow(s));
+    Assert.Equal(s, Ansi.BrightBlue(s));
+    Assert.Equal(s, Ansi.BrightMagenta(s));
+    Assert.Equal(s, Ansi.BrightCyan(s));
+    Assert.Equal(s, Ansi.BrightWhite(s));
+    Assert.Equal(s, Ansi.Bold(s));
+    Assert.Equal(s, Ansi.Dim(s));
+    Assert.Equal(s, Ansi.Italic(s));
+    Assert.Equal(s, Ansi.Underline(s));
+    Assert.Equal(s, Ansi.Reverse(s));
+}
+
+[Test]
+void test_set_enabled_override_survives_across_calls() {
+    Ansi.SetEnabled(true);
+    string a = Ansi.Red("a");
+    string b = Ansi.Green("b");
+    Assert.True(a.Contains(_esc() + "[31m"));
+    Assert.True(b.Contains(_esc() + "[32m"));
+}
+
+[Test]
+void test_manual_set_enabled_overrides_no_color() {
+    // Even if NO_COLOR is set, explicit SetEnabled(true) wins.
+    Environment.SetEnvironmentVariable("NO_COLOR", "1");
+    Ansi.SetEnabled(true);
+    string got = Ansi.Red("x");
+    Assert.True(got.Contains(_esc() + "[31m"));
+    Environment.UnsetEnvironmentVariable("NO_COLOR");
+}
+
+[Test]
+void test_strip_simple_color_wrap() {
+    string input = _esc() + "[31merror" + _esc() + "[0m";
+    Assert.Equal("error", Ansi.Strip(input));
+}
+
+[Test]
+void test_strip_nested_wraps() {
+    string input = _esc() + "[31m" + _esc() + "[1mX" + _esc() + "[0m" + _esc() + "[0m";
+    Assert.Equal("X", Ansi.Strip(input));
+}
+
+[Test]
+void test_strip_plain_text_is_identity() {
+    Assert.Equal("no codes here", Ansi.Strip("no codes here"));
+    Assert.Equal("", Ansi.Strip(""));
+}
+
+[Test]
+void test_strip_handles_non_sgr_escapes() {
+    // Cursor-move sequence (clear screen) — ends in `J`, not `m`.
+    string input = _esc() + "[2Jhello" + _esc() + "[H" + "world";
+    Assert.Equal("helloworld", Ansi.Strip(input));
+}
+
+[Test]
+void test_strip_handles_truncated_escape_at_eof() {
+    // Truncated CSI at end of string — strip whatever we have.
+    string input = "head" + _esc() + "[31m";
+    string stripped = Ansi.Strip(input);
+    Assert.Equal("head", stripped);
+}
