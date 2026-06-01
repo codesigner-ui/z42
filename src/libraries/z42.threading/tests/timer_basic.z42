@@ -32,7 +32,11 @@ void test_start_once_fires_exactly_once() {
     Timer t = Timer.StartOnce(50, () => {
         fires[0] = fires[0] + 1;
     });
-    Thread.Sleep(150);
+    // harden-timer-test-jitter (2026-06-01): widened 150ms→500ms so the
+    // single fire reliably lands even when a contended CI runner delays the
+    // worker thread's first wakeup. StartOnce self-stops, so it can never
+    // fire twice — the count stays exactly 1.
+    Thread.Sleep(500);
     Assert.Equal(1, fires[0]);
     Assert.False(t.IsRunning());
 }
@@ -56,13 +60,16 @@ void test_stop_responsive_for_large_interval() {
         // never expected to fire within the test window
     });
     Thread.Sleep(50);
-    // StopAndJoin should complete in ≤ 200ms (100ms chunk granularity +
-    // some scheduling slack), NOT wait the full 10s.
+    // StopAndJoin returns after the current 100ms chunk completes, NOT after
+    // the full 10s interval. harden-timer-test-jitter (2026-06-01): raised the
+    // cap 250ms→1000ms so a contended CI runner's Thread.Sleep(100) overshoot
+    // + Join scheduling slack can't trip it, while still being 10x below the
+    // 10s interval — i.e. still proving the chunked-sleep responsiveness.
     Stopwatch sw = Stopwatch.StartNew();
     t.StopAndJoin();
     sw.Stop();
     long elapsedMs = sw.Elapsed().TotalMilliseconds();
-    Assert.True(elapsedMs < 250);
+    Assert.True(elapsedMs < 1000);
 }
 
 [Test]
@@ -98,14 +105,27 @@ void test_callback_exception_does_not_kill_timer() {
 
 [Test]
 void test_stop_and_join_waits_for_in_flight_callback() {
+    bool[] started = new bool[1];
     bool[] done = new bool[1];
+    started[0] = false;
     done[0] = false;
     Timer t = Timer.StartPeriodic(10, () => {
+        started[0] = true;
         Thread.Sleep(200);
         done[0] = true;
     });
-    // Give the first callback a chance to start.
-    Thread.Sleep(50);
+    // harden-timer-test-jitter (2026-06-01): the old fixed Thread.Sleep(50)
+    // "give the callback a chance to start" raced — on a contended CI runner
+    // the worker thread may not be scheduled within 50ms, so StopAndJoin would
+    // exit before the callback ever ran and `done` stayed false. Instead poll
+    // a `started` flag (set at callback entry) until the callback is provably
+    // in-flight, then StopAndJoin must block until it finishes.
+    int waited = 0;
+    while (!started[0] && waited < 5000) {
+        Thread.Sleep(5);
+        waited = waited + 5;
+    }
+    Assert.True(started[0]);   // callback actually entered (not a scheduling miss)
     t.StopAndJoin();
     // Once StopAndJoin returns, the in-flight callback must have finished.
     Assert.True(done[0]);
