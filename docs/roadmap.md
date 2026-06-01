@@ -309,7 +309,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Compression streaming decode | v0 是 accumulate-then-decompress | [stdlib/compression.md](design/stdlib/compression.md#compression-future-streaming-decode) |
 | Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |
 | wasm zstd | 需 WASI SDK 或 ruzstd | [stdlib/compression.md](design/stdlib/compression.md#compression-future-wasm-zstd) |
-| YAML anchors / tags / multi-line / ~~multi-doc~~ ✅ | **multi-doc 已落地 2026-05-25** (`add-yaml-multi-doc`)；anchors / tags / multi-line / complex-keys / timestamps 仍延后 | [stdlib/yaml.md](design/stdlib/yaml.md#deferred--future-work) |
+| YAML ~~anchors~~ ✅ / ~~tags~~ ✅ / ~~multi-line~~ ✅ / ~~multi-doc~~ ✅ / ~~timestamps~~ ✅ / ~~hex-octal~~ ✅ / ~~merge-keys~~ ✅ / complex-keys | **anchors / tags / multi-line / multi-doc / timestamps / numeric-bases / merge-keys 全部已落地** (2026-05-25 → 2026-06-01)；仅 `yaml-future-complex-keys` (`? key` 语法) 仍延后 — rare in practice | [stdlib/yaml.md](design/stdlib/yaml.md#deferred--future-work) |
 | ~~FileStream~~ ✅ + TextReader / BufferedStream / async streams | **`FileStream` 已落地 2026-05-24** (`add-z42-io-filestream`)；TextReader / BufferedStream / async 仍延后 | [stdlib/io-stream.md](design/stdlib/io-stream.md#deferred--future-work) |
 | ~~Refactor CompressionStream to Stream~~ | **✅ 已落地 2026-05-24** — CompressionStream → `WrapWrite/WrapRead` 返回 `Std.IO.Stream` | [stdlib/io-stream.md](design/stdlib/io-stream.md#refactor-compression-stream-on-iostream--landed-2026-05-24) |
 | ~~Refactor BinaryReader/Writer to accept Stream~~ | **✅ 已落地 2026-05-24** — `(Stream)` 构造器；byte[] 构造保留作 sugar | [stdlib/io-stream.md](design/stdlib/io-stream.md#refactor-binary-reader-stream--landed-2026-05-24) |

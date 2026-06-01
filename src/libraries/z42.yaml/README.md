@@ -37,14 +37,46 @@ void Main() {
 }
 ```
 
-## Scope (v0)
+## Scope
 
 - ✅ Block mapping / sequence with indentation-based nesting
 - ✅ Flow mapping `{}` / flow sequence `[]`
 - ✅ Plain / single-quoted / double-quoted strings (with `\n \t \"
   \\ \uXXXX` escapes)
-- ✅ Scalars: `null` (`~`) / bool / int / float / string
-- ✅ Comments
-- ❌ Anchors / aliases / tags / multi-line `|` `>` / multi-doc /
-  complex keys / hex-octal int / timestamps — see Deferred section in
+- ✅ Scalars: `null` (`~`) / bool / int / float / string / timestamp
+  (ISO 8601 prefix); int hex `0xFF` / octal `0o755` literals
+- ✅ Block scalars `|` literal / `>` folded (with `-` strip / `+`
+  keep chomping + optional indent indicator)
+- ✅ Comments (standalone + end-of-line)
+- ✅ Anchors `&name` / aliases `*name` (per-doc scope, DeepClone
+  resolution)
+- ✅ Tags `!!str` / `!!int` / `!!float` / `!!bool` / `!!null` for
+  explicit scalar coercion; unknown / local tags fall through to
+  inference
+- ✅ Multi-document streams via `YamlValue.ParseAll` (`---`
+  separator, `...` end marker)
+- ✅ Merge keys `<<: *anchor` (YAML 1.1 extension) — Docker Compose /
+  Helm / K8s pattern; explicit keys override merged; quoted `"<<"`
+  stays literal
+- ✅ Stream overloads (`ParseStream` / `ParseAllStream` / `WriteTo`)
+- ❌ Complex keys (`? sequence-as-key` syntax) — see
+  `yaml-future-complex-keys` in
   [yaml.md](../../../docs/design/stdlib/yaml.md#deferred--future-work)
+
+## Composing configs with merge keys
+
+```z42
+string yaml = "x-common: &common\n"
+    + "  restart: unless-stopped\n"
+    + "  logging:\n"
+    + "    driver: json-file\n"
+    + "services:\n"
+    + "  web:\n"
+    + "    <<: *common\n"
+    + "    image: nginx\n"
+    + "  worker:\n"
+    + "    <<: *common\n"
+    + "    image: python\n";
+YamlValue cfg = YamlValue.Parse(yaml);
+// cfg.services.web has restart + logging + image; cfg.services.worker too.
+```

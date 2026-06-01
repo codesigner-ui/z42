@@ -1,0 +1,255 @@
+// add-yaml-merge-keys (2026-06-01): YAML 1.1 `<<: *anchor` merge-key extension.
+namespace Z42YamlParseMergeKeysTests;
+
+using Std;
+using Std.Test;
+using Std.Yaml;
+
+[Test]
+void test_basic_merge_from_anchor() {
+    string input = "defaults: &d\n"
+        + "  a: 1\n"
+        + "  b: 2\n"
+        + "prod:\n"
+        + "  <<: *d\n"
+        + "  c: 3\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue prod = doc.Get("prod");
+    Assert.True(prod.IsMapping());
+    Assert.Equal(3, prod.Count());
+    Assert.False(prod.ContainsKey("<<"));
+    Assert.Equal(1, prod.Get("a").AsInt());
+    Assert.Equal(2, prod.Get("b").AsInt());
+    Assert.Equal(3, prod.Get("c").AsInt());
+}
+
+[Test]
+void test_explicit_after_merge_overrides() {
+    string input = "defaults: &d\n"
+        + "  a: 1\n"
+        + "  b: 2\n"
+        + "prod:\n"
+        + "  <<: *d\n"
+        + "  a: 99\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue prod = doc.Get("prod");
+    Assert.Equal(99, prod.Get("a").AsInt());
+    Assert.Equal(2, prod.Get("b").AsInt());
+}
+
+[Test]
+void test_explicit_before_merge_still_wins() {
+    string input = "defaults: &d\n"
+        + "  a: 1\n"
+        + "  b: 2\n"
+        + "prod:\n"
+        + "  a: 99\n"
+        + "  <<: *d\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue prod = doc.Get("prod");
+    Assert.Equal(99, prod.Get("a").AsInt());
+    Assert.Equal(2, prod.Get("b").AsInt());
+}
+
+[Test]
+void test_merge_sequence_earlier_source_wins() {
+    string input = "base: &base\n"
+        + "  a: 1\n"
+        + "  b: 2\n"
+        + "  c: 3\n"
+        + "override: &override\n"
+        + "  b: 99\n"
+        + "combined:\n"
+        + "  <<: [*override, *base]\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue c = doc.Get("combined");
+    Assert.Equal(1,  c.Get("a").AsInt());
+    Assert.Equal(99, c.Get("b").AsInt());
+    Assert.Equal(3,  c.Get("c").AsInt());
+}
+
+[Test]
+void test_merge_in_flow_mapping() {
+    string input = "defaults: &d\n"
+        + "  a: 1\n"
+        + "  b: 2\n"
+        + "prod: {<<: *d, c: 3}\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue prod = doc.Get("prod");
+    Assert.True(prod.IsMapping());
+    Assert.Equal(3, prod.Count());
+    Assert.Equal(1, prod.Get("a").AsInt());
+    Assert.Equal(2, prod.Get("b").AsInt());
+    Assert.Equal(3, prod.Get("c").AsInt());
+}
+
+[Test]
+void test_quoted_double_lt_stays_literal_key() {
+    string input = "m:\n"
+        + "  \"<<\": special\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue m = doc.Get("m");
+    Assert.True(m.ContainsKey("<<"));
+    Assert.Equal("special", m.Get("<<").AsString());
+}
+
+[Test]
+void test_quoted_single_lt_stays_literal_key() {
+    string input = "m:\n"
+        + "  '<<': literal\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue m = doc.Get("m");
+    Assert.True(m.ContainsKey("<<"));
+    Assert.Equal("literal", m.Get("<<").AsString());
+}
+
+[Test]
+void test_direct_mapping_as_merge_value() {
+    string input = "prod:\n"
+        + "  <<: {a: 1, b: 2}\n"
+        + "  c: 3\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue prod = doc.Get("prod");
+    Assert.Equal(3, prod.Count());
+    Assert.Equal(1, prod.Get("a").AsInt());
+    Assert.Equal(2, prod.Get("b").AsInt());
+    Assert.Equal(3, prod.Get("c").AsInt());
+}
+
+[Test]
+void test_merge_alias_to_scalar_throws() {
+    string input = "scalar: &s 42\n"
+        + "bad:\n"
+        + "  <<: *s\n";
+    bool caught = false;
+    try { YamlValue.Parse(input); }
+    catch (YamlException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("merge"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_merge_sequence_with_non_mapping_throws() {
+    string input = "m: &m {a: 1}\n"
+        + "s: &s 42\n"
+        + "bad:\n"
+        + "  <<: [*m, *s]\n";
+    bool caught = false;
+    try { YamlValue.Parse(input); }
+    catch (YamlException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("merge"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_merge_value_null_throws() {
+    string input = "bad:\n"
+        + "  <<: ~\n";
+    bool caught = false;
+    try { YamlValue.Parse(input); }
+    catch (YamlException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("merge"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_docker_compose_pattern() {
+    string input = "x-common: &common\n"
+        + "  restart: unless-stopped\n"
+        + "  logging:\n"
+        + "    driver: json-file\n"
+        + "services:\n"
+        + "  web:\n"
+        + "    <<: *common\n"
+        + "    image: nginx\n"
+        + "  worker:\n"
+        + "    <<: *common\n"
+        + "    image: python\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue services = doc.Get("services");
+    YamlValue web    = services.Get("web");
+    YamlValue worker = services.Get("worker");
+    Assert.Equal(3, web.Count());
+    Assert.Equal(3, worker.Count());
+    Assert.Equal("nginx",  web.Get("image").AsString());
+    Assert.Equal("python", worker.Get("image").AsString());
+    Assert.Equal("unless-stopped", web.Get("restart").AsString());
+    Assert.Equal("unless-stopped", worker.Get("restart").AsString());
+}
+
+[Test]
+void test_deep_clone_independence_across_siblings() {
+    // Mutating one merged value must not leak into a sibling that
+    // merged the same anchor (DeepClone semantics through merge).
+    string input = "shared: &shared\n"
+        + "  count: 1\n"
+        + "left:\n"
+        + "  <<: *shared\n"
+        + "right:\n"
+        + "  <<: *shared\n";
+    YamlValue doc = YamlValue.Parse(input);
+    YamlValue left  = doc.Get("left");
+    YamlValue right = doc.Get("right");
+    left.Set("count", YamlValue.OfInt(99));
+    Assert.Equal(99, left.Get("count").AsInt());
+    Assert.Equal(1,  right.Get("count").AsInt());
+}
+
+[Test]
+void test_stringify_drops_merge_token() {
+    string input = "d: &d\n"
+        + "  a: 1\n"
+        + "  b: 2\n"
+        + "prod:\n"
+        + "  <<: *d\n"
+        + "  c: 3\n";
+    YamlValue doc = YamlValue.Parse(input);
+    string output = YamlValue.Stringify(doc);
+    Assert.False(output.Contains("<<"));
+    // Round-trip parseable.
+    YamlValue reparsed = YamlValue.Parse(output);
+    YamlValue prod = reparsed.Get("prod");
+    Assert.Equal(1, prod.Get("a").AsInt());
+    Assert.Equal(2, prod.Get("b").AsInt());
+    Assert.Equal(3, prod.Get("c").AsInt());
+}
+
+[Test]
+void test_per_doc_merge_scope_via_parse_all() {
+    string input = "shared: &shared\n"
+        + "  k: 1\n"
+        + "use:\n"
+        + "  <<: *shared\n"
+        + "---\n"
+        + "shared: &shared\n"
+        + "  k: 2\n"
+        + "use:\n"
+        + "  <<: *shared\n";
+    YamlValue[] docs = YamlValue.ParseAll(input);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal(1, docs[0].Get("use").Get("k").AsInt());
+    Assert.Equal(2, docs[1].Get("use").Get("k").AsInt());
+}
+
+[Test]
+void test_duplicate_explicit_key_after_merge_still_errors() {
+    string input = "d: &d\n"
+        + "  a: 1\n"
+        + "bad:\n"
+        + "  <<: *d\n"
+        + "  a: 99\n"
+        + "  a: 77\n";
+    bool caught = false;
+    try { YamlValue.Parse(input); }
+    catch (YamlException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("duplicate"));
+    }
+    Assert.True(caught);
+}

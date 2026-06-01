@@ -71,11 +71,6 @@ public class YamlException : Exception { /* */ }
 See [`json.md` Stream overloads](json.md#stream-overloads2026-05-24-add-stream-overloads-to-format-parsers)
 for the rationale on the `ParseStream` naming.
 
-> Tests for these overloads land alongside the
-> `fix-yaml-parse-regression` spec (currently `YamlValue.Parse(string)`
-> is broken on `main` — int / string / mapping parsing failures
-> introduced between commits `249a0411` and `739112ce`).
-
 ## Supported syntax (v0)
 
 | Feature | Example |
@@ -90,6 +85,7 @@ for the rationale on the `ParseStream` naming.
 | Scalars: block literal | `key: \|\n  Line1\n  Line2\n` → `"Line1\nLine2\n"` (newlines preserved; chomping `-` strip / `+` keep / default clip) |
 | Scalars: block folded | `key: >\n  A\n  B\n` → `"A B\n"` (consecutive non-blank lines fold to single space; blank line → `\n`) |
 | Anchors / aliases | `defaults: &defaults\n  k: v\nprod: *defaults` — per-doc scope; aliases resolve to a `DeepClone` of the anchored value (no shared mutation) |
+| Merge keys | `prod:\n  <<: *defaults\n  override: true` — YAML 1.1 `tag:yaml.org,2002:merge`; value must be a mapping or sequence of mappings; explicit keys override merged regardless of position; quoted `"<<"` stays literal (escape hatch); `Stringify` emits the expanded form (no `<<:` in output) |
 | Block mapping | `key: value\n` with indentation-based nesting |
 | Block sequence | `- item\n` with same indentation rules |
 | Sequence of inline mappings | `- name: bob\n- name: alice\n` |
@@ -244,6 +240,49 @@ ParseAll / mixed-types doc stack (scalar + sequence + mapping) /
 nested mapping per doc / sequence-then-mapping / kubectl manifest
 stack / single-doc `Parse()` still rejects multi-doc with hint /
 single-doc `Parse()` accepts trailing `...` / comments between docs.
+
+### ~~`yaml-future-merge-keys`~~ — **✅ 已落地 2026-06-01 (add-yaml-merge-keys)**
+
+Shipped: YAML 1.1 merge-key extension `<<: *anchor`
+(`tag:yaml.org,2002:merge`). Block + flow mapping support;
+quoted `"<<"` / `'<<'` stays literal as the documented escape hatch.
+Merge value must resolve to a mapping or a sequence of mappings;
+scalars, nulls, mixed sequences throw `YamlException` with "merge"
+in the message. Precedence: explicit keys override merged values
+regardless of source position; within `<<: [*a, *b]` earlier source
+wins (per spec text). Stringify emits the expanded mapping (no `<<:`
+in output) — round-trip preserves data, not the merge syntax.
+
+Implementation: new `_ApplyMerge(dst, mergeVal)` + `_MergeOneSource` +
+linear `_mergedKeys` / `_mergedCount` field tracking which keys came
+from a merge so an explicit assignment can silently overwrite.
+`_ParseBlockMapping` and `_ParseFlowMapping` save/restore that table
+across recursion. `_lastKeyQuoted` flag (set by `_ParseMappingKey` /
+`_ParseFlowKey`) distinguishes plain `<<` (merge) from quoted `"<<"`
+(literal). `_ParseFlowValue` gained a one-liner `*alias` branch —
+needed because the block-context alias parser consumes the rest of
+the line, which is wrong for flow-bounded values.
+
+16 tests in `tests/parse_merge_keys.z42` cover: basic single-anchor
+merge, explicit override after `<<:`, explicit before `<<:`,
+sequence-of-anchors earlier-wins, flow mapping merge,
+double-quoted + single-quoted `<<` escape hatch, direct flow-mapping
+as merge value, alias-to-scalar / sequence-with-non-mapping / null
+error paths, Docker Compose `x-common` pattern (`web` / `worker`
+sharing `restart` + `logging`), DeepClone independence (mutating
+left.count doesn't leak to right.count), Stringify drops `<<:`,
+per-doc scope via `ParseAll`, duplicate explicit-after-merge still
+errors.
+
+Out of scope (no follow-up planned unless demand surfaces):
+- **Re-emit `<<:` in `Stringify`** — would require per-key provenance
+  tracking. Configs that author with `<<:` are typically read by
+  tools, not round-tripped.
+- **Deep merge** — merged mappings are inserted shallowly; an
+  explicit key with a mapping value replaces the merged mapping
+  wholesale (matches PyYAML default).
+- **`&anchor` in flow contexts** — separate pre-existing gap
+  unrelated to merge; add when needed.
 
 ### `yaml-future-complex-keys`
 

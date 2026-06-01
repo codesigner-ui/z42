@@ -10,7 +10,7 @@ using Std.Text;
 // Lines are processed in order; comments and blank lines are skipped at
 // the line boundary so they never appear mid-token.
 //
-// Supported (v0):
+// Supported:
 //   * Block mapping        key: value
 //   * Block sequence       - item
 //   * Flow mapping         { key: value, ... }
@@ -18,13 +18,17 @@ using Std.Text;
 //   * Scalars              plain / 'single' / "double" with \n \t \" \\ \uXXXX escapes
 //   * null token           ~ or empty value
 //   * bool tokens          true / false (YAML 1.2 — no yes/on/off Norway-problem)
-//   * int / float          decimal only; sign + exponent OK
+//   * int / float          decimal (signed, exponent); hex 0xFF / octal 0o755
 //   * Comments             # …  (line-end and standalone)
-//   * Document marker      --- (consumed at start if present, ignored)
+//   * Document markers     --- (start) / ... (end); multi-doc via ParseAll
+//   * Anchors / aliases    &name / *name with per-doc scope + DeepClone
+//   * Tags                 !!str / !!int / !!float / !!bool / !!null
+//   * Block scalars        | literal / > folded with -/+ chomping
+//   * Timestamps           ISO 8601 prefix → YamlValue kind 7
+//   * Merge keys           <<: *anchor  (YAML 1.1 extension)
 //
 // Not supported (raise YamlException → see yaml.md Deferred):
-//   anchors / aliases / tags / multi-line | > / multi-doc / complex keys /
-//   octal-hex int literals / timestamp scalars / YAML 1.1 quirks.
+//   complex keys (`? key` syntax) / YAML 1.1 yes-no-on-off bool quirks.
 
 public sealed class YamlParser {
     private string _src;
@@ -38,6 +42,24 @@ public sealed class YamlParser {
     private YamlValue[] _anchorValues;
     private int         _anchorCount;
 
+    // add-yaml-merge-keys (2026-06-01): the most recent mapping/flow key was
+    // produced from a quoted string literal (`"<<"` / `'<<'`). The merge-key
+    // dispatcher only fires on an unquoted plain `<<`, so quoted keys remain
+    // literal — the documented escape hatch for users who genuinely need
+    // `<<` as data. Set by _ParseMappingKey / _ParseFlowKey on every call.
+    private bool _lastKeyQuoted;
+
+    // add-yaml-merge-keys (2026-06-01): per-mapping table of keys that were
+    // inserted via a `<<:` merge rather than an explicit entry. Used by the
+    // mapping parsers so an explicit key can overwrite a merged value,
+    // while explicit-vs-explicit collisions still throw. Saved + restored
+    // around any recursive descent into a nested mapping. z42's `ref`
+    // modifier is compile-time only at runtime (parameter-modifiers.md),
+    // so a per-parser field with save/restore is cleaner than tuple
+    // returns or array re-assignment across helpers.
+    private string[] _mergedKeys;
+    private int      _mergedCount;
+
     public YamlParser(string src) {
         this._src  = src;
         this._pos  = 0;
@@ -46,6 +68,9 @@ public sealed class YamlParser {
         this._anchorNames  = new string[4];
         this._anchorValues = new YamlValue[4];
         this._anchorCount  = 0;
+        this._lastKeyQuoted = false;
+        this._mergedKeys   = new string[8];
+        this._mergedCount  = 0;
     }
 
     // ── Public entry ─────────────────────────────────────────────────────
@@ -203,6 +228,20 @@ public sealed class YamlParser {
 
     private YamlValue _ParseBlockMapping(int indent) {
         YamlValue m = YamlValue.OfMapping();
+        // add-yaml-merge-keys (2026-06-01): save outer mapping's merged-key
+        // table so nested mappings don't clobber it; reset for this
+        // mapping; restore on every return path.
+        string[] savedMergedKeys = this._mergedKeys;
+        int      savedMergedCount = this._mergedCount;
+        this._mergedKeys  = new string[8];
+        this._mergedCount = 0;
+        YamlValue result = this._ParseBlockMappingBody(m, indent);
+        this._mergedKeys  = savedMergedKeys;
+        this._mergedCount = savedMergedCount;
+        return result;
+    }
+
+    private YamlValue _ParseBlockMappingBody(YamlValue m, int indent) {
         while (true) {
             this._SkipBlankLines();
             if (this._pos >= this._src.Length) { break; }
@@ -231,6 +270,7 @@ public sealed class YamlParser {
 
             // Parse key (plain or quoted scalar before unquoted `:`).
             string key = this._ParseMappingKey();
+            bool keyQuoted = this._lastKeyQuoted;
             this._SkipInlineSpaces();
             if (this._pos >= this._src.Length || this._src.CharAt(this._pos) != ':') {
                 throw this._Err("expected ':' after mapping key '" + key + "'");
@@ -305,10 +345,22 @@ public sealed class YamlParser {
                 }
             }
 
-            if (m.ContainsKey(key)) {
-                throw this._Err("duplicate mapping key '" + key + "'");
+            // add-yaml-merge-keys (2026-06-01): unquoted plain `<<` is a
+            // merge directive; quoted `"<<"` / `'<<'` keeps its literal
+            // string-key meaning (escape hatch).
+            if (key == "<<" && !keyQuoted) {
+                this._ApplyMerge(m, val);
+            } else if (m.ContainsKey(key)) {
+                int mi = this._IndexOfMergedKey(key);
+                if (mi >= 0) {
+                    m.Set(key, val);
+                    this._RemoveMergedKeyAt(mi);
+                } else {
+                    throw this._Err("duplicate mapping key '" + key + "'");
+                }
+            } else {
+                m.Set(key, val);
             }
-            m.Set(key, val);
         }
         return m;
     }
@@ -319,11 +371,14 @@ public sealed class YamlParser {
         }
         char c = this._src.CharAt(this._pos);
         if (c == '"') {
+            this._lastKeyQuoted = true;
             return this._ParseDoubleQuotedString();
         }
         if (c == '\'') {
+            this._lastKeyQuoted = true;
             return this._ParseSingleQuotedString();
         }
+        this._lastKeyQuoted = false;
         // Plain key: read until ':' (followed by space or EOL) or EOL.
         int start = this._pos;
         while (this._pos < this._src.Length) {
@@ -512,8 +567,22 @@ public sealed class YamlParser {
             this._Advance();
             return m;
         }
+        // add-yaml-merge-keys (2026-06-01): save outer merged-key table;
+        // restore on every return path (mirrors _ParseBlockMapping).
+        string[] savedMergedKeys = this._mergedKeys;
+        int      savedMergedCount = this._mergedCount;
+        this._mergedKeys  = new string[8];
+        this._mergedCount = 0;
+        YamlValue result = this._ParseFlowMappingBody(m);
+        this._mergedKeys  = savedMergedKeys;
+        this._mergedCount = savedMergedCount;
+        return result;
+    }
+
+    private YamlValue _ParseFlowMappingBody(YamlValue m) {
         while (true) {
             string key = this._ParseFlowKey();
+            bool keyQuoted = this._lastKeyQuoted;
             this._SkipFlowWS();
             if (this._pos >= this._src.Length || this._src.CharAt(this._pos) != ':') {
                 throw this._Err("expected ':' after flow mapping key '" + key + "'");
@@ -521,10 +590,19 @@ public sealed class YamlParser {
             this._Advance();
             this._SkipFlowWS();
             YamlValue v = this._ParseFlowValue();
-            if (m.ContainsKey(key)) {
-                throw this._Err("duplicate flow mapping key '" + key + "'");
+            if (key == "<<" && !keyQuoted) {
+                this._ApplyMerge(m, v);
+            } else if (m.ContainsKey(key)) {
+                int mi = this._IndexOfMergedKey(key);
+                if (mi >= 0) {
+                    m.Set(key, v);
+                    this._RemoveMergedKeyAt(mi);
+                } else {
+                    throw this._Err("duplicate flow mapping key '" + key + "'");
+                }
+            } else {
+                m.Set(key, v);
             }
-            m.Set(key, v);
             this._SkipFlowWS();
             if (this._pos >= this._src.Length) {
                 throw this._Err("unterminated flow mapping (missing '}')");
@@ -549,8 +627,15 @@ public sealed class YamlParser {
             throw this._Err("expected flow mapping key, got EOF");
         }
         char c = this._src.CharAt(this._pos);
-        if (c == '"') { return this._ParseDoubleQuotedString(); }
-        if (c == '\'') { return this._ParseSingleQuotedString(); }
+        if (c == '"') {
+            this._lastKeyQuoted = true;
+            return this._ParseDoubleQuotedString();
+        }
+        if (c == '\'') {
+            this._lastKeyQuoted = true;
+            return this._ParseSingleQuotedString();
+        }
+        this._lastKeyQuoted = false;
         // Plain flow key: until ':' or ',' or '}' or whitespace
         int start = this._pos;
         while (this._pos < this._src.Length) {
@@ -573,6 +658,26 @@ public sealed class YamlParser {
         if (c == '[' || c == '{') { return this._ParseFlow(); }
         if (c == '"') { return YamlValue.OfString(this._ParseDoubleQuotedString()); }
         if (c == '\'') { return YamlValue.OfString(this._ParseSingleQuotedString()); }
+        // add-yaml-merge-keys (2026-06-01): inline `*alias` inside a flow
+        // value. Block contexts already resolve aliases via
+        // _TryParseAnchorOrAlias, which also consumes the rest of the line —
+        // wrong for flow contexts where the alias is bounded by `,` / `]` /
+        // `}`. Here we parse the alias by hand and let the surrounding flow
+        // parser handle trailing whitespace via _SkipFlowWS. (`&anchor`
+        // declarations in flow context remain a pre-existing gap; add when
+        // there's demand.)
+        if (c == '*') {
+            this._Advance();
+            string name = this._ParseAnchorName();
+            if (name.Length == 0) {
+                throw this._Err("expected anchor name after '*'");
+            }
+            YamlValue target = this._LookupAnchor(name);
+            if (target == null) {
+                throw this._Err("undefined anchor: *" + name);
+            }
+            return target.DeepClone();
+        }
         // Plain scalar: until ',' or ']' or '}' or EOL
         int start = this._pos;
         while (this._pos < this._src.Length) {
@@ -918,6 +1023,98 @@ public sealed class YamlParser {
             i = i + 1;
         }
         return null;
+    }
+
+    // ── Merge keys (`<<: *anchor`) ───────────────────────────────────────
+    //
+    // add-yaml-merge-keys (2026-06-01): YAML 1.1 merge-key extension
+    // (`tag:yaml.org,2002:merge`). Dispatched by _ParseBlockMapping /
+    // _ParseFlowMapping when an unquoted plain `<<` key is parsed. The
+    // value must resolve to a mapping or a sequence of mappings; each
+    // source mapping contributes (k, v.DeepClone()) entries except for
+    // keys already present in the destination. Earlier sources override
+    // later ones (spec). Explicit keys override merged keys regardless of
+    // source position — the parser tracks "this key came from a merge" in
+    // `_mergedKeys` and lets an explicit Set() overwrite.
+    //
+    // _mergedKeys is per-mapping state. Each mapping parser saves the
+    // outer state to locals, resets, runs, then restores before return.
+    // Recursion via _ParseBlockValue → _ParseBlockMapping / _ParseFlow
+    // is safe because the nested parser does its own save/restore.
+
+    /// Merge `mergeVal` into `dst`. `mergeVal` must be a mapping or a
+    /// sequence whose every item is a mapping; anything else throws.
+    /// For each source mapping (in order), insert every (k, v) for which
+    /// `dst` does not already contain `k`, recording `k` in `_mergedKeys`.
+    private void _ApplyMerge(YamlValue dst, YamlValue mergeVal) {
+        if (mergeVal.IsMapping()) {
+            this._MergeOneSource(dst, mergeVal);
+            return;
+        }
+        if (mergeVal.IsSequence()) {
+            int n = mergeVal.Length();
+            int i = 0;
+            while (i < n) {
+                YamlValue item = mergeVal.At(i);
+                if (!item.IsMapping()) {
+                    throw this._Err("merge key '<<' sequence item must be a mapping, got " + item.KindName());
+                }
+                this._MergeOneSource(dst, item);
+                i = i + 1;
+            }
+            return;
+        }
+        throw this._Err("merge key '<<' value must be a mapping or sequence of mappings, got " + mergeVal.KindName());
+    }
+
+    private void _MergeOneSource(YamlValue dst, YamlValue source) {
+        string[] keys = source.Keys();
+        int i = 0;
+        while (i < keys.Length) {
+            string k = keys[i];
+            if (!dst.ContainsKey(k)) {
+                dst.Set(k, source.Get(k).DeepClone());
+                this._AppendMergedKey(k);
+            }
+            i = i + 1;
+        }
+    }
+
+    private void _AppendMergedKey(string key) {
+        if (this._mergedCount == this._mergedKeys.Length) {
+            int newCap = this._mergedKeys.Length * 2;
+            string[] bigger = new string[newCap];
+            int j = 0;
+            while (j < this._mergedCount) {
+                bigger[j] = this._mergedKeys[j];
+                j = j + 1;
+            }
+            this._mergedKeys = bigger;
+        }
+        this._mergedKeys[this._mergedCount] = key;
+        this._mergedCount = this._mergedCount + 1;
+    }
+
+    /// Linear scan — merge counts are typically <10. Returns the index of
+    /// `key` in the current merged-key table, or -1.
+    private int _IndexOfMergedKey(string key) {
+        int i = 0;
+        while (i < this._mergedCount) {
+            if (this._mergedKeys[i] == key) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    /// Drop entry at `index` from `_mergedKeys`, shifting tail down by 1.
+    private void _RemoveMergedKeyAt(int index) {
+        int i = index;
+        while (i + 1 < this._mergedCount) {
+            this._mergedKeys[i] = this._mergedKeys[i + 1];
+            i = i + 1;
+        }
+        this._mergedCount = this._mergedCount - 1;
+        this._mergedKeys[this._mergedCount] = "";
     }
 
     /// Try to parse a block-scalar indicator (`|` literal or `>` folded)
