@@ -585,14 +585,12 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 这是已有设计决策（primitive-as-struct，String 例外因为是 reference type）。✅ 已文档化，不动。
 
-#### S2.8 README 质量不一 ⚠️
+#### S2.8 README 质量不一 ✅ 已解决（2026-06-02 状态）
 
-- 高质量（70-108 行）：z42.core / z42.io / z42.uri / z42.cli / z42.diagnostics
-- 中等（45-67 行）：z42.collections / z42.text / z42.encoding / z42.regex
-- 极简（11-22 行）：z42.math / z42.time / z42.test
-- 缺失：z42.crypto
-
-**建议**：建立 [`docs/stdlib/README-template.md`](../docs/stdlib/) 模板，新包必须套。已有包按"用户访问频次"渐进补齐（z42.math / z42.time 用户用得多，应该详细一点）。
+- ✅ 模板已建：`docs/design/stdlib/README-template.md` (103 行) 作为新包必套蓝本
+- ✅ 所有 22 个 stdlib 包均有 README，包含"高质量"段（z42.crypto 已补齐）
+- ✅ 原"极简" z42.math（67 行）/ z42.time（134 行）已扩到中等质量
+- 仍可改进：z42.test README 偏短（< 30 行），但作为测试框架内部使用，优先级低
 
 ## S3. z42 stdlib API 覆盖度对照 CoreCLR
 
@@ -629,8 +627,8 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 1. ⚡ **补 z42.crypto README** — 列出 SHA-256 用法 + deferred 列表（HMAC / CSPRNG）
 2. ⚡ **删除 z42.text/src/Regex.z42 stub** — 误导性的死代码
-3. ⚡ **建立 README-template.md** — 用 z42.core/README.md 为蓝本
-4. ⚡ **z42.math / z42.time README 扩充** — 补齐到中等质量（40-50 行）
+3. ✅ ~~**建立 README-template.md**~~ — `docs/design/stdlib/README-template.md` (103 行) 已落地
+4. ✅ ~~**z42.math / z42.time README 扩充**~~ — z42.math 67 行 / z42.time 134 行（含完整 Deferred + Public API 段）
 5. ⚡ **stdlib API audit one-liner** — `z42c export <pkg>` 命令规划（spec → 实施分两阶段）
 
 ## S5. 中期项目（每个 3-7 天）

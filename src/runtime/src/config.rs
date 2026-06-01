@@ -67,10 +67,22 @@ pub const KNOWN_KNOBS: &[KnobSpec] = &[
         consumed_by: "gc/arc_heap.rs",
     },
     KnobSpec {
+        name: "Z42_GC_MODE",
+        description: "GC algorithm: `stw` / `concurrent` / `generational` (with `-mark-sweep` aliases)",
+        default_hint: "unset; defaults to `stw-mark-sweep`",
+        consumed_by: "gc/mode.rs",
+    },
+    KnobSpec {
         name: "Z42_GC_PAUSE_WINDOW",
         description: "rolling window (ms) for GC pause statistics",
         default_hint: "unset; defaults to 60_000 ms",
         consumed_by: "gc/types.rs",
+    },
+    KnobSpec {
+        name: "Z42_GC_SOFT_THRESHOLD",
+        description: "heap pressure ratio (0.0–1.0) above which SoftHandle refs become GC-eligible",
+        default_hint: "unset; defaults to 0.80",
+        consumed_by: "gc/soft_registry.rs",
     },
     KnobSpec {
         name: "Z42_LIBS",
