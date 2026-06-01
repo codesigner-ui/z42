@@ -1385,7 +1385,7 @@ pub struct ScriptObject {
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
 | ✅ | ~~Polymorphic IC~~ (C4 P2 + C5 P2) — landed 2026-05-28 (jit-polymorphic-ic) | 2 | done | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
-| **P3** | **ScriptObject header 瘦身**（E2.P6）— 64B → ~52B | 5 | 2-3 天 | data |
+| 🟡 | **ScriptObject header 瘦身**（E2.P6）— 2026-05-27 type_args 改 `Box<[String]>` 省 8 B/object；2026-06-02 (scriptobject-slots-boxed) `slots` 改 `Vec<Value>` → `Box<[Value]>` 再省 8 B/object (no `cap` word)；slots 长度在 `alloc_object` 固定后只索引读写，Box<[T]> 完美匹配。Full 32 B header 目标（Option-wrap empty type_args + NativeData 重打包）waits on StringId Phase B+。 | 5 | Step 1+2 done | data |
 | **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
 | **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
 | ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
@@ -1442,6 +1442,7 @@ pub struct ScriptObject {
 2. ✅ ~~**`Instruction::Call.args: Vec<u32>` → `Box<[u32]>`**~~ — refactor-instruction-box-slice (2026-05-26); covers all 9 reg-list variants (Call / Builtin / CallIndirect / MkClos.captures / ArrayNewLit.elems / ObjNew / VCall / CallNative / CallNativeVtable) + ObjNew.type_args String list; `read_args` decoder now returns `Box<[u32]>` directly. ClassDesc 3 fields (fields / type_params / type_param_constraints) follow-up landed 2026-05-27.
 3. ✅ ~~**TypeDesc cold 字段** `Vec<T>` → `Box<[T]>`~~ — refactor-typedesc-cold-box-slice (2026-05-27); five immutable-after-construction fields (`own_fields` / `own_methods` / `type_params` / `type_args` / `type_param_constraints`); hot fields (`fields` / `vtable`) stay growable for fixup rewrites. Saves 8 B × 5 ≈ 40 B per TypeDesc.
 4. 🟡 ~~**`ScriptObject.type_args: Vec<String>` → `Box<[String]>`**~~ (2026-05-27) — first half (Vec → Box<[T]>) landed, saves 8 B/object via no `cap` word. `Option`-wrap + `StringId` migration (the full target) waits on StringId Phase B+.
+   ✅ 2026-06-02 sibling refactor (scriptobject-slots-boxed): `ScriptObject.slots: Vec<Value> → Box<[Value]>` — another 8 B/object. Slot count fixed at alloc time; mutation via index assignment still works.
 5. ✅ ~~**删 `TypeDesc.own_methods` 的 String pair tuple**~~ — refactor-own-methods-fq-only (2026-05-27): `Box<[(String, String)]>` → `Box<[Box<str>]>` (just the qualified func name; vtable slot key derived per entry via `TypeDesc::derive_simple_method_name`). Saves one `String` allocation + 16–24 B per method on every class. `Vec<MethodId>` further-reduce target deferred (would need module-context access during `try_fixup_inheritance` — TypeDesc has no back-reference).
 
 每项独立 commit，小步前进，不依赖大改造。

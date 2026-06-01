@@ -67,7 +67,7 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
 fn is_heap_ref_true_for_object() {
     let v = Value::Object(GcRef::new(ScriptObject {
         type_desc: dummy_type_desc("Foo"),
-        slots: vec![],
+        slots: Box::new([]),
         native: NativeData::None,
         type_args: Box::new([]),
     }));
@@ -100,7 +100,7 @@ fn is_heap_ref_true_for_ref_array() {
 fn is_heap_ref_true_for_ref_field() {
     let obj = GcRef::new(ScriptObject {
         type_desc: dummy_type_desc("Foo"),
-        slots: vec![Value::I64(0)],
+        slots: Box::new([Value::I64(0)]),
         native: NativeData::None,
         type_args: Box::new([]),
     });

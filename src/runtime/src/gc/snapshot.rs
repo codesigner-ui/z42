@@ -249,7 +249,9 @@ pub fn build_graph_snapshot(heap: &dyn MagrGC) -> GraphSnapshot {
                             .unwrap_or_else(|| format!("slot{}", i))
                     })
                     .collect();
-                let slots: Vec<Value> = obj.slots.clone();
+                // slots is `Box<[Value]>` since review.md E2.P6 (2026-06-02).
+                // Clone yields another `Box<[Value]>` — iter() works the same.
+                let slots: Box<[Value]> = obj.slots.clone();
                 drop(obj);
                 for (i, child) in slots.iter().enumerate() {
                     if let Some(ptr) = value_ptr(child) {

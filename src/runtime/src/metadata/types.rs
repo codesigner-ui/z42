@@ -246,7 +246,13 @@ pub struct ScriptObject {
     /// Type descriptor shared across all instances of this class.
     pub type_desc: Arc<TypeDesc>,
     /// Field storage indexed by slot (see `TypeDesc.field_index`).
-    pub slots: Vec<Value>,
+    ///
+    /// review.md E2.P6 (2026-06-02): `Box<[Value]>` instead of `Vec<Value>` —
+    /// slot count is fixed at `alloc_object` time (= `TypeDesc.fields.len()`)
+    /// and never grows. Saves 8 B/object vs `Vec` (no `capacity` word).
+    /// Mutation via `obj.slots[i] = v` still works; `&mut [Value]` indexing
+    /// is unchanged.
+    pub slots: Box<[Value]>,
     /// Native backing for built-in types (e.g. StringBuilder buffer).
     pub native: NativeData,
     /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): per-instance

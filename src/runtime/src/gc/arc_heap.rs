@@ -1204,8 +1204,10 @@ impl ArcMagrGC {
     /// locked inner data (avoids re-locking via object_size_bytes path).
     fn script_object_size_estimate(obj: &ScriptObject) -> u64 {
         use std::mem::size_of;
+        // slots is `Box<[Value]>` — len == actual allocation (no excess
+        // capacity to charge separately).
         (size_of::<Value>() + size_of::<ScriptObject>()
-            + obj.slots.capacity() * size_of::<Value>()) as u64
+            + obj.slots.len() * size_of::<Value>()) as u64
     }
 
     fn array_size_estimate(arr: &Vec<Value>) -> u64 {
@@ -1489,8 +1491,14 @@ impl MagrGC for ArcMagrGC {
         native: NativeData,
     ) -> Value {
         let class = type_desc.name.clone();
+        // review.md E2.P6 (2026-06-02): `slots` is `Box<[Value]>` now.
+        // Vec → Box<[T]> drops excess capacity; for the common case where
+        // the caller pre-sized to `TypeDesc.fields.len()` this is a zero
+        // realloc shrink-to-fit.
         let obj = ScriptObject {
-            type_desc, slots, native,
+            type_desc,
+            slots: slots.into_boxed_slice(),
+            native,
             type_args: Box::new([]),
         };
 
@@ -1700,8 +1708,9 @@ impl MagrGC for ArcMagrGC {
             }
             Value::Object(rc) => {
                 let obj = rc.borrow();
+                // slots is `Box<[Value]>` — len == actual allocation.
                 size_of::<Value>() + size_of::<ScriptObject>()
-                    + obj.slots.capacity() * size_of::<Value>()
+                    + obj.slots.len() * size_of::<Value>()
             }
             // Spec C4: PinnedView holds raw ptr+len; the borrowed buffer
             // itself is owned by the source `Value::Str` / `Value::Array`,
