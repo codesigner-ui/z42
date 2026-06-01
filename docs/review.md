@@ -945,7 +945,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P0** | **JIT↔VM trait 抽象** (Part 1) | 1 | 2-3 天 | arch |
 | **P1** | **Per-module log filtering** (D2) — `Z42_LOG=z42::jit=debug` | 4 | 0.5 天 | ops |
 | ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
-| **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
+| 🟡 | **Field/Method name → token id** (C4+C5) — Step 1 done 2026-06-01 (add-name-index-typedesc): `TypeDesc.field_index` + `vtable_index` 从 `HashMap<String, usize>` 改 `NameIndex(Vec<(Box<str>, usize)>)` linear scan。typical class N ≤ 16 时 linear scan + cache locality 友好；`Box<str>` 比 `String` 省 8 B/entry。剩余 token-id wire format 路径（C4 P3 `Instruction::FieldGet.field_name: String → field_id: u32`）需要 zbc minor bump，留待后续 spec。 | 2 | Step 1 done | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
@@ -1374,7 +1374,7 @@ pub struct ScriptObject {
 | 🟡 | **FieldSlot bit-packed**（E2.P2）— Step 1 (2026-05-27): `String` → `Box<str>` for `name` + `type_tag`; 48 B → 32 B per slot. Full 16 B target (StringId + TypeId + offset + flags) waits on StringId Phase B+ migration. | 5 | Step 1 done | data |
 | ✅ | ~~Per-module log filtering~~ (D2) — EnvFilter `Z42_LOG` wired in `init_tracing` (2026-05-25) | 4 | done | ops |
 | ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
-| **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
+| 🟡 | **Field/Method name → token id** (C4+C5) — Step 1 done 2026-06-01 (add-name-index-typedesc): `TypeDesc.field_index` + `vtable_index` 从 `HashMap<String, usize>` 改 `NameIndex(Vec<(Box<str>, usize)>)` linear scan。typical class N ≤ 16 时 linear scan + cache locality 友好；`Box<str>` 比 `String` 省 8 B/entry。剩余 token-id wire format 路径（C4 P3 `Instruction::FieldGet.field_name: String → field_id: u32`）需要 zbc minor bump，留待后续 spec。 | 2 | Step 1 done | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |

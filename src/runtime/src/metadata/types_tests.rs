@@ -47,7 +47,6 @@ fn default_for_ref_tags_is_null() {
 
 // ── is_heap_ref (add-write-barriers, 2026-05-21) ────────────────────────────
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use crate::gc::GcRef;
 
@@ -56,9 +55,9 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         name: name.to_string(),
         base_name: None,
         fields: Vec::new(),
-        field_index: HashMap::new(),
+        field_index: crate::metadata::NameIndex::new(),
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: crate::metadata::NameIndex::new(),
         cold: None,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })

@@ -8,7 +8,6 @@
 use super::*;
 use crate::gc::{ArcMagrGC, GcRef, MagrGC};
 use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
@@ -16,7 +15,7 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         crate::metadata::FieldSlot { name: "head".to_string().into(), type_tag: "object".to_string().into() },
         crate::metadata::FieldSlot { name: "tail".to_string().into(), type_tag: "object".to_string().into() },
     ];
-    let mut field_index = HashMap::new();
+    let mut field_index = crate::metadata::NameIndex::new();
     field_index.insert("head".to_string(), 0usize);
     field_index.insert("tail".to_string(), 1usize);
     Arc::new(TypeDesc {
@@ -29,7 +28,7 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: crate::metadata::NameIndex::new(),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })
 }

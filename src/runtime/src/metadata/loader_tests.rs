@@ -327,9 +327,9 @@ fn register_lazy_type_appends_with_next_id() {
         id: crate::metadata::tokens::TypeId(42),
         base_name: None,
         fields: vec![],
-        field_index: std::collections::HashMap::new(),
+        field_index: crate::metadata::NameIndex::new(),
         vtable: vec![],
-        vtable_index: std::collections::HashMap::new(),
+        vtable_index: crate::metadata::NameIndex::new(),
         cold: None,
     });
 
@@ -346,8 +346,8 @@ fn register_lazy_type_appends_with_next_id() {
     let dup = std::sync::Arc::new(TypeDesc {
         name: "Lazy.Foreign".to_owned(),
         id: crate::metadata::tokens::TypeId(99),
-        base_name: None, fields: vec![], field_index: std::collections::HashMap::new(),
-        vtable: vec![], vtable_index: std::collections::HashMap::new(),
+        base_name: None, fields: vec![], field_index: crate::metadata::NameIndex::new(),
+        vtable: vec![], vtable_index: crate::metadata::NameIndex::new(),
         cold: None,
     });
     let dup_id = module.register_lazy_type(dup);

@@ -445,9 +445,9 @@ struct TypeDesc {
     fields: Vec<FieldSlot>,                // 布局顺序，基类字段在前
     //   FieldSlot { name: String, type_tag: String }
     //   type_tag 用于 ObjNew 选默认值（fix-class-field-default-init）
-    field_index: HashMap<String, usize>,   // O(1) 字段名 → slot
+    field_index: NameIndex,                // 字段名 → slot（linear scan，见下）
     vtable: Vec<(method_name, func_name)>, // 方法名 → FQ func name
-    vtable_index: HashMap<String, usize>,  // O(1) method → vtable slot
+    vtable_index: NameIndex,               // method → vtable slot（同上）
     type_params: Vec<String>,              // 泛型类型参数（L3-G 起）
     type_args: Vec<String>,                // 实例化时具体类型（运行时填）
     type_param_constraints: ...,            // L3-G3a 约束元数据
@@ -456,6 +456,31 @@ struct TypeDesc {
 
 TypeDesc 由 `build_type_registry`（loader.rs）在模块加载完成后按 topo
 sort 预计算一次，避免运行时重复构建。
+
+#### NameIndex：linear-scan 替代 HashMap
+
+`field_index` / `vtable_index` 用 `NameIndex`（`Vec<(Box<str>, usize)>`）
+存储，hot path 是 linear scan。**不是 HashMap**。
+
+**为什么**：
+- review.md C4 / C5 P1（2026-06-01）：z42 stdlib + 用户代码典型 class 字段
+  / 方法数 ≤ 16。linear scan ≤16 项的 `Box<str>` ≡ `&str` 比
+  `HashMap<String, usize>` 探测 + 字符串 compare **快**：cache locality 友好，
+  无 hash 函数计算开销，分支预测对小循环友好。
+- IC + PIC（add-jit-polymorphic-ic, 2026-05-28）已拦截大部分 hot path 命中。
+  NameIndex 替换的是 **IC miss 时的 fallback 路径**，把"miss = hash + compare"
+  改为"miss = linear scan + str compare"。命中 IC 时完全不走这里。
+- 内存：`Box<str>` 比 `String` 省 8 B / entry（无 capacity 字段）。stdlib ~80
+  classes × ~8 fields/methods = **几 KB heap 省**。
+
+**何时该退化为 HashMap**：N ≥ 64 entries 时 linear scan 开始亏。当前 z42 没
+有这种 class；若未来出现，把 `NameIndex` 内部实现改为 hybrid（N ≤ K linear，
+N > K HashMap），调用方零改动 —— `NameIndex` 的 public API 故意按
+`HashMap<String, usize>` 子集设计。
+
+**API**：`get(&str) -> Option<&usize>` / `insert(String, usize) -> Option<usize>` /
+`iter()` / `FromIterator<(String, usize)>` / `Clone`。位于
+[`src/runtime/src/metadata/name_index.rs`](../../../src/runtime/src/metadata/name_index.rs)。
 
 ### VCall 指令执行
 

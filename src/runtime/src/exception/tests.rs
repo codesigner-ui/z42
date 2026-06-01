@@ -94,7 +94,7 @@ mod make_stdlib_exception_tests {
             FieldSlot { name: "StackTrace".into(),     type_tag: "str".into() },
             FieldSlot { name: "InnerException".into(), type_tag: "Std.Exception".into() },
         ];
-        let mut field_index = HashMap::new();
+        let mut field_index = crate::metadata::NameIndex::new();
         for (i, f) in fields.iter().enumerate() {
             field_index.insert(f.name.to_string(), i);
         }
@@ -106,7 +106,7 @@ mod make_stdlib_exception_tests {
             fields,
             field_index,
             vtable:                 vec![],
-            vtable_index:           HashMap::new(),
+            vtable_index:           crate::metadata::NameIndex::new(),
             cold: Some(Box::new(crate::metadata::types::TypeDescCold {
                 own_fields: own_fields_box,
                 ..Default::default()

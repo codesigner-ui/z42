@@ -133,7 +133,7 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: crate::metadata::NameIndex::new(),
         cold: Some(Box::new(crate::metadata::types::TypeDescCold {
             own_fields: own_fields.into(),
             ..Default::default()

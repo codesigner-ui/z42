@@ -14,6 +14,7 @@ use super::bytecode::Module;
 use super::formats::{ZpkgDep, ZBC_MAGIC, ZPKG_MAGIC};
 use super::merge::merge_modules;
 use super::test_index::TestEntry;
+use super::name_index::NameIndex;
 use super::types::{FieldSlot, TypeDesc};
 use super::zbc_reader::{
     parse_zbc_sidecar, parse_zpkg_sidecar, read_build_id, read_test_index_resolved, read_zbc,
@@ -634,10 +635,10 @@ fn merge_with_base(
     class_name:  &str,
     base_class_name: Option<&str>,
     registry:    &HashMap<String, Arc<TypeDesc>>,
-) -> (Vec<FieldSlot>, HashMap<String, usize>, Vec<(String, String)>, HashMap<String, usize>) {
+) -> (Vec<FieldSlot>, NameIndex, Vec<(String, String)>, NameIndex) {
     let (mut fields, mut vtable, mut vtable_index) = match base_class_name.and_then(|b| registry.get(b)) {
         Some(base) => (base.fields.clone(), base.vtable.clone(), base.vtable_index.clone()),
-        None       => (Vec::new(), Vec::new(), HashMap::new()),
+        None       => (Vec::new(), Vec::new(), NameIndex::new()),
     };
 
     // Append own fields skipping name collisions (subclass can't shadow).
@@ -646,7 +647,7 @@ fn merge_with_base(
             fields.push(f.clone());
         }
     }
-    let field_index: HashMap<String, usize> = fields.iter().enumerate()
+    let field_index: NameIndex = fields.iter().enumerate()
         .map(|(i, f)| (f.name.to_string(), i))
         .collect();
 
@@ -696,7 +697,7 @@ pub fn try_fixup_inheritance(
     registry: &mut HashMap<String, Arc<TypeDesc>>,
 ) -> usize {
     // ── Phase 1: immutable scan — compute new layouts without mutating anything.
-    type MergedLayout = (Vec<FieldSlot>, HashMap<String, usize>, Vec<(String, String)>, HashMap<String, usize>);
+    type MergedLayout = (Vec<FieldSlot>, NameIndex, Vec<(String, String)>, NameIndex);
     let mut planned: Vec<(String, MergedLayout)> = Vec::new();
     for (name, td) in registry.iter() {
         if !needs_fixup(td, registry) {

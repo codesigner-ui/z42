@@ -19,7 +19,6 @@
 //!
 //! Run via: `cargo bench --bench gc_cycle_bench`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use criterion::{
@@ -35,9 +34,9 @@ fn make_type_desc(name: &str) -> Arc<TypeDesc> {
         name: name.to_string(),
         base_name: None,
         fields: Vec::new(),
-        field_index: HashMap::new(),
+        field_index: z42::metadata::NameIndex::new(),
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: z42::metadata::NameIndex::new(),
         cold: None,
         id: TypeId::UNRESOLVED,
     })

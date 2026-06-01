@@ -1,7 +1,6 @@
 use crate::metadata::{NativeData, TypeDesc, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 // ── Object protocol ───────────────────────────────────────────────────────────
@@ -22,7 +21,7 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let simple_name = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
 
     // Build a minimal Type object with __name and __fullName slots.
-    let mut field_index = HashMap::new();
+    let mut field_index = crate::metadata::NameIndex::new();
     field_index.insert("__name".to_string(), 0usize);
     field_index.insert("__fullName".to_string(), 1usize);
     let fields = vec![
@@ -39,7 +38,7 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: crate::metadata::NameIndex::new(),
         cold,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });
@@ -180,9 +179,9 @@ fn weak_handle_type_desc() -> Arc<TypeDesc> {
         name: "Std.WeakHandle".to_string(),
         base_name: None,
         fields: Vec::new(),
-        field_index: HashMap::new(),
+        field_index: crate::metadata::NameIndex::new(),
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: crate::metadata::NameIndex::new(),
         cold: None,
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })).clone()

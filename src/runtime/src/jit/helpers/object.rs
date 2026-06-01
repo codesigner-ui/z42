@@ -3,7 +3,6 @@
 //! generic `default(T)` runtime helper.
 
 use crate::metadata::{NativeData, Value};
-use std::collections::HashMap;
 
 use super::super::frame::{JitFrame, JitModuleCtx};
 use super::{set_exception, vm_ctx_ref, JitFn};
@@ -34,8 +33,8 @@ pub unsafe extern "C" fn jit_obj_new(
     let type_desc = module.type_registry.get(&class_name).cloned()
         .unwrap_or_else(|| std::sync::Arc::new(crate::metadata::TypeDesc {
             name: class_name.clone(), base_name: None,
-            fields: Vec::new(), field_index: HashMap::new(),
-            vtable: Vec::new(), vtable_index: HashMap::new(),
+            fields: Vec::new(), field_index: crate::metadata::NameIndex::new(),
+            vtable: Vec::new(), vtable_index: crate::metadata::NameIndex::new(),
             cold: None,
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         }));

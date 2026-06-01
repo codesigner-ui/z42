@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::gc::GcRef;
@@ -107,15 +106,18 @@ pub struct TypeDesc {
     /// until [`crate::metadata::loader::try_fixup_inheritance`] runs at
     /// lazy-load time, which rebuilds this vector to include inherited slots.
     pub fields: Vec<FieldSlot>,
-    /// `field_name → slot index` — O(1) field lookup. Same cross-zpkg
-    /// fixup semantics as `fields`.
-    pub field_index: HashMap<String, usize>,
+    /// `field_name → slot index` — linear scan (review.md C4 P1, 2026-06-01:
+    /// `NameIndex` replaces `HashMap<String, usize>` because typical class
+    /// field counts ≤16, where `Vec<(Box<str>, usize)>` scan beats hash +
+    /// string compare). Same cross-zpkg fixup semantics as `fields`.
+    pub field_index: super::name_index::NameIndex,
     /// Virtual method table: slot → (simple_method_name, qualified_func_name).
     /// Derived class overrides replace base entries at the same slot index.
     /// Same cross-zpkg fixup semantics as `fields`.
     pub vtable: Vec<(String, String)>,
-    /// `method_name → vtable slot index` — O(1) virtual dispatch.
-    pub vtable_index: HashMap<String, usize>,
+    /// `method_name → vtable slot index` — linear scan (review.md C5 P1,
+    /// 2026-06-01). Same rationale as `field_index`.
+    pub vtable_index: super::name_index::NameIndex,
     /// review.md E2.P1 Step 1 (2026-05-27): five rarely-accessed fields
     /// (own_fields / own_methods / type_params / type_args /
     /// type_param_constraints) live behind an `Option<Box<TypeDescCold>>`.

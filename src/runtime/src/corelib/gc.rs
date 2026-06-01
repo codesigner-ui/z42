@@ -11,7 +11,6 @@ use crate::gc::GcHandleKind;
 use crate::metadata::{FieldSlot, NativeData, TypeDesc, Value};
 use crate::vm_context::VmContext;
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
 use std::io::Write as _;
 use std::sync::{Arc, OnceLock};
 
@@ -120,7 +119,7 @@ fn gc_handle_kind_to_i64(k: GcHandleKind) -> i64 {
 fn gc_handle_type_desc() -> Arc<TypeDesc> {
     static CACHE: OnceLock<Arc<TypeDesc>> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let mut field_index = HashMap::new();
+        let mut field_index = crate::metadata::NameIndex::new();
         field_index.insert("_slot".to_string(), 0usize);
         let fields = vec![FieldSlot { name: "_slot".to_string().into(), type_tag: "long".to_string().into() }];
         Arc::new(TypeDesc {
@@ -133,7 +132,7 @@ fn gc_handle_type_desc() -> Arc<TypeDesc> {
             fields,
             field_index,
             vtable: Vec::new(),
-            vtable_index: HashMap::new(),
+            vtable_index: crate::metadata::NameIndex::new(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()
@@ -151,7 +150,7 @@ fn heap_stats_type_desc() -> Arc<TypeDesc> {
             "__prop_Allocations", "__prop_GcCycles", "__prop_UsedBytes", "__prop_MaxBytes",
             "__prop_RootsPinned", "__prop_FinalizersPending", "__prop_Observers",
         ];
-        let mut field_index = HashMap::new();
+        let mut field_index = crate::metadata::NameIndex::new();
         let mut fields = Vec::with_capacity(names.len());
         for (i, n) in names.iter().enumerate() {
             field_index.insert(n.to_string(), i);
@@ -167,7 +166,7 @@ fn heap_stats_type_desc() -> Arc<TypeDesc> {
             fields,
             field_index,
             vtable: Vec::new(),
-            vtable_index: HashMap::new(),
+            vtable_index: crate::metadata::NameIndex::new(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()
@@ -351,7 +350,7 @@ pub fn builtin_gc_set_strict_oom(ctx: &VmContext, args: &[Value]) -> Result<Valu
 fn soft_handle_type_desc() -> Arc<TypeDesc> {
     static CACHE: OnceLock<Arc<TypeDesc>> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let mut field_index = HashMap::new();
+        let mut field_index = crate::metadata::NameIndex::new();
         field_index.insert("_key".to_string(), 0usize);
         let fields = vec![FieldSlot { name: "_key".to_string().into(), type_tag: "long".to_string().into() }];
         Arc::new(TypeDesc {
@@ -364,7 +363,7 @@ fn soft_handle_type_desc() -> Arc<TypeDesc> {
             fields,
             field_index,
             vtable: Vec::new(),
-            vtable_index: HashMap::new(),
+            vtable_index: crate::metadata::NameIndex::new(),
             id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()

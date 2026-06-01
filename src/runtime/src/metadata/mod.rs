@@ -14,6 +14,12 @@ pub mod tokens;
 /// migrate individual `String` fields (Function.name / TypeDesc.name /
 /// Instruction variants with String params) to use this.
 pub mod string_id;
+/// review.md Part 2 C4 / C5 P1 (2026-06-01): linear-scan replacement for
+/// `HashMap<String, usize>` used in `TypeDesc.field_index` /
+/// `TypeDesc.vtable_index`. For typical class sizes (≤16 entries) a
+/// `Vec<(Box<str>, usize)>` scan beats hash + string compare on cache
+/// locality + branch prediction, and saves 8 B / entry vs `String`.
+pub mod name_index;
 /// review.md C2 step 0.2 (2026-05-27): `IrType` enum mirroring the C#
 /// `IrType : byte` in `z42.IR/IrModule.cs`. Foundation for JIT type
 /// specialization — populated per-register on the `Function` via the
@@ -46,6 +52,8 @@ mod types_tests;
 
 // Re-exports: string pool typed handle (Part 5 P0 Phase A, 2026-05-26)
 pub use string_id::StringId;
+// Re-exports: NameIndex (review.md Part 2 C4 / C5 P1, 2026-06-01)
+pub use name_index::NameIndex;
 // Re-exports: per-register static type tag (C2 step 0.2, 2026-05-27)
 pub use ir_type::IrType;
 
