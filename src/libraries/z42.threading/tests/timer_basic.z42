@@ -14,8 +14,13 @@ void test_periodic_fires_multiple_times() {
     Timer t = Timer.StartPeriodic(50, () => {
         fires[0] = fires[0] + 1;
     });
-    // Four 50ms windows in 220ms → expect 3-4 fires (allow scheduling jitter).
-    Thread.Sleep(220);
+    // harden-timer-test-jitter (2026-06-01): a Thread.Sleep-based timer has
+    // unbounded wakeup jitter under load. The old 220ms/50ms window (ideal ~4
+    // fires) left no margin and dropped below 3 fires on contended macOS CI
+    // runners under `test-all.sh --parallel --jobs=4`. Use a 500ms window
+    // (ideal ~10 fires) so the `>= 3` assertion survives ~3x scheduling
+    // slowdown while still proving the timer fires repeatedly.
+    Thread.Sleep(500);
     t.StopAndJoin();
     Assert.True(fires[0] >= 3);
 }
@@ -81,8 +86,12 @@ void test_callback_exception_does_not_kill_timer() {
             throw new Exception("first fire intentionally fails");
         }
     });
-    // 220ms / 50ms = ~4 windows. First fire throws but Timer keeps going.
-    Thread.Sleep(220);
+    // harden-timer-test-jitter (2026-06-01): same Thread.Sleep jitter concern
+    // as test_periodic_fires_multiple_times. Widen to a 500ms window (ideal
+    // ~10 fires) so `>= 2` (first fire throws, ≥1 more must land) holds under
+    // contended CI scheduling. Verifies an exception in one fire doesn't kill
+    // the periodic Timer thread.
+    Thread.Sleep(500);
     t.StopAndJoin();
     Assert.True(fires[0] >= 2);
 }
