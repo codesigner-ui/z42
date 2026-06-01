@@ -545,6 +545,35 @@ public sealed class ParserTests
         parser.Diagnostics.HasErrors.Should().BeTrue();
     }
 
+    [Fact]
+    public void UnknownTokenInExpr_ListsExpressionAlternatives()
+    {
+        // spec add-parser-expected-list (2026-06-01): the Pratt Nud miss site
+        // should enumerate enabled alternatives instead of just saying
+        // "unexpected token". Roslyn-style "expected ..., got X".
+        var tokens = new Lexer("void Main() { var x = ;; }").Tokenize();
+        var parser = new Parser(tokens, LanguageFeatures.Phase1);
+        parser.ParseCompilationUnit();
+
+        parser.Diagnostics.HasErrors.Should().BeTrue();
+        var msg = parser.Diagnostics.All[0].Message;
+
+        msg.Should().StartWith("expected expression (");
+        // 验证至少几个关键 alternative 被列出（顺序 ordinal-stable）
+        msg.Should().Contain("`identifier`");
+        msg.Should().Contain("`literal`");
+        msg.Should().Contain("`(`");
+        msg.Should().Contain("`new`");
+        msg.Should().Contain("`typeof`");
+        msg.Should().Contain("`default`");
+        // operator alternatives 用源码符号（不是 `bang` / `plusplus` 等 enum 名）
+        msg.Should().Contain("`!`");
+        msg.Should().Contain("`++`");
+        msg.Should().Contain("`--`");
+        // 以及 "got `<actual>`" 尾缀
+        msg.Should().Contain("got `;`");
+    }
+
     // ── extern / [Native] ─────────────────────────────────────────────────────
 
     [Fact]

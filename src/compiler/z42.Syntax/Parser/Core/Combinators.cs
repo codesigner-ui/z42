@@ -162,4 +162,36 @@ internal static class Combinators
     // ── Display helper (used by error messages throughout the parser) ──────────
 
     internal static string KindDisplay(TokenKind k) => Display(k);
+
+    // ── Expected-list rendering ───────────────────────────────────────────────
+    // Used by dispatch fork sites (e.g. Pratt Nud-table miss) to format a set
+    // of valid alternative tokens as `` `A`, `B`, or `C` ``. Roslyn-style.
+    // See docs/spec/archive/2026-06-01-add-parser-expected-list/ for rationale.
+
+    /// Render a set of <see cref="TokenKind"/> alternatives as a backtick-quoted
+    /// human list using <see cref="Display"/>. Alternatives are deduped and
+    /// sorted ordinal so the message is deterministic across runs / platforms.
+    internal static string KindList(IEnumerable<TokenKind> kinds) =>
+        LabelList(kinds.Select(Display));
+
+    /// Render a set of pre-labeled alternatives. Use this when the caller has
+    /// already collapsed multiple <see cref="TokenKind"/> into category names
+    /// like "literal" or "identifier" (avoids dumping 20+ raw keyword forms).
+    internal static string LabelList(IEnumerable<string> labels)
+    {
+        var distinct = labels
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(s => s, StringComparer.Ordinal)
+            .ToList();
+
+        return distinct.Count switch
+        {
+            0 => "<none>",
+            1 => $"`{distinct[0]}`",
+            2 => $"`{distinct[0]}` or `{distinct[1]}`",
+            _ => string.Join(", ", distinct.Take(distinct.Count - 1).Select(s => $"`{s}`"))
+               + $", or `{distinct[^1]}`",
+        };
+    }
 }

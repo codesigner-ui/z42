@@ -163,6 +163,7 @@ internal static class TokenDefs
     private static readonly IReadOnlyDictionary<TokenKind, string> s_display =
         new Dictionary<TokenKind, string>
     {
+        // Brackets / punctuation
         [TokenKind.LParen]    = "(",
         [TokenKind.RParen]    = ")",
         [TokenKind.LBrace]    = "{",
@@ -177,6 +178,45 @@ internal static class TokenDefs
         [TokenKind.Arrow]     = "->",
         [TokenKind.FatArrow]  = "=>",
         [TokenKind.Question]  = "?",
+
+        // Operators — render as the source symbol, not the enum name, so error
+        // messages emitted by spec add-parser-expected-list (2026-06-01) read
+        // `expected ... `!`, `+`, `++`, ...` instead of `bang`, `plus`,
+        // `plusplus`. Single source of truth: the `Text` field of SymbolRules
+        // below — keep these two tables in sync when adding a new operator.
+        [TokenKind.Plus]              = "+",
+        [TokenKind.Minus]             = "-",
+        [TokenKind.Star]              = "*",
+        [TokenKind.Slash]             = "/",
+        [TokenKind.Percent]           = "%",
+        [TokenKind.Bang]              = "!",
+        [TokenKind.Tilde]             = "~",
+        [TokenKind.PlusPlus]          = "++",
+        [TokenKind.MinusMinus]        = "--",
+        [TokenKind.PlusEq]            = "+=",
+        [TokenKind.MinusEq]           = "-=",
+        [TokenKind.StarEq]            = "*=",
+        [TokenKind.SlashEq]           = "/=",
+        [TokenKind.PercentEq]         = "%=",
+        [TokenKind.EqEq]              = "==",
+        [TokenKind.BangEq]            = "!=",
+        [TokenKind.Lt]                = "<",
+        [TokenKind.LtEq]              = "<=",
+        [TokenKind.Gt]                = ">",
+        [TokenKind.GtEq]              = ">=",
+        [TokenKind.LtLt]              = "<<",
+        [TokenKind.GtGt]              = ">>",
+        [TokenKind.AmpAmp]            = "&&",
+        [TokenKind.PipePipe]          = "||",
+        [TokenKind.Ampersand]         = "&",
+        [TokenKind.Pipe]              = "|",
+        [TokenKind.Caret]             = "^",
+        [TokenKind.AmpEq]             = "&=",
+        [TokenKind.PipeEq]            = "|=",
+        [TokenKind.CaretEq]           = "^=",
+        [TokenKind.QuestionQuestion]  = "??",
+        [TokenKind.DotDot]            = "..",
+        [TokenKind.ColonColon]        = "::",
     };
 
     internal static string Display(TokenKind k) =>

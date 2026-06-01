@@ -1,2 +1,2 @@
-*source.z42*: error E0201: *unexpected*`;`*
-*source.z42*: error E0201: *unexpected*`;`*
+*source.z42*: error E0201: *expected expression*got `;`*
+*source.z42*: error E0201: *expected expression*got `;`*

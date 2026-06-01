@@ -97,8 +97,14 @@ internal static partial class ExprParser
         }
 
         if (!s_nudTable.TryGetValue(cursor.Current.Kind, out var nudEntry))
+        {
+            // List the enabled Nud alternatives so users see *what would have
+            // worked* here, Roslyn-style. spec add-parser-expected-list
+            // (2026-06-01).
+            var alternatives = EnumerateNudAlternatives(feat);
             return ParseResult<Expr>.Fail(cursor,
-                $"unexpected token `{cursor.Current.Text}` in expression");
+                $"expected expression ({Combinators.LabelList(alternatives)}), got `{cursor.Current.Text}`");
+        }
 
         if (nudEntry.Feature is { } nf && !feat.IsEnabled(nf))
             throw new ParseException($"feature `{LanguageFeatures.Metadata[nf].Name}` is disabled", span,
@@ -379,4 +385,54 @@ internal static partial class ExprParser
 
         return table;
     }
+
+    // ── Nud miss → expected-list helpers ──────────────────────────────────────
+    // spec add-parser-expected-list (2026-06-01): when the Pratt Nud dispatch
+    // finds no entry for the current token, list the categories of token that
+    // *would* have started an expression here. The 30+ TypeKeyword aliases
+    // (`int` / `long` / `u8` / …) collapse to "identifier" and all literal
+    // forms collapse to "literal", otherwise the user would see a 25-item list
+    // that's noisier than helpful.
+
+    /// Collect human labels for every Nud entry currently enabled by the
+    /// active <see cref="LanguageFeatures"/>. Disabled-feature entries are
+    /// excluded so the message only mentions tokens that would actually parse.
+    private static IEnumerable<string> EnumerateNudAlternatives(LanguageFeatures feat)
+    {
+        foreach (var (kind, entry) in s_nudTable)
+        {
+            if (entry.Feature is { } f && !feat.IsEnabled(f)) continue;
+            yield return NudAlternativeLabel(kind);
+        }
+    }
+
+    private static string NudAlternativeLabel(TokenKind k) => k switch
+    {
+        // All literal forms collapse to one label.
+        TokenKind.IntLiteral
+            or TokenKind.FloatLiteral
+            or TokenKind.StringLiteral
+            or TokenKind.CharLiteral
+            or TokenKind.InterpolatedStringLiteral
+            or TokenKind.RawStringLiteral
+            or TokenKind.True
+            or TokenKind.False
+            or TokenKind.Null
+            => "literal",
+
+        // Plain identifier + every primitive type keyword used as a static-call
+        // target (`int.Parse`, `string.Join`, `u8.Parse`, …) share the same
+        // syntactic role here. Collapse to one label.
+        TokenKind.Identifier
+            or TokenKind.String or TokenKind.Int or TokenKind.Long or TokenKind.Short
+            or TokenKind.Byte or TokenKind.Sbyte or TokenKind.Ushort or TokenKind.Uint
+            or TokenKind.Ulong or TokenKind.Double or TokenKind.Float or TokenKind.Bool
+            or TokenKind.Char
+            or TokenKind.I8 or TokenKind.I16 or TokenKind.I32 or TokenKind.I64
+            or TokenKind.U8 or TokenKind.U16 or TokenKind.U32 or TokenKind.U64
+            or TokenKind.F32 or TokenKind.F64
+            => "identifier",
+
+        _ => Combinators.KindDisplay(k),
+    };
 }

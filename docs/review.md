@@ -1884,7 +1884,7 @@ Phase 2（远期）：
 1. ✅ ~~**把 `Z42Type` 的 well-known singletons 移到 `WellKnownTypes` 类集中**~~ — `WellKnownTypes` (2026-05-25) exposes `ByName` alias map + `AllPrimitives` list; `Z42Type` singletons stay as identity targets
 2. ✅ ~~**`DiagnosticCodes` 加 `Category` 字段**~~ — `DiagnosticCategory` enum + `DiagnosticCategories.Of(code)` classifier (2026-05-25)
 3. ✅ ~~**`Diagnostic` 加 `Properties: ImmutableDictionary<string, string>` 字段**~~ — `Diagnostic.Properties` + `Props` + `WithProperty` shipped
-4. ⚡ **Parser error message 加 `expected: <list>`** ── Roslyn 错误是 "expected `(`, identifier, or `default`"；z42 当前是单 token
+4. ✅ ~~**Parser error message 加 `expected: <list>`**~~ — add-parser-expected-list (2026-06-01): Pratt Nud miss site emits `expected expression (<list>), got X` listing every enabled NudTable alternative; literals collapse to `literal`, primitive-type-keyword aliases collapse to `identifier`, operators render via `Display(TokenKind)` (newly enriched with `+`, `-`, `!`, `~`, `++`, `--`, `==`, `!=`, ...). Roslyn-style multi-alternative diagnostic.
 5. ✅ ~~**TypeChecker mutable stack 改 `ImmutableStack<T>`**~~ — `_catchVarStack` + `_lambdaBindingStack` (2026-05-27); aligns with future Binder hierarchy where each layer carries a binding snapshot. 1389 compiler tests stay green.
 6. ⚡ **BoundDumper 加 `--dump-bound-with-types` 选项** ── 当前已有 type 注解，再加 symbol id（依赖 F2.2 落地后）方便 LSP 调试
 7. ✅ ~~**`IrPassManager` 框架未用，加一个 no-op `IIrPass` 实现作为占位**~~ — `z42.IR/NoOpPass.cs` + IrPassManager pipeline
