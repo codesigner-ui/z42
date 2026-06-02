@@ -1,0 +1,155 @@
+// add-bigint-prime-deterministic (2026-06-02): BigInt.IsPrime() —
+// deterministic Miller-Rabin via OEIS A014233 witness sets.
+namespace Z42NumericsBigIntPrimeDeterministicTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_zero_negative_one_are_not_prime() {
+    Assert.False(BigInt.Zero.IsPrime());
+    Assert.False(BigInt.One.IsPrime());
+    Assert.False(new BigInt(-5).IsPrime());
+    Assert.False(new BigInt(-1).IsPrime());
+}
+
+[Test]
+void test_small_primes_through_41_all_true() {
+    // Every prime that appears in any witness set must be recognised.
+    Assert.True(new BigInt( 2).IsPrime());
+    Assert.True(new BigInt( 3).IsPrime());
+    Assert.True(new BigInt( 5).IsPrime());
+    Assert.True(new BigInt( 7).IsPrime());
+    Assert.True(new BigInt(11).IsPrime());
+    Assert.True(new BigInt(13).IsPrime());
+    Assert.True(new BigInt(17).IsPrime());
+    Assert.True(new BigInt(19).IsPrime());
+    Assert.True(new BigInt(23).IsPrime());
+    Assert.True(new BigInt(29).IsPrime());
+    Assert.True(new BigInt(31).IsPrime());
+    Assert.True(new BigInt(37).IsPrime());
+    Assert.True(new BigInt(41).IsPrime());
+}
+
+[Test]
+void test_more_small_primes_true() {
+    // Primes 43..101 — exercise the post-trial-division Miller-Rabin path.
+    Assert.True(new BigInt( 43).IsPrime());
+    Assert.True(new BigInt( 47).IsPrime());
+    Assert.True(new BigInt( 53).IsPrime());
+    Assert.True(new BigInt( 59).IsPrime());
+    Assert.True(new BigInt( 61).IsPrime());
+    Assert.True(new BigInt( 67).IsPrime());
+    Assert.True(new BigInt( 73).IsPrime());
+    Assert.True(new BigInt( 97).IsPrime());
+    Assert.True(new BigInt(101).IsPrime());
+}
+
+[Test]
+void test_small_composites_false() {
+    long[] composites = new long[12];
+    composites[ 0] =   4; composites[ 1] =   6; composites[ 2] =   8;
+    composites[ 3] =   9; composites[ 4] =  15; composites[ 5] =  21;
+    composites[ 6] =  25; composites[ 7] =  27; composites[ 8] =  33;
+    composites[ 9] =  35; composites[10] =  49; composites[11] = 121;
+    int i = 0;
+    while (i < 12) {
+        Assert.False(new BigInt(composites[i]).IsPrime());
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_mersenne_primes_in_range() {
+    Assert.True(new BigInt(           8191L).IsPrime());   // 2^13 - 1
+    Assert.True(new BigInt(         131071L).IsPrime());   // 2^17 - 1
+    Assert.True(new BigInt(         524287L).IsPrime());   // 2^19 - 1
+    Assert.True(new BigInt(     2147483647L).IsPrime());   // 2^31 - 1
+    Assert.True(BigInt.Parse("2305843009213693951").IsPrime());  // 2^61 - 1
+}
+
+[Test]
+void test_pseudoprime_2047_caught() {
+    // 2047 = 23 × 89 is the smallest strong pseudoprime to base 2.
+    // The tier picker selects the {2, 3} set here (since 2047 is NOT
+    // < 2047 → falls into tier 2), so witness 3 correctly identifies
+    // it as composite.
+    Assert.False(new BigInt(2047).IsPrime());
+}
+
+[Test]
+void test_pseudoprime_3215031751_caught() {
+    // 151 × 751 × 28351 — strong pseudoprime to bases 2, 3, 5, 7.
+    // Tier 6 (witness set {2, 7, 61}) must catch it via witness 61.
+    Assert.False(BigInt.Parse("3215031751").IsPrime());
+}
+
+[Test]
+void test_carmichael_561_caught() {
+    // 561 = 3 × 11 × 17 is the smallest Carmichael number.
+    Assert.False(new BigInt(561).IsPrime());
+}
+
+[Test]
+void test_more_carmichael_caught() {
+    // Additional Carmichael numbers — composites that fool naive
+    // Fermat tests but not Miller-Rabin.
+    Assert.False(new BigInt(1105).IsPrime());    // 5 × 13 × 17
+    Assert.False(new BigInt(1729).IsPrime());    // 7 × 13 × 19 (Ramanujan)
+    Assert.False(new BigInt(2465).IsPrime());    // 5 × 17 × 29
+    Assert.False(new BigInt(2821).IsPrime());    // 7 × 13 × 31
+    Assert.False(new BigInt(6601).IsPrime());    // 7 × 23 × 41
+}
+
+[Test]
+void test_value_at_top_threshold_throws() {
+    bool caught = false;
+    try {
+        BigInt n = BigInt.Parse("3317044064679887385961981");
+        bool unused = n.IsPrime();
+    } catch (ArgumentException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("deterministic"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_value_above_top_threshold_throws_with_hint() {
+    bool caught = false;
+    try {
+        // 2^89 - 1, ~6.18×10^26 — well above the threshold.
+        BigInt n = BigInt.Parse("618970019642690137449562111");
+        bool unused = n.IsPrime();
+    } catch (ArgumentException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("IsProbablyPrime"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_deterministic_repeat() {
+    BigInt n = BigInt.Parse("999999999989");   // prime
+    bool a = n.IsPrime();
+    bool b = n.IsPrime();
+    bool c = n.IsPrime();
+    Assert.True(a);
+    Assert.True(b);
+    Assert.True(c);
+}
+
+[Test]
+void test_large_composite_below_threshold() {
+    // Build a composite as p × q where both factors are known primes,
+    // ensuring the IsPrime call traverses the tier table and runs MR
+    // against the right witness set. (Constructing the composite via
+    // BigInt.Multiply avoids hand-arithmetic errors in the test.)
+    BigInt p = BigInt.Parse("1000000007");
+    BigInt q = BigInt.Parse("1000000009");
+    BigInt composite = p.Multiply(q);  // 10^18 + 16e9 + 63, tier 10
+    Assert.True(p.IsPrime());
+    Assert.True(q.IsPrime());
+    Assert.False(composite.IsPrime());
+}

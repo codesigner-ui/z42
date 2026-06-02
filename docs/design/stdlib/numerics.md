@@ -218,9 +218,20 @@ starts / fast-rejects (negative, even>2) / error path (rounds<=0) /
 RNG-determinism reproducibility / default-overload smoke test.
 
 Follow-ups deferred:
-- `bigint-future-prime-deterministic` — small-bound deterministic
-  Miller-Rabin (known witness sets per OEIS A014233; valid for
-  `n < 3,317,044,064,679,887,385,961,981` etc.)
+- ~~`bigint-future-prime-deterministic`~~ — **✅ 已落地 2026-06-02
+  (`add-bigint-prime-deterministic`)** — `BigInt.IsPrime()` uses tiered
+  Miller-Rabin per OEIS A014233 (1 round for `n < 2047` through 13
+  rounds for `n < 3,317,044,064,679,887,385,961,981`); throws
+  `ArgumentException` above the top bound (callers fall back to
+  `IsProbablyPrime(rounds)`). Pre-trial divides by primes 2..41 so
+  the MR loop always sees `n > 41` and odd; this also handles small
+  primes / Carmichael / small-witness collisions in one branch. 13
+  tests cover small primes (2..101) / small composites / Mersenne
+  primes (`2^13-1`..`2^61-1`) / strong pseudoprime 2047 (caught by
+  tier-2 witness 3) / strong pseudoprime 3215031751 (caught by tier-6
+  witness 61) / Carmichael 561 / 1105 / 1729 / 2465 / 2821 / 6601 /
+  threshold-throws / above-threshold-throws-with-hint /
+  deterministic-repeat / large composite via `Multiply`.
 - `bigint-future-bpsw` — Baillie–PSW; known no counterexample, slightly
   slower per round; deterministic up to current numerical tests
 - ~~`bigint-future-prime-sieve`~~ — **✅ 已落地 2026-05-25 (add-bigint-prime-sieve)** —
