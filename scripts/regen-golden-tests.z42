@@ -270,23 +270,10 @@ string[] _append(string[] arr, int count, string v) {
     return bigger;
 }
 
-// Slice argv after `--mode <mode>` (the z42 driver's CLI shape).
-// Falls back to argv[3..] (vm + zbc + entry) when not found.
+// add-z42-launcher cutover (2026-06-03): now run via `z42 run <zpkg> -- <args>`,
+// so GetCommandLineArgs() returns exactly the user args (the z42vm `-- args`
+// passthrough strips VM-internal tokens). The old "slice after --mode / argv[3..]"
+// env-var-era hack is gone.
 string[] _argvSlice() {
-    string[] all = Environment.GetCommandLineArgs();
-    int start = 0;
-    int i = 0;
-    while (i < all.Length) {
-        if (all[i] == "--mode" && i + 1 < all.Length) { start = i + 2; i = i + 2; continue; }
-        i = i + 1;
-    }
-    if (start == 0) {
-        if (all.Length >= 3) { start = 3; }
-        else { start = all.Length; }
-    }
-    int n = all.Length - start;
-    string[] slice = new string[n];
-    int j = 0;
-    while (j < n) { slice[j] = all[start + j]; j = j + 1; }
-    return slice;
+    return Environment.GetCommandLineArgs();
 }

@@ -54,7 +54,14 @@ if [ ! -f "$DRIVER_DLL" ]; then
     dotnet build -q src/compiler/z42.Driver/z42.Driver.csproj -c "$BUILD_CONFIG"
 fi
 
-# Hand off to the z42 implementation. Use --no-build because the bootstrap
-# above already built the driver in the requested configuration.
-exec dotnet run --project src/compiler/z42.Driver --verbosity quiet --no-build -- \
-    run scripts/regen-golden-tests.z42 "${Z42_ARGS[@]+"${Z42_ARGS[@]}"}"
+# add-z42-launcher cutover (2026-06-03): compile to Exe-zpkg + run via the
+# `z42` launcher (args forwarded after `--`; the script reads clean argv).
+# Ensure z42vm exists (the --no-stdlib path skips build-stdlib.sh which would
+# otherwise build it) — the launcher runtime needs it.
+cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
+source "$ROOT/scripts/_lib/launcher-env.sh"
+setup_launcher_env "$ROOT" release
+Z42_LIBS="$ROOT/artifacts/build/libs/release" dotnet run --project src/compiler/z42.Driver \
+    --verbosity quiet --no-build -- build scripts/regen-golden-tests.z42.toml --release >/dev/null
+
+exec "$Z42_LAUNCHER" run "$ROOT/scripts/dist/regen-golden-tests.zpkg" -- "${Z42_ARGS[@]+"${Z42_ARGS[@]}"}"

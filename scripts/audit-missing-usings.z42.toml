@@ -1,0 +1,22 @@
+# Mini-project for launcher cutover (add-z42-launcher, 2026-06-03).
+[project]
+name    = "audit-missing-usings"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42AuditMissingUsingsScript.Main"
+pack    = true
+
+[sources]
+include = ["audit-missing-usings.z42"]
+
+[dependencies]
+"z42.core"  = "0.1.0"
+"z42.io"    = "0.1.0"
+"z42.regex" = "0.1.0"
+
+[build]
+out_dir = "dist"
+
+[profile.release]
+mode     = "interp"
+optimize = 2

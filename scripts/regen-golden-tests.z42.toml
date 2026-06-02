@@ -1,0 +1,22 @@
+# Mini-project for launcher cutover (add-z42-launcher, 2026-06-03).
+[project]
+name    = "regen-golden-tests"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42RegenGoldenTestsScript.Main"
+pack    = true
+
+[sources]
+include = ["regen-golden-tests.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"
+"z42.io"   = "0.1.0"
+"z42.cli"  = "0.1.0"
+
+[build]
+out_dir = "dist"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
