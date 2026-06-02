@@ -224,7 +224,15 @@ pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     })
 }
 pub fn builtin_env_args(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
-    let list: Vec<Value> = std::env::args().map(|s| Value::Str(s.into())).collect();
+    // add-z42-launcher (2026-06-02): return the program arguments forwarded
+    // after `--` on the z42vm command line (stored on VmCore), NOT the VM's
+    // own raw process argv (`z42vm`, file, entry, --mode …). A bare
+    // invocation with no `--` yields an empty array.
+    let list: Vec<Value> = ctx
+        .program_args()
+        .into_iter()
+        .map(|s| Value::Str(s.into()))
+        .collect();
     Ok(ctx.heap().alloc_array(list))
 }
 pub fn builtin_process_exit(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
@@ -624,3 +632,7 @@ pub fn builtin_file_close(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     // on already-closed handles is the conventional behaviour.
     Ok(Value::Null)
 }
+
+#[cfg(test)]
+#[path = "fs_tests.rs"]
+mod fs_tests;

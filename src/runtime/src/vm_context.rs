@@ -237,6 +237,14 @@ pub struct VmCore {
     /// the round's stop-the-world collect. Cross-thread safe via the
     /// safepoint protocol.
     pub(crate) needs_auto_collect: Arc<std::sync::atomic::AtomicBool>,
+    /// **add-z42-launcher (2026-06-02)**: command-line arguments passed to
+    /// the running z42 program — everything after the `--` separator on the
+    /// `z42vm` command line. Exposed to z42 code via
+    /// `Std.IO.Environment.GetCommandLineArgs()` (builtin `__env_args`).
+    /// Shared on `VmCore` so worker threads see the same argv as main.
+    /// Set once at startup by `VmContext::set_program_args`; empty by default
+    /// (bare `z42vm file entry` with no `--` → no program args).
+    pub(crate) program_args:       Mutex<Vec<String>>,
     /// **add-sync-primitives-rwlock (2026-05-20)**: `Std.Threading.RwLock<T>`
     /// slot table. Multiple shared (read) holders OR a single exclusive
     /// (write) holder. Same Arc-+-thread-local-guard parking pattern as
@@ -421,6 +429,20 @@ impl VmContext {
         self.safepoint_skip.store(1, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// **add-z42-launcher (2026-06-02)**: install the running program's
+    /// command-line arguments (the tokens after `--` on the `z42vm`
+    /// invocation). Read back by the `__env_args` builtin →
+    /// `Std.IO.Environment.GetCommandLineArgs()`. Called once at startup
+    /// from `main.rs`; safe to call from any context sharing this `VmCore`.
+    pub fn set_program_args(&self, args: Vec<String>) {
+        *self.core.program_args.lock() = args;
+    }
+
+    /// **add-z42-launcher (2026-06-02)**: snapshot the program argv.
+    pub fn program_args(&self) -> Vec<String> {
+        self.core.program_args.lock().clone()
+    }
+
     /// Standard test entry: constructs a VmContext with `VmCore.module = None`.
     /// Cargo unit tests use this — they don't need a real Module for
     /// builtin / static-field / alloc tests. Production paths use
@@ -503,6 +525,7 @@ impl VmContext {
             parked_count:         std::sync::atomic::AtomicUsize::new(0),
             collector_active:     std::sync::atomic::AtomicBool::new(false),
             needs_auto_collect:   Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            program_args:         Mutex::new(Vec::new()),
             rwlocks:              Mutex::new(HashMap::new()),
             next_rwlock_id:       std::sync::atomic::AtomicU64::new(1),
             #[cfg(feature = "native-interop")]

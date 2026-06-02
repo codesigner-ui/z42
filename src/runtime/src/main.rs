@@ -38,6 +38,14 @@ struct Cli {
     /// the script exits cleanly. docs/review.md Part 4 D6 (2026-05-26).
     #[arg(long)]
     print_stats_on_exit: bool,
+
+    /// add-z42-launcher (2026-06-02): arguments forwarded to the running z42
+    /// program. Everything after a literal `--` separator is collected here
+    /// and exposed to z42 code via `Std.IO.Environment.GetCommandLineArgs()`
+    /// — NOT parsed by z42vm itself. e.g. `z42vm app.zpkg Main -- a b c` →
+    /// the program sees `["a", "b", "c"]`.
+    #[arg(last = true)]
+    args: Vec<String>,
 }
 // 2026-05-11 retire-z-codes: `--explain` / `--list-errors` were removed
 // alongside the Rust-side `diagnostics` catalog. Use `z42c explain E####`
@@ -593,6 +601,9 @@ fn main() -> Result<()> {
     // across threads); Vm becomes a thin run-config wrapper.
     let string_pool_len = final_module.string_pool.len();
     let ctx = z42::vm_context::VmContext::with_module(final_module);
+    // add-z42-launcher (2026-06-02): forward `-- <args>` to the program's
+    // GetCommandLineArgs(). Done before vm.run so the program sees them.
+    ctx.set_program_args(cli.args.clone());
     ctx.install_lazy_loader_with_deps(
         libs_dir.clone(),
         string_pool_len,
