@@ -34,12 +34,21 @@ public sealed class PropertyTests
     }
 
     // ── FsCheck: Lexer never crashes on arbitrary strings ────────────────────
+    //
+    // "Crash" here means an *unstructured* exception — `IndexOutOfRangeException`,
+    // `OverflowException`, panic, etc. A `ParseException` is the lexer/parser's
+    // *structured* way to signal a bad-input error (e.g. unterminated raw string
+    // — see `Lexer.cs:163` comment + LexerTests `RawString_UnterminatedAtEof_Throws`
+    // for the design intent that this be explicit, not silent truncation).
+    // Treating `ParseException` as crash would force the lexer to be infallible,
+    // which conflicts with the structured-error contract.
 
     [Property(MaxTest = 500)]
     public bool Lexer_NeverCrashes_Random(NonNull<string> input)
     {
         try { new Lexer(input.Get).Tokenize(); return true; }
-        catch { return false; }
+        catch (ParseException) { return true; }   // structured error — expected
+        catch { return false; }                   // unstructured = crash
     }
 
     // ── FsCheck: Parser never crashes on arbitrary strings ───────────────────
@@ -53,7 +62,8 @@ public sealed class PropertyTests
             new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
             return true;
         }
-        catch { return false; }
+        catch (ParseException) { return true; }   // structured error — expected
+        catch { return false; }                   // unstructured = crash
     }
 
     // ── Deterministic round-trip tests ───────────────────────────────────────
