@@ -27,41 +27,24 @@
 
 use crate::vm_context::VmContext;
 use std::sync::atomic::Ordering;
-use std::sync::OnceLock;
 
 /// add-gc-safepoint-counter-throttling (2026-05-21): default throttle
-/// constant. Every Nth `check_safepoint` call runs the slow path (real
-/// `gc_phase` Mutex lock + auto_collect drain); other N-1 calls are a
-/// single atomic decrement.
+/// constant lives in `RuntimeConfig::safepoint_throttle` (defaults 1024
+/// — mirrors HotSpot's polling-page heuristic; at z42's typical per-iter
+/// cost ~50ns this caps GC pause latency at ≈ 50us, negligible vs actual
+/// collect time 10ms+).
 ///
-/// 1024 mirrors HotSpot's polling-page heuristic — at z42's typical
-/// per-iter cost (~50ns) it caps GC pause latency at ≈ 50us, which is
-/// negligible compared to actual collect time (10ms+).
-const DEFAULT_THROTTLE: u32 = 1024;
+/// runtime-config-phase2 (2026-06-03): the OnceLock-cached env reader
+/// moved into `RuntimeConfig` for centralised parsing + warnings.
 
-/// Cached throttle value. Resolved once from `Z42_SAFEPOINT_THROTTLE` env
-/// on first access; subsequent calls hit the OnceLock fast path.
-static THROTTLE: OnceLock<u32> = OnceLock::new();
-
-/// Effective safepoint throttle. Reads `Z42_SAFEPOINT_THROTTLE` env on
-/// first call; cached for the process lifetime. Invalid values fall back
-/// to [`DEFAULT_THROTTLE`] with a warning on stderr.
+/// Effective safepoint throttle. Reads from process-wide [`runtime_config()`]
+/// (parsed once at first access; cached). Invalid values fall back to 1024
+/// with a stderr warning at config init.
 ///
 /// Setting `Z42_SAFEPOINT_THROTTLE=1` disables throttling (every call
 /// runs the slow path) — useful for debugging latency-sensitive paths.
 pub fn throttle_n() -> u32 {
-    *THROTTLE.get_or_init(|| match std::env::var("Z42_SAFEPOINT_THROTTLE") {
-        Ok(s) => match s.parse::<u32>() {
-            Ok(n) if n >= 1 => n,
-            _ => {
-                eprintln!(
-                    "z42: invalid Z42_SAFEPOINT_THROTTLE={s:?}; using default {DEFAULT_THROTTLE}"
-                );
-                DEFAULT_THROTTLE
-            }
-        },
-        Err(_) => DEFAULT_THROTTLE,
-    })
+    crate::config::runtime_config().safepoint_throttle
 }
 
 /// Current GC phase observed by mutators at safepoint checks.

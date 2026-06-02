@@ -41,27 +41,12 @@ impl Default for GcMode {
 }
 
 impl GcMode {
-    /// Resolve the GC mode from the `Z42_GC_MODE` environment variable.
-    /// Unset → `StwMarkSweep` (default). Invalid value → fall back to
-    /// `StwMarkSweep` with a stderr warning so misconfigured production
-    /// runs don't silently land on the wrong algorithm.
+    /// Resolve the GC mode from the process-wide `RuntimeConfig`.
+    /// Unset / invalid `Z42_GC_MODE` → `StwMarkSweep` (default) — the
+    /// warning lands once in `crate::config::parse_gc_mode` at first
+    /// access, not per-callsite (runtime-config-phase2 2026-06-03).
     pub fn from_env() -> Self {
-        match std::env::var("Z42_GC_MODE") {
-            Ok(s) => match s.as_str() {
-                "concurrent" | "concurrent-mark-sweep" => GcMode::ConcurrentMarkSweep,
-                "generational" | "generational-mark-sweep" => GcMode::GenerationalMarkSweep,
-                "stw" | "stw-mark-sweep" => GcMode::StwMarkSweep,
-                "" => GcMode::StwMarkSweep,
-                other => {
-                    eprintln!(
-                        "z42: Z42_GC_MODE={:?} not recognized; falling back to stw-mark-sweep",
-                        other
-                    );
-                    GcMode::StwMarkSweep
-                }
-            },
-            Err(_) => GcMode::StwMarkSweep,
-        }
+        crate::config::runtime_config().gc_mode
     }
 
     /// Convert from the `u8` representation used by `AtomicU8` storage.

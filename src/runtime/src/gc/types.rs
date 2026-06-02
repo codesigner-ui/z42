@@ -163,26 +163,23 @@ pub enum GcHandleKind {
 
 /// Default capacity of the per-heap rolling pause-time window
 /// (add-gc-pause-window, 2026-05-24). Overridable via
-/// `Z42_GC_PAUSE_WINDOW` env var; clamped to `[1, 65536]`.
+/// `Z42_GC_PAUSE_WINDOW`; clamped to `[1, 65536]`. The actual default +
+/// clamp live in `RuntimeConfig::gc_pause_window`. Kept as a public
+/// constant for any downstream that wants to refer to the default
+/// without going through the config singleton.
 pub const PAUSE_WINDOW_DEFAULT_CAP: usize = 1024;
 
 /// Hard ceiling on `Z42_GC_PAUSE_WINDOW` override. 65536 × 8 bytes =
 /// 512 KB per heap — generous but prevents a hostile env from
-/// allocating GB-sized deques.
+/// allocating GB-sized deques. Reflected in
+/// `crate::config::parse_gc_pause_window`.
 pub const PAUSE_WINDOW_MAX_CAP: usize = 65536;
 
-/// Reads `Z42_GC_PAUSE_WINDOW`, clamping into `[1, PAUSE_WINDOW_MAX_CAP]`.
-/// Falls back to [`PAUSE_WINDOW_DEFAULT_CAP`] on parse failure / 0 /
-/// negative / out-of-range. Called once per `PauseHistogram::default()`
-/// construction.
+/// Capacity for the per-heap pause-time window. Delegates to
+/// process-wide [`crate::config::runtime_config()`] (parsed once at
+/// startup; runtime-config-phase2 2026-06-03).
 pub fn pause_window_cap_from_env() -> usize {
-    match std::env::var("Z42_GC_PAUSE_WINDOW").ok().and_then(|v| v.parse::<i64>().ok()) {
-        // Positive integer → adopt, clamped to MAX (silent truncate
-        // for ergonomic "I want as much as you'll give me" UX).
-        Some(n) if n >= 1 => (n as usize).min(PAUSE_WINDOW_MAX_CAP),
-        // 0 / negative / parse-fail / unset → fallback.
-        _ => PAUSE_WINDOW_DEFAULT_CAP,
-    }
+    crate::config::runtime_config().gc_pause_window
 }
 
 /// Half-open bucket edges (µs). `BUCKET_EDGES[i]` is the lower bound of

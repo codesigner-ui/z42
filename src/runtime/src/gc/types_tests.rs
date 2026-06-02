@@ -61,33 +61,19 @@ fn window_evicts_oldest_at_capacity() {
     assert_eq!(h.count, 5, "count still tracks every sample");
 }
 
+/// runtime-config-phase2 (2026-06-03): parsing logic moved to
+/// `crate::config::parse_gc_pause_window` and is covered by
+/// `config::tests::from_getter_gc_pause_window_clamps_and_validates`.
+/// `pause_window_cap_from_env()` is now a thin delegator to
+/// `runtime_config().gc_pause_window`. Smoke-test that the delegator
+/// returns a sane value (≥1, ≤MAX). Detailed parsing cases live in
+/// the config module's tests where they don't fight the process-global
+/// `LazyLock` cache.
 #[test]
-fn pause_window_cap_from_env_clamps_and_falls_back() {
-    let _env_guard = PAUSE_WINDOW_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-    // Valid numeric → adopted.
-    std::env::set_var("Z42_GC_PAUSE_WINDOW", "42");
-    assert_eq!(pause_window_cap_from_env(), 42);
-
-    // Over ceiling → clamped to MAX (silent truncation; user
-    // intent "give me as much as you'll allow" is preserved).
-    std::env::set_var("Z42_GC_PAUSE_WINDOW", "99999999");
-    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_MAX_CAP);
-
-    // Zero → fallback.
-    std::env::set_var("Z42_GC_PAUSE_WINDOW", "0");
-    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
-
-    // Negative → fallback.
-    std::env::set_var("Z42_GC_PAUSE_WINDOW", "-5");
-    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
-
-    // Garbage → fallback.
-    std::env::set_var("Z42_GC_PAUSE_WINDOW", "notanumber");
-    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
-
-    // Cleanup.
-    std::env::remove_var("Z42_GC_PAUSE_WINDOW");
-    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
+fn pause_window_cap_from_env_delegates_to_runtime_config() {
+    let cap = pause_window_cap_from_env();
+    assert!(cap >= 1, "capacity must be positive");
+    assert!(cap <= PAUSE_WINDOW_MAX_CAP, "capacity must respect MAX clamp");
 }
 
 #[test]

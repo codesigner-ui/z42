@@ -53,29 +53,25 @@ fn native_search_paths_includes_exec_dir_for_cargo_target_layout() {
     );
 }
 
+/// runtime-config-phase2 (2026-06-03): `Z42_NATIVE_PATH` parsing moved
+/// to `crate::config::parse_native_search_paths`, covered by
+/// `config::tests::from_getter_native_path_splits_on_platform_separator`.
+/// `native_search_paths()` now concatenates the parsed list with SDK-
+/// relative fallbacks; smoke-test that it returns a non-empty list
+/// containing the running binary's exec_dir (the fallback) so the
+/// delegator + fallback wiring still works end-to-end.
 #[test]
-fn native_search_paths_respects_env_var() {
-    use std::sync::Mutex;
-    // serialise so concurrent tests don't trample each other's env var
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-    let _g = ENV_LOCK.lock().unwrap();
-
-    let prev = std::env::var("Z42_NATIVE_PATH").ok();
-    let sep = if cfg!(windows) { ";" } else { ":" };
-    std::env::set_var("Z42_NATIVE_PATH", format!("/tmp/a{sep}/tmp/b"));
-
+fn native_search_paths_includes_exec_dir_fallback() {
     let paths = native_search_paths();
-    let strs: Vec<String> = paths.iter()
-        .map(|p| p.to_string_lossy().into_owned())
-        .collect();
-    assert!(strs.iter().any(|s| s == "/tmp/a"), "missing /tmp/a, got {strs:?}");
-    assert!(strs.iter().any(|s| s == "/tmp/b"), "missing /tmp/b, got {strs:?}");
-
-    // restore
-    match prev {
-        Some(v) => std::env::set_var("Z42_NATIVE_PATH", v),
-        None    => std::env::remove_var("Z42_NATIVE_PATH"),
-    }
+    let exec_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .expect("test binary must have an exec_dir");
+    assert!(
+        paths.iter().any(|p| p == &exec_dir),
+        "expected exec_dir fallback ({}) among search paths, got {paths:?}",
+        exec_dir.display(),
+    );
 }
 
 #[test]

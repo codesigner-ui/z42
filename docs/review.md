@@ -1363,7 +1363,7 @@ pub struct ScriptObject {
 | 优先级 | 改造 | Part | 估时 | 类别 |
 |---|---|---|---|---|
 | ✅ | ~~Panic hook + signal handler~~ (D4) — Phase 1 `12cf7ef8` + Phase 2 add-os-signal-handler | 4 | done | ops |
-| ✅ | ~~`RuntimeConfig` 中心化~~ (D1) — refactor-runtime-config `81e1cbba` (2026-05-25); Phase 2 migrating subsystem-local `Z42_*` reads still open | 4 | done | ops |
+| ✅ | ~~`RuntimeConfig` 中心化~~ (D1) — Phase 1 refactor-runtime-config `81e1cbba` (2026-05-25); Phase 2 runtime-config-phase2 (2026-06-03) 把 6 个 subsystem-local 读（`Z42_GC_MODE` / `Z42_GC_MINOR_THRESHOLD` / `Z42_GC_PAUSE_WINDOW` / `Z42_GC_SOFT_THRESHOLD` / `Z42_SAFEPOINT_THROTTLE` / `Z42_NATIVE_PATH`）迁到 RuntimeConfig + 进程级 `LazyLock` 单例 + 集中 warning 输出。Phase 2 closed. | 4 | done | ops |
 | 🟡 | **StringId intern**（E2.P3）— Phase A `StringId(u32)` newtype + accessors landed add-string-id-newtype (2026-05-26); Phase B+ migrates individual String fields one at a time | 5 | Phase A done | data |
 | ✅ | ~~**JIT type specialization** (C2)~~ — P0 (8ef184e6) + P1 in five commits (a41050b8/98426e40/fc3936f0/3727e469) ship 1.51× on 10M-iter SumSquares loop | 2 | done | perf |
 | **P0** | **JIT↔VM `JitVm` trait 抽象** (Part 1 + E1.P2) | 1 | 2-3 天 | arch |

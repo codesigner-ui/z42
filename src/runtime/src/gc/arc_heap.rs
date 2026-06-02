@@ -881,28 +881,18 @@ impl ArcMagrGC {
         freed
     }
 
-    /// **add-generational-gc P3 (2026-05-22)**: escalation threshold
-    /// (configurable via `Z42_GC_MINOR_THRESHOLD` env var). If the
-    /// fraction of young entries surviving a minor GC exceeds this
-    /// threshold, the next collect is escalated to major immediately.
-    /// Default 0.75: if >75% survive, minor isn't recovering much.
+    /// **add-generational-gc P3 (2026-05-22)**: escalation threshold.
+    /// If the fraction of young entries surviving a minor GC exceeds
+    /// this, the next collect is escalated to major immediately.
+    /// Default 0.75 from [`RuntimeConfig::gc_minor_threshold`]; override
+    /// via `Z42_GC_MINOR_THRESHOLD`.
+    ///
+    /// runtime-config-phase2 (2026-06-03): centralised through
+    /// `crate::config::runtime_config()`; previous per-callsite
+    /// `OnceLock<f32>` retired.
     #[allow(dead_code)] // wired in collect_cycles_with_context below
     fn minor_escalation_threshold() -> f32 {
-        use std::sync::OnceLock;
-        static CACHE: OnceLock<f32> = OnceLock::new();
-        *CACHE.get_or_init(|| match std::env::var("Z42_GC_MINOR_THRESHOLD") {
-            Ok(s) => match s.parse::<f32>() {
-                Ok(v) if v > 0.0 && v <= 1.0 => v,
-                _ => {
-                    eprintln!(
-                        "z42: invalid Z42_GC_MINOR_THRESHOLD={:?}; using default 0.75",
-                        s
-                    );
-                    0.75
-                }
-            },
-            Err(_) => 0.75,
-        })
+        crate::config::runtime_config().gc_minor_threshold
     }
 
     /// **add-generational-gc P1 (2026-05-22)**: cross-gen detection

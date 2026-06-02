@@ -28,18 +28,12 @@ use std::sync::atomic::Ordering;
 
 use super::region::RegionEntry;
 
-/// Default pressure ratio above which soft refs become eligible for GC.
-const DEFAULT_SOFT_THRESHOLD: f64 = 0.80;
-
-/// Parse `Z42_GC_SOFT_THRESHOLD` from the environment; falls back to
-/// [`DEFAULT_SOFT_THRESHOLD`] on missing / invalid input. Clamped to
-/// `[0.0, 1.0]`.
+/// Soft-ref GC-eligibility pressure ratio. Delegates to process-wide
+/// [`crate::config::runtime_config()`] (runtime-config-phase2 2026-06-03);
+/// default 0.80, clamped `[0.0, 1.0]`, overridable via
+/// `Z42_GC_SOFT_THRESHOLD`.
 pub(crate) fn soft_threshold_from_env() -> f64 {
-    std::env::var("Z42_GC_SOFT_THRESHOLD")
-        .ok()
-        .and_then(|s| s.parse::<f64>().ok())
-        .map(|v| v.clamp(0.0, 1.0))
-        .unwrap_or(DEFAULT_SOFT_THRESHOLD)
+    crate::config::runtime_config().gc_soft_threshold
 }
 
 /// Which region owns the target — needed to re-construct the right

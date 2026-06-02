@@ -144,12 +144,9 @@ pub(crate) fn native_search_paths() -> Vec<PathBuf> {
 
     // 1. Explicit override (CI / dev / power user). `Z42_NATIVE_PATH`
     //    is colon-separated on Unix, semicolon-separated on Windows.
-    if let Ok(p) = std::env::var("Z42_NATIVE_PATH") {
-        let sep = if cfg!(windows) { ';' } else { ':' };
-        for part in p.split(sep) {
-            if !part.is_empty() { paths.push(PathBuf::from(part)); }
-        }
-    }
+    //    runtime-config-phase2 (2026-06-03): centralised through
+    //    `RuntimeConfig::native_search_paths` (pre-split at config init).
+    paths.extend(crate::config::runtime_config().native_search_paths.iter().cloned());
 
     // 2. Default SDK layout, relative to the running z42vm binary:
     //      <exec_dir>/../native/    — SDK package layout (bin/ and native/ siblings)
