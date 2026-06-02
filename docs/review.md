@@ -1710,7 +1710,19 @@ public class InCatchBinder : Binder { /* catch 变量 */ }
 
 估时：**14-21 天**（大架构改动）。**ROI 中长期**：当前 TypeChecker 还能撑，但加 L3 lambda / async / generic constraints 时复杂度爆炸前就该做。
 
-#### F2.5 没有 Lowering Pass 框架 ⚠️
+#### F2.5 没有 Lowering Pass 框架 🟡 Phase 1 框架已落地（2026-06-02）
+
+**Phase 1 状态**：`z42.Semantics/Lowering/BoundExprRewriter.cs` + `BoundStmtRewriter.cs`
+已落地（add-bound-tree-rewriter, 2026-06-02）。每个 visit 默认实现 identity 短路（所有
+ReferenceEquals child = 返回 input 原节点），任一 child 替换 → `with { ... }`
+重建。`BoundStmtRewriter.RewriteExpr` 虚 hook 用于组合（stmt rewriter 转发
+expr rewrite 给 expr rewriter）。
+
+**Phase 2 待做**（独立 spec）：把 FunctionEmitter 里现有的 foreach / interpolated /
+switch lowering 提出来，重写为 `BoundStmtRewriter` 子类；MethodCompiler 中固定
+pass-pipeline 顺序。
+
+
 
 **Roslyn**：Bound → Bound 多级转换 ——
 - `LocalRewriter`：async/await → state machine、iterator → state machine、lambda → 闭包类、`using` → try/finally、`foreach` → while + enumerator、switch → if-else 链、interpolated string → 构造、is-pattern → 等价 expr
@@ -1861,7 +1873,7 @@ Phase 2（远期）：
 | **P0** | **`Compilation` 不可变快照**（F2.1） | 6 | 7-10 天 | 多线程并行编译 + IDE / LSP 集成基础 |
 | **P1** | **`ISymbol` 公共抽象**（F2.2） | 6 | 10-14 天 | 跨文件符号身份；解锁 find-references / rename |
 | **P1** | **`SemanticModel` 按需 binding**（F2.3 Phase 1） | 6 | 3-5 天 | query API；IDE / analyzer 前置 |
-| **P1** | **BoundTree Lowering Pass 框架**（F2.5） | 6 | 7-10 天 | L3 async / lambda / generics lowering 前置 |
+| 🟡 | **BoundTree Lowering Pass 框架**（F2.5）— Phase 1 done 2026-06-02 (add-bound-tree-rewriter): `BoundExprRewriter`（30 个 VisitXxx 默认）+ `BoundStmtRewriter`（16 个 + `RewriteExpr` hook）+ 11 单元测试。Identity 短路（ReferenceEquals 链 = 零分配），fresh `with { ... }` 在任一 child 替换时分配。Phase 2（迁移现有 foreach / interpolated-string / switch lowering 从 FunctionEmitter 出来 + 加 MethodCompiler pass-pipeline）独立 spec 后续。 | 6 | Phase 1 done | L3 async / lambda / generics lowering 前置 |
 | **P2** | **Binder 层级**（F2.4） | 6 | 14-21 天 | scope 语义清晰，加 L3 特性时不爆炸 |
 | **P3** | **Analyzer / SourceGen 扩展点**（F2.6） | 6 | 大 | 自举完成后；IDE 阶段必备 |
 | **P4** | **IR Pass Manager 实装**（F2.7） | 6 | 中 | bytecode 微优化；先做 BoundTree lowering |
