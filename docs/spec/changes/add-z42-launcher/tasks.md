@@ -4,10 +4,10 @@
 > 硬约束：能用 z42 实现的都用 z42（原生面仅限 trampoline）
 
 ## 进度概览
-- [ ] 阶段 0: 前置使能(z42vm argv 透传 + z42c Exe-zpkg)
-- [ ] 阶段 1: 原生 trampoline `z42`
-- [ ] 阶段 2: z42 launcher 核心(子命令)
-- [ ] 阶段 3: 验证 + cutover + 文档
+- [x] 阶段 0a: z42vm argv 透传(commit fe0e0273)；0.5/0.6 z42c→Exe-zpkg 推迟到 cutover
+- [x] 阶段 1: 原生 trampoline `z42`(commit da65cb3b)
+- [x] 阶段 2: z42 launcher 核心(commit 071c2f86)—— 全 z42，e2e 验证
+- [ ] 阶段 3: 验证 + cutover + 文档（含统一测试 + push）
 
 ## 阶段 0: 前置使能（durable，在 Rust 运行时 + 编译器）
 - [ ] 0.1 `src/runtime/src/main.rs`：`Cli` 加收尾 `args: Vec<String>`(trailing_var_arg);`-- ` 后入 args
