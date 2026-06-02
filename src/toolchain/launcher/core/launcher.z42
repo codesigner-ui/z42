@@ -1,0 +1,306 @@
+// z42 launcher core (add-z42-launcher, 2026-06-02).
+//
+// All launcher logic lives here in z42 ("z42-first"); only the tiny native
+// trampoline (../src) stays Rust. Run by the bundled launcher runtime via:
+//     z42vm launcher.zpkg -- <user argv>
+// so GetCommandLineArgs() returns exactly the user's argv (phase 0).
+//
+// P1 commands (local, no network): run / link / list / default / which / info.
+// Layout managed under $Z42_HOME (default ~/.z42):
+//     runtimes/<ver>/        a runtime: contains z42vm (+ libs/), OR a
+//                            link.txt redirect to a dir that does.
+//     config.toml            `default = "<ver>"`
+
+namespace Z42Launcher;
+
+using Std;
+using Std.IO;
+
+void Main() {
+    string[] argv = Environment.GetCommandLineArgs();
+    if (argv.Length == 0) { _help(); return; }
+
+    string cmd = argv[0];
+    string[] rest = _tail(argv, 1);
+
+    if (cmd == "help" || cmd == "-h" || cmd == "--help") { _help(); return; }
+    if (cmd == "info")    { _cmdInfo();        return; }
+    if (cmd == "list")    { _cmdList();        return; }
+    if (cmd == "default") { _cmdDefault(rest); return; }
+    if (cmd == "link")    { _cmdLink(rest);    return; }
+    if (cmd == "which")   { _cmdWhich(rest);   return; }
+    if (cmd == "run")     { _cmdRun(rest);     return; }
+    // Bare apphost form: `z42 app.zpkg [-- args]`
+    if (cmd.EndsWith(".zpkg") || cmd.EndsWith(".zbc")) { _cmdRun(argv); return; }
+
+    ConsoleError.WriteLine("z42: unknown command `" + cmd + "` (try `z42 help`)");
+    Environment.Exit(2);
+}
+
+// ── layout helpers ──────────────────────────────────────────────────────────
+
+string _home() {
+    // z42 has no flow-narrowing for `string?`; coerce via `??` then check.
+    string h = Environment.GetEnvironmentVariable("Z42_HOME") ?? "";
+    if (h.Length > 0) { return h; }
+    string home = Environment.GetEnvironmentVariable("HOME") ?? "";
+    if (home.Length > 0) { return Path.Join(home, ".z42"); }
+    return ".z42";
+}
+
+string _runtimesDir() { return Path.Join(_home(), "runtimes"); }
+string _configPath()  { return Path.Join(_home(), "config.toml"); }
+
+// Versions = subdirectory names under runtimes/.
+string[] _installedVersions() {
+    string dir = _runtimesDir();
+    if (!Directory.Exists(dir)) { return new string[0]; }
+    string[] entries = Directory.Enumerate(dir);
+    string[] names = new string[entries.Length];
+    int n = 0;
+    int i = 0;
+    while (i < entries.Length) {
+        string leaf = Path.GetFileName(entries[i]);
+        if (leaf.Length > 0) { names[n] = leaf; n = n + 1; }
+        i = i + 1;
+    }
+    return _trimArr(names, n);
+}
+
+// Resolve a version's runtime directory: a `link.txt` redirect wins, else
+// the runtimes/<ver>/ directory itself. Returns null if not installed.
+string? _runtimeDir(string ver) {
+    string baseDir = Path.Join(_runtimesDir(), ver);
+    string link = Path.Join(baseDir, "link.txt");
+    if (File.Exists(link)) {
+        return File.ReadAllText(link).Trim();
+    }
+    if (Directory.Exists(baseDir)) { return baseDir; }
+    return null;
+}
+
+// z42vm binary inside a runtime dir: <dir>/z42vm or <dir>/bin/z42vm.
+string? _vmPath(string dir) {
+    string direct = Path.Join(dir, "z42vm");
+    if (File.Exists(direct)) { return direct; }
+    string nested = Path.Join(Path.Join(dir, "bin"), "z42vm");
+    if (File.Exists(nested)) { return nested; }
+    return null;
+}
+
+// stdlib libs dir inside a runtime dir, if present.
+string? _libsPath(string dir) {
+    string libs = Path.Join(dir, "libs");
+    if (Directory.Exists(libs)) { return libs; }
+    return null;
+}
+
+// ── config (default version) ────────────────────────────────────────────────
+
+string? _defaultVersion() {
+    string p = _configPath();
+    if (!File.Exists(p)) { return null; }
+    string text = File.ReadAllText(p);
+    // single line: default = "<ver>"
+    int q1 = text.IndexOf("\"");
+    if (q1 < 0) { return null; }
+    string afterQ1 = text.Substring(q1 + 1);
+    int q2 = afterQ1.IndexOf("\"");
+    if (q2 < 0) { return null; }
+    return afterQ1.Substring(0, q2);
+}
+
+void _setDefaultVersion(string ver) {
+    Directory.Create(_home());
+    File.WriteAllText(_configPath(), "default = \"" + ver + "\"\n");
+}
+
+// ── version resolution (run path) ────────────────────────────────────────────
+// Order: explicit --runtime  >  default  >  sole installed  >  error.
+
+string _resolveVersion(string? explicitVer) {
+    string ev = explicitVer ?? "";
+    if (ev.Length > 0) { return ev; }
+    string def = _defaultVersion() ?? "";
+    if (def.Length > 0) { return def; }
+    string[] installed = _installedVersions();
+    if (installed.Length == 1) { return installed[0]; }
+    if (installed.Length == 0) {
+        ConsoleError.WriteLine("z42: no runtime installed. `z42 link <dir> --as <ver>` first.");
+    } else {
+        ConsoleError.WriteLine("z42: multiple runtimes installed; pass --runtime <ver> or `z42 default <ver>`.");
+    }
+    Environment.Exit(2);
+    return "";
+}
+
+// ── commands ──────────────────────────────────────────────────────────────
+
+void _cmdInfo() {
+    Console.WriteLine("Z42_HOME:  " + _home());
+    Console.WriteLine("runtimes:  " + _runtimesDir());
+    Console.WriteLine("default:   " + (_defaultVersion() ?? "(none)"));
+    string[] vs = _installedVersions();
+    Console.WriteLine("installed: " + vs.Length.ToString());
+}
+
+void _cmdList() {
+    string[] vs = _installedVersions();
+    if (vs.Length == 0) { Console.WriteLine("(no runtimes installed)"); return; }
+    string def = _defaultVersion() ?? "";
+    int i = 0;
+    while (i < vs.Length) {
+        string mark = (def == vs[i]) ? " (default)" : "";
+        Console.WriteLine(vs[i] + mark);
+        i = i + 1;
+    }
+}
+
+void _cmdDefault(string[] rest) {
+    if (rest.Length == 0) {
+        Console.WriteLine(_defaultVersion() ?? "(none)");
+        return;
+    }
+    string ver = rest[0];
+    if (_runtimeDir(ver) == null) {
+        ConsoleError.WriteLine("z42: runtime `" + ver + "` not installed (see `z42 list`).");
+        Environment.Exit(2);
+        return;
+    }
+    _setDefaultVersion(ver);
+    Console.WriteLine("default → " + ver);
+}
+
+// z42 link <dir> --as <ver>
+void _cmdLink(string[] rest) {
+    string dir = "";
+    string ver = "";
+    int i = 0;
+    while (i < rest.Length) {
+        if (rest[i] == "--as" && i + 1 < rest.Length) { ver = rest[i + 1]; i = i + 2; continue; }
+        if (dir.Length == 0) { dir = rest[i]; }
+        i = i + 1;
+    }
+    if (dir.Length == 0 || ver.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 link <runtime-dir> --as <ver>");
+        Environment.Exit(2);
+        return;
+    }
+    if (_vmPath(dir) == null) {
+        ConsoleError.WriteLine("z42: no z42vm found under `" + dir + "` (expected <dir>/z42vm or <dir>/bin/z42vm).");
+        Environment.Exit(2);
+        return;
+    }
+    string baseDir = Path.Join(_runtimesDir(), ver);
+    Directory.Create(baseDir);
+    File.WriteAllText(Path.Join(baseDir, "link.txt"), dir);
+    Console.WriteLine("linked `" + ver + "` → " + dir);
+}
+
+void _cmdWhich(string[] rest) {
+    string? ver = _flagValue(rest, "--runtime");
+    string resolved = _resolveVersion(ver);
+    string? dirOpt = _runtimeDir(resolved);
+    if (dirOpt == null) {
+        ConsoleError.WriteLine("z42: runtime `" + resolved + "` not installed.");
+        Environment.Exit(2);
+        return;
+    }
+    string dir = dirOpt ?? "";
+    Console.WriteLine(_vmPath(dir) ?? ("(z42vm missing in " + dir + ")"));
+}
+
+// z42 run [--runtime V] <app.zpkg> [-- <app args>]
+void _cmdRun(string[] rest) {
+    string? ver = _flagValue(rest, "--runtime");
+    string app = "";
+    string[] appArgs = new string[0];
+    int i = 0;
+    while (i < rest.Length) {
+        string a = rest[i];
+        if (a == "--runtime") { i = i + 2; continue; }   // skip flag + value
+        if (a == "--") { appArgs = _tail(rest, i + 1); break; }
+        if (app.Length == 0) { app = a; }
+        i = i + 1;
+    }
+    if (app.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 run [--runtime <ver>] <app.zpkg> [-- <args>]");
+        Environment.Exit(2);
+        return;
+    }
+
+    string resolved = _resolveVersion(ver);
+    string? dirOpt = _runtimeDir(resolved);
+    if (dirOpt == null) {
+        ConsoleError.WriteLine("z42: runtime `" + resolved + "` not installed (see `z42 list`).");
+        Environment.Exit(2);
+        return;
+    }
+    string dir = dirOpt ?? "";
+    string? vmOpt = _vmPath(dir);
+    if (vmOpt == null) {
+        ConsoleError.WriteLine("z42: z42vm missing in runtime `" + resolved + "` (" + dir + ").");
+        Environment.Exit(2);
+        return;
+    }
+    string vm = vmOpt ?? "";
+
+    Process proc = new Process(vm)
+        .Arg(app)
+        .Stdin(Stdio.Inherit())
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit());
+    // Point z42vm at this runtime's stdlib if it ships one.
+    string libs = _libsPath(dir) ?? "";
+    if (libs.Length > 0) { proc = proc.Env("Z42_LIBS", libs); }
+    // Forward the program's own args after `--`.
+    if (appArgs.Length > 0) {
+        proc = proc.Arg("--");
+        int j = 0;
+        while (j < appArgs.Length) { proc = proc.Arg(appArgs[j]); j = j + 1; }
+    }
+    ProcessResult r = proc.Run();
+    Environment.Exit(r.ExitCode);
+}
+
+void _help() {
+    Console.WriteLine("z42 — launcher for the z42 runtime");
+    Console.WriteLine("");
+    Console.WriteLine("usage: z42 <command> [args]");
+    Console.WriteLine("       z42 <app.zpkg> [-- <args>]      run an app (apphost form)");
+    Console.WriteLine("");
+    Console.WriteLine("commands:");
+    Console.WriteLine("  run [--runtime V] <app.zpkg> [-- a]  run an app with the resolved runtime");
+    Console.WriteLine("  link <dir> --as <ver>                register a local runtime dir as <ver>");
+    Console.WriteLine("  list                                 list installed runtimes");
+    Console.WriteLine("  default [<ver>]                      show or set the default runtime");
+    Console.WriteLine("  which [--runtime V] [app]            print the resolved z42vm path");
+    Console.WriteLine("  info                                 show Z42_HOME / default / counts");
+}
+
+// ── small array/flag utils ───────────────────────────────────────────────────
+
+string[] _tail(string[] arr, int start) {
+    if (start >= arr.Length) { return new string[0]; }
+    int n = arr.Length - start;
+    string[] outArr = new string[n];
+    int j = 0;
+    while (j < n) { outArr[j] = arr[start + j]; j = j + 1; }
+    return outArr;
+}
+
+string[] _trimArr(string[] arr, int n) {
+    string[] outArr = new string[n];
+    int j = 0;
+    while (j < n) { outArr[j] = arr[j]; j = j + 1; }
+    return outArr;
+}
+
+string? _flagValue(string[] arr, string flag) {
+    int i = 0;
+    while (i < arr.Length) {
+        if (arr[i] == flag && i + 1 < arr.Length) { return arr[i + 1]; }
+        i = i + 1;
+    }
+    return null;
+}

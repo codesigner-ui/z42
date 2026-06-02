@@ -1,0 +1,22 @@
+# z42 launcher core — z42 program compiled to launcher.zpkg (Exe-mode).
+# The native trampoline (../src) runs this via the bundled launcher runtime.
+[project]
+name    = "z42.launcher"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42Launcher.Main"
+pack    = true
+
+[sources]
+include = ["*.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"   # String / Console-adjacent core
+"z42.io"   = "0.1.0"   # Environment / Directory / Path / File / Process / Console
+
+[build]
+out_dir = "dist"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
