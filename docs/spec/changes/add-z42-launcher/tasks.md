@@ -9,7 +9,8 @@
 - [x] 阶段 2: z42 launcher 核心(commit 071c2f86)—— 全 z42，e2e 验证
 - [x] 阶段 3a: 文档 —— docs/design/runtime/launcher.md + roadmap Deferred 索引
 - [~] 0.5 z42c 裸脚本→Exe-zpkg：**放弃**，改用 mini-project(`kind="exe"`)走现有 `z42c build`（见 launcher.md Deferred）
-- [ ] 阶段 3b: cutover —— 把 1 个 ported 脚本改用 `z42 run`（待并发 stdlib 循环依赖在那条线解掉、gate 转绿后做）
+- [x] 阶段 3b: cutover 试点 —— check-versions-drift 改用 `z42 run`（commit 8375f61f）+ 复用 helper `scripts/_lib/launcher-env.sh`；隔离验证 byte-identical
+- [ ] 阶段 3c: 其余 ported 脚本按同一 pattern cutover（带参数的 build-stdlib/test-vm 另需把 `_argvSlice()` 简化为直接读干净 argv）—— 待 main 转绿(并发 cargo/stdlib 破坏修掉)逐个做 + 全 gate 验证
 
 ## 阶段 0: 前置使能（durable，在 Rust 运行时 + 编译器）
 - [ ] 0.1 `src/runtime/src/main.rs`：`Cli` 加收尾 `args: Vec<String>`(trailing_var_arg);`-- ` 后入 args
