@@ -549,6 +549,63 @@ match callee_value {
 
 ---
 
+## JIT↔VM 元数据契约（review.md Part 1 P0 / E1.P2 Phase 1, 2026-06-02）
+
+位置：[`src/runtime/src/jit/vm_interface.rs`](../../../src/runtime/src/jit/vm_interface.rs)
+
+`pub trait JitVm` 是 JIT 后端对 metadata 模块的**只读契约** ——
+codifies "JIT 编译期需要从 module 拿到什么"，与 helper 运行期通过
+`*const Module` raw pointer 拿到的具体字段访问分离。Phase 1 surface 是 4
+个方法：
+
+```rust
+pub trait JitVm {
+    fn functions(&self) -> &[Function];
+    fn string_pool(&self) -> &[String];
+    fn module_name(&self) -> &str;
+    fn type_lookup(&self, class_name: &str) -> Option<&Arc<TypeDesc>>;
+}
+impl JitVm for Module { ... }   // 默认实现
+```
+
+### 为什么 Phase 1 只是契约 codification（review.md 原描述 vs 现实）
+
+review.md Part 1 P0 原稿说"translate.rs 只 take `&dyn VmInterface`，不
+import metadata 内部类型；helpers/* 同样改成走 trait"。两点结构性约束让
+**完整愿景**不可一步到位：
+
+1. **translate.rs 必须看见 `Instruction` enum**：100+ arm 模式匹配是 JIT 的
+   输入语言形态。把 IR 藏在 trait 后等于丢弃 visitor pattern 的编译期穷举性
+2. **helpers 通过 `*const Module` raw pointer 访问 Module**（extern "C" ABI
+   约束）：raw pointer 必须指向具体 sized 类型。`*const dyn JitVm` 是 fat
+   pointer，会破坏 Cranelift 生成代码对 helpers 的 ABI 调用
+
+Phase 1 现实路径：
+- **define + impl on Module**：codify "JIT compile-time 需要哪些 module 读"
+- **`compile_module` 改走 trait method**：`module.functions()` /
+  `module.string_pool()` 等替代直接字段访问
+- **一个 helper exemplar**（`jit_obj_new`）：示范 helpers 内部如何调 trait
+  method（`module.type_lookup(name)` 替代 `module.type_registry.get(name)`），
+  raw pointer 不变
+- **signature 不变**：`compile_module(&Module)` 保持原签名；`JitModuleCtx.module:
+  *const Module` 仍是具体类型
+
+### Phase 2+ 路径（独立 spec）
+
+- 把余下 9 个 helper 全迁到 trait method
+- 探索 `compile_module<M: JitVm + ?Sized>(module: &M)` generic 化（前提：解决
+  helper 端的 raw pointer ABI 问题，可能需要 type-erased dispatch table）
+- 远期 AOT 后端通过另一个 `JitVm` impl 接入相同 contract
+
+### Mockability
+
+Phase 1 的具体 ROI：单元测试可以构造一个 minimal `MockMetadata` struct
+（只实现 trait 关心的 4 个方法）而不必拼装整个 `Module`。
+`vm_interface_tests.rs` 包含一个 `MockMetadata` 示例，覆盖
+`&dyn JitVm` dyn-dispatch 调用。
+
+---
+
 ## JIT/EE helper 边界（2026-05-07 formalize-jit-vm-interface）
 
 位置：`src/runtime/src/jit/helpers/`

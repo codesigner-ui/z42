@@ -12,8 +12,13 @@
 mod frame;
 pub(crate) mod helpers;
 mod translate;
+/// JIT↔VM read-only metadata contract — review.md Part 1 P0 / E1.P2
+/// Phase 1 (2026-06-02). Compile-time path goes through this trait;
+/// helpers still reach Module via raw pointer (Phase 2 territory).
+pub(crate) mod vm_interface;
 
 use crate::metadata::Module;
+use vm_interface::JitVm;
 use anyhow::Result;
 use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_module::{FuncId, Linkage, Module as CraneliftModule};
@@ -126,15 +131,23 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
 
     let mut jit = JITModule::new(jit_builder);
 
+    // Access Module fields through the `JitVm` trait — review.md Part 1
+    // P0 / E1.P2 Phase 1 (2026-06-02). Codifies the read surface that
+    // compile-time JIT uses; helpers still reach `Module` via raw pointer
+    // (Phase 2 territory). The signature stays `&Module` because the
+    // raw-pointer ABI in `JitModuleCtx.module` cannot accept a fat
+    // `*const dyn JitVm`.
+    let functions = module.functions();
+
     // ── 2. Pre-compute max_reg for each function ──────────────────────────────
-    let max_regs: HashMap<String, usize> = module.functions.iter()
+    let max_regs: HashMap<String, usize> = functions.iter()
         .map(|f| (f.name.clone(), translate::max_reg(f)))
         .collect();
 
     // ── 3. Declare all z42 functions in Cranelift ────────────────────────────
     let ptr = jit.target_config().pointer_type();
     let mut func_ids: HashMap<String, FuncId> = HashMap::new();
-    for func in &module.functions {
+    for func in functions {
         let mut sig = jit.make_signature();
         sig.params.push(AbiParam::new(ptr));   // frame *mut JitFrame
         sig.params.push(AbiParam::new(ptr));   // ctx   *const JitModuleCtx
@@ -147,7 +160,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     let helper_ids = helpers::declare_imports(&mut jit)?;
 
     // ── 5. Translate each z42 function ───────────────────────────────────────
-    for func in &module.functions {
+    for func in functions {
         let max_r = max_regs[&func.name];
         translate::translate_function(&mut jit, &helper_ids, func, max_r, &func_ids)?;
     }
@@ -156,11 +169,11 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     jit.finalize_definitions()?;
 
     // ── 7. Build fn_entries (by-name) + fn_entries_by_id (by MethodId) ───────
-    // The by-id Vec is indexed in `module.functions` order so `MethodId.0`
+    // The by-id Vec is indexed in `functions` order so `MethodId.0`
     // matches the slot index. The HashMap stays as cross-zpkg lazy fallback.
     let mut fn_entries: HashMap<String, FnEntry> = HashMap::new();
-    let mut fn_entries_by_id: Vec<Option<FnEntry>> = Vec::with_capacity(module.functions.len());
-    for func in &module.functions {
+    let mut fn_entries_by_id: Vec<Option<FnEntry>> = Vec::with_capacity(functions.len());
+    for func in functions {
         let entry = if let Some(&id) = func_ids.get(&func.name) {
             let ptr_raw = jit.get_finalized_function(id);
             // 2026-05-10 jit-stack-trace: precompute name + file Arcs so
@@ -190,7 +203,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
 
     // ── 8. Build JitModuleCtx ─────────────────────────────────────────────────
     let ctx = Box::new(JitModuleCtx {
-        string_pool: module.string_pool.clone(),
+        string_pool: module.string_pool().to_vec(),
         fn_entries,
         fn_entries_by_id,
         module: module as *const Module,
@@ -215,7 +228,8 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
 pub fn run(ctx: &VmContext, module: &Module, entry_name: &str) -> Result<()> {
     use std::sync::atomic::Ordering;
 
-    let function_count = module.functions.len() as u64;
+    // E1.P2 Phase 1 (2026-06-02): metadata reads routed through `JitVm`.
+    let function_count = module.functions().len() as u64;
     let start = std::time::Instant::now();
 
     let mut jit_module = compile_module(module)?;
@@ -225,7 +239,7 @@ pub fn run(ctx: &VmContext, module: &Module, entry_name: &str) -> Result<()> {
     ctx.counters().jit_compile_us_total.fetch_add(duration_us, Ordering::Relaxed);
 
     ctx.fire_runtime_event(&crate::observer::RuntimeEvent::JitModuleCompiled {
-        module_name:    module.name.clone(),
+        module_name:    module.module_name().to_string(),
         function_count: function_count as u32,
         duration_us,
     });

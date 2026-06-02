@@ -30,7 +30,12 @@ pub unsafe extern "C" fn jit_obj_new(
     let module    = &*ctx_ref.module;
     let frame_ref = &mut *frame;
 
-    let type_desc = module.type_registry.get(&class_name).cloned()
+    // E1.P2 Phase 1 exemplar (2026-06-02): route metadata access through
+    // the `JitVm` trait instead of `module.type_registry.get(...)` directly.
+    // Other helpers stay on concrete-field access for now; Phase 2 spec
+    // migrates the remaining ~10 sites.
+    use super::super::vm_interface::JitVm;
+    let type_desc = module.type_lookup(&class_name).cloned()
         .unwrap_or_else(|| std::sync::Arc::new(crate::metadata::TypeDesc {
             name: class_name.clone(), base_name: None,
             fields: Vec::new(), field_index: crate::metadata::NameIndex::new(),

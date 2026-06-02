@@ -443,7 +443,7 @@ ee_alloc_context {
 | 优先级 | 改造 | 估时 | 解锁价值 | 类别 |
 |---|---|---|---|---|
 | ✅ | ~~**JIT type specialization**（C2）~~— P0 + P1 shipped 2026-05-27/28; **1.51× measured on 10M-iter SumSquares loop**. P0: REGT wire format (`8ef184e6`). P1: 24 B Value + native iadd/icmp/band/bor/bxor + BrCond i8 load (`a41050b8`/`98426e40`/`fc3936f0`/`3727e469`) | 2-3 天 | 数值循环 1.51×（仍低于 spec 2×；`jit_check_safepoint` 内联是下一步） | 代码 |
-| **P0** | **JIT↔VM trait 抽象** —— 上半部分 P0 | 2-3 天 | metadata 可演进 | 架构 |
+| 🟡 | **JIT↔VM trait 抽象** —— 上半部分 P0 — Phase 1 done 2026-06-02 (add-jit-vm-trait): `JitVm` trait + Module impl + compile_module reads through trait + jit_obj_new exemplar. Phase 2 (余下 helpers + generic compile_module) 待独立 spec。 | done | metadata 可演进 | 架构 |
 | ✅ | ~~**`Value::Str(String) → Str(Arc<str>)`**~~（C1+C3）— landed in ae23fb60 (2026-05-27, bundled with edition 2024 upgrade); Arc not Rc because `Value: Send + Sync` | 1-2 天 | clone 从 O(n) byte copy 变 O(1) atomic incr | 代码 |
 | **P1** | **Field / Method name → token id**（C4+C5）— `HashMap<String> → Vec<(u32, slot)>` | 3-4 天 | poly site 提速 + 内存省 | 代码 |
 | **P2** | **Prestub / lazy JIT** —— 上半部分 P1 | 3-5 天 | 启动延迟 | 架构 |
@@ -940,7 +940,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | ✅ | ~~Panic hook + signal handler~~ (D4) — Phase 1 `12cf7ef8` + Phase 2 add-os-signal-handler | 4 | done | ops |
 | **P0** | **`RuntimeConfig` 中心化** (D1) — 所有 knob 一处声明 | 4 | 1-2 天 | ops |
 | **P0** | **JIT type specialization** (C2) — 已知 IrType 不走 helper | 2 | 2-3 天 | perf |
-| **P0** | **JIT↔VM trait 抽象** (Part 1) | 1 | 2-3 天 | arch |
+| 🟡 | **JIT↔VM trait 抽象** (Part 1) — Phase 1 done 2026-06-02 (add-jit-vm-trait): `pub trait JitVm` 定义 + `impl for Module` + `compile_module` 内部走 trait + 一个 helper exemplar (`jit_obj_new`). review.md 原描述（translate.rs 走 dyn / helpers 全迁）是 over-scoped — `Instruction` enum 必须可见，helpers 通过 raw `*const Module` ABI 不能改 fat pointer。Phase 2 = 余下 9 helpers + 探索 `compile_module<M: JitVm>` generic 化，独立 spec。 | 1 | Phase 1 done | arch |
 | **P1** | **Per-module log filtering** (D2) — `Z42_LOG=z42::jit=debug` | 4 | 0.5 天 | ops |
 | ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
 | 🟡 | **Field/Method name → token id** (C4+C5) — Step 1 done 2026-06-01 (add-name-index-typedesc): `TypeDesc.field_index` + `vtable_index` 从 `HashMap<String, usize>` 改 `NameIndex(Vec<(Box<str>, usize)>)` linear scan。typical class N ≤ 16 时 linear scan + cache locality 友好；`Box<str>` 比 `String` 省 8 B/entry。剩余 token-id wire format 路径（C4 P3 `Instruction::FieldGet.field_name: String → field_id: u32`）需要 zbc minor bump，留待后续 spec。 | 2 | Step 1 done | perf |
