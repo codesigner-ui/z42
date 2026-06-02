@@ -1,0 +1,93 @@
+# z42 launcher (`z42`)
+
+> 长期规范。来源 spec：`docs/spec/changes/add-z42-launcher/`（add-z42-launcher, 2026-06-02）。
+
+## 定位
+
+`z42` 是用户**一次性安装的唯一入口**：给定一个 z42 应用（Exe-mode zpkg），解析它需要的运行时版本，用对应的 `z42vm` 跑起来，并把命令行参数透传给程序；同时管理本机已装的多个运行时版本。类比 `dotnet` muxer + `rustup`。
+
+**设计铁律 —— z42 优先**：bootstrap 约束（没有 VM 就跑不了 z42）决定"找/给 VM"的**最小核**必须原生；除此之外**全部逻辑用 z42 写**。因此 launcher 拆成两层：
+
+```
+z42  (原生 trampoline, Rust, ~85 行)
+      │  定位 $Z42_HOME/launcher/{z42vm, launcher.zpkg, libs}
+      ▼
+z42vm launcher.zpkg  --  <用户 argv 原样>      ← 之后全是 z42 代码
+      │
+      ▼
+launcher 核心 (z42 → launcher.zpkg, Exe-mode)
+      │  解析 argv / 子命令 / 读 ~/.z42 / 解析版本
+      │  run: Std.IO.Process.Spawn
+      ▼
+$Z42_HOME/runtimes/<ver>/z42vm  <app.zpkg>  --  <app args>
+```
+
+- **launcher 运行时**（`$Z42_HOME/launcher/`）：随 launcher 一起装的固定 `z42vm + launcher.zpkg + libs`，**只用来跑 launcher 核心自己**，避免"跑 launcher 需要先选运行时"的鸡生蛋。
+- **app 运行时**（`$Z42_HOME/runtimes/<ver>/`）：受 launcher 管理，用来跑用户 app。
+
+trampoline 永远只用 launcher 运行时跑核心，**不随 release 变**；所有行为都在 `launcher.zpkg` 里，可单独升级。
+
+## 依赖前置：z42vm 透传命令行参数（phase 0）
+
+`z42vm` CLI 末尾接受 `-- <args>`（clap `last = true`），存入 `VmCore.program_args`，由 `__env_args` builtin → `Std.IO.Environment.GetCommandLineArgs()` 返回。**只有 `--` 之后的 token** 是程序参数；VM 自身的 `file/entry/--mode` 不在内；无 `--` 则为空。
+
+> 这是参数透传的**永久归属**：放在 Rust 运行时（自举只重写编译器，不重写 VM），**不放 z42c**（编译器会被 z42 重写）。
+
+## 磁盘布局（`$Z42_HOME`，默认 `~/.z42`）
+
+```
+~/.z42/
+├── bin/z42                     # trampoline（在 PATH 上）
+├── launcher/                   # launcher 自身运行时（固定）
+│   ├── z42vm
+│   ├── launcher.zpkg
+│   └── libs/                   # stdlib zpkg
+├── runtimes/<ver>/             # app 运行时（受管）
+│   ├── z42vm   (或 bin/z42vm)
+│   ├── libs/
+│   └── link.txt                # 可选：重定向到一个含 z42vm+libs 的本地目录
+└── config.toml                 # default = "<ver>"
+```
+
+`runtimes/<ver>/` 既可以是真实运行时目录，也可以只放一个 `link.txt`（内容为一个本地构建目录的绝对路径）——后者用于 dev：`z42 link <dir> --as <ver>`，无需拷贝。
+
+## 命令（P1）
+
+| 命令 | 行为 |
+|------|------|
+| `z42 run [--runtime V] <app.zpkg> [-- <args>]` | 解析版本 → 用 `runtimes/<ver>/z42vm` 跑 app，继承 stdio，`--` 后参数透传，设 `Z42_LIBS`，回传退出码 |
+| `z42 <app.zpkg> [-- <args>]` | 裸 apphost 形式，等价 `run` |
+| `z42 link <dir> --as <ver>` | 把含 `z42vm`(+`libs/`) 的本地目录注册为 `<ver>`（写 `link.txt`） |
+| `z42 list` | 列已装运行时（标注 default） |
+| `z42 default [<ver>]` | 显示 / 设置默认版本（写 `config.toml`） |
+| `z42 which [--runtime V] [app]` | 打印解析到的 `z42vm` 路径 |
+| `z42 info` | 打印 `Z42_HOME` / runtimes 目录 / default / 已装数量 |
+
+### 版本解析顺序
+
+```
+--runtime <ver>  >  app 自带版本声明(P1 暂空)  >  config.toml default  >  唯一已装  >  报错并列候选
+```
+
+## Deferred / Future Work
+
+### launcher-future-install: 下载 / install / uninstall / self-update（P2）
+
+- **来源**：add-z42-launcher proposal（P2）
+- **触发原因**：P1 先把本地（`link` + `default`）跑通，不引入网络/下载基础设施
+- **前置依赖**：每平台×版本的 `z42vm` 发布点（GitHub Releases；`scripts/package.sh` 产 host-RID 包可作产物）+ 完整性校验
+- **当前 workaround**：`z42 link <本地构建目录> --as <ver>`
+
+### launcher-future-version-declaration: app 自带运行时版本声明
+
+- **来源**：add-z42-launcher design（决策 D4）
+- **触发原因**：是否把"需要哪个运行时版本"写进 zpkg `META.toolchain_version` 还是独立 `runtimeconfig.json` sidecar 未定；strict-pin 下 P1 用 `link`+`default` 本地指定即可
+- **触发条件**：进入分发场景（P2 下载）时必须定
+- **当前 workaround**：版本解析第 2 步（读 app 自带声明）留空 hook
+
+### launcher-future-single-file-exe-zpkg: z42c 从裸 `.z42` 脚本直接产 Exe-zpkg
+
+- **来源**：add-z42-launcher（原 phase 0.5）
+- **触发原因**：launcher 核心与 dev 脚本都可作为**普通 `kind="exe"` 项目**（带 `z42.toml`）经现有 `z42c build` 产 Exe-zpkg；单独实现"裸脚本 → Exe-zpkg"需在 SingleFileCompiler 重新装配 zpkg（sourceHash/namespace/deps），与已测项目路径重复，ROI 低
+- **触发条件**：若大量一次性脚本需免 `z42.toml` 的极简体验再做
+- **当前 workaround**：脚本写成 5 行 `z42.toml`（`kind="exe"`）的 mini-project，`z42c build` 即得 Exe-zpkg

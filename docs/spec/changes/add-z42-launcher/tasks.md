@@ -7,7 +7,9 @@
 - [x] 阶段 0a: z42vm argv 透传(commit fe0e0273)；0.5/0.6 z42c→Exe-zpkg 推迟到 cutover
 - [x] 阶段 1: 原生 trampoline `z42`(commit da65cb3b)
 - [x] 阶段 2: z42 launcher 核心(commit 071c2f86)—— 全 z42，e2e 验证
-- [ ] 阶段 3: 验证 + cutover + 文档（含统一测试 + push）
+- [x] 阶段 3a: 文档 —— docs/design/runtime/launcher.md + roadmap Deferred 索引
+- [~] 0.5 z42c 裸脚本→Exe-zpkg：**放弃**，改用 mini-project(`kind="exe"`)走现有 `z42c build`（见 launcher.md Deferred）
+- [ ] 阶段 3b: cutover —— 把 1 个 ported 脚本改用 `z42 run`（待并发 stdlib 循环依赖在那条线解掉、gate 转绿后做）
 
 ## 阶段 0: 前置使能（durable，在 Rust 运行时 + 编译器）
 - [ ] 0.1 `src/runtime/src/main.rs`：`Cli` 加收尾 `args: Vec<String>`(trailing_var_arg);`-- ` 后入 args
