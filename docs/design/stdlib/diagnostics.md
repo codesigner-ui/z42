@@ -119,19 +119,25 @@ if (Log.IsEnabled(LogLevel.DEBUG)) {
 - **触发条件**：用户出现需要按字段查询日志的场景
 - **当前 workaround**：调用方手动 JSON.Stringify 嵌入消息
 
-### diagnostics-future-iso8601-timestamps
+### ~~diagnostics-future-iso8601-timestamps~~ — ✅ 已落地 2026-06-03 (`add-log-iso8601-and-color`)
 
-- **来源**：`[INFO 2026-05-15T14:00:00.000Z]` 替代 UnixMs
-- **触发原因**：人类可读；与日志聚合工具（Splunk / ELK）兼容
-- **前置依赖**：z42.time 落地 `DateTime.ToIsoString()` / strftime-like API
-- **当前 workaround**：UnixMs + 外部转换工具
+Log header now emits `[LEVEL 2026-06-03T14:32:31.789Z] message` via
+`DateTime.UtcNow().ToIso8601()`. Pre-1.0 no-compat — pipelines
+configured for Unix ms must reconfigure to ISO 8601.
 
-### diagnostics-future-color
+### ~~diagnostics-future-color~~ — ✅ 已落地 2026-06-03 (`add-log-iso8601-and-color`)
 
-- **来源**：terminal 输出 WARN 黄、ERROR 红
-- **触发原因**：需要 TTY 检测 (`isatty`) + ANSI escape；需 z42.io 扩展
-- **前置依赖**：z42.io 落地 `Console.IsTerminal()` + ANSI helper
-- **当前 workaround**：调用方手贴 ANSI escape
+Level token wrapped in ANSI color via `Std.IO.Ansi` (shipped
+2026-06-01 by `add-console-ansi-color`). Auto-detect via
+`Console.IsTerminal()` AND `NO_COLOR` env var; manual override via
+`Ansi.SetEnabled(bool)`. Mapping: TRACE→Dim, DEBUG→Cyan,
+INFO→Green, WARN→Yellow, ERROR→Bold+Red.
+
+Public `Log.FormatHeader(level, DateTime)` exposed so callers /
+tests can probe the format string without round-tripping through
+stderr. Caveat: `Ansi.Enabled()` checks stdout TTY; when stdout is
+piped but stderr is a TTY, color won't appear (matches the
+`colored` Rust crate default — fix when first user hits it).
 
 ### diagnostics-future-async-batch
 

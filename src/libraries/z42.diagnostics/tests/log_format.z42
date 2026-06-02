@@ -1,0 +1,111 @@
+// add-log-iso8601-and-color (2026-06-03): Log header format —
+// ISO 8601 timestamps + TTY-aware level colour.
+namespace Z42DiagnosticsLogFormatTests;
+
+using Std;
+using Std.IO;
+using Std.Test;
+using Std.Time;
+using Std.Diagnostics;
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+string _esc() {
+    char[] arr = new char[1];
+    arr[0] = (char)0x1B;
+    return String.FromChars(arr);
+}
+
+DateTime _fixedTime() {
+    return DateTime.Utc(2026, 6, 3, 14, 32, 31, 789);
+}
+
+// ── ISO 8601 timestamp ────────────────────────────────────────────────
+
+[Test]
+void test_header_uses_iso8601_when_colour_disabled() {
+    Ansi.SetEnabled(false);
+    string h = Log.FormatHeader(LogLevel.Info, _fixedTime());
+    Assert.Equal("[INFO 2026-06-03T14:32:31.789Z]", h);
+}
+
+[Test]
+void test_header_iso8601_for_all_levels() {
+    Ansi.SetEnabled(false);
+    DateTime t = _fixedTime();
+    Assert.Equal("[TRACE 2026-06-03T14:32:31.789Z]", Log.FormatHeader(LogLevel.Trace, t));
+    Assert.Equal("[DEBUG 2026-06-03T14:32:31.789Z]", Log.FormatHeader(LogLevel.Debug, t));
+    Assert.Equal("[INFO 2026-06-03T14:32:31.789Z]",  Log.FormatHeader(LogLevel.Info,  t));
+    Assert.Equal("[WARN 2026-06-03T14:32:31.789Z]",  Log.FormatHeader(LogLevel.Warn,  t));
+    Assert.Equal("[ERROR 2026-06-03T14:32:31.789Z]", Log.FormatHeader(LogLevel.Error, t));
+}
+
+// ── Colour wrapping when Ansi enabled ─────────────────────────────────
+
+[Test]
+void test_error_is_red_and_bold_when_enabled() {
+    Ansi.SetEnabled(true);
+    string h = Log.FormatHeader(LogLevel.Error, _fixedTime());
+    // Inner: Ansi.Red wraps name → [31m...[0m. Outer: Ansi.Bold wraps
+    // that → [1m + red + [0m. Expected: [1m[31mERROR[0m[0m
+    string want = "[" + _esc() + "[1m" + _esc() + "[31mERROR" + _esc() + "[0m" + _esc() + "[0m" + " 2026-06-03T14:32:31.789Z]";
+    Assert.Equal(want, h);
+}
+
+[Test]
+void test_warn_is_yellow_when_enabled() {
+    Ansi.SetEnabled(true);
+    string h = Log.FormatHeader(LogLevel.Warn, _fixedTime());
+    Assert.True(h.Contains(_esc() + "[33mWARN" + _esc() + "[0m"));
+}
+
+[Test]
+void test_info_is_green_when_enabled() {
+    Ansi.SetEnabled(true);
+    string h = Log.FormatHeader(LogLevel.Info, _fixedTime());
+    Assert.True(h.Contains(_esc() + "[32mINFO" + _esc() + "[0m"));
+}
+
+[Test]
+void test_debug_is_cyan_when_enabled() {
+    Ansi.SetEnabled(true);
+    string h = Log.FormatHeader(LogLevel.Debug, _fixedTime());
+    Assert.True(h.Contains(_esc() + "[36mDEBUG" + _esc() + "[0m"));
+}
+
+[Test]
+void test_trace_is_dim_when_enabled() {
+    Ansi.SetEnabled(true);
+    string h = Log.FormatHeader(LogLevel.Trace, _fixedTime());
+    Assert.True(h.Contains(_esc() + "[2mTRACE" + _esc() + "[0m"));
+}
+
+[Test]
+void test_iso8601_timestamp_still_present_when_coloured() {
+    Ansi.SetEnabled(true);
+    string h = Log.FormatHeader(LogLevel.Warn, _fixedTime());
+    Assert.True(h.Contains("2026-06-03T14:32:31.789Z"));
+}
+
+[Test]
+void test_disable_strips_all_colour() {
+    Ansi.SetEnabled(false);
+    string h = Log.FormatHeader(LogLevel.Error, _fixedTime());
+    Assert.False(h.Contains(_esc()));
+}
+
+// ── smoke: Log.Error etc. don't blow up at runtime ────────────────────
+
+[Test]
+void test_log_methods_still_callable() {
+    Ansi.SetEnabled(false);
+    int origLevel = Log.GetMinLevel();
+    Log.SetMinLevel(LogLevel.Error);   // suppress lower output
+    Log.Trace("not emitted");
+    Log.Debug("not emitted");
+    Log.Info("not emitted");
+    Log.Warn("not emitted");
+    Log.Error("emitted but harmless in test");
+    Log.SetMinLevel(origLevel);
+    Assert.True(true);
+}

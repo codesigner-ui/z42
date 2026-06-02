@@ -37,12 +37,14 @@ if (Log.IsEnabled(LogLevel.DEBUG)) {
 ## 输出格式
 
 ```
-[INFO 1747327200000] connecting to api.example.com
-[ERROR 1747327201234] timeout after 1000ms
+[INFO 2026-06-03T14:32:31.789Z] connecting to api.example.com
+[ERROR 2026-06-03T14:32:32.123Z] timeout after 1000ms
 ```
 
-`[LEVEL UnixMs] message`，写入 stderr（`ConsoleError.WriteLine`），不污染
-stdout 主输出。
+`[LEVEL ISO8601] message`，写入 stderr（`ConsoleError.WriteLine`），不污染
+stdout 主输出。终端下 level token 自动着色（TRACE 灰 / DEBUG 青 / INFO 绿 /
+WARN 黄 / ERROR 红+粗），非 TTY 或 `NO_COLOR=1` 时透传不带 escape。
+`Ansi.SetEnabled(bool)` 可手动覆盖。
 
 ## Level 顺序
 
@@ -53,8 +55,8 @@ TRACE (0) < DEBUG (1) < INFO (2, default) < WARN (3) < ERROR (4)
 `SetMinLevel(LogLevel.WARN)` 后只输出 WARN + ERROR。
 
 ## 依赖关系
-依赖 `z42.core`（基础类型）+ `z42.io`（`ConsoleError.WriteLine`）+ `z42.time`
-（`DateTime.UtcNow().UnixMs()` 时间戳）。
+依赖 `z42.core`（基础类型）+ `z42.io`（`ConsoleError.WriteLine` + `Ansi.*` 颜色助手）+ `z42.time`
+（`DateTime.UtcNow().ToIso8601()` 时间戳）。
 
 ## 不在本期 Scope（详 `docs/design/stdlib/diagnostics.md` Deferred）
 

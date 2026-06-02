@@ -47,15 +47,37 @@ public static class Log {
 
     private static void Write(int level, string msg) {
         if (level < Log._minLevel) { return; }
-        long ms = DateTime.UtcNow().UnixMs();
-        ConsoleError.WriteLine("[" + LogLevel.Name(level) + " " + ms.ToString() + "] " + msg);
+        DateTime now = DateTime.UtcNow();
+        ConsoleError.WriteLine(Log.FormatHeader(level, now) + " " + msg);
     }
 
     private static void WriteF(int level, string msg, LogFields fields) {
         if (level < Log._minLevel) { return; }
-        long ms = DateTime.UtcNow().UnixMs();
+        DateTime now = DateTime.UtcNow();
         string suffix = "";
         if (fields != null) suffix = fields.Format();
-        ConsoleError.WriteLine("[" + LogLevel.Name(level) + " " + ms.ToString() + "] " + msg + suffix);
+        ConsoleError.WriteLine(Log.FormatHeader(level, now) + " " + msg + suffix);
+    }
+
+    /// add-log-iso8601-and-color (2026-06-03): build the
+    /// `[LEVEL ISO8601]` header. Level token is wrapped in ANSI color
+    /// when `Ansi.Enabled()` is true (auto-detect via
+    /// `Console.IsTerminal()` + `NO_COLOR`). Public so callers and
+    /// tests can probe the format without round-tripping through
+    /// stderr.
+    public static string FormatHeader(int level, DateTime now) {
+        string name  = LogLevel.Name(level);
+        string token = Log._colorLevel(level, name);
+        return "[" + token + " " + now.ToIso8601() + "]";
+    }
+
+    private static string _colorLevel(int level, string name) {
+        if (!Ansi.Enabled()) { return name; }
+        if (level == LogLevel.Error) { return Ansi.Bold(Ansi.Red(name)); }
+        if (level == LogLevel.Warn)  { return Ansi.Yellow(name);         }
+        if (level == LogLevel.Info)  { return Ansi.Green(name);          }
+        if (level == LogLevel.Debug) { return Ansi.Cyan(name);           }
+        if (level == LogLevel.Trace) { return Ansi.Dim(name);            }
+        return name;
     }
 }
