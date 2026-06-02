@@ -39,10 +39,15 @@
 
 ## 不支持（Deferred）
 
-### random-future-csprng
-- **来源**：安全场景（session token / API key / Web 加密）
-- **触发原因**：CSPRNG 需 syscall（`getrandom` / `BCryptGenRandom`）+ OS HAL
-- **触发条件**：z42.crypto 落地时一并设计
+### ~~random-future-csprng~~ — ✅ 已落地 2026-05-26 (`add-csprng-to-crypto`)
+
+Shipped in `z42.crypto`, not `z42.random` — `Std.Crypto.SecureRandom.
+{GetBytes(n) / NextInt(...) / NextLong(...) / NextDouble()}` via
+`getrandom(2)` / `BCryptGenRandom` per platform. The clean
+crypto/PRNG split matches BCL / Rust where `random` is for
+distribution-style helpers and `crypto` owns the unpredictability
+guarantee. `random-future-csprng-wasm32` remains deferred (wasm32
+needs `crypto.getRandomValues` / `WASI random_get` bridge).
 
 ### random-future-thread-safe
 - **来源**：多线程并发使用同一 Random 实例

@@ -125,20 +125,24 @@ strings — only comments + trailing commas were the practical pain.
 - **来源**：JSON Schema 风约束
 - **前置依赖**：lambda / 反射（L3+）
 
-### json-future-jsonpath
-- **来源**：JSONPath / JSONPointer 查询
-- **触发原因**：独立工具，与 JSON parser 解耦
-- **触发条件**：build-driver / debug protocol 场景实际需要时
+### ~~json-future-jsonpath~~ — ✅ 已落地
+
+`Std.Json.JsonPath.Select(JsonValue, path)` — RFC 9535-ish syntax
+covering `.`, `[i]`, `*`, recursive descent. Independent module
+(`src/JsonPath.z42`), zero coupling to parser/writer.
 
 ### json-future-streaming
 - **来源**：增量 reader / writer for huge JSON
 - **触发原因**：v0 整文档加载够用；流式独立 spec
 - **当前 workaround**：分块手处理
 
-### json-future-order-preservation
-- **来源**：保留原始 key 插入顺序 + 注释
-- **触发原因**：v0 stringify 按插入顺序，但 round-trip 不保 comment
-- **同 TOML**：与 toml-future-key-order-preservation 一起做
+### ~~json-future-order-preservation~~ — ✅ 已落地（部分）
+
+Insertion order preserved by parallel-array storage in `JsonValue`;
+round-trip preserves it. JSON has no comment syntax, so the original
+"还保 comment" goal is N/A. If the user later wants TOML-style
+comment preservation, that's a separate `toml-future-comment-
+preservation` track.
 
 ### ~~json-future-nan-inf~~ — **✅ 已落地 2026-05-25 (add-json-relaxed-naninf)**
 

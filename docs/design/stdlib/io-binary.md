@@ -142,12 +142,13 @@ Int64 read 不需要因为 `(long)int << 32` 路径里的 i64 overflow 自然给
 - **触发条件**：z42.core 或 z42.math 落地 `BitConverter` API（独立 spec）
 - **当前 workaround**：调用方手算 IEEE 754（极少 用户场景）
 
-### io-binary-future-stream
+### ~~io-binary-future-stream~~ — ✅ 已落地 2026-05-24 (`refactor-binary-reader-stream`)
 
-- **来源**：流式 IO（File / Network 适配），不一次性 load 到 byte[]
-- **触发原因**：需要 `Std.IO.Stream` trait + ReadAsync 等；架构性
-- **前置依赖**：z42.io 重构出 Stream 抽象 + async / await（L3）
-- **当前 workaround**：调用方自己分块 read 到 byte[] + 反复 new BinaryReader
+`BinaryReader(Stream src)` / `BinaryWriter(Stream dest)` constructors
+sit `BinaryReader` / `BinaryWriter` directly on top of `Std.IO.Stream`.
+File / Network / Memory sources all flow through the same `Stream`
+abstraction without intermediate byte[]. Async streaming is still
+gated on L3 async/await → `io-stream-future-async`.
 
 ### ~~io-binary-future-varint~~ — **✅ 已落地 2026-05-26 (add-io-binary-varint)**
 

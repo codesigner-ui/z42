@@ -218,14 +218,13 @@ treat the decoder as a chunk-by-chunk pipeline.
 - Wasm zstd decode still returns the unsupported error (gated on
   `compression-future-wasm-zstd`)
 
-### `compression-future-brotli`
+### ~~`compression-future-brotli`~~ — ✅ 已落地 2026-05-27 (`add-z42-compression-brotli`)
 
-- **来源**：add-z42-compression v0 algorithm scope
-- **触发原因**：brotli is web-specific (`Content-Encoding: br`); without
-  `z42.net` HTTP client there's no caller in z42 today.
-- **触发条件**：concurrent with or right after `add-z42-net` HTTP client
-  spec lands.
-- **当前 workaround**：none (no caller).
+`Std.Compression.Brotli.{Compress(data[, level]) / Decompress}` via
+pure-Rust `brotli` crate (no C deps, wasm-compatible). Levels 0..=11
+(default 4 — quality 11 is O(seconds) on small inputs even in
+optimised builds). Unlocked `net-future-http-compression` brotli
+portion (shipped 2026-05-30 by `add-z42-net-http-brotli`).
 
 ### ~~`compression-future-lz4`~~ — **✅ 已落地 2026-05-27 (add-z42-compression-lz4)**
 

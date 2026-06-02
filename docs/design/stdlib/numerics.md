@@ -322,10 +322,20 @@ divide round-trip (`(a*b)/b == a`).
 - **来源**：z42.numerics P2 roadmap entry
 - **触发条件**：图形 / ML / 信号处理用例
 
-### `numerics-future-complex` — `Std.Numerics.Complex` 复数
+### ~~`numerics-future-complex`~~ — ✅ 已落地 2026-05-27 (`add-numerics-complex`)
 
-- **触发条件**：信号处理 / 量子计算用例
+`Std.Numerics.Complex` — immutable `(real, imag)` over `double` with
+BCL API parity (`Magnitude` / `Phase` / `FromPolar` / Add / Subtract
+/ Multiply / Divide [Smith] / Negate / Conjugate / Reciprocal / Exp
+/ Log / Sqrt / Sin / Cos / Pow). 24 tests covering the 3-4-5
+magnitude, `i² == -1`, Euler's identity, `sqrt(-1) == i`, sqrt
+round-trip.
 
-### `numerics-future-decimal` — `Std.Numerics.Decimal` 定点小数
+### ~~`numerics-future-decimal`~~ — ✅ 已落地 2026-05-27 (`add-numerics-decimal`)
 
-- **触发条件**：金融 / 货币精确计算用例
+`Std.Numerics.Decimal` — arbitrary-precision base-10 fixed-point
+over `(BigInt mantissa, int scale)`. `Parse / FromInt / FromLong`,
+`Add / Subtract / Multiply / DivideBy(other, scale)` truncated
+toward zero, `Negate / Abs / CompareTo / Equals`. `ToString` preserves
+stored scale (`1.00` stays `"1.00"`). 26 tests cover currency
+addition + repeating-decimal truncation.

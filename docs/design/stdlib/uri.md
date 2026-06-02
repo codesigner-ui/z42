@@ -86,12 +86,12 @@ authority = [ userinfo "@" ] host [ ":" port ]
 
 ## 不支持（Deferred）
 
-### uri-future-resolve
+### ~~uri-future-resolve~~ — ✅ 已落地
 
-- **来源**：相对 URI 解析（`Uri.Resolve(base, ref)`）
-- **触发原因**：RFC 3986 §5 算法 ~80 行；当前用户没有 HTML/HTTP fetcher 场景
-- **触发条件**：z42.net 落地 / HTML 解析 / RSS reader 出现时
-- **当前 workaround**：手动字符串拼接 baseUri + relativePath
+`Std.Uri.Uri.Resolve(string base, string ref) → string` — RFC 3986 §5
+relative-reference resolution. Handles `../`, absolute paths,
+network-relative `//host`, scheme-relative refs, fragments. Pure
+script.
 
 ### uri-future-ipv6-parse
 
