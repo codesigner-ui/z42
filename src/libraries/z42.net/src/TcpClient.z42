@@ -168,8 +168,8 @@ public class TcpClient {
     }
 
     /// add-net-socket-options-extended (2026-05-30): SO_KEEPALIVE on the
-    /// connected socket. Uses OS default idle / interval / probe-count;
-    /// fine-grained tuning is deferred to `net-future-keepalive-tuning`.
+    /// connected socket. Uses OS default idle / interval / probe-count.
+    /// Use the 4-arg overload for fine-grained tuning.
     /// Must be called AFTER `Connect()` — pre-connect there's no socket.
     public void SetKeepAlive(bool enable) {
         if (this._disposed) { throw new SocketClosedException(); }
@@ -177,6 +177,27 @@ public class TcpClient {
             throw new InvalidOperationException("TcpClient not connected — call Connect first");
         }
         object[] raw = NetTcpNative.SocketSetKeepalive(this._slotId, enable);
+        long kind = (long)raw[0];
+        if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
+    }
+
+    /// add-net-keepalive-tuning (2026-06-03): SO_KEEPALIVE with per-OS
+    /// idle / interval / probe tuning. Same socket / lifecycle rules
+    /// as the 1-arg overload. All three tuning values must be `>= 1`
+    /// when `enable == true`; `enable == false` ignores them and just
+    /// disables keepalive.
+    ///
+    /// Per-OS field support (silently ignored when unsupported):
+    ///   - `idleSecs`     — Unix + Windows
+    ///   - `intervalSecs` — Unix + Windows (via WSAIoctl on Windows)
+    ///   - `probes`       — Linux / Android / FreeBSD only
+    public void SetKeepAlive(bool enable, int idleSecs, int intervalSecs, int probes) {
+        if (this._disposed) { throw new SocketClosedException(); }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        object[] raw = NetTcpNative.SocketSetKeepaliveTuned(this._slotId, enable,
+            (long)idleSecs, (long)intervalSecs, (long)probes);
         long kind = (long)raw[0];
         if (kind != 0) { NetTcpDecode.Throw(raw, kind); }
     }

@@ -55,6 +55,12 @@ public static class NetTcpNative {
     [Native("__net_tcp_socket_set_keepalive")]
     public static extern object[] SocketSetKeepalive(long slotId, bool enable);
 
+    // add-net-keepalive-tuning (2026-06-03): per-OS idle / interval / probes.
+    [Native("__net_tcp_socket_set_keepalive_tuned")]
+    public static extern object[] SocketSetKeepaliveTuned(long slotId, bool enable,
+                                                          long idleSecs, long intervalSecs,
+                                                          long probes);
+
     [Native("__net_tcp_listen_with_options")]
     public static extern object[] ListenWithOptions(string host, int port, bool reuseAddr);
 }

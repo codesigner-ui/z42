@@ -270,8 +270,16 @@ to give cross-platform setsockopt (libc on Unix, Winsock bindings on
 Windows). wasm32 stubs throw `NetUnsupportedException`.
 
 Still deferred — split out as their own follow-up specs:
-- `net-future-keepalive-tuning` — `SetKeepAlive(bool, idle, interval, probes)`
-  variants tying down OS-specific TCP_KEEPIDLE / TCP_KEEPINTVL / TCP_KEEPCNT
+- ~~`net-future-keepalive-tuning`~~ — **✅ 已落地 2026-06-03
+  (`add-net-keepalive-tuning`)** — `TcpClient.SetKeepAlive(bool,
+  int idleSecs, int intervalSecs, int probes)` 4-arg overload via
+  new `__net_tcp_socket_set_keepalive_tuned` builtin (socket2
+  `TcpKeepalive::with_time/with_interval/with_retries`, cfg-gated
+  per-OS). Idle honored Unix + Windows; interval honored Unix +
+  Windows (via WSAIoctl); probes Linux/Android/FreeBSD only. Zero /
+  negative tuning values throw via SocketException; `enable=false`
+  ignores tuning args and just disables. 4 tests in
+  `tcp_keepalive_reuseaddr.z42`.
 - `TcpClient.SetReuseAddress` (outgoing client) — rare use case; not in v0
 
 ### `net-future-wasm-wasi-sockets` — wasm32 真实 socket

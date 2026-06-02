@@ -437,8 +437,8 @@ mod imp {
 
     /// `__net_tcp_socket_set_keepalive(slot, enable) -> [0] | err | invalid`
     /// Toggle SO_KEEPALIVE on a connected socket. OS default idle / interval
-    /// / probe counts apply — fine-grained tuning is deferred to a future
-    /// `net-future-keepalive-tuning` spec.
+    /// / probe counts apply. For fine-grained tuning, see
+    /// `__net_tcp_socket_set_keepalive_tuned`.
     pub fn builtin_net_tcp_socket_set_keepalive(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         const NAME: &str = "__net_tcp_socket_set_keepalive";
         let slot_id = require_slot_id(args, 0, NAME)?;
@@ -462,6 +462,102 @@ mod imp {
         match sref.set_keepalive(enable) {
             Ok(()) => Ok(ok_unit(ctx)),
             Err(e) => Ok(socket_err(ctx, format!("set_keepalive: {}", e))),
+        }
+    }
+
+    /// `__net_tcp_socket_set_keepalive_tuned(slot, enable, idle_secs,
+    /// interval_secs, probes) -> [0] | err | invalid`
+    ///
+    /// Enable SO_KEEPALIVE and set the per-OS tuning parameters. Per
+    /// socket2's `TcpKeepalive`:
+    ///   - `idle_secs`    — time before first keepalive probe (Unix +
+    ///                       Windows)
+    ///   - `interval_secs` — time between successive probes (Unix only;
+    ///                       silently ignored on Windows)
+    ///   - `probes`        — number of failed probes before close (Linux/
+    ///                       Android/FreeBSD only; silently ignored
+    ///                       elsewhere)
+    /// `enable = false` falls back to plain `set_keepalive(false)` and
+    /// ignores the three tuning args. Caller passes the values in
+    /// seconds (`>= 1`); zero / negative values throw.
+    /// add-net-keepalive-tuning (2026-06-03).
+    pub fn builtin_net_tcp_socket_set_keepalive_tuned(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_set_keepalive_tuned";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let enable = match args.get(1) {
+            Some(Value::Bool(b)) => *b,
+            Some(Value::I64(n))  => *n != 0,
+            other => bail!("{}: arg 1 expected bool, got {:?}", NAME, other),
+        };
+        let idle_secs = match args.get(2) {
+            Some(Value::I64(n)) => *n,
+            other => bail!("{}: arg 2 expected i64 idle_secs, got {:?}", NAME, other),
+        };
+        let interval_secs = match args.get(3) {
+            Some(Value::I64(n)) => *n,
+            other => bail!("{}: arg 3 expected i64 interval_secs, got {:?}", NAME, other),
+        };
+        let probes = match args.get(4) {
+            Some(Value::I64(n)) => *n,
+            other => bail!("{}: arg 4 expected i64 probes, got {:?}", NAME, other),
+        };
+        let stream = {
+            let map = ctx.core.tcp_sockets.lock();
+            match map.get(&slot_id) {
+                Some(s) => s.try_clone(),
+                None => return Ok(handle_invalid(ctx)),
+            }
+        };
+        let stream = match stream {
+            Ok(s) => s,
+            Err(e) => return Ok(socket_err(ctx, format!("set_keepalive_tuned: try_clone: {}", e))),
+        };
+        let sref = socket2::SockRef::from(&stream);
+        if !enable {
+            return match sref.set_keepalive(false) {
+                Ok(()) => Ok(ok_unit(ctx)),
+                Err(e) => Ok(socket_err(ctx, format!("set_keepalive_tuned: {}", e))),
+            };
+        }
+        if idle_secs < 1 || interval_secs < 1 || probes < 1 {
+            return Ok(socket_err(ctx, format!(
+                "set_keepalive_tuned: idle_secs / interval_secs / probes must each be >= 1 (got {} / {} / {})",
+                idle_secs, interval_secs, probes
+            )));
+        }
+        let ka = socket2::TcpKeepalive::new()
+            .with_time(std::time::Duration::from_secs(idle_secs as u64));
+        // `with_interval` is supported on every Unix that socket2 exposes
+        // (Linux/macOS/iOS/Android/*BSD/Solaris) and is a no-op call on
+        // Windows since socket2 0.5 onward via WSAIoctl.
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "freebsd",
+            target_os = "dragonfly",
+            target_os = "netbsd",
+            target_os = "illumos",
+            target_os = "solaris",
+            target_os = "aix",
+            target_os = "windows",
+        ))]
+        let ka = ka.with_interval(std::time::Duration::from_secs(interval_secs as u64));
+        // `with_retries` only available on Linux/Android/FreeBSD per socket2.
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "freebsd",
+        ))]
+        let ka = ka.with_retries(probes as u32);
+        let _ = interval_secs;
+        let _ = probes;
+        match sref.set_tcp_keepalive(&ka) {
+            Ok(()) => Ok(ok_unit(ctx)),
+            Err(e) => Ok(socket_err(ctx, format!("set_keepalive_tuned: {}", e))),
         }
     }
 
@@ -957,6 +1053,9 @@ mod imp {
         Ok(unsupported(ctx))
     }
     pub fn builtin_net_tcp_socket_set_keepalive(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_set_keepalive_tuned(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(unsupported(ctx))
     }
     pub fn builtin_net_tcp_listen_with_options(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
