@@ -232,8 +232,29 @@ Follow-ups deferred:
   witness 61) / Carmichael 561 / 1105 / 1729 / 2465 / 2821 / 6601 /
   threshold-throws / above-threshold-throws-with-hint /
   deterministic-repeat / large composite via `Multiply`.
-- `bigint-future-bpsw` — Baillie–PSW; known no counterexample, slightly
-  slower per round; deterministic up to current numerical tests
+- ~~`bigint-future-bpsw`~~ — **✅ 已落地 2026-06-03 (`add-bigint-bpsw`)** —
+  `BigInt.IsBpswPrime()` composes strong Miller-Rabin base 2 + strong
+  Lucas test with Selfridge-method parameters (D in `{5, -7, 9, -11,
+  ...}` until `jacobi(D, n) = -1`; `P = 1`, `Q = (1 - D) / 4`). No
+  known counterexample since 1980; Feitsma & Galway verified ≤ 2^64
+  in 2017. Use for `n` above `IsPrime()`'s 3.317×10^24 ceiling.
+
+  Now three complementary primality methods:
+
+  | Method | Bound | Error |
+  |--------|-------|-------|
+  | `IsPrime()` | n < 3.317×10^24 | 0 (proven OEIS A014233) |
+  | `IsBpswPrime()` | any n | 0 known counterexample |
+  | `IsProbablyPrime(rounds)` | any n | ≤ 4^-rounds |
+
+  New private helpers: `_jacobiSymbol(BigInt a, BigInt n) → int`
+  (quadratic reciprocity), `_strongLucasPRP(D, P, Q)` (binary U/V
+  doubling with `ModInverse(2, n)` for /2 reductions), `_modNonNeg`.
+  10 tests cover small primes (2..97), small composites, Carmichael
+  numbers 561/1105/1729/2465/2821/6601, strong-MR-base-2 pseudoprime
+  2047, strong-MR-bases-{2,3,5,7} pseudoprime 3215031751, Mersenne
+  primes 2^13-1..2^61-1, Mersenne prime 2^89-1 (above `IsPrime`
+  ceiling), composite product above ceiling, deterministic repeat.
 - ~~`bigint-future-prime-sieve`~~ — **✅ 已落地 2026-05-25 (add-bigint-prime-sieve)** —
   NextPrime 用 2-3 wheel（仅 6k±1 candidates，跳过 2/3 倍数）+ 小素数
   trial division (primes 3..31) 在 Miller-Rabin 之前 early-reject。5 new

@@ -1,0 +1,115 @@
+// add-bigint-bpsw (2026-06-03): BigInt.IsBpswPrime() —
+// strong Miller-Rabin base 2 + strong Lucas (Selfridge parameters).
+namespace Z42NumericsBigIntBpswTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_zero_one_negative_are_not_prime() {
+    Assert.False(BigInt.Zero.IsBpswPrime());
+    Assert.False(BigInt.One.IsBpswPrime());
+    Assert.False(new BigInt(-5).IsBpswPrime());
+}
+
+[Test]
+void test_small_primes_through_41_all_true() {
+    Assert.True(new BigInt( 2).IsBpswPrime());
+    Assert.True(new BigInt( 3).IsBpswPrime());
+    Assert.True(new BigInt( 5).IsBpswPrime());
+    Assert.True(new BigInt( 7).IsBpswPrime());
+    Assert.True(new BigInt(11).IsBpswPrime());
+    Assert.True(new BigInt(13).IsBpswPrime());
+    Assert.True(new BigInt(17).IsBpswPrime());
+    Assert.True(new BigInt(19).IsBpswPrime());
+    Assert.True(new BigInt(23).IsBpswPrime());
+    Assert.True(new BigInt(29).IsBpswPrime());
+    Assert.True(new BigInt(31).IsBpswPrime());
+    Assert.True(new BigInt(37).IsBpswPrime());
+    Assert.True(new BigInt(41).IsBpswPrime());
+}
+
+[Test]
+void test_small_primes_43_through_97_all_true() {
+    // These primes are NOT in the pre-trial-divide set (≤ 41) — Selfridge
+    // search hits jacobi = 0 at D = ±|p| and the n == |D| special case
+    // must return true.
+    long[] primes = new long[12];
+    primes[ 0] = 43; primes[ 1] = 47; primes[ 2] = 53;
+    primes[ 3] = 59; primes[ 4] = 61; primes[ 5] = 67;
+    primes[ 6] = 71; primes[ 7] = 73; primes[ 8] = 79;
+    primes[ 9] = 83; primes[10] = 89; primes[11] = 97;
+    int i = 0;
+    while (i < 12) {
+        Assert.True(new BigInt(primes[i]).IsBpswPrime());
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_small_composites_false() {
+    long[] cs = new long[12];
+    cs[ 0] =   4; cs[ 1] =   6; cs[ 2] =   8; cs[ 3] =   9;
+    cs[ 4] =  15; cs[ 5] =  21; cs[ 6] =  25; cs[ 7] =  27;
+    cs[ 8] =  33; cs[ 9] =  49; cs[10] = 121; cs[11] = 169;
+    int i = 0;
+    while (i < 12) {
+        Assert.False(new BigInt(cs[i]).IsBpswPrime());
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_carmichael_caught() {
+    Assert.False(new BigInt( 561).IsBpswPrime());   // 3 × 11 × 17
+    Assert.False(new BigInt(1105).IsBpswPrime());   // 5 × 13 × 17
+    Assert.False(new BigInt(1729).IsBpswPrime());   // 7 × 13 × 19
+    Assert.False(new BigInt(2465).IsBpswPrime());   // 5 × 17 × 29
+    Assert.False(new BigInt(2821).IsBpswPrime());   // 7 × 13 × 31
+    Assert.False(new BigInt(6601).IsBpswPrime());   // 7 × 23 × 41
+}
+
+[Test]
+void test_strong_pseudoprimes_caught() {
+    // 2047 = 23 × 89 — strong pseudoprime base 2. MR base 2 by itself
+    // accepts it; the strong Lucas step catches it.
+    Assert.False(new BigInt(2047).IsBpswPrime());
+    // 3215031751 = 151 × 751 × 28351 — strong pseudoprime to bases 2,3,5,7.
+    Assert.False(BigInt.Parse("3215031751").IsBpswPrime());
+}
+
+[Test]
+void test_mersenne_primes_in_range() {
+    Assert.True(new BigInt(           8191L).IsBpswPrime());   // 2^13 - 1
+    Assert.True(new BigInt(         131071L).IsBpswPrime());   // 2^17 - 1
+    Assert.True(new BigInt(         524287L).IsBpswPrime());   // 2^19 - 1
+    Assert.True(new BigInt(     2147483647L).IsBpswPrime());   // 2^31 - 1
+    Assert.True(BigInt.Parse("2305843009213693951").IsBpswPrime());  // 2^61 - 1
+}
+
+[Test]
+void test_large_prime_above_isprime_ceiling() {
+    // 2^89 - 1 = 618970019642690137449562111, a Mersenne prime ~6.18×10^26.
+    // Far above the IsPrime() deterministic ceiling 3.317×10^24 — IsPrime
+    // would throw on this input. BPSW is the canonical answer here.
+    BigInt p = BigInt.Parse("618970019642690137449562111");
+    Assert.True(p.IsBpswPrime());
+}
+
+[Test]
+void test_large_composite_above_isprime_ceiling() {
+    // (2^89 - 1) × 3 — composite, well above the IsPrime ceiling.
+    BigInt p   = BigInt.Parse("618970019642690137449562111");
+    BigInt three = new BigInt(3L);
+    BigInt c = p.Multiply(three);
+    Assert.False(c.IsBpswPrime());
+}
+
+[Test]
+void test_deterministic_repeat() {
+    BigInt n = BigInt.Parse("99999999999999999989");   // 20-digit prime
+    Assert.True(n.IsBpswPrime());
+    Assert.True(n.IsBpswPrime());
+    Assert.True(n.IsBpswPrime());
+}
