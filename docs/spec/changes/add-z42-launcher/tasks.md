@@ -9,8 +9,11 @@
 - [x] 阶段 2: z42 launcher 核心(commit 071c2f86)—— 全 z42，e2e 验证
 - [x] 阶段 3a: 文档 —— docs/design/runtime/launcher.md + roadmap Deferred 索引
 - [~] 0.5 z42c 裸脚本→Exe-zpkg：**放弃**，改用 mini-project(`kind="exe"`)走现有 `z42c build`（见 launcher.md Deferred）
-- [x] 阶段 3b: cutover 试点 —— check-versions-drift 改用 `z42 run`（commit 8375f61f）+ 复用 helper `scripts/_lib/launcher-env.sh`；隔离验证 byte-identical
-- [ ] 阶段 3c: 其余 ported 脚本按同一 pattern cutover（带参数的 build-stdlib/test-vm 另需把 `_argvSlice()` 简化为直接读干净 argv）—— 待 main 转绿(并发 cargo/stdlib 破坏修掉)逐个做 + 全 gate 验证
+- [x] 阶段 3b: cutover 试点 —— check-versions-drift（commit 8375f61f）+ helper `scripts/_lib/launcher-env.sh`；byte-identical 验证
+- [x] 阶段 3c: 其余脚本 cutover —— audit-missing-usings + regen-golden-tests（commit 0b15c4b2，regen 删 `_argvSlice` hack）；test-vm + test-cross-zpkg（commit 8ed104d6）。5/7 已迁，全部 mini-project 编译为 Exe-zpkg 通过。
+  - **build-stdlib 不迁**：鸡生蛋（launcher 运行时需 stdlib，而它正是产 stdlib 的）—— 留作 `z42c run` bootstrap 根。
+  - **test-changed 暂缓**：轻量 git-diff 派发器，只 build driver；加整套 launcher-env(需 z42vm+stdlib+trampoline) 不成比例。
+  - 编排器(test-vm/test-cross-zpkg/regen)的**完整 run 验证**待 main 并发破坏(TcpKeepalive / WS006)清掉后做。
 
 ## 阶段 0: 前置使能（durable，在 Rust 运行时 + 编译器）
 - [ ] 0.1 `src/runtime/src/main.rs`：`Cli` 加收尾 `args: Vec<String>`(trailing_var_arg);`-- ` 后入 args
