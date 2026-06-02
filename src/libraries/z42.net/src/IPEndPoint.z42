@@ -1,0 +1,133 @@
+namespace Std.Net.Sockets;
+
+using Std;
+
+// add-ipendpoint-wrapper (2026-06-02): minimal BCL-aligned wrapper of
+// `(IPAddress, port)` as a single value. Surfaces the canonical
+// `addr:port` (IPv4) / `[addr]:port` (IPv6) URL-authority syntax for
+// parse + display. The bracket convention disambiguates the port colon
+// from the address colons in IPv6.
+public sealed class IPEndPoint {
+    public static int MinPort = 0;
+    public static int MaxPort = 65535;
+
+    private IPAddress _address;
+    private int       _port;
+
+    public IPEndPoint(IPAddress address, int port) {
+        if (address == null) {
+            throw new ArgumentNullException("IPEndPoint: address must not be null");
+        }
+        if (port < IPEndPoint.MinPort || port > IPEndPoint.MaxPort) {
+            throw new ArgumentException(
+                "IPEndPoint: port must be in [0, 65535], got " + port.ToString());
+        }
+        this._address = address;
+        this._port    = port;
+    }
+
+    public IPAddress Address() { return this._address; }
+    public int       Port()    { return this._port;    }
+
+    /// Canonical form: IPv4 → `addr:port`; IPv6 → `[addr]:port`.
+    /// Brackets disambiguate the port colon from IPv6 group colons.
+    /// Round-trips with `Parse`.
+    public override string ToString() {
+        if (this._address.IsIPv6()) {
+            return "[" + this._address.ToString() + "]:" + this._port.ToString();
+        }
+        return this._address.ToString() + ":" + this._port.ToString();
+    }
+
+    /// Parse the canonical `addr:port` (IPv4) or `[addr]:port` (IPv6)
+    /// form. Bracketed form is mandatory for IPv6 — `::1:80` is
+    /// ambiguous (is the port 80 with addr `::1` or addr `::1:80`?)
+    /// so we reject it as a FormatException pointing at the bracket.
+    public static IPEndPoint Parse(string s) {
+        if (s == null || s.Length == 0) {
+            throw new FormatException("IPEndPoint.Parse: empty input");
+        }
+        if (s.CharAt(0) == '[') {
+            // Bracketed IPv6 form: find the matching `]`, then `:port`.
+            int rb = -1;
+            int i = 1;
+            while (i < s.Length) {
+                if (s.CharAt(i) == ']') { rb = i; i = s.Length; }
+                else { i = i + 1; }
+            }
+            if (rb < 0) {
+                throw new FormatException("IPEndPoint.Parse: missing `]` in '" + s + "'");
+            }
+            if (rb == 1) {
+                throw new FormatException("IPEndPoint.Parse: empty brackets in '" + s + "'");
+            }
+            string addrStr = IPEndPoint._slice(s, 1, rb);
+            // Expect `:port` after the closing bracket.
+            if (rb + 1 >= s.Length || s.CharAt(rb + 1) != ':') {
+                throw new FormatException("IPEndPoint.Parse: expected `:port` after `]` in '" + s + "'");
+            }
+            string portStr = IPEndPoint._slice(s, rb + 2, s.Length);
+            IPAddress addr = IPAddress.Parse(addrStr);
+            int port = IPEndPoint._parsePort(portStr, s);
+            return new IPEndPoint(addr, port);
+        }
+        // Plain form: split on the LAST `:`. For IPv4 there's exactly
+        // one colon; for an unbracketed IPv6 there'd be multiple, which
+        // is ambiguous and rejected.
+        int lastColon = -1;
+        int colonCount = 0;
+        int j = 0;
+        while (j < s.Length) {
+            if (s.CharAt(j) == ':') {
+                lastColon = j;
+                colonCount = colonCount + 1;
+            }
+            j = j + 1;
+        }
+        if (lastColon < 0) {
+            throw new FormatException("IPEndPoint.Parse: missing `:port` in '" + s + "'");
+        }
+        if (colonCount > 1) {
+            // Likely an unbracketed IPv6 — point at the bracket convention.
+            throw new FormatException("IPEndPoint.Parse: unbracketed IPv6 is ambiguous in '"
+                + s + "' (use `[addr]:port`)");
+        }
+        string addrStr2 = IPEndPoint._slice(s, 0, lastColon);
+        string portStr2 = IPEndPoint._slice(s, lastColon + 1, s.Length);
+        IPAddress addr2 = IPAddress.Parse(addrStr2);
+        int port2 = IPEndPoint._parsePort(portStr2, s);
+        return new IPEndPoint(addr2, port2);
+    }
+
+    public bool Equals(IPEndPoint other) {
+        if (other == null) return false;
+        if (this._port != other._port) return false;
+        return this._address.Equals(other._address);
+    }
+
+    // ── internals ────────────────────────────────────────────────────
+
+    static string _slice(string s, int start, int end) {
+        return s.Substring(start, end - start);
+    }
+
+    static int _parsePort(string portStr, string original) {
+        if (portStr.Length == 0) {
+            throw new FormatException("IPEndPoint.Parse: empty port in '" + original + "'");
+        }
+        int port = 0;
+        int i = 0;
+        while (i < portStr.Length) {
+            char c = portStr.CharAt(i);
+            if (c < '0' || c > '9') {
+                throw new FormatException("IPEndPoint.Parse: non-digit in port of '" + original + "'");
+            }
+            port = port * 10 + ((int)c - (int)'0');
+            if (port > IPEndPoint.MaxPort) {
+                throw new FormatException("IPEndPoint.Parse: port > 65535 in '" + original + "'");
+            }
+            i = i + 1;
+        }
+        return port;
+    }
+}

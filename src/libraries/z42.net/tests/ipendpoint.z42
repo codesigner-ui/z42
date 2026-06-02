@@ -1,0 +1,225 @@
+// add-ipendpoint-wrapper (2026-06-02): IPEndPoint = (IPAddress, port).
+namespace Z42NetIPEndPointTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_construct_with_ipv4() {
+    IPAddress a = IPAddress.Parse("192.168.1.1");
+    IPEndPoint ep = new IPEndPoint(a, 8080);
+    Assert.True(ep.Address().Equals(a));
+    Assert.Equal(8080, ep.Port());
+}
+
+[Test]
+void test_construct_with_ipv6() {
+    IPAddress a = IPAddress.Parse("::1");
+    IPEndPoint ep = new IPEndPoint(a, 443);
+    Assert.True(ep.Address().IsIPv6());
+    Assert.Equal(443, ep.Port());
+}
+
+[Test]
+void test_construct_null_address_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = new IPEndPoint(null, 80);
+    } catch (ArgumentNullException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_construct_port_below_zero_throws() {
+    IPAddress a = IPAddress.Loopback();
+    bool caught = false;
+    try {
+        IPEndPoint ep = new IPEndPoint(a, -1);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_construct_port_above_65535_throws() {
+    IPAddress a = IPAddress.Loopback();
+    bool caught = false;
+    try {
+        IPEndPoint ep = new IPEndPoint(a, 65536);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_construct_port_edges_0_and_65535_ok() {
+    IPAddress a = IPAddress.Loopback();
+    IPEndPoint lo = new IPEndPoint(a, 0);
+    IPEndPoint hi = new IPEndPoint(a, 65535);
+    Assert.Equal(0,     lo.Port());
+    Assert.Equal(65535, hi.Port());
+}
+
+[Test]
+void test_tostring_ipv4_addr_port() {
+    IPEndPoint ep = new IPEndPoint(IPAddress.Parse("10.0.0.1"), 22);
+    Assert.Equal("10.0.0.1:22", ep.ToString());
+}
+
+[Test]
+void test_tostring_ipv6_brackets() {
+    IPEndPoint ep = new IPEndPoint(IPAddress.Parse("::1"), 80);
+    Assert.Equal("[::1]:80", ep.ToString());
+}
+
+[Test]
+void test_tostring_ipv6_full_addr() {
+    IPEndPoint ep = new IPEndPoint(IPAddress.Parse("2001:db8::1"), 443);
+    Assert.Equal("[2001:db8::1]:443", ep.ToString());
+}
+
+[Test]
+void test_parse_ipv4_addr_port() {
+    IPEndPoint ep = IPEndPoint.Parse("192.168.0.1:8080");
+    Assert.Equal("192.168.0.1", ep.Address().ToString());
+    Assert.Equal(8080, ep.Port());
+}
+
+[Test]
+void test_parse_ipv6_bracketed() {
+    IPEndPoint ep = IPEndPoint.Parse("[::1]:443");
+    Assert.True(ep.Address().IsIPv6());
+    Assert.Equal(443, ep.Port());
+}
+
+[Test]
+void test_parse_ipv6_bracketed_complex() {
+    IPEndPoint ep = IPEndPoint.Parse("[2001:db8::1]:8080");
+    Assert.Equal("2001:db8::1", ep.Address().ToString());
+    Assert.Equal(8080, ep.Port());
+}
+
+[Test]
+void test_parse_round_trip_ipv4() {
+    string original = "172.16.0.5:5000";
+    IPEndPoint ep = IPEndPoint.Parse(original);
+    Assert.Equal(original, ep.ToString());
+}
+
+[Test]
+void test_parse_round_trip_ipv6() {
+    string original = "[fe80::1]:1234";
+    IPEndPoint ep = IPEndPoint.Parse(original);
+    Assert.Equal(original, ep.ToString());
+}
+
+[Test]
+void test_parse_missing_port_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("192.168.1.1");
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_unbracketed_ipv6_ambiguous_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("::1:80");
+    } catch (FormatException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("ambiguous") || e.Message.Contains("bracket"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_port_out_of_range_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("10.0.0.1:99999");
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_empty_brackets_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("[]:80");
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_missing_closing_bracket_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("[::1:80");
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_empty_port_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("10.0.0.1:");
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_parse_non_digit_port_throws() {
+    bool caught = false;
+    try {
+        IPEndPoint ep = IPEndPoint.Parse("10.0.0.1:8x80");
+    } catch (FormatException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_equals_same_address_and_port() {
+    IPEndPoint a = new IPEndPoint(IPAddress.Parse("10.0.0.1"), 80);
+    IPEndPoint b = new IPEndPoint(IPAddress.Parse("10.0.0.1"), 80);
+    Assert.True(a.Equals(b));
+    Assert.True(b.Equals(a));
+}
+
+[Test]
+void test_equals_different_port() {
+    IPEndPoint a = new IPEndPoint(IPAddress.Parse("10.0.0.1"), 80);
+    IPEndPoint b = new IPEndPoint(IPAddress.Parse("10.0.0.1"), 81);
+    Assert.False(a.Equals(b));
+}
+
+[Test]
+void test_equals_different_address_family() {
+    IPEndPoint a = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 80);
+    IPEndPoint b = new IPEndPoint(IPAddress.Parse("::1"), 80);
+    Assert.False(a.Equals(b));
+}
+
+[Test]
+void test_equals_null_other_returns_false() {
+    IPEndPoint a = new IPEndPoint(IPAddress.Loopback(), 80);
+    Assert.False(a.Equals(null));
+}

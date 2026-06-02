@@ -162,12 +162,42 @@ Out of scope (now their own follow-up specs):
 - `add-z42-net-udp-recv-into` — buffer-fill variant (avoid per-call allocation)
 - `add-z42-net-udp-recv-timeout` — Receive timeout (covered by general `net-future-timeout`)
 
-### `net-future-ipaddress` — IPAddress / IPEndPoint 强类型
+### ~~`net-future-ipaddress`~~ — **✅ IPAddress + IPEndPoint 已落地**
 
-- **来源**：K1 简化为 `(string host, int port)`
-- **触发原因**：K1 最小可用；强类型 IPAddress 需要 v4/v6 parser + IPv6 zone-id 处理 + ToString round-trip
-- **触发条件**：用户需要 IPv4/IPv6 区分（如绑定特定 interface）
-- **当前 workaround**：`(string host, int port)` Rust std 自动支持双栈
+`Std.Net.Sockets.IPAddress` shipped 2026-05-27 (`add-z42-net-ipaddress`);
+`Std.Net.Sockets.IPEndPoint` shipped 2026-06-02 (`add-ipendpoint-wrapper`).
+
+`IPEndPoint(IPAddress, port)` constructor + `Address() / Port()`
+accessors; `ToString` produces `addr:port` for IPv4 and `[addr]:port`
+for IPv6 (URL-authority bracket convention disambiguates the port
+colon from IPv6 group colons); `Parse(string)` round-trips both
+forms and rejects unbracketed IPv6 as ambiguous. 25 tests cover
+constructor validation / accessors / ToString / Parse / round-trip /
+Equals / error paths (missing port / empty brackets / non-digit port
+/ port out of range / unbracketed IPv6).
+
+Out of scope (separate Deferred IDs below):
+
+### `net-future-ipaddress-v4mapped` — `::ffff:192.0.2.1`
+
+- **来源**：`add-z42-net-ipaddress` v0
+- **触发原因**：IPv4-in-IPv6 dotted form (`::ffff:a.b.c.d`) is the
+  canonical way RFC 4291 §2.5.5.2 maps v4 into v6; current
+  `IPAddress.Parse` rejects mixed `.` + `:` strings.
+- **触发条件**：dual-stack code that round-trips IPv4 through an
+  IPv6-only socket API surfaces this.
+- **当前 workaround**：build the 16 bytes by hand + use the
+  `IPAddress(int family, byte[] bytes)` constructor.
+
+### `net-future-ipaddress-zoneid` — `fe80::1%eth0`
+
+- **来源**：`add-z42-net-ipaddress` v0
+- **触发原因**：IPv6 link-local addresses (`fe80::/10`) need a zone
+  identifier to disambiguate which interface; RFC 4007 / RFC 6874
+  syntax is `addr%zone`.
+- **触发条件**：multi-interface hosts using IPv6 link-local
+  multicast / mDNS.
+- **当前 workaround**：none — link-local IPv6 unusable.
 
 ### `net-future-dns` — `Std.Net.Dns.GetHostAddresses(host)`
 

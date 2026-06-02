@@ -13,6 +13,8 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 | `NetworkStream.z42` | `NetworkStream` | extends `Std.IO.Stream`；read/write 字节经由 socket fd |
 | `UdpClient.z42` | `UdpClient` | sync blocking UDP socket (`Bind` / `Send` / `Receive` / `LocalPort` / `Close` / `Dispose`); auto-bind on first Send |
 | `UdpReceiveResult.z42` | `UdpReceiveResult` | `{ Buffer, RemoteHost, RemotePort }` carrier returned by `UdpClient.Receive()` |
+| `IPAddress.z42` | `IPAddress` | strongly-typed v4/v6 address: `Parse(string)` / `ToString` round-trip / `Loopback/Any/IPv6Loopback/IPv6Any` factories / `IsLoopback/IsAny/IsMulticast` / `GetAddressBytes` / `Equals` |
+| `IPEndPoint.z42` | `IPEndPoint` | `(IPAddress, port)` value: ctor validates port ∈ [0, 65535]; `Address() / Port()` accessors; `ToString` emits `addr:port` (IPv4) or `[addr]:port` (IPv6); `Parse(string)` round-trips both forms; rejects unbracketed IPv6 as ambiguous |
 | `Exceptions/NetException.z42` | `NetException` | z42.net 异常基类 |
 | `Exceptions/NetUnsupportedException.z42` | `NetUnsupportedException` | wasm32 / 未支持平台抛出 |
 | `Exceptions/SocketException.z42` | `SocketException` | 连接 / 读写失败 |
