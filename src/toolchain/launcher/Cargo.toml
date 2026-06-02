@@ -1,0 +1,17 @@
+# z42 launcher trampoline (add-z42-launcher, 2026-06-02).
+# Minimal native binary `z42`: locate the bundled launcher runtime and exec
+# the z42-written launcher core. All real logic lives in core/launcher.z42.
+[package]
+name    = "z42-launcher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "z42"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "z"
+lto       = true
+strip     = true
