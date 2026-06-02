@@ -40,8 +40,12 @@ if ! ls "$STDLIB_ROOT"/*/release/dist/*.zpkg >/dev/null 2>&1; then
     echo ""
 fi
 
-# Hand off to the z42 implementation. --no-build because we just built above.
-# Mode passed via env var (the driver's `run` subcommand does not forward
-# arbitrary args to the script).
-exec env Z42_VM_MODE="$MODE" dotnet run --project src/compiler/z42.Driver \
-    --verbosity quiet --no-build -- run scripts/test-cross-zpkg.z42
+# add-z42-launcher cutover (2026-06-03): compile to Exe-zpkg + run via the
+# `z42` launcher. MODE stays an env var (legit config, inherited by the
+# spawned z42vm) — not the old argv hack.
+source "$ROOT/scripts/_lib/launcher-env.sh"
+setup_launcher_env "$ROOT" debug
+Z42_LIBS="$ROOT/artifacts/build/libs/release" dotnet run --project src/compiler/z42.Driver \
+    --verbosity quiet --no-build -- build scripts/test-cross-zpkg.z42.toml --release >/dev/null
+
+exec env Z42_VM_MODE="$MODE" "$Z42_LAUNCHER" run "$ROOT/scripts/dist/test-cross-zpkg.zpkg"

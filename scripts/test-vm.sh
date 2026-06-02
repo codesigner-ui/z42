@@ -67,6 +67,13 @@ fi
 echo ""
 
 # ── Hand off ─────────────────────────────────────────────────────────────
+# add-z42-launcher cutover (2026-06-03): compile to Exe-zpkg + run via the
+# `z42` launcher. MODES/JOBS stay env vars (legit config, inherited) — not
+# the old argv hack.
+source "$ROOT/scripts/_lib/launcher-env.sh"
+setup_launcher_env "$ROOT" debug
+Z42_LIBS="$ROOT/artifacts/build/libs/release" dotnet run --project src/compiler/z42.Driver \
+    --verbosity quiet --no-build -- build scripts/test-vm.z42.toml --release >/dev/null
+
 exec env Z42_VM_MODES="$MODES" Z42_VM_JOBS="$JOBS" \
-    dotnet run --project src/compiler/z42.Driver --verbosity quiet --no-build -- \
-        run scripts/test-vm.z42
+    "$Z42_LAUNCHER" run "$ROOT/scripts/dist/test-vm.zpkg"
