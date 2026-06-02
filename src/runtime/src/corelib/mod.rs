@@ -85,8 +85,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__test_io_install_stderr_sink", io::builtin_test_io_install_stderr_sink),
     ("__test_io_take_stderr_buffer",  io::builtin_test_io_take_stderr_buffer),
 
-    // ── Bencher helpers (R2 完整版) ───────────────────────────────────────────
-    ("__bench_now_ns",     bench::builtin_bench_now_ns),
+    // ── Time + bencher helpers ──────────────────────────────────────────────
+    ("__time_now_mono_ns", bench::builtin_time_now_mono_ns),
     ("__bench_black_box",  bench::builtin_bench_black_box),
 
     // ── String (minimal intrinsic core; most methods are script-side now) ────

@@ -1,6 +1,6 @@
 //! Bench helpers — minimal native primitives for `Std.Test.Bencher`.
 //!
-//! `__bench_now_ns` returns nanoseconds since the first call (an internal
+//! `__time_now_mono_ns` returns nanoseconds since the first call (an internal
 //! EPOCH); used as a monotonic clock by `Bencher.iter` to time samples.
 //!
 //! `__bench_black_box` is the identity function. Interp does no
@@ -17,7 +17,7 @@ use std::time::Instant;
 
 static EPOCH: OnceLock<Instant> = OnceLock::new();
 
-pub fn builtin_bench_now_ns(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+pub fn builtin_time_now_mono_ns(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let epoch = EPOCH.get_or_init(Instant::now);
     let ns = Instant::now().duration_since(*epoch).as_nanos() as i64;
     Ok(Value::I64(ns))

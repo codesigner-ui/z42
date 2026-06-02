@@ -6,11 +6,11 @@ fn ctx() -> std::pin::Pin<Box<VmContext>> { VmContext::new() }
 
 #[test]
 fn now_ns_is_monotonic_non_decreasing() {
-    let a = match builtin_bench_now_ns(&ctx(), &[]).unwrap() {
+    let a = match builtin_time_now_mono_ns(&ctx(), &[]).unwrap() {
         Value::I64(n) => n,
         other => panic!("expected I64, got {:?}", other),
     };
-    let b = match builtin_bench_now_ns(&ctx(), &[]).unwrap() {
+    let b = match builtin_time_now_mono_ns(&ctx(), &[]).unwrap() {
         Value::I64(n) => n,
         other => panic!("expected I64, got {:?}", other),
     };
@@ -22,7 +22,7 @@ fn now_ns_is_monotonic_non_decreasing() {
 
 #[test]
 fn now_ns_advances_across_busy_loop() {
-    let a = match builtin_bench_now_ns(&ctx(), &[]).unwrap() {
+    let a = match builtin_time_now_mono_ns(&ctx(), &[]).unwrap() {
         Value::I64(n) => n,
         _ => unreachable!(),
     };
@@ -31,7 +31,7 @@ fn now_ns_advances_across_busy_loop() {
     let mut sum: u64 = 0;
     for i in 0..100_000u64 { sum = sum.wrapping_add(i); }
     std::hint::black_box(sum);
-    let b = match builtin_bench_now_ns(&ctx(), &[]).unwrap() {
+    let b = match builtin_time_now_mono_ns(&ctx(), &[]).unwrap() {
         Value::I64(n) => n,
         _ => unreachable!(),
     };

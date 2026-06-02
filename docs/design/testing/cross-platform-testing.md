@@ -439,7 +439,7 @@ jobs:
 
 - **Threading 语义**：`threading` capability 已声明，但 z42 并发模型（`async` / `Task<T>` / `lock` 等）属 L3 范围、尚未有规范。**Phase 1-5 内不会有任何 `[Feature("threading")]` 测试**。capability 注册先就位，等 L3 并发设计落地（独立 spec）后第一批 threading 测试同时进
 - **wasm threading 路径**：浏览器 multi-threading 依赖 SharedArrayBuffer + `COOP/COEP` HTTP headers，不是 wasm-bindgen 默认。等 L3 并发落地时单独评估是否 wasm 跑（可能默认 `WASM_CAPS` 不含 THREADING，仅在 `+sab` build target 上开启）
-- **Bencher 跨平台**：`Std.Test.Bencher` 用 `__bench_now_ns` builtin。wasm 需用 `performance.now()` 桥；移动平台用 `clock_gettime`。每平台需要一个 native shim。Phase 4/5 内解决。
+- **Bencher 跨平台**：`Std.Test.Bencher` 用 `__time_now_mono_ns` builtin。wasm 需用 `performance.now()` 桥；移动平台用 `clock_gettime`。每平台需要一个 native shim。Phase 4/5 内解决。
 - **真机 CI**：iOS / Android 真机租用（BrowserStack / Firebase Test Lab）成本与稳定性 trade-off，v0.1 simulator/emulator 即可，真机走 manual smoke
 - **stdout 字符编码**：移动平台 NSString / Java String 都是 UTF-16，golden 比对前要 normalize 到 UTF-8 + LF。`Std.Test.TestIO.captureStdout` 已是 UTF-8 string，platform binding 转字符串时遵循
 - **测试时长上限**：iOS XCTest 单测默认 60s timeout；某些 GC stress 测试可能超时 → 加 `[Timeout(secs)]` attribute（占位，不在 Phase 1-5 内）

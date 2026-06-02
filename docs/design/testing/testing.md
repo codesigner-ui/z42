@@ -449,7 +449,7 @@ public static class BenchHelpers {
 
 ### Native helpers
 
-- `__bench_now_ns` — `OnceLock<Instant>` epoch + `Instant::now().elapsed().as_nanos()`，单调性由 `std::time::Instant` 保证
+- `__time_now_mono_ns` — `OnceLock<Instant>` epoch + `Instant::now().elapsed().as_nanos()`，单调性由 `std::time::Instant` 保证
 - `__bench_black_box` — interp 端 `args[0].clone()`；future JIT 端可挂钩防止 dead-code elimination
 
 ### Stats in JSON output（capture-benchmark-stats-in-testresult, 2026-05-31）

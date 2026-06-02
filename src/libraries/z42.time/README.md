@@ -23,7 +23,7 @@ builtin 拿 OS 时钟，业务逻辑全部脚本化。
 | `TimeSpan.z42`  | `struct TimeSpan`  | 时间段值，内部 i64 ns；factory + 总量访问器 |
 | `DateTime.z42`  | `struct DateTime`  | UTC 时刻值，内部 i64 Unix epoch ms；factory + 解构访问器 + `ToIso8601()` / `ToIso8601Basic()` / `ToIso8601With(tz)` |
 | `TimeZone.z42`  | `class TimeZone`   | 固定 offset 时区 + 短代码查表（UTC/GMT/EST/PST/JST/IST/...）；`FromName` / `FromOffsetMinutes` / `Utc` factory。**无 DST、无 IANA tzdata**（详 Deferred） |
-| `Stopwatch.z42` | `class Stopwatch`  | 单调高精度计时器（不受系统时钟跳变影响），基于 `__bench_now_ns` |
+| `Stopwatch.z42` | `class Stopwatch`  | 单调高精度计时器（不受系统时钟跳变影响），基于 `__time_now_mono_ns` |
 
 ## 入口点
 
@@ -81,7 +81,7 @@ Stopwatch.Elapsed() -> TimeSpan                // 累计运行时长
 ## 依赖关系
 
 依赖 `z42.core`（`long` / `double` primitive + `Std.Object`）；无其他 stdlib
-依赖。通过 VM 内 `__time_unix_ms` / `__bench_now_ns` builtin 桥接 OS 时钟
+依赖。通过 VM 内 `__time_unix_ms` / `__time_now_mono_ns` builtin 桥接 OS 时钟
 （POSIX `clock_gettime` / Win32 `GetSystemTimeAsFileTime`）。
 
 ## Deferred / Future Work
@@ -116,7 +116,7 @@ Stopwatch.Elapsed() -> TimeSpan                // 累计运行时长
 ### High-resolution timestamp (`Ticks`)
 
 - **来源**：BCL `DateTime.Ticks` (100ns units)
-- **触发原因**：z42 用 ms 精度 + 单独 `__bench_now_ns` 已经覆盖；只在跨 .NET interop 时才需要
+- **触发原因**：z42 用 ms 精度 + 单独 `__time_now_mono_ns` 已经覆盖；只在跨 .NET interop 时才需要
 - **现状**：不阻塞，按需
 
 ## 测试

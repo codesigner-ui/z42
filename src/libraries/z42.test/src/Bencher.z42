@@ -71,9 +71,9 @@ public class Bencher {
         long[] times = new long[this.Samples];
         int i = 0;
         while (i < this.Samples) {
-            long t0 = __bench_now_ns();
+            long t0 = __time_now_mono_ns();
             body();
-            long t1 = __bench_now_ns();
+            long t1 = __time_now_mono_ns();
             times[i] = t1 - t0;
             i = i + 1;
         }
@@ -131,8 +131,8 @@ public class Bencher {
 
     // ── Native bindings ───────────────────────────────────────────────────
 
-    [Native("__bench_now_ns")]
-    private static extern long __bench_now_ns();
+    [Native("__time_now_mono_ns")]
+    private static extern long __time_now_mono_ns();
 }
 
 public static class BenchHelpers {
