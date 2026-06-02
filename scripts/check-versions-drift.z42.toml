@@ -1,0 +1,24 @@
+# Mini-project so `z42c build` produces an Exe-mode zpkg the launcher can run
+# (add-z42-launcher cutover, 2026-06-03). Replaces `z42c run <script.z42>`.
+[project]
+name    = "check-versions-drift"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42CheckVersionsDriftScript.Main"
+pack    = true
+
+[sources]
+include = ["check-versions-drift.z42"]
+
+[dependencies]
+"z42.core"  = "0.1.0"
+"z42.io"    = "0.1.0"
+"z42.toml"  = "0.1.0"
+"z42.regex" = "0.1.0"
+
+[build]
+out_dir = "dist"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
