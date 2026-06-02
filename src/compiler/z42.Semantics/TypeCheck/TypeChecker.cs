@@ -48,6 +48,14 @@ public sealed partial class TypeChecker : ITypeInferrer
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundThisCtorArgs = new();
+    /// review.md F2.3 Phase 1 (2026-06-03): Expr → BoundExpr map populated
+    /// by `BindExpr`. Reference-equality keyed because `Expr` records use
+    /// structural `==` by default — two identical-shape AST nodes at
+    /// different source positions must map to distinct entries.
+    /// Consumed by `SemanticModel.GetBoundExpression(Expr)` /
+    /// `GetExpressionType(Expr)`.
+    private readonly Dictionary<Expr, BoundExpr> _exprBindings =
+        new(ReferenceEqualityComparer.Instance);
 
     /// Resolved generic constraints keyed by declaration name. (L3-G2, L3-G2.5)
     /// Populated in Pass 0.5 after SymbolCollector; consumed at body binding and call sites.
@@ -190,7 +198,8 @@ public sealed partial class TypeChecker : ITypeInferrer
                                 ?? new HashSet<string>(_symbols.ImportedClassNames),
             classInterfaces: _symbols.ClassInterfaces,
             stackAllocClosures: stackAllocClosures,
-            delegates: _symbols.Delegates);
+            delegates: _symbols.Delegates,
+            exprBindings: _exprBindings);
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────

@@ -96,6 +96,30 @@ public sealed class SemanticModel
     /// signatures into TSIG.
     public IReadOnlyDictionary<string, DelegateInfo> Delegates { get; }
 
+    /// review.md F2.3 Phase 1 (2026-06-03): every AST `Expr` that
+    /// TypeChecker bound (via `BindExpr`) is mapped here to its resulting
+    /// `BoundExpr`. Reference-equality keyed — the same literal value at
+    /// two source positions gets two distinct entries. Backs
+    /// <see cref="GetBoundExpression"/> + <see cref="GetExpressionType"/>.
+    /// Empty for compilation units that hit only declaration-level bindings
+    /// without expressions.
+    public IReadOnlyDictionary<Expr, BoundExpr> ExpressionBindings { get; }
+
+    /// Returns the typed bound form of the given AST expression, or `null`
+    /// if the TypeChecker never bound it (e.g. node lives inside a
+    /// skipped extern body, or was elided during error recovery).
+    /// Reference-equality lookup — pass the same `Expr` node instance you
+    /// had during AST construction; structurally-equal-but-distinct nodes
+    /// won't match.
+    public BoundExpr? GetBoundExpression(Expr astNode) =>
+        ExpressionBindings.TryGetValue(astNode, out var bound) ? bound : null;
+
+    /// Convenience: the inferred Z42 type of `astNode`'s bound form, or
+    /// `null` if not bound. Equivalent to
+    /// `GetBoundExpression(astNode)?.Type`.
+    public Z42Type? GetExpressionType(Expr astNode) =>
+        GetBoundExpression(astNode)?.Type;
+
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,
         IReadOnlyDictionary<string, Z42FuncType>      funcs,
@@ -114,7 +138,8 @@ public sealed class SemanticModel
         IReadOnlySet<string>? importedClassNames = null,
         IReadOnlyDictionary<string, List<Z42InterfaceType>>? classInterfaces = null,
         IReadOnlySet<BoundLambda>? stackAllocClosures = null,
-        IReadOnlyDictionary<string, DelegateInfo>? delegates = null)
+        IReadOnlyDictionary<string, DelegateInfo>? delegates = null,
+        IReadOnlyDictionary<Expr, BoundExpr>? exprBindings = null)
     {
         Classes                 = classes;
         Funcs                   = funcs;
@@ -134,5 +159,6 @@ public sealed class SemanticModel
         ClassInterfaces         = classInterfaces ?? new Dictionary<string, List<Z42InterfaceType>>();
         StackAllocClosures      = stackAllocClosures ?? new HashSet<BoundLambda>(ReferenceEqualityComparer.Instance);
         Delegates               = delegates ?? new Dictionary<string, DelegateInfo>();
+        ExpressionBindings      = exprBindings ?? new Dictionary<Expr, BoundExpr>(ReferenceEqualityComparer.Instance);
     }
 }

@@ -18,7 +18,25 @@ public sealed partial class TypeChecker
     /// Binds <paramref name="expr"/> to a typed <see cref="BoundExpr"/>.
     /// <paramref name="expectedType"/> guides integer literal sizing when the
     /// target type is known (e.g. in variable declarations and assignments).
+    ///
+    /// review.md F2.3 Phase 1 (2026-06-03): every successful bind is recorded
+    /// in `_exprBindings` so `SemanticModel.GetBoundExpression(Expr)` can
+    /// resolve an AST node back to its typed result in O(1). The thin
+    /// wrapper hands off to `BindExprCore` for the actual switch — all 20
+    /// recursive call sites inside this file keep using `BindExpr`, so the
+    /// mapping populates transitively without per-case bookkeeping.
     private BoundExpr BindExpr(Expr expr, TypeEnv env, Z42Type? expectedType = null)
+    {
+        var bound = BindExprCore(expr, env, expectedType);
+        // Reference-equality keyed dict (see `_exprBindings` doc) — duplicate
+        // bind on the same AST node (shouldn't happen but defensive) keeps
+        // the latest, mirroring Roslyn `SemanticModel.GetTypeInfo` semantics
+        // for re-bound nodes during incremental scenarios.
+        _exprBindings[expr] = bound;
+        return bound;
+    }
+
+    private BoundExpr BindExprCore(Expr expr, TypeEnv env, Z42Type? expectedType = null)
     {
         switch (expr)
         {

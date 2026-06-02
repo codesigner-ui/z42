@@ -1872,7 +1872,7 @@ Phase 2（远期）：
 |---|---|---|---|---|
 | **P0** | **`Compilation` 不可变快照**（F2.1） | 6 | 7-10 天 | 多线程并行编译 + IDE / LSP 集成基础 |
 | **P1** | **`ISymbol` 公共抽象**（F2.2） | 6 | 10-14 天 | 跨文件符号身份；解锁 find-references / rename |
-| **P1** | **`SemanticModel` 按需 binding**（F2.3 Phase 1） | 6 | 3-5 天 | query API；IDE / analyzer 前置 |
+| 🟡 | **`SemanticModel` 按需 binding**（F2.3 Phase 1）— 2/5 query 方法落地 2026-06-03 (add-semantic-model-query-api): `GetBoundExpression(Expr) -> BoundExpr?` + `GetExpressionType(Expr) -> Z42Type?` + `ExpressionBindings` property。TypeChecker 在 `BindExpr` 单入口记录 Expr→BoundExpr (ReferenceEqualityComparer)，SemanticModel 持 dict 提供查询。剩余 `GetSymbol` / `GetDeclaredSymbol` 阻塞于 F2.2 ISymbol；`GetDiagnostics(Span)` 需把 DiagnosticBag 灌进 SemanticModel，独立 spec。 | 6 | Phase 1 partial | query API；IDE / analyzer 前置 |
 | 🟡 | **BoundTree Lowering Pass 框架**（F2.5）— Phase 1 done 2026-06-02 (add-bound-tree-rewriter): `BoundExprRewriter`（30 个 VisitXxx 默认）+ `BoundStmtRewriter`（16 个 + `RewriteExpr` hook）+ 11 单元测试。Identity 短路（ReferenceEquals 链 = 零分配），fresh `with { ... }` 在任一 child 替换时分配。Phase 2（迁移现有 foreach / interpolated-string / switch lowering 从 FunctionEmitter 出来 + 加 MethodCompiler pass-pipeline）独立 spec 后续。 | 6 | Phase 1 done | L3 async / lambda / generics lowering 前置 |
 | **P2** | **Binder 层级**（F2.4） | 6 | 14-21 天 | scope 语义清晰，加 L3 特性时不爆炸 |
 | **P3** | **Analyzer / SourceGen 扩展点**（F2.6） | 6 | 大 | 自举完成后；IDE 阶段必备 |
