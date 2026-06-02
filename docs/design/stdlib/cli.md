@@ -68,11 +68,12 @@ src/ArgParser.z42     (~340 行)
 
 ## 不支持（Deferred）
 
-### cli-future-subcommand
+### ~~cli-future-subcommand~~ — ✅ 已落地 2026-05-27 (`609b870e`)
 
-- **来源**：`prog sub --flag arg`（git 风格 subcommand 路由）
-- **触发原因**：v0 单命令；subcommand 需要 sub-parser 注册 + dispatch
-- **触发条件**：自举工具（z42c / z42vm）入口要 z42 实现时 — 它们都有 subcommand
+`Std.Cli.SubcommandRouter` — `git` / `cargo`-style subcommand
+dispatch on top of `ArgParser`. Top-level `--help` lists commands;
+unknown subcommand surfaces a Levenshtein "did you mean ..."
+suggestion.
 - **当前 workaround**：调用方手动 `if argv[0] == "build"` 分支再 new sub-parser
 
 ### ~~cli-future-required-option~~ — **✅ 已落地 2026-05-26 (add-cli-required-option)**
@@ -119,16 +120,17 @@ WasOptionSet true/false; int (basic / explicit / negative / invalid);
 long max i64; double + invalid; bool true/false/uppercase/invalid;
 combined required + typed in a realistic "tiny HTTP server" parser.
 
-### cli-future-env-fallback
+### ~~cli-future-env-fallback~~ — ✅ 已落地 2026-05-26 (`473eb0bf`)
 
-- **来源**：`AddOptionWithEnv("api-key", "K", "...", "default", "API_KEY")`
-- **触发原因**：常见模式（CI 环境变量传入）；v0 caller 手 `Environment.GetEnvironmentVariable`
-- **当前 workaround**：caller 显式
+`ArgParser.AddOptionWithEnv(longName, shortName, help, default,
+envName)` — flag value taken from `Environment.GetEnvironmentVariable(envName)`
+when not provided on argv. Common CI pattern (`API_TOKEN=...`).
 
-### cli-future-mutually-exclusive
+### ~~cli-future-mutually-exclusive~~ — ✅ 已落地 2026-05-26 (`473eb0bf`)
 
-- **来源**：`--release` xor `--debug`
-- **触发原因**：v0 caller 自行检查
+`ArgParser.AddMutuallyExclusive(string[] names)` registers a group;
+parse-time conflict surfaces `CliException` listing the offending
+flag pair.
 
 ### ~~cli-future-repeated-option~~ — **✅ 已落地 2026-05-26 (add-cli-repeated-option)**
 

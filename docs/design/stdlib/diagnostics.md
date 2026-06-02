@@ -112,11 +112,11 @@ if (Log.IsEnabled(LogLevel.DEBUG)) {
 - **前置依赖**：L2/L3 trait / interface 系统 + lambda
 - **当前 workaround**：调用方自行包装 Log + 业务 sink
 
-### diagnostics-future-structured-fields
+### ~~diagnostics-future-structured-fields~~ — ✅ 已落地 2026-05-27 (`1ea35472`)
 
-- **来源**：`Log.Info("user logged in", { "id": 42, "ip": "..." })`
-- **触发原因**：v0 string-only；结构化字段需要 dict / JsonValue
-- **触发条件**：用户出现需要按字段查询日志的场景
+`LogFields` builder + `Log.*(msg, LogFields)` overload per level
+emits logfmt-style ` key="value"` pairs after the message. Quoted
+escape per logfmt convention; null fields treated as no fields.
 - **当前 workaround**：调用方手动 JSON.Stringify 嵌入消息
 
 ### ~~diagnostics-future-iso8601-timestamps~~ — ✅ 已落地 2026-06-03 (`add-log-iso8601-and-color`)
