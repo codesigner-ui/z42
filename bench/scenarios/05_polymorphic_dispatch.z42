@@ -18,7 +18,7 @@
 
 namespace Bench.PolymorphicDispatch;
 
-[Native("__bench_now_ns")]
+[Native("__time_now_mono_ns")]
 extern long NowNs();
 
 [Native("__println")]
