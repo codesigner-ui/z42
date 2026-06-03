@@ -58,11 +58,38 @@ setup_launcher_env() {
     mkdir -p "$Z42_HOME/launcher"
     _install_atomic "$vmdir/z42vm$exe" "$Z42_HOME/launcher/z42vm$exe"
     _install_atomic "$root/artifacts/build/toolchain/launcher/z42.launcher.zpkg" "$Z42_HOME/launcher/launcher.zpkg"
-    ln -sfn "$libs" "$Z42_HOME/launcher/libs"
+    # Point launcher/libs → $libs. `ln -sfn` is unlink+symlink (NOT atomic):
+    # under test-all.sh --parallel, concurrent waves sharing this home race —
+    # one wave's unlink opens a window where the link is briefly absent, which
+    # cascades into EEXIST/'File exists' as the others' symlink() collide.
+    # `mv` of a temp symlink can't fix it either (BSD/macOS mv dereferences a
+    # symlink-to-dir target). Fix: create the link only when absent and NEVER
+    # unlink it — every wave targets the same $libs, so a concurrent creator is
+    # fine (tolerate its EEXIST). With no unlink there is no absence window, so
+    # no cascade. Steady state (link already correct) short-circuits. A *wrong*
+    # pre-existing link is only possible if $libs moved (can't happen within a
+    # run); replace it then — that path is effectively single-threaded.
+    local libslink="$Z42_HOME/launcher/libs"
+    if [ "$(readlink "$libslink" 2>/dev/null)" != "$libs" ]; then
+        # Remove ONLY a *wrong* existing link (re-checked here so we never rm a
+        # correct one a concurrent wave just created — that would reopen the
+        # absence window). In a fresh home the link is simply absent, so this rm
+        # never fires and the path stays unlink-free / race-safe.
+        if [ -L "$libslink" ] && [ "$(readlink "$libslink" 2>/dev/null)" != "$libs" ]; then
+            rm -f "$libslink" 2>/dev/null
+        fi
+        ln -s "$libs" "$libslink" 2>/dev/null || true   # EEXIST from a concurrent wave is fine
+        [ -L "$libslink" ] || { echo "launcher-env: failed to symlink libs" >&2; return 1; }
+    fi
 
-    # 4. the launcher dir (z42vm + libs) doubles as the default app runtime
-    "$tramp" link "$Z42_HOME/launcher" --as dev >/dev/null
-    "$tramp" default dev >/dev/null
+    # 4. the launcher dir (z42vm + libs) doubles as the default app runtime.
+    # Idempotent + concurrency-safe: skip the registry writes (link.txt /
+    # config.toml) once `dev` is already the default, so parallel waves don't
+    # re-write them under each other.
+    if [ "$("$tramp" default 2>/dev/null)" != "dev" ]; then
+        "$tramp" link "$Z42_HOME/launcher" --as dev >/dev/null 2>&1 || true
+        "$tramp" default dev >/dev/null 2>&1 || true
+    fi
 
     export Z42_LAUNCHER="$tramp"
 }
