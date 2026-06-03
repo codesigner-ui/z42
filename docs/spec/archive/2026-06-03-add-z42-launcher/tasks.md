@@ -1,7 +1,8 @@
 # Tasks: z42 launcher (P1)
 
-> 状态：🟡 待确认门 | 创建：2026-06-02 | 类型：vm + cli + 新工具（完整流程）
+> 状态：🟢 已完成（P1）| 创建：2026-06-02 | 归档：2026-06-03 | 类型：vm + cli + 新工具
 > 硬约束：能用 z42 实现的都用 z42（原生面仅限 trampoline）
+> P2（下载/install/self-update）+ app 版本声明格式 + test-changed cutover = 后续（见 launcher.md Deferred + roadmap）
 
 ## 进度概览
 - [x] 阶段 0a: z42vm argv 透传(commit fe0e0273)；0.5/0.6 z42c→Exe-zpkg 推迟到 cutover
@@ -13,7 +14,11 @@
 - [x] 阶段 3c: 其余脚本 cutover —— audit-missing-usings + regen-golden-tests（commit 0b15c4b2，regen 删 `_argvSlice` hack）；test-vm + test-cross-zpkg（commit 8ed104d6）。5/7 已迁，全部 mini-project 编译为 Exe-zpkg 通过。
   - **build-stdlib 不迁**：鸡生蛋（launcher 运行时需 stdlib，而它正是产 stdlib 的）—— 留作 `z42c run` bootstrap 根。
   - **test-changed 暂缓**：轻量 git-diff 派发器，只 build driver；加整套 launcher-env(需 z42vm+stdlib+trampoline) 不成比例。
-  - 编排器(test-vm/test-cross-zpkg/regen)的**完整 run 验证**待 main 并发破坏(TcpKeepalive / WS006)清掉后做。
+- [x] 阶段 3d: **端到端验证**(并发破坏清掉后,2026-06-03):
+  - `check-versions-drift.sh` 完整 shim 跑通(All version checks passed)
+  - `test-cross-zpkg.sh` 经 launcher + `Z42_VM_MODE` env → cross-zpkg 2/2 PASS
+  - `test-vm.sh interp --jobs=4` 经 launcher + `Z42_VM_MODES/JOBS` env + 并行 → 168/0 golden PASS
+  - regen / audit 共用同一 helper+pattern(audit 已经 launcher 跑通;regen 编译通过;两者会改文件,不重复整跑)
 
 ## 阶段 0: 前置使能（durable，在 Rust 运行时 + 编译器）
 - [ ] 0.1 `src/runtime/src/main.rs`：`Cli` 加收尾 `args: Vec<String>`(trailing_var_arg);`-- ` 后入 args
