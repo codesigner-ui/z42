@@ -614,7 +614,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 |---|---|---|---|
 | 基础类型（int / string / array / object） | System | z42.core | ✅ 对齐 |
 | 集合（List / Dict / Queue / Stack / ...） | System.Collections.Generic | z42.core (List/Dict) + z42.collections (others) | ✅ 基本覆盖；缺 ConcurrentDictionary（待 threading） |
-| 字符串处理 | System.Text | z42.text | ⚠️ z42.text 太单薄（97 LOC）；StringBuilder 在 z42.text，但 Format / Tokenize / Splitter 等都缺 |
+| 字符串处理 | System.Text | z42.text | 🟡 expand-z42-text-strings (2026-06-03) 加 `Strings` static helpers (`PadLeft / PadRight / Repeat / IndexOfAny / TrimChars`)；StringBuilder + Levenshtein + Strings 一起 ~290 LOC。Format / Tokenize / Splitter 仍缺，独立 spec。 |
 | 编码 | System.Text.Encoding / System.Buffers.Text | z42.encoding | ✅ Utf8 / Hex / Base64 都有 |
 | 数学 | System.Numerics | z42.math | ⚠️ 50 LOC，缺 BigInteger / Vector / Decimal / Complex |
 | 时间 | System.DateTime / System.TimeSpan | z42.time | ⚠️ 177 LOC；缺 timezone、calendar、duration arithmetic 完整 |
@@ -654,7 +654,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **S-P0** | **trait-based test commons** — z42.test 加 `ICollectionContract` / `IEnumerableContract`，所有 collections 复用 | 3-5 天 | 测试代码 -50%，新 collection 落地从 1 天 → 2 小时 |
 | **S-P1** | **internal shared helpers 层** — 识别 stdlib 中重复 patterns 提到 z42.core/_Internal 或新 internal-only package | 5-7 天 | 杜绝代码重复；维护成本下降 |
 | **S-P1** | **public API surface lint** — README `## Public API` 段 + CI diff lint | 2-3 天 | API breaking change 检测；对齐 ref/ 角色 |
-| **S-P2** | **z42.text 扩充** — Format / Tokenize / Splitter / Padding helpers | 5-7 天 | 减少业务代码里手写 StringBuilder |
+| 🟡 | **z42.text 扩充** — Padding helpers Phase 1 done 2026-06-03 (expand-z42-text-strings): `Std.Text.Strings` static class with `PadLeft / PadRight / Repeat / IndexOfAny / TrimChars` + 20 unit tests。Format / Tokenize / Splitter 独立 spec 后续。 | Padding done | 减少业务代码里手写 StringBuilder |
 | **S-P2** | **z42.math BigInteger / Decimal** | 7-10 天 | 解锁 z42.crypto 后续工作（RSA 需 BigInteger） |
 | **S-P3** | **z42.io streaming JSON reader/writer** | 5-7 天 | 大文件场景；DOM-only 撑不住 |
 
@@ -1407,7 +1407,7 @@ pub struct ScriptObject {
 | **P4** | **GC bump allocator** (C6) | 2 | 巨大 | arch |
 | **P4** | **Hot-path stub inline** (Part 1) | 1 | 2-3 天 | perf |
 | **P5** | **Diagnostic IPC** (D9) | 4 | 巨大 | ops |
-| **P5** | **z42.text / z42.math 扩充** (S5) | 3 | 7-10 天 | stdlib |
+| 🟡 | **z42.text / z42.math 扩充** (S5) — z42.text Padding helpers done 2026-06-03 (expand-z42-text-strings); z42.math BigInteger / Format / Tokenize / Splitter 独立 spec | 3 | partial | stdlib |
 
 ### 建议组织顺序
 

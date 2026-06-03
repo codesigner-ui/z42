@@ -1,0 +1,126 @@
+// expand-z42-text-strings (2026-06-03): tests for `Std.Text.Strings`
+// — review.md S3 / S5 Phase 1.
+namespace Z42TextStringsTests;
+
+using Std.Test;
+using Std.Text;
+
+// ── PadLeft ──────────────────────────────────────────────────────────────────
+
+[Test]
+void test_pad_left_adds_fill_chars() {
+    Assert.Equal("00042", Strings.PadLeft("42", 5, '0'));
+}
+
+[Test]
+void test_pad_left_returns_input_when_already_wider() {
+    // No truncation — caller's responsibility if they want it.
+    Assert.Equal("hello", Strings.PadLeft("hello", 3, '*'));
+}
+
+[Test]
+void test_pad_left_exact_width_returns_input() {
+    Assert.Equal("hi", Strings.PadLeft("hi", 2, '*'));
+}
+
+[Test]
+void test_pad_left_empty_pads_to_all_fill() {
+    Assert.Equal("***", Strings.PadLeft("", 3, '*'));
+}
+
+// ── PadRight ─────────────────────────────────────────────────────────────────
+
+[Test]
+void test_pad_right_adds_fill_chars() {
+    Assert.Equal("hi...", Strings.PadRight("hi", 5, '.'));
+}
+
+[Test]
+void test_pad_right_returns_input_when_already_wider() {
+    Assert.Equal("hello", Strings.PadRight("hello", 3, '.'));
+}
+
+// ── Repeat ───────────────────────────────────────────────────────────────────
+
+[Test]
+void test_repeat_concatenates_n_times() {
+    Assert.Equal("ababab", Strings.Repeat("ab", 3));
+}
+
+[Test]
+void test_repeat_zero_returns_empty() {
+    Assert.Equal("", Strings.Repeat("x", 0));
+}
+
+[Test]
+void test_repeat_negative_returns_empty() {
+    Assert.Equal("", Strings.Repeat("x", -1));
+}
+
+[Test]
+void test_repeat_empty_string_returns_empty() {
+    Assert.Equal("", Strings.Repeat("", 5));
+}
+
+[Test]
+void test_repeat_one_returns_input_value() {
+    Assert.Equal("hello", Strings.Repeat("hello", 1));
+}
+
+// ── IndexOfAny ───────────────────────────────────────────────────────────────
+
+[Test]
+void test_index_of_any_finds_first_matching_char() {
+    char[] needles = new char[]{ 'l', 'x' };
+    Assert.Equal(2, Strings.IndexOfAny("hello", needles));
+}
+
+[Test]
+void test_index_of_any_returns_minus_one_when_no_match() {
+    char[] needles = new char[]{ 'x', 'y', 'z' };
+    Assert.Equal(-1, Strings.IndexOfAny("hello", needles));
+}
+
+[Test]
+void test_index_of_any_empty_needles_returns_minus_one() {
+    char[] needles = new char[]{};
+    Assert.Equal(-1, Strings.IndexOfAny("hello", needles));
+}
+
+[Test]
+void test_index_of_any_at_position_zero() {
+    char[] needles = new char[]{ 'h' };
+    Assert.Equal(0, Strings.IndexOfAny("hello", needles));
+}
+
+// ── TrimChars ────────────────────────────────────────────────────────────────
+
+[Test]
+void test_trim_chars_strips_both_ends() {
+    char[] junk = new char[]{ '*' };
+    Assert.Equal("hi", Strings.TrimChars("***hi***", junk));
+}
+
+[Test]
+void test_trim_chars_strips_mixed_charset() {
+    char[] junk = new char[]{ '*', '-', '_' };
+    Assert.Equal("hi", Strings.TrimChars("*-_hi_-*", junk));
+}
+
+[Test]
+void test_trim_chars_returns_input_when_no_trim_needed() {
+    char[] junk = new char[]{ '*' };
+    Assert.Equal("hello", Strings.TrimChars("hello", junk));
+}
+
+[Test]
+void test_trim_chars_strips_to_empty_when_all_junk() {
+    char[] junk = new char[]{ '*' };
+    Assert.Equal("", Strings.TrimChars("****", junk));
+}
+
+[Test]
+void test_trim_chars_empty_charset_returns_input() {
+    char[] junk = new char[]{};
+    Assert.Equal("  hi  ", Strings.TrimChars("  hi  ", junk));
+}

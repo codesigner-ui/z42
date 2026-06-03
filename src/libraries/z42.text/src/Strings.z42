@@ -1,0 +1,140 @@
+namespace Std.Text;
+
+// `Std.Text.Strings` — small static helper set for the most common string
+// shaping operations that aren't on the prelude `Std.String` itself.
+// review.md S3 / S5 Phase 1 (2026-06-03, expand-z42-text-strings) — first
+// expansion of z42.text beyond StringBuilder + Levenshtein.
+//
+// Why a static class in z42.text (not new methods on z42.core `String`):
+// `Std.String` is part of the prelude — every method there pollutes
+// every script's namespace. These helpers are useful but not so universal
+// that scripts which never `using Std.Text` should see them. Keeping
+// them in `Std.Text.Strings` matches the BCL pattern (`StringValues` etc.)
+// and lets z42.text accumulate richer text shaping (Format / Tokenize /
+// Splitter — independent specs) under the same opt-in import.
+//
+// Complexity note: every helper here loops via `s.CharAt(i)`, which is
+// O(n) UTF-8 decode per call — so a "single walk" through a string of
+// length n is O(n²) chars-touched. Acceptable for normal-size strings;
+// hot paths (KB+ strings in inner loops) should reach for
+// `StringBuilder` or wait for the upcoming O(1) char-index pass on
+// `Std.String` itself (independent perf spec).
+public static class Strings {
+
+    /// Pad `s` on the left with `fill` characters until its length is
+    /// `width`. If `s` is already at least `width` long, returns `s`
+    /// unchanged (no truncation — caller's job to decide whether to
+    /// `Substring` first).
+    ///
+    /// Examples:
+    ///   `PadLeft("42", 5, '0')` → `"00042"`
+    ///   `PadLeft("hello", 3, '*')` → `"hello"` (already wider)
+    public static string PadLeft(string s, int width, char fill) {
+        int len = s.Length;
+        if (len >= width) return s;
+        int needed = width - len;
+        char[] buf = new char[width];
+        for (int i = 0; i < needed; i++) {
+            buf[i] = fill;
+        }
+        for (int i = 0; i < len; i++) {
+            buf[needed + i] = s.CharAt(i);
+        }
+        return string.FromChars(buf);
+    }
+
+    /// Pad `s` on the right with `fill` until its length is `width`.
+    /// No truncation; see `PadLeft` for the no-op-when-wider rationale.
+    ///
+    /// Example: `PadRight("hi", 5, '.')` → `"hi..."`
+    public static string PadRight(string s, int width, char fill) {
+        int len = s.Length;
+        if (len >= width) return s;
+        char[] buf = new char[width];
+        for (int i = 0; i < len; i++) {
+            buf[i] = s.CharAt(i);
+        }
+        for (int i = len; i < width; i++) {
+            buf[i] = fill;
+        }
+        return string.FromChars(buf);
+    }
+
+    /// Repeat `s` `count` times. `count <= 0` or empty `s` → `""`.
+    ///
+    /// Example: `Repeat("ab", 3)` → `"ababab"`
+    public static string Repeat(string s, int count) {
+        if (count <= 0) {
+            return "";
+        }
+        int srcLen = s.Length;
+        if (srcLen == 0) {
+            return "";
+        }
+        int totalLen = srcLen * count;
+        char[] buf = new char[totalLen];
+        for (int r = 0; r < count; r++) {
+            int offset = r * srcLen;
+            for (int i = 0; i < srcLen; i++) {
+                buf[offset + i] = s.CharAt(i);
+            }
+        }
+        return string.FromChars(buf);
+    }
+
+    /// Find the index of the first character in `s` that matches any
+    /// character in `chars`. Returns `-1` if no match. Empty `chars`
+    /// always returns `-1` (no character can match the empty set).
+    ///
+    /// Example: `IndexOfAny("hello", new char[]{'l', 'x'})` → `2`
+    public static int IndexOfAny(string s, char[] chars) {
+        int sLen = s.Length;
+        int cLen = chars.Length;
+        for (int i = 0; i < sLen; i++) {
+            char c = s.CharAt(i);
+            for (int j = 0; j < cLen; j++) {
+                if (chars[j] == c) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    /// Trim every character in `chars` from both ends of `s`. Empty `chars`
+    /// → `s` unchanged. Symmetric trim — to trim only one side, see
+    /// `Substring` + `IndexOfAny`.
+    ///
+    /// Example: `TrimChars("***hi***", new char[]{'*'})` → `"hi"`
+    public static string TrimChars(string s, char[] chars) {
+        int len = s.Length;
+        int cLen = chars.Length;
+        if (cLen == 0) {
+            return s;
+        }
+        int start = 0;
+        int end = len;
+        while (start < end && ContainsChar(chars, s.CharAt(start))) {
+            start = start + 1;
+        }
+        while (end > start && ContainsChar(chars, s.CharAt(end - 1))) {
+            end = end - 1;
+        }
+        if (start == 0 && end == len) {
+            return s;
+        }
+        return s.Substring(start, end - start);
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    private static bool ContainsChar(char[] chars, char c) {
+        int n = chars.Length;
+        for (int i = 0; i < n; i++) {
+            if (chars[i] == c) {
+                return true;
+            }
+        }
+        return false;
+    }
+}

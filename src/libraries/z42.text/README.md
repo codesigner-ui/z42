@@ -11,6 +11,7 @@ z42 文本处理类型。**纯脚本实现** —— 严格遵循 [`src/libraries
 |------|------|------|
 | `StringBuilder.z42` | `StringBuilder` | 字符串拼接缓冲区 — Script-First 实现，基于 `string[]` + `String.FromChars` |
 | `Levenshtein.z42`   | `Levenshtein` static class | 编辑距离 `Distance(a, b)` + 归一化相似度 `SimilarityRatio(a, b) ∈ [0,1]`（fuzzy search / 拼写纠错） |
+| `Strings.z42`       | `Strings` static class | 字符串 shaping helpers：`PadLeft / PadRight / Repeat / IndexOfAny / TrimChars`（expand-z42-text-strings, 2026-06-03，review.md S3/S5 Phase 1） |
 
 > **Regex 在 [`z42.regex`](../z42.regex/)** —— 不在本包。本包的 `Regex.z42` 旧 stub 已删除（commit 2026-05-24 docs/review.md Part 3 S2.2 清理）。
 
