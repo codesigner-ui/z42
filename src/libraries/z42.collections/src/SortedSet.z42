@@ -6,7 +6,9 @@ namespace Std.Collections;
 // and binary-search-insert for Add (O(log n) lookup + O(n) shift).
 // v0 design favours simplicity; red-black tree backend is a future
 // perf upgrade for data sets that exceed ~1k elements.
-public class SortedSet<T> where T: IComparable<T> + IEquatable<T> {
+// add-collection-contract-phase1 (2026-06-03): implements IBasicCollection<T>
+// to opt into Std.Test.Contracts.BasicCollectionContract coverage.
+public class SortedSet<T> : IBasicCollection<T> where T: IComparable<T> + IEquatable<T> {
     T[] items;
     int count;
     int capacity;

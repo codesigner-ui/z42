@@ -2,8 +2,19 @@
 // IsEmpty / AddFirst / AddLast / First / Last 行为。
 namespace Z42CollectionsTests;
 
+using Std;
 using Std.Test;
+using Std.Test.Contracts;
 using Std.Collections;
+
+// add-collection-contract-phase1 (2026-06-03): exercise the shared
+// IBasicCollection contract on a LinkedList<int> instance. Covers the
+// universally-true Count==0/IsEmpty/Clear invariants in 2 lines instead
+// of repeating the assertions in every collection's test file.
+[Test]
+void test_linkedlist_basic_collection_contract() {
+    BasicCollectionContract.Run("LinkedList<int>", new LinkedList<int>());
+}
 
 [Test]
 void test_new_list_is_empty() {

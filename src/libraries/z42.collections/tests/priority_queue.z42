@@ -3,7 +3,15 @@ namespace Z42CollectionsPriorityQueueTests;
 
 using Std;
 using Std.Test;
+using Std.Test.Contracts;
 using Std.Collections;
+
+// add-collection-contract-phase1 (2026-06-03): shared IBasicCollection
+// invariants on PriorityQueue<int>.
+[Test]
+void test_priority_queue_basic_collection_contract() {
+    BasicCollectionContract.Run("PriorityQueue<int>", new PriorityQueue<int>());
+}
 
 [Test]
 void test_empty_count_zero() {

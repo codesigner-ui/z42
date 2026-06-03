@@ -16,7 +16,9 @@ using Std;
 // pre-.NET-6 `PriorityQueue`. The newer .NET 6+ split-key form
 // `PriorityQueue<TElement, TPriority>` is deferred — wait for a concrete
 // use case that needs the indirection.
-public class PriorityQueue<T> where T: IComparable<T> {
+// add-collection-contract-phase1 (2026-06-03): implements IBasicCollection<T>
+// to opt into Std.Test.Contracts.BasicCollectionContract coverage.
+public class PriorityQueue<T> : IBasicCollection<T> where T: IComparable<T> {
     T[] items;
     int count;
     int capacity;

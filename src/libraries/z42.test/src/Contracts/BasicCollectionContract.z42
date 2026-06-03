@@ -1,0 +1,50 @@
+namespace Std.Test.Contracts;
+
+// review.md S2.4 Phase 1 — first trait-based test commons (2026-06-03,
+// add-collection-contract-phase1).
+//
+// `BasicCollectionContract.Run(name, instance)` runs the universally-true
+// behavioural assertions for any type implementing `Std.IBasicCollection<T>`:
+// fresh instances are empty, `Clear()` is idempotent on an empty collection.
+// Individual collection tests opt in with one `[Test]` line that calls
+// `Run` with a fresh instance of their concrete type:
+//
+//   [Test]
+//   void test_linkedlist_basic_contract() {
+//       BasicCollectionContract.Run("LinkedList<int>", new LinkedList<int>());
+//   }
+//
+// Adding a new collection that wants contract coverage costs **1 line**
+// (one Run call), not 5+ hand-written assertions copied across every
+// collection's test file.
+//
+// API design — why take an instance, not `Func<IBasicCollection<int>>`:
+// z42 delegates don't currently have return-type covariance, so a
+// `() => new LinkedList<int>()` lambda is not assignable to
+// `Func<IBasicCollection<int>>` even though `LinkedList<int>` implements
+// the interface. Taking the instance directly relies on the implicit
+// up-cast at the call boundary, which DOES work today. Invariant 2
+// (Clear()'s idempotence) reuses the same instance — same coverage.
+//
+// Phase 1 hardcodes the element type as `int` to bypass the
+// generic-function-with-interface-constraint code path while it settles
+// in stdlib usage. Phase 2 (future spec) lifts to
+// `Run<T>(name, IBasicCollection<T>)` once that path is well-trodden.
+public static class BasicCollectionContract {
+    /// Drives the IBasicCollection invariants against `instance`.
+    /// `name` is a human label for failure context (e.g. `"Queue<int>"`).
+    /// Pass a *fresh* instance — the contract asserts emptiness as its
+    /// first invariant.
+    public static void Run(string name, IBasicCollection<int> instance) {
+        // Invariant 1: a freshly-constructed collection is empty.
+        Assert.Equal(0, instance.Count());
+        Assert.True(instance.IsEmpty());
+
+        // Invariant 2: Clear() on an already-empty collection is a no-op,
+        // leaving Count == 0 + IsEmpty == true. Catches an implementation
+        // that e.g. decrements Count on every Clear or leaves stale flags.
+        instance.Clear();
+        Assert.Equal(0, instance.Count());
+        Assert.True(instance.IsEmpty());
+    }
+}

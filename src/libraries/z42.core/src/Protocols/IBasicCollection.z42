@@ -1,0 +1,23 @@
+namespace Std;
+
+// "基础集合契约" — 集合类型实现此接口表明它有标准的"大小 + 清空"操作。
+//
+// review.md S2.4 Phase 1（add-collection-contract-phase1, 2026-06-03）落地的
+// 第一个 trait-based test commons 基石。`Std.Test.Contracts.
+// BasicCollectionContract` 接收 `Func<IBasicCollection<int>>` 工厂跑通用
+// 断言，5 个 z42.collections 类（Queue/Stack/LinkedList/SortedSet/
+// PriorityQueue）实现该接口即可"零行加"获得契约覆盖。
+//
+// 字段说明：
+//   - `Count()` — 元素数；`int` 而非 `long` 与现有 collection API 对齐
+//   - `IsEmpty()` — 等价于 `Count() == 0` 的语义快捷
+//   - `Clear()` — 清空所有元素；幂等
+//
+// 为什么不放具体 `Add(T)`：5 个集合的"添加"语义命名不同（Push / Enqueue /
+// AddLast / Add），且语义本身不同（LIFO vs FIFO vs sorted vs heap）。统一
+// 接口会强迫机械别名，不如等 Phase 2 spec 决定一个有意义的更丰富契约。
+public interface IBasicCollection<T> {
+    int Count();
+    bool IsEmpty();
+    void Clear();
+}

@@ -14,6 +14,10 @@ public delegate void Action<T1, T2, T3>(T1 a, T2 b, T3 c);
 public delegate void Action<T1, T2, T3, T4>(T1 a, T2 b, T3 c, T4 d);
 
 // ── Func: typed return ──────────────────────────────────────────────────────
+// add-collection-contract-phase1 (2026-06-03): added the 0-arity `Func<R>()`
+// to match the documented "0–4 arity" coverage above — it was the one
+// missing arity in the original stdlib drop.
+public delegate R Func<R>();
 public delegate R Func<T, R>(T arg);
 public delegate R Func<T1, T2, R>(T1 a, T2 b);
 public delegate R Func<T1, T2, T3, R>(T1 a, T2 b, T3 c);

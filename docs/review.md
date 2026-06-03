@@ -547,7 +547,23 @@ z42 现状：
 - 短期：识别 stdlib 中的代码重复（grep `(byte)0` patterns、`StringBuilder` 重复使用 patterns）
 - 长期：建立 `src/libraries/_internal/` 或在 z42.core 加 `internal namespace Std._Internal`（语言层加 `internal` 访问修饰符是单独 spec）
 
-#### S2.4 **没有 trait-based test commons** ❌
+#### S2.4 **trait-based test commons** 🟡 Phase 1 done (2026-06-03)
+
+**Phase 1 状态**（add-collection-contract-phase1, 2026-06-03）：
+`Std.IBasicCollection<T>` 接口（z42.core/src/Protocols/）+ 5 个 collection
+（Queue / Stack / LinkedList / SortedSet / PriorityQueue）都 implement +
+`Std.Test.Contracts.BasicCollectionContract.Run(name, instance)`（z42.test/
+src/Contracts/）跑 Count==0 / IsEmpty / Clear-idempotence 通用断言。3 个
+测试文件（linkedlist / sorted_set / priority_queue）加 contract test 调用。
+新 collection 加契约覆盖 = 1 行（一个 `Run` 调用），不再每个测试文件重复
+手写断言。
+
+附带补：`Std.Func<R>` 0-arity 委托加入（之前 stdlib 缺该 arity；本 spec
+顺手补，但 contract 改走 instance-direct API 故未实际使用）。
+
+**Phase 2 待做（独立 spec）**：
+
+
 
 CoreCLR `Common/tests/` 有 `ICollection.Generic.Tests.cs`、`IDictionary.Generic.Tests.cs` 等 ~30 个 trait test suite，每个有 ~50 个测试。所有实现（`List<T>`/`Queue<T>`/`SortedSet<T>`/`ConcurrentDictionary<T>`/...）通过 `.csproj` link 进来自动跑同一套合约测试。
 
@@ -944,7 +960,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P1** | **Per-module log filtering** (D2) — `Z42_LOG=z42::jit=debug` | 4 | 0.5 天 | ops |
 | ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
 | 🟡 | **Field/Method name → token id** (C4+C5) — Step 1 done 2026-06-01 (add-name-index-typedesc): `TypeDesc.field_index` + `vtable_index` 从 `HashMap<String, usize>` 改 `NameIndex(Vec<(Box<str>, usize)>)` linear scan。typical class N ≤ 16 时 linear scan + cache locality 友好；`Box<str>` 比 `String` 省 8 B/entry。剩余 token-id wire format 路径（C4 P3 `Instruction::FieldGet.field_name: String → field_id: u32`）需要 zbc minor bump，留待后续 spec。 | 2 | Step 1 done | perf |
-| **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
+| 🟡 | **trait-based test commons** (S2.4) — Phase 1 done 2026-06-03 (add-collection-contract-phase1): `Std.IBasicCollection<T>` 接口 (z42.core) + 5 个 collection 都 implement + `Std.Test.Contracts.BasicCollectionContract.Run(name, instance)` (z42.test) 跑 Count/IsEmpty/Clear 通用断言。3 个测试文件加 contract test 行。Phase 2 (Add/Iterate/Compare contracts + lift to generic `Run<T>`) 独立 spec。 | 3 | Phase 1 done | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
 | ✅ | ~~`RuntimeObserver` (D3 Phase 1 + 2)~~ — add-runtime-observer (2026-05-26) + Phase 2 emit sites (JitModuleCompiled / ExceptionThrown / ExceptionCaught / NativeCallEntered) + lazy-load ModuleLoaded (2026-05-27) | 4 | done | ops |
@@ -1373,7 +1389,7 @@ pub struct ScriptObject {
 | ✅ | ~~Per-module log filtering~~ (D2) — EnvFilter `Z42_LOG` wired in `init_tracing` (2026-05-25) | 4 | done | ops |
 | ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
 | 🟡 | **Field/Method name → token id** (C4+C5) — Step 1 done 2026-06-01 (add-name-index-typedesc): `TypeDesc.field_index` + `vtable_index` 从 `HashMap<String, usize>` 改 `NameIndex(Vec<(Box<str>, usize)>)` linear scan。typical class N ≤ 16 时 linear scan + cache locality 友好；`Box<str>` 比 `String` 省 8 B/entry。剩余 token-id wire format 路径（C4 P3 `Instruction::FieldGet.field_name: String → field_id: u32`）需要 zbc minor bump，留待后续 spec。 | 2 | Step 1 done | perf |
-| **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
+| 🟡 | **trait-based test commons** (S2.4) — Phase 1 done 2026-06-03 (add-collection-contract-phase1): `Std.IBasicCollection<T>` 接口 (z42.core) + 5 个 collection 都 implement + `Std.Test.Contracts.BasicCollectionContract.Run(name, instance)` (z42.test) 跑 Count/IsEmpty/Clear 通用断言。3 个测试文件加 contract test 行。Phase 2 (Add/Iterate/Compare contracts + lift to generic `Run<T>`) 独立 spec。 | 3 | Phase 1 done | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
 | ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
 | ✅ | ~~`RuntimeObserver` (D3 Phase 1 + 2)~~ — add-runtime-observer (2026-05-26) + Phase 2 emit sites (JitModuleCompiled / ExceptionThrown / ExceptionCaught / NativeCallEntered) + lazy-load ModuleLoaded (2026-05-27) | 4 | done | ops |
