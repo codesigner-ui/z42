@@ -16,6 +16,10 @@ namespace Z42Launcher;
 using Std;
 using Std.IO;
 using Std.Json;
+using Std.Net.Http;
+using Std.Compression;
+using Std.Archive;
+using Std.Crypto;
 
 void Main() {
     string[] argv = Environment.GetCommandLineArgs();
@@ -31,6 +35,8 @@ void Main() {
     if (cmd == "link")    { _cmdLink(rest);    return; }
     if (cmd == "which")   { _cmdWhich(rest);   return; }
     if (cmd == "run")     { _cmdRun(rest);     return; }
+    if (cmd == "install")   { _cmdInstall(rest);   return; }
+    if (cmd == "uninstall") { _cmdUninstall(rest); return; }
     // Bare apphost form: `z42 app.zpkg [-- args]`
     if (cmd.EndsWith(".zpkg") || cmd.EndsWith(".zbc")) { _cmdRun(argv); return; }
 
@@ -321,6 +327,121 @@ void _cmdRun(string[] rest) {
     Environment.Exit(r.ExitCode);
 }
 
+// z42 install <version|nightly> — download a runtime from GitHub Releases
+// (add-z42-install). Direct: .../releases/download/<tag>/z42-<ver>-<rid>.tar.gz
+// + SHA256SUMS verify, gunzip + untar into runtimes/<ver>.
+void _cmdInstall(string[] rest) {
+    if (rest.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 install <version|nightly>");
+        Environment.Exit(2);
+        return;
+    }
+    string ver = rest[0];
+    string rid = _hostRid();
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("z42: unsupported host (" + Platform.OS() + "/" + Platform.Arch() + ")");
+        Environment.Exit(2);
+        return;
+    }
+    if (rid.StartsWith("windows")) {
+        ConsoleError.WriteLine("z42: windows (.zip) install not yet supported; use the package install.ps1.");
+        Environment.Exit(2);
+        return;
+    }
+    string tag = (ver == "nightly") ? "nightly" : ("v" + ver);
+    string asset = "z42-" + ver + "-" + rid + ".tar.gz";
+    string baseUrl = "https://github.com/codesigner-ui/z42/releases/download/" + tag;
+
+    HttpClient hc = new HttpClient();
+    string expected = "";
+    HttpResponse sums = hc.Get(baseUrl + "/SHA256SUMS");
+    if (sums.IsSuccess()) { expected = _findSum(sums.BodyAsString(), asset); }
+
+    Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
+    HttpResponse resp = hc.Get(baseUrl + "/" + asset);
+    if (!resp.IsSuccess()) {
+        ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") " + baseUrl + "/" + asset);
+        Environment.Exit(1);
+        return;
+    }
+    byte[] body = resp.Body;
+    if (expected.Length > 0) {
+        if (Sha256.HashHex(body) != expected) {
+            ConsoleError.WriteLine("z42: checksum mismatch for " + asset);
+            Environment.Exit(1);
+            return;
+        }
+        Console.WriteLine("  ✓ sha256 verified");
+    }
+
+    byte[] tarBytes = Gzip.Decompress(body);
+    string runtimes = _runtimesDir();
+    Directory.Create(runtimes);
+    string staging = Path.Join(runtimes, "." + ver + ".stage");
+    if (Directory.Exists(staging)) { Directory.Delete(staging, true); }
+    Directory.Create(staging);
+    Tar.ExtractTo(tarBytes, staging);
+
+    string inner = Path.Join(staging, "z42-" + ver + "-" + rid + "-release");
+    if (!Directory.Exists(inner)) {
+        ConsoleError.WriteLine("z42: unexpected archive layout (missing " + inner + ")");
+        Directory.Delete(staging, true);
+        Environment.Exit(1);
+        return;
+    }
+    string target = Path.Join(runtimes, ver);
+    if (Directory.Exists(target)) { Directory.Delete(target, true); }
+    File.Move(inner, target);
+    Directory.Delete(staging, true);
+    Console.WriteLine("installed " + ver + " → " + target);
+}
+
+void _cmdUninstall(string[] rest) {
+    if (rest.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 uninstall <version>");
+        Environment.Exit(2);
+        return;
+    }
+    string ver = rest[0];
+    string dir = Path.Join(_runtimesDir(), ver);
+    if (!Directory.Exists(dir)) {
+        ConsoleError.WriteLine("z42: `" + ver + "` not installed.");
+        Environment.Exit(2);
+        return;
+    }
+    Directory.Delete(dir, true);
+    Console.WriteLine("uninstalled " + ver);
+}
+
+// Std.Platform OS/Arch → release RID (aarch64→arm64, x86_64→x64). "" if unsupported.
+string _hostRid() {
+    string os = Platform.OS();
+    string arch = Platform.Arch();
+    string a = "";
+    if (arch == "aarch64") { a = "arm64"; }
+    else if (arch == "x86_64") { a = "x64"; }
+    else { return ""; }
+    if (os == "macos" || os == "linux" || os == "windows") { return os + "-" + a; }
+    return "";
+}
+
+// SHA256SUMS body ("<hex>  <filename>" per line) → hex for `asset`, or "".
+string _findSum(string text, string asset) {
+    string rest = text;
+    while (rest.Length > 0) {
+        string ln;
+        int nl = rest.IndexOf("\n");
+        if (nl < 0) { ln = rest; rest = ""; }
+        else { ln = rest.Substring(0, nl); rest = rest.Substring(nl + 1); }
+        ln = ln.Trim();
+        if (ln.Length > 0 && ln.EndsWith(asset)) {
+            int sp = ln.IndexOf(" ");
+            if (sp > 0) { return ln.Substring(0, sp); }
+        }
+    }
+    return "";
+}
+
 void _help() {
     Console.WriteLine("z42 — launcher for the z42 runtime");
     Console.WriteLine("");
@@ -333,6 +454,8 @@ void _help() {
     Console.WriteLine("  list                                 list installed runtimes");
     Console.WriteLine("  default [<ver>]                      show or set the default runtime");
     Console.WriteLine("  which [--runtime V] [app]            print the resolved z42vm path");
+    Console.WriteLine("  install <version|nightly>            download a runtime from GitHub Releases");
+    Console.WriteLine("  uninstall <version>                  remove an installed runtime");
     Console.WriteLine("  info                                 show Z42_HOME / default / counts");
 }
 
