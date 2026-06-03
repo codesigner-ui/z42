@@ -59,6 +59,13 @@ roll_forward = "latestFeature"          # 同 major.minor 任何 SDK 都通过
 min_version = "20"
 # wasm tests / playwright 需要；versions_check_node verify-only
 
+[toolchain.z42]
+# z42-bootstrap (2026-06-04): which prebuilt z42 launcher package
+# scripts/install-z42.{sh,bat,command} downloads into <repo>/.z42.
+#   "nightly" → tag nightly, re-download when the nightly release changes
+#   "0.1.0"   → tag v0.1.0, download once (immutable)
+launcher = "nightly"
+
 # ══════════════════════════════════════════════════════════════════════════
 # BUILD: 每平台 native SDK / 工具
 # ══════════════════════════════════════════════════════════════════════════

@@ -100,6 +100,18 @@ z42-<ver>-<rid>-<profile>/
 
 > Windows `install.ps1` + 自动 PATH/profile = 后续;联网 `install <ver>`/`self update`(P2)见下。
 
+## 项目本地引导（z42-bootstrap — install-z42, 2026-06-04）
+
+为了用 z42 自己实现的仓库构建工具(`xtask.zpkg` + 迁移后的脚本),仓库需要先有一个可用的 z42 launcher —— 鸡生蛋。`scripts/install-z42.{sh,bat,command}` 是**唯一保留的原生引导脚本**:从 GitHub Releases 下载预编译 launcher 包,装到**项目本地** `<repo>/.z42`(隔离、gitignore、不碰系统 `~/.z42`)。
+
+- **版本**:`versions.toml [toolchain.z42].launcher`,默认 `nightly`(也可 pin `0.1.0`)。
+- **按 RID 下载**:`z42-<ver>-<rid>.{tar.gz|zip}` ← `releases/download/<tag>/`;对 `SHA256SUMS` 校验。
+- **版本检查(每次跑)**:nightly 比对 release `published_at`(存于 `.z42/.bootstrap-stamp`),变了才重下;pin 版装一次即跳过。
+- **入口**:装完即 `.z42/z42`(launcher-at-package-root 后在根)。
+- **`.bat`** 走 PowerShell(下载/解压/Get-FileHash);**`.command`** 是 macOS Finder 双击 → exec `.sh`。
+
+这是 `bootstrap → xtask` 链路的第一环:`install-z42.sh` → `.z42/z42 xtask.zpkg build/test/...`。
+
 ## app `runtimeconfig.json`（版本声明 + 动态配置 — add-runtimeconfig-json, 2026-06-03）
 
 app 可在 **`<app>.runtimeconfig.json`** sidecar(.NET 同款,独立于 zpkg,可编辑/动态)声明所需运行时版本 + 运行时旋钮:

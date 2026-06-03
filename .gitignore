@@ -59,3 +59,4 @@ bench/baselines/*.json
 
 # dotnet test runner output
 TestResults/
+.z42/
