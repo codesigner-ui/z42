@@ -38,31 +38,77 @@ fn z42_home() -> PathBuf {
     PathBuf::from(".z42")
 }
 
-fn main() {
-    let launcher_dir = z42_home().join("launcher");
-    let vm_name = if cfg!(windows) { "z42vm.exe" } else { "z42vm" };
-    let vm = launcher_dir.join(vm_name);
-    let core = launcher_dir.join("launcher.zpkg");
-    let libs = launcher_dir.join("libs");
+/// Where the launcher runtime (z42vm + launcher.zpkg + libs) lives, and
+/// whether we're in a portable (package-relative) install.
+struct Runtime {
+    vm: PathBuf,
+    core: PathBuf,
+    libs: PathBuf,
+    portable: bool,
+}
 
-    if !vm.exists() || !core.exists() {
-        eprintln!(
-            "z42: launcher runtime not found under {}.\n\
-             Expected {} and launcher.zpkg. Reinstall the z42 launcher.",
-            launcher_dir.display(),
-            vm_name,
-        );
-        exit(1);
+/// Resolve the launcher runtime. Installed mode ($Z42_HOME/launcher) wins;
+/// otherwise fall back to a portable, package-relative layout where this
+/// binary sits at `<pkg>/bin/z42` next to `<pkg>/bin/z42vm`,
+/// `<pkg>/launcher.zpkg`, and `<pkg>/libs/` (bundle-launcher-in-release).
+fn resolve_runtime(vm_name: &str) -> Option<Runtime> {
+    // 1. Installed: $Z42_HOME/launcher/{z42vm, launcher.zpkg, libs}
+    let installed = z42_home().join("launcher");
+    if installed.join(vm_name).exists() && installed.join("launcher.zpkg").exists() {
+        return Some(Runtime {
+            vm: installed.join(vm_name),
+            core: installed.join("launcher.zpkg"),
+            libs: installed.join("libs"),
+            portable: false,
+        });
     }
+    // 2. Portable: <pkg>/bin/z42 → <pkg>/{bin/z42vm, launcher.zpkg, libs}
+    let pkg = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|p| p.to_path_buf())) // bin/
+        .and_then(|bin| bin.parent().map(|p| p.to_path_buf())); // pkg root
+    if let Some(pkg) = pkg {
+        let vm = pkg.join("bin").join(vm_name);
+        let core = pkg.join("launcher.zpkg");
+        if vm.exists() && core.exists() {
+            return Some(Runtime { vm, core, libs: pkg.join("libs"), portable: true });
+        }
+    }
+    None
+}
+
+fn main() {
+    let vm_name = if cfg!(windows) { "z42vm.exe" } else { "z42vm" };
+    let rt = match resolve_runtime(vm_name) {
+        Some(rt) => rt,
+        None => {
+            eprintln!(
+                "z42: launcher runtime not found.\n\
+                 Looked for {}/launcher/{vm_name}+launcher.zpkg (installed) and a\n\
+                 package-relative bin/{vm_name}+../launcher.zpkg (portable).\n\
+                 Reinstall the z42 launcher.",
+                z42_home().join("launcher").display(),
+            );
+            exit(1);
+        }
+    };
 
     // Everything after argv[0] is the user's command line; forward it to the
     // launcher core after `--` so its GetCommandLineArgs() sees exactly it.
     let forwarded: Vec<String> = env::args().skip(1).collect();
 
-    let mut cmd = Command::new(&vm);
-    cmd.arg(&core);
-    if libs.is_dir() {
-        cmd.env("Z42_LIBS", &libs);
+    let mut cmd = Command::new(&rt.vm);
+    cmd.arg(&rt.core);
+    if rt.libs.is_dir() {
+        cmd.env("Z42_LIBS", &rt.libs);
+    }
+    if rt.portable {
+        // No configured ~/.z42 runtimes; tell the launcher core to run apps
+        // with this bundled runtime directly.
+        cmd.env("Z42_PORTABLE_VM", &rt.vm);
+        if rt.libs.is_dir() {
+            cmd.env("Z42_PORTABLE_LIBS", &rt.libs);
+        }
     }
     if !forwarded.is_empty() {
         cmd.arg("--");
@@ -72,7 +118,7 @@ fn main() {
     match cmd.status() {
         Ok(status) => exit(status.code().unwrap_or(1)),
         Err(e) => {
-            eprintln!("z42: failed to launch runtime ({}): {e}", vm.display());
+            eprintln!("z42: failed to launch runtime ({}): {e}", rt.vm.display());
             exit(1);
         }
     }

@@ -98,6 +98,32 @@ for f in libz42_compression.a libz42_compression.dylib libz42_compression.so \
 done
 echo "      ✓ native/libz42_compression.* (dlopened by z42vm at startup)"
 
+# ── 2c. z42 launcher: trampoline (bin/z42) + launcher.zpkg (pkg root) ─────
+# bundle-launcher-in-release (2026-06-03): the trampoline is target-specific
+# (cargo --target); launcher.zpkg is RID-independent bytecode (built with the
+# host driver, so cross-packaging works). At runtime the trampoline resolves
+# its runtime package-relative (bin/z42vm + ../launcher.zpkg + ../libs) so
+# `<pkg>/bin/z42 run app.zpkg` works unpacked, no install.
+
+echo "[2c/7] z42 launcher (trampoline + launcher.zpkg)"
+
+cargo build \
+    $([ "$PROFILE" = "release" ] && echo "--release") \
+    --manifest-path "$ROOT/src/toolchain/launcher/Cargo.toml" \
+    --target "$CARGO_TARGET" --quiet
+
+if   [ -f "$CARGO_OUT/z42" ];     then cp "$CARGO_OUT/z42"     "$PKG_DIR/bin/z42"
+elif [ -f "$CARGO_OUT/z42.exe" ]; then cp "$CARGO_OUT/z42.exe" "$PKG_DIR/bin/z42.exe"; fi
+echo "      ✓ bin/z42 (trampoline)"
+
+# launcher core → launcher.zpkg. Built with the host driver (RID-independent
+# bytecode) + the dev stdlib flat view (matching this repo's version).
+( cd "$ROOT" && Z42_LIBS="$ROOT/artifacts/build/libs/release" \
+    dotnet run --project src/compiler/z42.Driver --verbosity quiet -- \
+    build src/toolchain/launcher/core/z42.launcher.z42.toml --release ) >/dev/null
+cp "$ROOT/src/toolchain/launcher/core/dist/z42.launcher.zpkg" "$PKG_DIR/launcher.zpkg"
+echo "      ✓ launcher.zpkg"
+
 # ── 3-7. Headers / libs / examples / manifest ───────────────────────────
 
 echo "[3/7] C ABI headers"

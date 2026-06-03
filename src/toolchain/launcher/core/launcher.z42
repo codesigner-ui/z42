@@ -142,6 +142,12 @@ void _cmdInfo() {
     Console.WriteLine("default:   " + (_defaultVersion() ?? "(none)"));
     string[] vs = _installedVersions();
     Console.WriteLine("installed: " + vs.Length.ToString());
+    // bundle-launcher-in-release: portable packages run apps with a bundled
+    // runtime (no ~/.z42 install).
+    string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (portableVm.Length > 0) {
+        Console.WriteLine("portable:  " + portableVm);
+    }
 }
 
 void _cmdList() {
@@ -199,6 +205,11 @@ void _cmdLink(string[] rest) {
 
 void _cmdWhich(string[] rest) {
     string? ver = _flagValue(rest, "--runtime");
+    string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (portableVm.Length > 0 && (ver ?? "").Length == 0) {
+        Console.WriteLine(portableVm);
+        return;
+    }
     string resolved = _resolveVersion(ver);
     string? dirOpt = _runtimeDir(resolved);
     if (dirOpt == null) {
@@ -229,29 +240,39 @@ void _cmdRun(string[] rest) {
         return;
     }
 
-    string resolved = _resolveVersion(ver);
-    string? dirOpt = _runtimeDir(resolved);
-    if (dirOpt == null) {
-        ConsoleError.WriteLine("z42: runtime `" + resolved + "` not installed (see `z42 list`).");
-        Environment.Exit(2);
-        return;
+    // Portable mode (bundle-launcher-in-release): the trampoline set
+    // Z42_PORTABLE_VM/_LIBS to the package's own bundled runtime. Use it
+    // directly when the caller didn't pin a --runtime.
+    string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    string vm = "";
+    string libs = "";
+    if (portableVm.Length > 0 && (ver ?? "").Length == 0) {
+        vm = portableVm;
+        libs = Environment.GetEnvironmentVariable("Z42_PORTABLE_LIBS") ?? "";
+    } else {
+        string resolved = _resolveVersion(ver);
+        string? dirOpt = _runtimeDir(resolved);
+        if (dirOpt == null) {
+            ConsoleError.WriteLine("z42: runtime `" + resolved + "` not installed (see `z42 list`).");
+            Environment.Exit(2);
+            return;
+        }
+        string dir = dirOpt ?? "";
+        string? vmOpt = _vmPath(dir);
+        if (vmOpt == null) {
+            ConsoleError.WriteLine("z42: z42vm missing in runtime `" + resolved + "` (" + dir + ").");
+            Environment.Exit(2);
+            return;
+        }
+        vm = vmOpt ?? "";
+        libs = _libsPath(dir) ?? "";
     }
-    string dir = dirOpt ?? "";
-    string? vmOpt = _vmPath(dir);
-    if (vmOpt == null) {
-        ConsoleError.WriteLine("z42: z42vm missing in runtime `" + resolved + "` (" + dir + ").");
-        Environment.Exit(2);
-        return;
-    }
-    string vm = vmOpt ?? "";
 
     Process proc = new Process(vm)
         .Arg(app)
         .Stdin(Stdio.Inherit())
         .Stdout(Stdio.Inherit())
         .Stderr(Stdio.Inherit());
-    // Point z42vm at this runtime's stdlib if it ships one.
-    string libs = _libsPath(dir) ?? "";
     if (libs.Length > 0) { proc = proc.Env("Z42_LIBS", libs); }
     // Forward the program's own args after `--`.
     if (appArgs.Length > 0) {

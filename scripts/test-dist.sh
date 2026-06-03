@@ -79,6 +79,28 @@ OVERALL_PASS=0
 OVERALL_FAIL=0
 OVERALL_COMPILE_FAIL=0
 
+# ── Launcher smoke (bundle-launcher-in-release) ──────────────────────────────
+# The package ships bin/z42 (trampoline) + launcher.zpkg. Verify portable
+# resolution works: with no $Z42_HOME, `z42 which` runs the launcher core via
+# the package-relative z42vm and reports that same bundled z42vm.
+Z42_LAUNCHER_BIN="$DIST_DIR/bin/z42"
+[ -f "$DIST_DIR/bin/z42.exe" ] && Z42_LAUNCHER_BIN="$DIST_DIR/bin/z42.exe"
+if [ -x "$Z42_LAUNCHER_BIN" ] && [ -f "$DIST_DIR/launcher.zpkg" ]; then
+    echo "Launcher smoke (portable): $Z42_LAUNCHER_BIN"
+    which_out=$(env -u Z42_HOME "$Z42_LAUNCHER_BIN" which 2>&1 || true)
+    case "$which_out" in
+        "$DIST_DIR/bin/z42vm"|"$DIST_DIR/bin/z42vm.exe")
+            echo "  ✓ z42 which → bundled z42vm"; OVERALL_PASS=$((OVERALL_PASS + 1)) ;;
+        *)
+            echo "  FAIL: z42 which → '$which_out' (expected $DIST_DIR/bin/z42vm)"
+            OVERALL_FAIL=$((OVERALL_FAIL + 1)) ;;
+    esac
+    echo ""
+else
+    echo "Launcher smoke: SKIP (bin/z42 or launcher.zpkg not in package)"
+    echo ""
+fi
+
 for MODE in "${MODES[@]}"; do
     echo "══════════════════════════════════════"
     echo " Mode: $MODE"
