@@ -261,6 +261,7 @@ fn type_registry_vec_invariant_after_build() {
         type_registry_vec: Vec::new(),
         func_index: std::collections::HashMap::new(),
         func_ref_cache_slots: 0,
+        interned_strings: Vec::new(),
     };
 
     crate::metadata::loader::build_type_registry(&mut module);
@@ -301,6 +302,7 @@ fn type_by_id_unresolved_returns_none() {
         type_registry_vec: Vec::new(),
         func_index: std::collections::HashMap::new(),
         func_ref_cache_slots: 0,
+        interned_strings: Vec::new(),
     };
 
     assert!(module.type_by_id(crate::metadata::tokens::TypeId::UNRESOLVED).is_none());
@@ -319,6 +321,7 @@ fn register_lazy_type_appends_with_next_id() {
         type_registry_vec: Vec::new(),
         func_index: std::collections::HashMap::new(),
         func_ref_cache_slots: 0,
+        interned_strings: Vec::new(),
     };
 
     // Lazy type carrying a foreign id (simulating cross-zpkg arrival).
@@ -398,6 +401,7 @@ fn module_with_one_class(
         type_registry_vec: Vec::new(),
         func_index: std::collections::HashMap::new(),
         func_ref_cache_slots: 0,
+        interned_strings: Vec::new(),
     }
 }
 

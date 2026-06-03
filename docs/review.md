@@ -448,7 +448,7 @@ ee_alloc_context {
 | **P1** | **Field / Method name → token id**（C4+C5）— `HashMap<String> → Vec<(u32, slot)>` | 3-4 天 | poly site 提速 + 内存省 | 代码 |
 | **P2** | **Prestub / lazy JIT** —— 上半部分 P1 | 3-5 天 | 启动延迟 | 架构 |
 | ✅ | ~~**Polymorphic IC（PIC）**（C4 P2 + C5 P2）— 4-slot cache~~ — landed 2026-05-28 (jit-polymorphic-ic spec). FieldIC / VCallIC 升级为 4-slot 线性扫描 + round-robin 牺牲；mono 路径零开销；共享 lookup/install helper 在 interp + JIT helpers 复用。bench `05_polymorphic_dispatch.z42` 验证多 receiver 站点 hit | 2-3 天 | poly site 不再退到 HashMap | 代码 |
-| **P3** | **String literal interning**（C3）— `Value::Str(StringId)` 复用 `Module.string_pool` | 3-4 天 | 内存 + 加速 string == | 代码 |
+| 🟡 | **String literal interning**（C3）— Phase 1 done 2026-06-03 (add-string-literal-interning-phase1): `Module.interned_strings: Vec<Arc<str>>` 一次性 populate；interp `const_str` + `jit_const_str` clone Arc 替代 String→Arc<str> 双 alloc。Phase 2 (`Value::Str(StringId)` 拆 hot/cold) + Phase 3 (跨 module intern table) 待独立 spec。 | done | hot literal "Length" / "ToString" / "_zeroBytes" 等零 alloc | 代码 |
 | **P3** | **PAL 抽象层** —— 上半部分 P2 | 5-7 天 | 多线程 + 移植 | 架构 |
 | **P4** | **`Value` 拆 hot/cold variants**（C1）— enum 从 48B → 16B | 5-7 天 | reg move 3x + cache locality | 代码 |
 | **P4** | **GC bump allocator**（C6）— 替换 Rc 默认 | 巨大 | L3 性能瓶颈 | 架构 |
@@ -968,7 +968,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | ✅ | ~~Polymorphic IC~~ (C4 P2 + C5 P2) — landed 2026-05-28 (jit-polymorphic-ic) | 2 | done | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
 | 🟡 | **PAL 抽象层** (Part 1) — Phase 1 done 2026-06-03 (add-pal-system-phase1): `src/runtime/src/pal/` 模块 + `pal::system::{hostname, os_version}` 迁出 `corelib/system.rs` inline cfg blocks + 完整 design doc (`docs/design/runtime/pal.md`，含 CoreCLR 对照 + Phase 2-5 migration plan)。Phase 2 (`pal/fs.rs` 迁 corelib/fs.rs) / Phase 3 (`pal/signal.rs`) / Phase 4 (`pal/thread.rs`) / Phase 5 (`pal/mem.rs` for GC bump allocator) 独立 spec。 | 1 | Phase 1 done | arch |
-| **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
+| 🟡 | **String literal interning** (C3) — Phase 1 done 2026-06-03 (add-string-literal-interning-phase1): `Module.interned_strings: Vec<Arc<str>>` 一次性 populate + interp / JIT `const_str` clone Arc 替代双 alloc。Phase 2 (`Value::Str(StringId)` ) + Phase 3 (跨 module intern table) 独立 spec。 | 2 | Phase 1 done | perf |
 | ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
 | **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
 | **P4** | **GC bump allocator** (C6) | 2 | 极大 | arch |
@@ -1401,7 +1401,7 @@ pub struct ScriptObject {
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
 | 🟡 | **ScriptObject header 瘦身**（E2.P6）— 2026-05-27 type_args 改 `Box<[String]>` 省 8 B/object；2026-06-02 (scriptobject-slots-boxed) `slots` 改 `Vec<Value>` → `Box<[Value]>` 再省 8 B/object (no `cap` word)；slots 长度在 `alloc_object` 固定后只索引读写，Box<[T]> 完美匹配。Full 32 B header 目标（Option-wrap empty type_args + NativeData 重打包）waits on StringId Phase B+。 | 5 | Step 1+2 done | data |
 | 🟡 | **PAL 抽象层** (Part 1) — Phase 1 done 2026-06-03 (add-pal-system-phase1): `src/runtime/src/pal/` 模块 + `pal::system::{hostname, os_version}` 迁出 `corelib/system.rs` inline cfg blocks + 完整 design doc (`docs/design/runtime/pal.md`，含 CoreCLR 对照 + Phase 2-5 migration plan)。Phase 2 (`pal/fs.rs` 迁 corelib/fs.rs) / Phase 3 (`pal/signal.rs`) / Phase 4 (`pal/thread.rs`) / Phase 5 (`pal/mem.rs` for GC bump allocator) 独立 spec。 | 1 | Phase 1 done | arch |
-| **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
+| 🟡 | **String literal interning** (C3) — Phase 1 done 2026-06-03 (add-string-literal-interning-phase1): `Module.interned_strings: Vec<Arc<str>>` 一次性 populate + interp / JIT `const_str` clone Arc 替代双 alloc。Phase 2 (`Value::Str(StringId)` ) + Phase 3 (跨 module intern table) 独立 spec。 | 2 | Phase 1 done | perf |
 | ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
 | **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
 | **P4** | **GC bump allocator** (C6) | 2 | 巨大 | arch |

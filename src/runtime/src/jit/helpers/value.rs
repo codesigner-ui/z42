@@ -82,8 +82,11 @@ pub unsafe extern "C" fn jit_const_str(
     idx:   u32,
 ) -> u8 {
     let ctx_ref = &*ctx;
+    // review.md C3 Phase 1 (2026-06-03): clone the pre-interned `Arc<str>`
+    // (atomic refcount inc, zero heap alloc) — was `s.clone().into()`
+    // (`String.clone()` + `String::into::<Arc<str>>()` = two allocs).
     match ctx_ref.string_pool.get(idx as usize) {
-        Some(s) => { (*frame).regs[dst as usize] = Value::Str(s.clone().into()); 0 }
+        Some(arc) => { (*frame).regs[dst as usize] = Value::Str(arc.clone()); 0 }
         None => {
             set_exception(vm_ctx_ref(ctx), Value::Str(format!("string pool index {} out of range", idx).into()));
             1

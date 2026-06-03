@@ -16,15 +16,19 @@ pub(super) fn const_str(
     ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, idx: u32,
 ) -> Result<()> {
     let i = idx as usize;
-    let s = if let Some(s) = module.string_pool.get(i) {
-        s.clone()
-    } else if let Some(s) = ctx.try_lookup_string(i) {
+    // review.md C3 / Part 5 P3 Phase 1 (2026-06-03,
+    // add-string-literal-interning-phase1): clone the pre-interned `Arc<str>`
+    // (atomic refcount inc, zero heap alloc) instead of the old
+    // `String.clone() + .into::<Arc<str>>()` two-allocation pattern.
+    let s = if let Some(arc) = module.interned_strings.get(i) {
+        arc.clone()
+    } else if let Some(arc) = ctx.try_lookup_string(i) {
         // ConstStr from a lazily-loaded function — idx is offset past main pool.
-        s
+        arc
     } else {
         bail!("string pool index {idx} out of range");
     };
-    frame.set(dst, Value::Str(s.into()));
+    frame.set(dst, Value::Str(s));
     Ok(())
 }
 

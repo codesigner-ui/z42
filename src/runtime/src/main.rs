@@ -580,6 +580,7 @@ fn main() -> Result<()> {
         let mut m = z42::metadata::merge_modules(modules)
             .with_context(|| format!("merging modules for `{}`", file))?;
         m.name = user_module_name;
+        // interned_strings: populated inside merge_modules.
         z42::metadata::loader::build_type_registry(&mut m);
         z42::metadata::loader::verify_constraints(&m)
             .with_context(|| format!("constraint verification failed for `{}`", file))?;

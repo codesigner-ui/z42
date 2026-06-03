@@ -7,6 +7,26 @@
 use super::bytecode::{BasicBlock, Instruction, Module};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+/// Build `interned_strings` from the final `string_pool` so every
+/// `Module` returned by `merge_modules` (whether the fast path or the
+/// multi-module merge) is consistent: `interned_strings.len() ==
+/// string_pool.len()`.
+///
+/// Why inside merge.rs instead of a caller responsibility: every consumer
+/// of `merge_modules` needs interned_strings populated. Five separate
+/// call sites had this responsibility (loader.rs × 2 / host/ops.rs /
+/// main.rs / test-runner bootstrap) and one was missed (test-runner) —
+/// surfaced as `"string pool index N out of range"` panics in stdlib
+/// tests. The architectural fix is to make the population a guaranteed
+/// post-condition of merge_modules instead of a manual step.
+fn populate_interned_strings(module: &mut Module) {
+    module.interned_strings = module.string_pool
+        .iter()
+        .map(|s| Arc::from(s.as_str()))
+        .collect();
+}
 
 /// Merge an ordered sequence of IR modules into a single flat module.
 ///
@@ -24,6 +44,7 @@ pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
         let mut m = modules.into_iter().next().unwrap();
         // Canonicalise: ensure no stale indices (no-op remap with offset 0)
         remap_functions(&mut m.functions, 0, 0);
+        populate_interned_strings(&mut m);
         return Ok(m);
     }
 
@@ -61,13 +82,17 @@ pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
         }
     }
 
-    Ok(Module {
+    let mut merged = Module {
         name, string_pool, classes, functions,
         type_registry: HashMap::new(),
         type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: func_ref_slot_total,
-    })
+        // Populated below by `populate_interned_strings`.
+        interned_strings: Vec::new(),
+    };
+    populate_interned_strings(&mut merged);
+    Ok(merged)
 }
 
 /// Shift every `ConstStr.idx` and `LoadFnCached.slot_id` by their respective

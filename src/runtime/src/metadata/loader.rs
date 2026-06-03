@@ -158,6 +158,7 @@ fn load_zbc_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
 
     let mut module = read_zbc(raw).context("cannot parse binary zbc")?;
 
+    build_interned_strings(&mut module);
     build_type_registry(&mut module);
     verify_constraints(&module)
         .with_context(|| format!("constraint verification failed for module `{}`", module.name))?;
@@ -213,6 +214,7 @@ fn load_zpkg_bytes_with_sidecar(
     let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
     let mut module = merge_modules(modules).context("merging zpkg modules")?;
 
+    // interned_strings: populated inside merge_modules.
     build_type_registry(&mut module);
     verify_constraints(&module)
         .with_context(|| format!("constraint verification failed for module `{}`", module.name))?;
@@ -300,6 +302,7 @@ fn load_zpkg_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
     let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
     let mut module = merge_modules(modules).context("merging zpkg modules")?;
 
+    // interned_strings: populated inside merge_modules.
     build_type_registry(&mut module);
     verify_constraints(&module)
         .with_context(|| format!("constraint verification failed for module `{}`", module.name))?;
@@ -512,6 +515,22 @@ fn infer_namespace_candidates(name: &str) -> Vec<&str> {
 }
 
 // ── TypeDesc registry ─────────────────────────────────────────────────────────
+
+/// review.md C3 / Part 5 P3 Phase 1 (2026-06-03, add-string-literal-interning-phase1):
+/// pre-allocate per-pool-slot `Arc<str>` cache once, so each subsequent
+/// `ConstStr` instruction can clone the existing `Arc` (atomic refcount
+/// increment) instead of `String.clone() + .into::<Arc<str>>()` (two
+/// heap allocations per call).
+///
+/// Each loaded zbc / zpkg pays this O(n) cost once, where n is the pool
+/// size. Stdlib `"Length"` / `"ToString"` / `"_zeroBytes"` literals are
+/// now interned per-module to a single Arc.
+pub fn build_interned_strings(module: &mut Module) {
+    module.interned_strings = module.string_pool
+        .iter()
+        .map(|s| Arc::from(s.as_str()))
+        .collect();
+}
 
 /// Pre-build a `TypeDesc` for every class in `module.classes` and store the
 /// results in `module.type_registry` (by-name HashMap) **and**

@@ -117,8 +117,12 @@ unsafe impl Sync for FnEntry {}
 
 /// Immutable module-level context threaded through every JIT call.
 pub struct JitModuleCtx {
-    /// Interned string constants (mirrors `Module::string_pool`).
-    pub string_pool: Vec<String>,
+    /// Interned string constants (mirrors `Module::interned_strings`).
+    /// review.md C3 Phase 1 (2026-06-03, add-string-literal-interning-phase1):
+    /// pre-interned `Arc<str>` per pool slot; `jit_const_str` clones the
+    /// Arc (atomic refcount inc, zero alloc) instead of the prior
+    /// `String.clone() + .into::<Arc<str>>()` two-alloc path.
+    pub string_pool: Vec<std::sync::Arc<str>>,
     /// Compiled function table — name → native code entry.
     pub fn_entries:  HashMap<String, FnEntry>,
     /// Compiled function table — `MethodId.0` → native code entry

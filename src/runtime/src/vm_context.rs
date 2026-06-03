@@ -287,6 +287,18 @@ pub struct VmCore {
     /// monotonic TCP listener slot id; never reused.
     pub(crate) next_tcp_listener_id: std::sync::atomic::AtomicU64,
 
+    // ── add-z42-net-tls (2026-06-03) ──────────────────────────────────────
+    /// live rustls client TLS streams (TCP + handshake state) keyed by
+    /// monotonic u64 slot id. `__net_tls_connect` inserts; `__net_tls_drop`
+    /// removes (the owned `StreamOwned` drops its `TcpStream` → closes the
+    /// fd). Slot space is independent from `tcp_sockets`. wasm32: never
+    /// populated (TLS builtins return KIND_UNSUPPORTED).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) tls_sockets:
+        Mutex<HashMap<u64, rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>>>,
+    /// monotonic TLS socket slot id; never reused.
+    pub(crate) next_tls_socket_id:   std::sync::atomic::AtomicU64,
+
     // ── add-z42-net-udp (K2, 2026-05-25) ───────────────────────────────────
     /// live `Std.Net.Sockets.UdpClient` sockets keyed by monotonic u64 slot id.
     /// `__net_udp_bind` inserts; `__net_udp_drop` removes (UdpSocket Drop closes
@@ -539,6 +551,9 @@ impl VmContext {
             next_tcp_socket_id:   std::sync::atomic::AtomicU64::new(1),
             next_tcp_listener_id: std::sync::atomic::AtomicU64::new(1),
             #[cfg(not(target_arch = "wasm32"))]
+            tls_sockets:          Mutex::new(HashMap::new()),
+            next_tls_socket_id:   std::sync::atomic::AtomicU64::new(1),
+            #[cfg(not(target_arch = "wasm32"))]
             udp_sockets:          Mutex::new(HashMap::new()),
             next_udp_socket_id:   std::sync::atomic::AtomicU64::new(1),
 
@@ -722,6 +737,25 @@ impl VmContext {
         let id = self.core.next_tcp_listener_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.core.tcp_listeners.lock().insert(id, listener);
         id
+    }
+
+    /// add-z42-net-tls (2026-06-03): register a connected + handshaken rustls
+    /// stream and return its slot id. `__net_tls_drop` removes (closing the fd).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn alloc_tls_socket_slot(
+        &self,
+        stream: rustls::StreamOwned<rustls::ClientConnection, std::net::TcpStream>,
+    ) -> u64 {
+        let id = self.core.next_tls_socket_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.core.tls_sockets.lock().insert(id, stream);
+        id
+    }
+
+    /// Number of currently allocated TLS socket slots. Used by tests to
+    /// verify cleanup paths drop entries.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn tls_socket_slot_count(&self) -> usize {
+        self.core.tls_sockets.lock().len()
     }
 
     /// Number of currently allocated TCP socket slots. Used by tests to
@@ -1136,7 +1170,9 @@ impl VmContext {
     }
 
     /// Resolve an "overflow" ConstStr index past the main module's pool.
-    pub fn try_lookup_string(&self, absolute_idx: usize) -> Option<String> {
+    /// Returns `Arc<str>` (review.md C3 Phase 1, 2026-06-03) so callers can
+    /// wrap directly into `Value::Str` without a second allocation.
+    pub fn try_lookup_string(&self, absolute_idx: usize) -> Option<std::sync::Arc<str>> {
         let state = self.core.lazy_loader.lock();
         let loader = state.as_ref()?;
         loader.try_lookup_string(absolute_idx)

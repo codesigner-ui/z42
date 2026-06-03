@@ -202,8 +202,11 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     }
 
     // ── 8. Build JitModuleCtx ─────────────────────────────────────────────────
+    // review.md C3 Phase 1 (2026-06-03): copy the pre-interned Arc<str> pool
+    // (cheap — `Arc::clone` per slot, no String allocation) into the JIT
+    // module ctx so `jit_const_str` later avoids the prior two-alloc path.
     let ctx = Box::new(JitModuleCtx {
-        string_pool: module.string_pool().to_vec(),
+        string_pool: module.interned_strings.clone(),
         fn_entries,
         fn_entries_by_id,
         module: module as *const Module,
