@@ -15,6 +15,19 @@
 #
 # Usage:  source scripts/_lib/launcher-env.sh; setup_launcher_env "$ROOT" release
 
+# Copy src→dst atomically: write to a unique temp in the same dir, then
+# rename(2) into place. A plain `cp -f` truncates and holds the dest open for
+# writing; under parallel test waves (test-all.sh --parallel) that share one
+# launcher home, a concurrent wave exec'ing this same z42vm hits ETXTBSY
+# ("Text file busy", os error 26) on Linux. rename(2) is atomic and never
+# leaves the dest open-for-write, so exec always sees a complete, closed inode.
+# (fix CI: linux-arm VM-goldens race after reorg introduced the shared home.)
+_install_atomic() {
+    local src="$1" dst="$2"
+    local tmp="$dst.tmp.$$"
+    cp -f "$src" "$tmp" && mv -f "$tmp" "$dst"
+}
+
 setup_launcher_env() {
     local root="$1"
     local profile="${2:-release}"          # which z42vm to bundle (debug|release)
@@ -43,8 +56,8 @@ setup_launcher_env() {
     # built launcher.zpkg now lands in build/toolchain/launcher (toml out_dir).
     export Z42_HOME="$root/artifacts/build/toolchain/launcher/home"
     mkdir -p "$Z42_HOME/launcher"
-    cp -f "$vmdir/z42vm$exe" "$Z42_HOME/launcher/z42vm$exe"
-    cp -f "$root/artifacts/build/toolchain/launcher/z42.launcher.zpkg" "$Z42_HOME/launcher/launcher.zpkg"
+    _install_atomic "$vmdir/z42vm$exe" "$Z42_HOME/launcher/z42vm$exe"
+    _install_atomic "$root/artifacts/build/toolchain/launcher/z42.launcher.zpkg" "$Z42_HOME/launcher/launcher.zpkg"
     ln -sfn "$libs" "$Z42_HOME/launcher/libs"
 
     # 4. the launcher dir (z42vm + libs) doubles as the default app runtime
