@@ -7,7 +7,7 @@
 
 use crate::metadata::{Function, Instruction, Terminator};
 use anyhow::{bail, Result};
-use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlags};
+use cranelift_codegen::ir::{AbiParam, AtomicRmwOp, FuncRef, InstBuilder, MemFlags, Value as ClValue};
 use cranelift_codegen::ir::types;
 use crate::metadata::IrType;
 use cranelift_codegen::Context;
@@ -15,6 +15,83 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{FuncId, Module as CraneliftModule};
 use cranelift_jit::JITModule;
 use std::collections::HashMap;
+
+use super::frame::JIT_MODULE_CTX_VM_CTX_OFFSET;
+use crate::vm_context::VM_CONTEXT_SAFEPOINT_SKIP_OFFSET;
+
+/// Emit the inline JIT safepoint-check fast path
+/// (inline-jit-safepoint-check, 2026-06-03).
+///
+/// Replaces the helper-call `call jit_check_safepoint(frame, ctx)` with
+/// the 5-instr inline equivalent of `check_safepoint`'s fast path:
+///
+/// ```text
+///   v_vm_ctx    = load.i64 trusted, ctx + JIT_MODULE_CTX_VM_CTX_OFFSET
+///   v_skip_addr = iadd_imm v_vm_ctx, VM_CONTEXT_SAFEPOINT_SKIP_OFFSET
+///   v_prev      = atomic_rmw.i32 trusted, Sub, v_skip_addr, 1
+///   v_cmp       = icmp_imm ugt v_prev, 1     // prev > 1 → still in budget
+///   brif v_cmp, fast_block, slow_block
+///
+/// fast_block:
+///   ... (current block continues here)
+///
+/// slow_block:
+///   call jit_check_safepoint_slow(frame, ctx)
+///   jump fast_block
+/// ```
+///
+/// After return, the builder's current block is `fast_block` so the
+/// caller can keep emitting normally.
+///
+/// Two new Cranelift blocks per emit site is fine — Cranelift blocks are
+/// cheap and the lowering merges trivial linear sequences. The slow
+/// block is rarely taken (every `throttle_n()`-th call, default 1024),
+/// so the branch is well-predicted.
+fn emit_safepoint_check(
+    builder:                &mut FunctionBuilder,
+    ctx_val:                ClValue,
+    frame_val:              ClValue,
+    hr_check_safepoint_slow: FuncRef,
+) {
+    let fast_block = builder.create_block();
+    let slow_block = builder.create_block();
+
+    let v_vm_ctx = builder.ins().load(
+        types::I64,
+        MemFlags::trusted(),
+        ctx_val,
+        JIT_MODULE_CTX_VM_CTX_OFFSET,
+    );
+    let v_skip_addr = builder.ins().iadd_imm(
+        v_vm_ctx,
+        VM_CONTEXT_SAFEPOINT_SKIP_OFFSET as i64,
+    );
+    let v_one_i32 = builder.ins().iconst(types::I32, 1);
+    let v_prev = builder.ins().atomic_rmw(
+        types::I32,
+        MemFlags::trusted(),
+        AtomicRmwOp::Sub,
+        v_skip_addr,
+        v_one_i32,
+    );
+    // prev > 1 (unsigned) → counter still positive after decrement → fast path.
+    let v_cmp = builder.ins().icmp_imm(
+        cranelift_codegen::ir::condcodes::IntCC::UnsignedGreaterThan,
+        v_prev,
+        1,
+    );
+    builder.ins().brif(v_cmp, fast_block, &[], slow_block, &[]);
+
+    // Slow block: helper call resets counter + runs phase check / auto-collect.
+    builder.switch_to_block(slow_block);
+    builder.seal_block(slow_block);
+    builder.ins().call(hr_check_safepoint_slow, &[frame_val, ctx_val]);
+    builder.ins().jump(fast_block, &[]);
+
+    // Continue emitting in fast_block.
+    builder.switch_to_block(fast_block);
+    builder.seal_block(fast_block);
+}
 
 pub use super::helpers::HelperIds;
 
@@ -300,14 +377,17 @@ pub fn translate_function(
     let hr_default_of     = imp!(helper_ids.default_of);
     let hr_convert        = imp!(helper_ids.convert);
     // add-gc-safepoint-jit (2026-05-21): cooperative GC safepoint trampoline.
-    let hr_check_safepoint = imp!(helper_ids.check_safepoint);
+    // inline-jit-safepoint-check (2026-06-03): hot path inlined as
+    // atomic_rmw + brif; only the rare slow-path (~1/throttle_n calls)
+    // dispatches through `jit_check_safepoint_slow`.
+    let hr_check_safepoint_slow = imp!(helper_ids.check_safepoint_slow);
     let hr_regs_ptr        = imp!(helper_ids.regs_ptr);
 
-    // add-gc-safepoint-jit (2026-05-21): function-entry safepoint check.
-    // A spawned worker that enters JIT-compiled code immediately after
-    // spawn must respect a pending GC pause before touching any roots.
-    // Idle fast path is one Mutex lock + one enum compare (~10ns).
-    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+    // Function-entry safepoint check. A spawned worker that enters
+    // JIT-compiled code immediately after spawn must respect a pending GC
+    // pause before touching any roots. Inline fast path is ~3-5ns
+    // (atomic decrement + branch), slow path defers to helper.
+    emit_safepoint_check(&mut builder, ctx_val, frame_val, hr_check_safepoint_slow);
 
     // review.md C2 P1 step 1 (2026-05-28): cache `frame.regs.as_mut_ptr()`
     // for typed-arithmetic fast paths. One helper call per function (not per
@@ -800,7 +880,8 @@ pub fn translate_function(
                     // add-gc-safepoint-jit (2026-05-21): post-Call safepoint
                     // — long callees may yield to a GC request that arrived
                     // partway through; the caller catches it on return.
-                    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+                    // inline-jit-safepoint-check (2026-06-03): inline fast path.
+                    emit_safepoint_check(&mut builder, ctx_val, frame_val, hr_check_safepoint_slow);
                 }
                 Instruction::Builtin { dst, name, args } => {
                     // formalize-jit-method-token Phase 2 (2026-05-08): emit
@@ -1053,7 +1134,8 @@ pub fn translate_function(
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                     // add-gc-safepoint-jit (2026-05-21): post-CallIndirect
                     // safepoint, see Instruction::Call for rationale.
-                    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+                    // inline-jit-safepoint-check (2026-06-03): inline fast path.
+                    emit_safepoint_check(&mut builder, ctx_val, frame_val, hr_check_safepoint_slow);
                 }
             }
         }
@@ -1076,8 +1158,9 @@ pub fn translate_function(
                 // add-gc-safepoint-jit (2026-05-21): backward branch =
                 // loop back-edge; check safepoint so long-running JIT
                 // loops park promptly when GC requests a pause.
+                // inline-jit-safepoint-check (2026-06-03): inline fast path.
                 if target <= block_idx {
-                    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+                    emit_safepoint_check(&mut builder, ctx_val, frame_val, hr_check_safepoint_slow);
                 }
                 builder.ins().jump(cl_blocks[target], &[]);
             }
@@ -1086,7 +1169,8 @@ pub fn translate_function(
                 // isn't known until cond is evaluated; check unconditionally.
                 // Idle fast path is cheap; this catches loops where the
                 // back-edge is a BrCond rather than a Br.
-                builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+                // inline-jit-safepoint-check (2026-06-03): inline fast path.
+                emit_safepoint_check(&mut builder, ctx_val, frame_val, hr_check_safepoint_slow);
 
                 let true_idx  = z42_func.blocks.iter().position(|blk| &blk.label == true_label)
                     .expect("true_label not found");

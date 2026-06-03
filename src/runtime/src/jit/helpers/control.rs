@@ -88,6 +88,25 @@ pub unsafe extern "C" fn jit_check_safepoint(
     crate::gc::safepoint::check_safepoint(vm_ctx);
 }
 
+/// Slow-path companion to the JIT-inlined fast-path (inline-jit-safepoint-check,
+/// 2026-06-03). The inline emit at each safepoint site does
+/// `atomic_rmw sub` on `vm_ctx.safepoint_skip` and branches here when the
+/// previous value was `<= 1`. The helper resets the counter to
+/// `throttle_n()` and runs the real slow check (gc phase / auto-collect
+/// drain), matching the semantics of [`crate::gc::safepoint::check_safepoint`]'s
+/// slow tail.
+///
+/// `_frame` unused (signature kept uniform with the rest of the helpers
+/// so the Cranelift call ABI stays `(frame, ctx)`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_check_safepoint_slow(
+    _frame: *mut JitFrame,
+    ctx:    *const JitModuleCtx,
+) {
+    let vm_ctx = vm_ctx_ref(ctx);
+    crate::gc::safepoint::check_safepoint_slow_with_reset(vm_ctx);
+}
+
 #[cfg(test)]
 mod check_safepoint_tests {
     //! add-gc-safepoint-jit (2026-05-21): inline tests for the

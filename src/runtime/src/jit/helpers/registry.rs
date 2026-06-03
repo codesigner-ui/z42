@@ -58,6 +58,12 @@ pub struct HelperIds {
     /// trampoline. Emitted by translate.rs at function entry, backward
     /// branches, and post-Call sites.
     pub check_safepoint: FuncId,
+    /// inline-jit-safepoint-check (2026-06-03): slow-path companion. The
+    /// inline fast path (atomic_rmw sub + brif) emitted at each safepoint
+    /// site branches here when the previous counter value was `<= 1`.
+    /// This helper resets the counter to `throttle_n()` and runs the real
+    /// slow check.
+    pub check_safepoint_slow: FuncId,
     // arith
     pub add:            FuncId,
     pub sub:            FuncId,
@@ -139,7 +145,8 @@ pub fn register_symbols(builder: &mut JITBuilder) {
     reg!("jit_throw",         control::jit_throw);
     reg!("jit_install_catch", control::jit_install_catch);
     reg!("jit_match_catch_type", control::jit_match_catch_type);
-    reg!("jit_check_safepoint",  control::jit_check_safepoint);
+    reg!("jit_check_safepoint",       control::jit_check_safepoint);
+    reg!("jit_check_safepoint_slow",  control::jit_check_safepoint_slow);
     // arith
     reg!("jit_add",           arith::jit_add);
     reg!("jit_sub",           arith::jit_sub);
@@ -287,7 +294,9 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         // jit_match_catch_type(frame, ctx, target_ptr, target_len) -> i8
         match_catch_type: decl!("jit_match_catch_type", [ptr, ptr, ptr, i64t],            [i8t]),
         // add-gc-safepoint-jit (2026-05-21): jit_check_safepoint(frame, ctx) -> void
-        check_safepoint:  decl!("jit_check_safepoint",  [ptr, ptr],                       []),
+        check_safepoint:       decl!("jit_check_safepoint",       [ptr, ptr],            []),
+        // inline-jit-safepoint-check (2026-06-03): slow-path companion to inline emit
+        check_safepoint_slow:  decl!("jit_check_safepoint_slow",  [ptr, ptr],            []),
         // jit_load_fn(frame, ctx, dst, name_ptr, name_len) -> u8
         load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
         // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len, stack_alloc:u8) -> u8

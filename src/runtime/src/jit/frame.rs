@@ -149,3 +149,34 @@ pub struct JitModuleCtx {
 // SAFETY: raw pointer — caller ensures Module outlives ctx.
 unsafe impl Send for JitModuleCtx {}
 unsafe impl Sync for JitModuleCtx {}
+
+/// Byte offset of `JitModuleCtx.vm_ctx` for use in JIT-emitted code that
+/// loads the `*mut VmContext` pointer directly from the ctx parameter
+/// without going through a helper. Used by inline-jit-safepoint-check
+/// (2026-06-03) to reach `vm_ctx.safepoint_skip` from emitted Cranelift IR.
+///
+/// `offset_of!` is compile-time-evaluated and stable regardless of Rust's
+/// field-reordering optimisations. `#[repr(Rust)]` (the default) does not
+/// pin field order, but `offset_of!` always reports the actual layout
+/// chosen for *this* build, so the emitted code stays correct under any
+/// reordering. Asserted in compile-time tests below.
+pub const JIT_MODULE_CTX_VM_CTX_OFFSET: i32 =
+    std::mem::offset_of!(JitModuleCtx, vm_ctx) as i32;
+
+#[cfg(test)]
+mod ctx_offset_tests {
+    use super::*;
+
+    /// Offset must fit i32 (Cranelift load/iadd_imm operand width). With
+    /// the current 5-field layout the offset is well under 256, but a
+    /// future bloat (e.g. inlining caches into ctx) could push it past
+    /// i32. Tripping this assert prompts a redesign (e.g. pin the field
+    /// near the start of the struct with `#[repr(C)]`).
+    #[test]
+    fn vm_ctx_offset_fits_i32() {
+        let off = std::mem::offset_of!(JitModuleCtx, vm_ctx);
+        assert!(off < i32::MAX as usize,
+            "JitModuleCtx.vm_ctx offset {off} exceeds i32::MAX — \
+             reorder fields or use repr(C) to pin layout");
+    }
+}

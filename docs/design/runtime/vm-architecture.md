@@ -734,9 +734,63 @@ M-series macOS 5-run 平均：
 | arith + cmp 内联 (`98426e40` / `fc3936f0`) | ~392 ms | 1.16× |
 | + BrCond i8 load (`3727e469`) | ~302 ms | **1.51×** |
 
-低于 spec 2× 上限的主要原因：`jit_check_safepoint` 仍是 helper call
-（在每个 backward branch 上 GC cooperation）。Inline 该 atomic fast
-path 是后续 spec 的事，~1-2 day 工作量推到 ~1.8×。
+低于 spec 2× 上限的主要原因：`jit_check_safepoint` 在每个 back-edge /
+function entry / post-Call site 都是 helper call。**已于 2026-06-03
+通过 `inline-jit-safepoint-check` 解决** —— atomic fast path 直接 emit
+为 Cranelift `atomic_rmw sub + brif`（详见下节"Safepoint 内联策略"），
+slow path 走专用 helper `jit_check_safepoint_slow`。预期推到 ~1.8×（待
+re-bench 验证）。
+
+### Safepoint 内联策略 (inline-jit-safepoint-check, 2026-06-03)
+
+**问题**：`check_safepoint` Rust fast path 本体只是 `fetch_sub + branch`
+（~3-5ns），但 Cranelift emit 成 helper call 后多承担 ~10ns 的 ABI
+开销（caller-save spill + jump + return）—— 在 hot loop 的 back-edge
+上是显著浪费。
+
+**解决方案**：5 处 emit site（function entry + post-`Call` + post-
+`CallIndirect` + backward `Br` + `BrCond`）改为直接 emit fast-path 5
+条 Cranelift IR：
+
+```
+v_vm_ctx    = load.i64 trusted, ctx + JIT_MODULE_CTX_VM_CTX_OFFSET
+v_skip_addr = iadd_imm v_vm_ctx, VM_CONTEXT_SAFEPOINT_SKIP_OFFSET
+v_prev      = atomic_rmw.i32 trusted, Sub, v_skip_addr, 1
+v_cmp       = icmp_imm ugt v_prev, 1
+brif v_cmp, fast_block, slow_block
+
+slow_block:
+  call jit_check_safepoint_slow(frame, ctx)   ← counter reset + 真正 slow check
+  jump fast_block
+
+fast_block:
+  ... 后续代码
+```
+
+**数据结构权衡**：
+
+- `JIT_MODULE_CTX_VM_CTX_OFFSET` / `VM_CONTEXT_SAFEPOINT_SKIP_OFFSET`
+  用 `std::mem::offset_of!` 编译期算出。`#[repr(Rust)]` 默认下编译器
+  可能重排字段，但 `offset_of!` 总报告 actual offset —— 同一 build
+  内稳定。两处 const 都有 i32 fit + 4-byte alignment 单测保护
+- `atomic_rmw` 在 Cranelift 默认 SeqCst（无 ordering 参数）。比 Rust
+  `Relaxed` 略强：x86-64 上 `LOCK XADD` 本就 SeqCst（无 cost diff）；
+  aarch64 上是 acquire-release，比 relaxed 慢 1-2ns，仍远快于 helper call
+- 每 emit site 创建两个新 Cranelift block（fast / slow）。block 是 cheap
+  的（几十 bytes），5 sites × 2 = 10 blocks 在 cranelift lowering 中
+  会做 trivial-jump 合并
+
+**为什么保留 `jit_check_safepoint` (非 slow)**：
+
+1. inline tests 直接调用作为单元覆盖（idle fast path / drain auto-collect）
+2. 任何未来非 hot path 的 emit site 可继续用 helper（清晰度优先于 1ns 节省）
+3. 是 `jit_check_safepoint_slow` + 前置 `fetch_sub` 的语义合体，作为
+   reference implementation 文档化
+
+**与 CoreCLR 对照**：CoreCLR JIT 在 GC poll points emit 类似的 inline
+test ("g_TrapReturningThreads" check)，但走的是 byte load + 0 compare（不是 atomic
+RMW）。我们选 atomic_rmw 是因为 z42 多线程共享 `VmContext`，counter
+需要并发安全的读-改-写。
 
 **与 CoreCLR / Java JIT 对照**: 这是 monomorphic specialization 的
 基础形态——所有跨类型 op 都退到 helper，所有静态已知类型 op 都 inline。
