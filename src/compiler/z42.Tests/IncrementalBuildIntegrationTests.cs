@@ -88,13 +88,15 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-25 add-gc-oom-exception 新增 Exceptions/OutOfMemoryException.z42，59 → 60。
         // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，z42.core 60 → 61；
         // 2026-05-27 add-string-split-options 新增 SplitOptions.z42，61 → 62。
+        // 2026-XX (62159392) 新增 ByteLength 相关文件，62 → 63。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 62/62");
+        err2.Should().Contain("cached: 63/63");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 5/5");
-        err2.Should().Contain("cached: 3/3");  // z42.time: TimeSpan + DateTime + Stopwatch
+        // 2026-05-27 add-timezone-basics 新增 z42.time/TimeZone.z42，3 → 4。
+        err2.Should().Contain("cached: 4/4");  // z42.time: TimeSpan + DateTime + Stopwatch + TimeZone
     }
 
     /// <summary>--no-incremental 强制全 fresh。</summary>
@@ -119,9 +121,10 @@ public sealed class IncrementalBuildIntegrationTests
         //   DivideByZeroException，57 → 59；
         // 2026-05-25 add-gc-oom-exception 新增 OutOfMemoryException.z42，59 → 60；
         // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，60 → 61；
-        // 2026-05-27 add-string-split-options 新增 SplitOptions.z42，61 → 62）
+        // 2026-05-27 add-string-split-options 新增 SplitOptions.z42，61 → 62）；
+        // 2026-XX 新增 ByteLength 相关文件，62 → 63。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/62");
+        err2.Should().Contain("cached: 0/63");
     }
 }
