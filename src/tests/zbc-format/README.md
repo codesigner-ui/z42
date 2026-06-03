@@ -53,5 +53,5 @@ git diff src/tests/zbc-format/      # review 哪些 fixture 受影响
 
 ## 依赖关系
 
-- 上游：`scripts/build-stdlib.sh` 产出（`artifacts/build/libs/release/*.zpkg`）—— `cross-import-token` / `with-tidx` 需要 stdlib 才能解析
+- 上游：`scripts/build-stdlib.sh` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— `cross-import-token` / `with-tidx` 需要 stdlib 才能解析
 - 下游：`FormatGoldenTests` harness（`src/compiler/z42.Tests/Zbc/`）

@@ -16,7 +16,7 @@ cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
 
 source "$ROOT/scripts/_lib/launcher-env.sh"
 setup_launcher_env "$ROOT" release
-Z42_LIBS="$ROOT/artifacts/build/libs/release" dotnet run --project src/compiler/z42.Driver \
+Z42_LIBS="$ROOT/artifacts/build/libraries/dist/release" dotnet run --project src/compiler/z42.Driver \
     --verbosity quiet --no-build -- build scripts/audit-missing-usings.z42.toml --release >/dev/null
 
 exec "$Z42_LAUNCHER" run "$ROOT/scripts/dist/audit-missing-usings.zpkg"

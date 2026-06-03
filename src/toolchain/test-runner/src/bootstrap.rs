@@ -166,8 +166,8 @@ fn build_declared_candidates(
 /// redesign-artifact-layout 2026-05-12):
 ///   1. `$Z42_LIBS`                                         — env override
 ///   2. `<binary-dir>/../libs/`                             — packages/<pkg>/libs/ adjacent
-///   3. `<cwd>/artifacts/build/libs/release/`               — dev flat view
-///   4. `<cwd>/artifacts/build/libs/debug/`                 — dev flat view (debug profile)
+///   3. `<cwd>/artifacts/build/libraries/dist/release/`               — dev flat view
+///   4. `<cwd>/artifacts/build/libraries/dist/debug/`                 — dev flat view (debug profile)
 ///   5. `<cwd>/artifacts/z42/libs/`                         — legacy fallback
 fn resolve_libs_dir() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("Z42_LIBS") {
@@ -182,8 +182,8 @@ fn resolve_libs_dir() -> Option<PathBuf> {
     }
     if let Ok(cwd) = std::env::current_dir() {
         for p in [
-            cwd.join("artifacts/build/libs/release"),
-            cwd.join("artifacts/build/libs/debug"),
+            cwd.join("artifacts/build/libraries/dist/release"),
+            cwd.join("artifacts/build/libraries/dist/debug"),
             cwd.join("artifacts/z42/libs"),
         ] {
             if p.is_dir() { return Some(p); }

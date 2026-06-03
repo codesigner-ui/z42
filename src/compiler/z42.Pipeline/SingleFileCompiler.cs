@@ -103,8 +103,8 @@ public static class SingleFileCompiler
 
     /// Walk up from the source file's directory to find stdlib zpkg dir.
     /// 搜索路径（redesign-artifact-layout, 2026-05-12）：
-    ///   1. `artifacts/build/libs/release/` (dev flat view, built by build-stdlib.sh)
-    ///   2. `artifacts/build/libs/debug/`
+    ///   1. `artifacts/build/libraries/dist/release/` (dev flat view, built by build-stdlib.sh)
+    ///   2. `artifacts/build/libraries/dist/debug/`
     ///   3. `artifacts/z42/libs/` (legacy fallback)
     public static DependencyIndex LocateDepIndex(string sourceFullPath)
     {
@@ -112,8 +112,8 @@ public static class SingleFileCompiler
         while (dir != null)
         {
             foreach (var rel in new[] {
-                Path.Combine("artifacts", "build", "libs", "release"),
-                Path.Combine("artifacts", "build", "libs", "debug"),
+                Path.Combine("artifacts", "build", "libraries", "dist", "release"),
+                Path.Combine("artifacts", "build", "libraries", "dist", "debug"),
                 Path.Combine("artifacts", "z42", "libs"),
             })
             {
@@ -139,8 +139,8 @@ public static class SingleFileCompiler
             // redesign-artifact-layout (2026-05-12): search new layout first.
             string? candidate = null;
             foreach (var rel in new[] {
-                Path.Combine("artifacts", "build", "libs", "release"),
-                Path.Combine("artifacts", "build", "libs", "debug"),
+                Path.Combine("artifacts", "build", "libraries", "dist", "release"),
+                Path.Combine("artifacts", "build", "libraries", "dist", "debug"),
                 Path.Combine("artifacts", "z42", "libs"),
             })
             {

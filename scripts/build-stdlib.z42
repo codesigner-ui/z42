@@ -4,7 +4,7 @@
 // 行为对齐 scripts/build-stdlib.sh（126 LOC bash）：
 //   1. 用 z42c build --workspace 编译 16 个 stdlib zpkgs（dotnet run 或 packaged）
 //   2. 验证产物存在 + 报告 byte size
-//   3. 在 artifacts/build/libs/<profile>/ 维护扁平视图（hard-link）
+//   3. 在 artifacts/build/libraries/dist/<profile>/ 维护扁平视图（hard-link）
 //   4. 写 namespace → zpkg 的 index.json
 //
 // 入口：bash bootstrap 处理 toolchain build + primer stdlib（chicken-and-egg：
@@ -41,7 +41,7 @@ void Main() {
 
     string wsDir = Path.Join(root, "src/libraries");
     string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
-    string flatDir = Path.Join(root, "artifacts/build/libs/" + profile);
+    string flatDir = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
 
     // ── Pick compiler ────────────────────────────────────────────────────
     string compilerProgram = "";

@@ -89,7 +89,7 @@ pub const KNOWN_KNOBS: &[KnobSpec] = &[
     KnobSpec {
         name: "Z42_LIBS",
         description: "stdlib zpkg search directory",
-        default_hint: "unset; falls back to artifacts/build/libs/release relative to z42vm binary",
+        default_hint: "unset; falls back to artifacts/build/libraries/dist/release relative to z42vm binary",
         consumed_by: "main.rs",
     },
     KnobSpec {

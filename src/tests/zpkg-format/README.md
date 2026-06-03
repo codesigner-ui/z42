@@ -54,5 +54,5 @@ git diff src/tests/zpkg-format/     # review 哪些 fixture 受影响
 
 ## 依赖关系
 
-- 上游：`scripts/build-stdlib.sh` 产出（`artifacts/build/libs/release/*.zpkg`）—— fixture compile 需要 stdlib 解析 namespace
+- 上游：`scripts/build-stdlib.sh` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— fixture compile 需要 stdlib 解析 namespace
 - 下游：`FormatGoldenTests` harness + `FormatInvariantTests`

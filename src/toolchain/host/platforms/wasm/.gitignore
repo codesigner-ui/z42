@@ -8,7 +8,7 @@ pkg-nodejs/
 pkg-bundler/
 
 # stdlib zpkg bundles + namespace index — copied in by build.sh from
-# artifacts/build/libs/release/ at build time; not tracked.
+# artifacts/build/libraries/dist/release/ at build time; not tracked.
 js/stdlib/*.zpkg
 js/stdlib/index.json
 

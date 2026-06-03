@@ -33,14 +33,14 @@ cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
 # 若 stdlib 不存在（fresh clone）→ z42c run 编译本 script 时 import 失败。
 # 用 raw z42c 跑一次 workspace build + 拷 minimal flat view。常见情况（stdlib
 # 已存在）整个 if 块跳过，z42 script 直接接管 + incremental rebuild。
-if [ ! -f artifacts/build/libs/release/z42.core.zpkg ]; then
+if [ ! -f artifacts/build/libraries/dist/release/z42.core.zpkg ]; then
     echo "  (primer: bootstrapping stdlib for the first time)"
     ( cd src/libraries && dotnet run --project ../compiler/z42.Driver \
         --verbosity quiet --no-build -- build --workspace --release ) >/dev/null
-    mkdir -p artifacts/build/libs/release
+    mkdir -p artifacts/build/libraries/dist/release
     for d in artifacts/build/libraries/*/release/dist; do
-        cp -l "$d"/*.zpkg "$d"/*.zsym artifacts/build/libs/release/ 2>/dev/null || \
-            cp "$d"/*.zpkg "$d"/*.zsym artifacts/build/libs/release/ 2>/dev/null || true
+        cp -l "$d"/*.zpkg "$d"/*.zsym artifacts/build/libraries/dist/release/ 2>/dev/null || \
+            cp "$d"/*.zpkg "$d"/*.zsym artifacts/build/libraries/dist/release/ 2>/dev/null || true
     done
 fi
 

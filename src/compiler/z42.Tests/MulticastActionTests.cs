@@ -20,7 +20,7 @@ public sealed class MulticastActionTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "build", "libs", "release");
+            string candidate = Path.Combine(dir.FullName, "artifacts", "build", "libraries", "dist", "release");
             if (Directory.Exists(candidate))
             {
                 var cache = new TsigCache();

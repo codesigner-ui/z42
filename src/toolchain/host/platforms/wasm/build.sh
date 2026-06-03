@@ -2,7 +2,7 @@
 # Build `@z42/wasm` end-to-end:
 #   1. Verify required tooling.
 #   2. Compile test fixtures from examples/embedding/*.z42 → js/fixtures/.
-#   3. Copy stdlib zpkgs + index.json from artifacts/build/libs/release/
+#   3. Copy stdlib zpkgs + index.json from artifacts/build/libraries/dist/release/
 #      into js/stdlib/.
 #   4. Run wasm-pack for web + nodejs targets.
 #
@@ -71,7 +71,7 @@ done
 
 # ── (3) Stdlib bundle (zpkgs + namespace index). ─────────────────────────
 
-LIBS_DIR="$ROOT/artifacts/build/libs/release"
+LIBS_DIR="$ROOT/artifacts/build/libraries/dist/release"
 STDLIB_DIR="$HERE/js/stdlib"
 
 if [[ -d "$LIBS_DIR" ]]; then

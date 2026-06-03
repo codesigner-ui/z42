@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build `z42vm-release.aar` end-to-end:
 #   1. Verify tooling (cargo-ndk + 4 android rust targets + JDK 17 + $ANDROID_NDK_HOME).
-#   2. Copy stdlib zpkgs from artifacts/build/libs/release/ → z42vm/src/main/assets/stdlib/.
+#   2. Copy stdlib zpkgs from artifacts/build/libraries/dist/release/ → z42vm/src/main/assets/stdlib/.
 #   3. cargo ndk × 4 ABI in release; outputs land under z42vm/src/main/jniLibs/<abi>/.
 #   4. ./gradlew :z42vm:assembleRelease (compiles Kotlin + JNI .so via CMake + packages AAR).
 #
@@ -73,7 +73,7 @@ fi
 
 # ── (2) Stdlib bundle. ───────────────────────────────────────────────────
 
-LIBS_DIR="$ROOT/artifacts/build/libs/release"
+LIBS_DIR="$ROOT/artifacts/build/libraries/dist/release"
 STDLIB_DIR="$HERE/z42vm/src/main/assets/stdlib"
 
 if [[ -d "$LIBS_DIR" ]]; then

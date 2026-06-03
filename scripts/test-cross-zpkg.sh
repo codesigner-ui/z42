@@ -45,7 +45,7 @@ fi
 # spawned z42vm) — not the old argv hack.
 source "$ROOT/scripts/_lib/launcher-env.sh"
 setup_launcher_env "$ROOT" debug
-Z42_LIBS="$ROOT/artifacts/build/libs/release" dotnet run --project src/compiler/z42.Driver \
+Z42_LIBS="$ROOT/artifacts/build/libraries/dist/release" dotnet run --project src/compiler/z42.Driver \
     --verbosity quiet --no-build -- build scripts/test-cross-zpkg.z42.toml --release >/dev/null
 
 exec env Z42_VM_MODE="$MODE" "$Z42_LAUNCHER" run "$ROOT/scripts/dist/test-cross-zpkg.zpkg"

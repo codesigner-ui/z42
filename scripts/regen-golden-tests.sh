@@ -36,7 +36,7 @@ done
 if [ "$REBUILD_STDLIB" = true ]; then
     # build-stdlib.sh internally invokes the C# compiler (dotnet run --project
     # z42.Driver), which transitively rebuilds the compiler if stale. After
-    # producing dist/<lib>.zpkg it syncs into artifacts/build/libs/release/ so the VM
+    # producing dist/<lib>.zpkg it syncs into artifacts/build/libraries/dist/release/ so the VM
     # loader sees the current stdlib. Skip via --no-stdlib when the caller has
     # already done this (e.g. test-vm.sh re-entry).
     "$SCRIPT_DIR/build-stdlib.sh"
@@ -61,7 +61,7 @@ fi
 cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
 source "$ROOT/scripts/_lib/launcher-env.sh"
 setup_launcher_env "$ROOT" release
-Z42_LIBS="$ROOT/artifacts/build/libs/release" dotnet run --project src/compiler/z42.Driver \
+Z42_LIBS="$ROOT/artifacts/build/libraries/dist/release" dotnet run --project src/compiler/z42.Driver \
     --verbosity quiet --no-build -- build scripts/regen-golden-tests.z42.toml --release >/dev/null
 
 exec "$Z42_LAUNCHER" run "$ROOT/scripts/dist/regen-golden-tests.zpkg" -- "${Z42_ARGS[@]+"${Z42_ARGS[@]}"}"

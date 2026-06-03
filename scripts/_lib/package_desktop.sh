@@ -118,7 +118,7 @@ echo "      ✓ bin/z42 (trampoline)"
 
 # launcher core → launcher.zpkg. Built with the host driver (RID-independent
 # bytecode) + the dev stdlib flat view (matching this repo's version).
-( cd "$ROOT" && Z42_LIBS="$ROOT/artifacts/build/libs/release" \
+( cd "$ROOT" && Z42_LIBS="$ROOT/artifacts/build/libraries/dist/release" \
     dotnet run --project src/compiler/z42.Driver --verbosity quiet -- \
     build src/toolchain/launcher/core/z42.launcher.z42.toml --release ) >/dev/null
 cp "$ROOT/artifacts/build/toolchain/launcher/z42.launcher.zpkg" "$PKG_DIR/launcher.zpkg"

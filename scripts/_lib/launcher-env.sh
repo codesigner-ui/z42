@@ -11,7 +11,7 @@
 #
 # Assumes the caller already built z42vm (cargo --<profile>) and stdlib
 # (build-stdlib.sh) — i.e. $artifacts/build/runtime/<profile>/z42vm and
-# $artifacts/build/libs/<profile> exist.
+# $artifacts/build/libraries/dist/<profile> exist.
 #
 # Usage:  source scripts/_lib/launcher-env.sh; setup_launcher_env "$ROOT" release
 
@@ -26,7 +26,7 @@ setup_launcher_env() {
     local vmdir="$root/artifacts/build/runtime/$profile"
     # build-stdlib.sh always writes the flat stdlib view to libs/release,
     # regardless of the z42vm profile — so libs is fixed, vmdir varies.
-    local libs="$root/artifacts/build/libs/release"
+    local libs="$root/artifacts/build/libraries/dist/release"
 
     # 1. native trampoline `z42` (shared cargo target → runtime/release/z42)
     cargo build --manifest-path "$root/src/toolchain/launcher/Cargo.toml" --release --quiet

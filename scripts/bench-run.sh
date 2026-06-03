@@ -11,7 +11,7 @@
 #
 # Prereqs (script auto-builds if missing):
 #   - z42vm release binary (artifacts/build/runtime/release/z42vm)
-#   - stdlib zpkgs (artifacts/build/libs/release/*.zpkg)
+#   - stdlib zpkgs (artifacts/build/libraries/dist/release/*.zpkg)
 
 set -euo pipefail
 
@@ -43,12 +43,12 @@ if [[ ! -x "$VM" ]]; then
 fi
 
 # ── Prereq: stdlib built ─────────────────────────────────────────────────
-if [[ ! -f artifacts/build/libs/release/z42.core.zpkg ]]; then
-    echo "→ stdlib not found in artifacts/build/libs/release/, building..."
+if [[ ! -f artifacts/build/libraries/dist/release/z42.core.zpkg ]]; then
+    echo "→ stdlib not found in artifacts/build/libraries/dist/release/, building..."
     ./scripts/build-stdlib.sh >/dev/null
-    # build-stdlib.sh writes to artifacts/build/libraries/; package.sh copies to artifacts/build/libs/release/
-    if [[ ! -f artifacts/build/libs/release/z42.core.zpkg ]]; then
-        echo "→ running package.sh to populate artifacts/build/libs/release/..."
+    # build-stdlib.sh writes to artifacts/build/libraries/; package.sh copies to artifacts/build/libraries/dist/release/
+    if [[ ! -f artifacts/build/libraries/dist/release/z42.core.zpkg ]]; then
+        echo "→ running package.sh to populate artifacts/build/libraries/dist/release/..."
         ./scripts/package.sh >/dev/null
     fi
 fi

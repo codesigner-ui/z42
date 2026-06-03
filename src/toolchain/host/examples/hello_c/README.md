@@ -15,7 +15,7 @@
 输出尾部：
 
 ```
-running: out/hello_c out/hello.zbc artifacts/build/libs/release
+running: out/hello_c out/hello.zbc artifacts/build/libraries/dist/release
 stdout: [host] hello, world
 
 ✅ hello_c end-to-end OK

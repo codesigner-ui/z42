@@ -34,25 +34,28 @@ The split is the conventional **intermediate / output / vendored** model
 |----------------------------|---------------------------------------------|----------|
 | `src/compiler/`            | `build/compiler/`                           | dotnet `bin`/`obj` for `z42c` |
 | `src/runtime/`             | `build/runtime/<cargo-target>/<profile>/`   | cargo target: `z42vm`, `libz42.*`, the `z42` trampoline, `z42-test-runner` |
-| `src/libraries/<lib>/`     | `build/libraries/<lib>/<profile>/`          | per-stdlib-lib compile (`dist/<lib>.zpkg` + `cache/`) |
-| (derived aggregate)        | `build/libs/<profile>/`                     | flat single-dir view of all stdlib `.zpkg` + `index.json` — the `Z42_LIBS` lookup target. Not a `src/` mirror; see note below. |
+| `src/libraries/<lib>/`     | `build/libraries/<lib>/<profile>/`          | **per-lib** compile, private to the build (`dist/<lib>.zpkg` + `cache/`) |
+| (aggregate copy-out)       | `build/libraries/dist/<profile>/`           | flat single-dir view of **all** stdlib `.zpkg` + `index.json` — the `Z42_LIBS` lookup target |
 | `src/toolchain/launcher/`  | `build/toolchain/launcher/`                 | `z42.launcher.zpkg` (toml `out_dir`) + `home/` (dev `$Z42_HOME`) |
 | `src/tests/`               | — (no build output)                         | |
 
-### `build/libs` — the one non-mirror (and why it stays for now)
+### `build/libraries/dist/<profile>` — the aggregate, not the per-lib trees
 
-The stdlib needs a single flat directory the VM points `Z42_LIBS` at,
-populated by `build-stdlib.sh` from each `build/libraries/<lib>/.../dist`.
-It's the only `build/` subdir with no `src/` counterpart, so a tidier name
-would be `build/libraries/_flat`. **It is deliberately *not* renamed**: the
-flat-view path is a **baked-in runtime contract** — `z42vm` hardcodes
-`artifacts/build/libs/{release,debug}` as its dev-mode `Z42_LIBS` fallback
-([`src/runtime/src/main.rs`](../../../src/runtime/src/main.rs), `config.rs`,
-`host_tests.rs`). Renaming `build/libs` would require changing that VM default
-+ recompiling + updating the host tests — a runtime-behavior change, not a
-cosmetic move. That's tracked as a separate follow-up
-(`reorg-artifacts-future-libs-flat`) rather than folded into this layout
-refactor.
+Each stdlib library builds privately into `build/libraries/<lib>/<profile>/`
+(with `debug`/`release` distinction). **z42vm and packaging must not depend on
+those per-lib subdirs** — they need a single flat directory. So after
+compiling, `build-stdlib.sh` copies every lib's `.zpkg`/`.zsym` + an
+`index.json` into the aggregate `build/libraries/dist/<profile>/`. That dir
+is:
+- z42vm's dev-mode `Z42_LIBS` fallback
+  ([`src/runtime/src/main.rs`](../../../src/runtime/src/main.rs) `resolve_libs_dir`,
+  `config.rs` hint, `host_tests.rs`);
+- what `package.sh` copies wholesale into a package's `libs/`.
+
+This keeps `build/` fully mirroring `src/` (everything maps to a `src/` path)
+while giving the VM/packaging one stable aggregate to point at. (Replaced the
+old top-level `build/libs/<profile>` — `reorg-artifacts-future-libs-flat`,
+folded into the layout refactor on 2026-06-04.)
 
 ### Why the launcher lives under `build/toolchain/launcher`
 

@@ -12,11 +12,11 @@
 - [x] 1.5 修 CI：launcher-env.sh 处理 Windows `.exe`（trampoline + z42vm），修复 regen-golden (Windows) 步 `no z42vm found` 失败
 - [x] 1.6 清理旧 `artifacts/launcher-home`（gitignored，本地 rm）
 
-## 阶段 2: build/libs → build/libraries/_flat（延后 — 见备注）
-- [ ] 2.x 暂不做：`build/libs` 是 z42vm 烘焙的 `Z42_LIBS` 默认 fallback 路径
-      （main.rs / config.rs / host_tests.rs），改名属运行时默认变更，需改 VM +
-      重编 + 改 host 测试，超出本次“目录组织”refactor。拆为独立
-      `reorg-artifacts-future-libs-flat`（roadmap Deferred 索引）。
+## 阶段 2: build/libs → build/libraries/dist/<profile>（✅ 完成 2026-06-04）
+- [x] 2.1 z42vm 默认 Z42_LIBS fallback：build/libs → build/libraries/dist（main.rs/config.rs/host_tests.rs）
+- [x] 2.2 build-stdlib + 全部脚本 + test-runner(bootstrap.rs) + z42c(SingleFileCompiler.cs) + host 平台脚本/示例 引用同步
+- [x] 2.3 验证：z42vm 重编 + flat view 落 dist/release + test-vm/test-stdlib GREEN
+
 
 ## deps 桶
 - 当前无填充物（cargo/nuget 缓存在 ~/.cargo /~/.nuget）；约定 + 布局文档说明即可。

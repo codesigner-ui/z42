@@ -83,7 +83,7 @@ echo "  native libs:     $NATIVE_LIBS"
 # ── (3) Ensure compiler + stdlib. ────────────────────────────────────────
 
 DRIVER_DLL="$ROOT/artifacts/build/compiler/z42.Driver/bin/z42c.dll"
-LIBS_DIR="$ROOT/artifacts/build/libs/release"
+LIBS_DIR="$ROOT/artifacts/build/libraries/dist/release"
 
 if [[ ! -f "$DRIVER_DLL" ]]; then
     echo "building compiler…"

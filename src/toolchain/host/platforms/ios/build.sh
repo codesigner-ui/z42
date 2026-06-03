@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build `Z42VM.xcframework` end-to-end and stage test bundle resources:
 #   1. Verify tooling (xcodebuild + 4 rust targets: 3 iOS + 1 macOS-arm64).
-#   2. Copy stdlib zpkgs from artifacts/build/libs/release/ into Resources/stdlib/.
+#   2. Copy stdlib zpkgs from artifacts/build/libraries/dist/release/ into Resources/stdlib/.
 #   3. cargo build × 4 targets in release.
 #   4. lipo -create the two iOS simulator slices into one universal.
 #   5. xcodebuild -create-xcframework: ios-device + sim-universal + macos-arm64.
@@ -62,7 +62,7 @@ fi
 
 # ── (2) Stdlib bundle. ───────────────────────────────────────────────────
 
-LIBS_DIR="$ROOT/artifacts/build/libs/release"
+LIBS_DIR="$ROOT/artifacts/build/libraries/dist/release"
 STDLIB_DIR="$HERE/Resources/stdlib"
 
 if [[ -d "$LIBS_DIR" ]]; then

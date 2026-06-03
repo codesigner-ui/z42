@@ -159,7 +159,7 @@ EOF
 
 pkg_copy_libs() {
     local pkg_dir="$1"
-    local libs_dir="$_PKG_HELPERS_ROOT/artifacts/build/libs/release"
+    local libs_dir="$_PKG_HELPERS_ROOT/artifacts/build/libraries/dist/release"
     if [[ ! -d "$libs_dir" ]]; then
         echo "error: stdlib not built at $libs_dir; run ./scripts/build-stdlib.sh" >&2
         return 1
@@ -551,8 +551,8 @@ pkg_sha256_check() {
         [[ -n "$sa" && "$sa" == "$sb" ]]
     }
 
-    # 1. libs/ files vs artifacts/build/libs/release/
-    local libs_src="$_PKG_HELPERS_ROOT/artifacts/build/libs/release"
+    # 1. libs/ files vs artifacts/build/libraries/dist/release/
+    local libs_src="$_PKG_HELPERS_ROOT/artifacts/build/libraries/dist/release"
     for f in "$pkg_dir/libs/"*; do
         local b
         b=$(basename "$f")
