@@ -121,7 +121,7 @@ echo "      ✓ bin/z42 (trampoline)"
 ( cd "$ROOT" && Z42_LIBS="$ROOT/artifacts/build/libs/release" \
     dotnet run --project src/compiler/z42.Driver --verbosity quiet -- \
     build src/toolchain/launcher/core/z42.launcher.z42.toml --release ) >/dev/null
-cp "$ROOT/src/toolchain/launcher/core/dist/z42.launcher.zpkg" "$PKG_DIR/launcher.zpkg"
+cp "$ROOT/artifacts/build/toolchain/launcher/z42.launcher.zpkg" "$PKG_DIR/launcher.zpkg"
 echo "      ✓ launcher.zpkg"
 
 # install-z42-to-home: ship the installer so `./install.sh` sets up $Z42_HOME.

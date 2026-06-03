@@ -19,7 +19,11 @@ include = ["*.z42"]
 "z42.crypto"      = "0.1.0"   # Sha256 — verify against SHA256SUMS
 
 [build]
-out_dir = "dist"
+# reorg-artifacts-layout (2026-06-04): emit launcher.zpkg into the shared
+# artifacts tree (mirrors src/toolchain/launcher) instead of a dist/ dir
+# inside src/. Relative from this toml's dir (src/toolchain/launcher/core)
+# up 4 levels to the repo root, then into artifacts/build/toolchain/launcher.
+out_dir = "../../../../artifacts/build/toolchain/launcher"
 
 [profile.release]
 mode     = "interp"

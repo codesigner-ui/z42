@@ -323,6 +323,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | ~~`jit-future-safepoint-inline`~~ | ✅ landed 2026-06-03 as [inline-jit-safepoint-check](spec/archive/2026-06-03-inline-jit-safepoint-check/tasks.md) — `atomic_rmw sub + brif` 内联在 translate.rs 5 处 emit site，slow path 走 `jit_check_safepoint_slow` 新 helper | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
 | `jit-future-f64-specialization` | F64 `fadd` / `fsub` / `fcmp` 走 native（结构与 I64 完全对称，只是 payload 类型）；等 F64-heavy benchmark 出现再做 | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
 | TLS 后续（streaming / system-roots / keepalive-pool / server）| `add-z42-net-tls` (2026-06-03) 客户端落地后的 4 项：https `SendStreaming`、honour 系统 CA、TLS 连接池、服务端 TLS | [stdlib/net.md](design/stdlib/net.md#net-future-tls--已落地-2026-06-03-add-z42-net-tls) |
+| `reorg-artifacts-future-libs-flat` | `build/libs` → `build/libraries/_flat`（让 build/ 全镜像 src）；阻塞 = z42vm 烘焙的 `Z42_LIBS` 默认 fallback 路径（main.rs/config.rs/host_tests.rs），需改 VM 默认 + 重编 + 改 host 测试 | [compiler/build-artifacts-layout.md](design/compiler/build-artifacts-layout.md#buildlibs--the-one-non-mirror-and-why-it-stays-for-now) |
 
 ### 实施期延后（D-* 系列）
 
