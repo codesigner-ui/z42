@@ -1,15 +1,14 @@
 //! `Std.OperatingSystem` builtins — process + machine info.
 //!
-//! Cross-platform implementation:
-//! - **Unix**: `libc::gethostname` + `libc::uname` for hostname / OS version.
-//! - **Windows**: not yet implemented (CI doesn't run windows yet);
-//!   returns `""` so script code keeps working with graceful degrade.
-//! - **Wasm**: no syscalls; everything returns `""` or sane defaults.
+//! Cross-platform impls now flow through `crate::pal::system` (review.md
+//! Part 1 P2 Phase 1, add-pal-system-phase1, 2026-06-03). This file is
+//! just the builtin-dispatch layer that wraps PAL calls into VM `Value`s.
 //!
-//! 2026-05-14 add-platform-os-stdlib.
+//! 2026-05-14 add-platform-os-stdlib (original landing).
 
 use super::convert::arg_str;
 use crate::metadata::Value;
+use crate::pal;
 use crate::vm_context::VmContext;
 use anyhow::Result;
 
@@ -38,7 +37,7 @@ pub fn builtin_system_set_cwd(_ctx: &VmContext, args: &[Value]) -> Result<Value>
 }
 
 pub fn builtin_system_hostname(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(get_hostname().unwrap_or_default().into()))
+    Ok(Value::Str(pal::system::hostname().unwrap_or_default().into()))
 }
 
 pub fn builtin_system_cpu_count(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
@@ -49,53 +48,13 @@ pub fn builtin_system_cpu_count(_ctx: &VmContext, _: &[Value]) -> Result<Value> 
 }
 
 pub fn builtin_system_os_version(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
-    Ok(Value::Str(get_os_version().into()))
+    Ok(Value::Str(pal::system::os_version().into()))
 }
 
-// ── platform-specific helpers ────────────────────────────────────────────
-
-#[cfg(unix)]
-fn get_hostname() -> Option<String> {
-    use std::ffi::CStr;
-    let mut buf = vec![0u8; 256];
-    let rc = unsafe {
-        libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len())
-    };
-    if rc != 0 { return None; }
-    // Find the terminating NUL — gethostname is C-string output.
-    let cstr = unsafe { CStr::from_ptr(buf.as_ptr() as *const libc::c_char) };
-    Some(cstr.to_string_lossy().into_owned())
-}
-
-#[cfg(not(unix))]
-fn get_hostname() -> Option<String> {
-    // Windows / wasm: graceful degrade. Real Windows impl via GetComputerNameW
-    // can land in a follow-up once a Windows CI runner exists.
-    None
-}
-
-#[cfg(unix)]
-fn get_os_version() -> String {
-    let mut utsname: libc::utsname = unsafe { std::mem::zeroed() };
-    if unsafe { libc::uname(&mut utsname) } != 0 {
-        return String::new();
-    }
-    fn cstr(arr: &[libc::c_char]) -> String {
-        let p = arr.as_ptr();
-        let cstr = unsafe { std::ffi::CStr::from_ptr(p) };
-        cstr.to_string_lossy().into_owned()
-    }
-    format!("{} {} {}",
-        cstr(&utsname.sysname),
-        cstr(&utsname.release),
-        cstr(&utsname.version))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn get_os_version() -> String { String::from("wasm") }
-
-#[cfg(all(not(unix), not(target_arch = "wasm32")))]
-fn get_os_version() -> String { String::new() }
+// add-pal-system-phase1 (2026-06-03): the unix / wasm / windows-stub
+// branches that used to live inline here now sit behind `crate::pal::system::*`.
+// Future PAL concerns (fs / signal / thread / mem) follow the same pattern —
+// see `docs/design/runtime/pal.md` for the migration plan.
 
 #[cfg(test)]
 #[path = "system_tests.rs"]

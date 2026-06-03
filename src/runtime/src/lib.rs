@@ -1,6 +1,11 @@
 pub mod metadata;
 pub mod corelib;
 pub mod gc;
+// review.md Part 1 P2 Phase 1 (2026-06-03, add-pal-system-phase1):
+// Platform Abstraction Layer — single home for every `#[cfg(target_os)]`
+// split. Phase 1 covers `system` (hostname / os_version);
+// Phase 2-N add fs / signal / thread / mem.
+pub mod pal;
 pub mod thread;
 pub mod exception;
 pub mod interp;

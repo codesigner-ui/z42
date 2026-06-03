@@ -967,7 +967,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
 | ✅ | ~~Polymorphic IC~~ (C4 P2 + C5 P2) — landed 2026-05-28 (jit-polymorphic-ic) | 2 | done | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
-| **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
+| 🟡 | **PAL 抽象层** (Part 1) — Phase 1 done 2026-06-03 (add-pal-system-phase1): `src/runtime/src/pal/` 模块 + `pal::system::{hostname, os_version}` 迁出 `corelib/system.rs` inline cfg blocks + 完整 design doc (`docs/design/runtime/pal.md`，含 CoreCLR 对照 + Phase 2-5 migration plan)。Phase 2 (`pal/fs.rs` 迁 corelib/fs.rs) / Phase 3 (`pal/signal.rs`) / Phase 4 (`pal/thread.rs`) / Phase 5 (`pal/mem.rs` for GC bump allocator) 独立 spec。 | 1 | Phase 1 done | arch |
 | **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
 | ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
 | **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
@@ -1400,7 +1400,7 @@ pub struct ScriptObject {
 | ✅ | ~~Polymorphic IC~~ (C4 P2 + C5 P2) — landed 2026-05-28 (jit-polymorphic-ic) | 2 | done | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
 | 🟡 | **ScriptObject header 瘦身**（E2.P6）— 2026-05-27 type_args 改 `Box<[String]>` 省 8 B/object；2026-06-02 (scriptobject-slots-boxed) `slots` 改 `Vec<Value>` → `Box<[Value]>` 再省 8 B/object (no `cap` word)；slots 长度在 `alloc_object` 固定后只索引读写，Box<[T]> 完美匹配。Full 32 B header 目标（Option-wrap empty type_args + NativeData 重打包）waits on StringId Phase B+。 | 5 | Step 1+2 done | data |
-| **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
+| 🟡 | **PAL 抽象层** (Part 1) — Phase 1 done 2026-06-03 (add-pal-system-phase1): `src/runtime/src/pal/` 模块 + `pal::system::{hostname, os_version}` 迁出 `corelib/system.rs` inline cfg blocks + 完整 design doc (`docs/design/runtime/pal.md`，含 CoreCLR 对照 + Phase 2-5 migration plan)。Phase 2 (`pal/fs.rs` 迁 corelib/fs.rs) / Phase 3 (`pal/signal.rs`) / Phase 4 (`pal/thread.rs`) / Phase 5 (`pal/mem.rs` for GC bump allocator) 独立 spec。 | 1 | Phase 1 done | arch |
 | **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
 | ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
 | **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
