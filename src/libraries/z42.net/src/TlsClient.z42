@@ -1,0 +1,233 @@
+namespace Std.Net.Sockets;
+
+using Std;
+using Std.IO;
+
+// add-z42-net-tls (2026-06-03): low-level extern wrappers for the
+// `__net_tls_*` VM builtins (corelib/tls.rs). The kind-tagged Array tuple
+// shape is identical to `__net_tcp_*`, so decoding reuses `NetTcpDecode`
+// (KIND_OK / KIND_SOCKET_ERR / KIND_HANDLE_INVALID / KIND_UNSUPPORTED).
+public static class NetTlsNative {
+    // timeoutMs <= 0 → blocking connect + handshake; > 0 bounds both.
+    [Native("__net_tls_connect")]
+    public static extern object[] Connect(string host, int port, int timeoutMs);
+
+    [Native("__net_tls_socket_read")]
+    public static extern object[] SocketRead(long slotId, byte[] buffer, int offset, int count);
+
+    [Native("__net_tls_socket_write")]
+    public static extern object[] SocketWrite(long slotId, byte[] buffer, int offset, int count);
+
+    [Native("__net_tls_socket_drop")]
+    public static extern void SocketDrop(long slotId);
+
+    // millis <= 0 clears the deadline (back to blocking).
+    [Native("__net_tls_socket_set_read_timeout")]
+    public static extern object[] SocketSetReadTimeout(long slotId, int millis);
+
+    [Native("__net_tls_socket_set_write_timeout")]
+    public static extern object[] SocketSetWriteTimeout(long slotId, int millis);
+}
+
+// add-z42-net-tls (2026-06-03): byte-oriented Stream over a rustls client TLS
+// session — the TLS analogue of `NetworkStream`. Read/Write forward to
+// `__net_tls_socket_*`, which encrypt/decrypt on the wire. Read returns 0 =
+// peer closed the TLS session (EOF); Write throws on broken pipe / reset.
+//
+// Co-located with TlsClient in this one file ON PURPOSE: z42's class-symbol
+// collection is file-order-sensitive, so a forward reference from
+// `TlsClient` (sorts before `TlsStream`) to a separate `TlsStream.z42` bound
+// a stub token distinct from the real class (E0402 "cannot assign TlsStream
+// to TlsStream"). Keeping the pair in one file removes the forward ref.
+// `NetworkStream` avoids this only by alphabetical luck (sorts before
+// `TcpClient`). `TlsClient.GetStream()` additionally returns the base
+// `Std.IO.Stream` so `HttpClient` (another file) never names `TlsStream`.
+//
+// Lifecycle owned by TlsClient: Close() only marks _closed; the fd + TLS
+// state are released in TlsClient.Dispose() via `__net_tls_socket_drop`.
+// The kind-tagged tuple shape matches the raw TCP builtins, so `NetTcpDecode`
+// decodes TLS results too.
+public class TlsStream : Stream {
+    private long _slotId;
+    private bool _closed;
+
+    public TlsStream(long slotId) {
+        this._slotId = slotId;
+        this._closed = false;
+    }
+
+    override bool CanRead() {
+        return !this._closed;
+    }
+
+    override bool CanWrite() {
+        return !this._closed;
+    }
+
+    override bool CanSeek() {
+        return false;
+    }
+
+    override int Read(byte[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (count == 0) return 0;
+        object[] raw = NetTlsNative.SocketRead(this._slotId, buffer, offset, count);
+        return NetTcpDecode.ToInt(raw);
+    }
+
+    override void Write(byte[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (count == 0) return;
+        object[] raw = NetTlsNative.SocketWrite(this._slotId, buffer, offset, count);
+        // Blocking write — OK means every byte was encrypted + flushed
+        // (Rust side does write_all + flush); short writes are impossible.
+        NetTcpDecode.ToInt(raw);
+    }
+
+    override void Close() {
+        this._closed = true;
+    }
+
+    // Package-private (z42 has no `internal`): TlsClient.Dispose flips _closed
+    // even if the user holds a cached reference.
+    public void MarkClosed() {
+        this._closed = true;
+    }
+
+    private void EnsureOpen() {
+        if (this._closed) {
+            throw new SocketClosedException();
+        }
+    }
+}
+
+// add-z42-net-tls (2026-06-03): sync blocking TLS client — the TLS analogue
+// of `TcpClient`. Certificate verification is always on (rustls + bundled
+// Mozilla roots, server name = the connect host for SNI). There is no
+// plaintext fallback: a handshake / cert failure throws `SocketException`.
+//
+// Lifecycle mirrors TcpClient:
+//   var c = new TlsClient();
+//   c.Connect("example.com", 443, 0);   // TCP connect + TLS handshake
+//   var s = c.GetStream();              // cached TlsStream
+//   s.Write(req, 0, req.Length);
+//   var n = s.Read(buf, 0, buf.Length);
+//   c.Dispose();                        // closes fd + TLS session
+//
+// Unlike TcpClient this has no listener/accept side (TLS server is a future
+// follow-up) and no connection pool — `HttpClient` opens a fresh TLS
+// connection per https request in v1 (keep-alive pooling is TCP-only).
+public class TlsClient {
+    private long      _slotId;
+    private bool      _connected;
+    private bool      _disposed;
+    private TlsStream _stream;
+    private string    _remoteHost;
+    private int       _remotePort;
+
+    public TlsClient() {
+        this._slotId     = -1;
+        this._connected  = false;
+        this._disposed   = false;
+        this._stream     = null;
+        this._remoteHost = "";
+        this._remotePort = 0;
+    }
+
+    /// Establish a TCP connection to `host:port` and complete a TLS
+    /// handshake (SNI = `host`, certificate verified against the bundled
+    /// roots). Blocks until the handshake finishes or fails. `timeoutMs > 0`
+    /// bounds both the TCP connect and the handshake; `<= 0` blocks.
+    /// Throws `SocketException` on connection refused / DNS failure /
+    /// certificate rejection / handshake error.
+    public void Connect(string host, int port, int timeoutMs) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (this._connected) {
+            throw new InvalidOperationException("TlsClient already connected");
+        }
+        object[] raw = NetTlsNative.Connect(host, port, timeoutMs);
+        long slotId = NetTcpDecode.ToSlot(raw);
+        this._slotId     = slotId;
+        this._connected  = true;
+        this._remoteHost = host;
+        this._remotePort = port;
+    }
+
+    /// Get the byte-oriented stream over this session. Lazy + cached: repeat
+    /// calls return the same instance. Returns the base `Std.IO.Stream` (the
+    /// concrete type is `TlsStream`) so callers in other files never name
+    /// `TlsStream` across the file boundary — see the file-order note above.
+    public Stream GetStream() {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException("TlsClient not connected — call Connect first");
+        }
+        if (this._stream == null) {
+            this._stream = new TlsStream(this._slotId);
+        }
+        return this._stream;
+    }
+
+    /// Host this client connected to. Useful for error messages / logging.
+    public string RemoteHost() {
+        return this._remoteHost;
+    }
+
+    public int RemotePort() {
+        return this._remotePort;
+    }
+
+    /// Per-session read deadline on the underlying socket. `millis <= 0`
+    /// clears it (back to blocking). Throws `SocketException` if the OS
+    /// rejects the value.
+    public void SetReadTimeout(int millis) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException("TlsClient not connected — call Connect first");
+        }
+        object[] raw = NetTlsNative.SocketSetReadTimeout(this._slotId, millis);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            NetTcpDecode.Throw(raw, kind);
+        }
+    }
+
+    public void SetWriteTimeout(int millis) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException("TlsClient not connected — call Connect first");
+        }
+        object[] raw = NetTlsNative.SocketSetWriteTimeout(this._slotId, millis);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            NetTcpDecode.Throw(raw, kind);
+        }
+    }
+
+    /// Close the session and release the underlying fd. Idempotent.
+    /// Subsequent operations throw `SocketClosedException`.
+    public void Dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        if (this._stream != null) {
+            this._stream.MarkClosed();
+        }
+        if (this._connected) {
+            NetTlsNative.SocketDrop(this._slotId);
+            this._connected = false;
+        }
+    }
+
+    /// Alias for `Dispose()` matching `TcpClient.Close()`.
+    public void Close() {
+        this.Dispose();
+    }
+}

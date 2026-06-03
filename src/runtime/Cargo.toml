@@ -143,6 +143,15 @@ getrandom = "0.2"
 # for SO_REUSEADDR / SO_KEEPALIVE. Rust networking working group crate;
 # only deps libc on Unix; ships Winsock bindings on Windows.
 socket2 = { version = "0.5", features = ["all"] }
+# add-z42-net-tls (2026-06-03): pure-Rust TLS for Std.Net (HTTPS in
+# HttpClient + raw TlsClient). rustls with the `ring` crypto backend
+# (no OpenSSL / no aws-lc-rs C-toolchain dependency → identical build
+# across host + cross-compile targets, same rationale as bundled libffi).
+# webpki-roots bundles the Mozilla CA root set so cert verification works
+# with zero host trust-store wiring. tls12 enabled for broad endpoint
+# compatibility.
+rustls       = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "0.26"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

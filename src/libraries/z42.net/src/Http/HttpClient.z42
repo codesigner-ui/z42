@@ -8,11 +8,14 @@ using Std.Crypto;
 using Std.Encoding;
 using Std.Net.Sockets;
 
-// add-z42-net-http K3 (2026-05-25): HTTP/1.1 client over plaintext TCP.
+// add-z42-net-http K3 (2026-05-25): HTTP/1.1 client over TCP, plus TLS.
 //
-// Pure-script over `Std.Net.Sockets.TcpClient` (K1). No VM changes.
-// http:// only — https:// throws `NotSupportedException` (TLS is
-// `add-z42-net-tls` follow-up).
+// Pure-script over `Std.Net.Sockets.TcpClient` (K1) for http:// and
+// `Std.Net.Sockets.TlsClient` (add-z42-net-tls, 2026-06-03) for https://.
+// `_sendOnce` branches once on scheme; the https path buffers the body
+// (no keep-alive pool, fresh connection per request). `SendStreaming`
+// over https is a follow-up (the streaming body owns its transport as a
+// `TcpClient`) and throws `NotSupportedException` for now.
 //
 // Connection: close 单 request per TCP connection (keep-alive is
 // `add-z42-net-http-keepalive` follow-up). Body 一次性读到 byte[]
@@ -222,7 +225,7 @@ public class HttpClient {
         // add-z42-net-http-digest-auth (2026-05-31): one-shot Digest 401
         // retry per outer Send call. Tracked here (not on HttpClient) so
         // concurrent calls don't clobber each other's flag.
-        bool digestRetried = false;
+        int digestAttempts = 0;
         while (true) {
             HttpResponse resp = this._sendOnce(cur);
             // Digest auth: handle 401 challenge BEFORE redirect logic.
@@ -231,16 +234,26 @@ public class HttpClient {
             // so propagate the 401 to the caller instead of looping.
             if (resp.StatusCode == 401
                 && cur.DigestUser.Length > 0
-                && !digestRetried) {
+                && digestAttempts < 2) {
                 string challenge = resp.Headers.Get("WWW-Authenticate");
                 string digestPart = HttpClient._extractDigestChallenge(challenge);
                 if (digestPart != null) {
+                    // add-digest-auth-int-and-stale (2026-06-03): on the
+                    // 2nd 401, only retry if the server explicitly signals
+                    // `stale=true`. Otherwise the credentials are wrong
+                    // and looping is pointless.
+                    if (digestAttempts >= 1) {
+                        if (!HttpClient._digestChallengeIsStale(digestPart)) {
+                            return resp;
+                        }
+                    }
                     HttpUrl u = HttpUrl.Parse(cur.Url);
                     string authHeader = HttpClient._buildDigestAuthHeader(
                         digestPart, cur.Method, u.Path,
-                        cur.DigestUser, cur.DigestPassword);
+                        cur.DigestUser, cur.DigestPassword,
+                        cur.Body);
                     cur.Headers.Set("Authorization", authHeader);
-                    digestRetried = true;
+                    digestAttempts = digestAttempts + 1;
                     continue;
                 }
             }
@@ -495,15 +508,44 @@ public class HttpClient {
         return Md5.HashStringHex(input);
     }
 
+    /// True iff the parsed challenge contains `stale=true` (case-
+    /// insensitive). Server-issued signal that the prior nonce is
+    /// rotated and the client should retry with the fresh one without
+    /// re-prompting the user. RFC 7616 §3.3. add-digest-auth-int-and-
+    /// stale (2026-06-03).
+    static bool _digestChallengeIsStale(string challengeParams) {
+        object[] parsed = HttpClient._parseDigestParams(challengeParams);
+        string[] names  = (string[])parsed[0];
+        string[] values = (string[])parsed[1];
+        string stale = HttpClient._digestParamGet(names, values, "stale").ToLower();
+        return stale == "true";
+    }
+
+    /// Bytes variant for the body hash in qop=auth-int. Empty byte[]
+    /// hashes via the documented "empty input" convention for each
+    /// algorithm — MD5("") = d41d8cd98f00b204e9800998ecf8427e and
+    /// SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.
+    /// add-digest-auth-int-and-stale (2026-06-03).
+    static string _digestHashHexBytes(string algo, byte[] input) {
+        if (algo == "sha-256") {
+            return Hex.Encode(Sha256.Hash(input));
+        }
+        return Hex.Encode(Md5.Hash(input));
+    }
+
     /// Build the `Authorization: Digest ...` header value for the given
-    /// challenge + request method + path. Throws `HttpProtocolException`
-    /// for v0-unsupported variants (algorithm / qop).
+    /// challenge + request method + path + body. Throws
+    /// `HttpProtocolException` for unsupported variants (algorithm).
+    /// add-digest-auth-int-and-stale (2026-06-03): body bytes feed
+    /// `HA2 = H(method:uri:H(body))` when the server's qop offering
+    /// includes `auth-int` and not `auth`.
     static string _buildDigestAuthHeader(
             string challengeParams,
             string method,
             string uri,
             string user,
-            string password) {
+            string password,
+            byte[] body) {
         object[] parsed = HttpClient._parseDigestParams(challengeParams);
         string[] names  = (string[])parsed[0];
         string[] values = (string[])parsed[1];
@@ -521,9 +563,9 @@ public class HttpClient {
                 + "' (v0 supports MD5 + SHA-256 only)");
         }
 
-        // qop may be comma-separated list (e.g. "auth,auth-int"). Pick
-        // `auth` if it's listed; otherwise the only one. If only auth-int
-        // is offered, reject.
+        // qop may be comma-separated list (e.g. "auth,auth-int"). Prefer
+        // `auth` if listed; otherwise fall back to `auth-int`. If neither
+        // is recognised, reject.
         string qopSelected = "auth";
         if (qop.Length > 0) {
             bool hasAuth = false;
@@ -538,23 +580,33 @@ public class HttpClient {
                 if (token == "auth-int") hasAuthInt = true;
                 if (p < qop.Length) p = p + 1;
             }
-            if (!hasAuth && hasAuthInt) {
-                throw new HttpProtocolException(
-                    "unsupported Digest qop 'auth-int' (v0 supports auth only)");
-            }
             if (!hasAuth && !hasAuthInt) {
                 throw new HttpProtocolException(
                     "unrecognised Digest qop '" + qop + "'");
             }
-            qopSelected = "auth";
+            if (hasAuth) {
+                qopSelected = "auth";
+            } else {
+                qopSelected = "auth-int";
+            }
         }
 
         // HA1 = H(user:realm:password)
         string ha1 = HttpClient._digestHashHex(algo,
             user + ":" + realm + ":" + password);
 
-        // HA2 = H(method:uri) — qop=auth (auth-int adds :H(body), v0 N/A)
-        string ha2 = HttpClient._digestHashHex(algo, method + ":" + uri);
+        // HA2 depends on qop:
+        //   qop=auth (or absent): HA2 = H(method:uri)
+        //   qop=auth-int:         HA2 = H(method:uri:H(body))
+        string ha2;
+        if (qopSelected == "auth-int") {
+            byte[] bodyBytes = (body == null) ? new byte[0] : body;
+            string bodyHash = HttpClient._digestHashHexBytes(algo, bodyBytes);
+            ha2 = HttpClient._digestHashHex(algo,
+                method + ":" + uri + ":" + bodyHash);
+        } else {
+            ha2 = HttpClient._digestHashHex(algo, method + ":" + uri);
+        }
 
         // cnonce = 16 random bytes as hex (32 chars)
         byte[] rnd = SecureRandom.GetBytes(16);
@@ -631,13 +683,17 @@ public class HttpClient {
     /// can wrap the stream via `Gzip.WrapRead(response.BodyStream)`).
     public HttpResponse SendStreaming(HttpRequest request) {
         HttpUrl url = HttpUrl.Parse(request.Url);
+        // add-z42-net-tls (2026-06-03): streaming-over-TLS is a follow-up —
+        // _HttpBodyStream owns its transport as a `TcpClient` for disposal,
+        // so an https streaming body can't be framed yet. Fail fast with a
+        // clear message rather than plaintext-connecting to port 443.
+        if (url.Scheme == "https") {
+            throw new NotSupportedException(
+                "SendStreaming over https is not supported yet (TLS streaming-body is a follow-up); use Send/Get which buffers the body, or fetch over http://");
+        }
         // Inject required headers (same as _sendOnce).
         if (!request.Headers.Contains("Host")) {
-            string hostHeader = url.Host;
-            if (url.Port != 80) {
-                hostHeader = hostHeader + ":" + Int32.ToString(url.Port);
-            }
-            request.Headers.Set("Host", hostHeader);
+            request.Headers.Set("Host", HttpClient._hostHeaderFor(url));
         }
         if (!request.Headers.Contains("User-Agent")) {
             request.Headers.Set("User-Agent", this._userAgent);
@@ -690,11 +746,7 @@ public class HttpClient {
 
         // Inject required headers (don't clobber if user already set).
         if (!request.Headers.Contains("Host")) {
-            string hostHeader = url.Host;
-            if (url.Port != 80) {
-                hostHeader = hostHeader + ":" + Int32.ToString(url.Port);
-            }
-            request.Headers.Set("Host", hostHeader);
+            request.Headers.Set("Host", HttpClient._hostHeaderFor(url));
         }
         if (!request.Headers.Contains("User-Agent")) {
             request.Headers.Set("User-Agent", this._userAgent);
@@ -727,6 +779,14 @@ public class HttpClient {
 
         // Serialise request → byte[]
         byte[] reqBytes = HttpClient._serialiseRequest(request, url);
+
+        // add-z42-net-tls (2026-06-03): https goes over a TLS transport. The
+        // body is fully buffered (like the TCP path), so the connection is
+        // opened fresh per request and disposed afterwards — no keep-alive
+        // pool for TLS in v1 (the pool array is typed `TcpClient[]`).
+        if (url.Scheme == "https") {
+            return this._sendOverTls(url, reqBytes);
+        }
 
         string poolKey = url.Host + ":" + Int32.ToString(url.Port);
         var resp = HttpClient._initialResp();
@@ -774,6 +834,16 @@ public class HttpClient {
         } else {
             try { client.Dispose(); } catch (Exception e) { /* swallow */ }
         }
+        this._postProcessResponse(resp, url);
+        return resp;
+    }
+
+    /// Shared response post-processing for both the TCP (`_sendOnce`) and
+    /// TLS (`_sendOverTls`) buffered paths: auto-decompress the body and
+    /// ingest Set-Cookie headers into the attached jar. Mutates `resp.Body`
+    /// in place. add-z42-net-tls (2026-06-03) extracted this so the https
+    /// path gets identical gzip/brotli + cookie behaviour.
+    private void _postProcessResponse(HttpResponse resp, HttpUrl url) {
         // add-z42-net-http-compression (2026-05-27): auto-decode gzip
         // response body before cookies / downstream observers see it.
         // add-z42-net-http-brotli (2026-05-30): same path also decodes
@@ -828,7 +898,48 @@ public class HttpClient {
                 hi = hi + 1;
             }
         }
+    }
+
+    /// add-z42-net-tls (2026-06-03): buffered https send. Opens a fresh TLS
+    /// connection (cert verified against bundled roots, SNI = host), writes
+    /// the serialised request, reads the full response, then disposes the
+    /// connection. No keep-alive pool (the pool is `TcpClient[]`); no
+    /// stale-connection retry needed since the socket is always fresh.
+    private HttpResponse _sendOverTls(HttpUrl url, byte[] reqBytes) {
+        var client = new TlsClient();
+        client.Connect(url.Host, url.Port, this._timeoutMs);
+        var resp = HttpClient._initialResp();
+        try {
+            if (this._timeoutMs > 0) {
+                client.SetReadTimeout(this._timeoutMs);
+                client.SetWriteTimeout(this._timeoutMs);
+            }
+            Stream stream = client.GetStream();
+            stream.Write(reqBytes, 0, reqBytes.Length);
+            resp = HttpClient._readResponse(stream);
+        } catch (Exception e) {
+            try { client.Dispose(); } catch (Exception e2) { /* swallow */ }
+            throw e;
+        }
+        try { client.Dispose(); } catch (Exception e) { /* swallow */ }
+        this._postProcessResponse(resp, url);
         return resp;
+    }
+
+    /// Value for the `Host` request header: bare host, with `:port` appended
+    /// only when the port is non-default for the scheme (80 for http, 443
+    /// for https). add-z42-net-tls (2026-06-03).
+    static string _hostHeaderFor(HttpUrl url) {
+        bool nonDefault;
+        if (url.Scheme == "https") {
+            nonDefault = url.Port != 443;
+        } else {
+            nonDefault = url.Port != 80;
+        }
+        if (nonDefault) {
+            return url.Host + ":" + Int32.ToString(url.Port);
+        }
+        return url.Host;
     }
 
     /// Stub for `var resp = ...` initializer — z42 var inference needs

@@ -31,8 +31,10 @@ public class HttpUrl {
         return this.Path + this.Query;
     }
 
-    /// Parse an absolute URL. Throws `FormatException` on malformed input,
-    /// `NotSupportedException` if scheme == "https" (TLS not in K3 v0).
+    /// Parse an absolute URL. Throws `FormatException` on malformed input
+    /// (unknown scheme, bad port, empty host/authority). Both `http://`
+    /// (default port 80) and `https://` (default port 443) are accepted —
+    /// add-z42-net-tls (2026-06-03) wired the TLS transport.
     public static HttpUrl Parse(string url) {
         if (url == null || url.Length == 0) {
             throw new FormatException("HttpUrl.Parse: empty URL");
@@ -43,12 +45,15 @@ public class HttpUrl {
             throw new FormatException("HttpUrl.Parse: missing scheme (no '://') in '" + url + "'");
         }
         string scheme = HttpUrl._substring(url, 0, schemeEnd).ToLower();
-        if (scheme == "https") {
-            throw new NotSupportedException(
-                "HTTPS is not supported in z42.net v0; needs add-z42-net-tls follow-up");
+        if (scheme != "http" && scheme != "https") {
+            throw new FormatException("HttpUrl.Parse: only http:// and https:// are supported, got scheme '" + scheme + "'");
         }
-        if (scheme != "http") {
-            throw new FormatException("HttpUrl.Parse: only http:// is supported, got scheme '" + scheme + "'");
+        // add-z42-net-tls (2026-06-03): scheme-default port — http→80, https→443.
+        int defaultPort;
+        if (scheme == "https") {
+            defaultPort = 443;
+        } else {
+            defaultPort = 80;
         }
         int authStart = schemeEnd + 3;
         // Find path / query start (first '/' or '?' or end)
@@ -73,7 +78,7 @@ public class HttpUrl {
         int colonAt = HttpUrl._indexOf(authority, ":", 0);
         if (colonAt < 0) {
             host = authority;
-            port = 80;   // http default
+            port = defaultPort;   // scheme default (80 / 443)
         } else {
             host = HttpUrl._substring(authority, 0, colonAt);
             string portStr = HttpUrl._substring(authority, colonAt + 1, authority.Length);

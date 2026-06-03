@@ -1,13 +1,14 @@
 # z42.net
 
-Network sockets + HTTP + WebSocket — sync today, async + TLS later.
+Network sockets + HTTP + HTTPS + WebSocket — sync today, async later.
 
 ## v0 scope (K1 + K2 + K3 + K4, 2026-05-24 / 2026-05-25 / 2026-05-25 / 2026-05-25)
 
 **K1 = TCP** (`add-z42-net`, 2026-05-24). **K2 = UDP** (`add-z42-net-udp`,
 2026-05-25). **K3 = HTTP/1.1 plaintext** (`add-z42-net-http`, 2026-05-25).
-**K4 = WebSocket ws://** (`add-z42-net-websocket`, 2026-05-25). IPAddress /
-DNS / TLS / HTTPS / wss:// / HTTP/2 / Async still 独立 follow-up specs.
+**K4 = WebSocket ws://** (`add-z42-net-websocket`, 2026-05-25). **TLS / HTTPS**
+(`add-z42-net-tls`, 2026-06-03) — client-side, see the TLS section below.
+wss:// / HTTP/2 / Async still 独立 follow-up specs.
 
 ### Public API
 
@@ -219,19 +220,76 @@ Shipped:
 
 TCP read/write timeout already landed 2026-05-27 (`add-httpclient-timeout`).
 
-### `net-future-tls` — TLS / HTTPS
+### ~~`net-future-tls`~~ — **✅ 已落地 2026-06-03 (add-z42-net-tls)**
 
-- **来源**：K1 明确 out of scope
-- **触发原因**：需要 OpenSSL / rustls cdylib（重 dep + 跨平台分发复杂）
-- **触发条件**：HTTP client / 安全 RPC 需求
-- **当前 workaround**：shell out to curl
+TLS client + HTTPS. Pure-Rust [rustls](https://github.com/rustls/rustls) with
+the `ring` crypto backend (no OpenSSL / no aws-lc-rs C toolchain → identical
+build across host + cross-compile targets, same rationale as the bundled
+libffi). Certificate verification is **always on** against the bundled Mozilla
+root set ([webpki-roots](https://github.com/rustls/webpki-roots)) — deterministic,
+zero per-OS trust-store wiring, refreshed by a dep bump. There is no plaintext
+fallback: a cert/handshake failure throws `SocketException`.
+
+**Usage**
+
+```z42
+// Raw TLS socket (Std.Net.Sockets.TlsClient — TLS analogue of TcpClient):
+var c = new TlsClient();
+c.Connect("example.com", 443, 5000);   // TCP connect + TLS handshake (5s budget)
+var s = c.GetStream();                  // TlsStream : Stream
+s.Write(reqBytes, 0, reqBytes.Length);  // encrypted on the wire
+int n = s.Read(buf, 0, buf.Length);     // decrypted; 0 = peer closed session
+c.Dispose();
+
+// HTTPS just works through HttpClient — scheme selects the transport:
+HttpResponse r = new HttpClient().Get("https://example.com/");
+```
+
+**Architecture**
+
+```
+HttpClient.Get("https://…")
+  └ HttpUrl.Parse → scheme=https, default port 443
+  └ _sendOnce: scheme==https → _sendOverTls (fresh conn, body buffered, no pool)
+       TlsClient.Connect → __net_tls_connect → (Rust) TcpStream::connect
+            + rustls ClientConnection (SNI=host, RootCertStore=webpki-roots, verify ON)
+            → StreamOwned<ClientConnection,TcpStream> in VmCore.tls_sockets slot
+       TlsStream.Read/Write → __net_tls_socket_read/write (slot) → rustls decrypt/encrypt
+  └ existing _readResponse + _postProcessResponse (gzip/brotli + cookies) unchanged
+```
+
+**Design decisions / rationale**
+
+- **Own builtins + slot table, not retrofitting TCP** (`__net_tls_*` +
+  `VmCore.tls_sockets`): clean separation from raw TCP, same slot-id discipline,
+  `Send+Sync` like the TCP sockets. The kind-tagged return tuple is identical to
+  `__net_tcp_*`, so z42 reuses `NetTcpDecode` for both.
+- **`__net_tls_connect(host, port, timeoutMs)`** forces the handshake at connect
+  (`complete_io`) so cert/protocol errors surface immediately, not on first read.
+  `timeoutMs > 0` bounds both the TCP connect and the handshake; the deadline is
+  then cleared (per-call read/write timeouts are set separately).
+- **`TlsStream : Stream`** so the existing HTTP framing (`_readResponse`,
+  `_buildBodyStream`, `_HttpBodyStream`) works unchanged. `HttpClient._sendOnce`
+  branches once on scheme.
+
+**Known limitations (own follow-ups)**
+
+- `net-future-tls-streaming` — `HttpClient.SendStreaming` over https. `_HttpBodyStream`
+  owns its transport as a `TcpClient` for disposal; until that's generalised,
+  streaming over https throws `NotSupportedException`. Use `Send`/`Get` (buffered).
+- `net-future-tls-system-roots` — honour enterprise/system-added CAs (today only
+  the bundled Mozilla set is trusted).
+- `net-future-tls-keepalive-pool` — HTTPS opens a fresh connection per request
+  (the keep-alive pool is `TcpClient[]`); TLS connection pooling is unaddressed.
+- `net-future-tls-server` — server-side TLS (`TlsListener`/accept). v1 is client-only.
 
 ### ~~`net-future-http`~~ — **✅ 已落地 2026-05-25 (add-z42-net-http K3)**
 
 Shipped: `Std.Net.Http.{HttpClient, HttpRequest, HttpResponse, HttpHeaders,
 HttpMethod, HttpStatusCode, HttpException, HttpProtocolException, HttpUrl}`.
-Pure-script over TcpClient (K1), no new VM builtin. http:// only —
-https:// throws NotSupportedException pending `add-z42-net-tls`. Supports
+Pure-script over TcpClient (K1) for http://, and over TlsClient
+(`add-z42-net-tls`, 2026-06-03) for https:// — `_sendOnce` branches once on
+scheme. Supports
 Content-Length and Transfer-Encoding: chunked incoming; outgoing always
 Content-Length. Case-insensitive HttpHeaders (raw string[]+count storage
 since z42 field generic types are unsupported). 13 z42 tests cover

@@ -1,0 +1,51 @@
+// add-z42-net-tls (2026-06-03): deterministic (no-network) coverage for the
+// https wiring. The live TLS handshake + GET is validated by the Rust
+// `tls_tests::real_https_handshake_and_get_round_trip` (run with --ignored)
+// and end-to-end by `z42 install` over GitHub HTTPS — neither belongs in the
+// default stdlib suite since CI network egress isn't guaranteed. Here we pin
+// the parts that must hold without a socket: https URL parsing (scheme +
+// default port 443) and the SendStreaming-over-https guard.
+namespace Z42NetHttpsUrlTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Http;
+
+[Test]
+void test_https_url_parses_with_default_port_443() {
+    HttpUrl u = HttpUrl.Parse("https://example.com/path?q=1");
+    Assert.Equal("https", u.Scheme);
+    Assert.Equal("example.com", u.Host);
+    Assert.Equal(443, u.Port);
+    Assert.Equal("/path", u.Path);
+    Assert.Equal("?q=1", u.Query);
+}
+
+[Test]
+void test_https_url_explicit_port_preserved() {
+    HttpUrl u = HttpUrl.Parse("https://example.com:8443/");
+    Assert.Equal("https", u.Scheme);
+    Assert.Equal(8443, u.Port);
+}
+
+[Test]
+void test_http_url_still_defaults_to_80() {
+    HttpUrl u = HttpUrl.Parse("http://example.com/");
+    Assert.Equal("http", u.Scheme);
+    Assert.Equal(80, u.Port);
+}
+
+[Test]
+void test_streaming_over_https_throws_not_supported() {
+    // TLS streaming-body is a follow-up; until then SendStreaming must fail
+    // fast (before any connect) rather than plaintext-connecting to :443.
+    var client = new HttpClient();
+    var req = new HttpRequest(HttpMethod.Get, "https://example.com/big");
+    bool threw = false;
+    try {
+        client.SendStreaming(req);
+    } catch (NotSupportedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

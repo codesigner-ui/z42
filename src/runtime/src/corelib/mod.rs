@@ -41,6 +41,7 @@ pub mod system;
 pub mod threading;
 pub mod sync;
 pub mod network;
+pub mod tls;
 pub mod crypto;
 
 use crate::metadata::tokens::BuiltinId;
@@ -379,6 +380,14 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__net_tcp_listen_with_options",  network::builtin_net_tcp_listen_with_options),
     ("__net_udp_set_read_timeout",     network::builtin_net_udp_set_read_timeout),
     ("__net_udp_set_write_timeout",    network::builtin_net_udp_set_write_timeout),
+
+    // ── add-z42-net-tls (2026-06-03) — rustls client TLS streams (HTTPS) ──
+    ("__net_tls_connect",                  tls::builtin_net_tls_connect),
+    ("__net_tls_socket_read",              tls::builtin_net_tls_socket_read),
+    ("__net_tls_socket_write",             tls::builtin_net_tls_socket_write),
+    ("__net_tls_socket_drop",              tls::builtin_net_tls_socket_drop),
+    ("__net_tls_socket_set_read_timeout",  tls::builtin_net_tls_socket_set_read_timeout),
+    ("__net_tls_socket_set_write_timeout", tls::builtin_net_tls_socket_set_write_timeout),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
