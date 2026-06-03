@@ -31,7 +31,9 @@ echo "Installing z42 $VERSION → $Z42_HOME"
 mkdir -p "$Z42_HOME/bin" "$Z42_HOME/launcher"
 
 # 1. trampoline + compiler on PATH
-cp -f "$PKG/bin/$tramp" "$Z42_HOME/bin/$tramp"
+# launcher-at-package-root (2026-06-04): trampoline is at the package ROOT
+# ($PKG/z42), not $PKG/bin/. It still installs onto PATH at $Z42_HOME/bin/.
+cp -f "$PKG/$tramp" "$Z42_HOME/bin/$tramp"
 [ -f "$PKG/bin/$z42c" ] && cp -f "$PKG/bin/$z42c" "$Z42_HOME/bin/$z42c"
 
 # 2. launcher runtime (runs the launcher core)

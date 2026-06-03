@@ -22,6 +22,8 @@ The split is the conventional **intermediate / output / vendored** model
 - **`packages/`** = "things we ship." Assembled by copying selected `build/`
   outputs into the per-RID SDK package layout
   (see [`docs/spec/archive/2026-05-13-define-package-layout`](../../spec/archive/2026-05-13-define-package-layout/)).
+  The package's entry trampoline `z42` sits at the package **root** (not `bin/`);
+  `bin/` holds apps (z42c, z42vm) — see [`runtime/launcher.md`](../runtime/launcher.md).
 - **`deps/`** = "things someone else gave us." Reserved for build-fetched
   third-party binaries (a pinned `wasm-opt`/`binaryen`, cross sysroots, …).
   Currently unpopulated — cargo/NuGet caches live in `~/.cargo` / `~/.nuget`,

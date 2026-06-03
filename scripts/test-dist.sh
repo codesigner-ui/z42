@@ -80,11 +80,12 @@ OVERALL_FAIL=0
 OVERALL_COMPILE_FAIL=0
 
 # ── Launcher smoke (bundle-launcher-in-release) ──────────────────────────────
-# The package ships bin/z42 (trampoline) + launcher.zpkg. Verify portable
-# resolution works: with no $Z42_HOME, `z42 which` runs the launcher core via
-# the package-relative z42vm and reports that same bundled z42vm.
-Z42_LAUNCHER_BIN="$DIST_DIR/bin/z42"
-[ -f "$DIST_DIR/bin/z42.exe" ] && Z42_LAUNCHER_BIN="$DIST_DIR/bin/z42.exe"
+# The package ships z42 (trampoline, at the package ROOT — launcher-at-package-root)
+# + launcher.zpkg. Verify portable resolution works: with no $Z42_HOME,
+# `z42 which` runs the launcher core via the package-relative bin/z42vm and
+# reports that same bundled z42vm.
+Z42_LAUNCHER_BIN="$DIST_DIR/z42"
+[ -f "$DIST_DIR/z42.exe" ] && Z42_LAUNCHER_BIN="$DIST_DIR/z42.exe"
 if [ -x "$Z42_LAUNCHER_BIN" ] && [ -f "$DIST_DIR/launcher.zpkg" ]; then
     echo "Launcher smoke (portable): $Z42_LAUNCHER_BIN"
     which_out=$(env -u Z42_HOME "$Z42_LAUNCHER_BIN" which 2>&1 || true)
@@ -108,7 +109,7 @@ if [ -x "$Z42_LAUNCHER_BIN" ] && [ -f "$DIST_DIR/launcher.zpkg" ]; then
     fi
     echo ""
 else
-    echo "Launcher smoke: SKIP (bin/z42 or launcher.zpkg not in package)"
+    echo "Launcher smoke: SKIP (z42 or launcher.zpkg not in package)"
     echo ""
 fi
 

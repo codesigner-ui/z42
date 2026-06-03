@@ -98,12 +98,13 @@ for f in libz42_compression.a libz42_compression.dylib libz42_compression.so \
 done
 echo "      ✓ native/libz42_compression.* (dlopened by z42vm at startup)"
 
-# ── 2c. z42 launcher: trampoline (bin/z42) + launcher.zpkg (pkg root) ─────
-# bundle-launcher-in-release (2026-06-03): the trampoline is target-specific
-# (cargo --target); launcher.zpkg is RID-independent bytecode (built with the
-# host driver, so cross-packaging works). At runtime the trampoline resolves
-# its runtime package-relative (bin/z42vm + ../launcher.zpkg + ../libs) so
-# `<pkg>/bin/z42 run app.zpkg` works unpacked, no install.
+# ── 2c. z42 launcher: trampoline (root z42) + launcher.zpkg (pkg root) ─────
+# bundle-launcher-in-release (2026-06-03) + launcher-at-package-root (2026-06-04):
+# the trampoline is target-specific (cargo --target) and sits at the package
+# ROOT; launcher.zpkg is RID-independent bytecode (built with the host driver,
+# so cross-packaging works). At runtime the trampoline resolves its runtime
+# package-relative (bin/z42vm + ./launcher.zpkg + ./libs) so
+# `<pkg>/z42 run app.zpkg` works unpacked, no install.
 
 echo "[2c/7] z42 launcher (trampoline + launcher.zpkg)"
 
@@ -112,9 +113,11 @@ cargo build \
     --manifest-path "$ROOT/src/toolchain/launcher/Cargo.toml" \
     --target "$CARGO_TARGET" --quiet
 
-if   [ -f "$CARGO_OUT/z42" ];     then cp "$CARGO_OUT/z42"     "$PKG_DIR/bin/z42"
-elif [ -f "$CARGO_OUT/z42.exe" ]; then cp "$CARGO_OUT/z42.exe" "$PKG_DIR/bin/z42.exe"; fi
-echo "      ✓ bin/z42 (trampoline)"
+# launcher-at-package-root (2026-06-04): trampoline goes to the PACKAGE ROOT
+# (not bin/) — it's the package entry point; bin/ is for apps (z42c/z42vm).
+if   [ -f "$CARGO_OUT/z42" ];     then cp "$CARGO_OUT/z42"     "$PKG_DIR/z42"
+elif [ -f "$CARGO_OUT/z42.exe" ]; then cp "$CARGO_OUT/z42.exe" "$PKG_DIR/z42.exe"; fi
+echo "      ✓ z42 (trampoline, package root)"
 
 # launcher core → launcher.zpkg. Built with the host driver (RID-independent
 # bytecode) + the dev stdlib flat view (matching this repo's version).

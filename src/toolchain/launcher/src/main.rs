@@ -49,8 +49,8 @@ struct Runtime {
 
 /// Resolve the launcher runtime. Installed mode ($Z42_HOME/launcher) wins;
 /// otherwise fall back to a portable, package-relative layout where this
-/// binary sits at `<pkg>/bin/z42` next to `<pkg>/bin/z42vm`,
-/// `<pkg>/launcher.zpkg`, and `<pkg>/libs/` (bundle-launcher-in-release).
+/// trampoline sits at the package root `<pkg>/z42` next to `<pkg>/bin/z42vm`,
+/// `<pkg>/launcher.zpkg`, and `<pkg>/libs/` (launcher-at-package-root).
 fn resolve_runtime(vm_name: &str) -> Option<Runtime> {
     // 1. Installed: $Z42_HOME/launcher/{z42vm, launcher.zpkg, libs}
     let installed = z42_home().join("launcher");
@@ -62,11 +62,12 @@ fn resolve_runtime(vm_name: &str) -> Option<Runtime> {
             portable: false,
         });
     }
-    // 2. Portable: <pkg>/bin/z42 → <pkg>/{bin/z42vm, launcher.zpkg, libs}
+    // 2. Portable: <pkg>/z42 → <pkg>/{bin/z42vm, launcher.zpkg, libs}
+    //    The trampoline lives at the package ROOT, so exe.parent() IS the
+    //    package root (launcher-at-package-root). z42vm stays in bin/.
     let pkg = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|p| p.to_path_buf())) // bin/
-        .and_then(|bin| bin.parent().map(|p| p.to_path_buf())); // pkg root
+        .and_then(|exe| exe.parent().map(|p| p.to_path_buf())); // pkg root (z42 at root)
     if let Some(pkg) = pkg {
         let vm = pkg.join("bin").join(vm_name);
         let core = pkg.join("launcher.zpkg");
@@ -85,7 +86,7 @@ fn main() {
             eprintln!(
                 "z42: launcher runtime not found.\n\
                  Looked for {}/launcher/{vm_name}+launcher.zpkg (installed) and a\n\
-                 package-relative bin/{vm_name}+../launcher.zpkg (portable).\n\
+                 package-relative <pkg>/bin/{vm_name}+<pkg>/launcher.zpkg (portable, trampoline at pkg root).\n\
                  Reinstall the z42 launcher.",
                 z42_home().join("launcher").display(),
             );
