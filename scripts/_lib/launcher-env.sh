@@ -24,7 +24,7 @@ setup_launcher_env() {
     local exe=""
     case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) exe=".exe";; esac
     local vmdir="$root/artifacts/build/runtime/$profile"
-    # build-stdlib.sh always writes the flat stdlib view to libs/release,
+    # build-stdlib.sh always writes the flat stdlib view to libraries/dist/release,
     # regardless of the z42vm profile — so libs is fixed, vmdir varies.
     local libs="$root/artifacts/build/libraries/dist/release"
 
