@@ -1,6 +1,6 @@
 # Tasks: Inline JIT safepoint fast-path
 
-> 状态：🟡 进行中 | 创建：2026-06-03 | 类型：refactor + perf
+> 状态：🟢 已完成 | 归档：2026-06-04 | 创建：2026-06-03 | 类型：refactor + perf
 > 来源：[`docs/review.md`](../../../review.md) C2 P1 deferred `jit-future-safepoint-inline`（见 archive [2026-05-28-jit-type-specialization tasks.md](../../archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec)）
 
 ## 变更说明
