@@ -320,8 +320,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Migrate existing stdlib natives to ext loader | crypto / 等可选移出 z42vm | [runtime/native-ext-loader.md](design/runtime/native-ext-loader.md#migration-of-existing-stdlib-natives) |
 | ~~reader-writer-asymmetry (zbc+zpkg)~~ | ✅ 已修复 by [align-zbc-reader-writer-asymmetry](spec/archive/2026-05-27-align-zbc-reader-writer-asymmetry/) (zbc 1.7 / zpkg 0.8, 2026-05-27)；SIGS / TYPE 在 u8 TypeTag 之后加 u32 type_str_idx 作权威类型名；ReadWriteRoundTrip CI 启用 | — |
 | ~~跨包 static field 初始化时机~~ | ✅ 已修复 by `dfcd1495 fix(compiler+vm): unique __static_init__ name per source file`（2026-05-15）；stdlib workaround 由 `cleanup-static-field-workarounds` spec 回收 | — |
-| `jit-future-safepoint-inline` | inline `jit_check_safepoint` fast path（atomic fetch_sub + branch）via Cranelift `atomic_rmw`，省每 backward branch 的 helper call；带 1-2 day cost，推 SumSquares loop 从 1.51× 到 ~1.8× | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
+| ~~`jit-future-safepoint-inline`~~ | ✅ landed 2026-06-03 as [inline-jit-safepoint-check](spec/archive/2026-06-03-inline-jit-safepoint-check/tasks.md) — `atomic_rmw sub + brif` 内联在 translate.rs 5 处 emit site，slow path 走 `jit_check_safepoint_slow` 新 helper | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
 | `jit-future-f64-specialization` | F64 `fadd` / `fsub` / `fcmp` 走 native（结构与 I64 完全对称，只是 payload 类型）；等 F64-heavy benchmark 出现再做 | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
+| TLS 后续（streaming / system-roots / keepalive-pool / server）| `add-z42-net-tls` (2026-06-03) 客户端落地后的 4 项：https `SendStreaming`、honour 系统 CA、TLS 连接池、服务端 TLS | [stdlib/net.md](design/stdlib/net.md#net-future-tls--已落地-2026-06-03-add-z42-net-tls) |
 
 ### 实施期延后（D-* 系列）
 

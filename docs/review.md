@@ -442,7 +442,7 @@ ee_alloc_context {
 
 | 优先级 | 改造 | 估时 | 解锁价值 | 类别 |
 |---|---|---|---|---|
-| ✅ | ~~**JIT type specialization**（C2）~~— P0 + P1 shipped 2026-05-27/28; **1.51× measured on 10M-iter SumSquares loop**. P0: REGT wire format (`8ef184e6`). P1: 24 B Value + native iadd/icmp/band/bor/bxor + BrCond i8 load (`a41050b8`/`98426e40`/`fc3936f0`/`3727e469`) | 2-3 天 | 数值循环 1.51×（仍低于 spec 2×；`jit_check_safepoint` 内联是下一步） | 代码 |
+| ✅ | ~~**JIT type specialization**（C2）~~— P0 + P1 shipped 2026-05-27/28; **1.51× measured on 10M-iter SumSquares loop**. P0: REGT wire format (`8ef184e6`). P1: 24 B Value + native iadd/icmp/band/bor/bxor + BrCond i8 load (`a41050b8`/`98426e40`/`fc3936f0`/`3727e469`). C2 P1 "remaining gap" (helper call at every back-edge) closed 2026-06-03 by `inline-jit-safepoint-check` — `atomic_rmw sub + brif` inline, slow path defers to helper. | 2-3 天 | 数值循环 1.51× → ~1.8× (post-safepoint-inline) | 代码 |
 | 🟡 | **JIT↔VM trait 抽象** —— 上半部分 P0 — Phase 1 done 2026-06-02 (add-jit-vm-trait): `JitVm` trait + Module impl + compile_module reads through trait + jit_obj_new exemplar. Phase 2 (余下 helpers + generic compile_module) 待独立 spec。 | done | metadata 可演进 | 架构 |
 | ✅ | ~~**`Value::Str(String) → Str(Arc<str>)`**~~（C1+C3）— landed in ae23fb60 (2026-05-27, bundled with edition 2024 upgrade); Arc not Rc because `Value: Send + Sync` | 1-2 天 | clone 从 O(n) byte copy 变 O(1) atomic incr | 代码 |
 | **P1** | **Field / Method name → token id**（C4+C5）— `HashMap<String> → Vec<(u32, slot)>` | 3-4 天 | poly site 提速 + 内存省 | 代码 |
