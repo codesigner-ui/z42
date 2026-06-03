@@ -1886,7 +1886,7 @@ Phase 2（远期）：
 
 | 优先级 | 改造 | Part | 估时 | 解锁价值 |
 |---|---|---|---|---|
-| **P0** | **`Compilation` 不可变快照**（F2.1） | 6 | 7-10 天 | 多线程并行编译 + IDE / LSP 集成基础 |
+| 🟡 | **`Compilation` 不可变快照**（F2.1）— Phase 1 done 2026-06-03 (add-compilation-snapshot-phase1): `Z42.Pipeline.Compilation` 不可变 wrapper 持 `CompilationUnit + DepIndex + Features + Imported`，Lazy + thread-safe (`PublicationOnly`) 缓存 `Model` / `Diagnostics`，`WithCompilationUnit` / `WithImported` 返回新快照。Phase 1 不引 SyntaxTree（z42 当前无该类型）/多文件/References/Emit；那些是 Phase 2-4 单独 spec。codify 不可变契约 + caller-side caching 痛点解决（PipelineCore.CheckOnly 重复调用不再重做 typecheck）。 | 6 | Phase 1 done | 多线程并行编译 + IDE / LSP 集成基础 |
 | **P1** | **`ISymbol` 公共抽象**（F2.2） | 6 | 10-14 天 | 跨文件符号身份；解锁 find-references / rename |
 | 🟡 | **`SemanticModel` 按需 binding**（F2.3 Phase 1）— 2/5 query 方法落地 2026-06-03 (add-semantic-model-query-api): `GetBoundExpression(Expr) -> BoundExpr?` + `GetExpressionType(Expr) -> Z42Type?` + `ExpressionBindings` property。TypeChecker 在 `BindExpr` 单入口记录 Expr→BoundExpr (ReferenceEqualityComparer)，SemanticModel 持 dict 提供查询。剩余 `GetSymbol` / `GetDeclaredSymbol` 阻塞于 F2.2 ISymbol；`GetDiagnostics(Span)` 需把 DiagnosticBag 灌进 SemanticModel，独立 spec。 | 6 | Phase 1 partial | query API；IDE / analyzer 前置 |
 | 🟡 | **BoundTree Lowering Pass 框架**（F2.5）— Phase 1 done 2026-06-02 (add-bound-tree-rewriter): `BoundExprRewriter`（30 个 VisitXxx 默认）+ `BoundStmtRewriter`（16 个 + `RewriteExpr` hook）+ 11 单元测试。Identity 短路（ReferenceEquals 链 = 零分配），fresh `with { ... }` 在任一 child 替换时分配。Phase 2（迁移现有 foreach / interpolated-string / switch lowering 从 FunctionEmitter 出来 + 加 MethodCompiler pass-pipeline）独立 spec 后续。 | 6 | Phase 1 done | L3 async / lambda / generics lowering 前置 |
