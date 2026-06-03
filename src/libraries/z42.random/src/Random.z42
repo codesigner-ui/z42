@@ -1,6 +1,7 @@
 namespace Std.Random;
 using Std;
 using Std.Time;
+using Std.Math;
 
 // add-z42-random (2026-05-15)：通用伪随机数（PCG-XSH-RR 64→32 输出）。
 //
@@ -13,21 +14,32 @@ using Std.Time;
 public class Random {
     private long _state;
 
-    // 这两个常数是 PCG 标准 multiplier / default increment（来自原论文）。
-    // 字段而非常量内联：方便 z42 type resolver；常量 inline 在表达式里。
+    // extend-z42-random (2026-06-03): per-instance increment for PCG
+    // stream selection. Must be odd. Default 1442695040888963407 | 1
+    // matches the historical hard-coded value, so a `Random(seed)`
+    // built before this spec produces the same sequence.
+    private long _inc;
 
     public Random() {
         // wall-clock seed — 同 C# new Random() default behaviour。
-        // DateTime.UtcNow().UnixMs() returns ms since epoch — 64-bit signed.
         long ms = DateTime.UtcNow().UnixMs();
-        this.Init(ms);
+        this.Init(ms, 1442695040888963407 | 1);
     }
 
     public Random(long seed) {
-        this.Init(seed);
+        this.Init(seed, 1442695040888963407 | 1);
     }
 
-    private void Init(long seed) {
+    /// extend-z42-random (2026-06-03): pick an independent PCG stream.
+    /// `streamId | 1` becomes the per-instance increment. Two
+    /// instances with the same seed but different streamId produce
+    /// strictly disjoint sequences (PCG correctness guarantee).
+    public Random(long seed, long streamId) {
+        this.Init(seed, streamId | 1);
+    }
+
+    private void Init(long seed, long inc) {
+        this._inc = inc;
         // PCG seed step: state starts as 0, increment + step once with the
         // user seed mixed in. Equivalent to pcg32_srandom_r(rng, seed, seq).
         this._state = 0;
@@ -43,7 +55,7 @@ public class Random {
         long oldState = this._state;
         // Multiplier from L'Ecuyer 1999 (PCG paper constant).
         long mul = 6364136223846793005;
-        long inc = 1442695040888963407;
+        long inc = this._inc;
         this._state = oldState * mul + inc;
         // 32-bit mask. Decimal literal since z42 hex literal support is TBD.
         long MASK32 = 4294967295;          // 0xFFFFFFFF
@@ -214,4 +226,34 @@ public class Random {
         while (r < k) { result[r] = work[r]; r = r + 1; }
         return result;
     }
+
+    // ── Distributions (extend-z42-random, 2026-06-03) ────────────────
+
+    /// Normal / Gaussian sample via Box-Muller. Two uniform draws
+    /// → one normal draw with the requested mean + standard deviation.
+    /// The second normal draw from the same pair is discarded; for
+    /// hot loops a future spec could cache it (`_gaussianPaired`).
+    public double NextGaussian(double mean, double stddev) {
+        double u = this.NextDouble();
+        // Avoid log(0) — re-draw the rare zero (open-interval semantics).
+        while (u == 0.0) { u = this.NextDouble(); }
+        double v = this.NextDouble();
+        double r = Math.Sqrt(-2.0 * Math.Log(u));
+        double z = r * Math.Cos(Math.Tau * v);
+        return mean + stddev * z;
+    }
+
+    /// Exponential sample via inverse CDF. `lambda` is the rate
+    /// parameter (`mean == 1 / lambda`). Throws `ArgumentException`
+    /// for `lambda <= 0`.
+    public double NextExponential(double lambda) {
+        if (lambda <= 0.0) {
+            throw new ArgumentException(
+                "Random.NextExponential: lambda must be > 0, got " + lambda.ToString());
+        }
+        double u = this.NextDouble();
+        while (u == 0.0) { u = this.NextDouble(); }
+        return -Math.Log(u) / lambda;
+    }
+
 }

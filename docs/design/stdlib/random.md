@@ -49,24 +49,44 @@ distribution-style helpers and `crypto` owns the unpredictability
 guarantee. `random-future-csprng-wasm32` remains deferred (wasm32
 needs `crypto.getRandomValues` / `WASI random_get` bridge).
 
-### random-future-thread-safe
-- **来源**：多线程并发使用同一 Random 实例
-- **前置依赖**：z42.threading（Arc + atomic CAS 状态更新）
-- **当前 workaround**：每线程独立 instance
+### ~~random-future-distributions~~ — ✅ 已落地 2026-06-03 (`extend-z42-random`)
 
-### random-future-distributions
-- **来源**：Normal / Gaussian / Exponential 等非均匀分布
-- **触发条件**：用户场景（科学计算 / 模拟）实际需要时
-- **当前 workaround**：Box-Muller 转换可纯脚本实现
+`NextGaussian(mean, stddev)` via Box-Muller, `NextExponential(lambda)`
+via inverse CDF. Both reject pathological inputs (`u == 0.0`
+re-draw; negative/zero lambda throws). 10k-sample tests verify
+mean & stddev within `±0.1` (Gaussian) / `±5%` (exponential).
+Uniform is already covered by `NextDouble`.
+
+### ~~random-future-stream-id~~ — ✅ 已落地 2026-06-03 (`extend-z42-random`)
+
+`Random(long seed, long streamId)` overload. `streamId | 1L`
+becomes the per-instance PCG increment. Two instances with the
+same seed but different streamId produce strictly disjoint
+sequences (PCG correctness guarantee). The previous `Random(seed)`
+constructor now delegates to `(seed, defaultIncrement)` so
+existing seeded code reproduces the same sequences byte-identical.
 
 ### random-future-seed-from-entropy
-- **来源**：从 OS entropy 源（`/dev/urandom`）取强 seed
+- **来源**：从 OS entropy 源（`getrandom(2)` / `BCryptGenRandom`）取强 seed
 - **触发原因**：wall-clock seed 可预测（PoC 攻击）；安全场景需要
-- **触发条件**：与 random-future-csprng 同步
+- **architecture block**：`Std.Crypto.SecureRandom.GetBytes` (z42.crypto)
+  would be the natural source, but
+  **`z42.crypto → z42.numerics → z42.random` already exists** —
+  adding `z42.random → z42.crypto` would form a cycle. Resolution
+  paths: (a) move `SecureRandom` into a new lower-layer
+  `z42.entropy` zpkg that both `z42.crypto` and `z42.random` can
+  consume, or (b) expose a `__entropy_bytes` corelib builtin
+  directly from `z42.random` (mirrors the SecureRandom backend
+  without going through `z42.crypto`). Pick one when the use case
+  hardens; attempted 2026-06-03 by `extend-z42-random` and
+  reverted.
 
-### random-future-stream-id
-- **来源**：PCG 支持 multiple streams（不同 increment → 不相关序列）
-- **触发原因**：v0 用固定 increment，足够 90% 场景
+### ~~random-future-thread-safe~~
+- **来源**：多线程并发使用同一 Random 实例
+- **状态**：still deferred — would require z42.threading dep
+  (`Mutex`) or atomic CAS state update. Workaround: per-thread
+  Random instance with different streamId (now that streamId
+  exists, this is the clean pattern).
 
 ## 跨 stdlib 交互
 

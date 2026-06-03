@@ -1,0 +1,134 @@
+// extend-z42-random (2026-06-03): FromEntropy / streamId / Gaussian /
+// Exponential extensions to Std.Random.Random.
+namespace Z42RandomExtensionsTests;
+
+using Std;
+using Std.Test;
+using Std.Math;
+using Std.Random;
+
+// ── streamId overload ────────────────────────────────────────────────
+
+[Test]
+void test_same_seed_different_streams_diverge() {
+    Random a = new Random(42L, 1L);
+    Random b = new Random(42L, 3L);   // odd streamId so |1 doesn't collide
+    bool anyDiffer = false;
+    int i = 0;
+    while (i < 10) {
+        if (a.NextLong() != b.NextLong()) { anyDiffer = true; }
+        i = i + 1;
+    }
+    Assert.True(anyDiffer);
+}
+
+[Test]
+void test_same_seed_same_stream_reproduces() {
+    Random a = new Random(42L, 7L);
+    Random b = new Random(42L, 7L);
+    int i = 0;
+    while (i < 10) {
+        Assert.Equal(a.NextLong(), b.NextLong());
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_streamid_or_1_handles_even_id() {
+    // Caller passes an even streamId; constructor sets |1 internally
+    // so the resulting stream is well-defined and reproducible.
+    Random a = new Random(99L, 8L);   // 8 | 1 == 9
+    Random b = new Random(99L, 9L);   // 9 | 1 == 9
+    Assert.Equal(a.NextLong(), b.NextLong());
+}
+
+[Test]
+void test_default_ctor_matches_pre_streamid_default() {
+    // Random(seed) and Random(seed, default_inc_id) must agree.
+    Random a = new Random(123L);
+    Random b = new Random(123L, 1442695040888963407L);
+    Assert.Equal(a.NextLong(), b.NextLong());
+    Assert.Equal(a.NextLong(), b.NextLong());
+}
+
+// ── NextGaussian ──────────────────────────────────────────────────────
+
+[Test]
+void test_gaussian_mean_is_close_to_declared() {
+    Random r = new Random(7L);
+    double sum = 0.0;
+    int n = 10000;
+    int i = 0;
+    while (i < n) {
+        sum = sum + r.NextGaussian(5.0, 2.0);
+        i = i + 1;
+    }
+    double mean = sum / (double)n;
+    Assert.True(Math.Abs(mean - 5.0) < 0.1);
+}
+
+[Test]
+void test_gaussian_stddev_is_close_to_declared() {
+    Random r = new Random(7L);
+    int n = 10000;
+    double[] xs = new double[n];
+    double sum = 0.0;
+    int i = 0;
+    while (i < n) {
+        xs[i] = r.NextGaussian(0.0, 3.0);
+        sum = sum + xs[i];
+        i = i + 1;
+    }
+    double mean = sum / (double)n;
+    double sqSum = 0.0;
+    i = 0;
+    while (i < n) {
+        double d = xs[i] - mean;
+        sqSum = sqSum + d * d;
+        i = i + 1;
+    }
+    double stddev = Math.Sqrt(sqSum / (double)n);
+    Assert.True(Math.Abs(stddev - 3.0) < 0.1);
+}
+
+// ── NextExponential ──────────────────────────────────────────────────
+
+[Test]
+void test_exponential_mean_is_close_to_inverse_lambda() {
+    Random r = new Random(13L);
+    double lambda = 2.0;            // mean should be 0.5
+    int n = 10000;
+    double sum = 0.0;
+    int i = 0;
+    while (i < n) {
+        sum = sum + r.NextExponential(lambda);
+        i = i + 1;
+    }
+    double mean = sum / (double)n;
+    double expected = 1.0 / lambda;
+    Assert.True(Math.Abs(mean - expected) < expected * 0.05);
+}
+
+[Test]
+void test_exponential_zero_lambda_throws() {
+    Random r = new Random(1L);
+    bool caught = false;
+    try {
+        double x = r.NextExponential(0.0);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_exponential_negative_lambda_throws() {
+    Random r = new Random(1L);
+    bool caught = false;
+    try {
+        double x = r.NextExponential(-1.5);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
