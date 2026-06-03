@@ -2,6 +2,7 @@ using FluentAssertions;
 using Z42.Core.Diagnostics;
 using Z42.Core.Features;
 using Z42.Semantics.Bound;
+using Z42.Semantics.Symbols;
 using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
@@ -117,5 +118,56 @@ public sealed class SemanticModelQueryTests
         // binds each via `BindExpr` → all populate the map.
         model.ExpressionBindings.Count.Should().BeGreaterThanOrEqualTo(4,
             $"got entries: {model.ExpressionBindings.Count}");
+    }
+
+    // ── F2.2 Phase 1: GetSymbol on direct method calls ──────────────────────
+
+    [Fact]
+    public void GetSymbol_OnDirectCall_ReturnsIMethodSymbol()
+    {
+        // Call a method on `this` — TypeChecker resolves it + populates
+        // BoundCall.Symbol.
+        var src = @"
+            class Foo {
+                int Compute() { return 42; }
+                int Run() { return this.Compute(); }
+            }
+        ";
+        var tokens = new Lexer(src).Tokenize();
+        var parser = new Parser(tokens, LanguageFeatures.Phase1);
+        var cu = parser.ParseCompilationUnit();
+        var diags = parser.Diagnostics;
+        var model = new TypeChecker(diags).Check(cu, imported: null);
+        diags.HasErrors.Should().BeFalse();
+
+        // Drill into Foo.Run's body and grab the `this.Compute()` call.
+        var run = cu.Classes[0].Methods.Single(m => m.Name == "Run");
+        var ret = (ReturnStmt)run.Body.Stmts.Single();
+        var call = (CallExpr)ret.Value!;
+
+        var sym = model.GetSymbol(call);
+        sym.Should().NotBeNull();
+        sym!.Kind.Should().Be(SymbolKind.Method);
+        sym.Name.Should().Be("Compute");
+        sym.Should().BeAssignableTo<IMethodSymbol>();
+    }
+
+    [Fact]
+    public void GetSymbol_OnLiteral_ReturnsNull()
+    {
+        // Literals aren't symbol-bearing — no method/field reference.
+        var (cu, model) = Bind("42;");
+        var expr = SingleExprStmt(cu);
+
+        model.GetSymbol(expr).Should().BeNull();
+    }
+
+    [Fact]
+    public void GetSymbol_OnUnboundNode_ReturnsNull()
+    {
+        var (_, model) = Bind("42;");
+        var unseen = new LitIntExpr(99, new Z42.Core.Text.Span(0, 0, 0, 0));
+
+        model.GetSymbol(unseen).Should().BeNull();
     }
 }

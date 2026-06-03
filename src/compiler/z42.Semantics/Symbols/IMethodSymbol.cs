@@ -44,6 +44,8 @@ public sealed class MethodSymbol : IMethodSymbol
     public string Name { get; }
     public Span Span { get; }
     public Visibility Visibility { get; }
+    /// add-isymbol-base-phase1 (2026-06-03): ISymbol discriminator.
+    public SymbolKind Kind => SymbolKind.Method;
     /// Internally settable to support two-phase construction:
     /// SymbolCollector builds the symbol with containingType=null, then constructs
     /// Z42ClassType with these symbols, then fixes-up ContainingType post-construction.

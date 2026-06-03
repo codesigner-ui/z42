@@ -1,4 +1,5 @@
 using Z42.Semantics.Bound;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -119,6 +120,32 @@ public sealed class SemanticModel
     /// `GetBoundExpression(astNode)?.Type`.
     public Z42Type? GetExpressionType(Expr astNode) =>
         GetBoundExpression(astNode)?.Type;
+
+    /// review.md F2.2 Phase 1 (2026-06-03, add-isymbol-base-phase1): the
+    /// resolved <see cref="ISymbol"/> referenced by <paramref name="astNode"/>,
+    /// or <c>null</c> if the node either isn't bound or doesn't reference
+    /// a symbol that's been carrying its symbol pointer through
+    /// TypeChecker.
+    ///
+    /// Phase 1 covers direct method-dispatch calls:
+    ///
+    /// <list type="bullet">
+    ///   <item><see cref="CallExpr"/> → <see cref="BoundCall.Symbol"/>
+    ///     (an <see cref="Symbols.IMethodSymbol"/>).</item>
+    /// </list>
+    ///
+    /// Phase 2-3 will extend to <c>BoundIdent</c> (locals / params /
+    /// fields), <c>BoundMember</c> (field / method group access), and
+    /// declaration-site lookup via <c>GetDeclaredSymbol</c>.
+    public ISymbol? GetSymbol(Expr astNode)
+    {
+        var bound = GetBoundExpression(astNode);
+        return bound switch
+        {
+            BoundCall { Symbol: { } sym } => sym,
+            _                              => null,
+        };
+    }
 
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,

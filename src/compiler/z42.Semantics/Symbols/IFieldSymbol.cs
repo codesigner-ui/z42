@@ -25,6 +25,8 @@ public sealed class FieldSymbol : IFieldSymbol
     public string Name { get; }
     public Span Span { get; }
     public Visibility Visibility { get; }
+    /// add-isymbol-base-phase1 (2026-06-03): ISymbol discriminator.
+    public SymbolKind Kind => SymbolKind.Field;
     /// Internally settable for two-phase construction (see MethodSymbol).
     public Z42Type? ContainingType { get; internal set; }
     public Z42Type Type { get; }
