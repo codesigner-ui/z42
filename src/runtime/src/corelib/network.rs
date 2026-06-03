@@ -469,14 +469,17 @@ mod imp {
     /// interval_secs, probes) -> [0] | err | invalid`
     ///
     /// Enable SO_KEEPALIVE and set the per-OS tuning parameters. Per
-    /// socket2's `TcpKeepalive`:
-    ///   - `idle_secs`    — time before first keepalive probe (Unix +
-    ///                       Windows)
-    ///   - `interval_secs` — time between successive probes (Unix only;
-    ///                       silently ignored on Windows)
-    ///   - `probes`        — number of failed probes before close (Linux/
-    ///                       Android/FreeBSD only; silently ignored
-    ///                       elsewhere)
+    /// socket2's `TcpKeepalive` (built with `feature = "all"`):
+    ///   - `idle_secs`    — time before first keepalive probe (all
+    ///                       Unix + Windows)
+    ///   - `interval_secs` — time between successive probes (all Unix
+    ///                       + Windows via WSAIoctl)
+    ///   - `probes`        — number of failed probes before close.
+    ///                       Available on Android / DragonFly / FreeBSD
+    ///                       / Fuchsia / illumos / iOS / Linux / macOS
+    ///                       / NetBSD / tvOS / visionOS / watchOS /
+    ///                       Cygwin; silently ignored on Windows + the
+    ///                       few platforms where socket2 omits the option.
     /// `enable = false` falls back to plain `set_keepalive(false)` and
     /// ignores the three tuning args. Caller passes the values in
     /// seconds (`>= 1`); zero / negative values throw.
@@ -546,11 +549,23 @@ mod imp {
             target_os = "windows",
         ))]
         let ka = ka.with_interval(std::time::Duration::from_secs(interval_secs as u64));
-        // `with_retries` only available on Linux/Android/FreeBSD per socket2.
+        // socket2 0.5 exposes `with_retries` on this set when feature = "all";
+        // mirrors that gate so we don't accidentally drop on platforms where
+        // the kernel actually supports TCP_KEEPCNT.
         #[cfg(any(
-            target_os = "linux",
             target_os = "android",
+            target_os = "dragonfly",
             target_os = "freebsd",
+            target_os = "fuchsia",
+            target_os = "illumos",
+            target_os = "ios",
+            target_os = "visionos",
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "netbsd",
+            target_os = "tvos",
+            target_os = "watchos",
+            target_os = "cygwin",
         ))]
         let ka = ka.with_retries(probes as u32);
         let _ = interval_secs;

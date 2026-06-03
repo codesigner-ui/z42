@@ -188,9 +188,13 @@ public class TcpClient {
     /// disables keepalive.
     ///
     /// Per-OS field support (silently ignored when unsupported):
-    ///   - `idleSecs`     — Unix + Windows
-    ///   - `intervalSecs` — Unix + Windows (via WSAIoctl on Windows)
-    ///   - `probes`       — Linux / Android / FreeBSD only
+    ///   - `idleSecs`     — all Unix + Windows
+    ///   - `intervalSecs` — all Unix + Windows (via WSAIoctl on Windows)
+    ///   - `probes`       — Android / DragonFly / FreeBSD / Fuchsia /
+    ///                      illumos / iOS / Linux / macOS / NetBSD /
+    ///                      tvOS / visionOS / watchOS / Cygwin
+    ///                      (silently ignored on Windows and the few
+    ///                      platforms where socket2 omits the option)
     public void SetKeepAlive(bool enable, int idleSecs, int intervalSecs, int probes) {
         if (this._disposed) { throw new SocketClosedException(); }
         if (!this._connected) {

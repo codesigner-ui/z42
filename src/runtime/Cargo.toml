@@ -142,7 +142,7 @@ getrandom = "0.2"
 # add-net-socket-options-extended (2026-05-30): cross-platform setsockopt
 # for SO_REUSEADDR / SO_KEEPALIVE. Rust networking working group crate;
 # only deps libc on Unix; ships Winsock bindings on Windows.
-socket2 = "0.5"
+socket2 = { version = "0.5", features = ["all"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
