@@ -124,6 +124,11 @@ echo "      ✓ bin/z42 (trampoline)"
 cp "$ROOT/src/toolchain/launcher/core/dist/z42.launcher.zpkg" "$PKG_DIR/launcher.zpkg"
 echo "      ✓ launcher.zpkg"
 
+# install-z42-to-home: ship the installer so `./install.sh` sets up $Z42_HOME.
+cp "$ROOT/scripts/install.sh" "$PKG_DIR/install.sh"
+chmod +x "$PKG_DIR/install.sh"
+echo "      ✓ install.sh"
+
 # ── 3-7. Headers / libs / examples / manifest ───────────────────────────
 
 echo "[3/7] C ABI headers"

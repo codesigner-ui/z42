@@ -88,6 +88,18 @@ z42-<ver>-<rid>-<profile>/
 
 打包步骤见 `scripts/_lib/package_desktop.sh` [2c];`scripts/test-dist.sh` 有 portable `z42 which` smoke。
 
+## 安装模式（installed, model B — install-z42-to-home, 2026-06-03）
+
+包根的 `install.sh`(由 package_desktop.sh 内置)把包铺进 `$Z42_HOME`(默认 `~/.z42`):
+- `bin/z42`(trampoline,放 PATH)+ `bin/z42c`(编译器)
+- `launcher/{z42vm, launcher.zpkg, libs}`(跑 launcher 核心)
+- 本版本经 **`z42 link $Z42_HOME/launcher --as <ver>` + `z42 default <ver>`** 注册为 app 运行时——`runtimes/<ver>/link.txt` 重定向到 `launcher/`,**不二次拷贝 z42vm/libs**。
+- 版本号从包内 `manifest.toml` 读。
+
+装完 `z42` 在 PATH 上、`z42 run app.zpkg` 任意目录可用(trampoline **installed 优先于 portable**),多版本可共存于 `runtimes/<ver>`。`install.sh` 只**打印** PATH 接入指引,不自动改 profile。
+
+> Windows `install.ps1` + 自动 PATH/profile = 后续;联网 `install <ver>`/`self update`(P2)见下。
+
 ## Deferred / Future Work
 
 ### launcher-future-install: 下载 / install / uninstall / self-update（P2）

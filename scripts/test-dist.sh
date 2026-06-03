@@ -90,11 +90,22 @@ if [ -x "$Z42_LAUNCHER_BIN" ] && [ -f "$DIST_DIR/launcher.zpkg" ]; then
     which_out=$(env -u Z42_HOME "$Z42_LAUNCHER_BIN" which 2>&1 || true)
     case "$which_out" in
         "$DIST_DIR/bin/z42vm"|"$DIST_DIR/bin/z42vm.exe")
-            echo "  ✓ z42 which → bundled z42vm"; OVERALL_PASS=$((OVERALL_PASS + 1)) ;;
+            echo "  ✓ z42 which (portable) → bundled z42vm"; OVERALL_PASS=$((OVERALL_PASS + 1)) ;;
         *)
-            echo "  FAIL: z42 which → '$which_out' (expected $DIST_DIR/bin/z42vm)"
+            echo "  FAIL: z42 which (portable) → '$which_out' (expected $DIST_DIR/bin/z42vm)"
             OVERALL_FAIL=$((OVERALL_FAIL + 1)) ;;
     esac
+    # Installed mode (install-z42-to-home): install.sh into a temp $Z42_HOME,
+    # then `z42 which` should resolve the installed launcher z42vm.
+    if [ -x "$DIST_DIR/install.sh" ]; then
+        IH="$TMPDIR_BASE/z42home"
+        if ( Z42_HOME="$IH" "$DIST_DIR/install.sh" >/dev/null 2>&1 ) \
+            && [ "$(Z42_HOME="$IH" "$Z42_LAUNCHER_BIN" which 2>&1)" = "$IH/launcher/z42vm" ]; then
+            echo "  ✓ install.sh → installed-mode z42 which"; OVERALL_PASS=$((OVERALL_PASS + 1))
+        else
+            echo "  FAIL: install.sh / installed-mode z42 which"; OVERALL_FAIL=$((OVERALL_FAIL + 1))
+        fi
+    fi
     echo ""
 else
     echo "Launcher smoke: SKIP (bin/z42 or launcher.zpkg not in package)"
