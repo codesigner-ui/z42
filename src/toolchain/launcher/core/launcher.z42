@@ -15,6 +15,7 @@ namespace Z42Launcher;
 
 using Std;
 using Std.IO;
+using Std.Json;
 
 void Main() {
     string[] argv = Environment.GetCommandLineArgs();
@@ -240,17 +241,36 @@ void _cmdRun(string[] rest) {
         return;
     }
 
+    // runtimeconfig.json (add-runtimeconfig-json): <app>.runtimeconfig.json
+    // declares the runtime version + per-app config knobs.
+    string rcPath = _runtimeConfigPath(app);
+    bool hasCfg = false;
+    JsonValue cfg = JsonValue.OfNull();
+    if (File.Exists(rcPath)) {
+        cfg = JsonValue.Parse(File.ReadAllText(rcPath));
+        hasCfg = true;
+    }
+    // Effective version: --runtime > runtimeconfig runtime.version.
+    string effVer = ver ?? "";
+    if (effVer.Length == 0 && hasCfg && cfg.IsObject() && cfg.ContainsKey("runtime")) {
+        JsonValue rt = cfg.Get("runtime");
+        if (rt.IsObject() && rt.ContainsKey("version")) {
+            JsonValue vv = rt.Get("version");
+            if (vv.IsString()) { effVer = vv.AsString(); }
+        }
+    }
+
     // Portable mode (bundle-launcher-in-release): the trampoline set
     // Z42_PORTABLE_VM/_LIBS to the package's own bundled runtime. Use it
-    // directly when the caller didn't pin a --runtime.
+    // directly when no version was pinned (flag or runtimeconfig).
     string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
     string vm = "";
     string libs = "";
-    if (portableVm.Length > 0 && (ver ?? "").Length == 0) {
+    if (portableVm.Length > 0 && effVer.Length == 0) {
         vm = portableVm;
         libs = Environment.GetEnvironmentVariable("Z42_PORTABLE_LIBS") ?? "";
     } else {
-        string resolved = _resolveVersion(ver);
+        string resolved = _resolveVersion(effVer);
         string? dirOpt = _runtimeDir(resolved);
         if (dirOpt == null) {
             ConsoleError.WriteLine("z42: runtime `" + resolved + "` not installed (see `z42 list`).");
@@ -274,6 +294,23 @@ void _cmdRun(string[] rest) {
         .Stdout(Stdio.Inherit())
         .Stderr(Stdio.Inherit());
     if (libs.Length > 0) { proc = proc.Env("Z42_LIBS", libs); }
+    // Apply configProperties (arbitrary Z42_* knobs) to the spawned z42vm.
+    if (hasCfg && cfg.IsObject() && cfg.ContainsKey("configProperties")) {
+        JsonValue cp = cfg.Get("configProperties");
+        if (cp.IsObject()) {
+            string[] ks = cp.Keys();
+            int k = 0;
+            while (k < ks.Length) {
+                JsonValue val = cp.Get(ks[k]);
+                string sv = "";
+                if (val.IsString()) { sv = val.AsString(); }
+                else if (val.IsLong()) { sv = val.AsLong().ToString(); }
+                else if (val.IsBool()) { sv = val.AsBool() ? "true" : "false"; }
+                if (sv.Length > 0) { proc = proc.Env(ks[k], sv); }
+                k = k + 1;
+            }
+        }
+    }
     // Forward the program's own args after `--`.
     if (appArgs.Length > 0) {
         proc = proc.Arg("--");
@@ -324,4 +361,11 @@ string? _flagValue(string[] arr, string flag) {
         i = i + 1;
     }
     return null;
+}
+
+// `<dir>/<name>.runtimeconfig.json` next to the app (.NET-style sidecar).
+string _runtimeConfigPath(string app) {
+    string dir = Path.GetDirectoryName(app);
+    string fname = Path.GetFileNameWithoutExtension(app) + ".runtimeconfig.json";
+    return dir.Length > 0 ? Path.Join(dir, fname) : fname;
 }

@@ -100,6 +100,24 @@ z42-<ver>-<rid>-<profile>/
 
 > Windows `install.ps1` + 自动 PATH/profile = 后续;联网 `install <ver>`/`self update`(P2)见下。
 
+## app `runtimeconfig.json`（版本声明 + 动态配置 — add-runtimeconfig-json, 2026-06-03）
+
+app 可在 **`<app>.runtimeconfig.json`** sidecar(.NET 同款,独立于 zpkg,可编辑/动态)声明所需运行时版本 + 运行时旋钮:
+
+```json
+{
+  "runtime": { "version": "0.3.4", "rollForward": "exact" },
+  "configProperties": { "Z42_GC_MODE": "concurrent", "Z42_SAFEPOINT_THROTTLE": 1024 }
+}
+```
+
+`z42 run <app.zpkg>` 时,launcher 核心(`Std.Json` 解析):
+- `runtime.version` 进入版本解析,**优先级**:`--runtime` > runtimeconfig `runtime.version` > `config.toml` default > 唯一已装。
+- `configProperties` 的**任意** key/value 作为 env 设到被 spawn 的 z42vm(`Std.IO.Process.Env`)——支持任何 `Z42_*` 旋钮(GC 模式 / safepoint throttle / …),动态生效。
+- `rollForward`:P1 只认 `exact`。
+
+> 独立 sidecar 的好处:版本无关的 launcher 读它**不需解析带版本的 zpkg 格式**;可手改、可被工具生成。这也是 P2(下载即用)的前置——"声明需要的版本 → 没装自动拉"(自动拉 = P2)。
+
 ## Deferred / Future Work
 
 ### launcher-future-install: 下载 / install / uninstall / self-update（P2）
