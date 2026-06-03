@@ -87,10 +87,14 @@ string? _runtimeDir(string ver) {
 }
 
 // z42vm binary inside a runtime dir: <dir>/z42vm or <dir>/bin/z42vm.
+// Windows binaries carry a .exe suffix (the native trampoline + launcher-env.sh
+// both bundle z42vm.exe) — match it here too, else `z42 link`/`run`/`which`
+// can't find the VM on Windows. (fix CI: regen-golden Windows step.)
 string? _vmPath(string dir) {
-    string direct = Path.Join(dir, "z42vm");
+    string vmname = Platform.IsWindows() ? "z42vm.exe" : "z42vm";
+    string direct = Path.Join(dir, vmname);
     if (File.Exists(direct)) { return direct; }
-    string nested = Path.Join(Path.Join(dir, "bin"), "z42vm");
+    string nested = Path.Join(Path.Join(dir, "bin"), vmname);
     if (File.Exists(nested)) { return nested; }
     return null;
 }

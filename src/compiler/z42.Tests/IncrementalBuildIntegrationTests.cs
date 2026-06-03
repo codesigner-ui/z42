@@ -60,9 +60,16 @@ public sealed class IncrementalBuildIntegrationTests
         string libsRoot = Path.Combine(RepoRoot, "src", "libraries");
         string artifactsLibs = Path.Combine(RepoRoot, "artifacts", "build", "libraries");
 
-        // 清空产物
+        // 清空产物 —— 仅删 per-lib 构建目录(本测试要验证的增量缓存),**保留**
+        // 聚合 flat view `artifacts/build/libraries/dist`。后者被 GoldenTests /
+        // StdlibDelegateTests 等并发读取(它们不在本序列化 collection 内),整目录
+        // recursive 删会把 dist 一并清掉 → 并发测试看到空 stdlib → "undefined Std.*"。
+        // reorg-artifacts-layout (2026-06-04) 把 flat view 从独立的 build/libs 移到
+        // build/libraries/dist,故现在必须 dist-aware 地删。
         if (Directory.Exists(artifactsLibs))
-            Directory.Delete(artifactsLibs, recursive: true);
+            foreach (var sub in Directory.GetDirectories(artifactsLibs))
+                if (Path.GetFileName(sub) != "dist")
+                    Directory.Delete(sub, recursive: true);
 
         // 第一次：全 fresh
         var (code1, _, err1) = RunZ42c(libsRoot, "build", "--workspace", "--release");
