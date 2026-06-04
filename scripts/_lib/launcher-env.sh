@@ -58,28 +58,31 @@ setup_launcher_env() {
     mkdir -p "$Z42_HOME/launcher"
     _install_atomic "$vmdir/z42vm$exe" "$Z42_HOME/launcher/z42vm$exe"
     _install_atomic "$root/artifacts/build/toolchain/launcher/z42.launcher.zpkg" "$Z42_HOME/launcher/launcher.zpkg"
-    # Point launcher/libs → $libs. `ln -sfn` is unlink+symlink (NOT atomic):
-    # under test-all.sh --parallel, concurrent waves sharing this home race —
-    # one wave's unlink opens a window where the link is briefly absent, which
-    # cascades into EEXIST/'File exists' as the others' symlink() collide.
-    # `mv` of a temp symlink can't fix it either (BSD/macOS mv dereferences a
-    # symlink-to-dir target). Fix: create the link only when absent and NEVER
-    # unlink it — every wave targets the same $libs, so a concurrent creator is
-    # fine (tolerate its EEXIST). With no unlink there is no absence window, so
-    # no cascade. Steady state (link already correct) short-circuits. A *wrong*
-    # pre-existing link is only possible if $libs moved (can't happen within a
-    # run); replace it then — that path is effectively single-threaded.
+    # Point launcher/libs → $libs.
     local libslink="$Z42_HOME/launcher/libs"
-    if [ "$(readlink "$libslink" 2>/dev/null)" != "$libs" ]; then
-        # Remove ONLY a *wrong* existing link (re-checked here so we never rm a
-        # correct one a concurrent wave just created — that would reopen the
-        # absence window). In a fresh home the link is simply absent, so this rm
-        # never fires and the path stays unlink-free / race-safe.
-        if [ -L "$libslink" ] && [ "$(readlink "$libslink" 2>/dev/null)" != "$libs" ]; then
-            rm -f "$libslink" 2>/dev/null
+    if [ -n "$exe" ]; then
+        # Windows (git-bash): `ln -s` materializes a *copy*, not a real symlink
+        # (so `[ -L ]` would be false). The Windows CI flow (regen-golden) runs
+        # single-threaded — no parallel race — so keep the original force-refresh
+        # so the stdlib copy stays current across reruns.
+        ln -sfn "$libs" "$libslink"
+    else
+        # Unix: `ln -sfn` is unlink+symlink (NOT atomic). Under test-all.sh
+        # --parallel, concurrent waves sharing this home race — one wave's unlink
+        # opens a window where the link is briefly absent, cascading into
+        # EEXIST/'File exists' as the others' symlink() collide. (`mv` of a temp
+        # symlink can't fix it: BSD/macOS mv dereferences a symlink-to-dir.)
+        # Fix: create the link only when absent and NEVER unlink a correct one —
+        # every wave targets the same $libs, so a concurrent creator's EEXIST is
+        # fine. No unlink ⇒ no absence window ⇒ no cascade. A *wrong* pre-existing
+        # link is only possible if $libs moved (never within a run).
+        if [ "$(readlink "$libslink" 2>/dev/null)" != "$libs" ]; then
+            if [ -L "$libslink" ] && [ "$(readlink "$libslink" 2>/dev/null)" != "$libs" ]; then
+                rm -f "$libslink" 2>/dev/null
+            fi
+            ln -s "$libs" "$libslink" 2>/dev/null || true   # EEXIST from a concurrent wave is fine
+            [ -L "$libslink" ] || { echo "launcher-env: failed to symlink libs" >&2; return 1; }
         fi
-        ln -s "$libs" "$libslink" 2>/dev/null || true   # EEXIST from a concurrent wave is fine
-        [ -L "$libslink" ] || { echo "launcher-env: failed to symlink libs" >&2; return 1; }
     fi
 
     # 4. the launcher dir (z42vm + libs) doubles as the default app runtime.
