@@ -88,6 +88,6 @@ mod mode_tests {
     // Note: from_env() tests cannot reliably set env vars in a unit test
     // (Rust test harness shares process state across parallel tests). The
     // env-var path is exercised by the integration test in P0.9 (running
-    // `Z42_GC_MODE=concurrent ./scripts/test-all.sh`) and verified via
+    // `Z42_GC_MODE=concurrent z42 xtask.zpkg test`) and verified via
     // ArcMagrGC::new() construction in `arc_heap_tests::mode_selection`.
 }

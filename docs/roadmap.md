@@ -206,7 +206,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 起始版本 | 新增 GREEN 项 |
 |:------:|------|
-| 当前 | `dotnet build` + `cargo build` + `dotnet test` + `./scripts/test-vm.sh` 全绿 |
+| 当前 | `dotnet build` + `cargo build` + `dotnet test` + `z42 xtask.zpkg test vm` 全绿 |
 | 0.2.3 | Perf CI |
 | 0.2.5 | 多平台 CI matrix |
 | 0.4.6 | `z42c test` 100% 通过 |

@@ -41,4 +41,4 @@ stdout: [host] hello, world
 
 ## CI
 
-本 spec 不把 `hello_c` 加入 `./scripts/test-all.sh` 默认 GREEN 路径（`hello_c` 是 example，不是 critical infrastructure；用户按需手动跑）。后续若需 CI 自动跑，新建 `add-hello-c-to-test-all` spec。
+本 spec 不把 `hello_c` 加入 `z42 xtask.zpkg test` 默认 GREEN 路径（`hello_c` 是 example，不是 critical infrastructure；用户按需手动跑）。后续若需 CI 自动跑，新建 `add-hello-c-to-test-all` spec。

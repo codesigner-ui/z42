@@ -1,4 +1,4 @@
-// port-test-vm (2026-05-27): test-vm.sh → z42 self-host.
+// port-test-vm (2026-05-27): the former scripts/test-vm.sh → z42 self-host.
 //
 // Runs VM golden tests in interp / jit mode. Each golden case lives at one of:
 //   src/tests/<cat>/<name>/source.zbc        (dir mode) + expected_output.txt
@@ -14,9 +14,10 @@
 // wait on the batch, then aggregate. Output is collected into per-job
 // strings and printed in original order so the terminal stays readable.
 //
-// Bash entry point: scripts/test-vm.sh — bootstraps stdlib + golden zbc
-// (unless --no-rebuild), builds z42vm, then exec's the z42 script with
-// parameters passed via env vars (see _envOpt / _envOptInt).
+// Invoked via `z42 xtask.zpkg test vm [interp|jit] [--no-rebuild] [--jobs=N]`,
+// which bootstraps stdlib + golden zbc (unless --no-rebuild), builds z42vm, then
+// runs this compiled zpkg with parameters passed via env vars (see _envOpt /
+// _envOptInt).
 namespace Z42TestVmScript;
 
 using Std;
@@ -55,7 +56,7 @@ void Main() {
         _Case[] cases = _enumerateCases(root, mode);
         if (cases.Length == 0) {
             ConsoleError.WriteLine("❌ no runnable golden fixtures found.");
-            ConsoleError.WriteLine("   Hint: run `./scripts/regen-golden-tests.sh` first.");
+            ConsoleError.WriteLine("   Hint: run `z42 xtask.zpkg regen` first.");
             Environment.Exit(1);
             return;
         }

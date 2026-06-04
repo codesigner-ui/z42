@@ -217,7 +217,7 @@ int _depsCheck() {
         .Env("Z42_LIBS", libs));
 }
 
-// `audit` — native, bash-free. Mirrors scripts/audit-missing-usings.sh:
+// `audit` — native, bash-free. Mirrors the former scripts/audit-missing-usings.sh:
 // compile audit-missing-usings.z42 + run it on the inherited z42vm to scan the
 // C# compiler sources for missing using directives. (Warm-tree: needs stdlib.)
 int _audit() {
@@ -233,7 +233,7 @@ int _audit() {
 // ── regen-golden ────────────────────────────────────────────────────────────
 
 // `regen` — native, bash-free (migrate-scripts-to-z42). Mirrors
-// scripts/regen-golden-tests.sh: rebuild stdlib (unless --no-stdlib) + compiler
+// the former scripts/regen-golden-tests.sh: rebuild stdlib (unless --no-stdlib) + compiler
 // driver + runtime, compile regen-golden-tests.z42, then run it to regenerate
 // the golden .zbc fixtures. `release` positional → release config.
 int _regen(string[] argv) {
@@ -360,7 +360,7 @@ void _help() {
     Console.WriteLine("        cross-zpkg    cross-zpkg e2e");
     Console.WriteLine("        compiler      dotnet test");
     Console.WriteLine("        changed       only changed-area tests");
-    Console.WriteLine("      flags: --parallel, --jobs N  (forwarded to test-all)");
+    Console.WriteLine("      flags: --parallel, --jobs N  (forwarded to the full `test` gate)");
     Console.WriteLine("");
     Console.WriteLine("    run <target> [-- args]   run a zpkg / .z42 via the launcher");
     Console.WriteLine("    deps check | install     verify / fetch toolchains");

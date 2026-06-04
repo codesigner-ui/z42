@@ -18,7 +18,7 @@
 
 > 2026-05-12 重构：以前 `errors/` + `parse/` 也在本目录，但它们只过编译器、
 > 不进 VM、由 `dotnet test` (GoldenTests.cs) 消费 —— 与 VM e2e 共用同根导致
-> test-vm.sh 要手动 exclude。已搬到 `src/compiler/z42.Tests/Fixtures/`，每个
+> 当时的 VM 测试入口要手动 exclude。已搬到 `src/compiler/z42.Tests/Fixtures/`，每个
 > runner 拥有自己的 fixture，黑名单也跟着删了。
 
 ## 类别
@@ -39,7 +39,7 @@
 | `refs/` | ref / out / in / nested ref |
 | `classes/` | class / namespace / access / static / auto-property / ctor / indexer |
 | `strings/` | string builtin / 方法 / 静态方法 / 边界 / script-mode |
-| `cross-zpkg/` | 多 zpkg 端到端（target / ext / main 三方协作；由 `test-cross-zpkg.sh` 跑） |
+| `cross-zpkg/` | 多 zpkg 端到端（target / ext / main 三方协作；由 `z42 xtask.zpkg test cross-zpkg` 跑） |
 
 > 编译器 golden（`errors/` + `parse/`）已搬到 [`src/compiler/z42.Tests/Fixtures/`](../compiler/z42.Tests/Fixtures/)。
 
@@ -50,7 +50,7 @@
 | 文件 | 何时存在 | 含义 |
 |------|---------|------|
 | `source.z42` | 必须 | z42 源码 |
-| `source.zbc` | run / parse | 由 `regen-golden-tests.sh` 生成；不入库（gitignored） |
+| `source.zbc` | run / parse | 由 `z42 xtask.zpkg regen` 生成；不入库（gitignored） |
 | `source.zasm` | 可选 | ZASM 调试文本 |
 | `expected_output.txt` | run | stdout 期望（**空 = 删除**；缺失 = assert-only 模式：用例靠 `Std.Assert` 抛异常表达失败，期望空 stdout）|
 | `expected_error.txt` | error | 编译诊断期望 |
@@ -61,7 +61,7 @@
 ### Flat 模式（`<category>/<name>.z42`）
 
 仅适用于 assert-only run 用例。无任何 sidecar — 期望空 stdout，使用 `LanguageFeatures.Phase1` 默认配置。
-对应的 `<name>.zbc` 由 `regen-golden-tests.sh` 生成（不入库）。
+对应的 `<name>.zbc` 由 `z42 xtask.zpkg regen` 生成（不入库）。
 
 **何时使用 Flat 模式**：用例只调用 `Assert.*`（无 `Console.WriteLine` 输出对照），且不需要 features 覆盖、emit 格式覆盖、interp_only 标记或任何其他 sidecar。
 
@@ -83,9 +83,9 @@
 ## 运行
 
 ```bash
-./scripts/test-vm.sh        # 全部 run 用例（interp + jit；不含 cross-zpkg）
-./scripts/test-cross-zpkg.sh  # 仅 cross-zpkg
+z42 xtask.zpkg test vm          # 全部 run 用例（interp + jit；不含 cross-zpkg）
+z42 xtask.zpkg test cross-zpkg  # 仅 cross-zpkg
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj  # xUnit 跑 run + error + parse 三类
 ```
 
-或一把跑全 GREEN：`./scripts/test-all.sh`。
+或一把跑全 GREEN：`z42 xtask.zpkg test`。

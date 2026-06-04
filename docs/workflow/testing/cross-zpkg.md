@@ -5,7 +5,7 @@
 ## 命令
 
 ```bash
-./scripts/test-cross-zpkg.sh
+z42 xtask.zpkg test cross-zpkg
 ```
 
 或 `just`：

@@ -290,7 +290,7 @@ docs/spec/changes/<change-name>/
 ## Testing Strategy
 - 单元测试：[覆盖点]
 - Golden test：[新增场景]
-- VM 验证：dotnet test + ./scripts/test-vm.sh
+- VM 验证：dotnet test + z42 xtask.zpkg test vm
 ```
 
 ---
@@ -322,7 +322,7 @@ docs/spec/changes/<change-name>/
 ## 阶段 3: 验证
 - [ ] 3.1 dotnet build && cargo build —— 无编译错误
 - [ ] 3.2 dotnet test —— 全绿
-- [ ] 3.3 ./scripts/test-vm.sh —— 全绿
+- [ ] 3.3 z42 xtask.zpkg test vm —— 全绿
 - [ ] 3.4 spec scenarios 逐条覆盖确认
 - [ ] 3.5 docs/design/ 文档同步（新语法 / IR / VM 行为）
 - [ ] 3.6 docs/roadmap.md 进度表更新（若有特性完成某 pipeline 阶段）
@@ -446,7 +446,7 @@ docs/spec/changes/<change-name>/
 统一入口：
 
 ```bash
-./scripts/test-all.sh        # 默认串联所有必跑 stage（scope=full）
+z42 xtask.zpkg test          # 默认串联所有必跑 stage（完整 GREEN gate）
 ```
 
 **Scope-aware 加速（add-test-split-by-area, 2026-05-21）**：
@@ -456,7 +456,7 @@ iteration 期可用 `--scope=runtime|compiler|stdlib|auto` 缩窄 scope 跳过
 快速 iterate，不替代 commit 门禁。详细 scope 说明见
 [`docs/workflow/testing/README.md`](../../docs/workflow/testing/README.md)。
 
-`test-all.sh` 等价于按顺序跑（任一 stage 失败立刻停）：
+`z42 xtask.zpkg test` 等价于按顺序跑（任一 stage 失败立刻停）：
 
 ```bash
 # 1. 编译验证（无编译错误）
@@ -467,21 +467,21 @@ cargo build --manifest-path src/runtime/Cargo.toml --release
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 # 3. VM 测试（必须 100% 通过）
-./scripts/test-vm.sh
+z42 xtask.zpkg test vm
 
 # 4. 跨 zpkg 端到端（catch / vcall / 元数据跨包行为）
-./scripts/test-cross-zpkg.sh
+z42 xtask.zpkg test cross-zpkg
 
 # 5. stdlib [Test] dogfood（z42.test 26+ / 其他 5 lib）
-./scripts/test-stdlib.sh
+z42 xtask.zpkg test lib
 ```
 
 > **不要单独只跑 1-3**。historic regression：cross-zpkg subclass catch
 > bug 之所以一直没被发现，就是 4 / 5 不在默认 GREEN 路径里 —— 每次 spec
-> 验证都漏跑。该 lesson 现在以 `test-all.sh` 形式固化。
+> 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。
 
 打包发行验证：发行版变更（package.sh / 跨平台 / 嵌入接口）追加跑
-`./scripts/test-all.sh --with-dist`（要求先跑 `./scripts/package.sh release`
+`./scripts/test-dist.sh`（要求先跑 `./scripts/package.sh release`
 产 host-RID 包）。
 
 **测试失败处理规则：**
@@ -498,15 +498,15 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ```markdown
 ## 验证报告
 
-### test-all.sh 状态：✅ 全绿（N stages）/ ❌ 失败 at <stage>
+### z42 xtask.zpkg test 状态：✅ 全绿（N stages）/ ❌ 失败 at <stage>
 
 逐 stage（出现失败时展开）：
 - ✅ dotnet build
 - ✅ cargo build (release)
 - ✅ dotnet test: N/N
-- ✅ ./scripts/test-vm.sh: M/M（interp + JIT）
-- ✅ ./scripts/test-cross-zpkg.sh: K/K
-- ✅ ./scripts/test-stdlib.sh: 6/6 lib
+- ✅ z42 xtask.zpkg test vm: M/M（interp + JIT）
+- ✅ z42 xtask.zpkg test cross-zpkg: K/K
+- ✅ z42 xtask.zpkg test lib: 6/6 lib
 - （可选）✅ ./scripts/test-dist.sh: P/P
 
 ### Spec 覆盖（若有 spec）
@@ -666,7 +666,7 @@ tasks.md 顶部：
 - **验证未全绿时 commit / push**
   - 🔴 **任何测试失败都不得进入 commit**
   - 包括 pre-existing 失败：发现后必须修复，或新建单独 issue + 说明
-  - 验证命令必须完整运行：`dotnet build && cargo build && dotnet test && ./scripts/test-vm.sh`
+  - 验证命令必须完整运行：`dotnet build && cargo build && dotnet test && z42 xtask.zpkg test vm`
   - 全绿的定义：所有编译无错，所有测试 100% 通过
 
 - **顺手修复 Scope 外问题**

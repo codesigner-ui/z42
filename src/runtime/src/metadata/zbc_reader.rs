@@ -659,7 +659,7 @@ pub fn parse_zbc_sidecar(data: &[u8]) -> Result<ZbcSidecarData> {
         bail!(
             "zbc sidecar {major}.{minor} not supported (writer is at \
              {ZBC_VERSION_MAJOR}.{ZBC_VERSION_MINOR}); \
-             regen via ./scripts/regen-golden-tests.sh"
+             regen via z42 xtask.zpkg regen"
         );
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
@@ -1035,14 +1035,14 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
     // Strict-pin policy (freeze-zbc-v1, 2026-05-14): exact match with writer.
     // Pre-1.0 z42 doesn't keep older zbc minor readable; regen via
-    // scripts/regen-golden-tests.sh. See docs/design/runtime/zbc.md.
+    // z42 xtask.zpkg regen. See docs/design/runtime/zbc.md.
     if major != ZBC_VERSION_MAJOR {
         bail!("zbc major {major} not supported (writer is at {ZBC_VERSION_MAJOR})");
     }
     if minor != ZBC_VERSION_MINOR {
         bail!(
             "zbc minor {minor} not supported (writer is at {ZBC_VERSION_MINOR}); \
-             regen via ./scripts/regen-golden-tests.sh"
+             regen via z42 xtask.zpkg regen"
         );
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);

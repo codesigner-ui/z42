@@ -451,7 +451,7 @@ section（基于 tag 查找天然跳过未识别 section）。
 
 ### 兼容性
 
-zbc version 0.7 → 0.8。pre-1.0 规则：旧 zbc 不可读，需要 `regen-golden-tests.sh`
+zbc version 0.7 → 0.8。pre-1.0 规则：旧 zbc 不可读，需要 `z42 xtask.zpkg regen`
 重生。
 
 ---

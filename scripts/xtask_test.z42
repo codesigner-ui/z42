@@ -9,7 +9,7 @@ using Std.IO;
 // ── test vm ─────────────────────────────────────────────────────────────────
 
 // `test vm [interp|jit] [--no-rebuild] [--jobs=N]` — native, bash-free.
-// Mirrors scripts/test-vm.sh: regen (rebuild stdlib + compiler + golden zbc)
+// Mirrors the former scripts/test-vm.sh: regen (rebuild stdlib + compiler + golden zbc)
 // unless --no-rebuild, build the DEBUG z42vm + compression cdylib (test-vm.z42
 // resolves artifacts/build/runtime/debug/z42vm and JIT dlopens the compressor),
 // compile test-vm.z42, then run it with MODES/JOBS as env vars (legit config).
@@ -48,7 +48,7 @@ int _testVm(string[] argv) {
 // ── test cross-zpkg ─────────────────────────────────────────────────────────
 
 // `test cross-zpkg [interp|jit]` — native, bash-free. Mirrors
-// scripts/test-cross-zpkg.sh: build compiler (slnx) + DEBUG runtime, ensure
+// the former scripts/test-cross-zpkg.sh: build compiler (slnx) + DEBUG runtime, ensure
 // stdlib present, compile test-cross-zpkg.z42, run it with Z42_VM_MODE.
 int _testCrossZpkg(string[] argv) {
     string mode = _at(argv, 2);
@@ -75,7 +75,7 @@ int _testCrossZpkg(string[] argv) {
 
 // `test` (no target) — the full GREEN gate, sequential: build once, then run
 // compiler + VM goldens + cross-zpkg + stdlib, short-circuiting on first
-// failure. Mirrors scripts/test-all.sh's stage set (the --parallel wave +
+// failure. Mirrors the former scripts/test-all.sh's stage set (the --parallel wave +
 // --scope auto-narrow optimizations are a later increment).
 int _testAll() {
     // build wave (once): stdlib + compiler driver + release runtime + golden zbc
@@ -107,7 +107,7 @@ int _testAll() {
 // ── test lib (stdlib [Test] harness) ────────────────────────────────────────
 
 // `test lib|stdlib [lib...] [--no-build] [-k filter]` — native stdlib [Test]
-// harness. Mirrors scripts/test-lib.sh (sequential; --jobs parallel batching is
+// harness. Mirrors the former scripts/test-lib.sh (sequential; --jobs parallel batching is
 // a later optimization). Each src/libraries/<lib>/tests/*.z42 is compiled to
 // .zbc via z42c then run through z42-test-runner; results aggregated.
 int _testLib(string[] argv) {

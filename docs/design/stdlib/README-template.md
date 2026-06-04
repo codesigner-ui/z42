@@ -71,7 +71,7 @@
 `tests/`：<N> 个 `.z42` 测试文件覆盖 <主题 / 边界 / 错误>。运行：
 
 ```bash
-./scripts/test-stdlib.sh        # 完整 stdlib 测试套
+z42 xtask.zpkg test lib        # 完整 stdlib 测试套
 ```
 
 <可选：跨 zpkg 端到端 / golden / benchmark 等。>

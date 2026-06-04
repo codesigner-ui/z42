@@ -68,5 +68,5 @@ C 头文件位于 [`include/z42_abi.h`](include/z42_abi.h)；`.z42abi` manifest 
 ```bash
 cargo build --workspace --manifest-path src/runtime/Cargo.toml
 cargo test  --workspace --manifest-path src/runtime/Cargo.toml
-./scripts/test-vm.sh
+z42 xtask.zpkg test vm
 ```

@@ -148,7 +148,7 @@ PackageCompiler 把每个源文件作为一个 CU 处理：
 
 **迁移工具**：
 
-`scripts/audit-missing-usings.sh` — 扫描 source.z42 按使用类型推断需要的
+`z42 xtask.zpkg audit` — 扫描 source.z42 按使用类型推断需要的
 using，自动 patch（一次性工具）。
 
 ---

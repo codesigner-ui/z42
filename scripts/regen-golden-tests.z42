@@ -1,8 +1,8 @@
-// port-regen-golden-tests (2026-05-27): regen-golden-tests.sh → z42 self-host.
+// port-regen-golden-tests (2026-05-27): the former scripts/regen-golden-tests.sh → z42 self-host.
 //
-// Mirrors scripts/regen-golden-tests.sh (139 LOC bash):
+// Mirrors the former scripts/regen-golden-tests.sh (139 LOC bash):
 //   1. Optional stdlib rebuild via build-stdlib.sh (skipped with --no-stdlib;
-//      bash wrapper invokes it before exec'ing us)
+//      xtask invokes it before running us)
 //   2. Locate driver DLL; build z42.Driver if missing
 //   3. Enumerate golden test cases in two layouts:
 //        Dir mode:  <root>/<cat>/<name>/source.z42 → <...>/source.zbc
@@ -12,10 +12,10 @@
 //   4. For each case: `dotnet <driver.dll> <source> --emit zbc -o <output>`
 //   5. Tally + exit non-zero on any failure
 //
-// Bash entry point: scripts/regen-golden-tests.sh — bootstraps toolchain,
-// translates positional `release` to `--release`, runs build-stdlib unless
-// `--no-stdlib`, then exec's `dotnet run --project z42.Driver -- run
-// scripts/regen-golden-tests.z42 [--release]`.
+// Invoked via `z42 xtask.zpkg regen [release] [--no-stdlib]`, which bootstraps
+// the toolchain, translates positional `release` to `--release`, rebuilds stdlib
+// unless `--no-stdlib`, then runs this compiled zpkg with `[--release]` passed
+// through.
 namespace Z42RegenGoldenTestsScript;
 
 using Std;

@@ -32,7 +32,7 @@ public static partial class ZbcReader
         if (minor != ZbcWriter.VersionMinor)
             throw new InvalidDataException(
                 $"zbc minor {minor} not supported (writer is at {ZbcWriter.VersionMinor}); " +
-                $"regen via ./scripts/regen-golden-tests.sh");
+                $"regen via z42 xtask.zpkg regen");
 
         var dir = ReadDirectory(data, minor, secCount);
 
@@ -175,7 +175,7 @@ public static partial class ZbcReader
             throw new InvalidDataException(
                 $"sidecar zbc {major}.{minor} not supported (writer is at " +
                 $"{ZbcWriter.VersionMajor}.{ZbcWriter.VersionMinor}); " +
-                $"regen via ./scripts/regen-golden-tests.sh");
+                $"regen via z42 xtask.zpkg regen");
         if (!flags.HasFlag(ZbcFlags.SymOnly))
             throw new InvalidDataException(
                 "expected SymOnly flag set; this is not a debug-symbol sidecar.");

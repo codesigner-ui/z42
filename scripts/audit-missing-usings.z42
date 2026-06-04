@@ -1,10 +1,10 @@
 // port-audit-missing-usings (2026-05-17)：第二个 .z42 实现的 build script。
 //
-// 行为对齐 scripts/audit-missing-usings.sh（100 LOC bash）：扫 src/tests +
+// 行为对齐 the former scripts/audit-missing-usings.sh（100 LOC bash）：扫 src/tests +
 // src/libraries 下所有 source.z42，根据 type 使用启发式插入缺失 `using` 声明。
 // 幂等：已存在的 using 跳过。
 //
-// 入口：`z42c run scripts/audit-missing-usings.z42`；CWD 必须 repo root。
+// 入口：`z42 xtask.zpkg audit`；CWD 必须 repo root。
 namespace Z42AuditMissingUsingsScript;
 
 using Std;

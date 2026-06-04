@@ -5,8 +5,8 @@
 ## 命令
 
 ```bash
-./scripts/test-stdlib.sh             # 6 个库全跑
-./scripts/test-stdlib.sh z42.math    # 仅指定库
+z42 xtask.zpkg test lib             # 6 个库全跑
+z42 xtask.zpkg test lib z42.math    # 仅指定库
 ```
 
 或 `just`：
@@ -28,11 +28,11 @@ just test-stdlib z42.math
 ## Runner 输出格式
 
 ```bash
-./scripts/test-stdlib.sh                            # 默认按 TTY 自动选 pretty / tap
-./scripts/test-stdlib.sh --format pretty            # 人类可读
-./scripts/test-stdlib.sh --format tap               # TAP 13（CI 友好）
-./scripts/test-stdlib.sh --format json              # JSON（custom schema）
-./scripts/test-stdlib.sh --filter <SUBSTR>          # 子串过滤
+z42 xtask.zpkg test lib                            # 默认按 TTY 自动选 pretty / tap
+z42 xtask.zpkg test lib --format pretty            # 人类可读
+z42 xtask.zpkg test lib --format tap               # TAP 13（CI 友好）
+z42 xtask.zpkg test lib --format json              # JSON（custom schema）
+z42 xtask.zpkg test lib --filter <SUBSTR>          # 子串过滤
 ```
 
 ## 加新测试
@@ -54,7 +54,7 @@ public static void test_throws_on_invalid_input() {
 }
 ```
 
-写完后 `./scripts/test-stdlib.sh <lib>` 即可发现。
+写完后 `z42 xtask.zpkg test lib <lib>` 即可发现。
 
 ## 与 C# 单测的区别
 

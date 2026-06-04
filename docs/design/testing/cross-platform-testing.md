@@ -311,8 +311,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - dotnet test
-      - ./scripts/test-vm.sh        # interp + jit
-      - ./scripts/test-stdlib.sh
+      - z42 xtask.zpkg test vm        # interp + jit
+      - z42 xtask.zpkg test lib
       - tar artifacts/test-zbcs/*.zbc → upload-artifact
 
   wasm-tests:
@@ -413,7 +413,7 @@ jobs:
 
 1. **Phase 1 — test-runner library 化**（基础）
    spec：[rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/) （已 DRAFT）
-   交付：`pub fn run_zbc(...)`，CLI 改成调用库；host 现有 `./scripts/test-stdlib.sh` 不变
+   交付：`pub fn run_zbc(...)`，CLI 改成调用库；host 现有 `z42 xtask.zpkg test lib` 不变
 
 2. **Phase 2 — Capability 注册表 + `[SkipPlatform]` attribute**（轻量）
    新 spec（小）：

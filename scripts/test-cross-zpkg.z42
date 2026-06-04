@@ -1,4 +1,4 @@
-// port-test-cross-zpkg (2026-05-27): test-cross-zpkg.sh → z42 self-host.
+// port-test-cross-zpkg (2026-05-27): the former scripts/test-cross-zpkg.sh → z42 self-host.
 //
 // Each test under src/tests/cross-zpkg/<name>/ ships three z42.toml packages
 // (target / ext / main) plus expected_output.txt. We build them in
@@ -13,8 +13,9 @@
 //   3. dotnet z42c.dll build <main>/z42.toml            (deps on target + ext)
 //   4. cargo run -q -- <main>.zpkg --mode <interp|jit>  (run + capture stdout)
 //
-// Bash entry point: scripts/test-cross-zpkg.sh — bootstraps compiler + VM
-// + stdlib, then exec's `dotnet run -- run scripts/test-cross-zpkg.z42 [mode]`.
+// Invoked via `z42 xtask.zpkg test cross-zpkg [interp|jit]`, which bootstraps
+// compiler + VM + stdlib, then runs this compiled zpkg with mode passed via the
+// Z42_VM_MODE env var.
 namespace Z42TestCrossZpkgScript;
 
 using Std;

@@ -32,11 +32,11 @@ L3-Impl2 (`impl Trait for Type` 跨 zpkg 传播) 是首个驱动用例。
 ## 运行
 
 ```bash
-./scripts/test-cross-zpkg.sh                # interp 模式
-./scripts/test-cross-zpkg.sh jit            # jit 模式
+z42 xtask.zpkg test cross-zpkg              # interp 模式
+z42 xtask.zpkg test cross-zpkg jit          # jit 模式
 ```
 
-驱动逻辑（`scripts/test-cross-zpkg.sh`）：
+驱动逻辑（`z42 xtask.zpkg test cross-zpkg`）：
 
 1. 构建 target → ext → main（每步把上一步的 zpkg 复制到下一步的 `libs/`）
 2. 收集 stdlib + target + ext 的 zpkg 到临时 libs_dir

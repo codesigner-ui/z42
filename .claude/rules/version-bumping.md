@@ -35,7 +35,7 @@ paths:
 dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc"
 ```
 
-由于 strict-pin 政策（reader 精确匹配 writer 的 major + minor），minor bump 必然让所有现存 `.zbc` artifacts 失效；常配套跑 `./scripts/regen-golden-tests.sh` 把 stdlib + 测试 zbc 一并 regen。这是预期行为，不需要兼容代码。
+由于 strict-pin 政策（reader 精确匹配 writer 的 major + minor），minor bump 必然让所有现存 `.zbc` artifacts 失效；常配套跑 `z42 xtask.zpkg regen` 把 stdlib + 测试 zbc 一并 regen。这是预期行为，不需要兼容代码。
 
 如果只是修 reader / writer 的非格式相关 bug（不改 wire layout）— **不要** bump minor；invariant tests 仍会通过。
 

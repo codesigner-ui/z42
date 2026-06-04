@@ -30,7 +30,7 @@ just ci          # = build + test，CI 标准管线
 
 ## Scope-aware test-all（add-test-split-by-area, 2026-05-21）
 
-`./scripts/test-all.sh` 默认跑 6 stages（dotnet build / cargo build /
+`z42 xtask.zpkg test` 默认跑 6 stages（dotnet build / cargo build /
 dotnet test / test-vm / cross-zpkg / stdlib）≈ 3-5 min。iteration 期常
 只改一个 area；用 `--scope=<value>` 跳过不相关 stages：
 
@@ -55,10 +55,10 @@ dotnet test / test-vm / cross-zpkg / stdlib）≈ 3-5 min。iteration 期常
 例：
 
 ```bash
-./scripts/test-all.sh --scope=runtime     # 跳 dotnet stages，约省 30-40s
-./scripts/test-all.sh --scope=stdlib      # 跳 build + dotnet test，约省 60-90s
-./scripts/test-all.sh --scope=auto        # 自动判断当前 diff
-./scripts/test-all.sh                      # full，commit 前必走
+z42 xtask.zpkg test     # 跳 dotnet stages，约省 30-40s
+z42 xtask.zpkg test     # 跳 build + dotnet test，约省 60-90s
+z42 xtask.zpkg test     # 自动判断当前 diff
+z42 xtask.zpkg test     # full，commit 前必走
 ```
 
 **GREEN gate 规则**：iteration 期允许缩窄 scope 加速。**commit 前最终
@@ -68,7 +68,7 @@ GREEN 必须 `--scope=full`**（或 `--scope=auto` 自动等价 full，
 
 ### Parallel waves（add-test-parallel-stages, 2026-05-21）
 
-正交于 `--scope`。加 `--parallel` 让 test-all.sh 按依赖图分 wave 跑，每个
+正交于 `--scope`。加 `--parallel` 让 `z42 xtask.zpkg test` 按依赖图分 wave 跑，每个
 wave 内的 stage 并发；wave 之间串行。期望加速 ~38%（scope=full）。
 
 各 scope 的 wave 排列：
@@ -96,9 +96,9 @@ stage 的 temp 输出文件，echo 完整路径供 debug。成功 wave 自动清
 例：
 
 ```bash
-./scripts/test-all.sh --parallel                       # full + parallel ≈ 160s
-./scripts/test-all.sh --scope=runtime --parallel       # runtime + parallel
-./scripts/test-all.sh --scope=auto --parallel          # auto + parallel
+z42 xtask.zpkg test --parallel                       # full + parallel ≈ 160s
+z42 xtask.zpkg test --parallel                       # runtime + parallel
+z42 xtask.zpkg test --parallel                       # auto + parallel
 ```
 
 `--parallel` + `--quick`、`--parallel` + `--with-dist` 都兼容（额外 stage

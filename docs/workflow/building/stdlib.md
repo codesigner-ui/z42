@@ -9,7 +9,7 @@
 - zbc / zpkg 格式 bump（compiler 端 minor 升级）
 - 编译器有 codegen / TypeChecker 行为变更
 
-**注**：`./scripts/test-vm.sh` 默认会自动重建 stdlib，开发场景**不必手动**跑 `build-stdlib.sh`。
+**注**：`z42 xtask.zpkg test vm` 默认会自动重建 stdlib，开发场景**不必手动**跑 `build-stdlib.sh`。
 
 ## 直接构建
 
@@ -60,4 +60,4 @@ artifacts/
 
 ## 与 stdlib 内 `[Test]` 测试的关系
 
-`build-stdlib.sh` 只编译 lib 本身的源码（不跑测试）；stdlib 内 `[Test]` 测试由 [`../testing/stdlib-tests.md`](../testing/stdlib-tests.md) 描述的 `test-stdlib.sh` + z42-test-runner 跑。
+`build-stdlib.sh` 只编译 lib 本身的源码（不跑测试）；stdlib 内 `[Test]` 测试由 [`../testing/stdlib-tests.md`](../testing/stdlib-tests.md) 描述的 `z42 xtask.zpkg test lib` + z42-test-runner 跑。

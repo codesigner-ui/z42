@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://z42.dev/schemas/bench-baseline-v1.json",
   "title": "z42 Benchmark Baseline v1",
-  "description": "Schema for z42 benchmark baseline / current-run results. Produced by scripts/bench-run.sh; consumed by scripts/bench-diff.sh (P1.D).",
+  "description": "Schema for z42 benchmark baseline / current-run results. Produced by `z42 xtask.zpkg bench`; consumed by scripts/bench-diff.sh (P1.D).",
   "type": "object",
   "required": ["schema_version", "commit", "branch", "os", "timestamp", "benchmarks"],
   "additionalProperties": false,

@@ -21,8 +21,8 @@ z42 xtask.zpkg <command> [args]                    # run via launcher
   moved to native, **bash-free** orchestration — `_exec(Process)` spawns
   cargo/dotnet/git/z42vm directly (`Process.WorkingDirectory`), `_root()` finds
   the repo root via `git`, and compiled `.z42` logic runs on this process's own
-  inherited z42vm (`Z42_PORTABLE_VM` / `Z42_HOME`). The corresponding `.sh` is
-  kept as fallback until each native path is CI-proven, then deleted.
+  inherited z42vm (`Z42_PORTABLE_VM` / `Z42_HOME`). The test/regen/bench/audit
+  scripts have been deleted — xtask is now the sole entry for these.
   - ✅ `deps check` — native (compiles + runs check-versions-drift.z42, no bash)
   - ✅ `test changed` — native outer (runs test-changed.z42 via the driver, base/
     --dry-run via env vars); inner `just` command-exec is a tracked follow-up

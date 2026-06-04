@@ -130,5 +130,5 @@ Stopwatch.Elapsed() -> TimeSpan                // 累计运行时长
 运行：
 
 ```bash
-./scripts/test-stdlib.sh        # 完整 stdlib 测试套
+z42 xtask.zpkg test lib         # 完整 stdlib 测试套
 ```

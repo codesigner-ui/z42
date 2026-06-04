@@ -83,7 +83,7 @@ cargo build --manifest-path src/runtime/Cargo.toml --release   # z42vm + libz42
 ./scripts/build-stdlib.sh
 
 # 全套测试
-./scripts/test-all.sh
+z42 xtask.zpkg test
 
 # 打 host (windows-x64) SDK package
 ./scripts/package.sh release --rid windows-x64
@@ -169,7 +169,7 @@ ls artifacts/packages/z42-0.1.0-windows-x64-release/
 #  manifest.toml
 ```
 
-跑 `./scripts/test-all.sh` 应该全绿；如果有失败按本文档下方"See also"链表里的 testing/ 文件排查。
+跑 `z42 xtask.zpkg test` 应该全绿；如果有失败按本文档下方"See also"链表里的 testing/ 文件排查。
 
 ## See also
 

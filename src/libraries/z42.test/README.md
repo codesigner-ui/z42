@@ -58,7 +58,7 @@ class Counter { public int n; public Counter() { this.n = 0; } }
 
 跑测试：`just test-stdlib mylib`（默认串行，in-process VM 保留 [Setup]/[Teardown]）。
 
-**并行执行**（add-test-runner-parallel 2026-05-27）：`./scripts/test-lib.sh --jobs N mylib`
+**并行执行**（add-test-runner-parallel 2026-05-27）：`z42 xtask.zpkg test lib --jobs N mylib`
 或 `--jobs 0` 自动用 `available_parallelism()`。N > 1 强制 subprocess 模式 —
 速度上 4–8× 但 [Setup]/[Teardown] 不会运行（VmContext 是 `!Send`，无法跨线程
 共享）。z42.crypto 7 文件实测：serial 18s → `--jobs 8` 5.7s。

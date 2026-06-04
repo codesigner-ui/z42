@@ -63,5 +63,5 @@
 （NaN / Inf / 大数 / 负零 / 整数 overflow）。运行：
 
 ```bash
-./scripts/test-stdlib.sh        # 完整 stdlib 测试套
+z42 xtask.zpkg test lib         # 完整 stdlib 测试套
 ```

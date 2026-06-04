@@ -5,7 +5,7 @@ members = [".", "crates/z42-abi", "crates/z42-rs", "crates/z42-macros", "crates/
 # main `z42` crate (only pulled in compile-time via `bundled-compression`
 # feature, used on wasm). Without listing it as a default-member, the bare
 # `cargo build --manifest-path src/runtime/Cargo.toml` invocations in
-# `just build-runtime` and `scripts/test-lib.sh` only built the root
+# `just build-runtime` and `z42 xtask.zpkg test lib` only built the root
 # package; tests that touched Std.Compression hit "unknown builtin
 # `__brotli_compress`" because no libz42_compression.{dylib,so,dll} was
 # present in the search path. Listing it here makes every default build

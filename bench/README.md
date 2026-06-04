@@ -8,7 +8,7 @@
 |----|------|------|------|
 | Rust 微基准 | criterion | `src/runtime/benches/` | ✅ P1.A |
 | C# 编译器吞吐 | BenchmarkDotNet | `src/compiler/z42.Bench/` | ✅ P1.B |
-| z42 端到端 | hyperfine + 自建 harness | `bench/scenarios/` + `scripts/bench-run.sh` | ✅ P1.C |
+| z42 端到端 | hyperfine + 自建 harness | `bench/scenarios/` + `z42 xtask.zpkg bench` | ✅ P1.C |
 | **z42 进程内微基准** | **`[Benchmark]` + `Std.Test.Bencher`（test-runner 派发）** | **各 lib `tests/*_bench.z42`** | **✅ 2026-05-31** |
 | 基线对比 | `scripts/bench-diff.sh` | `bench/baselines/` | ✅ P1.D.1 |
 | CI bench smoke (artifact) | `.github/workflows/ci.yml` (`bench-e2e` job) | — | ✅ P1.D.2 |

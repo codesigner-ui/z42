@@ -19,9 +19,9 @@ z42 CI 在 GitHub Actions 运行，配置见 [`.github/workflows/`](../../.githu
 dotnet build src/compiler/z42.slnx                    # 无编译错误
 cargo build --manifest-path src/runtime/Cargo.toml    # 无编译错误
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj   # 100% 通过
-./scripts/test-vm.sh                                  # 100% 通过（interp + jit 双模）
-./scripts/test-stdlib.sh                              # 100% 通过
-./scripts/test-cross-zpkg.sh                          # 100% 通过
+z42 xtask.zpkg test vm                                # 100% 通过（interp + jit 双模）
+z42 xtask.zpkg test lib                               # 100% 通过
+z42 xtask.zpkg test cross-zpkg                        # 100% 通过
 ```
 
 简化入口：
@@ -38,7 +38,7 @@ just ci      # build + test 全套
 
 | 起始版本 | 新增 GREEN 项 |
 |:------:|------|
-| 当前 | dotnet build + cargo build + dotnet test + test-vm.sh |
+| 当前 | dotnet build + cargo build + dotnet test + z42 xtask.zpkg test vm |
 | 0.2.3 | Perf CI（≥10% 退化阻塞）|
 | 0.2.5 | 多平台 CI matrix |
 | 0.4.6 | `z42c test` 100% 通过 |

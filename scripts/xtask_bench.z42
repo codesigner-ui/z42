@@ -1,5 +1,5 @@
 // xtask — e2e benchmarks (migrate-scripts-to-z42). Native port of
-// scripts/bench-run.sh + scripts/_merge-bench-results.py. Compiles
+// the former scripts/bench-run.sh + scripts/_merge-bench-results.py. Compiles
 // bench/scenarios/*.z42, runs hyperfine on z42vm per scenario, then merges the
 // hyperfine JSONs into bench/results/e2e.json — parse with native Std.Json,
 // output string-built (replacing python3). Same Z42Xtask namespace; calls

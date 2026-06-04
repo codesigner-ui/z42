@@ -4,12 +4,12 @@
 //! bytes produced by the C# compiler (the golden test artifacts under
 //! `tests/golden/run/<name>/source.zbc`). Catches **any** C# opcode /
 //! section format drift that breaks Rust decoding — without waiting for
-//! `./scripts/test-vm.sh` to find it via end-to-end execution.
+//! `z42 xtask.zpkg test vm` to find it via end-to-end execution.
 //!
 //! review2 §4 (跨语言契约自动校验) — closes the gap between
 //! `ZbcRoundTripTests` (C# write → C# read only) and full e2e (slow).
 //!
-//! Regenerate the golden zbc files with `./scripts/regen-golden-tests.sh`
+//! Regenerate the golden zbc files with `z42 xtask.zpkg regen`
 //! after every C# compiler change that affects bytecode emission.
 
 use std::fs;
@@ -82,7 +82,7 @@ fn each_golden_zbc() -> Vec<(String, PathBuf)> {
 fn all_golden_zbc_decode() {
     let goldens = each_golden_zbc();
     // The repo only commits 6 source.zbc files; the rest (~50+ total) are
-    // regen-on-demand by `./scripts/regen-golden-tests.sh` and excluded from
+    // regen-on-demand by `z42 xtask.zpkg regen` and excluded from
     // git via .gitignore. CI runs the regen for us; local `cargo test` runs
     // without regen still get useful decoder coverage on the 6 committed
     // fixtures. Emit a notice when below the regen'd-set threshold instead
@@ -95,7 +95,7 @@ fn all_golden_zbc_decode() {
     if goldens.len() < 50 {
         eprintln!(
             "note: only {} source.zbc fixtures present (run \
-             `./scripts/regen-golden-tests.sh` for full ~50+ set)",
+             `z42 xtask.zpkg regen` for full ~50+ set)",
             goldens.len()
         );
     }

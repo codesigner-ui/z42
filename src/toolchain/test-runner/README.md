@@ -29,7 +29,7 @@ z42 测试运行器（R3 minimal 实施）。读取 .zbc 中的 TIDX section（s
 | stdout 捕获（默认隐藏 PASS 输出） | `TestIO.captureStdout(closure)` 需 closure | R2.B |
 | `--tag` filter | 需 z42 attribute 加 tag 字段 | 独立 spec |
 | regex filter | 当前 substring 够用 | 真有需求时升级 |
-| 增量测试（`scripts/test-changed.sh`） | git diff → 反向依赖图 | R3c |
+| 增量测试（`z42 xtask.zpkg test changed`） | git diff → 反向依赖图 | R3c |
 
 ## 使用
 

@@ -72,5 +72,5 @@ HmacSha256.ComputeStringHex(string key, string message) -> string
 运行：
 
 ```bash
-./scripts/test-stdlib.sh        # 完整 stdlib 测试套
+z42 xtask.zpkg test lib         # 完整 stdlib 测试套
 ```

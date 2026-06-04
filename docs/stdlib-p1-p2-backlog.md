@@ -36,4 +36,4 @@
 
 - `compiler-future-typed-overload-resolution`：`override` 父方法的 arity overload 不支持（add-bigint-tobase 撞到）；可能影响其他 stdlib 类的 API 命名选择
 - `compression-future-zip-write`：`Zip.Write` 仍未实现（compression.md Deferred）；本表 `Zip.CreateFromDirectory` 依赖该项，若 Zip.Write 没就绪需要单独立 spec 把 v0 Zip.Write 落地，再做 CreateFromDirectory
-- ~~test-runner Arc<str> 类型错~~ ✅ 已 settle（2026-05-27 验证 cargo build clean）；本会话所有 16 stdlib libs `test-lib.sh` 全 GREEN（z42.json wildcard test 一并修了）
+- ~~test-runner Arc<str> 类型错~~ ✅ 已 settle（2026-05-27 验证 cargo build clean）；本会话所有 16 stdlib libs `z42 xtask.zpkg test lib` 全 GREEN（z42.json wildcard test 一并修了）

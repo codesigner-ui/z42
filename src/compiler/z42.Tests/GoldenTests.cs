@@ -24,7 +24,7 @@ namespace Z42.Tests;
 /// Two layouts coexist (dual-mode discovery, 2026-05-08 flatten-assert-only-tests):
 ///
 ///   Dir mode  — case dir holds source + sidecars:
-///     src/tests/&lt;category&gt;/&lt;name&gt;/                  — VM-runnable cases (test-vm.sh)
+///     src/tests/&lt;category&gt;/&lt;name&gt;/                  — VM-runnable cases (z42 xtask.zpkg test vm)
 ///     src/compiler/z42.Tests/Fixtures/{errors,parse}/&lt;name&gt;/ — compiler-only goldens (this runner)
 ///     src/libraries/&lt;lib&gt;/tests/&lt;name&gt;/
 ///       source.z42          — z42 source input
@@ -46,7 +46,7 @@ namespace Z42.Tests;
 ///
 /// 2026-05-12: compiler-only goldens (errors + parse) live under
 /// `src/compiler/z42.Tests/Fixtures/` (owned by this runner). `src/tests/`
-/// is now reserved for VM-runnable e2e goldens consumed by test-vm.sh.
+/// is now reserved for VM-runnable e2e goldens consumed by z42 xtask.zpkg test vm.
 /// </summary>
 public sealed class GoldenTests
 {
@@ -174,7 +174,7 @@ public sealed class GoldenTests
         // timing issue (ModeFlags.Once / .Weak from z42.core appear as Null
         // before the cross-zpkg __static_init__ pass runs). See roadmap.md
         // "Deferred Backlog Index" → 跨包 static field 初始化时机. Mirrors the
-        // same skip in scripts/test-vm.sh. Re-enable once that backlog ships.
+        // same skip in z42 xtask.zpkg test vm. Re-enable once that backlog ships.
         static bool IsExcludedPath(string p) =>
                p.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar)
             || p.Contains(Path.DirectorySeparatorChar + "zbc-format"  + Path.DirectorySeparatorChar)
@@ -209,7 +209,7 @@ public sealed class GoldenTests
             // Error / parse cases must use dir mode (they require sidecar files).
             //
             // Flat scan only applies to src/tests/. Files under src/libraries/<lib>/tests/<name>.z42
-            // are owned by the z42-test-runner ([Test]-attributed; dispatched via scripts/test-stdlib.sh)
+            // are owned by the z42-test-runner ([Test]-attributed; dispatched via z42 xtask.zpkg test lib)
             // and would lack a Main entry point — not golden runnable.
             if (root != TestsRoot) continue;
 

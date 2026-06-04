@@ -1,14 +1,14 @@
 # 增量测试（只跑 git diff 影响）
 
-dev 内循环加速：`./scripts/test-changed.sh` 根据 git diff 把改动文件映射到测试命令，去重后执行最小集合。
+dev 内循环加速：`z42 xtask.zpkg test changed` 根据 git diff 把改动文件映射到测试命令，去重后执行最小集合。
 
 ## 命令
 
 ```bash
-./scripts/test-changed.sh                 # base = HEAD（unstaged + staged）
-./scripts/test-changed.sh main            # base = main（branch 全部差异）
-./scripts/test-changed.sh --dry-run       # 只打印计划，不执行
-Z42_TEST_CHANGED_BASE=origin/main ./scripts/test-changed.sh
+z42 xtask.zpkg test changed                 # base = HEAD（unstaged + staged）
+z42 xtask.zpkg test changed main            # base = main（branch 全部差异）
+z42 xtask.zpkg test changed --dry-run       # 只打印计划，不执行
+Z42_TEST_CHANGED_BASE=origin/main z42 xtask.zpkg test changed
 ```
 
 或 `just`：
@@ -44,6 +44,6 @@ just test-changed --dry-run
 
 ## 实施
 
-`test-changed.sh` 用 `git diff --name-only <BASE>` 收集 tracked changes + `git ls-files --others --exclude-standard` 收集 untracked，去重后 case 映射 + dedup 命令 + 固定顺序执行（compile → vm → stdlib → cross）。
+`z42 xtask.zpkg test changed` 用 `git diff --name-only <BASE>` 收集 tracked changes + `git ls-files --others --exclude-standard` 收集 untracked，去重后 case 映射 + dedup 命令 + 固定顺序执行（compile → vm → stdlib → cross）。
 
-source: [`scripts/test-changed.sh`](../../../scripts/test-changed.sh)。
+source: `z42 xtask.zpkg test changed`。

@@ -2,7 +2,7 @@
 //! `ArcMagrGC::write_barrier_*` trait overrides dispatch to the
 //! installed `BarrierObserver`. The call-site filter (Decision 1 —
 //! only invoke when `new.is_heap_ref()`) is verified end-to-end by
-//! the broader `test-all.sh --scope=full` GREEN gate (stdlib + JIT
+//! the broader `z42 xtask.zpkg test` GREEN gate (stdlib + JIT
 //! smoke + golden tests); these unit tests focus on the GC-side
 //! dispatch + observer plumbing.
 
