@@ -1,24 +1,23 @@
-// port-check-versions-drift (2026-05-16)：第一个 .z42 实现的 build script。
+// xtask — `deps check` impl (unify-scripts-into-xtask, 2026-06-05). Folded from
+// the former standalone scripts/check-versions-drift.z42 into xtask so it runs
+// as in-process xtask logic (no per-invocation dotnet-run-build + z42vm-run dance).
 //
-// 行为对齐 the former scripts/check-versions-drift.sh（83 LOC bash）：从 versions.toml
-// 拿期望值，扫几个"投影"文件（Cargo.toml / build.gradle.kts / package_helpers.sh）
-// 验证一致性。任一 mismatch → exit 1。
-//
-// 入口：直接 `z42c run scripts/check-versions-drift.z42` 或经 bash bootstrap
-// 编译执行；CWD 必须是 repo root。
-namespace Z42CheckVersionsDriftScript;
+// 从 versions.toml 拿期望值，扫几个"投影"文件（Cargo.toml / build.gradle.kts /
+// ios/Package.swift）验证一致性。任一 mismatch → return 1。scalar 解析复用 shared
+// xtask_versions.z42 的 _scalarStr。Entry: `z42 xtask.zpkg deps check`.
+namespace Z42Xtask;
 
 using Std;
 using Std.IO;
 using Std.Toml;
 using Std.Regex;
 
-void Main() {
-    string root = Environment.GetCurrentDirectory();
+int _checkVersionsDrift() {
+    string root = _root();
     string tomlPath = Path.Join(root, "versions.toml");
     if (!File.Exists(tomlPath)) {
         ConsoleError.WriteLine("error: versions.toml not found at " + tomlPath);
-        Environment.Exit(2);
+        return 2;
     }
 
     TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
@@ -27,18 +26,18 @@ void Main() {
     // ── project ──────────────────────────────────────────────────────────
     Console.WriteLine("── project ──────────────────────────────────────────────────────────────");
     string cargoText = File.ReadAllText(Path.Join(root, "src/runtime/Cargo.toml"));
-    string wantVer = _tomlScalarToString(toml.Get("project").Get("version"));
+    string wantVer = _scalarStr(toml.Get("project").Get("version"));
     string gotVer  = _extractCargoWorkspaceVersion(cargoText);
     failCount = failCount + _check("src/runtime/Cargo.toml [workspace.package].version", wantVer, gotVer);
 
     // ── Android ──────────────────────────────────────────────────────────
     Console.WriteLine("── Android ──────────────────────────────────────────────────────────────");
     string gradleText = File.ReadAllText(Path.Join(root, "src/toolchain/host/platforms/android/z42vm/build.gradle.kts"));
-    string wantMin = _tomlScalarToString(toml.Get("platform").Get("android").Get("min_api"));
+    string wantMin = _scalarStr(toml.Get("platform").Get("android").Get("min_api"));
     string gotMin  = _firstMatchGroup(gradleText, "minSdk\\s*=\\s*([0-9]+)", 1);
     failCount = failCount + _check("build.gradle.kts  minSdk", wantMin, gotMin);
 
-    string wantTgt = _tomlScalarToString(toml.Get("platform").Get("android").Get("target_api"));
+    string wantTgt = _scalarStr(toml.Get("platform").Get("android").Get("target_api"));
     string gotTgt  = _firstMatchGroup(gradleText, "compileSdk\\s*=\\s*([0-9]+)", 1);
     failCount = failCount + _check("build.gradle.kts  compileSdk", wantTgt, gotTgt);
 
@@ -54,21 +53,21 @@ void Main() {
     // committed host harness src/toolchain/host/platforms/ios/Package.swift
     // (used for `swift test`); re-anchor the drift check onto it.
     string pkgSwiftText = File.ReadAllText(Path.Join(root, "src/toolchain/host/platforms/ios/Package.swift"));
-    string wantIos = _tomlScalarToString(toml.Get("platform").Get("ios").Get("min_ios"));
+    string wantIos = _scalarStr(toml.Get("platform").Get("ios").Get("min_ios"));
     string gotIosMajor = _firstMatchGroup(pkgSwiftText, "\\.iOS\\(\\.v([0-9]+)\\)", 1);
     string gotIos = gotIosMajor + ".0";
     failCount = failCount + _check("ios/Package.swift  .iOS(.v<major>)", wantIos, gotIos);
 
-    string wantMac = _tomlScalarToString(toml.Get("platform").Get("ios").Get("min_macos"));
+    string wantMac = _scalarStr(toml.Get("platform").Get("ios").Get("min_macos"));
     string gotMacMajor = _firstMatchGroup(pkgSwiftText, "\\.macOS\\(\\.v([0-9]+)\\)", 1);
     string gotMac = gotMacMajor + ".0";
     failCount = failCount + _check("ios/Package.swift  .macOS(.v<major>)", wantMac, gotMac);
 
     // ── wasm presence checks ────────────────────────────────────────────
     Console.WriteLine("── wasm ──────────────────────────────────────────────────────────────────");
-    string wpm = _tomlScalarToString(toml.Get("build").Get("wasm").Get("wasm_pack_min"));
+    string wpm = _scalarStr(toml.Get("build").Get("wasm").Get("wasm_pack_min"));
     failCount = failCount + _check("versions.toml  build.wasm.wasm_pack_min present", wpm, wpm);
-    string wtm = _tomlScalarToString(toml.Get("build").Get("wasm").Get("wasm_tools_min"));
+    string wtm = _scalarStr(toml.Get("build").Get("wasm").Get("wasm_tools_min"));
     failCount = failCount + _check("versions.toml  build.wasm.wasm_tools_min present", wtm, wtm);
 
     // ── Result ──────────────────────────────────────────────────────────
@@ -76,9 +75,10 @@ void Main() {
     if (failCount > 0) {
         ConsoleError.WriteLine("error: versions.toml drift detected — update the source files to match versions.toml");
         ConsoleError.WriteLine("       See versions.toml → field comments (→ filename) for which file to fix.");
-        Environment.Exit(1);
+        return 1;
     }
     Console.WriteLine("All version checks passed.");
+    return 0;
 }
 
 // 同 bash check()：want == got → ✓，否则 ✗ + 计 1 失败。
@@ -102,14 +102,7 @@ string _padRight(string s, int width) {
     return acc;
 }
 
-// TomlValue scalar → string（同 python `print(node)` 行为：int 23 → "23"）。
-string _tomlScalarToString(TomlValue v) {
-    if (v.IsString()) { return v.AsString(); }
-    if (v.IsLong())   { return v.AsLong().ToString(); }
-    if (v.IsDouble()) { return v.AsDouble().ToString(); }
-    if (v.IsBool())   { return v.AsBool().ToString(); }
-    throw new Exception("expected scalar TomlValue, got " + v.KindName());
-}
+// _scalarStr 现由 shared xtask_versions.z42 提供（同 Z42Xtask 命名空间）。
 
 // 第一个 regex match 的指定 group；找不到返回 ""（同 bash `head -1` 失败时空）。
 string _firstMatchGroup(string text, string pattern, int groupIdx) {
