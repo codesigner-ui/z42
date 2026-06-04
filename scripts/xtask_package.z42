@@ -50,8 +50,10 @@ int _buildPackage(string[] argv) {
     int c;
     if (category == "desktop") {
         c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
+    } else if (category == "ios") {
+        c = _packageIos(root, pkgDir, rid, version, profile, hostRid);
     } else {
-        ConsoleError.WriteLine("xtask build package: category '" + category + "' not yet ported (desktop only)");
+        ConsoleError.WriteLine("xtask build package: category '" + category + "' not yet ported (desktop + ios)");
         return 2;
     }
     if (c != 0) { return c; }
