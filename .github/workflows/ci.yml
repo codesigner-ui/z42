@@ -418,22 +418,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-        with:
-          just-version: '1.50.0'
-
+      # migrate-scripts-to-z42: feature presets are plain cargo feature combos
+      # (was `just build-*-feature`) — inlined so this job needs no `just`.
       - name: Build interp-only (no cranelift)
-        run: just build-interp-only
+        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features interp-only
 
       - name: Build wasm preset (host target)
-        run: just build-wasm-feature
+        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features wasm
 
       - name: Build ios preset (host target)
-        run: just build-ios-feature
+        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features ios
 
       - name: Build android preset (host target)
-        run: just build-android-feature
+        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features android
 
       - name: Verify cranelift excluded under interp-only
         run: |
