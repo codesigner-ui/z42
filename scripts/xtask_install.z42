@@ -151,36 +151,8 @@ int _depsInstallNode(bool force) {
     return 0;
 }
 
-// ── versions.toml access (replaces versions.sh + python tomllib) ─────────────
-
-// versions_get <dotted.path> → scalar as string (int 23 → "23").
-string _vget(TomlValue toml, string dotted) {
-    TomlValue node = toml;
-    foreach (var key in dotted.Split(".")) {
-        node = node.Get(key);
-    }
-    return _scalarStr(node);
-}
-
-// versions_get_list <dotted.path> → array elements as strings.
-string[] _vgetList(TomlValue toml, string dotted) {
-    TomlValue node = toml;
-    foreach (var key in dotted.Split(".")) {
-        node = node.Get(key);
-    }
-    string[] xs = new string[node.Count()];
-    int i = 0;
-    while (i < node.Count()) { xs[i] = _scalarStr(node.At(i)); i = i + 1; }
-    return xs;
-}
-
-string _scalarStr(TomlValue v) {
-    if (v.IsString()) { return v.AsString(); }
-    if (v.IsLong())   { return v.AsLong().ToString(); }
-    if (v.IsDouble()) { return v.AsDouble().ToString(); }
-    if (v.IsBool())   { return v.AsBool().ToString(); }
-    throw new Exception("versions.toml: expected scalar, got " + v.KindName());
-}
+// versions.toml access (_vget/_vgetList/_scalarStr) now lives in the shared
+// xtask_versions.z42 module — same Z42Xtask namespace, so callers are unchanged.
 
 // ── host helpers ─────────────────────────────────────────────────────────────
 

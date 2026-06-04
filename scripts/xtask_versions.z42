@@ -1,0 +1,60 @@
+// xtask — shared versions.toml reader (unify-scripts-into-xtask, 2026-06-05).
+// One place to parse versions.toml; replaces the four near-identical readers that
+// used to live in xtask_install (_vget/_vgetList/_scalarStr), xtask_package
+// (_versionsGet), xtask_package_ios (_versionsGetIos) and xtask_package_android
+// (_avGet). Two access styles:
+//   - TomlValue-based (_vget/_vgetList): parse once, read many keys (deps install).
+//   - root-based (_vRead/_vReadOr): convenience that parses versions.toml fresh.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+
+// Scalar TomlValue → string (int 23 → "23", bool true → "true"). Throws on non-scalar.
+string _scalarStr(TomlValue v) {
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    if (v.IsDouble()) { return v.AsDouble().ToString(); }
+    if (v.IsBool())   { return v.AsBool().ToString(); }
+    throw new Exception("versions.toml: expected scalar, got " + v.KindName());
+}
+
+// versions_get <dotted.path> → scalar as string, on an already-parsed TomlValue.
+string _vget(TomlValue toml, string dotted) {
+    TomlValue node = toml;
+    foreach (var key in dotted.Split(".")) {
+        node = node.Get(key);
+    }
+    return _scalarStr(node);
+}
+
+// versions_get_list <dotted.path> → array elements as strings.
+string[] _vgetList(TomlValue toml, string dotted) {
+    TomlValue node = toml;
+    foreach (var key in dotted.Split(".")) {
+        node = node.Get(key);
+    }
+    string[] xs = new string[node.Count()];
+    int i = 0;
+    while (i < node.Count()) { xs[i] = _scalarStr(node.At(i)); i = i + 1; }
+    return xs;
+}
+
+// Parse the repo-root versions.toml into a TomlValue.
+TomlValue _vparse(string root) {
+    return TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
+}
+
+// Dotted-path scalar, parsing versions.toml fresh (convenience for one-off reads).
+// Throws if the file or key is missing — use _vReadOr when a default is wanted.
+string _vRead(string root, string dotted) {
+    return _vget(_vparse(root), dotted);
+}
+
+// Like _vRead but returns `fallback` on any error (missing file / missing key).
+string _vReadOr(string root, string dotted, string fallback) {
+    if (!File.Exists(Path.Join(root, "versions.toml"))) { return fallback; }
+    try { return _vget(_vparse(root), dotted); }
+    catch (Exception e) { return fallback; }
+}

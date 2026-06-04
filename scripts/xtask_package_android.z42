@@ -9,7 +9,6 @@ namespace Z42Xtask;
 
 using Std;
 using Std.IO;
-using Std.Toml;
 
 int _packageAndroid(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
     string cargoTarget = _ridToCargo(rid);
@@ -29,7 +28,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
     }
     string ndkHome = Environment.GetEnvironmentVariable("ANDROID_NDK_HOME") ?? "";
     if (ndkHome.Length == 0) {
-        string autoNdk = Path.Join(root, _avGet(root, "build.android.install_root") + "/ndk/" + _avGet(root, "build.android.ndk.version"));
+        string autoNdk = Path.Join(root, _vRead(root, "build.android.install_root") + "/ndk/" + _vRead(root, "build.android.ndk.version"));
         if (Directory.Exists(autoNdk)) {
             ndkHome = autoNdk;
             Environment.SetEnvironmentVariable("ANDROID_NDK_HOME", ndkHome);
@@ -145,8 +144,8 @@ void _pkgEmitJniBridge(string root, string pkgDir) {
 }
 
 void _pkgEmitManifestAndroid(string root, string pkgDir, string rid, string version, string profile, string buildHost) {
-    string minApi = _avGet(root, "platform.android.min_api");
-    string tgtApi = _avGet(root, "platform.android.target_api");
+    string minApi = _vRead(root, "platform.android.min_api");
+    string tgtApi = _vRead(root, "platform.android.target_api");
     string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
     string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
     string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
@@ -185,14 +184,4 @@ string _getFileSize(string path) {
     if (bytes < 1024) { return bytes.ToString() + "B"; }
     if (bytes < 1048576) { return (bytes / 1024).ToString() + "K"; }
     return (bytes / 1048576).ToString() + "M";
-}
-
-// versions.toml nested scalar (dotted path) as string — android file local helper.
-string _avGet(string root, string dotted) {
-    TomlValue t = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
-    TomlValue node = t;
-    foreach (var key in dotted.Split(".")) { node = node.Get(key); }
-    if (node.IsString()) { return node.AsString(); }
-    if (node.IsLong())   { return node.AsLong().ToString(); }
-    return node.AsString();
 }

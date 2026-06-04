@@ -10,13 +10,12 @@ namespace Z42Xtask;
 
 using Std;
 using Std.IO;
-using Std.Toml;
 
 int _packageIos(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
     string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
-    string iosMin = _versionsGetIos(root, "min_ios", "16.0");
-    string macMin = _versionsGetIos(root, "min_macos", "13.0");
+    string iosMin = _vReadOr(root, "platform.ios.min_ios", "16.0");
+    string macMin = _vReadOr(root, "platform.ios.min_macos", "13.0");
     string iosMajor = _majorComp(iosMin);
     string macMajor = _majorComp(macMin);
 
@@ -162,16 +161,6 @@ Process _iosRustc(string root, bool rel, string cargoTarget, string crateType, s
         .Arg("--quiet")
         .Env("IPHONEOS_DEPLOYMENT_TARGET", iosMin);
     return p;
-}
-
-// versions.toml [platform.ios].<key> (string), with fallback.
-string _versionsGetIos(string root, string key, string fallback) {
-    string tomlPath = Path.Join(root, "versions.toml");
-    if (!File.Exists(tomlPath)) { return fallback; }
-    try {
-        TomlValue t = TomlValue.Parse(File.ReadAllText(tomlPath));
-        return t.Get("platform").Get("ios").Get(key).AsString();
-    } catch (Exception e) { return fallback; }
 }
 
 // "16.0" → "16"

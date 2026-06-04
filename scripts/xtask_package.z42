@@ -11,7 +11,6 @@ namespace Z42Xtask;
 
 using Std;
 using Std.IO;
-using Std.Toml;
 
 // `build package [release|debug] [--rid R] [--variant V]`
 int _buildPackage(string[] argv) {
@@ -114,11 +113,8 @@ string _ridToDotnet(string rid) {
 
 // Read versions.toml [project].version with native Std.Toml (was python3).
 string _versionsGet(string root) {
-    string tomlPath = Path.Join(root, "versions.toml");
-    if (!File.Exists(tomlPath)) { return ""; }
-    TomlValue t = TomlValue.Parse(File.ReadAllText(tomlPath));
-    // [project].version always exists in versions.toml; Get throws otherwise.
-    return t.Get("project").Get("version").AsString();
+    // shared reader (xtask_versions.z42); "" when versions.toml is absent.
+    return _vReadOr(root, "project.version", "");
 }
 
 // ── desktop pipeline ────────────────────────────────────────────────────────
