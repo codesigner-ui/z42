@@ -41,6 +41,20 @@
 - [ ] rewire CI（ci/bench-update/release）→ `z42vm xtask.zpkg -- …`；删 justfile + scripts/*.sh + _lib（留 install-z42.*）
 - [ ] 更新 docs（workflow/、CLAUDE.md 等引用）
 
+## CI rewire — bootstrap sequence (build-and-test job)
+
+Replace `just build` + build-stdlib.sh + test-all.sh + package.sh with:
+1. `cargo build --release --manifest-path src/runtime/Cargo.toml`   (z42vm; inline, no script)
+2. `dotnet build src/compiler/z42.slnx`                              (compiler; inline)
+3. **stdlib primer** (cold-start, inline): `cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release` + copy per-lib dist → flat `artifacts/build/libraries/dist/release/`  (xtask `build stdlib`'s primer can't run until xtask exists → must be inline here)
+4. `dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release`  (xtask.zpkg)
+5. env: `Z42_PORTABLE_VM=artifacts/build/runtime/release/z42vm`, `Z42_LIBS=artifacts/build/libraries/dist/release`
+6. `z42vm xtask.zpkg -- test all`            (replaces test-all.sh; now parallel)
+7. `z42vm xtask.zpkg -- build package release` (replaces package.sh, desktop)
+- Windows: `z42vm xtask.zpkg -- regen --no-stdlib` (replaces regen step); cargo/dotnet smoke stay inline
+- mobile/wasm package jobs: keep package.sh until ios/android/wasm subs ported
+- **CI-critical**: push + watch (cancel-in-progress means a bad push cancels nightly); validate each OS before deleting any .sh
+
 ## 备注
 - 自托管边界保留：编译 .z42 需 dotnet（z42c）；build VM 需 cargo。xtask 直接 spawn。
 - stdlib 就绪：Process.WorkingDirectory / Environment.SetCurrentDirectory 均已存在。
