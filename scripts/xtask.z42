@@ -106,10 +106,13 @@ int _buildStdlib() {
     string coreZpkg = Path.Join(root, "artifacts/build/libraries/dist/release/z42.core.zpkg");
     if (!File.Exists(coreZpkg)) {
         Console.WriteLine("  (primer: bootstrapping stdlib for the first time)");
-        int pc = _exec(new Process("dotnet")
-            .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-            .Arg("--").Arg("build").Arg("--workspace").Arg("--release")
-            .WorkingDirectory(Path.Join(root, "src/libraries")));
+        // Must run from src/libraries so `build --workspace` finds the workspace
+        // toml; --project is therefore relative to that dir. _execIn (not _exec)
+        // because _exec would override the working directory to _root().
+        int pc = _execIn(new Process("dotnet")
+            .Arg("run").Arg("--project").Arg("../compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+            .Arg("--").Arg("build").Arg("--workspace").Arg("--release"),
+            Path.Join(root, "src/libraries"));
         if (pc != 0) { return pc; }
         _primerFlatView(root);
     }
@@ -292,6 +295,17 @@ string _root() {
 // Run a prepared Process at the repo root, inheriting stdio; return its exit code.
 int _exec(Process p) {
     return p.WorkingDirectory(_root())
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run().ExitCode;
+}
+
+// Like _exec but runs in an explicit working directory instead of _root().
+// Needed by the stdlib primer, which must invoke `z42c build --workspace` from
+// src/libraries (where the workspace toml lives) with --project relative to it.
+// (Passing a WorkingDirectory to _exec is silently overridden to _root().)
+int _execIn(Process p, string wd) {
+    return p.WorkingDirectory(wd)
         .Stdout(Stdio.Inherit())
         .Stderr(Stdio.Inherit())
         .Run().ExitCode;
