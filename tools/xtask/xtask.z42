@@ -1,0 +1,164 @@
+// xtask — the z42 repo's unified dev CLI (add-xtask-cli, 2026-06-04).
+//
+// Run via the launcher:  z42 xtask.zpkg <command> [args]
+//
+//   build  runtime | compiler | stdlib [lib] | launcher | package [--rid R] | all
+//   test   (empty=all) | stdlib [lib] | vm [interp|jit] | cross-zpkg | compiler | changed
+//   run    <app.zpkg|script.z42> [-- args]
+//   deps   check | install
+//   bench  [--diff]
+//   help   (also -h / --help)
+//
+// MVP (Stream 3): each subcommand cd's to the repo root and delegates to the
+// existing script/.z42, forwarding stdout/stderr + exit code. Stream 2
+// (migrate-scripts-to-z42) replaces each delegation with native z42 and
+// deletes the corresponding .sh.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+void Main() {
+    string[] argv = Environment.GetCommandLineArgs();
+    if (argv.Length == 0) { _help(); return; }
+
+    string cmd = argv[0];
+    if (cmd == "help" || cmd == "-h" || cmd == "--help") { _help(); return; }
+
+    int code = 0;
+    if (cmd == "build") {
+        code = _build(argv);
+    } else if (cmd == "test") {
+        code = _test(argv);
+    } else if (cmd == "run") {
+        // thin alias over the launcher's own run (you can also `z42 <app.zpkg>`).
+        code = _sh("z42 run " + _join(argv, 1));
+    } else if (cmd == "deps") {
+        code = _deps(argv);
+    } else if (cmd == "bench") {
+        code = _sh("./scripts/bench-run.sh " + _join(argv, 1));
+    } else {
+        ConsoleError.WriteLine("xtask: unknown command '" + cmd + "'  (try: z42 xtask.zpkg --help)");
+        _help();
+        Environment.Exit(2);
+        return;
+    }
+    Environment.Exit(code);
+}
+
+// ── build ─────────────────────────────────────────────────────────────────
+
+int _build(string[] argv) {
+    string sub  = _at(argv, 1);
+    string rest = _join(argv, 2);
+    if (sub == "runtime")    { return _sh("cargo build --release --manifest-path src/runtime/Cargo.toml " + rest); }
+    if (sub == "compiler")   { return _sh("dotnet build src/compiler/z42.slnx"); }
+    if (sub == "stdlib")     { return _sh("./scripts/build-stdlib.sh " + rest); }
+    if (sub == "launcher")   { return _sh("cargo build --release --manifest-path src/toolchain/launcher/Cargo.toml"); }
+    if (sub == "package")    { return _sh("./scripts/package.sh release " + rest); }
+    if (sub == "all") {
+        int c = _sh("cargo build --release --manifest-path src/runtime/Cargo.toml");
+        if (c != 0) { return c; }
+        c = _sh("dotnet build src/compiler/z42.slnx");
+        if (c != 0) { return c; }
+        return _sh("./scripts/build-stdlib.sh");
+    }
+    ConsoleError.WriteLine("xtask build: unknown target '" + sub + "'  (runtime|compiler|stdlib|launcher|package|all)");
+    return 2;
+}
+
+// ── test ──────────────────────────────────────────────────────────────────
+
+int _test(string[] argv) {
+    string sub  = _at(argv, 1);
+    string rest = _join(argv, 2);
+    if (sub == "")           { return _sh("./scripts/test-all.sh"); }
+    if (sub == "stdlib")     { return _sh("./scripts/test-stdlib.sh " + rest); }
+    if (sub == "vm")         { return _sh("./scripts/test-vm.sh " + rest); }
+    if (sub == "cross-zpkg") { return _sh("./scripts/test-cross-zpkg.sh " + rest); }
+    if (sub == "compiler")   { return _sh("dotnet test src/compiler/z42.Tests/z42.Tests.csproj"); }
+    if (sub == "changed")    { return _sh("./scripts/test-changed.sh " + rest); }
+    // a leading flag (e.g. --parallel / --jobs) → forward the whole tail to test-all
+    if (_startsWith(sub, "-")) { return _sh("./scripts/test-all.sh " + _join(argv, 1)); }
+    ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|compiler|changed | empty=all)");
+    return 2;
+}
+
+// ── deps ──────────────────────────────────────────────────────────────────
+
+int _deps(string[] argv) {
+    string sub = _at(argv, 1);
+    if (sub == "check")   { return _sh("./scripts/check-versions-drift.sh"); }
+    if (sub == "install") { return _sh("./scripts/setup-tools.sh " + _join(argv, 2)); }
+    ConsoleError.WriteLine("xtask deps: unknown action '" + sub + "'  (check|install)");
+    return 2;
+}
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+// Run a shell command at the repo root (git toplevel), inheriting stdio.
+int _sh(string cmd) {
+    string full = "cd \"$(git rev-parse --show-toplevel)\" && " + cmd;
+    ProcessResult r = new Process("bash")
+        .Arg("-c").Arg(full)
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run();
+    return r.ExitCode;
+}
+
+string _at(string[] a, int i) {
+    if (i < a.Length) { return a[i]; }
+    return "";
+}
+
+string _join(string[] a, int from) {
+    string s = "";
+    int i = from;
+    while (i < a.Length) {
+        if (s.Length > 0) { s = s + " "; }
+        s = s + a[i];
+        i = i + 1;
+    }
+    return s;
+}
+
+bool _startsWith(string s, string prefix) {
+    if (s.Length < prefix.Length) { return false; }
+    int i = 0;
+    while (i < prefix.Length) {
+        if (s.CharAt(i) != prefix.CharAt(i)) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+void _help() {
+    Console.WriteLine("xtask — z42 repo dev CLI");
+    Console.WriteLine("");
+    Console.WriteLine("USAGE:");
+    Console.WriteLine("    z42 xtask.zpkg <command> [args]");
+    Console.WriteLine("");
+    Console.WriteLine("COMMANDS:");
+    Console.WriteLine("    build <what>      build components");
+    Console.WriteLine("        runtime       cargo build z42vm + libz42 (--release)");
+    Console.WriteLine("        compiler      dotnet build z42c");
+    Console.WriteLine("        stdlib [lib]  build stdlib (all or one) -> build/libraries/dist");
+    Console.WriteLine("        launcher      trampoline + launcher.zpkg");
+    Console.WriteLine("        package [--rid R]   full SDK package");
+    Console.WriteLine("        all           runtime + compiler + stdlib");
+    Console.WriteLine("");
+    Console.WriteLine("    test [what]       run tests");
+    Console.WriteLine("        (empty)       all: compiler + vm + cross-zpkg + stdlib");
+    Console.WriteLine("        stdlib [lib]  stdlib [Test] (all or one)");
+    Console.WriteLine("        vm [interp|jit]   golden VM tests");
+    Console.WriteLine("        cross-zpkg    cross-zpkg e2e");
+    Console.WriteLine("        compiler      dotnet test");
+    Console.WriteLine("        changed       only changed-area tests");
+    Console.WriteLine("      flags: --parallel, --jobs N  (forwarded to test-all)");
+    Console.WriteLine("");
+    Console.WriteLine("    run <target> [-- args]   run a zpkg / .z42 via the launcher");
+    Console.WriteLine("    deps check | install     verify / fetch toolchains");
+    Console.WriteLine("    bench [--diff]           benchmarks");
+    Console.WriteLine("    help, -h, --help");
+}

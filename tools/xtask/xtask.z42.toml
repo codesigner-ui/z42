@@ -1,0 +1,23 @@
+# xtask — z42 repo dev CLI (add-xtask-cli, 2026-06-04).
+# Built to an Exe-zpkg, run via the launcher: `z42 xtask.zpkg <command> [args]`.
+[project]
+name    = "xtask"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42Xtask.Main"
+pack    = true
+
+[sources]
+include = ["xtask.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"   # String / Console
+"z42.io"   = "0.1.0"   # Environment / Process / Console
+
+[build]
+# emit into the shared artifacts tree (mirrors src/toolchain), out of src/.
+out_dir = "../../artifacts/build/toolchain/xtask"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
