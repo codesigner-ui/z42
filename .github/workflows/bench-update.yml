@@ -30,11 +30,6 @@ jobs:
           # Need full history so we can switch to bench-baselines branch.
           fetch-depth: 0
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-        with:
-          just-version: '1.50.0'
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -67,8 +62,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Run full e2e bench
-        run: just bench-e2e
+      - uses: ./.github/actions/xtask-bootstrap
+
+      - name: Run full e2e bench (xtask)
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- bench
 
       - name: Publish baseline to bench-baselines branch
         env:

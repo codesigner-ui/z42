@@ -158,6 +158,11 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     c = _cargo(rel, "build", "src/toolchain/launcher/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _copyIfExists(Path.Join(cargoOut, "z42"), Path.Join(pkgDir, "z42"));
     _copyIfExists(Path.Join(cargoOut, "z42.exe"), Path.Join(pkgDir, "z42.exe"));
+    // File.Copy doesn't carry the executable bit; restore it on the binaries so
+    // the package runs unpacked (and after a chmod-on-extract installer).
+    _makeExe(Path.Join(pkgDir, "bin/z42c"));
+    _makeExe(Path.Join(pkgDir, "bin/z42vm"));
+    _makeExe(Path.Join(pkgDir, "z42"));
     Console.WriteLine("      ✓ z42 (trampoline, package root)");
     string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
     c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
@@ -216,6 +221,10 @@ void _cargoRustc(bool rel, string target, string crateType) {
 
 void _copyIfExists(string src, string dst) {
     if (File.Exists(src)) { File.Copy(src, dst); }
+}
+
+void _makeExe(string path) {
+    if (File.Exists(path)) { File.MakeExecutable(path); }
 }
 
 // Copy any libz42.*/z42.* native artifacts present in cargoOut into native/.

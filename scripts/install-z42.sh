@@ -92,6 +92,11 @@ INNER="$TMP/z42-$VER-$RID-release"
 
 rm -rf "$DEST"; mkdir -p "$DEST"
 cp -R "$INNER"/. "$DEST"/
+# GitHub Actions artifact upload/download strips the executable bit; restore it
+# on the launcher trampoline + bundled binaries so `$DEST/z42` is runnable.
+for b in "$DEST/z42" "$DEST/bin/z42" "$DEST/bin/z42vm" "$DEST/bin/z42c"; do
+  [ -f "$b" ] && chmod +x "$b" 2>/dev/null || true
+done
 echo "$WANT" > "$STAMP"
 
 # Entry: post launcher-at-package-root the trampoline is at .z42/z42; older

@@ -23,11 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-        with:
-          just-version: '1.50.0'
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -246,11 +241,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install just
-        uses: extractions/setup-just@v2
-        with:
-          just-version: '1.50.0'
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -279,18 +269,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Build (just build)
-        run: just build
+      - uses: ./.github/actions/xtask-bootstrap
 
-      - name: Build stdlib
-        run: ./scripts/build-stdlib.sh
-
-      - name: VM golden — JIT mode
-        run: ./scripts/test-vm.sh jit --jobs=4
+      - name: VM goldens + cross-zpkg — JIT mode (xtask)
         shell: bash
-
-      - name: Cross-zpkg — JIT mode
-        run: just test-cross-zpkg jit
+        run: |
+          set -euo pipefail
+          # downloaded z42 runs xtask; xtask builds the current toolchain + runs
+          # the JIT goldens/cross-zpkg on the current z42vm (no --no-rebuild).
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test vm jit --jobs=4
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test cross-zpkg jit
 
   # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
   # uploads bench/results/e2e.json as artifact for manual inspection.
@@ -304,11 +292,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install just
-        uses: extractions/setup-just@v2
-        with:
-          just-version: '1.50.0'
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -342,8 +325,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Run e2e bench (quick mode)
-        run: just bench-e2e --quick
+      - uses: ./.github/actions/xtask-bootstrap
+
+      - name: Run e2e bench (quick mode, xtask)
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- bench --quick
 
       - name: Upload bench results
         uses: actions/upload-artifact@v4
