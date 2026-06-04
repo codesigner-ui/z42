@@ -16,7 +16,7 @@ include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42"]
 
 [build]
 # emit into the shared artifacts tree (mirrors src/toolchain), out of src/.
-out_dir = "../../artifacts/build/toolchain/xtask"
+out_dir = "../artifacts/build/toolchain/xtask"
 
 [profile.release]
 mode     = "interp"

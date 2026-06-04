@@ -26,10 +26,10 @@ it removes bash, not the compilers.
 ## Scope (grows per increment; increment 1 only listed concretely)
 | File | Change | Increment |
 |------|--------|-----------|
-| `tools/xtask/xtask.z42` | MODIFY — native `_run` (no bash) + `_root` via git; `deps check` runs check-versions-drift natively | 1 |
+| `scripts/xtask.z42` | MODIFY — native `_run` (no bash) + `_root` via git; `deps check` runs check-versions-drift natively | 1 |
 | `scripts/check-versions-drift.sh` | KEEP (fallback) | 1 |
 | `docs/design/compiler/build-artifacts-layout.md` | MODIFY — note xtask native orchestration | 1 |
-| (subsequent) `tools/xtask/xtask.z42` + each `.sh` | per-increment | 2..N |
+| (subsequent) `scripts/xtask.z42` + each `.sh` | per-increment | 2..N |
 
 ## Out of Scope
 - Deleting any `.sh` in increment 1 (fallback retained until CI-proven).
