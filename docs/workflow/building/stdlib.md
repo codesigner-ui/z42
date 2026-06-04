@@ -54,8 +54,8 @@ artifacts/
 ```bash
 ./scripts/package.sh                  # 1. 打 z42c + z42vm 到 artifacts/build/runtime/release/
 ./scripts/build-stdlib.sh --use-dist  # 2. 用分发版 z42c 重编译 stdlib
-./scripts/test-dist.sh                # 3. 跑分发版 binary 跑 goldens（interp + jit）
-./scripts/test-dist.sh interp         # 仅 interp 模式
+z42 xtask.zpkg test dist                # 3. 跑分发版 binary 跑 goldens（interp + jit）
+z42 xtask.zpkg test dist interp         # 仅 interp 模式
 ```
 
 ## 与 stdlib 内 `[Test]` 测试的关系

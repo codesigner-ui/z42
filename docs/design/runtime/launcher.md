@@ -86,7 +86,7 @@ z42-<ver>-<rid>-<profile>/
 
 **便携解析**(launcher-at-package-root, 2026-06-04):trampoline 先找 `$Z42_HOME/launcher`(installed 模式,优先);找不到则**按自身位置**回退——trampoline 在包根 `<pkg>/z42`,故 `exe.parent()` 即包根 → `<pkg>/bin/z42vm` + `<pkg>/launcher.zpkg` + `<pkg>/libs`,用它跑 launcher 核心,并设 `Z42_PORTABLE_VM`/`Z42_PORTABLE_LIBS` = 包内 z42vm+libs。核心的 `run`/`which` 在未 pin `--runtime` 时直接用这个 portable runtime(不查 `runtimes/<ver>`)。于是 `<pkg>/z42 run app.zpkg` 开箱即用,**不重复 z42vm/libs、不用 symlink**(Windows 友好)。`z42` 在根而非 `bin/`:它是包的统一入口,`bin/` 留给 app(z42c/z42vm/未来工具)。
 
-打包步骤见 `scripts/_lib/package_desktop.sh` [2c];`scripts/test-dist.sh` 有 portable `z42 which` smoke。
+打包步骤见 `scripts/_lib/package_desktop.sh` [2c];`z42 xtask.zpkg test dist` 有 portable `z42 which` smoke。
 
 ## 安装模式（installed, model B — install-z42-to-home, 2026-06-03）
 

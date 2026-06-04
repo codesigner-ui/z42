@@ -151,12 +151,13 @@ int _test(string[] argv) {
     if (sub == "lib")        { return _testLib(argv); }
     if (sub == "vm")         { return _testVm(argv); }
     if (sub == "cross-zpkg") { return _testCrossZpkg(argv); }
+    if (sub == "dist")       { return _testDist(argv); }
     if (sub == "compiler")   { return _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj")); }
     if (sub == "changed")    { return _testChanged(argv); }
     // a leading flag (e.g. --parallel / --jobs) → run the full gate (sequential;
     // --parallel/--scope wave optimization is a later increment).
     if (sub.StartsWith("-")) { return _testAll(); }
-    ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|compiler|changed | empty=all)");
+    ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|dist|compiler|changed | empty=all)");
     return 2;
 }
 

@@ -18,7 +18,7 @@
 | `z42 xtask.zpkg test vm` | 跑 VM 端到端 golden test（最常用） | `cargo build` + `z42 xtask.zpkg regen` 的产物 | 终端报告 interp / jit 通过率 |
 | `z42 xtask.zpkg test cross-zpkg` | 跨包路径 / 元数据相关变更 | `dotnet` + `cargo build` | 终端报告 target/ext/main 三方协作通过率 |
 | `z42 xtask.zpkg test lib` | stdlib 源 / 编译器变动 | `build-stdlib.sh` + `z42-test-runner` | 6 个 stdlib lib 的 [Test] 通过率 |
-| `test-dist.sh` | 验证打包后的发行版能独立工作 | `package.sh` + `build-stdlib.sh` 的产物 | 终端报告 packaged z42c+z42vm 跑 golden 通过率 |
+| `z42 xtask.zpkg test dist` | 验证打包后的发行版能独立工作 | `package.sh` + `build-stdlib.sh` 的产物 | 终端报告 packaged z42c+z42vm 跑 golden 通过率 |
 
 ### `setup-tools.sh` 模式
 
@@ -64,7 +64,7 @@ z42 xtask.zpkg test vm
 ```bash
 ./scripts/package.sh release      # 打包 z42c + z42vm
 ./scripts/build-stdlib.sh         # 编 stdlib（可选 --use-dist 用 packaged z42c）
-./scripts/test-dist.sh            # 端到端验证发行包
+z42 xtask.zpkg test dist            # 端到端验证发行包
 ```
 
 **跨包 e2e**（改 zpkg 路径解析、元数据格式时必跑）：

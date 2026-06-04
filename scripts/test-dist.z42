@@ -1,0 +1,469 @@
+// port-test-dist (migrate-scripts-to-z42): the former scripts/test-dist.sh → z42.
+//
+// End-to-end test of the PACKAGED z42 distribution: compile each golden
+// source.z42 with the packaged z42c, run the result with the packaged z42vm
+// (no dotnet/cargo) in interp/jit, and diff stdout against expected_output.txt.
+// Also a launcher smoke: `z42 which` (portable + installed via install.sh).
+//
+// Golden layout (same as test-vm):
+//   src/tests/<cat>/<name>/source.z42         (dir mode) + expected_output.txt
+//   src/libraries/<lib>/tests/<name>/source.z42
+//   src/tests/<cat>/<name>.z42                (flat mode) + <name>.expected_output.txt
+//
+// Driven by `z42 xtask.zpkg test dist [interp|jit]`. The package dir is the
+// latest artifacts/packages/z42-*-release (or env DIST_DIR); mode list comes via
+// env Z42_DIST_MODES (default "interp jit").
+namespace Z42TestDistScript;
+
+using Std;
+using Std.IO;
+
+void Main() {
+    string root = Environment.GetCurrentDirectory();
+
+    // ── Resolve the packaged distribution dir ────────────────────────────
+    string distDir = _envOpt("DIST_DIR", "");
+    if (distDir.Length == 0) { distDir = _latestReleasePkg(root); }
+    if (distDir.Length == 0 || !Directory.Exists(distDir)) {
+        ConsoleError.WriteLine("error: no packaged distribution found at artifacts/packages/z42-*-release");
+        ConsoleError.WriteLine("       Run: z42 xtask.zpkg build package release");
+        Environment.Exit(1);
+        return;
+    }
+    string z42c    = Path.Join(distDir, "bin/z42c");
+    string z42vm   = Path.Join(distDir, "bin/z42vm");
+    string libsDir = Path.Join(distDir, "libs");
+
+    // ── Preflight ────────────────────────────────────────────────────────
+    bool bad = false;
+    if (!File.Exists(z42c))      { ConsoleError.WriteLine("error: z42c not found at " + z42c); bad = true; }
+    if (!File.Exists(z42vm))     { ConsoleError.WriteLine("error: z42vm not found at " + z42vm); bad = true; }
+    if (!Directory.Exists(libsDir)) { ConsoleError.WriteLine("error: libs not found at " + libsDir); bad = true; }
+    if (bad) { Environment.Exit(1); return; }
+
+    Console.WriteLine("z42 Distribution Test Runner");
+    Console.WriteLine("  compiler: " + z42c);
+    Console.WriteLine("  vm:       " + z42vm);
+    Console.WriteLine("  libs:     " + libsDir);
+    Console.WriteLine("");
+
+    string work = Directory.CreateTempDir("xtask-testdist");
+
+    int overallPass = 0;
+    int overallFail = 0;
+
+    // ── Launcher smoke (portable + installed) ────────────────────────────
+    int[] smoke = _launcherSmoke(distDir, work);
+    overallPass = overallPass + smoke[0];
+    overallFail = overallFail + smoke[1];
+
+    // ── Golden cases per mode ────────────────────────────────────────────
+    string[] modes = _splitWords(_envOpt("Z42_DIST_MODES", "interp jit"));
+    int mi = 0;
+    while (mi < modes.Length) {
+        string mode = modes[mi];
+        Console.WriteLine("══════════════════════════════════════");
+        Console.WriteLine(" Mode: " + mode);
+        Console.WriteLine("══════════════════════════════════════");
+
+        _Case[] cases = _enumerateCases(root, mode);
+        int pass = 0;
+        int fail = 0;
+        int compileFail = 0;
+        int i = 0;
+        while (i < cases.Length) {
+            _Case c = cases[i];
+            string zbc = Path.Join(work, c.name + "-" + mode + ".zbc");
+            // Compile source.z42 → zbc with the packaged z42c.
+            int cc = -1;
+            try {
+                cc = new Process(z42c).Arg(c.source).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc)
+                    .Env("Z42_LIBS", libsDir)
+                    .Stdout(Stdio.Null()).Stderr(Stdio.Null())
+                    .Run().ExitCode;
+            } catch (Exception e) { cc = -1; }
+            if (cc != 0) {
+                compileFail = compileFail + 1;
+                Console.WriteLine("  FAIL: " + c.name + " (compile failed)");
+                i = i + 1;
+                continue;
+            }
+            // Run zbc with the packaged z42vm (entry passed explicitly — z42vm requires it).
+            string actual;
+            try {
+                ProcessResult r = new Process(z42vm).Arg(zbc).Arg(c.entryName).Arg("--mode").Arg(mode)
+                    .Env("Z42_LIBS", libsDir)
+                    .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe())
+                    .Run();
+                actual = _stripTrailingNewlines(r.Stdout + r.Stderr);
+            } catch (Exception e) { actual = "<spawn error: " + e.Message + ">"; }
+            string expected = "";
+            if (File.Exists(c.expected)) { expected = _stripTrailingNewlines(File.ReadAllText(c.expected)); }
+            if (actual == expected) {
+                pass = pass + 1;
+            } else {
+                fail = fail + 1;
+                Console.WriteLine("  FAIL: " + c.name);
+                Console.WriteLine("    expected: " + _firstLine(expected));
+                Console.WriteLine("    actual:   " + _firstLine(actual));
+            }
+            i = i + 1;
+        }
+        Console.WriteLine("");
+        Console.WriteLine("  Result: " + pass.ToString() + " passed, " + fail.ToString()
+            + " failed, " + compileFail.ToString() + " compile errors");
+        Console.WriteLine("");
+        overallPass = overallPass + pass;
+        overallFail = overallFail + fail + compileFail;
+        mi = mi + 1;
+    }
+
+    Console.WriteLine("══════════════════════════════════════");
+    Console.WriteLine(" Total: " + overallPass.ToString() + " passed, " + overallFail.ToString() + " failed");
+    Console.WriteLine("══════════════════════════════════════");
+    if (overallFail > 0) { Environment.Exit(1); return; }
+}
+
+// ── Launcher smoke: returns [pass, fail] ───────────────────────────────────
+// Portable: `z42 which` with no Z42_HOME → bundled bin/z42vm.
+// Installed: install.sh into a temp Z42_HOME → `z42 which` → installed vm.
+int[] _launcherSmoke(string distDir, string work) {
+    int pass = 0;
+    int fail = 0;
+    string launcher = Path.Join(distDir, "z42");
+    if (!File.Exists(launcher) || !File.Exists(Path.Join(distDir, "launcher.zpkg"))) {
+        Console.WriteLine("Launcher smoke: SKIP (z42 or launcher.zpkg not in package)");
+        Console.WriteLine("");
+        int[] r0 = new int[2]; r0[0] = 0; r0[1] = 0; return r0;
+    }
+    Console.WriteLine("Launcher smoke (portable): " + launcher);
+    string wantVm = Path.Join(distDir, "bin/z42vm");
+    // Portable: drop Z42_HOME + Z42_PORTABLE_VM so resolution uses the
+    // package-relative bin/z42vm. (xtask runs us with Z42_PORTABLE_VM set to the
+    // build-tree vm, which would otherwise win and mask the package's own vm.)
+    try {
+        ProcessResult r = new Process(launcher).Arg("which")
+            .EnvRemove("Z42_HOME").EnvRemove("Z42_PORTABLE_VM")
+            .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe()).Run();
+        string got = r.Stdout.Trim();
+        if (got == wantVm) {
+            Console.WriteLine("  ✓ z42 which (portable) → bundled z42vm");
+            pass = pass + 1;
+        } else {
+            Console.WriteLine("  FAIL: z42 which (portable) → '" + got + "' (expected " + wantVm + ")");
+            fail = fail + 1;
+        }
+    } catch (Exception e) {
+        Console.WriteLine("  FAIL: z42 which (portable) spawn: " + e.Message);
+        fail = fail + 1;
+    }
+    // Installed: install.sh into a temp Z42_HOME.
+    string installSh = Path.Join(distDir, "install.sh");
+    if (File.Exists(installSh)) {
+        string ih = Path.Join(work, "z42home");
+        try {
+            int ic = new Process("bash").Arg(installSh)
+                .Env("Z42_HOME", ih).EnvRemove("Z42_PORTABLE_VM")
+                .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+            string wantInstalled = Path.Join(ih, "launcher/z42vm");
+            string got = "";
+            if (ic == 0) {
+                // Drop Z42_PORTABLE_VM so the installed Z42_HOME wins resolution.
+                got = new Process(launcher).Arg("which").Env("Z42_HOME", ih).EnvRemove("Z42_PORTABLE_VM")
+                    .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe()).Run().Stdout.Trim();
+            }
+            if (ic == 0 && got == wantInstalled) {
+                Console.WriteLine("  ✓ install.sh → installed-mode z42 which");
+                pass = pass + 1;
+            } else {
+                Console.WriteLine("  FAIL: install.sh / installed-mode z42 which");
+                fail = fail + 1;
+            }
+        } catch (Exception e) {
+            Console.WriteLine("  FAIL: install.sh smoke: " + e.Message);
+            fail = fail + 1;
+        }
+    }
+    Console.WriteLine("");
+    int[] res = new int[2]; res[0] = pass; res[1] = fail; return res;
+}
+
+// latest artifacts/packages/z42-*-release dir (absolute path), or "" if none.
+string _latestReleasePkg(string root) {
+    string pkgs = Path.Join(root, "artifacts/packages");
+    if (!Directory.Exists(pkgs)) { return ""; }
+    string best = "";
+    foreach (var name in Directory.Enumerate(pkgs)) {
+        if (name.StartsWith("z42-") && name.EndsWith("-release")) {
+            string full = Path.Join(pkgs, name);
+            if (Directory.Exists(full)) {
+                // Prefer the lexicographically-greatest (stable; usually one host pkg).
+                if (best.Length == 0 || name.CompareTo(Path.GetFileName(best)) > 0) { best = full; }
+            }
+        }
+    }
+    return best;
+}
+
+// ── Case shape + enumeration (source.z42, no entry derivation) ─────────────
+
+class _Case {
+    public string name;
+    public string source;     // source.z42 path
+    public string expected;   // expected_output.txt path
+    public string entryName;  // <ns>.Main / Main / <ns>.main / main (z42vm needs it)
+    public _Case(string name, string source, string expected, string entryName) {
+        this.name = name; this.source = source; this.expected = expected; this.entryName = entryName;
+    }
+}
+
+_Case[] _enumerateCases(string root, string mode) {
+    _Case[] cases = new _Case[64];
+    int n = 0;
+
+    string testsDir = Path.Join(root, "src/tests");
+    string[] cats = _enumDirsSorted(testsDir);
+
+    // Dir mode part 1: src/tests/<cat>/<name>/source.z42
+    int ci = 0;
+    while (ci < cats.Length) {
+        if (!_isExcludedCat(cats[ci])) {
+            string catDir = Path.Join(testsDir, cats[ci]);
+            string[] names = _enumDirsSorted(catDir);
+            int ni = 0;
+            while (ni < names.Length) {
+                string dir = Path.Join(catDir, names[ni]);
+                string src = Path.Join(dir, "source.z42");
+                if (File.Exists(src)) {
+                    if (!(mode == "jit" && File.Exists(Path.Join(dir, "interp_only")))) {
+                        cases = _appendCase(cases, n, new _Case(names[ni], src, Path.Join(dir, "expected_output.txt"), _deriveEntry(src)));
+                        n = n + 1;
+                    }
+                }
+                ni = ni + 1;
+            }
+        }
+        ci = ci + 1;
+    }
+
+    // Dir mode part 2: src/libraries/<lib>/tests/<name>/source.z42
+    string libsRoot = Path.Join(root, "src/libraries");
+    string[] libs = _enumDirsSorted(libsRoot);
+    int li = 0;
+    while (li < libs.Length) {
+        string libTests = Path.Join(libsRoot, libs[li] + "/tests");
+        if (Directory.Exists(libTests)) {
+            string[] names = _enumDirsSorted(libTests);
+            int ni = 0;
+            while (ni < names.Length) {
+                string dir = Path.Join(libTests, names[ni]);
+                string src = Path.Join(dir, "source.z42");
+                if (File.Exists(src)) {
+                    if (!(mode == "jit" && File.Exists(Path.Join(dir, "interp_only")))) {
+                        cases = _appendCase(cases, n, new _Case(names[ni], src, Path.Join(dir, "expected_output.txt"), _deriveEntry(src)));
+                        n = n + 1;
+                    }
+                }
+                ni = ni + 1;
+            }
+        }
+        li = li + 1;
+    }
+
+    // Flat mode: src/tests/<cat>/<name>.z42 (exclude errors / parse / cross-zpkg).
+    ci = 0;
+    while (ci < cats.Length) {
+        string cat = cats[ci];
+        if (cat != "errors" && cat != "parse" && !_isExcludedCat(cat)) {
+            string catDir = Path.Join(testsDir, cat);
+            string[] hits = Path.Glob(catDir, "*.z42");
+            int hi = 0;
+            while (hi < hits.Length) {
+                string src = hits[hi];
+                string name = Path.GetFileNameWithoutExtension(src);
+                string interpMarker = Path.Join(catDir, name + ".interp_only");
+                if (!(mode == "jit" && File.Exists(interpMarker))) {
+                    cases = _appendCase(cases, n, new _Case(name, src, Path.Join(catDir, name + ".expected_output.txt"), _deriveEntry(src)));
+                    n = n + 1;
+                }
+                hi = hi + 1;
+            }
+        }
+        ci = ci + 1;
+    }
+
+    _Case[] tight = new _Case[n];
+    int t = 0;
+    while (t < n) { tight[t] = cases[t]; t = t + 1; }
+    return tight;
+}
+
+bool _isExcludedCat(string cat) {
+    return cat == "cross-zpkg" || cat == "zbc-format" || cat == "zpkg-format";
+}
+
+// ── entry derivation (ported from test-vm.z42; z42vm needs the entry name) ───
+// Priority: `<ns>.Main` > `Main` > `<ns>.main` > `main`. No-namespace → bare name.
+string _deriveEntry(string srcFile) {
+    if (!File.Exists(srcFile)) { return "Main"; }
+    string content = File.ReadAllText(srcFile);
+    string ns = _extractNamespace(content);
+    bool hasUpper = _hasMain(content, "Main");
+    bool hasLower = _hasMain(content, "main");
+    string fnName = "Main";
+    if (hasUpper) { fnName = "Main"; }
+    else if (hasLower) { fnName = "main"; }
+    if (ns.Length > 0) { return ns + "." + fnName; }
+    return fnName;
+}
+
+string _extractNamespace(string content) {
+    int i = 0;
+    while (i < content.Length) {
+        while (i < content.Length && (content.CharAt(i) == ' ' || content.CharAt(i) == '\t')) { i = i + 1; }
+        if (i + 10 <= content.Length && content.Substring(i, 10) == "namespace "
+                && _isWordEnd(content, i + 9)) {
+            int n = i + 10;
+            while (n < content.Length && (content.CharAt(n) == ' ' || content.CharAt(n) == '\t')) { n = n + 1; }
+            int idStart = n;
+            while (n < content.Length && _isIdentChar(content.CharAt(n))) { n = n + 1; }
+            if (n > idStart) { return content.Substring(idStart, n - idStart); }
+        }
+        while (i < content.Length && content.CharAt(i) != '\n') { i = i + 1; }
+        if (i < content.Length) { i = i + 1; }
+    }
+    return "";
+}
+
+bool _isWordEnd(string s, int i) {
+    if (i >= s.Length) { return true; }
+    char c = s.CharAt(i);
+    return c == ' ' || c == '\t';
+}
+
+bool _isIdentChar(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+        || (c >= '0' && c <= '9') || c == '_' || c == '.';
+}
+
+bool _hasMain(string content, string name) {
+    int i = 0;
+    while (i < content.Length) {
+        int idx = _indexOfFrom(content, "void", i);
+        if (idx < 0) { return false; }
+        if (idx > 0 && _isIdentChar(content.CharAt(idx - 1))) { i = idx + 1; continue; }
+        int p = idx + 4;
+        if (p >= content.Length || (content.CharAt(p) != ' ' && content.CharAt(p) != '\t')) { i = idx + 1; continue; }
+        while (p < content.Length && (content.CharAt(p) == ' ' || content.CharAt(p) == '\t')) { p = p + 1; }
+        if (p + name.Length > content.Length || content.Substring(p, name.Length) != name) { i = idx + 1; continue; }
+        int after = p + name.Length;
+        if (after < content.Length && _isIdentChar(content.CharAt(after))) { i = idx + 1; continue; }
+        int q = after;
+        while (q < content.Length && (content.CharAt(q) == ' ' || content.CharAt(q) == '\t')) { q = q + 1; }
+        if (q < content.Length && content.CharAt(q) == '(') { return true; }
+        i = idx + 1;
+    }
+    return false;
+}
+
+int _indexOfFrom(string s, string needle, int start) {
+    int n = needle.Length;
+    int limit = s.Length - n;
+    int i = start;
+    while (i <= limit) {
+        if (s.Substring(i, n) == needle) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+string _stripTrailingNewlines(string s) {
+    int end = s.Length;
+    while (end > 0 && (s.CharAt(end - 1) == '\n' || s.CharAt(end - 1) == '\r')) { end = end - 1; }
+    if (end == s.Length) { return s; }
+    return s.Substring(0, end);
+}
+
+string _firstLine(string s) {
+    int i = 0;
+    while (i < s.Length && s.CharAt(i) != '\n') { i = i + 1; }
+    return s.Substring(0, i);
+}
+
+string[] _splitWords(string s) {
+    string[] result = new string[4];
+    int n = 0;
+    int i = 0;
+    while (i < s.Length) {
+        while (i < s.Length && (s.CharAt(i) == ' ' || s.CharAt(i) == '\t' || s.CharAt(i) == '\n')) { i = i + 1; }
+        if (i >= s.Length) { break; }
+        int start = i;
+        while (i < s.Length && s.CharAt(i) != ' ' && s.CharAt(i) != '\t' && s.CharAt(i) != '\n') { i = i + 1; }
+        result = _append(result, n, s.Substring(start, i - start));
+        n = n + 1;
+    }
+    string[] tight = new string[n];
+    int t = 0;
+    while (t < n) { tight[t] = result[t]; t = t + 1; }
+    return tight;
+}
+
+string _envOpt(string name, string fallback) {
+    string? v = Environment.GetEnvironmentVariable(name);
+    if (v == null) { return fallback; }
+    string nonNull = v ?? "";
+    if (nonNull.Length == 0) { return fallback; }
+    return nonNull;
+}
+
+string[] _enumDirsSorted(string dir) {
+    if (!Directory.Exists(dir)) { return new string[0]; }
+    string[] entries = Directory.Enumerate(dir);
+    string[] subs = new string[entries.Length];
+    int j = 0;
+    int i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) { subs[j] = entries[i]; j = j + 1; }
+        i = i + 1;
+    }
+    string[] tight = new string[j];
+    int t = 0;
+    while (t < j) { tight[t] = subs[t]; t = t + 1; }
+    _sortStrings(tight);
+    return tight;
+}
+
+void _sortStrings(string[] arr) {
+    int i = 1;
+    while (i < arr.Length) {
+        string key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && key.CompareTo(arr[j]) < 0) { arr[j + 1] = arr[j]; j = j - 1; }
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+}
+
+string[] _append(string[] arr, int count, string v) {
+    if (count < arr.Length) { arr[count] = v; return arr; }
+    int newCap = arr.Length * 2;
+    if (newCap < 4) { newCap = 4; }
+    string[] bigger = new string[newCap];
+    int i = 0;
+    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+    bigger[count] = v;
+    return bigger;
+}
+
+_Case[] _appendCase(_Case[] arr, int count, _Case v) {
+    if (count < arr.Length) { arr[count] = v; return arr; }
+    int newCap = arr.Length * 2;
+    if (newCap < 4) { newCap = 4; }
+    _Case[] bigger = new _Case[newCap];
+    int i = 0;
+    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+    bigger[count] = v;
+    return bigger;
+}

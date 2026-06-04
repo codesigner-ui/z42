@@ -481,7 +481,7 @@ z42 xtask.zpkg test lib
 > 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。
 
 打包发行验证：发行版变更（package.sh / 跨平台 / 嵌入接口）追加跑
-`./scripts/test-dist.sh`（要求先跑 `./scripts/package.sh release`
+`z42 xtask.zpkg test dist`（要求先跑 `./scripts/package.sh release`
 产 host-RID 包）。
 
 **测试失败处理规则：**
@@ -507,7 +507,7 @@ z42 xtask.zpkg test lib
 - ✅ z42 xtask.zpkg test vm: M/M（interp + JIT）
 - ✅ z42 xtask.zpkg test cross-zpkg: K/K
 - ✅ z42 xtask.zpkg test lib: 6/6 lib
-- （可选）✅ ./scripts/test-dist.sh: P/P
+- （可选）✅ z42 xtask.zpkg test dist: P/P
 
 ### Spec 覆盖（若有 spec）
 | Scenario | 实现位置 | 验证方式 | 状态 |

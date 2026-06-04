@@ -127,7 +127,7 @@ src/
 
 - **非空文件**保留，`z42 xtask.zpkg test vm` 用于 stdout 比对（103 个用例）
 - **空文件**已删除（16 个），那些用例完全靠内置 `Assert.Equal` 自验：成功 = 跑通无 stdout 输出
-- 测试 runner（xtask test vm / GoldenTests.cs / test-dist.sh）在文件缺失时把期望视为空字符串
+- 测试 runner（xtask test vm / GoldenTests.cs / z42 xtask.zpkg test dist）在文件缺失时把期望视为空字符串
 - 等 R3 z42-test-runner 落地后，由独立 spec 评估是否把 stdout 比对全部转为 [Test]+Assert
 
 ---

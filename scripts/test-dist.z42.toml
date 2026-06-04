@@ -1,0 +1,18 @@
+# test-dist job (migrate-scripts-to-z42): e2e test of the packaged distribution.
+# Built to an Exe-zpkg, run via xtask `test dist`.
+[project]
+name    = "test-dist"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42TestDistScript.Main"
+pack    = true
+[sources]
+include = ["test-dist.z42"]
+[dependencies]
+"z42.core" = "0.1.0"
+"z42.io"   = "0.1.0"
+[build]
+out_dir = "dist"
+[profile.release]
+mode = "interp"
+optimize = 2
