@@ -1,76 +1,33 @@
-// port-regen-golden-tests (2026-05-27): the former scripts/regen-golden-tests.sh → z42 self-host.
+// xtask — `regen` golden-fixture rebuild (unify-scripts-into-xtask, 2026-06-05).
+// Folded from the former standalone scripts/regen-golden-tests.z42 into xtask so
+// it runs as in-process logic (no per-invocation dotnet-run-build + z42vm-run).
 //
-// Mirrors the former scripts/regen-golden-tests.sh (139 LOC bash):
-//   1. Optional stdlib rebuild via build-stdlib.sh (skipped with --no-stdlib;
-//      xtask invokes it before running us)
-//   2. Locate driver DLL; build z42.Driver if missing
-//   3. Enumerate golden test cases in two layouts:
-//        Dir mode:  <root>/<cat>/<name>/source.z42 → <...>/source.zbc
-//        Flat mode: src/tests/<cat>/<name>.z42     → src/tests/<cat>/<name>.zbc
-//      where <root> ∈ {src/tests, src/libraries/<lib>/tests}.
-//      Excluded categories under src/tests: errors / parse / cross-zpkg.
-//   4. For each case: `dotnet <driver.dll> <source> --emit zbc -o <output>`
-//   5. Tally + exit non-zero on any failure
+// Recompiles golden test source.z42 → source.zbc in two layouts:
+//   Dir mode:  <root>/<cat>/<name>/source.z42 → <...>/source.zbc
+//   Flat mode: src/tests/<cat>/<name>.z42     → src/tests/<cat>/<name>.zbc
+// where <root> ∈ {src/tests, src/libraries/<lib>/tests}; excluded categories
+// under src/tests: errors / parse / cross-zpkg. Tally + return 1 on any failure.
 //
-// Invoked via `z42 xtask.zpkg regen [release] [--no-stdlib]`, which bootstraps
-// the toolchain, translates positional `release` to `--release`, rebuilds stdlib
-// unless `--no-stdlib`, then runs this compiled zpkg with `[--release]` passed
-// through.
-namespace Z42RegenGoldenTestsScript;
+// Called by _regenCore (xtask.z42), which already builds stdlib + the z42.Driver
+// (so the driver-build-if-missing block + the --release arg parsing from the old
+// standalone are dropped). Shared enumeration helpers come from xtask_golden.z42.
+namespace Z42Xtask;
 
 using Std;
 using Std.IO;
-using Std.Cli;
 
-void Main() {
-    string root = Environment.GetCurrentDirectory();
-
-    // ── CLI ──────────────────────────────────────────────────────────────
-    var p = new ArgParser("regen-golden-tests",
-        "Recompile golden test source.z42 → source.zbc artifacts");
-    p.AddFlag("release", "r", "Build in Release configuration (default Debug)");
-    ParseResult r;
-    try {
-        r = p.Parse(_argvSlice());
-    } catch (CliException e) {
-        ConsoleError.WriteLine("error: " + e.Message);
-        Environment.Exit(2);
-        return;
-    }
-    if (r.ShowHelp()) {
-        Console.WriteLine(p.HelpText());
-        return;
-    }
-    string buildConfig = r.GetFlag("release") ? "Release" : "Debug";
-
-    // ── Driver DLL location & build-if-missing ───────────────────────────
-    string driverDll = Path.Join(root,
-        "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
-    if (!File.Exists(driverDll)) {
-        Console.WriteLine("Building compiler (" + buildConfig + ")...");
-        ProcessResult br = new Process("dotnet")
-            .Arg("build").Arg("-q")
-            .Arg(Path.Join(root, "src/compiler/z42.Driver/z42.Driver.csproj"))
-            .Arg("-c").Arg(buildConfig)
-            .Stdout(Stdio.Inherit())
-            .Stderr(Stdio.Inherit())
-            .Run();
-        if (br.ExitCode != 0) {
-            Environment.Exit(br.ExitCode);
-            return;
-        }
-    }
+int _regenGolden() {
+    string root = _root();
+    string driverDll = Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
     if (!File.Exists(driverDll)) {
         ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);
-        Environment.Exit(1);
-        return;
+        return 1;
     }
 
     Console.WriteLine("Regenerating golden test artifacts...");
     Console.WriteLine("");
 
-    // ── Enumerate cases ──────────────────────────────────────────────────
-    // Use parallel growable arrays: (name, source, output).
+    // ── Enumerate cases (parallel growable arrays: name, source, output) ──
     string[] caseNames    = new string[64];
     string[] caseSources  = new string[64];
     string[] caseOutputs  = new string[64];
@@ -188,12 +145,10 @@ void Main() {
             Console.WriteLine("  - " + failures[fi]);
             fi = fi + 1;
         }
-        Environment.Exit(1);
-        return;
+        return 1;
     }
+    return 0;
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 bool _isExcludedCategory(string cat) {
     return cat == "errors" || cat == "parse" || cat == "cross-zpkg";
@@ -213,67 +168,4 @@ bool _compileCase(string driverDll, string source, string output) {
     } catch (Exception e) {
         return false;
     }
-}
-
-// Enumerate immediate subdirectories of `dir`, returning sorted basenames.
-// Filters Directory.Enumerate results (which can include files) to dirs only.
-// Sort enforces cross-OS determinism per common-pitfalls.md §1.
-string[] _enumDirsSorted(string dir) {
-    if (!Directory.Exists(dir)) { return new string[0]; }
-    string[] entries = Directory.Enumerate(dir);
-    // First pass: count subdirs
-    int n = 0;
-    int i = 0;
-    while (i < entries.Length) {
-        if (Directory.Exists(Path.Join(dir, entries[i]))) { n = n + 1; }
-        i = i + 1;
-    }
-    string[] subs = new string[n];
-    int j = 0;
-    i = 0;
-    while (i < entries.Length) {
-        if (Directory.Exists(Path.Join(dir, entries[i]))) {
-            subs[j] = entries[i];
-            j = j + 1;
-        }
-        i = i + 1;
-    }
-    _sortStrings(subs);
-    return subs;
-}
-
-void _sortStrings(string[] arr) {
-    int i = 1;
-    while (i < arr.Length) {
-        string key = arr[i];
-        int j = i - 1;
-        while (j >= 0 && key.CompareTo(arr[j]) < 0) {
-            arr[j + 1] = arr[j];
-            j = j - 1;
-        }
-        arr[j + 1] = key;
-        i = i + 1;
-    }
-}
-
-string[] _append(string[] arr, int count, string v) {
-    if (count < arr.Length) {
-        arr[count] = v;
-        return arr;
-    }
-    int newCap = arr.Length * 2;
-    if (newCap < 4) { newCap = 4; }
-    string[] bigger = new string[newCap];
-    int i = 0;
-    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
-    bigger[count] = v;
-    return bigger;
-}
-
-// add-z42-launcher cutover (2026-06-03): now run via `z42 run <zpkg> -- <args>`,
-// so GetCommandLineArgs() returns exactly the user args (the z42vm `-- args`
-// passthrough strips VM-internal tokens). The old "slice after --mode / argv[3..]"
-// env-var-era hack is gone.
-string[] _argvSlice() {
-    return Environment.GetCommandLineArgs();
 }

@@ -1,0 +1,66 @@
+// xtask — shared golden-test infrastructure (unify-scripts-into-xtask, 2026-06-05).
+// Generic enumeration/array helpers that the folded test commands (regen / test vm
+// / test cross-zpkg / test dist) all need — defined ONCE here instead of a private
+// copy per script. Golden-walk + entry-derivation helpers (added when test-vm /
+// test-dist fold in) also live here. Same Z42Xtask namespace.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+// Enumerate immediate subdirectories of `dir`, returning sorted basenames.
+// Filters Directory.Enumerate results (which can include files) to dirs only.
+// Sort enforces cross-OS determinism per common-pitfalls.md §1.
+string[] _enumDirsSorted(string dir) {
+    if (!Directory.Exists(dir)) { return new string[0]; }
+    string[] entries = Directory.Enumerate(dir);
+    // First pass: count subdirs
+    int n = 0;
+    int i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) { n = n + 1; }
+        i = i + 1;
+    }
+    string[] subs = new string[n];
+    int j = 0;
+    i = 0;
+    while (i < entries.Length) {
+        if (Directory.Exists(Path.Join(dir, entries[i]))) {
+            subs[j] = entries[i];
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    _sortStrings(subs);
+    return subs;
+}
+
+// In-place insertion sort (deterministic; common-pitfalls.md §1).
+void _sortStrings(string[] arr) {
+    int i = 1;
+    while (i < arr.Length) {
+        string key = arr[i];
+        int j = i - 1;
+        while (j >= 0 && key.CompareTo(arr[j]) < 0) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
+        }
+        arr[j + 1] = key;
+        i = i + 1;
+    }
+}
+
+// Append `v` at index `count`, growing (×2) when the backing array is full.
+string[] _append(string[] arr, int count, string v) {
+    if (count < arr.Length) {
+        arr[count] = v;
+        return arr;
+    }
+    int newCap = arr.Length * 2;
+    if (newCap < 4) { newCap = 4; }
+    string[] bigger = new string[newCap];
+    int i = 0;
+    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+    bigger[count] = v;
+    return bigger;
+}

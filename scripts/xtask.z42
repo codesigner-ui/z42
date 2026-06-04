@@ -247,15 +247,10 @@ int _regenCore(bool release, bool rebuildStdlib) {
         if (c != 0) { return c; }
     }
     int cr = _buildRuntime(); if (cr != 0) { return cr; }   // cargo build --release (launcher runtime needs z42vm)
-    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
-    int cb = _exec(new Process("dotnet")
-        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("scripts/regen-golden-tests.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
-    if (cb != 0) { return cb; }
-    Process p = new Process(_z42vm()).Arg("scripts/dist/regen-golden-tests.zpkg").Env("Z42_LIBS", libs);
-    if (release) { p = p.Arg("--").Arg("--release"); }
-    return _exec(p);
+    // in-process (unify-scripts-into-xtask): regen logic folded into xtask_regen.z42
+    // (_regenGolden); the driver is already built above, so the old `--release`
+    // passthrough (only affected the standalone's driver-build) is moot.
+    return _regenGolden();
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
