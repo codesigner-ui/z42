@@ -8,12 +8,13 @@ kind    = "exe"
 pack    = true
 
 [sources]
-include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42"]
+include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42", "xtask_bench.z42"]
 
 [dependencies]
 "z42.core" = "0.1.0"   # String / Console
 "z42.io"   = "0.1.0"   # Environment / Process / File / Directory / Path
 "z42.toml" = "0.1.0"   # versions.toml read (xtask_package)
+"z42.json" = "0.1.0"   # hyperfine result merge (xtask_bench)
 
 [build]
 # xtask is the build DRIVER, so its output lives at artifacts/xtask — NOT under

@@ -40,7 +40,7 @@ void Main() {
     } else if (cmd == "audit") {
         code = _audit();
     } else if (cmd == "bench") {
-        code = _sh("./scripts/bench-run.sh " + _join(argv, 1));
+        code = _bench(argv);
     } else {
         ConsoleError.WriteLine("xtask: unknown command '" + cmd + "'  (try: z42 xtask.zpkg --help)");
         _help();

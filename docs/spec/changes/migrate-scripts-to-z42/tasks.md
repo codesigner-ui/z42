@@ -31,7 +31,8 @@
 - [x] test lib（从头 port，无 .z42）— native stdlib [Test] harness (sequential)：枚举 tests/*.z42 → z42c emit zbc → z42-test-runner；z42.math → 2 passed。**验证 z42 能表达测试 harness**
 - [x] test all（GREEN gate orchestrator）— build once + compiler/vm/cross-zpkg/lib short-circuit；split test handlers → xtask_test.z42（500-line limit）；full run validating in bg
 - [x] audit（87a9d838）— native audit-missing-usings
-- [ ] bench run/diff（hyperfine+python3 dep）/ test-dist（208 LOC，无外部依赖）
+- [x] bench（xtask_bench.z42）— native bench-run + merge：compile scenarios + hyperfine + Std.Json 合并 → e2e.json（删 python _merge-bench-results.py 依赖）；--quick 验证产出 valid JSON
+- [ ] bench-diff（regression）/ test-dist（208 LOC，无外部依赖）
 - [x] package DESKTOP（xtask_package.z42）— native build package release：dotnet publish + cargo target + launcher + manifest + sha256 invariant；host-RID 包过全部 CI verify 检查。dogfood：versions via Std.Toml（非 python3）、sha256 invariant via File.ReadAllBytes byte-compare
 - [ ] package ios/android/wasm subs（separate xtask_package_*.z42）+ dSYM 递归拷贝（需 Directory.Copy recursive — 唯一 stdlib gap，暂跳过 dSYM）
 - [ ] package 1471 LOC — desktop done; mobile/wasm 余下

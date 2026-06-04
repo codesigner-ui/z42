@@ -1,0 +1,102 @@
+// xtask — e2e benchmarks (migrate-scripts-to-z42). Native port of
+// scripts/bench-run.sh + scripts/_merge-bench-results.py. Compiles
+// bench/scenarios/*.z42, runs hyperfine on z42vm per scenario, then merges the
+// hyperfine JSONs into bench/results/e2e.json — parse with native Std.Json,
+// output string-built (replacing python3). Same Z42Xtask namespace; calls
+// _exec/_root/_buildRuntime/_utcNow in xtask.z42 / xtask_package.z42.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Json;
+
+// `bench [--quick]`  (--quick: warmup=1, runs=3, first 2 scenarios only)
+int _bench(string[] argv) {
+    bool quick = false;
+    foreach (var a in argv) { if (a == "--quick") { quick = true; } }
+    string warmup = quick ? "1" : "3";
+    string runs = quick ? "3" : "10";
+    string root = _root();
+    string scenDir = Path.Join(root, "bench/scenarios");
+    string resultsDir = Path.Join(root, "bench/results");
+    Directory.Create(resultsDir);
+    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    if (!File.Exists(vm)) { int rc = _buildRuntime(); if (rc != 0) { return rc; } }
+    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
+    string work = Directory.CreateTempDir("xtask-bench");
+
+    string benchmarks = "";
+    int count = 0;
+    foreach (var f in Directory.Enumerate(scenDir)) {
+        if (!f.EndsWith(".z42")) { continue; }
+        if (quick && count >= 2) { break; }
+        string name = f.Substring(0, f.Length - 4);
+        string src = Path.Join(scenDir, f);
+        string ns = _namespaceOf(src);
+        if (ns.Length == 0) { ConsoleError.WriteLine("error: no namespace in " + f); return 2; }
+        string zbc = Path.Join(work, name + ".zbc");
+        int cc = _exec(new Process("dotnet")
+            .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("-c").Arg("Release")
+            .Arg("--").Arg(src).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc).Env("Z42_LIBS", libs));
+        if (cc != 0) { return cc; }
+        string outJson = Path.Join(work, name + "-bench.json");
+        Console.WriteLine("→ Benchmarking " + name + " (warmup=" + warmup + ", runs=" + runs + ")...");
+        int hc = _exec(new Process("hyperfine")
+            .Arg("--warmup").Arg(warmup).Arg("--runs").Arg(runs)
+            .Arg("--export-json").Arg(outJson).Arg("--shell=none").Arg("--command-name").Arg(name)
+            .Arg(vm + " " + zbc + " " + ns + ".Main").Env("Z42_LIBS", libs));
+        if (hc != 0) { return hc; }
+        if (benchmarks.Length > 0) { benchmarks = benchmarks + ",\n"; }
+        benchmarks = benchmarks + _benchObj(outJson, name, runs);
+        count = count + 1;
+    }
+
+    string commit = _gitOut(root, "rev-parse", "--short", "HEAD");
+    string branch = _gitOut(root, "rev-parse", "--abbrev-ref", "HEAD");
+    string doc = "{\n  \"schema_version\": 1,\n  \"commit\": \"" + commit
+        + "\",\n  \"branch\": \"" + branch + "\",\n  \"os\": \"" + _osTag()
+        + "\",\n  \"timestamp\": \"" + _utcNow() + "\",\n  \"benchmarks\": [\n"
+        + benchmarks + "\n  ]\n}\n";
+    string outFile = Path.Join(resultsDir, "e2e.json");
+    File.WriteAllText(outFile, doc);
+    Console.WriteLine("✅ E2E bench complete. Results: " + outFile);
+    return 0;
+}
+
+// one benchmark object from a hyperfine export JSON (time values are seconds → ms).
+string _benchObj(string hjson, string name, string runs) {
+    JsonValue r0 = JsonValue.Parse(File.ReadAllText(hjson)).Get("results").At(0);
+    string val = (r0.Get("mean").AsDouble() * 1000.0).ToString();
+    string lo  = (r0.Get("min").AsDouble()  * 1000.0).ToString();
+    string hi  = (r0.Get("max").AsDouble()  * 1000.0).ToString();
+    return "    {\n      \"name\": \"" + name + "\",\n      \"tier\": \"z42-e2e\""
+        + ",\n      \"metric\": \"time\",\n      \"value\": " + val
+        + ",\n      \"unit\": \"ms\",\n      \"ci_lower\": " + lo
+        + ",\n      \"ci_upper\": " + hi + ",\n      \"samples\": " + runs + "\n    }";
+}
+
+// "namespace Foo.Bar;" → "Foo.Bar"
+string _namespaceOf(string path) {
+    foreach (var line in File.ReadAllText(path).Split("\n")) {
+        string t = line.Trim();
+        if (t.StartsWith("namespace ")) {
+            string rest = t.Substring(10);
+            int semi = rest.IndexOf(";");
+            if (semi >= 0) { rest = rest.Substring(0, semi); }
+            return rest.Trim();
+        }
+    }
+    return "";
+}
+
+string _gitOut(string root, string a, string b, string c) {
+    ProcessResult r = new Process("git").Arg(a).Arg(b).Arg(c).WorkingDirectory(root).Run();
+    if (r.ExitCode == 0) { return r.Stdout.Trim(); }
+    return "unknown";
+}
+
+string _osTag() {
+    ProcessResult r = new Process("uname").Arg("-sm").Run();
+    if (r.ExitCode != 0) { return "unknown"; }
+    return r.Stdout.Trim().ToLower().Replace(" ", "-");
+}
