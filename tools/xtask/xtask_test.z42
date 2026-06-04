@@ -1,0 +1,205 @@
+// xtask — test orchestration (split from xtask.z42 for the 500-line code-org
+// limit). Same Z42Xtask namespace; these call _exec/_root/_z42vm/_build*/
+// _regenCore/_at defined in xtask.z42 (cross-file, same namespace).
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+// ── test vm ─────────────────────────────────────────────────────────────────
+
+// `test vm [interp|jit] [--no-rebuild] [--jobs=N]` — native, bash-free.
+// Mirrors scripts/test-vm.sh: regen (rebuild stdlib + compiler + golden zbc)
+// unless --no-rebuild, build the DEBUG z42vm + compression cdylib (test-vm.z42
+// resolves artifacts/build/runtime/debug/z42vm and JIT dlopens the compressor),
+// compile test-vm.z42, then run it with MODES/JOBS as env vars (legit config).
+int _testVm(string[] argv) {
+    string modes = "interp jit";
+    bool rebuild = true;
+    string jobs = "1";
+    bool gotMode = false;
+    int i = 2;
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "--no-rebuild")        { rebuild = false; }
+        else if (a.StartsWith("--jobs=")) { jobs = a.Substring(7); }
+        else if (!a.StartsWith("-")) { if (!gotMode) { modes = a; gotMode = true; } }
+        i = i + 1;
+    }
+    if (rebuild) { int c = _regenCore(false, true); if (c != 0) { return c; } }
+    int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
+        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml"));
+    if (cd != 0) { return cd; }
+    int cc = _exec(new Process("cargo").Arg("build").Arg("-q")
+        .Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
+    if (cc != 0) { return cc; }
+    string libs = Path.Join(_root(), "artifacts/build/libraries/dist/release");
+    int cb = _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("scripts/test-vm.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (cb != 0) { return cb; }
+    return _exec(new Process(_z42vm()).Arg("scripts/dist/test-vm.zpkg")
+        .Env("Z42_LIBS", libs)
+        .Env("Z42_VM_MODES", modes)
+        .Env("Z42_VM_JOBS", jobs));
+}
+
+// ── test cross-zpkg ─────────────────────────────────────────────────────────
+
+// `test cross-zpkg [interp|jit]` — native, bash-free. Mirrors
+// scripts/test-cross-zpkg.sh: build compiler (slnx) + DEBUG runtime, ensure
+// stdlib present, compile test-cross-zpkg.z42, run it with Z42_VM_MODE.
+int _testCrossZpkg(string[] argv) {
+    string mode = _at(argv, 2);
+    if (mode.Length == 0) { mode = "interp"; }
+    int c = _buildCompiler(); if (c != 0) { return c; }
+    int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
+        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml"));
+    if (cr != 0) { return cr; }
+    string root = _root();
+    if (!File.Exists(Path.Join(root, "artifacts/build/libraries/dist/release/z42.core.zpkg"))) {
+        int cs = _buildStdlib(); if (cs != 0) { return cs; }
+    }
+    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
+    int cb = _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("scripts/test-cross-zpkg.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (cb != 0) { return cb; }
+    return _exec(new Process(_z42vm()).Arg("scripts/dist/test-cross-zpkg.zpkg")
+        .Env("Z42_LIBS", libs).Env("Z42_VM_MODE", mode));
+}
+
+// ── test all (unified GREEN gate) ───────────────────────────────────────────
+
+// `test` (no target) — the full GREEN gate, sequential: build once, then run
+// compiler + VM goldens + cross-zpkg + stdlib, short-circuiting on first
+// failure. Mirrors scripts/test-all.sh's stage set (the --parallel wave +
+// --scope auto-narrow optimizations are a later increment).
+int _testAll() {
+    // build wave (once): stdlib + compiler driver + release runtime + golden zbc
+    int c = _regenCore(false, true); if (c != 0) { return c; }
+    // extra tooling the test stages need
+    c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/Cargo.toml")); if (c != 0) { return c; }            // debug z42vm
+    c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml")); if (c != 0) { return c; }
+    c = _exec(new Process("cargo").Arg("build").Arg("--release").Arg("-q").Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml")); if (c != 0) { return c; }
+    c = _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.slnx").Arg("--nologo").Arg("-v").Arg("quiet")); if (c != 0) { return c; }
+    // stage 1: compiler (dotnet test)
+    Console.WriteLine("\n=== stage: compiler tests ===");
+    c = _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj").Arg("--nologo")); if (c != 0) { return c; }
+    // stage 2: VM goldens (both modes, no rebuild)
+    Console.WriteLine("\n=== stage: VM goldens ===");
+    string[] vmA = new string[3]; vmA[0] = "test"; vmA[1] = "vm"; vmA[2] = "--no-rebuild";
+    c = _testVm(vmA); if (c != 0) { return c; }
+    // stage 3: cross-zpkg
+    Console.WriteLine("\n=== stage: cross-zpkg ===");
+    string[] cA = new string[2]; cA[0] = "test"; cA[1] = "cross-zpkg";
+    c = _testCrossZpkg(cA); if (c != 0) { return c; }
+    // stage 4: stdlib [Test] (no build)
+    Console.WriteLine("\n=== stage: stdlib [Test] ===");
+    string[] lA = new string[3]; lA[0] = "test"; lA[1] = "lib"; lA[2] = "--no-build";
+    c = _testLib(lA); if (c != 0) { return c; }
+    Console.WriteLine("\n✅ GREEN — all stages passed (compiler + vm + cross-zpkg + stdlib)");
+    return 0;
+}
+
+// ── test lib (stdlib [Test] harness) ────────────────────────────────────────
+
+// `test lib|stdlib [lib...] [--no-build] [-k filter]` — native stdlib [Test]
+// harness. Mirrors scripts/test-lib.sh (sequential; --jobs parallel batching is
+// a later optimization). Each src/libraries/<lib>/tests/*.z42 is compiled to
+// .zbc via z42c then run through z42-test-runner; results aggregated.
+int _testLib(string[] argv) {
+    bool noBuild = false;
+    string filter = "";
+    string[] reqLibs = new string[64];
+    int nReq = 0;
+    int i = 2;
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "--no-build") { noBuild = true; }
+        else if (a.StartsWith("-k")) {
+            if (a.Length > 2) { filter = a.Substring(2); }
+            else { i = i + 1; if (i < argv.Length) { filter = argv[i]; } }
+        }
+        else if (a.StartsWith("--jobs") || a.StartsWith("-j")) {
+            if (a == "--jobs" || a == "-j") { i = i + 1; }   // sequential: consume + ignore the value
+        }
+        else if (!a.StartsWith("-")) { reqLibs[nReq] = a; nReq = nReq + 1; }
+        i = i + 1;
+    }
+    string root = _root();
+    if (!noBuild) {
+        Console.WriteLine("→ Preparing tooling (stdlib + z42vm + z42-test-runner; release)...");
+        int c = _buildStdlib(); if (c != 0) { return c; }
+        c = _buildRuntime(); if (c != 0) { return c; }
+        c = _exec(new Process("cargo").Arg("build").Arg("--release")
+            .Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
+        if (c != 0) { return c; }
+        c = _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
+            .Arg("-c").Arg("Release").Arg("--nologo").Arg("-v").Arg("quiet"));
+        if (c != 0) { return c; }
+    }
+    string runner = Path.Join(root, "artifacts/build/runtime/release/z42-test-runner");
+    if (!File.Exists(runner)) {
+        ConsoleError.WriteLine("error: z42-test-runner not found at " + runner + " (run without --no-build)");
+        return 2;
+    }
+    string work = Directory.CreateTempDir("xtask-testlib");
+    string libsRoot = Path.Join(root, "src/libraries");
+    string[] libList;
+    if (nReq > 0) {
+        libList = new string[nReq];
+        int k = 0;
+        while (k < nReq) { libList[k] = reqLibs[k]; k = k + 1; }
+    } else {
+        libList = Directory.Enumerate(libsRoot);
+    }
+    int totalFailed = 0;
+    int totalFiles = 0;
+    int libsTested = 0;
+    foreach (var lib in libList) {
+        string testsDir = Path.Join(libsRoot, lib + "/tests");
+        if (!Directory.Exists(testsDir)) { continue; }
+        string[] files = Directory.Enumerate(testsDir);
+        int matched = 0;
+        foreach (var f in files) {
+            if (f.EndsWith(".z42") && (filter.Length == 0 || f.Contains(filter))) { matched = matched + 1; }
+        }
+        if (matched == 0) { continue; }
+        libsTested = libsTested + 1;
+        Console.WriteLine("");
+        Console.WriteLine("════════════════════════════════════════════════");
+        Console.WriteLine("  " + lib + "  (" + matched.ToString() + " test file(s))");
+        Console.WriteLine("════════════════════════════════════════════════");
+        foreach (var f in files) {
+            if (!f.EndsWith(".z42")) { continue; }
+            if (filter.Length > 0 && !f.Contains(filter)) { continue; }
+            totalFiles = totalFiles + 1;
+            string testFile = Path.Join(testsDir, f);
+            string zbc = Path.Join(work, lib + "_" + f + ".zbc");
+            int cc = _exec(new Process("dotnet")
+                .Arg("run").Arg("--no-build").Arg("--project").Arg("src/compiler/z42.Driver").Arg("-c").Arg("Release")
+                .Arg("--").Arg(testFile).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc));
+            if (cc != 0) {
+                Console.WriteLine("✗ COMPILE ERROR: " + f);
+                totalFailed = totalFailed + 1;
+            } else {
+                int rc = _exec(new Process(runner).Arg(zbc));
+                if (rc != 0) { totalFailed = totalFailed + 1; }
+            }
+        }
+    }
+    Console.WriteLine("");
+    Console.WriteLine("════════════════════════════════════════════════");
+    if (totalFailed > 0) {
+        Console.WriteLine("  ❌ stdlib tests: " + totalFailed.ToString()
+            + " file(s) failed (of " + totalFiles.ToString() + " in " + libsTested.ToString() + " lib(s))");
+        return 1;
+    }
+    Console.WriteLine("  ✅ stdlib tests: all " + totalFiles.ToString()
+        + " file(s) passed (in " + libsTested.ToString() + " lib(s))");
+    return 0;
+}
+
