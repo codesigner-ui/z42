@@ -5,6 +5,14 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # Manual trigger: force a nightly republish from the latest main WITHOUT a new
+  # push. This is the escape hatch for the xtask↔nightly bootstrap cycle — after
+  # a zbc/zpkg bump (or an xtask change needing a newer stdlib API), the
+  # download-bootstrap jobs (vm-jit/bench) transiently fail on the OLD nightly,
+  # but publish-nightly is decoupled from them (source-bootstrapped only) and
+  # republishes a compatible nightly so the next run self-heals. Run via the
+  # Actions "Run workflow" button or: gh workflow run CI --ref main
+  workflow_dispatch:
 
 # Cancel in-progress runs on the same ref when a new one starts
 concurrency:
@@ -714,10 +722,20 @@ jobs:
   # Not signed. Marked --prerelease. Skipped on PRs (token + fork-PR limitations).
   publish-nightly:
     name: publish-nightly
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    # IMPORTANT — do NOT add vm-jit-consistency / bench-e2e (or any other
+    # download-bootstrap job that runs xtask off the prebuilt .z42) to `needs`.
+    # Those jobs bootstrap xtask from the PREVIOUS nightly, so on a zbc/zpkg bump
+    # (or an xtask change needing a newer stdlib API) they transiently fail until
+    # a compatible nightly exists — and the only thing that produces one is THIS
+    # job. Gating publish on them is a deadlock. publish-nightly therefore depends
+    # ONLY on jobs that build from CURRENT source (build-and-test bootstraps xtask
+    # via cargo+z42c, not download; package-* use source build-stdlib.sh +
+    # package.sh), so it always republishes a compatible nightly and the
+    # download-bootstrap jobs self-heal on the next run. JIT correctness is still
+    # gated here via build-and-test's `xtask test all` (vm goldens in interp+jit).
     needs:
       - build-and-test
-      - vm-jit-consistency
       - feature-matrix
       - package-ios
       - package-android

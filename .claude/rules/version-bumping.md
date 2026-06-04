@@ -63,3 +63,35 @@ dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc|FullyQualifiedName~Z42.Te
 仅改 zpkg outer（不动 zbc）时（如新增 zpkg-only section / 已定义 section 字段语义）：只触上述步骤 5-8（zpkg writer / Rust 常量 / zpkg.md changelog / zpkg fixture regen），跳过 zbc 步骤 1-4。
 
 注意：实际工作中 zpkg-only 改动非常罕见（v0 历史里所有 minor bump 都耦合 zbc），但若发生，本节给出独立路径定义。
+
+---
+
+## bump 与 xtask↔nightly bootstrap 循环（opt-xtask-bootstrap-stdlib, 2026-06-04）
+
+CI 的 `xtask-bootstrap` composite **下载上一次的 nightly**（`install-z42` → `.z42/`）来
+编译 + 运行 xtask（vm-jit / bench / bench-update 三个 job 这样做）。所以 zbc/zpkg
+minor bump 后会短暂出现循环：
+
+- 旧 nightly 的 z42vm 是旧 zbc reader → 跑不了用**新** z42c 编出的 xtask.zpkg（strict-pin 失败）；
+  且 xtask 现在还**对着 `.z42/libs`（旧 nightly stdlib）编译**，新 stdlib API 也可能缺。
+- 于是 vm-jit / bench **红**，直到存在一个兼容的新 nightly——而产出它的正是 publish-nightly。
+
+**为什么不死锁（自愈设计）**：`publish-nightly` 的 `needs` **只含从当前源码构建的 job**
+（`build-and-test` 用 cargo+z42c 从源码 bootstrap xtask；`package-ios/android/wasm` 用源码
+`build-stdlib.sh` + `package.sh`），**绝不依赖 download-bootstrap 的 vm-jit / bench**。所以
+bump commit 推上 main 后：源码 job 全绿 → publish-nightly 发布新 nightly → 下一次 run 的
+vm-jit / bench 下到新 nightly → 自愈。bump 当次那一跑 vm-jit/bench 红是预期的、一次性的。
+
+> **硬约束**：任何 feed `publish-nightly` 的 job 必须从**当前源码** bootstrap（不许走
+> download-nightly composite）。Phase 5 把 `package.sh` 移植进 xtask 时，package job 仍要
+> `cargo build` + 源码编 xtask.zpkg，**不要**改用 `xtask-bootstrap` composite——否则 publish
+> 路径变成依赖旧 nightly，死锁复活。
+
+**手动发布 nightly（escape hatch）**：若自愈不及时（或要在不推 commit 的情况下刷新 nightly），
+手动触发 CI 的 `workflow_dispatch`，它会从当前 main 源码构建并发布 nightly：
+
+```bash
+gh workflow run CI --ref main          # 或 Actions 页面 "Run workflow" 按钮
+```
+
+publish-nightly 的 `if` 已放行 `workflow_dispatch`；vm-jit/bench 即使红也不挡发布。
