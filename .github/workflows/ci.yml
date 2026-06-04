@@ -81,6 +81,19 @@ jobs:
           Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
           Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
 
+      # migrate-scripts-to-z42: version-drift check via xtask (replaces the
+      # feature-matrix `bash scripts/check-versions-drift.sh` step). ubuntu only —
+      # the check is OS-independent (versions.toml + zbc/zpkg/gradle/Package.swift
+      # version constants). Reuses the from-source xtask bootstrapped above.
+      - name: Check versions.toml drift (z42 xtask.zpkg deps check)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- deps check
+
       # Test on Unix runners (existing scripts are bash).
       # --parallel: wave-based stage-level concurrency (W1/W2/W3).
       # --jobs=4: intra-stage parallelism for test-lib.sh and test-vm.sh;
@@ -436,8 +449,8 @@ jobs:
             exit 1
           fi
 
-      - name: Check versions.toml drift
-        run: bash scripts/check-versions-drift.sh
+      # (versions.toml drift check moved to build-and-test via
+      # `z42 xtask.zpkg deps check` — migrate-scripts-to-z42.)
 
   # ── iOS packaging ──────────────────────────────────────────────────────
   # Packages ios-arm64 + ios-arm64-sim. Requires Xcode (pre-installed on

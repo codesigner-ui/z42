@@ -30,7 +30,7 @@ paths:
 提交前自检：
 
 ```bash
-./scripts/check-versions-drift.sh    # （未来扩展时校 ZbcWriter/Reader 一致性）
+z42 xtask.zpkg deps check    # （未来扩展时校 ZbcWriter/Reader 一致性）
 ./src/tests/zbc-format/generate-fixtures.sh
 dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc"
 ```

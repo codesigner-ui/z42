@@ -21,13 +21,13 @@
 $EDITOR versions.toml                             # 例：0.1.0 → 0.2.0
 
 # 2. drift-check 提醒同步 Cargo.toml
-./scripts/check-versions-drift.sh                 # 应 fail（versions.toml 已改但 Cargo.toml 未改）
+z42 xtask.zpkg deps check                 # 应 fail（versions.toml 已改但 Cargo.toml 未改）
 
 # 3. 同步 src/runtime/Cargo.toml [workspace.package].version
 $EDITOR src/runtime/Cargo.toml                    # 同样改成 0.2.0
 
 # 4. 验证（drift-check 通过 + workspace 解析正确）
-./scripts/check-versions-drift.sh                 # 应通过
+z42 xtask.zpkg deps check                 # 应通过
 cargo metadata --manifest-path src/runtime/Cargo.toml --format-version 1 --no-deps \
     | jq -r '.packages[].version' | sort -u       # 应全部为 0.2.0
 

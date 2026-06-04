@@ -1,6 +1,6 @@
 // port-check-versions-drift (2026-05-16)：第一个 .z42 实现的 build script。
 //
-// 行为对齐 scripts/check-versions-drift.sh（83 LOC bash）：从 versions.toml
+// 行为对齐 the former scripts/check-versions-drift.sh（83 LOC bash）：从 versions.toml
 // 拿期望值，扫几个"投影"文件（Cargo.toml / build.gradle.kts / package_helpers.sh）
 // 验证一致性。任一 mismatch → exit 1。
 //

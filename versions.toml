@@ -32,7 +32,7 @@ schema_version = 1
 # ══════════════════════════════════════════════════════════════════════════
 #
 # Bumping 流程：
-#   1. 改本字段 → 跑 scripts/check-versions-drift.sh
+#   1. 改本字段 → 跑 z42 xtask.zpkg deps check
 #   2. drift 报错 → 同步更新仓库根 Cargo.toml [workspace.package].version
 #   3. commit → git tag v<version> → push --tags
 #   4. .github/workflows/release.yml 自动触发跨平台 SDK package publish

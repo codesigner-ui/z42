@@ -202,10 +202,10 @@ int _deps(string[] argv) {
 
 // `deps check` — native, bash-free (migrate-scripts-to-z42 increment 1):
 // compile check-versions-drift.z42 with z42c (dotnet) then run the zpkg on this
-// process's own inherited z42vm runtime (Z42_PORTABLE_VM / Z42_LIBS). Mirrors
-// scripts/check-versions-drift.sh, which is retained as fallback until CI-proven.
-// Prereq (same as the .sh's built tree): stdlib + driver present — run
-// `z42 xtask.zpkg build stdlib` first on a fresh tree.
+// process's own inherited z42vm runtime (Z42_PORTABLE_VM / Z42_LIBS). This is
+// the sole entry for the version-drift check (the former
+// scripts/check-versions-drift.sh has been deleted; CI runs it in build-and-test).
+// Prereq: stdlib + driver present — run `z42 xtask.zpkg build stdlib` on a fresh tree.
 int _depsCheck() {
     string libs = Path.Join(_root(), "artifacts/build/libraries/dist/release");
     // 1. compile the script → Exe-zpkg (z42c via dotnet; spawned directly)

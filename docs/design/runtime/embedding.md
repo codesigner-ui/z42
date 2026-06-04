@@ -593,7 +593,7 @@ Phase 1 下游 spec：
 - 版本号 < `1.0.0`（pre-1.0 阶段全部）
 - Tag 含 `-` 后缀（`v0.2.5-rc1` / `v1.0.0-rc.1` 等）
 
-**版本号 SoT**：`versions.toml [project].version` 单一来源；`src/runtime/Cargo.toml [workspace.package].version` 必须镜像（漂移由 [scripts/check-versions-drift.sh](../../../scripts/check-versions-drift.sh) 强制检出）。Release pipeline 在 `verify` job 验证 `tag.strip_prefix('v') == versions.toml [project].version`，漂移即 fail-fast。
+**版本号 SoT**：`versions.toml [project].version` 单一来源；`src/runtime/Cargo.toml [workspace.package].version` 必须镜像（漂移由 `z42 xtask.zpkg deps check` 强制检出）。Release pipeline 在 `verify` job 验证 `tag.strip_prefix('v') == versions.toml [project].version`，漂移即 fail-fast。
 
 **Bump 流程**：① 改 `versions.toml [project].version` ② drift-check 通过 ③ 同步更新 `src/runtime/Cargo.toml [workspace.package].version` ④ commit ⑤ `git tag v<version> && git push --tags`。
 
