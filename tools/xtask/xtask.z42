@@ -37,6 +37,8 @@ void Main() {
         code = _deps(argv);
     } else if (cmd == "regen") {
         code = _regen(argv);
+    } else if (cmd == "audit") {
+        code = _audit();
     } else if (cmd == "bench") {
         code = _sh("./scripts/bench-run.sh " + _join(argv, 1));
     } else {
@@ -139,7 +141,7 @@ void _primerFlatView(string root) {
 int _test(string[] argv) {
     string sub  = _at(argv, 1);
     string rest = _join(argv, 2);
-    if (sub == "")           { return _testAll(); }
+    if (sub == "" || sub == "all") { return _testAll(); }
     if (sub == "stdlib")     { return _testLib(argv); }
     if (sub == "lib")        { return _testLib(argv); }
     if (sub == "vm")         { return _testVm(argv); }
@@ -209,6 +211,19 @@ int _depsCheck() {
     return _exec(new Process(_z42vm())
         .Arg("scripts/dist/check-versions-drift.zpkg")
         .Env("Z42_LIBS", libs));
+}
+
+// `audit` — native, bash-free. Mirrors scripts/audit-missing-usings.sh:
+// compile audit-missing-usings.z42 + run it on the inherited z42vm to scan the
+// C# compiler sources for missing using directives. (Warm-tree: needs stdlib.)
+int _audit() {
+    string libs = Path.Join(_root(), "artifacts/build/libraries/dist/release");
+    int c = _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("scripts/audit-missing-usings.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
+    return _exec(new Process(_z42vm()).Arg("scripts/dist/audit-missing-usings.zpkg").Env("Z42_LIBS", libs));
 }
 
 // ── regen-golden ────────────────────────────────────────────────────────────
