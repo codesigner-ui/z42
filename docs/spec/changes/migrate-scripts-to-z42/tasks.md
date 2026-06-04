@@ -32,7 +32,9 @@
 - [x] test all（GREEN gate orchestrator）— build once + compiler/vm/cross-zpkg/lib short-circuit；split test handlers → xtask_test.z42（500-line limit）；full run validating in bg
 - [x] audit（87a9d838）— native audit-missing-usings
 - [ ] bench run/diff（hyperfine+python3 dep）/ test-dist（208 LOC，无外部依赖）
-- [ ] package（platform packaging 1471 LOC — 最大、release-critical、最后；先再拆 xtask 文件）
+- [x] package DESKTOP（xtask_package.z42）— native build package release：dotnet publish + cargo target + launcher + manifest + sha256 invariant；host-RID 包过全部 CI verify 检查。dogfood：versions via Std.Toml（非 python3）、sha256 invariant via File.ReadAllBytes byte-compare
+- [ ] package ios/android/wasm subs（separate xtask_package_*.z42）+ dSYM 递归拷贝（需 Directory.Copy recursive — 唯一 stdlib gap，暂跳过 dSYM）
+- [ ] package 1471 LOC — desktop done; mobile/wasm 余下
 - [ ] test all 加 --parallel wave（CI 性能：当前 sequential，rewire 前需并行化避免超时）
 - [ ] mtime native extern（File.GetLastWriteTime）当增量/freshness 检查需要时
 - [ ] rewire CI（ci/bench-update/release）→ `z42vm xtask.zpkg -- …`；删 justfile + scripts/*.sh + _lib（留 install-z42.*）

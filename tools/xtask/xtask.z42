@@ -61,7 +61,7 @@ int _build(string[] argv) {
     if (sub == "launcher")       { return _exec(new Process("cargo").Arg("build").Arg("--release")
                                        .Arg("--manifest-path").Arg("src/toolchain/launcher/Cargo.toml")); }
     if (sub == "feature-matrix") { return _featureMatrix(); }
-    if (sub == "package")        { return _sh("./scripts/package.sh release " + rest); } // TODO: native port (platform packaging)
+    if (sub == "package")        { return _buildPackage(argv); }
     if (sub == "all") {
         int c = _buildRuntime();  if (c != 0) { return c; }
         c = _buildCompiler();     if (c != 0) { return c; }

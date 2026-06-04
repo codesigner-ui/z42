@@ -8,7 +8,7 @@ entry   = "Z42Xtask.Main"
 pack    = true
 
 [sources]
-include = ["xtask.z42", "xtask_test.z42"]
+include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42"]
 
 [dependencies]
 "z42.core" = "0.1.0"   # String / Console

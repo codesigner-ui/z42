@@ -1,0 +1,385 @@
+// xtask — release packaging (migrate-scripts-to-z42). Native port of
+// scripts/package.sh + _lib/package_desktop.sh + the desktop helpers of
+// package_helpers.sh / versions.sh. Desktop/host-RID category only for now;
+// ios/android/wasm subs follow. Same Z42Xtask namespace; calls _exec/_root/
+// _buildCompiler defined in xtask.z42 (cross-file).
+//
+// Dogfood wins vs the bash original: versions.toml is read with native
+// Std.Toml (was python3+tomllib); the SHA-256 invariant is a native byte
+// compare via File.ReadAllBytes (was shasum/sha256sum).
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+
+// `build package [release|debug] [--rid R] [--variant V]`
+int _buildPackage(string[] argv) {
+    string profile = "release";   // xtask defaults release (package.sh default is debug)
+    string rid = "";
+    string variant = "";
+    int i = 2;
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "release" || a == "Release") { profile = "release"; }
+        else if (a == "debug" || a == "Debug") { profile = "debug"; }
+        else if (a == "--rid") { i = i + 1; if (i < argv.Length) { rid = argv[i]; } }
+        else if (a == "--variant") { i = i + 1; if (i < argv.Length) { variant = argv[i]; } }
+        i = i + 1;
+    }
+    string root = _root();
+    string hostRid = _detectHostRid();
+    if (rid.Length == 0) { rid = hostRid; }
+    string category = _ridCategory(rid);
+    string version = _versionsGet(root);
+    if (version.Length == 0) { ConsoleError.WriteLine("error: versions.toml [project].version missing"); return 1; }
+    string pkgName = "z42-" + version + "-" + rid + "-" + profile;
+    if (variant.Length > 0) { pkgName = pkgName + "-" + variant; }
+    string pkgDir = Path.Join(root, "artifacts/packages/" + pkgName);
+    Console.WriteLine("Package:    " + pkgName);
+    Console.WriteLine("Output:     " + pkgDir);
+    Console.WriteLine("Target RID: " + rid + "  (category=" + category + ")");
+    Console.WriteLine("Profile:    " + profile);
+    Console.WriteLine("");
+    if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
+    Directory.Create(Path.Join(pkgDir, "bin"));
+    Directory.Create(Path.Join(pkgDir, "libs"));
+    Directory.Create(Path.Join(pkgDir, "native/include"));
+    Directory.Create(Path.Join(pkgDir, "examples"));
+
+    int c;
+    if (category == "desktop") {
+        c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
+    } else {
+        ConsoleError.WriteLine("xtask build package: category '" + category + "' not yet ported (desktop only)");
+        return 2;
+    }
+    if (c != 0) { return c; }
+
+    Console.WriteLine("");
+    Console.WriteLine("SHA-256 invariant check:");
+    c = _pkgSha256Check(root, pkgDir);
+    if (c != 0) { ConsoleError.WriteLine("  ✗ SHA-256 invariant FAILED"); return c; }
+    Console.WriteLine("  ✓ SHA-256 invariants OK");
+    Console.WriteLine("");
+    Console.WriteLine("✅ Package assembled: " + pkgDir);
+    return 0;
+}
+
+// ── RID + version helpers ───────────────────────────────────────────────────
+
+string _detectHostRid() {
+    string arch = Platform.Arch();
+    if (Platform.IsMacOS())   { if (arch == "x86_64") { return "macos-x64-unsupported"; } return "macos-arm64"; }
+    if (Platform.IsWindows()) { return "windows-x64"; }
+    // linux
+    if (arch == "aarch64" || arch == "arm64") { return "linux-arm64"; }
+    return "linux-x64";
+}
+
+string _ridCategory(string rid) {
+    if (rid.StartsWith("macos-") || rid.StartsWith("linux-") || rid.StartsWith("windows-")) { return "desktop"; }
+    if (rid.StartsWith("ios-")) { return "ios"; }
+    if (rid.StartsWith("android-")) { return "android"; }
+    if (rid == "browser-wasm") { return "wasm"; }
+    return "unknown";
+}
+
+string _ridToCargo(string rid) {
+    if (rid == "macos-arm64")   { return "aarch64-apple-darwin"; }
+    if (rid == "linux-arm64")   { return "aarch64-unknown-linux-gnu"; }
+    if (rid == "linux-x64")     { return "x86_64-unknown-linux-gnu"; }
+    if (rid == "windows-x64")   { return "x86_64-pc-windows-msvc"; }
+    if (rid == "ios-arm64")     { return "aarch64-apple-ios"; }
+    if (rid == "ios-arm64-sim") { return "aarch64-apple-ios-sim"; }
+    if (rid == "android-arm64") { return "aarch64-linux-android"; }
+    if (rid == "android-x64")   { return "x86_64-linux-android"; }
+    if (rid == "browser-wasm")  { return "wasm32-unknown-unknown"; }
+    return "";
+}
+
+string _ridToDotnet(string rid) {
+    if (rid == "macos-arm64") { return "osx-arm64"; }
+    if (rid == "linux-arm64") { return "linux-arm64"; }
+    if (rid == "linux-x64")   { return "linux-x64"; }
+    if (rid == "windows-x64") { return "win-x64"; }
+    return "";
+}
+
+// Read versions.toml [project].version with native Std.Toml (was python3).
+string _versionsGet(string root) {
+    string tomlPath = Path.Join(root, "versions.toml");
+    if (!File.Exists(tomlPath)) { return ""; }
+    TomlValue t = TomlValue.Parse(File.ReadAllText(tomlPath));
+    // [project].version always exists in versions.toml; Get throws otherwise.
+    return t.Get("project").Get("version").AsString();
+}
+
+// ── desktop pipeline ────────────────────────────────────────────────────────
+
+int _packageDesktop(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
+    string cargoTarget = _ridToCargo(rid);
+    string dotnetRid = _ridToDotnet(rid);
+    string dotnetConfig = (profile == "release") ? "Release" : "Debug";
+    bool rel = (profile == "release");
+
+    // [1/7] z42c via dotnet publish single-file
+    Console.WriteLine("[1/7] z42c (dotnet publish " + dotnetRid + ", " + profile + ")");
+    string pub = Directory.CreateTempDir("xtask-pub");
+    int c = _exec(new Process("dotnet").Arg("publish").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
+        .Arg("-c").Arg(dotnetConfig).Arg("-r").Arg(dotnetRid)
+        .Arg("-p:PublishSingleFile=true").Arg("-p:UseAppHost=true")
+        .Arg("-o").Arg(pub).Arg("--nologo").Arg("-v").Arg("quiet"));
+    if (c != 0) { return c; }
+    _copyIfExists(Path.Join(pub, "z42c"), Path.Join(pkgDir, "bin/z42c"));
+    _copyIfExists(Path.Join(pub, "z42c.exe"), Path.Join(pkgDir, "bin/z42c.exe"));
+    Console.WriteLine("      ✓ bin/z42c");
+
+    // [2/7] z42vm + libz42.* via cargo build --target + staticlib/cdylib
+    Console.WriteLine("[2/7] z42vm + libz42 (cargo " + cargoTarget + ", " + profile + ")");
+    c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
+    _cargoRustc(rel, cargoTarget, "staticlib");
+    _cargoRustc(rel, cargoTarget, "cdylib");
+    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
+    _copyIfExists(Path.Join(cargoOut, "z42vm"), Path.Join(pkgDir, "bin/z42vm"));
+    _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "bin/z42vm.exe"));
+    Console.WriteLine("      ✓ bin/z42vm");
+    _copyNativeLibs(cargoOut, pkgDir);
+    Console.WriteLine("      ✓ native/ (libz42.* / z42.*)");
+
+    // [2b/7] z42-compression cdylib + staticlib
+    Console.WriteLine("[2b/7] z42-compression (cargo " + cargoTarget + ", " + profile + ")");
+    c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, "z42-compression"); if (c != 0) { return c; }
+    _copyNativeLibs(cargoOut, pkgDir);
+    Console.WriteLine("      ✓ native/libz42_compression.*");
+
+    // [2c/7] launcher trampoline (pkg root) + launcher.zpkg + install.sh
+    Console.WriteLine("[2c/7] z42 launcher (trampoline + launcher.zpkg)");
+    c = _cargo(rel, "build", "src/toolchain/launcher/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
+    _copyIfExists(Path.Join(cargoOut, "z42"), Path.Join(pkgDir, "z42"));
+    _copyIfExists(Path.Join(cargoOut, "z42.exe"), Path.Join(pkgDir, "z42.exe"));
+    Console.WriteLine("      ✓ z42 (trampoline, package root)");
+    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
+    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
+    File.Copy(Path.Join(root, "artifacts/build/toolchain/launcher/z42.launcher.zpkg"), Path.Join(pkgDir, "launcher.zpkg"));
+    Console.WriteLine("      ✓ launcher.zpkg");
+    File.Copy(Path.Join(root, "scripts/install.sh"), Path.Join(pkgDir, "install.sh"));
+    File.MakeExecutable(Path.Join(pkgDir, "install.sh"));
+    Console.WriteLine("      ✓ install.sh");
+
+    // [3/7] C ABI headers
+    Console.WriteLine("[3/7] C ABI headers");
+    File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
+    File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
+
+    // [4/7] stdlib zpkg + zsym + index.json
+    Console.WriteLine("[4/7] stdlib zpkg + zsym + index.json");
+    c = _pkgCopyLibs(libs, pkgDir); if (c != 0) { return c; }
+
+    // [5/7] examples/hello_c
+    Console.WriteLine("[5/7] examples/hello_c");
+    c = _pkgEmitHelloC(root, pkgDir); if (c != 0) { return c; }
+
+    // [6/7] examples/hello_rust
+    Console.WriteLine("[6/7] examples/hello_rust");
+    _pkgEmitHelloRust(root, pkgDir);
+
+    // [7/7] manifest.toml
+    Console.WriteLine("[7/7] manifest.toml");
+    _pkgEmitManifest(pkgDir, rid, version, profile, hostRid);
+    return 0;
+}
+
+// ── cargo wrappers ──────────────────────────────────────────────────────────
+
+int _cargo(bool rel, string verb, string manifest, string target, string pkg) {
+    Process p = new Process("cargo").Arg(verb);
+    if (rel) { p = p.Arg("--release"); }
+    if (pkg.Length > 0) { p = p.Arg("-p").Arg(pkg); }
+    p = p.Arg("--manifest-path").Arg(manifest).Arg("--target").Arg(target).Arg("--quiet");
+    return _exec(p);
+}
+
+// cargo rustc --crate-type=X (best-effort: rlib already exists; ignore failure like the .sh).
+void _cargoRustc(bool rel, string target, string crateType) {
+    Process p = new Process("cargo").Arg("rustc");
+    if (rel) { p = p.Arg("--release"); }
+    p = p.Arg("--lib").Arg("--crate-type=" + crateType)
+        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml").Arg("--target").Arg(target).Arg("--quiet");
+    _exec(p);
+}
+
+// ── file assembly helpers ───────────────────────────────────────────────────
+
+void _copyIfExists(string src, string dst) {
+    if (File.Exists(src)) { File.Copy(src, dst); }
+}
+
+// Copy any libz42.*/z42.* native artifacts present in cargoOut into native/.
+void _copyNativeLibs(string cargoOut, string pkgDir) {
+    if (!Directory.Exists(cargoOut)) { return; }
+    foreach (var f in Directory.Enumerate(cargoOut)) {
+        bool isLib = f.StartsWith("libz42") || f == "z42.lib" || f == "z42.dll" || f.StartsWith("z42_compression");
+        if (isLib && (f.EndsWith(".a") || f.EndsWith(".dylib") || f.EndsWith(".so") || f.EndsWith(".lib") || f.EndsWith(".dll"))) {
+            File.Copy(Path.Join(cargoOut, f), Path.Join(pkgDir, "native/" + f));
+        }
+    }
+}
+
+int _pkgCopyLibs(string libsDir, string pkgDir) {
+    if (!Directory.Exists(libsDir)) {
+        ConsoleError.WriteLine("error: stdlib not built at " + libsDir + "; run build stdlib");
+        return 1;
+    }
+    foreach (var f in Directory.Enumerate(libsDir)) {
+        if (f.EndsWith(".zpkg") || f.EndsWith(".zsym")) {
+            File.Copy(Path.Join(libsDir, f), Path.Join(pkgDir, "libs/" + f));
+        }
+    }
+    string idx = Path.Join(libsDir, "index.json");
+    if (!File.Exists(idx)) { ConsoleError.WriteLine("error: " + idx + " missing"); return 1; }
+    File.Copy(idx, Path.Join(pkgDir, "libs/index.json"));
+    return 0;
+}
+
+int _pkgEmitHelloC(string root, string pkgDir) {
+    string dst = Path.Join(pkgDir, "examples/hello_c");
+    Directory.Create(dst);
+    File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
+    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md.host"), Path.Join(dst, "README.md"));
+    string driver = Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    if (!File.Exists(driver)) {
+        ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler");
+        return 1;
+    }
+    return _exec(new Process("dotnet").Arg(driver)
+        .Arg(Path.Join(root, "examples/embedding/hello.z42")).Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));
+}
+
+void _pkgEmitHelloRust(string root, string pkgDir) {
+    string src = Path.Join(root, "examples/embedding/hello_rust");
+    string dst = Path.Join(pkgDir, "examples/hello_rust");
+    Directory.Create(Path.Join(dst, "src"));
+    File.Copy(Path.Join(src, "Cargo.toml"), Path.Join(dst, "Cargo.toml"));
+    File.Copy(Path.Join(src, "src/main.rs"), Path.Join(dst, "src/main.rs"));
+    File.Copy(Path.Join(src, "README.md"), Path.Join(dst, "README.md"));
+}
+
+// ── manifest (desktop) ──────────────────────────────────────────────────────
+
+void _pkgEmitManifest(string pkgDir, string rid, string version, string profile, string buildHost) {
+    string buildDate = _utcNow();
+    string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
+    string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
+    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
+    string staticList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42.a", "z42.lib");
+    string dynamicList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42.dylib", "libz42.so");
+    string m = "";
+    m = m + "[package]\n";
+    m = m + "name        = \"z42-" + rid + "\"\n";
+    m = m + "version     = \"" + version + "\"\n";
+    m = m + "abi-version = 1\n";
+    m = m + "rid         = \"" + rid + "\"\n";
+    m = m + "profile     = \"" + profile + "\"\n";
+    m = m + "build-date  = \"" + buildDate + "\"\n";
+    m = m + "build-host  = \"" + buildHost + "\"\n\n";
+    m = m + "[contents]\n";
+    m = m + "bin         = [" + binList + "]\n";
+    m = m + "libs        = [" + libsList + "]\n";
+    m = m + "examples    = [" + examplesList + "]\n\n";
+    m = m + "[contents.native]\n";
+    m = m + "static      = [" + staticList + "]\n";
+    m = m + "dynamic     = [" + dynamicList + "]\n";
+    m = m + "containers  = []\n";
+    m = m + "includes    = [\"z42_abi.h\", \"z42_host.h\"]\n\n";
+    m = m + "[contents.platform]\n";
+    m = m + "# desktop package: no platform-native facade (C consumers use native/include/)\n\n";
+    m = m + "[compat]\n";
+    m = m + "host-min-version = \"" + version + "\"\n";
+    File.WriteAllText(Path.Join(pkgDir, "manifest.toml"), m);
+}
+
+// `date -u +FMT` — build-date is a timestamp anyway; spawn the system util.
+string _utcNow() {
+    ProcessResult r = new Process("date").Arg("-u").Arg("+%Y-%m-%dT%H:%M:%SZ").Run();
+    if (r.ExitCode == 0) { return r.Stdout.Trim(); }
+    return "1970-01-01T00:00:00Z";
+}
+
+// comma-quoted list of dir entries (optionally filtered by suffix), sorted.
+string _quotedDirList(string dir, string suffix) {
+    if (!Directory.Exists(dir)) { return ""; }
+    string acc = "";
+    foreach (var f in Directory.Enumerate(dir)) {
+        if (suffix.Length == 0 || f.EndsWith(suffix)) {
+            if (acc.Length > 0) { acc = acc + ", "; }
+            acc = acc + "\"" + f + "\"";
+        }
+    }
+    return acc;
+}
+
+string _quotedSubdirs(string dir) {
+    if (!Directory.Exists(dir)) { return ""; }
+    string acc = "";
+    foreach (var d in Directory.Enumerate(dir)) {
+        if (Directory.Exists(Path.Join(dir, d))) {
+            if (acc.Length > 0) { acc = acc + ", "; }
+            acc = acc + "\"" + d + "\"";
+        }
+    }
+    return acc;
+}
+
+string _quotedExisting(string dir, string a, string b) {
+    string acc = "";
+    if (File.Exists(Path.Join(dir, a))) { acc = "\"" + a + "\""; }
+    if (File.Exists(Path.Join(dir, b))) { if (acc.Length > 0) { acc = acc + ", "; } acc = acc + "\"" + b + "\""; }
+    return acc;
+}
+
+// ── SHA-256 invariant (native byte compare) ─────────────────────────────────
+
+int _pkgSha256Check(string root, string pkgDir) {
+    bool fail = false;
+    // 1. libs/* vs the flat dist source of truth
+    string libsSrc = Path.Join(root, "artifacts/build/libraries/dist/release");
+    string pkgLibs = Path.Join(pkgDir, "libs");
+    if (Directory.Exists(pkgLibs)) {
+        foreach (var f in Directory.Enumerate(pkgLibs)) {
+            string src = Path.Join(libsSrc, f);
+            if (File.Exists(src) && !_filesEqual(Path.Join(pkgLibs, f), src)) {
+                ConsoleError.WriteLine("  ✗ libs/" + f + " differs from source"); fail = true;
+            }
+        }
+    }
+    // 2. native/include/*.h vs src/runtime/include/
+    if (!_filesEqual(Path.Join(pkgDir, "native/include/z42_abi.h"), Path.Join(root, "src/runtime/include/z42_abi.h"))) {
+        ConsoleError.WriteLine("  ✗ native/include/z42_abi.h differs"); fail = true;
+    }
+    if (!_filesEqual(Path.Join(pkgDir, "native/include/z42_host.h"), Path.Join(root, "src/runtime/include/z42_host.h"))) {
+        ConsoleError.WriteLine("  ✗ native/include/z42_host.h differs"); fail = true;
+    }
+    // 3. examples/hello_c/main.c vs source
+    if (!_filesEqual(Path.Join(pkgDir, "examples/hello_c/main.c"), Path.Join(root, "examples/embedding/hello_c/main.c"))) {
+        ConsoleError.WriteLine("  ✗ examples/hello_c/main.c differs"); fail = true;
+    }
+    if (fail) { return 1; }
+    return 0;
+}
+
+bool _filesEqual(string a, string b) {
+    if (!File.Exists(a) || !File.Exists(b)) { return false; }
+    byte[] ba = File.ReadAllBytes(a);
+    byte[] bb = File.ReadAllBytes(b);
+    if (ba.Length != bb.Length) { return false; }
+    int i = 0;
+    while (i < ba.Length) {
+        if (ba[i] != bb[i]) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
