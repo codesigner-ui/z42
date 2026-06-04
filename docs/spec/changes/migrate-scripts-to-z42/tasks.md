@@ -17,10 +17,19 @@
 - [x] 2.3 保留 test-changed.sh；CI 不动
 - 注：test-changed.z42 内部仍 `bash -c "just …"` 跑映射命令 → 待 inner-bash 子 increment（映射改 `z42 xtask.zpkg …`）
 
+## Increment 3: native build family + dogfood foreach/String ✅
+- [x] 3.1 `build runtime|compiler|launcher` → native `_exec` (cargo/dotnet 直接 spawn)
+- [x] 3.2 `build feature-matrix` (interp-only/wasm/ios/android) native — replaces `just build-*-feature`
+- [x] 3.3 `build stdlib` native — cold-start primer (raw z42c workspace + flat-view copy via foreach) + run build-stdlib.z42; warm path validated → 22 zpkgs
+- [x] 3.4 dogfood：用 `foreach (var x in arr)` + `String.StartsWith/EndsWith`（均已实现），删 `_startsWith/_endsWith` workaround
+- 注：foreach 与 String.StartsWith/EndsWith/Split 早已实现（之前误判为缺失）；workflow 审计确认真正 P0 gap 是 `File.GetLastWriteTime`(mtime, native extern) — 待 port 需要时补
+
 ## 后续 increments（每个一 commit，同结构）
-- [ ] test vm / test cross-zpkg / build stdlib / test all（outer native）
-- [ ] inner-bash 子 increment：各 .z42 内部 `just`/`bash -c` 映射 → native xtask 调用
-- [ ] 各 increment CI-proven 后：rewire CI 调 `z42 xtask.zpkg …` + 删对应 .sh
+- [ ] test vm / test cross-zpkg / test lib / test all（orchestration → native）
+- [ ] bench run/diff / test-dist / package（platform packaging — 最大、最后）
+- [ ] mtime native extern（File.GetLastWriteTime）当增量/freshness 检查需要时
+- [ ] rewire CI（ci/bench-update/release）→ `z42vm xtask.zpkg -- …`；删 justfile + scripts/*.sh + _lib（留 install-z42.*）
+- [ ] 更新 docs（workflow/、CLAUDE.md 等引用）
 
 ## 备注
 - 自托管边界保留：编译 .z42 需 dotnet（z42c）；build VM 需 cargo。xtask 直接 spawn。

@@ -51,20 +51,85 @@ void Main() {
 int _build(string[] argv) {
     string sub  = _at(argv, 1);
     string rest = _join(argv, 2);
-    if (sub == "runtime")    { return _sh("cargo build --release --manifest-path src/runtime/Cargo.toml " + rest); }
-    if (sub == "compiler")   { return _sh("dotnet build src/compiler/z42.slnx"); }
-    if (sub == "stdlib")     { return _sh("./scripts/build-stdlib.sh " + rest); }
-    if (sub == "launcher")   { return _sh("cargo build --release --manifest-path src/toolchain/launcher/Cargo.toml"); }
-    if (sub == "package")    { return _sh("./scripts/package.sh release " + rest); }
+    if (sub == "runtime")        { return _buildRuntime(); }
+    if (sub == "compiler")       { return _buildCompiler(); }
+    if (sub == "stdlib")         { return _buildStdlib(); }
+    if (sub == "launcher")       { return _exec(new Process("cargo").Arg("build").Arg("--release")
+                                       .Arg("--manifest-path").Arg("src/toolchain/launcher/Cargo.toml")); }
+    if (sub == "feature-matrix") { return _featureMatrix(); }
+    if (sub == "package")        { return _sh("./scripts/package.sh release " + rest); } // TODO: native port (platform packaging)
     if (sub == "all") {
-        int c = _sh("cargo build --release --manifest-path src/runtime/Cargo.toml");
-        if (c != 0) { return c; }
-        c = _sh("dotnet build src/compiler/z42.slnx");
-        if (c != 0) { return c; }
-        return _sh("./scripts/build-stdlib.sh");
+        int c = _buildRuntime();  if (c != 0) { return c; }
+        c = _buildCompiler();     if (c != 0) { return c; }
+        return _buildStdlib();
     }
-    ConsoleError.WriteLine("xtask build: unknown target '" + sub + "'  (runtime|compiler|stdlib|launcher|package|all)");
+    ConsoleError.WriteLine("xtask build: unknown target '" + sub + "'  (runtime|compiler|stdlib|launcher|feature-matrix|package|all)");
     return 2;
+}
+
+int _buildRuntime() {
+    return _exec(new Process("cargo").Arg("build").Arg("--release")
+        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml"));
+}
+
+int _buildCompiler() {
+    return _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.slnx"));
+}
+
+// feature-matrix (CI P4.1): verify each Cargo feature combo compiles (host target).
+int _featureMatrix() {
+    int c = _cargoFeature("interp-only"); if (c != 0) { return c; }
+    c = _cargoFeature("wasm");            if (c != 0) { return c; }
+    c = _cargoFeature("ios");             if (c != 0) { return c; }
+    return _cargoFeature("android");
+}
+
+int _cargoFeature(string feat) {
+    Console.WriteLine("== cargo build --no-default-features --features " + feat + " ==");
+    return _exec(new Process("cargo").Arg("build").Arg("--release")
+        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml")
+        .Arg("--no-default-features").Arg("--features").Arg(feat));
+}
+
+// `build stdlib` — native, bash-free. On a cold tree (no flat dist) run the
+// primer: raw z42c workspace build so build-stdlib.z42's own `using Std.*`
+// resolves; then run build-stdlib.z42 for the incremental build + flat-view
+// assembly. Mirrors scripts/build-stdlib.sh (retained as fallback).
+int _buildStdlib() {
+    string root = _root();
+    string coreZpkg = Path.Join(root, "artifacts/build/libraries/dist/release/z42.core.zpkg");
+    if (!File.Exists(coreZpkg)) {
+        Console.WriteLine("  (primer: bootstrapping stdlib for the first time)");
+        int pc = _exec(new Process("dotnet")
+            .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+            .Arg("--").Arg("build").Arg("--workspace").Arg("--release")
+            .WorkingDirectory(Path.Join(root, "src/libraries")));
+        if (pc != 0) { return pc; }
+        _primerFlatView(root);
+    }
+    // incremental build + flat-view assembly (build-stdlib.z42 is bash-free internally)
+    return _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("run").Arg("scripts/build-stdlib.z42"));
+}
+
+// Cold-start: copy each per-lib dist's zpkg/zsym into the flat dist view so the
+// driver can resolve build-stdlib.z42's stdlib imports. (build-stdlib.z42 then
+// re-asserts the flat view itself.) Directory.Enumerate returns names, not paths.
+void _primerFlatView(string root) {
+    string flat = Path.Join(root, "artifacts/build/libraries/dist/release");
+    Directory.Create(flat);
+    string libsRoot = Path.Join(root, "artifacts/build/libraries");
+    foreach (var libName in Directory.Enumerate(libsRoot)) {
+        string d = Path.Join(libsRoot, libName + "/release/dist");
+        if (Directory.Exists(d)) {
+            foreach (var fname in Directory.Enumerate(d)) {
+                if (fname.EndsWith(".zpkg") || fname.EndsWith(".zsym")) {
+                    File.Copy(Path.Join(d, fname), Path.Join(flat, fname));
+                }
+            }
+        }
+    }
 }
 
 // ── test ──────────────────────────────────────────────────────────────────
@@ -79,7 +144,7 @@ int _test(string[] argv) {
     if (sub == "compiler")   { return _sh("dotnet test src/compiler/z42.Tests/z42.Tests.csproj"); }
     if (sub == "changed")    { return _testChanged(argv); }
     // a leading flag (e.g. --parallel / --jobs) → forward the whole tail to test-all
-    if (_startsWith(sub, "-")) { return _sh("./scripts/test-all.sh " + _join(argv, 1)); }
+    if (sub.StartsWith("-")) { return _sh("./scripts/test-all.sh " + _join(argv, 1)); }
     ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|compiler|changed | empty=all)");
     return 2;
 }
@@ -98,7 +163,7 @@ int _testChanged(string[] argv) {
     while (i < argv.Length) {
         string a = argv[i];
         if (a == "--dry-run") { dry = "1"; }
-        else if (_startsWith(a, "-")) {
+        else if (a.StartsWith("-")) {
             ConsoleError.WriteLine("[test-changed] unknown flag: " + a);
             return 2;
         } else { base_ = a; }
@@ -196,16 +261,6 @@ string _join(string[] a, int from) {
         i = i + 1;
     }
     return s;
-}
-
-bool _startsWith(string s, string prefix) {
-    if (s.Length < prefix.Length) { return false; }
-    int i = 0;
-    while (i < prefix.Length) {
-        if (s.CharAt(i) != prefix.CharAt(i)) { return false; }
-        i = i + 1;
-    }
-    return true;
 }
 
 void _help() {
