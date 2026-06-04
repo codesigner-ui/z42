@@ -18,16 +18,23 @@ using Std.Toml;
 int _depsInstall(string[] argv) {
     string mode = "install";
     string platform = "";
+    bool force = false;
+    bool wantNode = false;
     int i = 2;   // argv[0]=deps, argv[1]=install
     while (i < argv.Length) {
         string a = argv[i];
         if (a == "--check")          { mode = "check"; }
         else if (a == "--drift")     { mode = "drift"; }
         else if (a == "--print-env") { mode = "print-env"; }
+        else if (a == "--force")     { force = true; }
+        else if (a == "node")        { wantNode = true; }
         else if (a == "android" || a == "ios" || a == "wasm") { platform = a; }
-        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try --check/--drift/--print-env/<platform>)"); return 2; }
+        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try node | <android|ios|wasm> | --check/--drift/--print-env/--force)"); return 2; }
         i = i + 1;
     }
+    // Standalone project-local Node.js installer (was install-node-local.sh).
+    if (wantNode) { return _depsInstallNode(force); }
+
     string root = _root();
     TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
 
@@ -60,6 +67,66 @@ int _depsInstall(string[] argv) {
         Console.WriteLine("     eval \"$(z42 xtask.zpkg deps install android --print-env)\"");
     }
     return rc;
+}
+
+// ── deps install node (was install-node-local.sh) ───────────────────────────
+
+// Download Node.js LTS into artifacts/tools/node/ (no system PATH changes).
+// Idempotent; --force redownloads. POSIX-only (.tar.gz); Windows → MSI.
+int _depsInstallNode(bool force) {
+    string nodeVersion = "22.11.0";   // LTS "Jod"; matches install-node-local.sh
+    string root = _root();
+    string installDir = Path.Join(root, "artifacts/tools/node");
+    string nodeBin = Path.Join(installDir, "bin/node");
+
+    // Idempotence.
+    if (File.Exists(nodeBin) && !force) {
+        string cur = _cmdOut(nodeBin, new string[]{ "--version" });
+        if (cur == "v" + nodeVersion) {
+            Console.WriteLine("Node.js v" + nodeVersion + " already installed at " + installDir + " (skip; --force to reinstall)");
+            Console.WriteLine(nodeBin);
+            return 0;
+        }
+        Console.WriteLine("existing node " + cur + " differs from target v" + nodeVersion + "; reinstalling");
+    }
+
+    // OS / arch.
+    string os = _detectOs();
+    if (os == "windows") {
+        ConsoleError.WriteLine("error: auto-extract is POSIX-only. On Windows install Node.js from the official MSI:");
+        ConsoleError.WriteLine("       https://nodejs.org/en/download  (see docs/workflow/windows.md)");
+        return 1;
+    }
+    string arch = Platform.Arch();          // "arm64" / "x86_64" / ...
+    string nodeArch = "";
+    if (arch == "arm64" || arch == "aarch64") { nodeArch = "arm64"; }
+    else if (arch == "x86_64" || arch == "x64") { nodeArch = "x64"; }
+    else { ConsoleError.WriteLine("error: unsupported arch " + arch); return 1; }
+
+    string name = "node-v" + nodeVersion + "-" + os + "-" + nodeArch;
+    string url = "https://nodejs.org/dist/v" + nodeVersion + "/" + name + ".tar.gz";
+
+    string tmp = Directory.CreateTempDir("node-dl");
+    string tarball = Path.Join(tmp, name + ".tar.gz");
+    Console.WriteLine("fetching " + url);
+    int dc = _exec(new Process("curl").Arg("--fail").Arg("--location").Arg("--silent").Arg("--show-error").Arg("-o").Arg(tarball).Arg(url));
+    if (dc != 0) { ConsoleError.WriteLine("error: node download failed"); return dc; }
+
+    Console.WriteLine("extracting to " + installDir);
+    Directory.Create(Path.Join(root, "artifacts/tools"));
+    if (Directory.Exists(installDir)) { Directory.Delete(installDir, true); }
+    int xc = _exec(new Process("tar").Arg("-xzf").Arg(tarball).Arg("-C").Arg(tmp));
+    if (xc != 0) { return xc; }
+    int mc = _exec(new Process("mv").Arg(Path.Join(tmp, name)).Arg(installDir));
+    if (mc != 0) { return mc; }
+
+    if (!File.Exists(nodeBin)) { ConsoleError.WriteLine("error: " + nodeBin + " missing after extract"); return 1; }
+    string nodeVer = _cmdOut(nodeBin, new string[]{ "--version" });
+    Console.WriteLine("");
+    Console.WriteLine("Node.js installed locally — no system PATH changes.");
+    Console.WriteLine("  node: " + nodeVer + "  → " + nodeBin);
+    Console.WriteLine("  prepend to PATH:  export PATH=\"" + Path.Join(installDir, "bin") + ":$PATH\"");
+    return 0;
 }
 
 // ── versions.toml access (replaces versions.sh + python tomllib) ─────────────

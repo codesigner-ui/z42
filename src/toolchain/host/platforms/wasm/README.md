@@ -35,7 +35,7 @@ miniserve --index demo/web/index.html .        # 然后开 http://127.0.0.1:8080
 # 或：python3 -m http.server 8000               # 同上 URL
 
 # 或跑 Node demo（需要本地 Node — 走 artifacts/tools/node）
-../../../../scripts/install-node-local.sh             # 一次性，装到 artifacts/tools/node
+z42 xtask.zpkg deps install node             # 一次性，装到 artifacts/tools/node
 PATH="$PWD/../../../../artifacts/tools/node/bin:$PATH" node demo/node/run.js
 # 期望输出：[host] hello, world
 ```
@@ -48,7 +48,7 @@ PATH="$PWD/../../../../artifacts/tools/node/bin:$PATH" node demo/node/run.js
 
 ```bash
 # 一次性：本地 Node + chromium 落 artifacts/tools/，不动系统
-../../../../scripts/install-node-local.sh
+z42 xtask.zpkg deps install node
 
 # 每次（自动 npm install + playwright install chromium）：
 ./build.sh && ./test.sh
