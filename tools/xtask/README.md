@@ -14,8 +14,13 @@ z42 xtask.zpkg <command> [args]                    # run via launcher
 - `test (empty=all)|stdlib [lib]|vm [interp|jit]|cross-zpkg|compiler|changed` (+ `--parallel`, `--jobs N`)
 - `run <target> [-- args]` · `deps check|install` · `bench [--diff]` · `help`
 
-## Status (Stream 3 — add-xtask-cli)
-MVP: each subcommand cd's to the repo root and **delegates to the existing
-script/.z42** (subprocess, forwarding stdout/stderr + exit code). Stream 2
-(`migrate-scripts-to-z42`) replaces each delegation with native z42 and deletes
-the corresponding `.sh`.
+## Status
+- **Stream 3 (add-xtask-cli):** most subcommands cd to the repo root and
+  **delegate to the existing script/.z42** via `_sh` (bash subprocess).
+- **Stream 2 (migrate-scripts-to-z42), incremental:** subcommands are being
+  moved to native, **bash-free** orchestration — `_exec(Process)` spawns
+  cargo/dotnet/git/z42vm directly (`Process.WorkingDirectory`), `_root()` finds
+  the repo root via `git`, and compiled `.z42` logic runs on this process's own
+  inherited z42vm (`Z42_PORTABLE_VM` / `Z42_HOME`). The corresponding `.sh` is
+  kept as fallback until each native path is CI-proven, then deleted.
+  - ✅ `deps check` — native (compiles + runs check-versions-drift.z42, no bash)

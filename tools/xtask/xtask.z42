@@ -88,15 +88,36 @@ int _test(string[] argv) {
 
 int _deps(string[] argv) {
     string sub = _at(argv, 1);
-    if (sub == "check")   { return _sh("./scripts/check-versions-drift.sh"); }
+    if (sub == "check")   { return _depsCheck(); }
     if (sub == "install") { return _sh("./scripts/setup-tools.sh " + _join(argv, 2)); }
     ConsoleError.WriteLine("xtask deps: unknown action '" + sub + "'  (check|install)");
     return 2;
 }
 
+// `deps check` — native, bash-free (migrate-scripts-to-z42 increment 1):
+// compile check-versions-drift.z42 with z42c (dotnet) then run the zpkg on this
+// process's own inherited z42vm runtime (Z42_PORTABLE_VM / Z42_LIBS). Mirrors
+// scripts/check-versions-drift.sh, which is retained as fallback until CI-proven.
+// Prereq (same as the .sh's built tree): stdlib + driver present — run
+// `z42 xtask.zpkg build stdlib` first on a fresh tree.
+int _depsCheck() {
+    string libs = Path.Join(_root(), "artifacts/build/libraries/dist/release");
+    // 1. compile the script → Exe-zpkg (z42c via dotnet; spawned directly)
+    int c = _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("scripts/check-versions-drift.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
+    // 2. run the compiled zpkg on the inherited runtime (no bash, no launcher dance)
+    return _exec(new Process(_z42vm())
+        .Arg("scripts/dist/check-versions-drift.zpkg")
+        .Env("Z42_LIBS", libs));
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 // Run a shell command at the repo root (git toplevel), inheriting stdio.
+// Legacy path — delegates to bash. Native handlers use _exec instead.
 int _sh(string cmd) {
     string full = "cd \"$(git rev-parse --show-toplevel)\" && " + cmd;
     ProcessResult r = new Process("bash")
@@ -105,6 +126,32 @@ int _sh(string cmd) {
         .Stderr(Stdio.Inherit())
         .Run();
     return r.ExitCode;
+}
+
+// Repo root via git (spawned directly — no bash), falling back to CWD.
+string _root() {
+    ProcessResult r = new Process("git").Arg("rev-parse").Arg("--show-toplevel").Run();
+    if (r.ExitCode == 0) { return r.Stdout.Trim(); }
+    return Environment.GetCurrentDirectory();
+}
+
+// Run a prepared Process at the repo root, inheriting stdio; return its exit code.
+int _exec(Process p) {
+    return p.WorkingDirectory(_root())
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run().ExitCode;
+}
+
+// Resolve the z42vm this process is running on, to execute compiled zpkgs.
+// The launcher exports Z42_PORTABLE_VM (portable) / sets Z42_HOME (installed/dev).
+string _z42vm() {
+    string pv = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (pv.Length > 0) { return pv; }
+    string vmname = Platform.IsWindows() ? "z42vm.exe" : "z42vm";
+    string home = Environment.GetEnvironmentVariable("Z42_HOME") ?? "";
+    if (home.Length > 0) { return Path.Join(home, Path.Join("launcher", vmname)); }
+    return vmname;
 }
 
 string _at(string[] a, int i) {
