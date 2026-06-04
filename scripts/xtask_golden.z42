@@ -64,3 +64,166 @@ string[] _append(string[] arr, int count, string v) {
     bigger[count] = v;
     return bigger;
 }
+
+// ── golden-walk exclusions (added by test-vm fold) ───────────────────────────
+
+bool _isExcludedCat(string cat) {
+    return cat == "cross-zpkg" || cat == "zbc-format" || cat == "zpkg-format";
+}
+
+// Pre-existing known-deferred cases (cross-zpkg static-init bug).
+bool _isExcludedDirName(string cat, string name) {
+    if (cat == "gc" && name == "composite_ref_weak_mode") return true;
+    if (cat == "delegates" && name == "multicast_subscription_refs") return true;
+    return false;
+}
+
+// ── entry-name derivation (added by test-vm fold) ────────────────────────────
+
+// Mirror bash derive_entry: priority `<ns>.Main > Main > <ns>.main > main`.
+string _deriveEntry(string srcFile) {
+    if (!File.Exists(srcFile)) return "Main";
+    string content = File.ReadAllText(srcFile);
+    string ns = _extractNamespace(content);
+    bool hasUpper = _hasMain(content, "Main");
+    bool hasLower = _hasMain(content, "main");
+    string fnName = "Main";
+    if (hasUpper) { fnName = "Main"; }
+    else if (hasLower) { fnName = "main"; }
+    if (ns.Length > 0) { return ns + "." + fnName; }
+    return fnName;
+}
+
+// Find first `namespace <Identifier>;` line; return the identifier (or "").
+string _extractNamespace(string content) {
+    int i = 0;
+    while (i < content.Length) {
+        // Skip leading whitespace on a line.
+        int lineStart = i;
+        while (i < content.Length && (content.CharAt(i) == ' ' || content.CharAt(i) == '\t')) { i = i + 1; }
+        // Check for "namespace ".
+        if (i + 10 <= content.Length
+                && content.Substring(i, 10) == "namespace "
+                && _isWordEnd(content, i + 9)) {
+            int n = i + 10;
+            // Skip whitespace.
+            while (n < content.Length && (content.CharAt(n) == ' ' || content.CharAt(n) == '\t')) { n = n + 1; }
+            int idStart = n;
+            while (n < content.Length && _isIdentChar(content.CharAt(n))) { n = n + 1; }
+            if (n > idStart) {
+                return content.Substring(idStart, n - idStart);
+            }
+        }
+        // Advance to next line.
+        while (i < content.Length && content.CharAt(i) != '\n') { i = i + 1; }
+        if (i < content.Length) { i = i + 1; }
+    }
+    return "";
+}
+
+bool _isWordEnd(string s, int i) {
+    if (i >= s.Length) return true;
+    char c = s.CharAt(i);
+    return c == ' ' || c == '\t';
+}
+
+bool _isIdentChar(char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+        || (c >= '0' && c <= '9') || c == '_' || c == '.';
+}
+
+// Bash: `grep -c '\bvoid\s+<name>\s*('` — count > 0 means found.
+bool _hasMain(string content, string name) {
+    int i = 0;
+    while (i < content.Length) {
+        int idx = _indexOfFrom(content, "void", i);
+        if (idx < 0) return false;
+        // Require `\b` before void (start of string or non-ident).
+        if (idx > 0 && _isIdentChar(content.CharAt(idx - 1))) {
+            i = idx + 1;
+            continue;
+        }
+        int p = idx + 4;
+        // Require whitespace after "void".
+        if (p >= content.Length
+            || (content.CharAt(p) != ' ' && content.CharAt(p) != '\t')) {
+            i = idx + 1;
+            continue;
+        }
+        while (p < content.Length
+            && (content.CharAt(p) == ' ' || content.CharAt(p) == '\t')) { p = p + 1; }
+        // Check name (case-sensitive).
+        if (p + name.Length > content.Length
+            || content.Substring(p, name.Length) != name) {
+            i = idx + 1;
+            continue;
+        }
+        int after = p + name.Length;
+        // Boundary after name + optional whitespace + '('.
+        if (after < content.Length && _isIdentChar(content.CharAt(after))) {
+            i = idx + 1;
+            continue;
+        }
+        int q = after;
+        while (q < content.Length
+            && (content.CharAt(q) == ' ' || content.CharAt(q) == '\t')) { q = q + 1; }
+        if (q < content.Length && content.CharAt(q) == '(') {
+            return true;
+        }
+        i = idx + 1;
+    }
+    return false;
+}
+
+int _indexOfFrom(string s, string needle, int start) {
+    int n = needle.Length;
+    int limit = s.Length - n;
+    int i = start;
+    while (i <= limit) {
+        if (s.Substring(i, n) == needle) return i;
+        i = i + 1;
+    }
+    return -1;
+}
+
+// ── string helpers (added by test-vm fold) ───────────────────────────────────
+
+string _firstLine(string s) {
+    int i = 0;
+    while (i < s.Length && s.CharAt(i) != '\n') { i = i + 1; }
+    return s.Substring(0, i);
+}
+
+string[] _splitWords(string s) {
+    // Split on ASCII whitespace.
+    string[] result = new string[4];
+    int n = 0;
+    int i = 0;
+    while (i < s.Length) {
+        while (i < s.Length
+            && (s.CharAt(i) == ' ' || s.CharAt(i) == '\t' || s.CharAt(i) == '\n')) {
+            i = i + 1;
+        }
+        if (i >= s.Length) break;
+        int start = i;
+        while (i < s.Length
+            && s.CharAt(i) != ' ' && s.CharAt(i) != '\t' && s.CharAt(i) != '\n') {
+            i = i + 1;
+        }
+        result = _append(result, n, s.Substring(start, i - start));
+        n = n + 1;
+    }
+    string[] tight = new string[n];
+    int t = 0;
+    while (t < n) { tight[t] = result[t]; t = t + 1; }
+    return tight;
+}
+
+string _stripTrailingNewlines(string s) {
+    int end = s.Length;
+    while (end > 0 && (s.CharAt(end - 1) == '\n' || s.CharAt(end - 1) == '\r')) {
+        end = end - 1;
+    }
+    if (end == s.Length) return s;
+    return s.Substring(0, end);
+}
