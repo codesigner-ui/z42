@@ -1,22 +1,34 @@
 name: xtask-bootstrap
 description: >
-  Bootstrap the native z42 dev CLI by DOWNLOADING the prebuilt nightly z42
-  (install-z42 → .z42/) and compiling xtask.zpkg against its bundled stdlib.
-  After this, run work via `.z42/z42 artifacts/xtask/xtask.zpkg <command>` — the
-  downloaded z42vm runs xtask; xtask then builds + tests the current source.
-  Linux/macOS only (install-z42.sh; Windows would use install-z42.bat).
-  NOTE (zbc strict-pin): on a commit that bumps the zbc/zpkg version, the
-  prebuilt nightly z42vm can't run the freshly-compiled xtask.zpkg — publish a
-  compatible nightly first (see docs/.../version-bumping.md).
+  Bootstrap the native z42 dev CLI. DOWNLOAD the prebuilt nightly z42 (install-z42
+  → .z42/) to RUN xtask, and compile xtask.zpkg against the current stdlib. xtask
+  is then run via `.z42/z42 artifacts/xtask/xtask.zpkg <cmd>` — the downloaded z42vm
+  runs xtask; xtask builds + tests the CURRENT source.
+  We build the current stdlib at artifacts/build/libraries/dist/release (z42c's
+  build resolves deps from there) rather than reuse the downloaded .z42/libs, so
+  xtask.zpkg compiles against the current stdlib API regardless of nightly age.
+  Linux/macOS only (install-z42.sh).
+  NOTE (zbc strict-pin): on a commit that bumps zbc/zpkg, the prebuilt nightly
+  z42vm can't run the freshly-compiled xtask.zpkg — publish a compatible nightly
+  first (see version-bumping docs).
 runs:
   using: composite
   steps:
-    - name: Download prebuilt z42 (install-z42)
+    - name: Download prebuilt z42 (install-z42) to run xtask
       shell: bash
       run: bash scripts/install-z42.sh
 
-    - name: Compile xtask.zpkg (z42c + downloaded stdlib)
+    - name: Build current stdlib + compile xtask.zpkg
       shell: bash
       run: |
         set -euo pipefail
-        Z42_LIBS="$PWD/.z42/libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
+        libs="$PWD/artifacts/build/libraries/dist/release"
+        if [ ! -f "$libs/z42.core.zpkg" ]; then
+          ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
+          mkdir -p "$libs"
+          for d in artifacts/build/libraries/*/release/dist; do
+            cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
+          done
+        fi
+        Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
+        Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
