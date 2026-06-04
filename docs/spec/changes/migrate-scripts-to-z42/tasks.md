@@ -25,6 +25,7 @@
 - 注：foreach 与 String.StartsWith/EndsWith/Split 早已实现（之前误判为缺失）；workflow 审计确认真正 P0 gap 是 `File.GetLastWriteTime`(mtime, native extern) — 待 port 需要时补
 
 ## 后续 increments（每个一 commit，同结构）
+- [x] regen-golden（a次后commit）— native：bootstrap + 跑 regen-golden-tests.z42 → 179 ok（dogfood foreach）
 - [ ] test vm / test cross-zpkg / test lib / test all（orchestration → native）
 - [ ] bench run/diff / test-dist / package（platform packaging — 最大、最后）
 - [ ] mtime native extern（File.GetLastWriteTime）当增量/freshness 检查需要时

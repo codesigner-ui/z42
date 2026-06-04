@@ -35,6 +35,8 @@ void Main() {
         code = _sh("z42 run " + _join(argv, 1));
     } else if (cmd == "deps") {
         code = _deps(argv);
+    } else if (cmd == "regen") {
+        code = _regen(argv);
     } else if (cmd == "bench") {
         code = _sh("./scripts/bench-run.sh " + _join(argv, 1));
     } else {
@@ -205,6 +207,40 @@ int _depsCheck() {
     return _exec(new Process(_z42vm())
         .Arg("scripts/dist/check-versions-drift.zpkg")
         .Env("Z42_LIBS", libs));
+}
+
+// ── regen-golden ────────────────────────────────────────────────────────────
+
+// `regen` — native, bash-free (migrate-scripts-to-z42). Mirrors
+// scripts/regen-golden-tests.sh: rebuild stdlib (unless --no-stdlib) + compiler
+// driver + runtime, compile regen-golden-tests.z42, then run it to regenerate
+// the golden .zbc fixtures. `release` positional → release config.
+int _regen(string[] argv) {
+    bool release = false;
+    bool rebuildStdlib = true;
+    foreach (var a in argv) {
+        if (a == "release")      { release = true; }
+        else if (a == "--no-stdlib") { rebuildStdlib = false; }
+    }
+    string root = _root();
+    if (rebuildStdlib) { int c = _buildStdlib(); if (c != 0) { return c; } }
+    // build the compiler driver only if z42c.dll is absent (avoids MSB3492 on slnx)
+    if (!File.Exists(Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll"))) {
+        string cfg = release ? "Release" : "Debug";
+        int c = _exec(new Process("dotnet").Arg("build").Arg("-q")
+            .Arg("src/compiler/z42.Driver/z42.Driver.csproj").Arg("-c").Arg(cfg));
+        if (c != 0) { return c; }
+    }
+    int cr = _buildRuntime(); if (cr != 0) { return cr; }   // cargo build --release (launcher runtime needs z42vm)
+    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
+    int cb = _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("scripts/regen-golden-tests.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (cb != 0) { return cb; }
+    Process p = new Process(_z42vm()).Arg("scripts/dist/regen-golden-tests.zpkg").Env("Z42_LIBS", libs);
+    if (release) { p = p.Arg("--").Arg("--release"); }
+    return _exec(p);
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
