@@ -22,6 +22,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
+        dotnet build src/compiler/z42.slnx --nologo -v quiet
         libs="$PWD/artifacts/build/libraries/dist/release"
         if [ ! -f "$libs/z42.core.zpkg" ]; then
           ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
@@ -30,5 +31,9 @@ runs:
             cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
           done
         fi
+        # z42c's `run` delegates execution to z42vm. In download mode there is no
+        # z42vm at the default build path (we did not cargo-build it), so point
+        # Z42VM at the DOWNLOADED vm (.z42/bin/z42vm) for the build-stdlib.z42 run.
+        export Z42VM="$PWD/.z42/bin/z42vm"
         Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
         Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
