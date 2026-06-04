@@ -1,0 +1,423 @@
+// xtask — deps install (migrate-scripts-to-z42): native port of the former
+// scripts/setup-tools.sh. Verify/install the toolchain declared in versions.toml.
+// Source-of-truth = versions.toml (parsed with Std.Toml, no python).
+//
+//   deps install                       install all missing (every platform)
+//   deps install <android|ios|wasm>    only that platform
+//   deps install --check               verify only, never install
+//   deps install --drift               check build.gradle.kts / Package.swift agree with versions.toml
+//   deps install android --print-env   emit sourceable env exports (ANDROID_NDK_HOME)
+//
+// Same Z42Xtask namespace; calls _root/_exec/_have... defined here + in xtask.z42.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+
+int _depsInstall(string[] argv) {
+    string mode = "install";
+    string platform = "";
+    int i = 2;   // argv[0]=deps, argv[1]=install
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "--check")          { mode = "check"; }
+        else if (a == "--drift")     { mode = "drift"; }
+        else if (a == "--print-env") { mode = "print-env"; }
+        else if (a == "android" || a == "ios" || a == "wasm") { platform = a; }
+        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try --check/--drift/--print-env/<platform>)"); return 2; }
+        i = i + 1;
+    }
+    string root = _root();
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
+
+    string[] platforms;
+    if (platform.Length > 0) { platforms = new string[1]; platforms[0] = platform; }
+    else { platforms = new string[3]; platforms[0] = "android"; platforms[1] = "ios"; platforms[2] = "wasm"; }
+
+    if (mode != "print-env" && mode != "drift") {
+        Console.WriteLine("── toolchain (cross-platform) ──");
+        _checkRust(toml);
+        _checkDotnet(toml);
+        _checkNode(toml);
+    }
+
+    int rc = 0;
+    int p = 0;
+    while (p < platforms.Length) {
+        int c = 0;
+        if (platforms[p] == "android")   { c = _setupAndroid(root, toml, mode); }
+        else if (platforms[p] == "ios")  { c = _setupIos(root, toml, mode); }
+        else if (platforms[p] == "wasm") { c = _setupWasm(toml, mode); }
+        if (c != 0) { rc = c; }
+        p = p + 1;
+    }
+
+    if (mode == "install") {
+        Console.WriteLine("");
+        Console.WriteLine("✅ setup complete");
+        Console.WriteLine("   For ANDROID_NDK_HOME export, run:");
+        Console.WriteLine("     eval \"$(z42 xtask.zpkg deps install android --print-env)\"");
+    }
+    return rc;
+}
+
+// ── versions.toml access (replaces versions.sh + python tomllib) ─────────────
+
+// versions_get <dotted.path> → scalar as string (int 23 → "23").
+string _vget(TomlValue toml, string dotted) {
+    TomlValue node = toml;
+    foreach (var key in dotted.Split(".")) {
+        node = node.Get(key);
+    }
+    return _scalarStr(node);
+}
+
+// versions_get_list <dotted.path> → array elements as strings.
+string[] _vgetList(TomlValue toml, string dotted) {
+    TomlValue node = toml;
+    foreach (var key in dotted.Split(".")) {
+        node = node.Get(key);
+    }
+    string[] xs = new string[node.Count()];
+    int i = 0;
+    while (i < node.Count()) { xs[i] = _scalarStr(node.At(i)); i = i + 1; }
+    return xs;
+}
+
+string _scalarStr(TomlValue v) {
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    if (v.IsDouble()) { return v.AsDouble().ToString(); }
+    if (v.IsBool())   { return v.AsBool().ToString(); }
+    throw new Exception("versions.toml: expected scalar, got " + v.KindName());
+}
+
+// ── host helpers ─────────────────────────────────────────────────────────────
+
+// "is <bin> on PATH" — spawn `<bin> --version`; spawn-failure (not found) → false.
+bool _have(string bin) {
+    try {
+        new Process(bin).Arg("--version").Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run();
+        return true;
+    } catch (Exception e) { return false; }
+}
+
+string _detectOs() {
+    if (Platform.IsWindows()) { return "windows"; }
+    if (Platform.IsMacOS())   { return "darwin"; }
+    return "linux";
+}
+
+// stdout of a command, trimmed; "" on failure.
+string _cmdOut(string bin, string[] args) {
+    try {
+        ProcessResult r = new Process(bin).Args(args).Stderr(Stdio.Null()).Run();
+        if (r.ExitCode != 0) { return ""; }
+        return r.Stdout.Trim();
+    } catch (Exception e) { return ""; }
+}
+
+// major.minor → comparable int (1.79 → 1079); only the first two components.
+int _verKey(string ver) {
+    string[] parts = ver.Split(".");
+    int major = 0;
+    int minor = 0;
+    if (parts.Length >= 1) { major = _parseIntOr(parts[0], 0); }
+    if (parts.Length >= 2) { minor = _parseIntOr(parts[1], 0); }
+    return major * 1000 + minor;
+}
+
+int _parseIntOr(string s, int fallback) {
+    try { return int.Parse(s); } catch (Exception e) { return fallback; }
+}
+
+// ── cross-platform toolchain checks (warning-only) ───────────────────────────
+
+void _checkRust(TomlValue toml) {
+    if (!_have("rustc")) { ConsoleError.WriteLine("error: rustc not found. Install via https://rustup.rs"); return; }
+    string wantChannel = _vget(toml, "toolchain.rust.channel");
+    string wantMin = _vget(toml, "toolchain.rust.min_version");
+    // rustc --version → "rustc 1.79.0 (...)"
+    string vline = _cmdOut("rustc", new string[]{ "--version" });
+    string actual = _nthWord(vline, 1);
+    if (actual.Length == 0) { ConsoleError.WriteLine("warning: cannot parse rustc version; skip check"); return; }
+    if (_verKey(actual) < _verKey(wantMin)) {
+        ConsoleError.WriteLine("warning: rustc " + actual + " < versions.toml min " + wantMin + " (" + wantChannel + " channel)");
+        ConsoleError.WriteLine("         consider: rustup update " + wantChannel);
+    } else {
+        Console.WriteLine("  ✓ rustc " + actual + " (≥ " + wantMin + ")");
+    }
+}
+
+void _checkDotnet(TomlValue toml) {
+    if (!_have("dotnet")) { ConsoleError.WriteLine("error: dotnet not found. Install .NET 8+ (https://dotnet.microsoft.com)."); return; }
+    string want = _vget(toml, "toolchain.dotnet.sdk");
+    string actual = _cmdOut("dotnet", new string[]{ "--version" });
+    if (actual.Length == 0) { ConsoleError.WriteLine("warning: cannot read 'dotnet --version'; skip check"); return; }
+    if (_majorMinor(want) != _majorMinor(actual)) {
+        ConsoleError.WriteLine("warning: dotnet SDK " + actual + " ≠ versions.toml pin " + want + " (same major.minor required)");
+    } else {
+        Console.WriteLine("  ✓ dotnet " + actual);
+    }
+}
+
+void _checkNode(TomlValue toml) {
+    if (!_have("node")) { return; }   // only wasm tests need node; silent skip
+    string wantMin = _vget(toml, "toolchain.node.min_version");
+    string v = _cmdOut("node", new string[]{ "-v" });   // "v22.11.0"
+    if (v.StartsWith("v")) { v = v.Substring(1); }
+    int major = _parseIntOr(_nthDot(v, 0), 0);
+    if (major > 0 && major < _parseIntOr(wantMin, 0)) {
+        ConsoleError.WriteLine("warning: node v" + v + " < versions.toml min v" + wantMin);
+    } else {
+        Console.WriteLine("  ✓ node v" + v);
+    }
+}
+
+string _majorMinor(string v) {
+    string[] p = v.Split(".");
+    if (p.Length >= 2) { return p[0] + "." + p[1]; }
+    return v;
+}
+
+string _nthWord(string s, int n) {
+    string[] w = s.Split(" ");
+    if (n < w.Length) { return w[n]; }
+    return "";
+}
+
+string _firstLineOf(string s) {
+    int i = 0;
+    while (i < s.Length && s.CharAt(i) != '\n') { i = i + 1; }
+    return s.Substring(0, i);
+}
+
+string _nthDot(string s, int n) {
+    string[] p = s.Split(".");
+    if (n < p.Length) { return p[n]; }
+    return "";
+}
+
+// ── rust target / cargo crate ensure ─────────────────────────────────────────
+
+int _ensureRustTarget(string t, string mode) {
+    string installed = _cmdOut("rustup", new string[]{ "target", "list", "--installed" });
+    if (_hasLine(installed, t)) {
+        Console.WriteLine("  ✓ rust target " + t);
+        return 0;
+    }
+    if (mode == "check") { ConsoleError.WriteLine("  ✗ rust target " + t + " (missing)"); return 1; }
+    Console.WriteLine("  rustup target add " + t);
+    return _exec(new Process("rustup").Arg("target").Arg("add").Arg(t));
+}
+
+int _ensureCargoInstall(string crate, string bin, string mode) {
+    if (_have(bin)) { Console.WriteLine("  ✓ " + bin); return 0; }
+    if (mode == "check") { ConsoleError.WriteLine("  ✗ " + bin + " (missing; cargo install " + crate + " --locked)"); return 1; }
+    Console.WriteLine("  cargo install " + crate + " --locked");
+    return _exec(new Process("cargo").Arg("install").Arg(crate).Arg("--locked"));
+}
+
+bool _hasLine(string text, string want) {
+    foreach (var line in text.Split("\n")) {
+        if (line.Trim() == want) { return true; }
+    }
+    return false;
+}
+
+// ── android ──────────────────────────────────────────────────────────────────
+
+string _ndkInstallDir(string root, TomlValue toml) {
+    return Path.Join(root, _vget(toml, "build.android.install_root") + "/ndk/" + _vget(toml, "build.android.ndk.version"));
+}
+
+string _resolveNdkHome(string root, TomlValue toml) {
+    string local = _ndkInstallDir(root, toml);
+    if (Directory.Exists(local)) { return local; }
+    string env = Environment.GetEnvironmentVariable("ANDROID_NDK_HOME") ?? "";
+    if (env.Length > 0 && Directory.Exists(env)) { return env; }
+    return "";
+}
+
+int _installNdk(string root, TomlValue toml) {
+    string ver = _vget(toml, "build.android.ndk.version");
+    string urlTmpl = _vget(toml, "build.android.ndk.url");
+    string wantSha = _vget(toml, "build.android.ndk.sha256");
+    string targetDir = _ndkInstallDir(root, toml);
+    string url = urlTmpl.Replace("{os}", _detectOs());
+
+    string work = Directory.CreateTempDir("ndk");
+    string zip = Path.Join(work, "ndk.zip");
+    Console.WriteLine("  GET " + url);
+    int dc = _exec(new Process("curl").Arg("-L").Arg("--fail").Arg("--progress-bar").Arg("-o").Arg(zip).Arg(url));
+    if (dc != 0) { ConsoleError.WriteLine("error: NDK download failed"); return dc; }
+
+    string gotSha = _sha256File(zip);
+    if (wantSha.Length > 0) {
+        if (gotSha != wantSha) { ConsoleError.WriteLine("error: NDK sha256 mismatch (want=" + wantSha + " got=" + gotSha + ")"); return 1; }
+        Console.WriteLine("  ✓ sha256 verified");
+    } else {
+        Console.WriteLine("  ⚠ versions.toml [build.android.ndk].sha256 empty; add: sha256 = \"" + gotSha + "\"");
+    }
+
+    Directory.Create(_parentDir(targetDir));
+    string unpack = Directory.CreateTempDir("ndk-unpack");
+    Console.WriteLine("  unzip → " + targetDir);
+    int uc = _exec(new Process("unzip").Arg("-q").Arg(zip).Arg("-d").Arg(unpack));
+    if (uc != 0) { return uc; }
+    // NDK zip contains one top dir like android-ndk-r26d/
+    string inner = "";
+    foreach (var name in Directory.Enumerate(unpack)) {
+        if (name.StartsWith("android-ndk")) { inner = Path.Join(unpack, name); }
+    }
+    if (inner.Length == 0) { ConsoleError.WriteLine("error: android-ndk-* dir not found in NDK zip"); return 1; }
+    int mc = _exec(new Process("mv").Arg(inner).Arg(targetDir));
+    if (mc != 0) { return mc; }
+    Console.WriteLine("  ✓ NDK " + ver + " installed");
+    return 0;
+}
+
+// sha256 of a file via shasum/sha256sum (mirrors versions.sh sha256_of).
+string _sha256File(string path) {
+    if (_have("shasum")) { return _nthWord(_cmdOut("shasum", new string[]{ "-a", "256", path }), 0); }
+    if (_have("sha256sum")) { return _nthWord(_cmdOut("sha256sum", new string[]{ path }), 0); }
+    return "";
+}
+
+string _parentDir(string p) {
+    int idx = p.LastIndexOf("/");
+    if (idx <= 0) { return "."; }
+    return p.Substring(0, idx);
+}
+
+int _setupAndroid(string root, TomlValue toml, string mode) {
+    Console.WriteLine("── android ──");
+    if (mode == "print-env") {
+        string home = _resolveNdkHome(root, toml);
+        if (home.Length == 0) { ConsoleError.WriteLine("# android: NDK not found; run z42 xtask.zpkg deps install android"); return 1; }
+        Console.WriteLine("export ANDROID_NDK_HOME=\"" + home + "\"");
+        return 0;
+    }
+    if (mode == "drift") { return _checkAndroidDrift(root, toml); }
+
+    int rc = 0;
+    foreach (var t in _vgetList(toml, "platform.android.rust_targets")) {
+        int c = _ensureRustTarget(t, mode); if (c != 0) { rc = c; }
+    }
+    int cc = _ensureCargoInstall("cargo-ndk", "cargo-ndk", mode); if (cc != 0) { rc = cc; }
+
+    // JDK (verify-only)
+    int jdkMin = _parseIntOr(_vget(toml, "build.android.jdk_min"), 0);
+    if (_have("javac")) {
+        string jv = _cmdOut("javac", new string[]{ "-version" });   // "javac 21.0.1"
+        int jdkMajor = _parseIntOr(_nthDot(_nthWord(jv, 1), 0), 0);
+        if (jdkMajor < jdkMin) { ConsoleError.WriteLine("  ✗ JDK " + jdkMajor.ToString() + " < required " + jdkMin.ToString()); }
+        else { Console.WriteLine("  ✓ JDK " + jdkMajor.ToString() + " (≥ " + jdkMin.ToString() + ")"); }
+    } else {
+        ConsoleError.WriteLine("  ✗ javac not on PATH (need JDK " + jdkMin.ToString() + "+)");
+    }
+
+    // NDK
+    string ndkVer = _vget(toml, "build.android.ndk.version");
+    if (_resolveNdkHome(root, toml).Length > 0) {
+        Console.WriteLine("  ✓ NDK " + ndkVer + " at " + _resolveNdkHome(root, toml));
+    } else if (mode == "check") {
+        ConsoleError.WriteLine("  ✗ NDK " + ndkVer + " missing (expected " + _ndkInstallDir(root, toml) + ")");
+        rc = 1;
+    } else {
+        int c = _installNdk(root, toml); if (c != 0) { rc = c; }
+    }
+    return rc;
+}
+
+int _checkAndroidDrift(string root, TomlValue toml) {
+    string wantMin = _vget(toml, "platform.android.min_api");
+    string wantTgt = _vget(toml, "platform.android.target_api");
+    string gradle = Path.Join(root, "src/toolchain/host/platforms/android/z42vm/build.gradle.kts");
+    string text = File.Exists(gradle) ? File.ReadAllText(gradle) : "";
+    string minActual = _firstIntAfter(text, "minSdk");
+    string compileActual = _firstIntAfter(text, "compileSdk");
+    int rc = 0;
+    if (minActual == wantMin) { Console.WriteLine("  ✓ build.gradle.kts minSdk=" + minActual + " = versions.toml min_api"); }
+    else { ConsoleError.WriteLine("  ✗ drift: build.gradle.kts minSdk=" + minActual + " ≠ versions.toml min_api=" + wantMin); rc = 1; }
+    if (compileActual == wantTgt) { Console.WriteLine("  ✓ build.gradle.kts compileSdk=" + compileActual + " = versions.toml target_api"); }
+    else { ConsoleError.WriteLine("  ✗ drift: build.gradle.kts compileSdk=" + compileActual + " ≠ versions.toml target_api=" + wantTgt); rc = 1; }
+    return rc;
+}
+
+// ── ios ────────────────────────────────────────────────────────────────────
+
+int _setupIos(string root, TomlValue toml, string mode) {
+    Console.WriteLine("── ios ──");
+    if (mode == "print-env") { return 0; }
+    if (mode == "drift") { return _checkIosDrift(root, toml); }
+
+    int rc = 0;
+    foreach (var t in _vgetList(toml, "platform.ios.rust_targets")) {
+        int c = _ensureRustTarget(t, mode); if (c != 0) { rc = c; }
+    }
+    if (toml.Get("build").ContainsKey("ios") && toml.Get("build").Get("ios").ContainsKey("extra_rust_targets")) {
+        foreach (var t in _vgetList(toml, "build.ios.extra_rust_targets")) {
+            int c = _ensureRustTarget(t, mode); if (c != 0) { rc = c; }
+        }
+    }
+    string xcodeMin = _vget(toml, "build.ios.xcode_min");
+    if (_have("xcodebuild")) {
+        // `xcodebuild -version` → "Xcode 16.4\nBuild version 16F6"; take line 1, word 1.
+        string xv = _nthWord(_firstLineOf(_cmdOut("xcodebuild", new string[]{ "-version" })), 1);
+        Console.WriteLine("  ✓ Xcode " + xv + " (want ≥ " + xcodeMin + ")");
+    } else {
+        ConsoleError.WriteLine("  ✗ xcodebuild missing (run: xcode-select --install)");
+    }
+    return rc;
+}
+
+int _checkIosDrift(string root, TomlValue toml) {
+    string wantIos = _vget(toml, "platform.ios.min_ios");
+    string wantMac = _vget(toml, "platform.ios.min_macos");
+    string pkg = Path.Join(root, "src/toolchain/host/platforms/ios/Package.swift");
+    string text = File.Exists(pkg) ? File.ReadAllText(pkg) : "";
+    string iosActual = _firstIntAfter(text, ".iOS(.v");
+    string macActual = _firstIntAfter(text, ".macOS(.v");
+    int rc = 0;
+    if (iosActual == _majorOf(wantIos)) { Console.WriteLine("  ✓ Package.swift .iOS(.v" + iosActual + ") = versions.toml min_ios=" + wantIos); }
+    else { ConsoleError.WriteLine("  ✗ drift: Package.swift .iOS(.v" + iosActual + ") ≠ versions.toml min_ios=" + wantIos); rc = 1; }
+    if (macActual == _majorOf(wantMac)) { Console.WriteLine("  ✓ Package.swift .macOS(.v" + macActual + ") = versions.toml min_macos=" + wantMac); }
+    else { ConsoleError.WriteLine("  ✗ drift: Package.swift .macOS(.v" + macActual + ") ≠ versions.toml min_macos=" + wantMac); rc = 1; }
+    return rc;
+}
+
+string _majorOf(string v) {
+    string[] p = v.Split(".");
+    if (p.Length >= 1) { return p[0]; }
+    return v;
+}
+
+// ── wasm ───────────────────────────────────────────────────────────────────
+
+int _setupWasm(TomlValue toml, string mode) {
+    Console.WriteLine("── wasm ──");
+    if (mode == "print-env") { return 0; }
+    if (mode == "drift") { Console.WriteLine("  (wasm has no native-file drift to check)"); return 0; }
+    int rc = 0;
+    foreach (var t in _vgetList(toml, "platform.wasm.rust_targets")) {
+        int c = _ensureRustTarget(t, mode); if (c != 0) { rc = c; }
+    }
+    int cc = _ensureCargoInstall("wasm-pack", "wasm-pack", mode); if (cc != 0) { rc = cc; }
+    return rc;
+}
+
+// First integer appearing after the first occurrence of `marker` (e.g. "minSdk"
+// → the digits in `minSdk = 23`; ".iOS(.v" → the digits in `.iOS(.v16)`).
+string _firstIntAfter(string text, string marker) {
+    int idx = text.IndexOf(marker);
+    if (idx < 0) { return ""; }
+    int i = idx + marker.Length;
+    // skip to first digit
+    while (i < text.Length && !(text.CharAt(i) >= '0' && text.CharAt(i) <= '9')) { i = i + 1; }
+    int start = i;
+    while (i < text.Length && text.CharAt(i) >= '0' && text.CharAt(i) <= '9') { i = i + 1; }
+    if (i == start) { return ""; }
+    return text.Substring(start, i - start);
+}

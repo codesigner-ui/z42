@@ -14,7 +14,7 @@ using Std.Compression;
 //   - Read-side only (Write deferred to `add-z42-compression-zip-write`
 //     follow-up — needs `byte[][]` array-of-array support in z42 to
 //     express the natural implementation; v0 ships the high-impact
-//     extraction use case for `setup-tools.sh` NDK/SDK unzipping)
+//     extraction use case for the former `setup-tools.sh` NDK/SDK unzipping)
 //   - methods 0 (STORE) and 8 (DEFLATE) only
 //   - no encryption (method 99 / strong encryption)
 //   - no ZIP64 extra fields (archives < 4 GB, fewer than 65 535 entries)

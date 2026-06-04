@@ -127,7 +127,7 @@ Git Bash 内部把 `C:\foo\bar` 映射为 `/c/foo/bar`。但 .NET / Cargo 这种
 - Linux 通常有 `sha256sum`
 - Git Bash 通常**两者都有**
 
-`scripts/_lib/package_helpers.sh` 的 `pkg_sha256_check` 与 `scripts/setup-tools.sh` 的 `sha256_of` 已经按 "shasum → sha256sum → 错" 的顺序兜底。
+`scripts/_lib/package_helpers.sh` 的 `pkg_sha256_check` 与 `xtask_install.z42` 的 `_sha256File` 已经按 "shasum → sha256sum → 错" 的顺序兜底。
 
 ### `file` / `ar` 工具
 
