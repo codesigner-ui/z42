@@ -90,7 +90,7 @@ int _testAll() {
     c = _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj").Arg("--nologo")); if (c != 0) { return c; }
     // stage 2: VM goldens (both modes, no rebuild)
     Console.WriteLine("\n=== stage: VM goldens ===");
-    string[] vmA = new string[3]; vmA[0] = "test"; vmA[1] = "vm"; vmA[2] = "--no-rebuild";
+    string[] vmA = new string[4]; vmA[0] = "test"; vmA[1] = "vm"; vmA[2] = "--no-rebuild"; vmA[3] = "--jobs=4";
     c = _testVm(vmA); if (c != 0) { return c; }
     // stage 3: cross-zpkg
     Console.WriteLine("\n=== stage: cross-zpkg ===");
@@ -98,7 +98,7 @@ int _testAll() {
     c = _testCrossZpkg(cA); if (c != 0) { return c; }
     // stage 4: stdlib [Test] (no build)
     Console.WriteLine("\n=== stage: stdlib [Test] ===");
-    string[] lA = new string[3]; lA[0] = "test"; lA[1] = "lib"; lA[2] = "--no-build";
+    string[] lA = new string[4]; lA[0] = "test"; lA[1] = "lib"; lA[2] = "--no-build"; lA[3] = "--jobs=4";
     c = _testLib(lA); if (c != 0) { return c; }
     Console.WriteLine("\n✅ GREEN — all stages passed (compiler + vm + cross-zpkg + stdlib)");
     return 0;
@@ -113,6 +113,7 @@ int _testAll() {
 int _testLib(string[] argv) {
     bool noBuild = false;
     string filter = "";
+    string jobs = "1";   // forwarded to z42-test-runner ([Test]-method parallelism)
     string[] reqLibs = new string[64];
     int nReq = 0;
     int i = 2;
@@ -123,9 +124,9 @@ int _testLib(string[] argv) {
             if (a.Length > 2) { filter = a.Substring(2); }
             else { i = i + 1; if (i < argv.Length) { filter = argv[i]; } }
         }
-        else if (a.StartsWith("--jobs") || a.StartsWith("-j")) {
-            if (a == "--jobs" || a == "-j") { i = i + 1; }   // sequential: consume + ignore the value
-        }
+        else if (a.StartsWith("--jobs=")) { jobs = a.Substring(7); }
+        else if (a == "--jobs" || a == "-j") { i = i + 1; if (i < argv.Length) { jobs = argv[i]; } }
+        else if (a.StartsWith("-j")) { jobs = a.Substring(2); }
         else if (!a.StartsWith("-")) { reqLibs[nReq] = a; nReq = nReq + 1; }
         i = i + 1;
     }
@@ -186,7 +187,9 @@ int _testLib(string[] argv) {
                 Console.WriteLine("✗ COMPILE ERROR: " + f);
                 totalFailed = totalFailed + 1;
             } else {
-                int rc = _exec(new Process(runner).Arg(zbc));
+                Process rp = new Process(runner);
+                if (jobs != "1") { rp = rp.Arg("--jobs").Arg(jobs); }
+                int rc = _exec(rp.Arg(zbc));
                 if (rc != 0) { totalFailed = totalFailed + 1; }
             }
         }
