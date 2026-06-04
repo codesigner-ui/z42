@@ -78,7 +78,7 @@ _ = try vm.invoke(e)
 
 **See also**
 
-- **本地打 per-slice SDK package**（自包含 `Package.swift` + `Z42VM.xcframework`）：[`../packaging.md`](../packaging.md) — `./scripts/package.sh release --rid ios-arm64 / ios-arm64-sim`
+- **本地打 per-slice SDK package**（自包含 `Package.swift` + `Z42VM.xcframework`）：[`../packaging.md`](../packaging.md) — `z42 xtask.zpkg build package release --rid ios-arm64 / ios-arm64-sim`
 - Swift API + 错误码（spec 落地后补）：`platforms/ios/README.md`
 - 跨平台契约：[`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)
 - 设计 + 决策：[spec](../../spec/archive/2026-05-12-add-platform-ios/)

@@ -47,13 +47,13 @@ The split is the conventional **intermediate / output / vendored** model
 Each stdlib library builds privately into `build/libraries/<lib>/<profile>/`
 (with `debug`/`release` distinction). **z42vm and packaging must not depend on
 those per-lib subdirs** — they need a single flat directory. So after
-compiling, `build-stdlib.sh` copies every lib's `.zpkg`/`.zsym` + an
+compiling, `z42 xtask.zpkg build stdlib` copies every lib's `.zpkg`/`.zsym` + an
 `index.json` into the aggregate `build/libraries/dist/<profile>/`. That dir
 is:
 - z42vm's dev-mode `Z42_LIBS` fallback
   ([`src/runtime/src/main.rs`](../../../src/runtime/src/main.rs) `resolve_libs_dir`,
   `config.rs` hint, `host_tests.rs`);
-- what `package.sh` copies wholesale into a package's `libs/`.
+- what `z42 xtask.zpkg build package` copies wholesale into a package's `libs/`.
 
 This keeps `build/` fully mirroring `src/` (everything maps to a `src/` path)
 while giving the VM/packaging one stable aggregate to point at. (Replaced the
@@ -66,13 +66,14 @@ folded into the layout refactor on 2026-06-04.)
   to `src/toolchain/launcher/core/dist/` — a build output *inside the source
   tree*, the one place that violated "outputs go to `artifacts/`." Its toml
   `out_dir` now points up into `build/toolchain/launcher/`.
-- **`home/`** is the dev `$Z42_HOME` that `scripts/_lib/launcher-env.sh`
+- **`home/`** is the dev `$Z42_HOME` that the xtask launcher-env step
   assembles (a throwaway "fake `~/.z42`": `launcher/{z42vm, launcher.zpkg,
   libs→…}` + linked dev runtime) so ported scripts run as Exe-zpkgs via the
-  launcher without touching the user's real `~/.z42`. It's an ephemeral
+  launcher without touching the user's real `~/.z42`. (Originally assembled by
+  the since-removed `scripts/_lib/launcher-env.sh`.) It's an ephemeral
   dev/test install, not a compile output — but it's launcher-derived, so it
   sits under the launcher's `build/` subdir rather than warranting a separate
-  top-level bucket. (`rm -rf` it anytime; `setup_launcher_env` rebuilds it.)
+  top-level bucket. (`rm -rf` it anytime; the xtask launcher-env step rebuilds it.)
   The `z42` trampoline binary itself stays in `build/runtime/<…>` because
   cargo emits all workspace binaries to the shared target dir.
 

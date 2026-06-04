@@ -480,8 +480,8 @@ z42 xtask.zpkg test lib
 > bug 之所以一直没被发现，就是 4 / 5 不在默认 GREEN 路径里 —— 每次 spec
 > 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。
 
-打包发行验证：发行版变更（package.sh / 跨平台 / 嵌入接口）追加跑
-`z42 xtask.zpkg test dist`（要求先跑 `./scripts/package.sh release`
+打包发行验证：发行版变更（z42 xtask.zpkg build package / 跨平台 / 嵌入接口）追加跑
+`z42 xtask.zpkg test dist`（要求先跑 `z42 xtask.zpkg build package release`
 产 host-RID 包）。
 
 **测试失败处理规则：**

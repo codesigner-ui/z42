@@ -78,12 +78,12 @@ minor bump 后会短暂出现循环：
 
 **为什么不死锁（自愈设计）**：`publish-nightly` 的 `needs` **只含从当前源码构建的 job**
 （`build-and-test` 用 cargo+z42c 从源码 bootstrap xtask；`package-ios/android/wasm` 用源码
-`build-stdlib.sh` + `package.sh`），**绝不依赖 download-bootstrap 的 vm-jit / bench**。所以
+`z42 xtask.zpkg build stdlib` + `z42 xtask.zpkg build package`），**绝不依赖 download-bootstrap 的 vm-jit / bench**。所以
 bump commit 推上 main 后：源码 job 全绿 → publish-nightly 发布新 nightly → 下一次 run 的
 vm-jit / bench 下到新 nightly → 自愈。bump 当次那一跑 vm-jit/bench 红是预期的、一次性的。
 
 > **硬约束**：任何 feed `publish-nightly` 的 job 必须从**当前源码** bootstrap（不许走
-> download-nightly composite）。Phase 5 把 `package.sh` 移植进 xtask 时，package job 仍要
+> download-nightly composite）。`package.sh` 移植进 xtask（Phase 5，已完成）后，package job 仍要
 > `cargo build` + 源码编 xtask.zpkg，**不要**改用 `xtask-bootstrap` composite——否则 publish
 > 路径变成依赖旧 nightly，死锁复活。
 

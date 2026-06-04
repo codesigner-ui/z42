@@ -91,7 +91,7 @@ Z42VM(zpkgResolver = AssetZpkgResolver(assets)).use { vm ->
 
 **See also**
 
-- **本地打 per-ABI SDK package**（自包含 `kotlin/` + `cpp/` + `native/libz42_platform_android.{a,so}`）：[`../packaging.md`](../packaging.md) — `./scripts/package.sh release --rid android-arm64 / android-x64`
+- **本地打 per-ABI SDK package**（自包含 `kotlin/` + `cpp/` + `native/libz42_platform_android.{a,so}`）：[`../packaging.md`](../packaging.md) — `z42 xtask.zpkg build package release --rid android-arm64 / android-x64`
 - Kotlin API + 错误码（spec 落地后补）：`platforms/android/README.md`
 - 跨平台契约：[`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)
 - 设计 + 决策：[spec](../../spec/archive/2026-05-12-add-platform-android/)

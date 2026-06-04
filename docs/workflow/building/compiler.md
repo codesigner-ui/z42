@@ -54,8 +54,8 @@ dotnet run --project src/compiler/z42.Driver -- errors                          
 把 dotnet 单文件 binary 打到 `artifacts/build/runtime/release/`：
 
 ```bash
-./scripts/package.sh           # debug
-./scripts/package.sh release   # release
+z42 xtask.zpkg build package debug     # debug
+z42 xtask.zpkg build package release   # release
 ```
 
 之后 `z42c` 可独立运行（无需 `dotnet run`）。详见 [`stdlib.md`](stdlib.md) 关于 stdlib 同步的描述。

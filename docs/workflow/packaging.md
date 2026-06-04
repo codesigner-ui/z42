@@ -7,10 +7,10 @@
 ## 统一入口
 
 ```bash
-./scripts/package.sh release --rid <rid>          # 见下表选 RID
-./scripts/package.sh debug   --rid <rid>          # debug profile（dev 用）
-./scripts/package.sh release                       # 不带 --rid → 自动用 host RID
-./scripts/package.sh --help                        # 完整选项
+z42 xtask.zpkg build package release --rid <rid>  # 见下表选 RID
+z42 xtask.zpkg build package debug --rid <rid>    # debug profile（dev 用）
+z42 xtask.zpkg build package release              # 不带 --rid → 自动用 host RID
+z42 xtask.zpkg --help                             # 完整选项
 ```
 
 产物落到 `artifacts/packages/z42-<version>-<rid>-<profile>/`。
@@ -46,7 +46,7 @@
 # 必备（所有 RID）
 dotnet --version              # .NET 8+；编译器 + z42c
 cargo --version               # Rust stable；VM
-./scripts/build-stdlib.sh     # stdlib zpkg → artifacts/build/libs/release/
+z42 xtask.zpkg build stdlib   # stdlib zpkg → artifacts/build/libs/release/
 dotnet build src/compiler/z42.slnx   # z42c.dll → artifacts/build/compiler/...
 
 # iOS RID（macOS only）
@@ -103,9 +103,9 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 # → "WebAssembly (wasm) binary module"
 ```
 
-### 4. SHA-256 invariant（package.sh 自动跑）
+### 4. SHA-256 invariant（z42 xtask.zpkg build package 末尾自动跑 SHA-256 invariant，原生 byte compare）
 
-`./scripts/package.sh` 末尾会自动跑 `pkg_sha256_check`，确保跨 9 包 byte-identical：
+`z42 xtask.zpkg build package` 末尾会自动跑 SHA-256 invariant（原生 byte compare），确保跨 9 包 byte-identical：
 
 - `libs/*.zpkg` + `libs/index.json` — stdlib 二进制（平台无关）
 - `native/include/z42_abi.h` + `z42_host.h` — Tier 1 C ABI 头
@@ -133,10 +133,10 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 
 | 流程 | 入口 | 用途 |
 |------|------|------|
-| **per-arch flat package**（本文）| `scripts/package.sh --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
+| **per-arch flat package**（本文）| `z42 xtask.zpkg build package --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
 | **in-repo native build** | `src/toolchain/host/platforms/<x>/build.sh` | 给 `add-<plat>-tests` 跑 in-repo 测试（emulator / simulator / wasm-pack）|
 
-两条流程**共存**：`build.sh` 产物供 in-repo 测试用；`package.sh` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
+两条流程**共存**：`build.sh` 产物供 in-repo 测试用；`z42 xtask.zpkg build package` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
 
 ## 失败排查
 
@@ -144,7 +144,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 |------|-----------|
 | `rid '<x>' not in supported whitelist` | 你给的 RID 不在 9 个白名单内；见 memory `project_supported_platforms` |
 | `cross-compiling to '<x>' from host '<y>' not supported` | host RID 不能 cross-compile 到目标 RID；换 host 或走 CI |
-| `error: stdlib not built at artifacts/build/libs/release` | 先 `./scripts/build-stdlib.sh` |
+| `error: stdlib not built at artifacts/build/libs/release` | 先 `z42 xtask.zpkg build stdlib` |
 | `error: z42c not built at ...z42c.dll` | 先 `dotnet build src/compiler/z42.slnx` |
 | `cargo-ndk not found` | `cargo install cargo-ndk --locked` |
 | `$ANDROID_NDK_HOME unset and NDK not found locally` | `z42 xtask.zpkg deps install android` 或 `export ANDROID_NDK_HOME=<path>` |

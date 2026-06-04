@@ -22,7 +22,7 @@ just test-vm jit
 
 `z42 xtask.zpkg test vm` 入口自动按依赖顺序：
 
-1. `build-stdlib.sh` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libs/release/`
+1. `z42 xtask.zpkg build stdlib` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libs/release/`
 2. `z42 xtask.zpkg regen` — 用最新 z42c 把所有 golden `source.z42` → `source.zbc`
 3. `cargo build` VM
 4. 逐个跑 golden test

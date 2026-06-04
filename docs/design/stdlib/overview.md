@@ -278,7 +278,7 @@ Each path is expected to contain files named `<module-name>.zbc` or `<module-nam
 Both formats are accepted; `.zpkg` (packed mode) is preferred when both exist as it
 carries version metadata.
 
-**Producing the `libs/` directory:** run `scripts/package.sh` from the project root.
+**Producing the `libs/` directory:** run `z42 xtask.zpkg build package` from the project root.
 This builds the VM binary and populates `artifacts/build/libs/release/` with stdlib artifacts.
 Until M7 (`[Native]` attribute support), the `.zbc`/`.zpkg` files are placeholders.
 
