@@ -160,10 +160,10 @@ int _test(string[] argv) {
 // `test changed` — native, bash-free (migrate-scripts-to-z42 increment 2):
 // parse the legacy CLI (base ref positional + --dry-run), then run the native
 // test-changed.z42 directly via the driver (dotnet spawned directly, not bash),
-// passing base/dry-run through the same env vars test-changed.sh uses (the
-// driver `run` subcommand doesn't forward script args). test-changed.z42 still
-// maps changed files → commands and runs them via `just` internally — that
-// inner shell-out is a later increment. test-changed.sh is retained as fallback.
+// passing base/dry-run through env vars (the driver `run` subcommand doesn't
+// forward script args). test-changed.z42 maps changed files → logical `xtask …`
+// commands; we pass Z42_XTASK_CMD so it re-invokes THIS xtask (the resolved
+// launcher) for each scope — no `just`, no shell-out to a separate CLI.
 int _testChanged(string[] argv) {
     string base_ = Environment.GetEnvironmentVariable("Z42_TEST_CHANGED_BASE") ?? "";
     string dry = "0";
@@ -178,11 +178,13 @@ int _testChanged(string[] argv) {
         i = i + 1;
     }
     if (base_.Length == 0) { base_ = "HEAD"; }
+    string xtaskCmd = _z42vm() + " " + Path.Join(_root(), "artifacts/xtask/xtask.zpkg") + " --";
     return _exec(new Process("dotnet")
         .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
         .Arg("--").Arg("run").Arg("scripts/test-changed.z42")
         .Env("Z42_TEST_CHANGED_BASE", base_)
-        .Env("Z42_TEST_CHANGED_DRY_RUN", dry));
+        .Env("Z42_TEST_CHANGED_DRY_RUN", dry)
+        .Env("Z42_XTASK_CMD", xtaskCmd));
 }
 
 // ── deps ──────────────────────────────────────────────────────────────────

@@ -7,8 +7,11 @@
 //   - --dry-run prints plan but doesn't execute
 //   - first failing command short-circuits the remainder
 //
-// Bash entry point: scripts/test-changed.sh — bootstraps compiler + VM,
-// then exec's the z42 script. Args + base resolution happen here in z42.
+// Driven by `xtask test changed`, which spawns this script via the driver and
+// passes base/dry-run + Z42_XTASK_CMD (the resolved launcher invocation) as env.
+// Plan commands are stored as logical `xtask <scope>`; _resolveXtask() rewrites
+// the leading `xtask ` to Z42_XTASK_CMD at run time so each scope re-invokes the
+// same xtask — no `just`, no shell-out to a separate CLI.
 namespace Z42TestChangedScript;
 
 using Std;
@@ -73,7 +76,7 @@ void Main() {
 
     if (needsFull) {
         plan = new string[1];
-        plan[0] = "just test";
+        plan[0] = "xtask test all";
         planCount = 1;
     }
 
@@ -105,10 +108,16 @@ void Main() {
     Console.WriteLine("[test-changed] running...");
     Console.WriteLine("");
 
+    // How to invoke xtask itself. xtask's `_testChanged` passes the resolved
+    // launcher invocation (`<z42vm> artifacts/xtask/xtask.zpkg --`) via this env;
+    // when run standalone, fall back to a PATH `xtask`. Plan commands store the
+    // logical `xtask …` form; substitute the real invocation at run time.
+    string xtaskCmd = _envOpt("Z42_XTASK_CMD", "xtask");
+
     int exitCode = 0;
     pi = 0;
     while (pi < planCount) {
-        string cmd = plan[pi];
+        string cmd = _resolveXtask(plan[pi], xtaskCmd);
         Console.WriteLine("──── " + cmd + " ────");
         ProcessResult r;
         try {
@@ -171,20 +180,20 @@ _MapResult _mapFile(string f) {
         string lib = _segment(f, 2);
         if (_containsSlash(f, "/src/")) {
             r.commands = new string[2];
-            r.commands[0] = "just test-stdlib " + lib;
-            r.commands[1] = "just test-vm";
+            r.commands[0] = "xtask test lib " + lib;
+            r.commands[1] = "xtask test vm";
             r.touchedAny = true;
             return r;
         }
         if (_containsSlash(f, "/tests/")) {
             r.commands = new string[1];
-            r.commands[0] = "just test-stdlib " + lib;
+            r.commands[0] = "xtask test lib " + lib;
             r.touchedAny = true;
             return r;
         }
         if (_endsWith(f, ".toml")) {
             r.commands = new string[1];
-            r.commands[0] = "just test-stdlib " + lib;
+            r.commands[0] = "xtask test lib " + lib;
             r.touchedAny = true;
             return r;
         }
@@ -199,7 +208,7 @@ _MapResult _mapFile(string f) {
         || f == "src/runtime/build.rs") {
         r.commands = new string[2];
         r.commands[0] = "cargo test --manifest-path src/runtime/Cargo.toml";
-        r.commands[1] = "just test-vm";
+        r.commands[1] = "xtask test vm";
         r.touchedAny = true;
         return r;
     }
@@ -211,13 +220,13 @@ _MapResult _mapFile(string f) {
     }
     if (_startsWith(f, "src/tests/cross-zpkg/")) {
         r.commands = new string[1];
-        r.commands[0] = "just test-cross-zpkg";
+        r.commands[0] = "xtask test cross-zpkg";
         r.touchedAny = true;
         return r;
     }
     if (_startsWith(f, "src/tests/")) {
         r.commands = new string[1];
-        r.commands[0] = "just test-vm";
+        r.commands[0] = "xtask test vm";
         r.touchedAny = true;
         return r;
     }
@@ -225,8 +234,8 @@ _MapResult _mapFile(string f) {
     // C# compiler.
     if (_startsWith(f, "src/compiler/")) {
         r.commands = new string[2];
-        r.commands[0] = "just test-compiler";
-        r.commands[1] = "just test-vm";
+        r.commands[0] = "xtask test compiler";
+        r.commands[1] = "xtask test vm";
         r.touchedAny = true;
         return r;
     }
@@ -235,33 +244,37 @@ _MapResult _mapFile(string f) {
     if (_startsWith(f, "src/toolchain/")) {
         r.commands = new string[2];
         r.commands[0] = "cargo test --manifest-path src/toolchain/test-runner/Cargo.toml";
-        r.commands[1] = "just test-stdlib";
+        r.commands[1] = "xtask test lib";
         r.touchedAny = true;
         return r;
     }
 
-    // Test infrastructure scripts.
-    if (f == "scripts/test-vm.sh" || f == "scripts/regen-golden-tests.sh") {
+    // Test infrastructure (z42 job scripts xtask delegates to).
+    if (f == "scripts/test-vm.z42" || f == "scripts/regen-golden-tests.z42") {
         r.commands = new string[1];
-        r.commands[0] = "just test-vm";
+        r.commands[0] = "xtask test vm";
         r.touchedAny = true;
         return r;
     }
-    if (f == "scripts/test-stdlib.sh" || f == "scripts/build-stdlib.sh") {
+    if (f == "scripts/build-stdlib.z42") {
         r.commands = new string[1];
-        r.commands[0] = "just test-stdlib";
+        r.commands[0] = "xtask test lib";
         r.touchedAny = true;
         return r;
     }
-    if (f == "scripts/test-cross-zpkg.sh") {
+    if (f == "scripts/test-cross-zpkg.z42") {
         r.commands = new string[1];
-        r.commands[0] = "just test-cross-zpkg";
+        r.commands[0] = "xtask test cross-zpkg";
         r.touchedAny = true;
         return r;
     }
 
-    // justfile, top-level config → full sweep.
-    if (f == "justfile" || _endsWith(f, ".workspace.toml")) {
+    // xtask CLI source / manifest (the build+test driver) or a workspace
+    // config → full sweep (was the justfile branch before the migration).
+    if (f == "scripts/xtask.z42"
+        || f == "scripts/xtask_test.z42"
+        || f == "scripts/xtask.z42.toml"
+        || _endsWith(f, ".workspace.toml")) {
         r.needsFull = true;
         r.touchedAny = true;
         return r;
@@ -285,6 +298,17 @@ _MapResult _mapFile(string f) {
     r.needsFull = true;
     r.touchedAny = true;
     return r;
+}
+
+// Substitute the logical `xtask ` prefix with the real launcher invocation.
+// Plan commands are stored as `xtask test vm` etc. for readable plan output;
+// at run time the leading `xtask ` becomes `<z42vm> …/xtask.zpkg -- `. Non-xtask
+// commands (cargo …) pass through unchanged.
+string _resolveXtask(string cmd, string xtaskCmd) {
+    if (_startsWith(cmd, "xtask ")) {
+        return xtaskCmd + " " + cmd.Substring(6);
+    }
+    return cmd;
 }
 
 // ── Git helpers ──────────────────────────────────────────────────────────
