@@ -124,8 +124,12 @@ jobs:
       # "Build stdlib" step above already populated artifacts/build/libs/release/.
       - name: Regen golden zbc fixtures (Windows)
         if: matrix.os == 'windows-latest'
-        run: ./scripts/regen-golden-tests.sh --no-stdlib
         shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- regen --no-stdlib
 
       # Windows: smoke test only (cargo + dotnet are cross-platform; bash scripts not)
       # shell: pwsh (default on windows-latest) — dotnet test spawns testhost.exe,
@@ -170,9 +174,13 @@ jobs:
       # shell: bash everywhere — on windows-latest this uses Git Bash (per
       # docs/workflow/windows.md; .gitattributes ensures LF on .sh).
 
-      - name: Package host RID
-        run: ./scripts/package.sh release
+      - name: Package host RID (z42 xtask.zpkg build package)
         shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- build package release
 
       - name: Verify package manifest + native artifacts
         shell: bash
