@@ -58,7 +58,7 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 - `rustup target add aarch64-linux-android x86_64-linux-android`
 - `cargo install cargo-ndk --locked`
 
-⚠️ `z42 xtask.zpkg deps install android-sdk` 在 Windows 上**会拒绝执行**（只支持 macOS/Linux 自动下载）；走 Android Studio 这条路。
+⚠️ `z42 xtask.zpkg deps install --os android` / `deps install android-emulator` 在 Windows 上**会拒绝执行**（只支持 macOS/Linux 自动下载）；走 Android Studio 这条路。
 
 ### 6.（可选）Node.js —— 用官方 MSI
 

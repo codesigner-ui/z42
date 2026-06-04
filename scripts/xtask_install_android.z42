@@ -1,13 +1,18 @@
-// xtask — deps install android-sdk (migrate-scripts-to-z42): native port of the
+// xtask — android SDK installer (migrate-scripts-to-z42): native port of the
 // former scripts/install-android-toolchain-local.sh. Installs the Android
-// SDK + NDK + emulator + AVD + Gradle locally into artifacts/tools/ (no system
-// changes). Idempotent; --force redownloads. ~4 GB / ~10-15 min.
+// SDK + NDK (+ emulator + AVD + Gradle for the emulator tier) locally into
+// artifacts/tools/ (no system changes). Idempotent; --force redownloads.
 //
-//   deps install android-sdk [--force]
+// Two tiers (see the two-tier dependency model in xtask_install.z42):
+//   "build"    — TIER 1 essential build deps: cmdline-tools + platforms +
+//                build-tools + platform-tools + NDK. Driven by `deps install --os android`.
+//   "emulator" — TIER 2 step deps (android instrumentation tests): the build set
+//                PLUS emulator + system-image + AVD + Gradle. Driven by
+//                `deps install android-emulator`. ~4 GB / ~10-15 min.
 //
 // POSIX-only (downloads mac/linux tarballs); Windows → Android Studio. Prereqs:
 // JDK 17+, curl, unzip. NOT used by CI (CI installs cargo-ndk inline) — this is
-// the dev path for instrumented Android tests. Same Z42Xtask namespace.
+// the dev path. Same Z42Xtask namespace.
 namespace Z42Xtask;
 
 using Std;
@@ -15,7 +20,11 @@ using Std.IO;
 using Std.Encoding;
 using Std.Toml;
 
-int _depsInstallAndroidSdk(bool force) {
+// TIER 2 entry: full SDK incl emulator/AVD/Gradle for running Android tests.
+int _depsInstallAndroidEmulator(bool force) { return _depsInstallAndroidSdk(force, "emulator"); }
+
+int _depsInstallAndroidSdk(bool force, string tier) {
+    bool wantEmu = (tier != "build");   // "emulator"/"full" → emulator + AVD + Gradle
     string root = _root();
     // ── version pins — single source of truth: versions.toml ─────────────
     TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
@@ -94,9 +103,16 @@ int _depsInstallAndroidSdk(bool force) {
     _runWithStdin(sdkmanager, new string[]{ sdkRoot, "--licenses" }, javaHome, _repeat("y\n", 100));
 
     // ── (3) SDK packages ─────────────────────────────────────────────────
-    Console.WriteLine("[3/6] installing SDK packages");
-    int pc = _runJava(sdkmanager, new string[]{ sdkRoot, "--install",
-        "platforms;" + platformVer, "build-tools;" + buildToolsVer, "platform-tools", "emulator", sysImage }, javaHome);
+    // build tier: platforms + build-tools + platform-tools. emulator tier adds
+    // the emulator binary + AVD system-image.
+    Console.WriteLine("[3/6] installing SDK packages" + (wantEmu ? " (+ emulator + system-image)" : " (build tier)"));
+    string[] pkgs;
+    if (wantEmu) {
+        pkgs = new string[]{ sdkRoot, "--install", "platforms;" + platformVer, "build-tools;" + buildToolsVer, "platform-tools", "emulator", sysImage };
+    } else {
+        pkgs = new string[]{ sdkRoot, "--install", "platforms;" + platformVer, "build-tools;" + buildToolsVer, "platform-tools" };
+    }
+    int pc = _runJava(sdkmanager, pkgs, javaHome);
     if (pc != 0) { return pc; }
 
     // ── (4) NDK + stable symlink ─────────────────────────────────────────
@@ -108,41 +124,50 @@ int _depsInstallAndroidSdk(bool force) {
     if (File.Exists(ndkDirLink) || Directory.Exists(ndkDirLink)) { _exec(new Process("rm").Arg("-f").Arg(ndkDirLink)); }
     _exec(new Process("ln").Arg("-s").Arg(ndkInstall).Arg(ndkDirLink));
 
-    // ── (5) AVD ──────────────────────────────────────────────────────────
-    string existing = _cmdOut(avdmanager, new string[]{ "list", "avd" });
-    if (existing.Contains(avdName) && !force) {
-        Console.WriteLine("[5/6] AVD " + avdName + " already exists (skip)");
-    } else {
-        Console.WriteLine("[5/6] creating AVD " + avdName);
-        if (existing.Contains(avdName)) { _runJava(avdmanager, new string[]{ "delete", "avd", "-n", avdName }, javaHome); }
-        _runWithStdin(avdmanager, new string[]{ "create", "avd", "--name", avdName, "--device", avdDevice, "--package", sysImage, "--force" }, javaHome, "no\n");
-    }
-
-    // ── (6) Gradle ───────────────────────────────────────────────────────
+    // ── (5) AVD + (6) Gradle — emulator tier only ────────────────────────
     string gradleInstall = Path.Join(gradleDir, "gradle-" + gradleVer);
-    string gradleBin = Path.Join(gradleInstall, "bin/gradle");
-    if (File.Exists(gradleBin) && !force) {
-        Console.WriteLine("[6/6] Gradle " + gradleVer + " already installed (skip)");
+    if (!wantEmu) {
+        Console.WriteLine("[5-6/6] AVD + Gradle skipped (build tier; run `z42 xtask.zpkg deps install android-emulator` for instrumentation tests)");
     } else {
-        Console.WriteLine("[6/6] downloading Gradle " + gradleVer);
-        string tmp2 = Directory.CreateTempDir("gradle-dl");
-        string gzip = Path.Join(tmp2, "gradle.zip");
-        int dc = _exec(new Process("curl").Arg("--fail").Arg("--location").Arg("--silent").Arg("--show-error").Arg("-o").Arg(gzip)
-            .Arg("https://services.gradle.org/distributions/gradle-" + gradleVer + "-bin.zip"));
-        if (dc != 0) { return dc; }
-        if (Directory.Exists(gradleDir)) { Directory.Delete(gradleDir, true); }
-        Directory.Create(gradleDir);
-        int uc = _exec(new Process("unzip").Arg("-q").Arg(gzip).Arg("-d").Arg(gradleDir));
-        if (uc != 0) { return uc; }
-        if (!File.Exists(gradleBin)) { ConsoleError.WriteLine("error: " + gradleBin + " missing after extract"); return 1; }
+        // ── (5) AVD ──────────────────────────────────────────────────────
+        string existing = _cmdOut(avdmanager, new string[]{ "list", "avd" });
+        if (existing.Contains(avdName) && !force) {
+            Console.WriteLine("[5/6] AVD " + avdName + " already exists (skip)");
+        } else {
+            Console.WriteLine("[5/6] creating AVD " + avdName);
+            if (existing.Contains(avdName)) { _runJava(avdmanager, new string[]{ "delete", "avd", "-n", avdName }, javaHome); }
+            _runWithStdin(avdmanager, new string[]{ "create", "avd", "--name", avdName, "--device", avdDevice, "--package", sysImage, "--force" }, javaHome, "no\n");
+        }
+
+        // ── (6) Gradle ─────────────────────────────────────────────────────
+        string gradleBin = Path.Join(gradleInstall, "bin/gradle");
+        if (File.Exists(gradleBin) && !force) {
+            Console.WriteLine("[6/6] Gradle " + gradleVer + " already installed (skip)");
+        } else {
+            Console.WriteLine("[6/6] downloading Gradle " + gradleVer);
+            string tmp2 = Directory.CreateTempDir("gradle-dl");
+            string gzip = Path.Join(tmp2, "gradle.zip");
+            int dc = _exec(new Process("curl").Arg("--fail").Arg("--location").Arg("--silent").Arg("--show-error").Arg("-o").Arg(gzip)
+                .Arg("https://services.gradle.org/distributions/gradle-" + gradleVer + "-bin.zip"));
+            if (dc != 0) { return dc; }
+            if (Directory.Exists(gradleDir)) { Directory.Delete(gradleDir, true); }
+            Directory.Create(gradleDir);
+            int uc = _exec(new Process("unzip").Arg("-q").Arg(gzip).Arg("-d").Arg(gradleDir));
+            if (uc != 0) { return uc; }
+            if (!File.Exists(gradleBin)) { ConsoleError.WriteLine("error: " + gradleBin + " missing after extract"); return 1; }
+        }
     }
 
     Console.WriteLine("");
-    Console.WriteLine("Android toolchain installed locally — no system PATH changes.");
+    Console.WriteLine("Android " + (wantEmu ? "toolchain (build + emulator)" : "build SDK") + " installed locally — no system PATH changes.");
     Console.WriteLine("  export ANDROID_HOME=\"" + sdkDir + "\"");
     Console.WriteLine("  export ANDROID_NDK_HOME=\"" + ndkDirLink + "\"");
     Console.WriteLine("  export JAVA_HOME=\"" + javaHome + "\"");
-    Console.WriteLine("  export PATH=\"$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:" + Path.Join(gradleInstall, "bin") + ":$PATH\"");
+    if (wantEmu) {
+        Console.WriteLine("  export PATH=\"$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:" + Path.Join(gradleInstall, "bin") + ":$PATH\"");
+    } else {
+        Console.WriteLine("  export PATH=\"$ANDROID_HOME/platform-tools:$PATH\"");
+    }
     return 0;
 }
 

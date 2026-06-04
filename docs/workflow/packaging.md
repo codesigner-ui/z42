@@ -56,7 +56,7 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 # Android RID
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
-# NDK：z42 xtask.zpkg deps install android（装到 artifacts/tools/android-ndk）
+# NDK + 构建 SDK：z42 xtask.zpkg deps install --os android（装到 artifacts/tools/android-sdk）
 # 或 export ANDROID_NDK_HOME=<your-ndk-path>
 
 # wasm RID
@@ -147,7 +147,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 | `error: stdlib not built at artifacts/build/libs/release` | 先 `z42 xtask.zpkg build stdlib` |
 | `error: z42c not built at ...z42c.dll` | 先 `dotnet build src/compiler/z42.slnx` |
 | `cargo-ndk not found` | `cargo install cargo-ndk --locked` |
-| `$ANDROID_NDK_HOME unset and NDK not found locally` | `z42 xtask.zpkg deps install android` 或 `export ANDROID_NDK_HOME=<path>` |
+| `$ANDROID_NDK_HOME unset and NDK not found locally` | `z42 xtask.zpkg deps install --os android` 或 `export ANDROID_NDK_HOME=<path>` |
 | iOS `xcframework not created` | Xcode 没装或 `xcode-select -p` 指错 |
 | wasm `pkg-web/ missing — run platforms/wasm/build.sh first` | 先 `cd src/toolchain/host/platforms/wasm && ./build.sh` |
 | SHA invariant fail | 通常是 stdlib / native include 中途被改；重建对应源 + 重打包 |

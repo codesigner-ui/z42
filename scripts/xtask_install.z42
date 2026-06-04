@@ -2,11 +2,20 @@
 // scripts/setup-tools.sh. Verify/install the toolchain declared in versions.toml.
 // Source-of-truth = versions.toml (parsed with Std.Toml, no python).
 //
-//   deps install                       install all missing (every platform)
-//   deps install <android|ios|wasm>    only that platform
-//   deps install --check               verify only, never install
-//   deps install --drift               check build.gradle.kts / Package.swift agree with versions.toml
-//   deps install android --print-env   emit sourceable env exports (ANDROID_NDK_HOME)
+// Two-tier dependency model:
+//   TIER 1 — essential BUILD deps, platform-distinguished (install up front):
+//     deps install                       cross-platform toolchain presence check (rust/dotnet/node)
+//     deps install --os <android|ios|wasm>   + that platform's essential build deps
+//         android = rust targets + cargo-ndk + JDK check + build SDK (cmdline-tools
+//                   + platforms;<p> + build-tools;<bt> + platform-tools + ndk;<ver>)
+//         ios     = rust targets (+ extra host slice) + Xcode check
+//         wasm    = rust targets + wasm-pack
+//   TIER 2 — step-specific deps (fetched lazily by the step that needs them):
+//     deps install node                  Node LTS (wasm js / playground tests)
+//     deps install android-emulator      emulator + system-image + AVD + Gradle (android instrumentation tests)
+//
+// Modifiers:  --check (verify only) | --drift (versions.toml ↔ projection drift)
+//             | --print-env (emit env exports) | --force (reinstall)
 //
 // Same Z42Xtask namespace; calls _root/_exec/_have... defined here + in xtask.z42.
 namespace Z42Xtask;
@@ -20,7 +29,7 @@ int _depsInstall(string[] argv) {
     string platform = "";
     bool force = false;
     bool wantNode = false;
-    bool wantAndroidSdk = false;
+    bool wantAndroidEmu = false;
     int i = 2;   // argv[0]=deps, argv[1]=install
     while (i < argv.Length) {
         string a = argv[i];
@@ -28,15 +37,22 @@ int _depsInstall(string[] argv) {
         else if (a == "--drift")     { mode = "drift"; }
         else if (a == "--print-env") { mode = "print-env"; }
         else if (a == "--force")     { force = true; }
-        else if (a == "node")        { wantNode = true; }
-        else if (a == "android-sdk") { wantAndroidSdk = true; }
-        else if (a == "android" || a == "ios" || a == "wasm") { platform = a; }
-        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try node | android-sdk | <android|ios|wasm> | --check/--drift/--print-env/--force)"); return 2; }
+        else if (a == "--os") {
+            i = i + 1;
+            if (i >= argv.Length) { ConsoleError.WriteLine("deps install --os: missing platform (android|ios|wasm)"); return 2; }
+            platform = argv[i];
+            if (platform != "android" && platform != "ios" && platform != "wasm") {
+                ConsoleError.WriteLine("deps install --os: unknown platform '" + platform + "' (android|ios|wasm)"); return 2;
+            }
+        }
+        else if (a == "node")             { wantNode = true; }
+        else if (a == "android-emulator") { wantAndroidEmu = true; }
+        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try --os <android|ios|wasm> | node | android-emulator | --check/--drift/--print-env/--force)"); return 2; }
         i = i + 1;
     }
-    // Standalone project-local installers (were install-node/android-toolchain-local.sh).
+    // TIER 2 — step-specific lazy installers (run when you reach the step).
     if (wantNode)       { return _depsInstallNode(force); }
-    if (wantAndroidSdk) { return _depsInstallAndroidSdk(force); }
+    if (wantAndroidEmu) { return _depsInstallAndroidEmulator(force); }
 
     string root = _root();
     TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
@@ -56,7 +72,7 @@ int _depsInstall(string[] argv) {
     int p = 0;
     while (p < platforms.Length) {
         int c = 0;
-        if (platforms[p] == "android")   { c = _setupAndroid(root, toml, mode); }
+        if (platforms[p] == "android")   { c = _setupAndroid(root, toml, mode, force); }
         else if (platforms[p] == "ios")  { c = _setupIos(root, toml, mode); }
         else if (platforms[p] == "wasm") { c = _setupWasm(toml, mode); }
         if (c != 0) { rc = c; }
@@ -67,7 +83,9 @@ int _depsInstall(string[] argv) {
         Console.WriteLine("");
         Console.WriteLine("✅ setup complete");
         Console.WriteLine("   For ANDROID_NDK_HOME export, run:");
-        Console.WriteLine("     eval \"$(z42 xtask.zpkg deps install android --print-env)\"");
+        Console.WriteLine("     eval \"$(z42 xtask.zpkg deps install --os android --print-env)\"");
+        Console.WriteLine("   For android emulator/AVD + Gradle (run-tests only):");
+        Console.WriteLine("     z42 xtask.zpkg deps install android-emulator");
     }
     return rc;
 }
@@ -311,94 +329,56 @@ string _resolveNdkHome(string root, TomlValue toml) {
     return "";
 }
 
-int _installNdk(string root, TomlValue toml) {
-    string ver = _vget(toml, "build.android.ndk.version");
-    string urlTmpl = _vget(toml, "build.android.ndk.url");
-    string wantSha = _vget(toml, "build.android.ndk.sha256");
-    string targetDir = _ndkInstallDir(root, toml);
-    string url = urlTmpl.Replace("{os}", _detectOs());
-
-    string work = Directory.CreateTempDir("ndk");
-    string zip = Path.Join(work, "ndk.zip");
-    Console.WriteLine("  GET " + url);
-    int dc = _exec(new Process("curl").Arg("-L").Arg("--fail").Arg("--progress-bar").Arg("-o").Arg(zip).Arg(url));
-    if (dc != 0) { ConsoleError.WriteLine("error: NDK download failed"); return dc; }
-
-    string gotSha = _sha256File(zip);
-    if (wantSha.Length > 0) {
-        if (gotSha != wantSha) { ConsoleError.WriteLine("error: NDK sha256 mismatch (want=" + wantSha + " got=" + gotSha + ")"); return 1; }
-        Console.WriteLine("  ✓ sha256 verified");
-    } else {
-        Console.WriteLine("  ⚠ versions.toml [build.android.ndk].sha256 empty; add: sha256 = \"" + gotSha + "\"");
-    }
-
-    Directory.Create(_parentDir(targetDir));
-    string unpack = Directory.CreateTempDir("ndk-unpack");
-    Console.WriteLine("  unzip → " + targetDir);
-    int uc = _exec(new Process("unzip").Arg("-q").Arg(zip).Arg("-d").Arg(unpack));
-    if (uc != 0) { return uc; }
-    // NDK zip contains one top dir like android-ndk-r26d/
-    string inner = "";
-    foreach (var name in Directory.Enumerate(unpack)) {
-        if (name.StartsWith("android-ndk")) { inner = Path.Join(unpack, name); }
-    }
-    if (inner.Length == 0) { ConsoleError.WriteLine("error: android-ndk-* dir not found in NDK zip"); return 1; }
-    int mc = _exec(new Process("mv").Arg(inner).Arg(targetDir));
-    if (mc != 0) { return mc; }
-    Console.WriteLine("  ✓ NDK " + ver + " installed");
-    return 0;
-}
-
-// sha256 of a file via shasum/sha256sum (mirrors versions.sh sha256_of).
-string _sha256File(string path) {
-    if (_have("shasum")) { return _nthWord(_cmdOut("shasum", new string[]{ "-a", "256", path }), 0); }
-    if (_have("sha256sum")) { return _nthWord(_cmdOut("sha256sum", new string[]{ path }), 0); }
-    return "";
-}
-
-string _parentDir(string p) {
-    int idx = p.LastIndexOf("/");
-    if (idx <= 0) { return "."; }
-    return p.Substring(0, idx);
-}
-
-int _setupAndroid(string root, TomlValue toml, string mode) {
+int _setupAndroid(string root, TomlValue toml, string mode, bool force) {
     Console.WriteLine("── android ──");
     if (mode == "print-env") {
         string home = _resolveNdkHome(root, toml);
-        if (home.Length == 0) { ConsoleError.WriteLine("# android: NDK not found; run z42 xtask.zpkg deps install android"); return 1; }
+        if (home.Length == 0) { ConsoleError.WriteLine("# android: NDK not found; run z42 xtask.zpkg deps install --os android"); return 1; }
         Console.WriteLine("export ANDROID_NDK_HOME=\"" + home + "\"");
         return 0;
     }
     if (mode == "drift") { return _checkAndroidDrift(root, toml); }
 
     int rc = 0;
+    // native cross-compile essentials: rust targets + cargo-ndk
     foreach (var t in _vgetList(toml, "platform.android.rust_targets")) {
         int c = _ensureRustTarget(t, mode); if (c != 0) { rc = c; }
     }
     int cc = _ensureCargoInstall("cargo-ndk", "cargo-ndk", mode); if (cc != 0) { rc = cc; }
 
-    // JDK (verify-only)
+    // build SDK (JDK + cmdline-tools + platforms + build-tools + platform-tools + NDK)
+    if (mode == "check") {
+        int c = _checkAndroidBuildSdk(root, toml); if (c != 0) { rc = c; }
+    } else {
+        int c = _depsInstallAndroidSdk(force, "build"); if (c != 0) { rc = c; }
+    }
+    return rc;
+}
+
+// Verify-only: JDK + NDK + the build SDK packages (platforms / build-tools) present.
+int _checkAndroidBuildSdk(string root, TomlValue toml) {
+    int rc = 0;
     int jdkMin = _parseIntOr(_vget(toml, "build.android.jdk_min"), 0);
     if (_have("javac")) {
-        string jv = _cmdOut("javac", new string[]{ "-version" });   // "javac 21.0.1"
-        int jdkMajor = _parseIntOr(_nthDot(_nthWord(jv, 1), 0), 0);
-        if (jdkMajor < jdkMin) { ConsoleError.WriteLine("  ✗ JDK " + jdkMajor.ToString() + " < required " + jdkMin.ToString()); }
+        int jdkMajor = _parseIntOr(_nthDot(_nthWord(_cmdOut("javac", new string[]{ "-version" }), 1), 0), 0);
+        if (jdkMajor < jdkMin) { ConsoleError.WriteLine("  ✗ JDK " + jdkMajor.ToString() + " < required " + jdkMin.ToString()); rc = 1; }
         else { Console.WriteLine("  ✓ JDK " + jdkMajor.ToString() + " (≥ " + jdkMin.ToString() + ")"); }
     } else {
-        ConsoleError.WriteLine("  ✗ javac not on PATH (need JDK " + jdkMin.ToString() + "+)");
+        ConsoleError.WriteLine("  ✗ javac not on PATH (need JDK " + jdkMin.ToString() + "+)"); rc = 1;
     }
-
-    // NDK
     string ndkVer = _vget(toml, "build.android.ndk.version");
     if (_resolveNdkHome(root, toml).Length > 0) {
         Console.WriteLine("  ✓ NDK " + ndkVer + " at " + _resolveNdkHome(root, toml));
-    } else if (mode == "check") {
-        ConsoleError.WriteLine("  ✗ NDK " + ndkVer + " missing (expected " + _ndkInstallDir(root, toml) + ")");
-        rc = 1;
     } else {
-        int c = _installNdk(root, toml); if (c != 0) { rc = c; }
+        ConsoleError.WriteLine("  ✗ NDK " + ndkVer + " missing (run: z42 xtask.zpkg deps install --os android)"); rc = 1;
     }
+    string sdkDir = Path.Join(root, _vget(toml, "build.android.install_root"));
+    string platformVer = _vget(toml, "build.android.sdk.platform");
+    string btVer = _vget(toml, "build.android.sdk.build_tools");
+    if (Directory.Exists(Path.Join(sdkDir, "platforms/" + platformVer))) { Console.WriteLine("  ✓ SDK " + platformVer); }
+    else { ConsoleError.WriteLine("  ✗ SDK " + platformVer + " missing"); rc = 1; }
+    if (Directory.Exists(Path.Join(sdkDir, "build-tools/" + btVer))) { Console.WriteLine("  ✓ build-tools " + btVer); }
+    else { ConsoleError.WriteLine("  ✗ build-tools " + btVer + " missing"); rc = 1; }
     return rc;
 }
 

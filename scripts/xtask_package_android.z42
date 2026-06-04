@@ -24,7 +24,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
     try { new Process("cargo-ndk").Arg("--version").Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run(); haveCargoNdk = true; }
     catch (Exception e) { haveCargoNdk = false; }
     if (!haveCargoNdk) {
-        ConsoleError.WriteLine("error: cargo-ndk not found. install: cargo install cargo-ndk --locked (or z42 xtask.zpkg deps install android)");
+        ConsoleError.WriteLine("error: cargo-ndk not found. install: cargo install cargo-ndk --locked (or z42 xtask.zpkg deps install --os android)");
         return 1;
     }
     string ndkHome = Environment.GetEnvironmentVariable("ANDROID_NDK_HOME") ?? "";
@@ -35,7 +35,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
             Environment.SetEnvironmentVariable("ANDROID_NDK_HOME", ndkHome);
         } else {
             ConsoleError.WriteLine("error: $ANDROID_NDK_HOME unset and NDK not found at " + autoNdk);
-            ConsoleError.WriteLine("       run: z42 xtask.zpkg deps install android");
+            ConsoleError.WriteLine("       run: z42 xtask.zpkg deps install --os android");
             return 1;
         }
     }

@@ -378,7 +378,11 @@ void _help() {
     Console.WriteLine("      flags: --parallel, --jobs N  (forwarded to the full `test` gate)");
     Console.WriteLine("");
     Console.WriteLine("    run <target> [-- args]   run a zpkg / .z42 via the launcher");
-    Console.WriteLine("    deps check | install     verify / fetch toolchains");
+    Console.WriteLine("    deps check               versions.toml ↔ source-file drift check");
+    Console.WriteLine("    deps install             cross-platform toolchain presence check");
+    Console.WriteLine("         --os <android|ios|wasm>   + that platform's essential build deps");
+    Console.WriteLine("         node | android-emulator   step-specific deps (lazy)");
+    Console.WriteLine("         --check | --drift | --print-env | --force");
     Console.WriteLine("    bench [--diff]           benchmarks");
     Console.WriteLine("    help, -h, --help");
 }
