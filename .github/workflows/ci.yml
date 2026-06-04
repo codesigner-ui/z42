@@ -56,14 +56,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Build (just build)
-        run: just build
-
-      # Build stdlib before tests — StdlibDelegateTests + MulticastActionTests
-      # require artifacts/build/libs/release/*.zpkg to be present.
-      - name: Build stdlib
-        run: ./scripts/build-stdlib.sh
+      # migrate-scripts-to-z42: bootstrap the native build CLI (replaces
+      # `just build` + build-stdlib.sh). Builds the compiler (slnx) + release
+      # z42vm + stdlib (cold-start primer then build-stdlib.z42 for the flat
+      # dist + index.json) + xtask.zpkg. After this, every other step drives
+      # work through `z42vm xtask.zpkg …`. Runs on all OSes (git-bash on Win).
+      - name: Bootstrap (compiler + runtime + stdlib + xtask.zpkg)
         shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build src/compiler/z42.slnx --nologo -v quiet
+          cargo build --release --manifest-path src/runtime/Cargo.toml
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          if [ ! -f "$libs/z42.core.zpkg" ]; then
+            ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
+            mkdir -p "$libs"
+            for d in artifacts/build/libraries/*/release/dist; do
+              cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
+            done
+          fi
+          Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
+          Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
 
       # Test on Unix runners (existing scripts are bash).
       # --parallel: wave-based stage-level concurrency (W1/W2/W3).
@@ -81,9 +94,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/ci-logs
-          cargo build --release --manifest-path src/runtime/Cargo.toml
-          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
           Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
           Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
             artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- test all 2>&1 | tee artifacts/ci-logs/test-all.log
