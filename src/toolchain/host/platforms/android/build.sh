@@ -13,15 +13,22 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../../.." && pwd)"
 RUST_MANIFEST="$HERE/rust/Cargo.toml"
 
-# 单一真相源：repo 根 versions.toml；helper 在 scripts/_lib/versions.sh.
-source "$ROOT/scripts/_lib/versions.sh"
-versions_require_python3
-versions_check_rust          # 校 rustc 版本 vs [toolchain.rust]
+# 单一真相源：repo 根 versions.toml。scripts/_lib/versions.sh 已随 scripts→xtask
+# 迁移删除；这里内联一个最小 tomllib 读取器（python3 本就是构建前置）。值仍单一
+# 源自 versions.toml。版本下限改为 presence-only 守卫（原 compare 仅 warning）。
+command -v python3 >/dev/null 2>&1 || { echo "error: python3 required to read versions.toml" >&2; exit 1; }
+command -v rustc   >/dev/null 2>&1 || echo "warning: rustc not found (https://rustup.rs)" >&2
+_vget()  { python3 -c "import tomllib;d=tomllib.load(open('$ROOT/versions.toml','rb'))
+for p in '$1'.split('.'): d=d[p]
+print(d)"; }
+_vlist() { python3 -c "import tomllib;d=tomllib.load(open('$ROOT/versions.toml','rb'))
+for p in '$1'.split('.'): d=d[p]
+print(' '.join(map(str,d)))"; }
 
-NDK_VERSION=$(versions_get build.android.ndk.version)
-RUST_TARGETS=$(versions_get_list platform.android.rust_targets)
-ABIS=$(versions_get_list platform.android.abis)
-JDK_MIN=$(versions_get build.android.jdk_min)
+NDK_VERSION=$(_vget build.android.ndk.version)
+RUST_TARGETS=$(_vlist platform.android.rust_targets)
+ABIS=$(_vlist platform.android.abis)
+JDK_MIN=$(_vget build.android.jdk_min)
 
 # ── (1) Tooling check (fail-fast). ───────────────────────────────────────
 
@@ -34,7 +41,7 @@ command -v cargo-ndk >/dev/null 2>&1 || {
 # Auto-discover NDK from artifacts/tools/ (where setup-tools.sh installs it)
 # when $ANDROID_NDK_HOME is unset. Versioned subdir per versions.toml NDK pin.
 if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
-    auto_ndk="$ROOT/$(versions_get build.android.install_root)/ndk/$NDK_VERSION"
+    auto_ndk="$ROOT/$(_vget build.android.install_root)/ndk/$NDK_VERSION"
     if [[ -d "$auto_ndk" ]]; then
         export ANDROID_NDK_HOME="$auto_ndk"
         echo "ANDROID_NDK_HOME auto-detected: $ANDROID_NDK_HOME"

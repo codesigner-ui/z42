@@ -14,16 +14,23 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../../.." && pwd)"
 
-# 单一真相源：repo 根 versions.toml；helper 在 scripts/_lib/versions.sh.
-source "$ROOT/scripts/_lib/versions.sh"
-versions_require_python3
-versions_check_rust          # 校 rustc 版本 vs [toolchain.rust]
-versions_check_dotnet        # 校 dotnet SDK vs [toolchain.dotnet]
-versions_check_node          # 校 node ≥ [toolchain.node].min_version
+# 单一真相源：repo 根 versions.toml。scripts/_lib/versions.sh 已随 scripts→xtask
+# 迁移删除；这里内联一个最小 tomllib 读取器（python3 本就是构建前置）。值仍单一
+# 源自 versions.toml。版本下限改为 presence-only 守卫（原 compare 仅 warning）。
+command -v python3 >/dev/null 2>&1 || { echo "error: python3 required to read versions.toml" >&2; exit 1; }
+command -v rustc   >/dev/null 2>&1 || echo "warning: rustc not found (https://rustup.rs)" >&2
+command -v dotnet  >/dev/null 2>&1 || echo "warning: dotnet not found (.NET 8+)" >&2
+command -v node    >/dev/null 2>&1 || echo "warning: node not found (versions.toml [toolchain.node])" >&2
+_vget()  { python3 -c "import tomllib;d=tomllib.load(open('$ROOT/versions.toml','rb'))
+for p in '$1'.split('.'): d=d[p]
+print(d)"; }
+_vlist() { python3 -c "import tomllib;d=tomllib.load(open('$ROOT/versions.toml','rb'))
+for p in '$1'.split('.'): d=d[p]
+print(' '.join(map(str,d)))"; }
 
-WASM_RUST_TARGETS=$(versions_get_list platform.wasm.rust_targets)
-WASM_PACK_MIN=$(versions_get build.wasm.wasm_pack_min)
-NODE_MIN=$(versions_get toolchain.node.min_version)
+WASM_RUST_TARGETS=$(_vlist platform.wasm.rust_targets)
+WASM_PACK_MIN=$(_vget build.wasm.wasm_pack_min)
+NODE_MIN=$(_vget toolchain.node.min_version)
 
 # ── (1) Tooling check (fail-fast — we do not auto-install). ──────────────
 
@@ -41,7 +48,7 @@ for t in $WASM_RUST_TARGETS; do
     fi
 done
 
-# dotnet/node 已在头部 versions_check_dotnet / versions_check_node 校过
+# dotnet/node 已在头部 presence 守卫校过
 
 DRIVER_DLL="$ROOT/artifacts/build/compiler/z42.Driver/bin/z42c.dll"
 if [[ ! -f "$DRIVER_DLL" ]]; then
