@@ -30,7 +30,10 @@
 - [x] test cross-zpkg + test compiler（0359a193）— native：2 passed / dotnet test via _exec
 - [x] test lib（从头 port，无 .z42）— native stdlib [Test] harness (sequential)：枚举 tests/*.z42 → z42c emit zbc → z42-test-runner；z42.math → 2 passed。**验证 z42 能表达测试 harness**
 - [x] test all（GREEN gate orchestrator）— build once + compiler/vm/cross-zpkg/lib short-circuit；split test handlers → xtask_test.z42（500-line limit）；full run validating in bg
-- [ ] bench run/diff / test-dist / package（platform packaging — 最大、最后）
+- [x] audit（87a9d838）— native audit-missing-usings
+- [ ] bench run/diff（hyperfine+python3 dep）/ test-dist（208 LOC，无外部依赖）
+- [ ] package（platform packaging 1471 LOC — 最大、release-critical、最后；先再拆 xtask 文件）
+- [ ] test all 加 --parallel wave（CI 性能：当前 sequential，rewire 前需并行化避免超时）
 - [ ] mtime native extern（File.GetLastWriteTime）当增量/freshness 检查需要时
 - [ ] rewire CI（ci/bench-update/release）→ `z42vm xtask.zpkg -- …`；删 justfile + scripts/*.sh + _lib（留 install-z42.*）
 - [ ] 更新 docs（workflow/、CLAUDE.md 等引用）
