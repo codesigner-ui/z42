@@ -1,0 +1,176 @@
+// xtask — browser-wasm release packaging (migrate-scripts-to-z42). Native port
+// of scripts/_lib/package_wasm.sh. Assembles a wasm SDK package: native/(libz42.a
+// + z42_wasm_bg.wasm) + pkg-web/ + pkg-nodejs/ + js/ + package.json + libs/ +
+// examples/hello_c. REQUIRES the wasm-bindgen output (pkg-web/ + pkg-nodejs/)
+// pre-built under src/toolchain/host/platforms/wasm/ (CI builds it via wasm-pack
+// before packaging). Same Z42Xtask namespace; reuses _exec/_root/_ridToCargo/
+// _pkgCopyLibs/_pkgEmitBinReadmePlaceholder/_quotedDirList/_utcNow.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+int _packageWasm(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
+    string cargoTarget = _ridToCargo(rid);
+    bool rel = (profile == "release");
+    string wasmRoot = Path.Join(root, "src/toolchain/host/platforms/wasm");
+    string nativeOut = Path.Join(pkgDir, "native");
+    Directory.Create(Path.Join(pkgDir, "native/include"));
+
+    // ── 0. tooling: rust target + pre-built wasm-bindgen output ──────────
+    Console.WriteLine("[0/8] tooling check");
+    ProcessResult tc;
+    try { tc = new Process("rustup").Arg("target").Arg("list").Arg("--installed").Stdout(Stdio.Pipe()).Stderr(Stdio.Null()).Run(); }
+    catch (Exception e) { ConsoleError.WriteLine("error: rustup not found"); return 1; }
+    if (tc.ExitCode != 0 || !tc.Stdout.Contains(cargoTarget)) {
+        ConsoleError.WriteLine("error: rust target " + cargoTarget + " not installed (rustup target add " + cargoTarget + ")");
+        return 1;
+    }
+    if (!Directory.Exists(Path.Join(wasmRoot, "pkg-web")) || !Directory.Exists(Path.Join(wasmRoot, "pkg-nodejs"))) {
+        ConsoleError.WriteLine("error: " + wasmRoot + "/pkg-web or pkg-nodejs missing — run the wasm-pack build first");
+        return 1;
+    }
+
+    // ── 1. bin/ placeholder ──────────────────────────────────────────────
+    Console.WriteLine("[1/8] bin/ placeholder");
+    _pkgEmitBinReadmePlaceholder(pkgDir, "browser-wasm");
+
+    // ── 2. libz42.a (wasm32 staticlib) ──────────────────────────────────
+    Console.WriteLine("[2/8] libz42.a (cargo rustc " + cargoTarget + " --features wasm, " + profile + ")");
+    int c = _cargoWasmRustc(root, rel, cargoTarget);
+    if (c != 0) { ConsoleError.WriteLine("error: cargo rustc staticlib for " + cargoTarget + " failed"); return 1; }
+    string staticA = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile + "/libz42.a");
+    if (!File.Exists(staticA)) { ConsoleError.WriteLine("error: libz42.a not produced at " + staticA); return 1; }
+    File.Copy(staticA, Path.Join(nativeOut, "libz42.a"));
+    Console.WriteLine("      ✓ native/libz42.a");
+
+    // ── 3. z42_wasm_bg.wasm (from pkg-web) ──────────────────────────────
+    Console.WriteLine("[3/8] z42_wasm_bg.wasm");
+    string wasmBg = Path.Join(wasmRoot, "pkg-web/z42_wasm_bg.wasm");
+    if (!File.Exists(wasmBg)) { ConsoleError.WriteLine("error: " + wasmBg + " missing — run the wasm-pack build first"); return 1; }
+    File.Copy(wasmBg, Path.Join(nativeOut, "z42_wasm_bg.wasm"));
+    Console.WriteLine("      ✓ native/z42_wasm_bg.wasm");
+
+    // ── 4. C ABI headers ─────────────────────────────────────────────────
+    Console.WriteLine("[4/8] C ABI headers");
+    File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
+    File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
+
+    // ── 5. pkg-web/ + pkg-nodejs/ (wasm-bindgen output) ─────────────────
+    Console.WriteLine("[5/8] pkg-web/ + pkg-nodejs/");
+    c = _pkgCopyWasmBindgen(pkgDir, wasmRoot); if (c != 0) { return c; }
+
+    // ── 6. js/ facade + package.json ────────────────────────────────────
+    Console.WriteLine("[6/8] js/ + package.json");
+    string jsDir = Path.Join(wasmRoot, "js");
+    string dstJs = Path.Join(pkgDir, "js");
+    Directory.Create(dstJs);
+    foreach (var f in new string[]{ "index.js", "index.d.ts", "stdlib-resolver.js" }) {
+        string s = Path.Join(jsDir, f);
+        if (File.Exists(s)) { File.Copy(s, Path.Join(dstJs, f)); }
+    }
+    File.WriteAllText(Path.Join(pkgDir, "package.json"), _wasmPackageJson(version));
+    Console.WriteLine("      ✓ js/ + package.json");
+
+    // ── 7. stdlib libs + examples/hello_c ───────────────────────────────
+    Console.WriteLine("[7/8] stdlib + examples/hello_c");
+    c = _pkgCopyLibs(Path.Join(root, "artifacts/build/libraries/dist/release"), pkgDir); if (c != 0) { return c; }
+    string dst = Path.Join(pkgDir, "examples/hello_c");
+    Directory.Create(dst);
+    File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
+    string readmeSrc = Path.Join(root, "examples/embedding/hello_c/README.md.wasm");
+    if (!File.Exists(readmeSrc)) { readmeSrc = Path.Join(root, "examples/embedding/hello_c/README.md.host"); }
+    File.Copy(readmeSrc, Path.Join(dst, "README.md"));
+    string driver = Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    if (!File.Exists(driver)) { ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler"); return 1; }
+    c = _exec(new Process("dotnet").Arg(driver).Arg(Path.Join(root, "examples/embedding/hello.z42"))
+        .Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));
+    if (c != 0) { return c; }
+
+    // ── 8. manifest.toml ─────────────────────────────────────────────────
+    Console.WriteLine("[8/8] manifest.toml");
+    _pkgEmitManifestWasm(pkgDir, rid, version, profile, hostRid);
+    Console.WriteLine("      ✓ manifest.toml");
+    return 0;
+}
+
+// cargo rustc for wasm32 staticlib with --no-default-features --features wasm.
+int _cargoWasmRustc(string root, bool rel, string cargoTarget) {
+    Process p = new Process("cargo").Arg("rustc");
+    if (rel) { p = p.Arg("--release"); }
+    p = p.Arg("--lib").Arg("--crate-type=staticlib")
+        .Arg("--manifest-path").Arg(Path.Join(root, "src/runtime/Cargo.toml"))
+        .Arg("--target").Arg(cargoTarget)
+        .Arg("--no-default-features").Arg("--features").Arg("wasm").Arg("--quiet");
+    return _exec(p);
+}
+
+// Copy pkg-web/ + pkg-nodejs/ (.js/.wasm/.ts + package.json + README) into pkg root.
+int _pkgCopyWasmBindgen(string pkgDir, string wasmRoot) {
+    foreach (var sub in new string[]{ "pkg-web", "pkg-nodejs" }) {
+        string srcDir = Path.Join(wasmRoot, sub);
+        if (!Directory.Exists(srcDir)) { ConsoleError.WriteLine("error: " + srcDir + " missing"); return 1; }
+        string dstDir = Path.Join(pkgDir, sub);
+        Directory.Create(dstDir);
+        foreach (var f in Directory.Enumerate(srcDir)) {
+            if (f.EndsWith(".js") || f.EndsWith(".wasm") || f.EndsWith(".ts") || f == "package.json" || f == "README.md") {
+                File.Copy(Path.Join(srcDir, f), Path.Join(dstDir, f));
+            }
+        }
+    }
+    return 0;
+}
+
+// npm package.json for the wasm SDK (built by concatenation — z42 has no @"" raw).
+string _wasmPackageJson(string version) {
+    string j = "{\n";
+    j = j + "  \"name\": \"@z42/wasm\",\n";
+    j = j + "  \"version\": \"" + version + "\",\n";
+    j = j + "  \"description\": \"WebAssembly facade for the z42 embedding API. Runs .zbc bytecode in browser / Node.js hosts.\",\n";
+    j = j + "  \"type\": \"module\",\n";
+    j = j + "  \"main\": \"./js/index.js\",\n";
+    j = j + "  \"types\": \"./js/index.d.ts\",\n";
+    j = j + "  \"files\": [\"js/\", \"pkg-web/\", \"pkg-nodejs/\", \"libs/\", \"native/\"],\n";
+    j = j + "  \"exports\": {\n";
+    j = j + "    \".\": { \"node\": \"./pkg-nodejs/z42_wasm.js\", \"browser\": \"./pkg-web/z42_wasm.js\", \"default\": \"./pkg-web/z42_wasm.js\", \"types\": \"./js/index.d.ts\" },\n";
+    j = j + "    \"./node\": \"./pkg-nodejs/z42_wasm.js\",\n";
+    j = j + "    \"./web\": \"./pkg-web/z42_wasm.js\",\n";
+    j = j + "    \"./stdlib-resolver\": \"./js/stdlib-resolver.js\"\n";
+    j = j + "  },\n";
+    j = j + "  \"engines\": { \"node\": \">=18\" },\n";
+    j = j + "  \"license\": \"TBD\",\n";
+    j = j + "  \"private\": false\n";
+    j = j + "}\n";
+    return j;
+}
+
+void _pkgEmitManifestWasm(string pkgDir, string rid, string version, string profile, string buildHost) {
+    string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
+    string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
+    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
+    string staticList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42.a", "");
+    string dynamicList = _quotedExisting(Path.Join(pkgDir, "native"), "z42_wasm_bg.wasm", "");
+    string m = "[package]\n";
+    m = m + "name        = \"z42-" + rid + "\"\n";
+    m = m + "version     = \"" + version + "\"\n";
+    m = m + "abi-version = 1\n";
+    m = m + "rid         = \"" + rid + "\"\n";
+    m = m + "profile     = \"" + profile + "\"\n";
+    m = m + "build-date  = \"" + _utcNow() + "\"\n";
+    m = m + "build-host  = \"" + buildHost + "\"\n\n";
+    m = m + "[contents]\n";
+    m = m + "bin         = [" + binList + "]\n";
+    m = m + "libs        = [" + libsList + "]\n";
+    m = m + "examples    = [" + examplesList + "]\n\n";
+    m = m + "[contents.native]\n";
+    m = m + "static      = [" + staticList + "]\n";
+    m = m + "dynamic     = [" + dynamicList + "]\n";
+    m = m + "containers  = []\n";
+    m = m + "includes    = [\"z42_abi.h\", \"z42_host.h\"]\n\n";
+    m = m + "[contents.platform]\n";
+    m = m + "npm-manifest = \"package.json\"\n";
+    m = m + "wasm-bindgen = [\"pkg-web\", \"pkg-nodejs\"]\n\n";
+    m = m + "[compat]\n";
+    m = m + "host-min-version = \"" + version + "\"\n";
+    File.WriteAllText(Path.Join(pkgDir, "manifest.toml"), m);
+}

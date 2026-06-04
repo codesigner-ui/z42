@@ -52,8 +52,12 @@ int _buildPackage(string[] argv) {
         c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
     } else if (category == "ios") {
         c = _packageIos(root, pkgDir, rid, version, profile, hostRid);
+    } else if (category == "android") {
+        c = _packageAndroid(root, pkgDir, rid, version, profile, hostRid);
+    } else if (category == "wasm") {
+        c = _packageWasm(root, pkgDir, rid, version, profile, hostRid);
     } else {
-        ConsoleError.WriteLine("xtask build package: category '" + category + "' not yet ported (desktop + ios)");
+        ConsoleError.WriteLine("xtask build package: unknown category '" + category + "' for rid " + rid);
         return 2;
     }
     if (c != 0) { return c; }
@@ -229,6 +233,18 @@ void _makeExe(string path) {
     if (File.Exists(path)) { File.MakeExecutable(path); }
 }
 
+// Mobile/wasm packages don't ship z42c — bin/ gets a placeholder README.
+// Shared by _packageAndroid / _packageWasm (ios writes its own inline).
+void _pkgEmitBinReadmePlaceholder(string pkgDir, string targetLabel) {
+    Directory.Create(Path.Join(pkgDir, "bin"));
+    string content = "# bin/\n\n"
+        + "Reserved for future cross tools targeting **" + targetLabel + "**\n"
+        + "(e.g. z42-aotcross). Mobile / wasm packages do NOT ship the host compiler\n"
+        + "(z42c); embed prebuilt .zbc from your host build pipeline.\n"
+        + "See memory: project_mobile_no_compiler.\n";
+    File.WriteAllText(Path.Join(pkgDir, "bin/README.md"), content);
+}
+
 // Copy any libz42.*/z42.* native artifacts present in cargoOut into native/.
 void _copyNativeLibs(string cargoOut, string pkgDir) {
     if (!Directory.Exists(cargoOut)) { return; }
@@ -347,8 +363,10 @@ string _quotedSubdirs(string dir) {
 
 string _quotedExisting(string dir, string a, string b) {
     string acc = "";
-    if (File.Exists(Path.Join(dir, a))) { acc = "\"" + a + "\""; }
-    if (File.Exists(Path.Join(dir, b))) { if (acc.Length > 0) { acc = acc + ", "; } acc = acc + "\"" + b + "\""; }
+    // length guards: skip empty names — z42 File.Exists is true for the dir itself
+    // (Path.Join(dir,"")==dir), which would otherwise emit a spurious "".
+    if (a.Length > 0 && File.Exists(Path.Join(dir, a))) { acc = "\"" + a + "\""; }
+    if (b.Length > 0 && File.Exists(Path.Join(dir, b))) { if (acc.Length > 0) { acc = acc + ", "; } acc = acc + "\"" + b + "\""; }
     return acc;
 }
 

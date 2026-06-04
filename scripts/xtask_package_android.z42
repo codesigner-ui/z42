@@ -1,0 +1,196 @@
+// xtask — android release packaging (migrate-scripts-to-z42). Native port of
+// scripts/_lib/package_android.sh. Builds an Android SDK package via cargo-ndk:
+// native/(libz42_platform_android.{a,so} + libz42_compression.{a,so}) + kotlin/
+// + cpp/ + libs/ + examples/hello_c. Needs ANDROID_NDK_HOME (or auto-detected
+// from versions.toml build.android.install_root). Same Z42Xtask namespace; reuses
+// _exec/_root/_ridToCargo/_pkgCopyLibs/_pkgEmitHelloC/_pkgEmitBinReadmePlaceholder/
+// _quotedDirList/_utcNow from xtask_package.z42 / xtask.z42. versions.toml = SoT.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+
+int _packageAndroid(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
+    string cargoTarget = _ridToCargo(rid);
+    string abi = _ridToAndroidAbi(rid);
+    bool rel = (profile == "release");
+    string androidCrate = Path.Join(root, "src/toolchain/host/platforms/android/rust");
+    string nativeOut = Path.Join(pkgDir, "native");
+    Directory.Create(nativeOut);
+
+    // ── 0. tooling: cargo-ndk + ANDROID_NDK_HOME + rust target ───────────
+    bool haveCargoNdk = false;
+    try { new Process("cargo-ndk").Arg("--version").Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run(); haveCargoNdk = true; }
+    catch (Exception e) { haveCargoNdk = false; }
+    if (!haveCargoNdk) {
+        ConsoleError.WriteLine("error: cargo-ndk not found. install: cargo install cargo-ndk --locked (or z42 xtask.zpkg deps install android)");
+        return 1;
+    }
+    string ndkHome = Environment.GetEnvironmentVariable("ANDROID_NDK_HOME") ?? "";
+    if (ndkHome.Length == 0) {
+        string autoNdk = Path.Join(root, _avGet(root, "build.android.install_root") + "/ndk/" + _avGet(root, "build.android.ndk.version"));
+        if (Directory.Exists(autoNdk)) {
+            ndkHome = autoNdk;
+            Environment.SetEnvironmentVariable("ANDROID_NDK_HOME", ndkHome);
+        } else {
+            ConsoleError.WriteLine("error: $ANDROID_NDK_HOME unset and NDK not found at " + autoNdk);
+            ConsoleError.WriteLine("       run: z42 xtask.zpkg deps install android");
+            return 1;
+        }
+    }
+
+    // ── 1. bin/ placeholder ──────────────────────────────────────────────
+    Console.WriteLine("[1/8] bin/ placeholder");
+    _pkgEmitBinReadmePlaceholder(pkgDir, "Android");
+
+    // ── 2. libz42_platform_android.so (cdylib via cargo-ndk) ─────────────
+    Console.WriteLine("[2/8] libz42_platform_android.so (cargo ndk -t " + abi + ", " + profile + ")");
+    string ndkOut = Path.Join(nativeOut, ".ndk-out");
+    Process p = new Process("cargo").Arg("ndk").Arg("-t").Arg(abi).Arg("-o").Arg(ndkOut).Arg("build").Arg("--quiet");
+    if (rel) { p = p.Arg("--release"); }
+    int c = _exec(p.WorkingDirectory(androidCrate));
+    if (c != 0) { return c; }
+    string outSo = Path.Join(ndkOut, abi + "/libz42_platform_android.so");
+    if (!File.Exists(outSo)) { ConsoleError.WriteLine("error: " + outSo + " not produced"); return 1; }
+    File.Copy(outSo, Path.Join(nativeOut, "libz42_platform_android.so"));
+    if (Directory.Exists(ndkOut)) { Directory.Delete(ndkOut, true); }
+    Console.WriteLine("      ✓ native/libz42_platform_android.so (" + _getFileSize(Path.Join(nativeOut, "libz42_platform_android.so")) + ")");
+
+    // ── 3. libz42_platform_android.a (staticlib via cargo-ndk rustc) ─────
+    Console.WriteLine("[3/8] libz42_platform_android.a (cargo ndk rustc --crate-type=staticlib)");
+    Process p2 = new Process("cargo").Arg("ndk").Arg("-t").Arg(abi).Arg("-o").Arg(ndkOut)
+        .Arg("rustc").Arg("--lib").Arg("--crate-type=staticlib").Arg("--quiet")
+        .Stdout(Stdio.Null()).Stderr(Stdio.Null());
+    if (rel) { p2 = p2.Arg("--release"); }
+    _exec(p2.WorkingDirectory(androidCrate));   // exits non-zero though .a is produced — ignore like the bash
+    string staticA = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile + "/libz42_platform_android.a");
+    if (!File.Exists(staticA)) { staticA = Path.Join(androidCrate, "target/" + cargoTarget + "/" + profile + "/libz42_platform_android.a"); }
+    if (!File.Exists(staticA)) { ConsoleError.WriteLine("error: libz42_platform_android.a not produced for " + cargoTarget); return 1; }
+    File.Copy(staticA, Path.Join(nativeOut, "libz42_platform_android.a"));
+    if (Directory.Exists(ndkOut)) { Directory.Delete(ndkOut, true); }
+    Console.WriteLine("      ✓ native/libz42_platform_android.a (" + _getFileSize(Path.Join(nativeOut, "libz42_platform_android.a")) + ")");
+
+    // ── 3b. libz42_compression.{so,a} ───────────────────────────────────
+    Console.WriteLine("[3b/8] libz42_compression.{so,a} (cargo ndk -p z42-compression)");
+    string ndkOut2 = Path.Join(nativeOut, ".ndk-out2");
+    Process p3 = new Process("cargo").Arg("ndk").Arg("-t").Arg(abi).Arg("-o").Arg(ndkOut2)
+        .Arg("build").Arg("-p").Arg("z42-compression").Arg("--quiet").Stdout(Stdio.Null()).Stderr(Stdio.Null());
+    if (rel) { p3 = p3.Arg("--release"); }
+    _exec(p3.WorkingDirectory(androidCrate));
+    string compSo = Path.Join(ndkOut2, abi + "/libz42_compression.so");
+    if (File.Exists(compSo)) { File.Copy(compSo, Path.Join(nativeOut, "libz42_compression.so")); }
+    string compA = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile + "/libz42_compression.a");
+    if (!File.Exists(compA)) { compA = Path.Join(androidCrate, "target/" + cargoTarget + "/" + profile + "/libz42_compression.a"); }
+    if (File.Exists(compA)) { File.Copy(compA, Path.Join(nativeOut, "libz42_compression.a")); }
+    if (Directory.Exists(ndkOut2)) { Directory.Delete(ndkOut2, true); }
+    Console.WriteLine("      ✓ native/libz42_compression.{so,a}");
+
+    // ── 4. C ABI headers ─────────────────────────────────────────────────
+    Console.WriteLine("[4/8] C ABI headers");
+    Directory.Create(Path.Join(pkgDir, "native/include"));
+    File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
+    File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
+
+    // ── 5. Kotlin facade ─────────────────────────────────────────────────
+    Console.WriteLine("[5/8] kotlin/io/z42/vm/*.kt");
+    _pkgEmitKotlinSources(root, pkgDir);
+
+    // ── 6. JNI bridge ────────────────────────────────────────────────────
+    Console.WriteLine("[6/8] cpp/{z42vm_jni.c,CMakeLists.txt}");
+    _pkgEmitJniBridge(root, pkgDir);
+
+    // ── 7. stdlib libs + examples/hello_c ───────────────────────────────
+    Console.WriteLine("[7/8] stdlib + examples/hello_c");
+    c = _pkgCopyLibs(Path.Join(root, "artifacts/build/libraries/dist/release"), pkgDir); if (c != 0) { return c; }
+    c = _pkgEmitHelloC(root, pkgDir); if (c != 0) { return c; }
+
+    // ── 8. manifest.toml ─────────────────────────────────────────────────
+    Console.WriteLine("[8/8] manifest.toml");
+    _pkgEmitManifestAndroid(root, pkgDir, rid, version, profile, hostRid);
+    Console.WriteLine("      ✓ manifest.toml");
+    return 0;
+}
+
+string _ridToAndroidAbi(string rid) {
+    if (rid == "android-arm64") { return "arm64-v8a"; }
+    if (rid == "android-x64")   { return "x86_64"; }
+    return "";
+}
+
+void _pkgEmitKotlinSources(string root, string pkgDir) {
+    string src = Path.Join(root, "src/toolchain/host/platforms/android/z42vm/src/main/java/io/z42/vm");
+    string dst = Path.Join(pkgDir, "kotlin/io/z42/vm");
+    Directory.Create(dst);
+    foreach (var f in Directory.Enumerate(src)) {
+        if (f.EndsWith(".kt")) { File.Copy(Path.Join(src, f), Path.Join(dst, f)); }
+    }
+}
+
+void _pkgEmitJniBridge(string root, string pkgDir) {
+    string src = Path.Join(root, "src/toolchain/host/platforms/android/z42vm/src/main/cpp");
+    string dst = Path.Join(pkgDir, "cpp");
+    Directory.Create(dst);
+    File.Copy(Path.Join(src, "z42vm_jni.c"), Path.Join(dst, "z42vm_jni.c"));
+    File.Copy(Path.Join(src, "CMakeLists.txt"), Path.Join(dst, "CMakeLists.txt"));
+    string inc = Path.Join(src, "include");
+    if (Directory.Exists(inc)) {
+        Directory.Create(Path.Join(dst, "include"));
+        foreach (var h in Directory.Enumerate(inc)) {
+            if (h.EndsWith(".h")) { File.Copy(Path.Join(inc, h), Path.Join(dst, "include/" + h)); }
+        }
+    }
+}
+
+void _pkgEmitManifestAndroid(string root, string pkgDir, string rid, string version, string profile, string buildHost) {
+    string minApi = _avGet(root, "platform.android.min_api");
+    string tgtApi = _avGet(root, "platform.android.target_api");
+    string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
+    string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
+    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
+    string staticList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42_platform_android.a", "");
+    string dynamicList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42_platform_android.so", "");
+    string m = "[package]\n";
+    m = m + "name        = \"z42-" + rid + "\"\n";
+    m = m + "version     = \"" + version + "\"\n";
+    m = m + "abi-version = 1\n";
+    m = m + "rid         = \"" + rid + "\"\n";
+    m = m + "profile     = \"" + profile + "\"\n";
+    m = m + "build-date  = \"" + _utcNow() + "\"\n";
+    m = m + "build-host  = \"" + buildHost + "\"\n\n";
+    m = m + "[contents]\n";
+    m = m + "bin         = [" + binList + "]\n";
+    m = m + "libs        = [" + libsList + "]\n";
+    m = m + "examples    = [" + examplesList + "]\n\n";
+    m = m + "[contents.native]\n";
+    m = m + "static      = [" + staticList + "]\n";
+    m = m + "dynamic     = [" + dynamicList + "]\n";
+    m = m + "containers  = []\n";
+    m = m + "includes    = [\"z42_abi.h\", \"z42_host.h\"]\n\n";
+    m = m + "[contents.platform]\n";
+    m = m + "kotlin-sources = \"kotlin/io/z42/vm\"\n";
+    m = m + "jni-sources    = \"cpp\"\n\n";
+    m = m + "[compat]\n";
+    m = m + "host-min-version   = \"" + version + "\"\n";
+    m = m + "android-min-sdk    = " + minApi + "\n";
+    m = m + "android-target-sdk = " + tgtApi + "\n";
+    File.WriteAllText(Path.Join(pkgDir, "manifest.toml"), m);
+}
+
+string _getFileSize(string path) {
+    if (!File.Exists(path)) { return "0B"; }
+    long bytes = File.ReadAllBytes(path).Length;
+    if (bytes < 1024) { return bytes.ToString() + "B"; }
+    if (bytes < 1048576) { return (bytes / 1024).ToString() + "K"; }
+    return (bytes / 1048576).ToString() + "M";
+}
+
+// versions.toml nested scalar (dotted path) as string — android file local helper.
+string _avGet(string root, string dotted) {
+    TomlValue t = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
+    TomlValue node = t;
+    foreach (var key in dotted.Split(".")) { node = node.Get(key); }
+    if (node.IsString()) { return node.AsString(); }
+    if (node.IsLong())   { return node.AsLong().ToString(); }
+    return node.AsString();
+}
