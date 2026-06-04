@@ -254,6 +254,14 @@ private readonly Dictionary<string, List<ExportedModule>> _cache;
 3. `LoadForUsings(usings)` / `LoadAll()`：根据 `using` 声明（或全部已注册）聚合所有相关 zpkg 路径，
    首次访问时 `LoadZpkg` 解码 `TSIG` section，结果进 `_cache` 复用。
 
+**libs 搜索路径（`BuildLibsDirs(projectDir)`）**：编译期扫描哪些目录找依赖 zpkg，按优先级：
+
+1. project-local：`<projectDir>/libs`、workspace 布局 `<projectDir>/artifacts/build/libraries/<member>/<profile>/dist`、`artifacts/packages/<pkg>/libs`、legacy `artifacts/z42/libs` / `artifacts/libraries`；
+2. 向上 walk-up：对每一级父目录重复上述 workspace / packages / legacy 候选（让 `scripts/` 下的工程也能解析仓库级 stdlib）；
+3. **`Z42_LIBS` fallback（opt-xtask-bootstrap-stdlib, 2026-06-04）**：若设置了运行时 lib 环境变量 `Z42_LIBS`，按平台路径分隔符拆分后**追加到末尾**（最低优先级）。
+
+> 第 3 条让"编译期"也认 `Z42_LIBS`（此前只有 VM 运行期认它）。用途：CI 的 `xtask-bootstrap` composite 用 `install-z42` 下载预编译 stdlib 到 `.z42/libs`，直接 `Z42_LIBS=.z42/libs z42c build xtask.z42.toml` 编 xtask.zpkg，**不必从源码重建 stdlib**——`.z42/libs` 不在任何固定布局候选里，靠这个 fallback 命中。追加到末尾保证：本地/已构建 stdlib 的常规编译走布局扫描（行为不变），只有布局扫描找不到时才用 `Z42_LIBS`。
+
 ### 设计决策：namespace 可跨 zpkg（2026-04-25 vm-zpkg-dependency-loading）
 
 **为什么**：对齐 C# assembly 模型 —— `System.Collections.Generic` 在 C# 里物理分布在 `System.Private.CoreLib`

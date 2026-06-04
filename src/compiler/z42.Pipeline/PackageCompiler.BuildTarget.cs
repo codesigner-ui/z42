@@ -253,7 +253,7 @@ public static partial class PackageCompiler
     ///   - `artifacts/libraries/&lt;member&gt;/dist/`（旧 workspace 布局）
     ///
     /// 沿目录树向上搜索，让 stdlib 包先后编译时能找到上游 zpkg。
-    static string[] BuildLibsDirs(string projectDir)
+    internal static string[] BuildLibsDirs(string projectDir)
     {
         var dirs = new List<string>();
 
@@ -308,6 +308,22 @@ public static partial class PackageCompiler
             AddLegacyCandidate(Path.Combine(dir.FullName, "artifacts", "z42", "libs"));
             AddLegacyCandidate(Path.Combine(dir.FullName, "artifacts", "libraries"));
             dir = dir.Parent;
+        }
+
+        // Z42_LIBS fallback: honor the runtime lib-search env at compile time too,
+        // added LAST so it only supplies dependencies the layout/walk-up scan did
+        // not already find. This lets a prebuilt / downloaded stdlib (e.g. the
+        // install-z42 `.z42/libs` flat dir) satisfy `using Std.*` without first
+        // rebuilding stdlib from source — used by the CI xtask-bootstrap composite
+        // to compile xtask.zpkg against the downloaded nightly stdlib. Split on the
+        // platform path separator so several dirs may be supplied.
+        var z42Libs = Environment.GetEnvironmentVariable("Z42_LIBS");
+        if (!string.IsNullOrWhiteSpace(z42Libs))
+        {
+            foreach (var d in z42Libs.Split(
+                         Path.PathSeparator,
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                AddDirIfExists(d);
         }
 
         return dirs.ToArray();

@@ -1,16 +1,17 @@
 name: xtask-bootstrap
 description: >
-  Bootstrap the native z42 dev CLI. DOWNLOAD the prebuilt nightly z42 (install-z42
-  → .z42/) to RUN xtask, and compile xtask.zpkg against the current stdlib. xtask
-  is then run via `.z42/z42 artifacts/xtask/xtask.zpkg <cmd>` — the downloaded z42vm
-  runs xtask; xtask builds + tests the CURRENT source.
-  We build the current stdlib at artifacts/build/libraries/dist/release (z42c's
-  build resolves deps from there) rather than reuse the downloaded .z42/libs, so
-  xtask.zpkg compiles against the current stdlib API regardless of nightly age.
+  Bootstrap the native z42 dev CLI for CI. DOWNLOAD the prebuilt nightly z42
+  (install-z42 → .z42/) and compile xtask.zpkg against the DOWNLOADED stdlib
+  (.z42/libs) — no stdlib rebuild from source. xtask is then run via
+  `.z42/z42 artifacts/xtask/xtask.zpkg <cmd>`: the downloaded z42vm runs xtask;
+  xtask itself builds + tests the CURRENT source.
+  z42c's BuildLibsDirs honors Z42_LIBS as a fallback compile-time search path, so
+  the prebuilt .z42/libs satisfies xtask's `using Std.*` without building stdlib —
+  and xtask.zpkg's compile-time stdlib then matches the nightly stdlib it runs on.
   Linux/macOS only (install-z42.sh).
-  NOTE (zbc strict-pin): on a commit that bumps zbc/zpkg, the prebuilt nightly
-  z42vm can't run the freshly-compiled xtask.zpkg — publish a compatible nightly
-  first (see version-bumping docs).
+  NOTE: xtask.z42 must only use stdlib APIs present in the prebuilt nightly; a
+  commit that makes xtask depend on a brand-new stdlib API (or bumps zbc/zpkg)
+  needs a compatible nightly published first (see version-bumping docs).
 runs:
   using: composite
   steps:
@@ -18,22 +19,11 @@ runs:
       shell: bash
       run: bash scripts/install-z42.sh
 
-    - name: Build current stdlib + compile xtask.zpkg
+    - name: Compile xtask.zpkg against the downloaded stdlib (.z42/libs)
       shell: bash
       run: |
         set -euo pipefail
-        dotnet build src/compiler/z42.slnx --nologo -v quiet
-        libs="$PWD/artifacts/build/libraries/dist/release"
-        if [ ! -f "$libs/z42.core.zpkg" ]; then
-          ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
-          mkdir -p "$libs"
-          for d in artifacts/build/libraries/*/release/dist; do
-            cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
-          done
-        fi
-        # z42c's `run` delegates execution to z42vm. In download mode there is no
-        # z42vm at the default build path (we did not cargo-build it), so point
-        # Z42VM at the DOWNLOADED vm (.z42/bin/z42vm) for the build-stdlib.z42 run.
-        export Z42VM="$PWD/.z42/bin/z42vm"
-        Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
-        Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
+        # z42c's BuildLibsDirs honors Z42_LIBS as a fallback search path, so the
+        # downloaded prebuilt stdlib satisfies xtask's `using Std.*` deps without
+        # rebuilding stdlib from source. `build` is compile-only — no z42vm needed.
+        Z42_LIBS="$PWD/.z42/libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
