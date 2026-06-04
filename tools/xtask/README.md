@@ -24,3 +24,5 @@ z42 xtask.zpkg <command> [args]                    # run via launcher
   inherited z42vm (`Z42_PORTABLE_VM` / `Z42_HOME`). The corresponding `.sh` is
   kept as fallback until each native path is CI-proven, then deleted.
   - ✅ `deps check` — native (compiles + runs check-versions-drift.z42, no bash)
+  - ✅ `test changed` — native outer (runs test-changed.z42 via the driver, base/
+    --dry-run via env vars); inner `just` command-exec is a tracked follow-up

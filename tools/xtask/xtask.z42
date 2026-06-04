@@ -77,11 +77,39 @@ int _test(string[] argv) {
     if (sub == "vm")         { return _sh("./scripts/test-vm.sh " + rest); }
     if (sub == "cross-zpkg") { return _sh("./scripts/test-cross-zpkg.sh " + rest); }
     if (sub == "compiler")   { return _sh("dotnet test src/compiler/z42.Tests/z42.Tests.csproj"); }
-    if (sub == "changed")    { return _sh("./scripts/test-changed.sh " + rest); }
+    if (sub == "changed")    { return _testChanged(argv); }
     // a leading flag (e.g. --parallel / --jobs) → forward the whole tail to test-all
     if (_startsWith(sub, "-")) { return _sh("./scripts/test-all.sh " + _join(argv, 1)); }
     ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|compiler|changed | empty=all)");
     return 2;
+}
+
+// `test changed` — native, bash-free (migrate-scripts-to-z42 increment 2):
+// parse the legacy CLI (base ref positional + --dry-run), then run the native
+// test-changed.z42 directly via the driver (dotnet spawned directly, not bash),
+// passing base/dry-run through the same env vars test-changed.sh uses (the
+// driver `run` subcommand doesn't forward script args). test-changed.z42 still
+// maps changed files → commands and runs them via `just` internally — that
+// inner shell-out is a later increment. test-changed.sh is retained as fallback.
+int _testChanged(string[] argv) {
+    string base_ = Environment.GetEnvironmentVariable("Z42_TEST_CHANGED_BASE") ?? "";
+    string dry = "0";
+    int i = 2;
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "--dry-run") { dry = "1"; }
+        else if (_startsWith(a, "-")) {
+            ConsoleError.WriteLine("[test-changed] unknown flag: " + a);
+            return 2;
+        } else { base_ = a; }
+        i = i + 1;
+    }
+    if (base_.Length == 0) { base_ = "HEAD"; }
+    return _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("run").Arg("scripts/test-changed.z42")
+        .Env("Z42_TEST_CHANGED_BASE", base_)
+        .Env("Z42_TEST_CHANGED_DRY_RUN", dry));
 }
 
 // ── deps ──────────────────────────────────────────────────────────────────

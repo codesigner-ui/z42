@@ -11,8 +11,15 @@
 - [x] 1.4 本地验证：`z42 xtask.zpkg deps check` exit 0 + 输出与 `.sh` 一致；0 次 bash spawn
 - [x] 1.5 保留 check-versions-drift.sh；CI 不动；commit（xtask-only，零 CI 风险）
 
+## Increment 2: `test changed` (outer native) ✅
+- [x] 2.1 `_testChanged(argv)` — parse base/--dry-run，set env vars，经 driver `run` 跑 test-changed.z42（dotnet 直接 spawn，非 bash）
+- [x] 2.2 本地验证：`test changed --dry-run` plan 与 `./scripts/test-changed.sh --dry-run` 一致，exit 0
+- [x] 2.3 保留 test-changed.sh；CI 不动
+- 注：test-changed.z42 内部仍 `bash -c "just …"` 跑映射命令 → 待 inner-bash 子 increment（映射改 `z42 xtask.zpkg …`）
+
 ## 后续 increments（每个一 commit，同结构）
-- [ ] test changed / test vm / test cross-zpkg / build stdlib / test all
+- [ ] test vm / test cross-zpkg / build stdlib / test all（outer native）
+- [ ] inner-bash 子 increment：各 .z42 内部 `just`/`bash -c` 映射 → native xtask 调用
 - [ ] 各 increment CI-proven 后：rewire CI 调 `z42 xtask.zpkg …` + 删对应 .sh
 
 ## 备注
