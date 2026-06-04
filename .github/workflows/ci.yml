@@ -70,15 +70,24 @@ jobs:
       # --jobs=4: intra-stage parallelism for test-lib.sh and test-vm.sh;
       #   capped at 4 to stay within the runner's vCPU budget (ubuntu=4,
       #   macos-15=3) even when two stages run concurrently in a wave.
-      - name: Test (test-all.sh --parallel --jobs=4)
+      # migrate-scripts-to-z42: the GREEN gate now runs through the native
+      # z42 build CLI (xtask) instead of test-all.sh. Bootstrap = release z42vm
+      # (to run xtask.zpkg) + compile xtask.zpkg; then `xtask test all` (which
+      # itself rebuilds stdlib/compiler/zbc + runs compiler+vm+cross-zpkg+stdlib,
+      # parallelized via --jobs=4). z42c/stdlib from the prior steps are reused.
+      - name: Test (z42 xtask.zpkg test all)
         if: matrix.os != 'windows-latest'
-        run: |
-          mkdir -p artifacts/ci-logs
-          ./scripts/test-all.sh --parallel --jobs=4 2>&1 | tee artifacts/ci-logs/test-all.log
-          # Use PIPESTATUS to surface the script exit code (tee always
-          # succeeds). 0 = green, anything else = the actual failure.
-          exit "${PIPESTATUS[0]}"
         shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/ci-logs
+          cargo build --release --manifest-path src/runtime/Cargo.toml
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- test all 2>&1 | tee artifacts/ci-logs/test-all.log
+          exit "${PIPESTATUS[0]}"
 
       # diag-ci-test-log-upload (2026-05-30): the wave-failed stage prints
       # `stage outputs preserved at: /tmp/...` paths that disappear when
