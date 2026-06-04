@@ -12,11 +12,13 @@ include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42"]
 
 [dependencies]
 "z42.core" = "0.1.0"   # String / Console
-"z42.io"   = "0.1.0"   # Environment / Process / Console
+"z42.io"   = "0.1.0"   # Environment / Process / File / Directory / Path
+"z42.toml" = "0.1.0"   # versions.toml read (xtask_package)
 
 [build]
-# emit into the shared artifacts tree (mirrors src/toolchain), out of src/.
-out_dir = "../artifacts/build/toolchain/xtask"
+# xtask is the build DRIVER, so its output lives at artifacts/xtask — NOT under
+# artifacts/build/ (which is where the things xtask builds go).
+out_dir = "../artifacts/xtask"
 
 [profile.release]
 mode     = "interp"

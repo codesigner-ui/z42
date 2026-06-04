@@ -39,7 +39,7 @@ The split is the conventional **intermediate / output / vendored** model
 | `src/libraries/<lib>/`     | `build/libraries/<lib>/<profile>/`          | **per-lib** compile, private to the build (`dist/<lib>.zpkg` + `cache/`) |
 | (aggregate copy-out)       | `build/libraries/dist/<profile>/`           | flat single-dir view of **all** stdlib `.zpkg` + `index.json` — the `Z42_LIBS` lookup target |
 | `src/toolchain/launcher/`  | `build/toolchain/launcher/`                 | `z42.launcher.zpkg` (toml `out_dir`) + `home/` (dev `$Z42_HOME`) |
-| `scripts/` (`xtask*.z42`)  | `build/toolchain/xtask/`                    | `xtask.zpkg` — repo dev CLI (`z42 xtask.zpkg build/test/…`); sources live in `scripts/` alongside `install-z42.*` |
+| `scripts/` (`xtask*.z42`)  | `artifacts/xtask/` (NOT under `build/`)     | `xtask.zpkg` — the build **driver** CLI; output sits at `artifacts/xtask/` (sibling of `build/`, not inside it) since it runs *before* and *drives* the builds. Sources live in `scripts/` alongside `install-z42.*` |
 | `src/tests/`               | — (no build output)                         | |
 
 ### `build/libraries/dist/<profile>` — the aggregate, not the per-lib trees

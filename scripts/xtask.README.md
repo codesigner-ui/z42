@@ -5,7 +5,7 @@ launcher. NOT part of the general `z42` launcher (which stays a generic runtime)
 
 ## Build + run
 ```
-z42c build tools/xtask/xtask.z42.toml --release   # → artifacts/build/toolchain/xtask/xtask.zpkg
+z42c build scripts/xtask.z42.toml --release        # → artifacts/xtask/xtask.zpkg
 z42 xtask.zpkg <command> [args]                    # run via launcher
 ```
 
