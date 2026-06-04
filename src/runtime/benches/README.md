@@ -40,7 +40,7 @@ cargo bench -- --quick       # 快速模式（每个 bench 总耗时上限缩短
 
 P1.D 引入：
 - `bench/baselines/<branch>-<os>.json` 持久化基线
-- `scripts/bench-diff.sh` 与 baseline diff
+- `z42 xtask.zpkg bench --diff` 与 baseline diff
 - CI PR 阶段 quick 子集 + diff 性能门禁
 
 详见 [docs/spec/changes/add-benchmark-framework/](../../../spec/changes/add-benchmark-framework/)。

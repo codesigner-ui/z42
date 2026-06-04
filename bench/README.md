@@ -10,10 +10,10 @@
 | C# 编译器吞吐 | BenchmarkDotNet | `src/compiler/z42.Bench/` | ✅ P1.B |
 | z42 端到端 | hyperfine + 自建 harness | `bench/scenarios/` + `z42 xtask.zpkg bench` | ✅ P1.C |
 | **z42 进程内微基准** | **`[Benchmark]` + `Std.Test.Bencher`（test-runner 派发）** | **各 lib `tests/*_bench.z42`** | **✅ 2026-05-31** |
-| 基线对比 | `scripts/bench-diff.sh` | `bench/baselines/` | ✅ P1.D.1 |
+| 基线对比 | `z42 xtask.zpkg bench --diff` | `bench/baselines/` | ✅ P1.D.1 |
 | CI bench smoke (artifact) | `.github/workflows/ci.yml` (`bench-e2e` job) | — | ✅ P1.D.2 |
 | 主分支 baseline 持久化 | `.github/workflows/bench-update.yml` → `bench-baselines` 分支 | — | ✅ P1.D.3 |
-| PR auto-diff (informational) | ci.yml fetch + bench-diff | — | ⏳ P1.D.4 |
+| PR auto-diff (informational) | ci.yml fetch + `bench --diff` | — | ⏳ P1.D.4 |
 
 ### micro vs e2e — 何时用哪个
 
@@ -82,7 +82,7 @@ PR 到 main 时，`.github/workflows/ci.yml` 的 `bench-e2e` job 自动跑 `just
 P1.D.4 加 PR fetch + 自动 diff 后才有自动门禁；当前 PR 流程：
 1. PR 触发 CI → bench-e2e job 跑完 → 在 PR Checks 页面下载 artifact
 2. 本地 `cp downloaded.json bench/baselines/main-darwin-arm64.json`
-3. 本地 `just bench-diff` 手动检查
+3. 本地 `z42 xtask.zpkg bench --diff` 手动检查
 
 **主分支 baseline 持久化（P1.D.3 已上线）**：每次 push 到 main 自动跑全量 e2e 并把结果提交到 `bench-baselines` 分支：
 
@@ -98,7 +98,7 @@ bench-baselines/
 ```bash
 git fetch origin bench-baselines:bench-baselines
 git show bench-baselines:baselines/e2e-ubuntu-latest.json > /tmp/main.json
-just bench-diff /tmp/main.json
+z42 xtask.zpkg bench --diff --baseline /tmp/main.json
 ```
 
 ## 与 baseline 对比
@@ -108,9 +108,9 @@ just bench-diff /tmp/main.json
 cp bench/results/e2e.json bench/baselines/main-darwin-arm64.json
 
 # 2. 后续跑 bench 后对比
-just bench-e2e
-just bench-diff                                # 自动选 main-<os>.json
-just bench-diff bench/baselines/main-x.json    # 显式 baseline
+z42 xtask.zpkg bench
+z42 xtask.zpkg bench --diff                              # 自动选 main-<os>.json
+z42 xtask.zpkg bench --diff --baseline bench/baselines/main-x.json   # 显式 baseline
 ```
 
 退化判定：

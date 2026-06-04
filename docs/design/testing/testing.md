@@ -628,8 +628,7 @@ src/compiler/z42.Bench/                  # C# BenchmarkDotNet (独立 csproj)
 └── Inputs/{small,medium}.z42
 
 z42 xtask.zpkg bench                     # hyperfine 调度 + 写 results/e2e.json
-scripts/
-└── bench-diff.sh                        # 比对当前与 baseline (5% 时间 / 10% 内存阈值)
+z42 xtask.zpkg bench --diff              # 比对当前与 baseline (5% 时间 / 10% 内存阈值)
 ```
 
 ### 为什么分离（与 `src/tests/` 不同处）

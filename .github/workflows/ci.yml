@@ -292,7 +292,7 @@ jobs:
   # uploads bench/results/e2e.json as artifact for manual inspection.
   # No diff/gate yet — that's P1.D.3 (gh-pages baseline + automatic PR diff).
   # Note: noisy CI runners make 5% gate unreliable; current smoke just verifies
-  # bench infra works in CI. Manual download + bench-diff.sh for now.
+  # bench infra works in CI. Manual download + `xtask bench --diff` for now.
   bench-e2e:
     name: bench-e2e (smoke, PR only)
     if: github.event_name == 'pull_request'
@@ -378,7 +378,7 @@ jobs:
             echo "## Bench diff vs main"
             echo ""
             echo '```'
-            ./scripts/bench-diff.sh \
+            "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- bench --diff \
               --current  bench/results/e2e.json \
               --baseline /tmp/main-baseline.json \
               --threshold-time   0.15 \
