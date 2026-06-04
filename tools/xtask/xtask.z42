@@ -141,7 +141,7 @@ int _test(string[] argv) {
     string rest = _join(argv, 2);
     if (sub == "")           { return _sh("./scripts/test-all.sh"); }
     if (sub == "stdlib")     { return _sh("./scripts/test-stdlib.sh " + rest); }
-    if (sub == "vm")         { return _sh("./scripts/test-vm.sh " + rest); }
+    if (sub == "vm")         { return _testVm(argv); }
     if (sub == "cross-zpkg") { return _sh("./scripts/test-cross-zpkg.sh " + rest); }
     if (sub == "compiler")   { return _sh("dotnet test src/compiler/z42.Tests/z42.Tests.csproj"); }
     if (sub == "changed")    { return _testChanged(argv); }
@@ -222,6 +222,10 @@ int _regen(string[] argv) {
         if (a == "release")      { release = true; }
         else if (a == "--no-stdlib") { rebuildStdlib = false; }
     }
+    return _regenCore(release, rebuildStdlib);
+}
+
+int _regenCore(bool release, bool rebuildStdlib) {
     string root = _root();
     if (rebuildStdlib) { int c = _buildStdlib(); if (c != 0) { return c; } }
     // build the compiler driver only if z42c.dll is absent (avoids MSB3492 on slnx)
@@ -241,6 +245,45 @@ int _regen(string[] argv) {
     Process p = new Process(_z42vm()).Arg("scripts/dist/regen-golden-tests.zpkg").Env("Z42_LIBS", libs);
     if (release) { p = p.Arg("--").Arg("--release"); }
     return _exec(p);
+}
+
+// ── test vm ─────────────────────────────────────────────────────────────────
+
+// `test vm [interp|jit] [--no-rebuild] [--jobs=N]` — native, bash-free.
+// Mirrors scripts/test-vm.sh: regen (rebuild stdlib + compiler + golden zbc)
+// unless --no-rebuild, build the DEBUG z42vm + compression cdylib (test-vm.z42
+// resolves artifacts/build/runtime/debug/z42vm and JIT dlopens the compressor),
+// compile test-vm.z42, then run it with MODES/JOBS as env vars (legit config).
+int _testVm(string[] argv) {
+    string modes = "interp jit";
+    bool rebuild = true;
+    string jobs = "1";
+    bool gotMode = false;
+    int i = 2;
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "--no-rebuild")        { rebuild = false; }
+        else if (a.StartsWith("--jobs=")) { jobs = a.Substring(7); }
+        else if (!a.StartsWith("-")) { if (!gotMode) { modes = a; gotMode = true; } }
+        i = i + 1;
+    }
+    if (rebuild) { int c = _regenCore(false, true); if (c != 0) { return c; } }
+    int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
+        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml"));
+    if (cd != 0) { return cd; }
+    int cc = _exec(new Process("cargo").Arg("build").Arg("-q")
+        .Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
+    if (cc != 0) { return cc; }
+    string libs = Path.Join(_root(), "artifacts/build/libraries/dist/release");
+    int cb = _exec(new Process("dotnet")
+        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("scripts/test-vm.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (cb != 0) { return cb; }
+    return _exec(new Process(_z42vm()).Arg("scripts/dist/test-vm.zpkg")
+        .Env("Z42_LIBS", libs)
+        .Env("Z42_VM_MODES", modes)
+        .Env("Z42_VM_JOBS", jobs));
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
