@@ -9,7 +9,7 @@ import PackageDescription
 let package = Package(
     name: "Z42VM",
     platforms: [
-        .iOS(.v14),
+        .iOS(.v16),      // = versions.toml platform.ios.min_ios (drift-checked)
         .macOS(.v13),    // host-side build + dev workflow + `swift test`
     ],
     products: [
