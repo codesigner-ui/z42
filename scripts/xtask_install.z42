@@ -77,8 +77,9 @@ int _depsInstall(string[] argv) {
 // Download Node.js LTS into artifacts/tools/node/ (no system PATH changes).
 // Idempotent; --force redownloads. POSIX-only (.tar.gz); Windows → MSI.
 int _depsInstallNode(bool force) {
-    string nodeVersion = "22.11.0";   // LTS "Jod"; matches install-node-local.sh
     string root = _root();
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
+    string nodeVersion = _vget(toml, "toolchain.node.version");   // SoT: versions.toml
     string installDir = Path.Join(root, "artifacts/tools/node");
     string nodeBin = Path.Join(installDir, "bin/node");
 

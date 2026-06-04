@@ -58,6 +58,7 @@ roll_forward = "latestFeature"          # 同 major.minor 任何 SDK 都通过
 [toolchain.node]
 min_version = "20"
 # wasm tests / playwright 需要；versions_check_node verify-only
+version = "22.11.0"   # LTS "Jod"; `xtask deps install node` 下载此版本到 artifacts/tools/node
 
 [toolchain.z42]
 # z42-bootstrap (2026-06-04): which prebuilt z42 launcher package
@@ -85,6 +86,10 @@ platform           = "android-34"       # compileSdk
 build_tools        = "34.0.0"
 cmdline_tools_url  = "https://dl.google.com/android/repository/commandlinetools-{os}-11076708_latest.zip"
 cmdline_tools_sha256 = ""               # TODO
+gradle             = "8.7"              # AGP 8.6 compatible; `deps install android-sdk` 下载
+system_image_tag   = "google_apis_playstore;arm64-v8a"   # AVD system image (Apple silicon)
+avd_name           = "z42_pixel6_api34"
+avd_device         = "pixel_6"
 
 [build.ios]
 xcode_min          = "15.0"             # verify-only（macOS dev 必备）

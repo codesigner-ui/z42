@@ -13,19 +13,21 @@ namespace Z42Xtask;
 using Std;
 using Std.IO;
 using Std.Encoding;
+using Std.Toml;
 
 int _depsInstallAndroidSdk(bool force) {
-    // ── pinned versions (match install-android-toolchain-local.sh) ───────
-    string cmdlineVer = "13114758";          // cmdline-tools 2025-01
-    string ndkVer = "26.3.11579264";         // NDK r26d
-    string platformVer = "android-34";
-    string buildToolsVer = "34.0.0";
-    string gradleVer = "8.7";
-    string sysImage = "system-images;" + platformVer + ";google_apis_playstore;arm64-v8a";
-    string avdName = "z42_pixel6_api34";
-    string avdDevice = "pixel_6";
-
     string root = _root();
+    // ── version pins — single source of truth: versions.toml ─────────────
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));
+    string ndkVer = _vget(toml, "build.android.ndk.version");
+    string platformVer = _vget(toml, "build.android.sdk.platform");
+    string buildToolsVer = _vget(toml, "build.android.sdk.build_tools");
+    string gradleVer = _vget(toml, "build.android.sdk.gradle");
+    string cmdlineUrlTmpl = _vget(toml, "build.android.sdk.cmdline_tools_url");   // has {os} + version
+    string sysImage = "system-images;" + platformVer + ";" + _vget(toml, "build.android.sdk.system_image_tag");
+    string avdName = _vget(toml, "build.android.sdk.avd_name");
+    string avdDevice = _vget(toml, "build.android.sdk.avd_device");
+
     string toolsDir = Path.Join(root, "artifacts/tools");
     string sdkDir = Path.Join(toolsDir, "android-sdk");
     string ndkDirLink = Path.Join(toolsDir, "android-ndk");
@@ -68,12 +70,12 @@ int _depsInstallAndroidSdk(bool force) {
     if (File.Exists(sdkmanager) && !force) {
         Console.WriteLine("[1/6] cmdline-tools already installed (skip)");
     } else {
-        Console.WriteLine("[1/6] downloading cmdline-tools (" + cmdlineVer + ")");
+        Console.WriteLine("[1/6] downloading cmdline-tools");
         if (Directory.Exists(Path.Join(sdkDir, "cmdline-tools"))) { Directory.Delete(Path.Join(sdkDir, "cmdline-tools"), true); }
         Directory.Create(Path.Join(sdkDir, "cmdline-tools"));
         string tmp = Directory.CreateTempDir("android-cmdline");
         string zip = Path.Join(tmp, "cmdline-tools.zip");
-        string url = "https://dl.google.com/android/repository/commandlinetools-" + hostOs + "-" + cmdlineVer + "_latest.zip";
+        string url = cmdlineUrlTmpl.Replace("{os}", hostOs);   // versions.toml pins the version
         int dc = _exec(new Process("curl").Arg("--fail").Arg("--location").Arg("--silent").Arg("--show-error").Arg("-o").Arg(zip).Arg(url));
         if (dc != 0) { return dc; }
         int uc = _exec(new Process("unzip").Arg("-q").Arg(zip).Arg("-d").Arg(tmp));
