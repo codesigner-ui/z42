@@ -22,6 +22,8 @@ void Main() {
     string[] argv = Environment.GetCommandLineArgs();
     if (argv.Length == 0) { _help(); return; }
 
+    _ensureDriverVm();
+
     string cmd = argv[0];
     if (cmd == "help" || cmd == "-h" || cmd == "--help") { _help(); return; }
 
@@ -291,6 +293,20 @@ int _exec(Process p) {
         .Stdout(Stdio.Inherit())
         .Stderr(Stdio.Inherit())
         .Run().ExitCode;
+}
+
+// Make xtask's z42vm visible to the child C# Driver (`dotnet -- run/build`),
+// whose FindVm() locates z42vm via (1) Z42VM env, (2) artifacts/build/runtime/...,
+// (3) PATH. The launcher exports Z42_PORTABLE_VM (the vm we run on) but NOT
+// Z42VM, and in download/portable mode there is no z42vm at the default build
+// path before the first build-stdlib — so FindVm fails. Export our own vm as
+// Z42VM (std::env::set_var → inherited by spawned Commands) so every delegated
+// compile/run resolves it. No-op in dev where _z42vm() is a bare name (PATH).
+void _ensureDriverVm() {
+    string cur = Environment.GetEnvironmentVariable("Z42VM") ?? "";
+    if (cur.Length > 0) { return; }
+    string vm = _z42vm();
+    if (File.Exists(vm)) { Environment.SetEnvironmentVariable("Z42VM", vm); }
 }
 
 // Resolve the z42vm this process is running on, to execute compiled zpkgs.
