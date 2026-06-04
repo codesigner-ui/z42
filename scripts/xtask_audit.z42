@@ -1,18 +1,18 @@
-// port-audit-missing-usings (2026-05-17)：第二个 .z42 实现的 build script。
+// xtask — `audit` command (unify-scripts-into-xtask, 2026-06-05). Folded in from
+// the former standalone scripts/audit-missing-usings.z42 so it runs as in-process
+// xtask logic (no per-invocation `dotnet run -- build … + z42vm <zpkg>` dance).
 //
-// 行为对齐 the former scripts/audit-missing-usings.sh（100 LOC bash）：扫 src/tests +
-// src/libraries 下所有 source.z42，根据 type 使用启发式插入缺失 `using` 声明。
-// 幂等：已存在的 using 跳过。
-//
-// 入口：`z42 xtask.zpkg audit`；CWD 必须 repo root。
-namespace Z42AuditMissingUsingsScript;
+// Scans src/tests + src/libraries/*/tests source.z42, heuristically inserts
+// missing `using` declarations by type usage. Idempotent: existing usings skipped.
+// Pure file-IO + regex, ZERO subprocess spawns. Entry: `z42 xtask.zpkg audit`.
+namespace Z42Xtask;
 
 using Std;
 using Std.IO;
 using Std.Regex;
 
-void Main() {
-    string root = Environment.GetCurrentDirectory();
+int _auditRun() {
+    string root = _root();
 
     // 收集所有 source.z42（src/tests + src/libraries/*/tests 递归）
     string[] testsFiles = _findSourceFiles(Path.Join(root, "src/tests"));
@@ -32,6 +32,7 @@ void Main() {
 
     Console.WriteLine("");
     Console.WriteLine("audit-missing-usings: " + patched.ToString() + " file(s) patched");
+    return 0;
 }
 
 // 返回 root 下所有名为 "source.z42" 的全路径（递归）。
@@ -205,7 +206,7 @@ string _insertUsings(string content, string[] missing) {
     int k = 0;
     while (k <= nsIdx) {
         acc = acc + lines[k];
-        // Split 丢了 \n；末行无 newline 由 _joinLines 处理
+        // Split 丢了 \n；末行无 newline 由拼接处理
         if (k < lines.Length - 1) { acc = acc + "\n"; }
         k = k + 1;
     }

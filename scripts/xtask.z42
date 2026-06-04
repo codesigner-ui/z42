@@ -221,17 +221,12 @@ int _depsCheck() {
         .Env("Z42_LIBS", libs));
 }
 
-// `audit` — native, bash-free. Mirrors the former scripts/audit-missing-usings.sh:
-// compile audit-missing-usings.z42 + run it on the inherited z42vm to scan the
-// C# compiler sources for missing using directives. (Warm-tree: needs stdlib.)
+// `audit` — in-process (unify-scripts-into-xtask). Folded from the former
+// standalone scripts/audit-missing-usings.z42 into xtask_audit.z42 (_auditRun);
+// no per-invocation dotnet-run-build + z42vm-run dance. Scans src/tests +
+// src/libraries source.z42 and inserts missing `using` directives.
 int _audit() {
-    string libs = Path.Join(_root(), "artifacts/build/libraries/dist/release");
-    int c = _exec(new Process("dotnet")
-        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("scripts/audit-missing-usings.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
-    if (c != 0) { return c; }
-    return _exec(new Process(_z42vm()).Arg("scripts/dist/audit-missing-usings.zpkg").Env("Z42_LIBS", libs));
+    return _auditRun();
 }
 
 // ── regen-golden ────────────────────────────────────────────────────────────
