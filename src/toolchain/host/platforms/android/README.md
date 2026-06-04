@@ -15,8 +15,8 @@
 
 ```bash
 # 一次性：SDK + NDK + emulator + AVD + Gradle 全装到 artifacts/tools/
-# 不动系统（~4 GB；详见 scripts/install-android-toolchain-local.sh）
-./scripts/install-android-toolchain-local.sh
+# 不动系统（~4 GB；详见 z42 xtask.zpkg deps install android-sdk）
+z42 xtask.zpkg deps install android-sdk
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
 dotnet build src/compiler/z42.slnx                         # 编 stdlib

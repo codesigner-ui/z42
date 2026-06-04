@@ -20,6 +20,7 @@ int _depsInstall(string[] argv) {
     string platform = "";
     bool force = false;
     bool wantNode = false;
+    bool wantAndroidSdk = false;
     int i = 2;   // argv[0]=deps, argv[1]=install
     while (i < argv.Length) {
         string a = argv[i];
@@ -28,12 +29,14 @@ int _depsInstall(string[] argv) {
         else if (a == "--print-env") { mode = "print-env"; }
         else if (a == "--force")     { force = true; }
         else if (a == "node")        { wantNode = true; }
+        else if (a == "android-sdk") { wantAndroidSdk = true; }
         else if (a == "android" || a == "ios" || a == "wasm") { platform = a; }
-        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try node | <android|ios|wasm> | --check/--drift/--print-env/--force)"); return 2; }
+        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try node | android-sdk | <android|ios|wasm> | --check/--drift/--print-env/--force)"); return 2; }
         i = i + 1;
     }
-    // Standalone project-local Node.js installer (was install-node-local.sh).
-    if (wantNode) { return _depsInstallNode(force); }
+    // Standalone project-local installers (were install-node/android-toolchain-local.sh).
+    if (wantNode)       { return _depsInstallNode(force); }
+    if (wantAndroidSdk) { return _depsInstallAndroidSdk(force); }
 
     string root = _root();
     TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));

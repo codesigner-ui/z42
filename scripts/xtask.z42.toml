@@ -8,7 +8,7 @@ kind    = "exe"
 pack    = true
 
 [sources]
-include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42", "xtask_bench.z42", "xtask_install.z42"]
+include = ["xtask.z42", "xtask_test.z42", "xtask_package.z42", "xtask_bench.z42", "xtask_install.z42", "xtask_install_android.z42"]
 
 [dependencies]
 "z42.core" = "0.1.0"   # String / Console
