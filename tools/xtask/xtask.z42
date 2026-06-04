@@ -140,7 +140,8 @@ int _test(string[] argv) {
     string sub  = _at(argv, 1);
     string rest = _join(argv, 2);
     if (sub == "")           { return _sh("./scripts/test-all.sh"); }
-    if (sub == "stdlib")     { return _sh("./scripts/test-stdlib.sh " + rest); }
+    if (sub == "stdlib")     { return _testLib(argv); }
+    if (sub == "lib")        { return _testLib(argv); }
     if (sub == "vm")         { return _testVm(argv); }
     if (sub == "cross-zpkg") { return _testCrossZpkg(argv); }
     if (sub == "compiler")   { return _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj")); }
@@ -310,6 +311,105 @@ int _testCrossZpkg(string[] argv) {
     if (cb != 0) { return cb; }
     return _exec(new Process(_z42vm()).Arg("scripts/dist/test-cross-zpkg.zpkg")
         .Env("Z42_LIBS", libs).Env("Z42_VM_MODE", mode));
+}
+
+// ── test lib (stdlib [Test] harness) ────────────────────────────────────────
+
+// `test lib|stdlib [lib...] [--no-build] [-k filter]` — native stdlib [Test]
+// harness. Mirrors scripts/test-lib.sh (sequential; --jobs parallel batching is
+// a later optimization). Each src/libraries/<lib>/tests/*.z42 is compiled to
+// .zbc via z42c then run through z42-test-runner; results aggregated.
+int _testLib(string[] argv) {
+    bool noBuild = false;
+    string filter = "";
+    string[] reqLibs = new string[64];
+    int nReq = 0;
+    int i = 2;
+    while (i < argv.Length) {
+        string a = argv[i];
+        if (a == "--no-build") { noBuild = true; }
+        else if (a.StartsWith("-k")) {
+            if (a.Length > 2) { filter = a.Substring(2); }
+            else { i = i + 1; if (i < argv.Length) { filter = argv[i]; } }
+        }
+        else if (a.StartsWith("--jobs") || a.StartsWith("-j")) {
+            if (a == "--jobs" || a == "-j") { i = i + 1; }   // sequential: consume + ignore the value
+        }
+        else if (!a.StartsWith("-")) { reqLibs[nReq] = a; nReq = nReq + 1; }
+        i = i + 1;
+    }
+    string root = _root();
+    if (!noBuild) {
+        Console.WriteLine("→ Preparing tooling (stdlib + z42vm + z42-test-runner; release)...");
+        int c = _buildStdlib(); if (c != 0) { return c; }
+        c = _buildRuntime(); if (c != 0) { return c; }
+        c = _exec(new Process("cargo").Arg("build").Arg("--release")
+            .Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
+        if (c != 0) { return c; }
+        c = _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
+            .Arg("-c").Arg("Release").Arg("--nologo").Arg("-v").Arg("quiet"));
+        if (c != 0) { return c; }
+    }
+    string runner = Path.Join(root, "artifacts/build/runtime/release/z42-test-runner");
+    if (!File.Exists(runner)) {
+        ConsoleError.WriteLine("error: z42-test-runner not found at " + runner + " (run without --no-build)");
+        return 2;
+    }
+    string work = Directory.CreateTempDir("xtask-testlib");
+    string libsRoot = Path.Join(root, "src/libraries");
+    string[] libList;
+    if (nReq > 0) {
+        libList = new string[nReq];
+        int k = 0;
+        while (k < nReq) { libList[k] = reqLibs[k]; k = k + 1; }
+    } else {
+        libList = Directory.Enumerate(libsRoot);
+    }
+    int totalFailed = 0;
+    int totalFiles = 0;
+    int libsTested = 0;
+    foreach (var lib in libList) {
+        string testsDir = Path.Join(libsRoot, lib + "/tests");
+        if (!Directory.Exists(testsDir)) { continue; }
+        string[] files = Directory.Enumerate(testsDir);
+        int matched = 0;
+        foreach (var f in files) {
+            if (f.EndsWith(".z42") && (filter.Length == 0 || f.Contains(filter))) { matched = matched + 1; }
+        }
+        if (matched == 0) { continue; }
+        libsTested = libsTested + 1;
+        Console.WriteLine("");
+        Console.WriteLine("════════════════════════════════════════════════");
+        Console.WriteLine("  " + lib + "  (" + matched.ToString() + " test file(s))");
+        Console.WriteLine("════════════════════════════════════════════════");
+        foreach (var f in files) {
+            if (!f.EndsWith(".z42")) { continue; }
+            if (filter.Length > 0 && !f.Contains(filter)) { continue; }
+            totalFiles = totalFiles + 1;
+            string testFile = Path.Join(testsDir, f);
+            string zbc = Path.Join(work, lib + "_" + f + ".zbc");
+            int cc = _exec(new Process("dotnet")
+                .Arg("run").Arg("--no-build").Arg("--project").Arg("src/compiler/z42.Driver").Arg("-c").Arg("Release")
+                .Arg("--").Arg(testFile).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc));
+            if (cc != 0) {
+                Console.WriteLine("✗ COMPILE ERROR: " + f);
+                totalFailed = totalFailed + 1;
+            } else {
+                int rc = _exec(new Process(runner).Arg(zbc));
+                if (rc != 0) { totalFailed = totalFailed + 1; }
+            }
+        }
+    }
+    Console.WriteLine("");
+    Console.WriteLine("════════════════════════════════════════════════");
+    if (totalFailed > 0) {
+        Console.WriteLine("  ❌ stdlib tests: " + totalFailed.ToString()
+            + " file(s) failed (of " + totalFiles.ToString() + " in " + libsTested.ToString() + " lib(s))");
+        return 1;
+    }
+    Console.WriteLine("  ✅ stdlib tests: all " + totalFiles.ToString()
+        + " file(s) passed (in " + libsTested.ToString() + " lib(s))");
+    return 0;
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
