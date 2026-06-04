@@ -39,6 +39,10 @@ public static class Z42Errors
     public const string WS002 = "WS002";  // ExcludedMemberSelected
     public const string WS006 = "WS006";  // CircularDependency
 
+    // ── Project manifest hygiene warnings（add-manifest-hygiene-warnings, 2026-06-04）─
+    public const string WS008 = "WS008";  // UnknownManifestKey (warning)
+    public const string WS009 = "WS009";  // RedundantEntryKey (warning)
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     public static ManifestException ForbiddenSectionInMember(string memberPath, string sectionName) =>
@@ -180,4 +184,23 @@ public static class Z42Errors
     public static ManifestException CircularDependency(IReadOnlyList<string> cycle) =>
         new($"error[{WS006}]: circular dependency between workspace members\n" +
             $"  cycle: {string.Join(" -> ", cycle)}");
+
+    // ── Project manifest hygiene factory methods ─────────────────────────────
+
+    public static ManifestException UnknownManifestKey(
+        string manifestPath, string section, string key, string? suggestion = null)
+    {
+        string help = suggestion is null
+            ? "\n  help: remove the line, or check the docs for recognized keys"
+            : $"\n  help: did you mean '{suggestion}'?";
+        return new($"warning[{WS008}]: unknown key '{key}' in [{section}]\n" +
+            $"  --> {manifestPath}{help}");
+    }
+
+    public static ManifestException RedundantEntryKey(
+        string manifestPath, string section, string explicitEntry) =>
+        new($"warning[{WS009}]: [{section}].entry = \"{explicitEntry}\" is redundant\n" +
+            $"  --> {manifestPath}\n" +
+            $"  note: auto-detect would resolve to the same Main()\n" +
+            $"  help: remove this line — z42c finds Main() automatically when unambiguous");
 }

@@ -381,4 +381,115 @@ public sealed class ProjectManifestTests : IDisposable
         m.Dependencies.Entries.Should().ContainSingle()
             .Which.Name.Should().Be("z42.core");
     }
+
+    // ── add-manifest-hygiene-warnings (WS008) — unknown-key scan ──────────────
+
+    ProjectManifestLoadResult LoadWithWarnings(string filename, string toml)
+    {
+        File.WriteAllText(Path.Combine(_dir, filename), toml);
+        return ProjectManifest.LoadWithWarnings(Path.Combine(_dir, filename));
+    }
+
+    [Fact]
+    public void LoadWithWarnings_KnownKeysOnly_NoWarnings()
+    {
+        var r = LoadWithWarnings("clean.z42.toml", """
+            [project]
+            name = "clean"
+            version = "0.1.0"
+            kind = "exe"
+            entry = "Clean.Main"
+            description = "all known keys"
+            pack = true
+            [sources]
+            include = ["**/*.z42"]
+            exclude = []
+            [build]
+            out_dir = "dist"
+            mode = "interp"
+            incremental = true
+            [profile.release]
+            mode = "jit"
+            optimize = 3
+            debug = false
+            strip = true
+            pack = true
+            """);
+        r.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LoadWithWarnings_UnknownProjectKey_EmitsWS008()
+    {
+        var r = LoadWithWarnings("typo.z42.toml", """
+            [project]
+            name = "typo"
+            kind = "exe"
+            entrypoint = "Hello.Main"
+            """);
+        r.Warnings.Should().ContainSingle()
+            .Which.Message.Should().Contain("warning[WS008]")
+            .And.Contain("unknown key 'entrypoint' in [project]");
+    }
+
+    [Fact]
+    public void LoadWithWarnings_TypoNearKnownKey_SuggestsCorrection()
+    {
+        var r = LoadWithWarnings("near.z42.toml", """
+            [project]
+            kind = "exe"
+            [builds]
+            out_dir = "dist"
+            """);
+        r.Warnings.Should().Contain(w =>
+            w.Message.Contains("WS008") &&
+            w.Message.Contains("'builds'") &&
+            w.Message.Contains("did you mean 'build'"));
+    }
+
+    [Fact]
+    public void LoadWithWarnings_UnknownTopLevelKey_EmitsWS008()
+    {
+        var r = LoadWithWarnings("topkey.z42.toml", """
+            [project]
+            kind = "exe"
+            [random_section]
+            x = 1
+            """);
+        r.Warnings.Should().Contain(w =>
+            w.Message.Contains("WS008") &&
+            w.Message.Contains("'random_section'") &&
+            w.Message.Contains("(top-level)"));
+    }
+
+    [Fact]
+    public void LoadWithWarnings_UnknownExeKey_EmitsWS008()
+    {
+        // [[exe]] with [project] (kind omitted → inferred as Multi).
+        var r = LoadWithWarnings("exe.z42.toml", """
+            [project]
+            name = "x"
+            [[exe]]
+            name = "a"
+            entry = "A.Main"
+            bogus = true
+            """);
+        r.Warnings.Should().Contain(w =>
+            w.Message.Contains("WS008") &&
+            w.Message.Contains("'bogus'"));
+    }
+
+    [Fact]
+    public void LoadWithWarnings_DependenciesSection_NoFalsePositives()
+    {
+        // [dependencies] keys are package names — any string is valid.
+        var r = LoadWithWarnings("deps.z42.toml", """
+            [project]
+            kind = "lib"
+            [dependencies]
+            "z42.core" = "0.1.0"
+            "my-utils" = "*"
+            """);
+        r.Warnings.Should().BeEmpty();
+    }
 }

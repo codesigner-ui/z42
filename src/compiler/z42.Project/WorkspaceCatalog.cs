@@ -62,6 +62,25 @@ public static class WorkspaceCatalog
             "`exclude` to make the omission explicit.",
             "// libs/forgotten/forgotten.z42.toml not in members[] → WS007"),
 
+        [Z42Errors.WS008] = new(
+            "Unknown key in project manifest (warning)",
+            "A key in a `.z42.toml` section is not in the recognized set for " +
+            "that section. Common causes: typo, key from an older spec version, " +
+            "or copy-paste from a workspace manifest. When the key is within " +
+            "edit distance 2 of a known key, the warning suggests the likely " +
+            "correction. add-manifest-hygiene-warnings (2026-06-04).",
+            "// [project] entrypoint = \"Hello.Main\" → WS008 (did you mean 'entry'?)"),
+
+        [Z42Errors.WS009] = new(
+            "Redundant [project].entry / [[exe]].entry (warning)",
+            "The explicit `entry` value matches what z42c's auto-detect " +
+            "would have resolved unaided (the only `Main()` in compiled " +
+            "units). Remove the line to keep the manifest minimal — " +
+            "auto-detect kicks in when `entry` is omitted, and reports " +
+            "an unambiguous error if there's no `Main()` or more than one. " +
+            "add-manifest-hygiene-warnings (2026-06-04).",
+            "// [project] entry = \"App.Main\" but App.Main is the only Main → WS009"),
+
         // ── WS010-011: Policy ────────────────────────────────────────────────
 
         [Z42Errors.WS010] = new(

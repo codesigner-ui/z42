@@ -47,21 +47,31 @@ public sealed class ProjectManifest
 
     // ── Loading ───────────────────────────────────────────────────────────────
 
-    public static ProjectManifest Load(string tomlPath)
+    public static ProjectManifest Load(string tomlPath) =>
+        LoadWithWarnings(tomlPath).Manifest;
+
+    /// <summary>
+    /// Same as <see cref="Load(string)"/> but also returns hygiene
+    /// warnings (WS008 unknown-key, WS009 redundant-entry).
+    /// add-manifest-hygiene-warnings (2026-06-04).
+    /// </summary>
+    public static ProjectManifestLoadResult LoadWithWarnings(string tomlPath)
     {
         string toml = File.ReadAllText(tomlPath);
         var model   = TomlSerializer.Deserialize<TomlTable>(toml)
                       ?? throw new ManifestException($"error: failed to parse {tomlPath}");
 
-        var exeTargets  = ParseExeTargets(model);
-        var project     = ParseProject(model, tomlPath, exeTargets.Count > 0);
-        var sources     = ParseSources(model);
-        var build       = ParseBuild(model);
-        var debug       = ParseProfile(model, "debug",   ProfileSection.DefaultDebug);
-        var release     = ParseProfile(model, "release", ProfileSection.DefaultRelease);
+        var warnings    = new List<ManifestException>();
+        var exeTargets  = ParseExeTargets(model, tomlPath, warnings);
+        var project     = ParseProject(model, tomlPath, exeTargets.Count > 0, warnings);
+        var sources     = ParseSources(model, tomlPath, warnings);
+        var build       = ParseBuild(model, tomlPath, warnings);
+        var debug       = ParseProfile(model, "debug",   ProfileSection.DefaultDebug, tomlPath, warnings);
+        var release     = ParseProfile(model, "release", ProfileSection.DefaultRelease, tomlPath, warnings);
         var deps        = ParseDependencies(model);
+        ScanTopLevelKeys(model, tomlPath, warnings);
 
-        return new ProjectManifest
+        var manifest = new ProjectManifest
         {
             Project      = project,
             Sources      = sources,
@@ -71,6 +81,94 @@ public sealed class ProjectManifest
             ExeTargets   = exeTargets,
             Dependencies = deps,
         };
+        return new ProjectManifestLoadResult(manifest, warnings);
+    }
+
+    // ── Manifest hygiene: WS008 unknown-key scan ──────────────────────────────
+    //
+    // add-manifest-hygiene-warnings (2026-06-04): scan each TOML table for
+    // keys outside the known set; emit WS008 per stray key. Levenshtein
+    // suggestion when within edit distance 2 of a known key.
+
+    static readonly HashSet<string> KnownTopLevelKeys = new(StringComparer.Ordinal)
+    {
+        "project", "sources", "build", "exe", "dependencies", "profile",
+    };
+    static readonly HashSet<string> KnownProjectKeys = new(StringComparer.Ordinal)
+    {
+        "name", "version", "kind", "entry", "description", "pack",
+    };
+    static readonly HashSet<string> KnownExeKeys = new(StringComparer.Ordinal)
+    {
+        "name", "entry", "src", "pack",
+    };
+    static readonly HashSet<string> KnownSourcesKeys = new(StringComparer.Ordinal)
+    {
+        "include", "exclude",
+    };
+    static readonly HashSet<string> KnownBuildKeys = new(StringComparer.Ordinal)
+    {
+        "out_dir", "mode", "incremental",
+    };
+    static readonly HashSet<string> KnownProfileKeys = new(StringComparer.Ordinal)
+    {
+        "mode", "optimize", "debug", "strip", "pack",
+    };
+
+    static void ScanUnknownKeys(
+        TomlTable table, HashSet<string> known, string section,
+        string tomlPath, List<ManifestException> warnings)
+    {
+        foreach (var key in table.Keys)
+        {
+            if (known.Contains(key)) continue;
+            string? suggestion = NearestKnown(key, known);
+            warnings.Add(Z42Errors.UnknownManifestKey(tomlPath, section, key, suggestion));
+        }
+    }
+
+    static void ScanTopLevelKeys(
+        TomlTable model, string tomlPath, List<ManifestException> warnings)
+    {
+        foreach (var key in model.Keys)
+        {
+            if (KnownTopLevelKeys.Contains(key)) continue;
+            string? suggestion = NearestKnown(key, KnownTopLevelKeys);
+            warnings.Add(Z42Errors.UnknownManifestKey(tomlPath, "(top-level)", key, suggestion));
+        }
+    }
+
+    /// <summary>Levenshtein-1-or-2 match against a known-key set.</summary>
+    static string? NearestKnown(string candidate, HashSet<string> known)
+    {
+        string? best = null;
+        int bestDist = 3;     // strict: only suggest when within edit distance 2
+        foreach (var k in known)
+        {
+            int d = LevenshteinDistance(candidate, k);
+            if (d < bestDist) { bestDist = d; best = k; }
+        }
+        return best;
+    }
+
+    static int LevenshteinDistance(string a, string b)
+    {
+        if (a.Length == 0) return b.Length;
+        if (b.Length == 0) return a.Length;
+        var v0 = new int[b.Length + 1];
+        var v1 = new int[b.Length + 1];
+        for (int i = 0; i <= b.Length; i++) v0[i] = i;
+        for (int i = 0; i < a.Length; i++)
+        {
+            v1[0] = i + 1;
+            for (int j = 0; j < b.Length; j++)
+            {
+                int cost = a[i] == b[j] ? 0 : 1;
+                v1[j + 1] = Math.Min(Math.Min(v1[j] + 1, v0[j + 1] + 1), v0[j] + cost);
+            }
+            (v0, v1) = (v1, v0);
+        }
+        return v0[b.Length];
     }
 
     // ── Source file resolution ─────────────────────────────────────────────────
@@ -138,10 +236,13 @@ public sealed class ProjectManifest
 
     // ── Private parsers ────────────────────────────────────────────────────────
 
-    static ProjectSection ParseProject(TomlTable model, string tomlPath, bool hasExeTargets)
+    static ProjectSection ParseProject(
+        TomlTable model, string tomlPath, bool hasExeTargets,
+        List<ManifestException> warnings)
     {
         if (!model.TryGetValue("project", out var raw) || raw is not TomlTable t)
             throw new ManifestException("error: [project] section is required");
+        ScanUnknownKeys(t, KnownProjectKeys, "project", tomlPath, warnings);
 
         // Infer name from filename if not provided
         string inferredName = Path.GetFileName(tomlPath)
@@ -179,7 +280,8 @@ public sealed class ProjectManifest
         return new ProjectSection(name, version, kind, entry, desc, pack);
     }
 
-    static IReadOnlyList<ExeTarget> ParseExeTargets(TomlTable model)
+    static IReadOnlyList<ExeTarget> ParseExeTargets(
+        TomlTable model, string tomlPath, List<ManifestException> warnings)
     {
         if (!model.TryGetValue("exe", out var raw)) return [];
 
@@ -196,6 +298,7 @@ public sealed class ProjectManifest
         for (int i = 0; i < tables.Count; i++)
         {
             var t = tables[i];
+            ScanUnknownKeys(t, KnownExeKeys, $"[exe]] #{i}", tomlPath, warnings);
             string? name  = t.TryGetString("name");
             string? entry = t.TryGetString("entry");
 
@@ -210,20 +313,24 @@ public sealed class ProjectManifest
         return targets;
     }
 
-    static SourcesSection ParseSources(TomlTable model)
+    static SourcesSection ParseSources(
+        TomlTable model, string tomlPath, List<ManifestException> warnings)
     {
         if (!model.TryGetValue("sources", out var raw) || raw is not TomlTable t)
             return new SourcesSection(["src/**/*.z42"], []);
+        ScanUnknownKeys(t, KnownSourcesKeys, "sources", tomlPath, warnings);
 
         var include = t.TryGetStringArray("include") ?? ["src/**/*.z42"];
         var exclude = t.TryGetStringArray("exclude") ?? [];
         return new SourcesSection(include, exclude);
     }
 
-    static BuildSection ParseBuild(TomlTable model)
+    static BuildSection ParseBuild(
+        TomlTable model, string tomlPath, List<ManifestException> warnings)
     {
         if (!model.TryGetValue("build", out var raw) || raw is not TomlTable t)
             return new BuildSection("dist", "interp", true);
+        ScanUnknownKeys(t, KnownBuildKeys, "build", tomlPath, warnings);
 
         string outDir      = t.TryGetString("out_dir") ?? "dist";
         string mode        = t.TryGetString("mode")    ?? "interp";
@@ -231,12 +338,15 @@ public sealed class ProjectManifest
         return new BuildSection(outDir, mode, incremental);
     }
 
-    static ProfileSection ParseProfile(TomlTable model, string name, ProfileSection defaults)
+    static ProfileSection ParseProfile(
+        TomlTable model, string name, ProfileSection defaults,
+        string tomlPath, List<ManifestException> warnings)
     {
         if (!model.TryGetValue("profile", out var profilesRaw) || profilesRaw is not TomlTable profiles)
             return defaults;
         if (!profiles.TryGetValue(name, out var raw) || raw is not TomlTable t)
             return defaults;
+        ScanUnknownKeys(t, KnownProfileKeys, $"profile.{name}", tomlPath, warnings);
 
         string mode     = t.TryGetString("mode")    ?? defaults.Mode;
         int    optimize = (int)(t.TryGetLong("optimize") ?? defaults.Optimize);
@@ -326,6 +436,14 @@ public sealed record ProfileSection(
     public static ProfileSection DefaultDebug   => new("interp", 0, true,  false, null);
     public static ProfileSection DefaultRelease => new("jit",    3, false, true,  null);
 }
+
+/// add-manifest-hygiene-warnings (2026-06-04): manifest plus any
+/// hygiene warnings collected during parsing (WS008 unknown-key,
+/// WS009 redundant-entry — the latter emitted later from
+/// PackageCompiler.BuildTarget where auto-detect actually runs).
+public sealed record ProjectManifestLoadResult(
+    ProjectManifest                  Manifest,
+    IReadOnlyList<ManifestException> Warnings);
 
 // ── TOML helpers ──────────────────────────────────────────────────────────────
 

@@ -365,7 +365,10 @@ static class BuildCommand
         try
         {
             tomlPath = ProjectManifest.Discover(Directory.GetCurrentDirectory(), explicitToml);
-            manifest = ProjectManifest.Load(tomlPath);
+            var result = ProjectManifest.LoadWithWarnings(tomlPath);
+            manifest = result.Manifest;
+            foreach (var w in result.Warnings)
+                Console.Error.WriteLine(w.Message);
         }
         catch (ManifestException ex)
         {
@@ -422,7 +425,10 @@ static class BuildCommand
         try
         {
             tomlPath = ProjectManifest.Discover(Directory.GetCurrentDirectory(), explicitToml);
-            manifest = ProjectManifest.Load(tomlPath);
+            var result = ProjectManifest.LoadWithWarnings(tomlPath);
+            manifest = result.Manifest;
+            foreach (var w in result.Warnings)
+                Console.Error.WriteLine(w.Message);
         }
         catch (ManifestException ex)
         {

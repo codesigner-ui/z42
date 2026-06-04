@@ -151,6 +151,19 @@ public static partial class PackageCompiler
             entry = autoEntry;
             Console.Error.WriteLine($"    Entry: {entry} (auto-detected)");
         }
+        else if (kind == ZpkgKind.Exe && !string.IsNullOrWhiteSpace(entry))
+        {
+            // add-manifest-hygiene-warnings (2026-06-04): WS009 — if the
+            // explicit `entry` is what auto-detect would have picked
+            // anyway, nudge the user to drop the line.
+            var (autoEntry, _) = AutoDetectEntry(units);
+            if (autoEntry is not null && string.Equals(autoEntry, entry, StringComparison.Ordinal))
+            {
+                Console.Error.WriteLine(
+                    Z42.Project.Z42Errors.RedundantEntryKey(
+                        $"(target {name})", "project", entry!).Message);
+            }
+        }
 
         ZpkgFile zpkg;
         if (pack)

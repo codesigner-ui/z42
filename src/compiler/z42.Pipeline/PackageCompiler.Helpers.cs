@@ -52,7 +52,13 @@ public static partial class PackageCompiler
         try
         {
             tomlPath = ProjectManifest.Discover(Directory.GetCurrentDirectory(), explicitToml);
-            manifest = ProjectManifest.Load(tomlPath);
+            var result = ProjectManifest.LoadWithWarnings(tomlPath);
+            manifest = result.Manifest;
+            // add-manifest-hygiene-warnings (2026-06-04): WS008 stray-key
+            // warnings are surfaced here so they fire regardless of which
+            // subcommand kicked the load (build / pack / inspect / ...).
+            foreach (var w in result.Warnings)
+                Console.Error.WriteLine(w.Message);
             return true;
         }
         catch (ManifestException ex)
