@@ -43,8 +43,13 @@ jobs:
           else
             tag="${{ inputs.version }}"
           fi
-          source scripts/_lib/versions.sh
-          repo_version=$(versions_get project.version)
+          # read versions.toml [project].version (no versions.sh; this job has no
+          # z42 toolchain — same awk pattern as scripts/install-z42.sh).
+          repo_version=$(awk '
+            /^\[project\]/ {inblock=1; next}
+            /^\[/ {inblock=0}
+            inblock && /^version/ {gsub(/.*"|".*/,""); print; exit}
+          ' versions.toml)
           if [ "$tag" != "$repo_version" ]; then
             echo "drift: tag=$tag versions.toml=$repo_version" >&2
             exit 1
@@ -125,9 +130,7 @@ jobs:
         if: matrix.rid == 'browser-wasm'
         run: cargo install wasm-pack wasm-tools --locked
 
-      - name: Build stdlib (also builds z42c.dll)
-        run: ./scripts/build-stdlib.sh
-        shell: bash
+      - uses: ./.github/actions/xtask-bootstrap-source
 
       # wasm-only: pre-build pkg-web/ + pkg-nodejs/ via wasm-pack
       - name: Build wasm platform
@@ -135,18 +138,29 @@ jobs:
         run: ./build.sh
         working-directory: src/toolchain/host/platforms/wasm
 
-      - name: Package ${{ matrix.rid }}
-        run: ./scripts/package.sh release --rid ${{ matrix.rid }}
+      - name: Package ${{ matrix.rid }} (z42 xtask.zpkg build package)
         shell: bash
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid ${{ matrix.rid }}
 
       - name: Archive
         shell: bash
         run: |
           set -euo pipefail
-          source scripts/_lib/release_archive.sh
-          make_archive "${{ matrix.rid }}" "${{ needs.verify.outputs.version }}"
+          rid="${{ matrix.rid }}"; version="${{ needs.verify.outputs.version }}"
+          pkg="z42-${version}-${rid}-release"
+          mkdir -p artifacts/release
+          if [[ "$rid" == windows-* ]]; then
+            tar -C artifacts/packages -a -cf "artifacts/release/z42-${version}-${rid}.zip" "$pkg"
+          else
+            tar -C artifacts/packages -czf "artifacts/release/z42-${version}-${rid}.tar.gz" "$pkg"
+          fi
+          echo "✓ archived $pkg"
 
       - name: Upload archive
         uses: actions/upload-artifact@v4
@@ -178,8 +192,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source scripts/_lib/release_archive.sh
-          make_checksums dist > dist/SHA256SUMS
+          ( cd dist && shasum -a 256 z42-*.tar.gz z42-*.zip 2>/dev/null | sort -k2 ) > dist/SHA256SUMS
           echo "--- SHA256SUMS ---"
           cat dist/SHA256SUMS
 

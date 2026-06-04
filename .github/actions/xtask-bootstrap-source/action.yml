@@ -1,0 +1,30 @@
+name: xtask-bootstrap-source
+description: >
+  Bootstrap the native z42 dev CLI (xtask) FROM CURRENT SOURCE — build the
+  compiler (slnx) + release z42vm + stdlib (cold-start primer then build-stdlib.z42
+  for the flat dist + index.json) + compile xtask.zpkg. After this, drive work
+  via `z42vm artifacts/xtask/xtask.zpkg -- <cmd>` (host z42vm at
+  artifacts/build/runtime/release/z42vm).
+  This is the SOURCE bootstrap (distinct from xtask-bootstrap which DOWNLOADS the
+  prebuilt nightly). The publish-nightly path + the package jobs MUST use THIS one
+  — never the download composite — so they never depend on a prior nightly
+  (preserves the publish-nightly self-heal invariant; see version-bumping docs).
+runs:
+  using: composite
+  steps:
+    - name: Bootstrap xtask from source (compiler + runtime + stdlib + xtask.zpkg)
+      shell: bash
+      run: |
+        set -euo pipefail
+        dotnet build src/compiler/z42.slnx --nologo -v quiet
+        cargo build --release --manifest-path src/runtime/Cargo.toml
+        libs="$PWD/artifacts/build/libraries/dist/release"
+        if [ ! -f "$libs/z42.core.zpkg" ]; then
+          ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
+          mkdir -p "$libs"
+          for d in artifacts/build/libraries/*/release/dist; do
+            cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
+          done
+        fi
+        Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
+        Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release

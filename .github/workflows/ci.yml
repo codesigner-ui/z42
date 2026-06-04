@@ -60,7 +60,7 @@ jobs:
             ${{ runner.os }}-nuget-
 
       # migrate-scripts-to-z42: bootstrap the native build CLI (replaces
-      # `just build` + build-stdlib.sh). Builds the compiler (slnx) + release
+      # `just build`). Builds the compiler (slnx) + release
       # z42vm + stdlib (cold-start primer then build-stdlib.z42 for the flat
       # dist + index.json) + xtask.zpkg. After this, every other step drives
       # work through `z42vm xtask.zpkg …`. Runs on all OSes (git-bash on Win).
@@ -182,7 +182,7 @@ jobs:
           cargo test --manifest-path src/runtime/Cargo.toml -- --test-threads=1
 
       # ── host RID SDK package smoke ──
-      # Run scripts/package.sh release for the host RID (stdlib already built above).
+      # Host-RID package via `z42 xtask.zpkg build package` (stdlib already built above).
       # Verifies the per-arch flat SDK layout (Phase 1.1 + 1.4 + drop-android-32bit)
       # works end-to-end on each desktop runner. Cross-platform RIDs (iOS / Android /
       # browser-wasm) deferred to a later CI matrix.
@@ -454,7 +454,7 @@ jobs:
 
   # ── iOS packaging ──────────────────────────────────────────────────────
   # Packages ios-arm64 + ios-arm64-sim. Requires Xcode (pre-installed on
-  # macos-15 arm64) + iOS Rust targets. build-stdlib.sh also builds z42c.dll.
+  # macos-15 arm64) + iOS Rust targets. The source bootstrap also builds z42c.
   package-ios:
     name: package-ios
     runs-on: macos-15
@@ -492,14 +492,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Build stdlib (also builds z42c.dll)
-        run: ./scripts/build-stdlib.sh
+      - uses: ./.github/actions/xtask-bootstrap-source
 
-      - name: Package ios-arm64
-        run: ./scripts/package.sh release --rid ios-arm64
-
-      - name: Package ios-arm64-sim
-        run: ./scripts/package.sh release --rid ios-arm64-sim
+      - name: Package ios-arm64 + ios-arm64-sim (z42 xtask.zpkg build package)
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          for rid in ios-arm64 ios-arm64-sim; do
+            Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" \
+              "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid "$rid"
+          done
 
       - name: Verify iOS packages
         run: |
@@ -588,18 +592,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Build stdlib (also builds z42c.dll)
-        run: ./scripts/build-stdlib.sh
+      - uses: ./.github/actions/xtask-bootstrap-source
 
-      - name: Package android-arm64
-        run: ./scripts/package.sh release --rid android-arm64
+      - name: Package android-arm64 + android-x64 (z42 xtask.zpkg build package)
+        shell: bash
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-
-      - name: Package android-x64
-        run: ./scripts/package.sh release --rid android-x64
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          for rid in android-arm64 android-x64; do
+            Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" \
+              "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid "$rid"
+          done
 
       - name: Verify Android packages
         run: |
@@ -643,7 +649,7 @@ jobs:
   # Packages browser-wasm via wasm-pack (no Node.js needed — wasm-pack build
   # only generates JS glue, it doesn't execute it).
   # platforms/wasm/build.sh produces pkg-web/ + pkg-nodejs/ (required by
-  # package.sh before it can assemble the wasm SDK package).
+  # before `xtask build package` can assemble the wasm SDK package).
   package-wasm:
     name: package-wasm
     runs-on: ubuntu-latest
@@ -684,15 +690,19 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Build stdlib (also builds z42c.dll)
-        run: ./scripts/build-stdlib.sh
+      - uses: ./.github/actions/xtask-bootstrap-source
 
       - name: Build wasm platform (pkg-web/ + pkg-nodejs/ via wasm-pack)
         run: ./build.sh
         working-directory: src/toolchain/host/platforms/wasm
 
-      - name: Package browser-wasm
-        run: ./scripts/package.sh release --rid browser-wasm
+      - name: Package browser-wasm (z42 xtask.zpkg build package)
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid browser-wasm
 
       - name: Verify wasm package + WebAssembly validation
         run: |
@@ -743,7 +753,7 @@ jobs:
     # a compatible nightly exists — and the only thing that produces one is THIS
     # job. Gating publish on them is a deadlock. publish-nightly therefore depends
     # ONLY on jobs that build from CURRENT source (build-and-test bootstraps xtask
-    # via cargo+z42c, not download; package-* use source build-stdlib.sh +
+    # via cargo+z42c, not download; package-* use the source bootstrap +
     # package.sh), so it always republishes a compatible nightly and the
     # download-bootstrap jobs self-heal on the next run. JIT correctness is still
     # gated here via build-and-test's `xtask test all` (vm goldens in interp+jit).
