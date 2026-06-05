@@ -16,7 +16,7 @@
 // the optional `interp|jit` positional from argv (index 2; default "interp jit").
 //
 // Shared golden-walk / entry-derivation / string helpers (_enumDirsSorted,
-// _sortStrings, _append, _isExcludedCat, _deriveEntry, _extractNamespace,
+// _sortStrings, _append, _isNonRunnableCat, _deriveEntry, _extractNamespace,
 // _isWordEnd, _isIdentChar, _hasMain, _indexOfFrom, _firstLine, _splitWords,
 // _stripTrailingNewlines) live ONCE in xtask_golden.z42 (same namespace) and are
 // not redefined here. _latestReleasePkg lives in xtask_test.z42 next to
@@ -231,7 +231,7 @@ _DistCase[] _enumerateDistCases(string root, string mode) {
     // Dir mode part 1: src/tests/<cat>/<name>/source.z42
     int ci = 0;
     while (ci < cats.Length) {
-        if (!_isExcludedCat(cats[ci])) {
+        if (!_isNonRunnableCat(cats[ci])) {
             string catDir = Path.Join(testsDir, cats[ci]);
             string[] names = _enumDirsSorted(catDir);
             int ni = 0;
@@ -278,7 +278,7 @@ _DistCase[] _enumerateDistCases(string root, string mode) {
     ci = 0;
     while (ci < cats.Length) {
         string cat = cats[ci];
-        if (cat != "errors" && cat != "parse" && !_isExcludedCat(cat)) {
+        if (cat != "errors" && cat != "parse" && !_isNonRunnableCat(cat)) {
             string catDir = Path.Join(testsDir, cat);
             string[] hits = Path.Glob(catDir, "*.z42");
             int hi = 0;

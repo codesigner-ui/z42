@@ -4,7 +4,6 @@
 //
 // Compiles the z42 stdlib workspace (z42c build --workspace, release) + verifies
 // each zpkg + assembles the flat dist view (hard-link) + writes index.json.
-// useDist=true uses the packaged z42c under artifacts/packages/*/bin/.
 //
 // Cold-bootstrap note: this runs INSIDE xtask.zpkg, so xtask (and the stdlib it
 // depends on) must already exist. The CI/local cold bootstrap therefore keeps a
@@ -18,42 +17,25 @@ namespace Z42Xtask;
 using Std;
 using Std.IO;
 
-int _buildStdlibCore(bool useDist) {
+int _buildStdlibCore() {
     string root = _root();
     string profile = "release";
     string wsDir = Path.Join(root, "src/libraries");
     string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
     string flatDir = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
 
-    // ── Pick compiler ────────────────────────────────────────────────────
-    string compilerProgram = "";
-    string[] compilerLeadArgs = new string[0];
-    if (useDist) {
-        string z42c = _findPackagedZ42c(root);
-        if (z42c.Length == 0) {
-            ConsoleError.WriteLine("error: no packaged z42c found under artifacts/packages/*/bin/");
-            ConsoleError.WriteLine("       Run: z42 xtask.zpkg build package release");
-            return 1;
-        }
-        Console.WriteLine("Using packaged compiler: " + z42c);
-        compilerProgram = z42c;
-    } else {
-        Console.WriteLine("Using dotnet run compiler");
-        compilerProgram = "dotnet";
-        compilerLeadArgs = new string[7];
-        compilerLeadArgs[0] = "run";
-        compilerLeadArgs[1] = "--project";
-        compilerLeadArgs[2] = Path.Join(root, _driverProj());
-        compilerLeadArgs[3] = "-c";
-        compilerLeadArgs[4] = "Release";
-        compilerLeadArgs[5] = "--no-build";
-        compilerLeadArgs[6] = "--";
-    }
-
-    // ── Workspace build ──────────────────────────────────────────────────
+    // ── Workspace build (z42c via dotnet run, --no-build) ────────────────
     Console.WriteLine("  building stdlib workspace (" + profile + ", all members)");
+    string[] compilerLeadArgs = new string[7];
+    compilerLeadArgs[0] = "run";
+    compilerLeadArgs[1] = "--project";
+    compilerLeadArgs[2] = Path.Join(root, _driverProj());
+    compilerLeadArgs[3] = "-c";
+    compilerLeadArgs[4] = "Release";
+    compilerLeadArgs[5] = "--no-build";
+    compilerLeadArgs[6] = "--";
     string[] buildArgs = _concat3(compilerLeadArgs, new string[]{"build", "--workspace"}, new string[]{"--release"});
-    ProcessResult br = new Process(compilerProgram)
+    ProcessResult br = new Process("dotnet")
         .Args(buildArgs)
         .WorkingDirectory(wsDir)
         .Stdout(Stdio.Inherit())
@@ -166,24 +148,6 @@ string _indexJson() {
     return s;
 }
 
-// Latest packaged z42c under artifacts/packages/*/bin/ (alphabetical-last; z42.io
-// has no mtime API — Path.Glob/Enumerate is sorted). "" when not found.
-string _findPackagedZ42c(string root) {
-    string packagesRoot = _packagesDir(root);
-    if (!Directory.Exists(packagesRoot)) { return ""; }
-    string[] subs = Directory.Enumerate(packagesRoot);
-    string latest = "";
-    int i = 0;
-    while (i < subs.Length) {
-        string sub = subs[i];
-        if (sub.StartsWith("z42-")) {
-            string cand = Path.Join(packagesRoot, sub + "/bin/z42c");
-            if (File.Exists(cand)) { latest = cand; }
-        }
-        i = i + 1;
-    }
-    return latest;
-}
 
 void _cleanGlob(string dir, string pattern) {
     string[] hits = Path.Glob(dir, pattern);

@@ -248,11 +248,7 @@ string _nthWord(string s, int n) {
     return "";
 }
 
-string _firstLineOf(string s) {
-    int i = 0;
-    while (i < s.Length && s.CharAt(i) != '\n') { i = i + 1; }
-    return s.Substring(0, i);
-}
+// _firstLine (first line of a string) lives in the shared xtask_golden.z42.
 
 string _nthDot(string s, int n) {
     string[] p = s.Split(".");
@@ -388,7 +384,7 @@ int _setupIos(string root, TomlValue toml, string mode) {
     string xcodeMin = _vget(toml, "build.ios.xcode_min");
     if (_have("xcodebuild")) {
         // `xcodebuild -version` → "Xcode 16.4\nBuild version 16F6"; take line 1, word 1.
-        string xv = _nthWord(_firstLineOf(_cmdOut("xcodebuild", new string[]{ "-version" })), 1);
+        string xv = _nthWord(_firstLine(_cmdOut("xcodebuild", new string[]{ "-version" })), 1);
         Console.WriteLine("  ✓ Xcode " + xv + " (want ≥ " + xcodeMin + ")");
     } else {
         ConsoleError.WriteLine("  ✗ xcodebuild missing (run: xcode-select --install)");
@@ -404,17 +400,11 @@ int _checkIosDrift(string root, TomlValue toml) {
     string iosActual = _firstIntAfter(text, ".iOS(.v");
     string macActual = _firstIntAfter(text, ".macOS(.v");
     int rc = 0;
-    if (iosActual == _majorOf(wantIos)) { Console.WriteLine("  ✓ Package.swift .iOS(.v" + iosActual + ") = versions.toml min_ios=" + wantIos); }
+    if (iosActual == _nthDot(wantIos, 0)) { Console.WriteLine("  ✓ Package.swift .iOS(.v" + iosActual + ") = versions.toml min_ios=" + wantIos); }
     else { ConsoleError.WriteLine("  ✗ drift: Package.swift .iOS(.v" + iosActual + ") ≠ versions.toml min_ios=" + wantIos); rc = 1; }
-    if (macActual == _majorOf(wantMac)) { Console.WriteLine("  ✓ Package.swift .macOS(.v" + macActual + ") = versions.toml min_macos=" + wantMac); }
+    if (macActual == _nthDot(wantMac, 0)) { Console.WriteLine("  ✓ Package.swift .macOS(.v" + macActual + ") = versions.toml min_macos=" + wantMac); }
     else { ConsoleError.WriteLine("  ✗ drift: Package.swift .macOS(.v" + macActual + ") ≠ versions.toml min_macos=" + wantMac); rc = 1; }
     return rc;
-}
-
-string _majorOf(string v) {
-    string[] p = v.Split(".");
-    if (p.Length >= 1) { return p[0]; }
-    return v;
 }
 
 // ── wasm ───────────────────────────────────────────────────────────────────

@@ -56,7 +56,6 @@ void Main() {
 
 int _build(string[] argv) {
     string sub  = _at(argv, 1);
-    string rest = _join(argv, 2);
     if (sub == "runtime")        { return _buildRuntime(); }
     if (sub == "compiler")       { return _buildCompiler(); }
     if (sub == "stdlib")         { return _buildStdlib(); }
@@ -105,14 +104,13 @@ int _cargoFeature(string feat) {
 // raw `dotnet -- build --workspace` primer BEFORE compiling xtask (to satisfy
 // xtask's own `using Std.*`), then runs `xtask build stdlib` afterward.
 int _buildStdlib() {
-    return _buildStdlibCore(false);
+    return _buildStdlibCore();
 }
 
 // ── test ──────────────────────────────────────────────────────────────────
 
 int _test(string[] argv) {
     string sub  = _at(argv, 1);
-    string rest = _join(argv, 2);
     if (sub == "" || sub == "all") { return _testAll(); }
     if (sub == "stdlib")     { return _testLib(argv); }
     if (sub == "lib")        { return _testLib(argv); }

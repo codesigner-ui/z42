@@ -175,33 +175,33 @@ _MapResult _mapFile(string f) {
     var r = new _MapResult();
 
     // Docs / spec / claude state — no tests.
-    if (_endsWith(f, ".md")
-        || _startsWith(f, "docs/")
-        || _startsWith(f, ".claude/")
+    if (f.EndsWith(".md")
+        || f.StartsWith("docs/")
+        || f.StartsWith(".claude/")
         || f == ".gitignore"
         || f == ".gitattributes"
-        || _startsWithPrefix(f, "LICENSE")
-        || _startsWithPrefix(f, "README")) {
+        || f.StartsWith("LICENSE")
+        || f.StartsWith("README")) {
         return r;
     }
 
     // Stdlib library.
-    if (_startsWith(f, "src/libraries/")) {
+    if (f.StartsWith("src/libraries/")) {
         string lib = _segment(f, 2);
-        if (_containsSlash(f, "/src/")) {
+        if (f.Contains("/src/")) {
             r.commands = new string[2];
             r.commands[0] = "xtask test lib " + lib;
             r.commands[1] = "xtask test vm";
             r.touchedAny = true;
             return r;
         }
-        if (_containsSlash(f, "/tests/")) {
+        if (f.Contains("/tests/")) {
             r.commands = new string[1];
             r.commands[0] = "xtask test lib " + lib;
             r.touchedAny = true;
             return r;
         }
-        if (_endsWith(f, ".toml")) {
+        if (f.EndsWith(".toml")) {
             r.commands = new string[1];
             r.commands[0] = "xtask test lib " + lib;
             r.touchedAny = true;
@@ -212,7 +212,7 @@ _MapResult _mapFile(string f) {
     }
 
     // Runtime (Rust VM).
-    if (_startsWith(f, "src/runtime/src/")
+    if (f.StartsWith("src/runtime/src/")
         || f == "src/runtime/Cargo.toml"
         || f == "src/runtime/Cargo.lock"
         || f == "src/runtime/build.rs") {
@@ -222,19 +222,19 @@ _MapResult _mapFile(string f) {
         r.touchedAny = true;
         return r;
     }
-    if (_startsWith(f, "src/runtime/tests/")) {
+    if (f.StartsWith("src/runtime/tests/")) {
         r.commands = new string[1];
         r.commands[0] = "cargo test --manifest-path src/runtime/Cargo.toml";
         r.touchedAny = true;
         return r;
     }
-    if (_startsWith(f, "src/tests/cross-zpkg/")) {
+    if (f.StartsWith("src/tests/cross-zpkg/")) {
         r.commands = new string[1];
         r.commands[0] = "xtask test cross-zpkg";
         r.touchedAny = true;
         return r;
     }
-    if (_startsWith(f, "src/tests/")) {
+    if (f.StartsWith("src/tests/")) {
         r.commands = new string[1];
         r.commands[0] = "xtask test vm";
         r.touchedAny = true;
@@ -242,7 +242,7 @@ _MapResult _mapFile(string f) {
     }
 
     // C# compiler.
-    if (_startsWith(f, "src/compiler/")) {
+    if (f.StartsWith("src/compiler/")) {
         r.commands = new string[2];
         r.commands[0] = "xtask test compiler";
         r.commands[1] = "xtask test vm";
@@ -251,7 +251,7 @@ _MapResult _mapFile(string f) {
     }
 
     // Toolchain.
-    if (_startsWith(f, "src/toolchain/")) {
+    if (f.StartsWith("src/toolchain/")) {
         r.commands = new string[2];
         r.commands[0] = "cargo test --manifest-path src/toolchain/test-runner/Cargo.toml";
         r.commands[1] = "xtask test lib";
@@ -263,24 +263,24 @@ _MapResult _mapFile(string f) {
     // cross / dist / stdlib logic all folded in), so any scripts/xtask* change
     // rebuilds the whole CLI → full sweep. A change to the stdlib-build module
     // (xtask_stdlib.z42) also affects every downstream test. Workspace config too.
-    if (_startsWith(f, "scripts/xtask")
-        || _endsWith(f, ".workspace.toml")) {
+    if (f.StartsWith("scripts/xtask")
+        || f.EndsWith(".workspace.toml")) {
         r.needsFull = true;
         r.touchedAny = true;
         return r;
     }
 
     // Anything else under src/ → full sweep (defensive).
-    if (_startsWith(f, "src/")) {
+    if (f.StartsWith("src/")) {
         r.needsFull = true;
         r.touchedAny = true;
         return r;
     }
 
     // Examples / artifacts / bench — no test impact.
-    if (_startsWith(f, "examples/")
-        || _startsWith(f, "artifacts/")
-        || _startsWith(f, "bench/")) {
+    if (f.StartsWith("examples/")
+        || f.StartsWith("artifacts/")
+        || f.StartsWith("bench/")) {
         return r;
     }
 
@@ -319,47 +319,10 @@ string _gitOutput(string[] args) {
 
 // ── String / array helpers (module-private) ──────────────────────────────
 
-bool _startsWith(string s, string prefix) {
-    if (s.Length < prefix.Length) return false;
-    int i = 0;
-    while (i < prefix.Length) {
-        if (s.CharAt(i) != prefix.CharAt(i)) return false;
-        i = i + 1;
-    }
-    return true;
-}
-
-// Allow either exact "LICENSE" or "LICENSE.md" / "LICENSE-MIT" style.
-bool _startsWithPrefix(string s, string prefix) {
-    return _startsWith(s, prefix);
-}
-
-bool _endsWith(string s, string suffix) {
-    if (s.Length < suffix.Length) return false;
-    int off = s.Length - suffix.Length;
-    int i = 0;
-    while (i < suffix.Length) {
-        if (s.CharAt(off + i) != suffix.CharAt(i)) return false;
-        i = i + 1;
-    }
-    return true;
-}
-
-bool _containsSlash(string s, string needle) {
-    int i = 0;
-    int limit = s.Length - needle.Length;
-    while (i <= limit) {
-        bool match = true;
-        int j = 0;
-        while (j < needle.Length) {
-            if (s.CharAt(i + j) != needle.CharAt(j)) { match = false; break; }
-            j = j + 1;
-        }
-        if (match) return true;
-        i = i + 1;
-    }
-    return false;
-}
+// Prefix/suffix/substring tests use native String.StartsWith / EndsWith /
+// Contains (z42.core String.z42) — the former hand-rolled CharAt loops were
+// byte-equivalent. "LICENSE" / "README" matching is StartsWith (covers
+// "LICENSE.md" / "LICENSE-MIT" style suffixes).
 
 // Return the n-th path segment (0-based; '/'-split).
 string _segment(string path, int n) {

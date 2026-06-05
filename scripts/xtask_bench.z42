@@ -43,7 +43,7 @@ int _bench(string[] argv) {
         if (quick && count >= 2) { break; }
         string name = f.Substring(0, f.Length - 4);
         string src = Path.Join(scenDir, f);
-        string ns = _namespaceOf(src);
+        string ns = _extractNamespace(File.ReadAllText(src));
         if (ns.Length == 0) { ConsoleError.WriteLine("error: no namespace in " + f); return 2; }
         string zbc = Path.Join(work, name + ".zbc");
         int cc = _exec(new Process("dotnet")
@@ -204,20 +204,6 @@ string _benchObj(string hjson, string name, string runs) {
         + ",\n      \"metric\": \"time\",\n      \"value\": " + val
         + ",\n      \"unit\": \"ms\",\n      \"ci_lower\": " + lo
         + ",\n      \"ci_upper\": " + hi + ",\n      \"samples\": " + runs + "\n    }";
-}
-
-// "namespace Foo.Bar;" → "Foo.Bar"
-string _namespaceOf(string path) {
-    foreach (var line in File.ReadAllText(path).Split("\n")) {
-        string t = line.Trim();
-        if (t.StartsWith("namespace ")) {
-            string rest = t.Substring(10);
-            int semi = rest.IndexOf(";");
-            if (semi >= 0) { rest = rest.Substring(0, semi); }
-            return rest.Trim();
-        }
-    }
-    return "";
 }
 
 string _gitOut(string root, string a, string b, string c) {

@@ -39,7 +39,7 @@ int _regenGolden() {
     int ci = 0;
     while (ci < testCats.Length) {
         string cat = testCats[ci];
-        if (_isExcludedCategory(cat)) { ci = ci + 1; continue; }
+        if (_isNonRegenCat(cat)) { ci = ci + 1; continue; }
         string catDir = Path.Join(testsRoot, cat);
         string[] names = _enumDirsSorted(catDir);
         int ni = 0;
@@ -89,7 +89,7 @@ int _regenGolden() {
     ci = 0;
     while (ci < testCats.Length) {
         string cat = testCats[ci];
-        if (_isExcludedCategory(cat)) { ci = ci + 1; continue; }
+        if (_isNonRegenCat(cat)) { ci = ci + 1; continue; }
         string catDir = Path.Join(testsRoot, cat);
         string[] entries = Path.Glob(catDir, "*.z42");
         int ei = 0;
@@ -150,7 +150,10 @@ int _regenGolden() {
     return 0;
 }
 
-bool _isExcludedCategory(string cat) {
+// Categories with no single-source golden .zbc to regenerate: errors / parse
+// expect compile/parse failure (no .zbc), cross-zpkg is multi-package.
+// Distinct from golden's _isNonRunnableCat (cross-zpkg / zbc-format / zpkg-format).
+bool _isNonRegenCat(string cat) {
     return cat == "errors" || cat == "parse" || cat == "cross-zpkg";
 }
 

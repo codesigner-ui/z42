@@ -16,8 +16,8 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
     bool rel = (profile == "release");
     string iosMin = _vReadOr(root, "platform.ios.min_ios", "16.0");
     string macMin = _vReadOr(root, "platform.ios.min_macos", "13.0");
-    string iosMajor = _majorComp(iosMin);
-    string macMajor = _majorComp(macMin);
+    string iosMajor = _nthDot(iosMin, 0);
+    string macMajor = _nthDot(macMin, 0);
 
     // [1/7] bin/ placeholder (mobile packages don't ship z42c)
     Console.WriteLine("[1/7] bin/ placeholder");
@@ -161,11 +161,4 @@ Process _iosRustc(string root, bool rel, string cargoTarget, string crateType, s
         .Arg("--quiet")
         .Env("IPHONEOS_DEPLOYMENT_TARGET", iosMin);
     return p;
-}
-
-// "16.0" → "16"
-string _majorComp(string v) {
-    string[] p = v.Split(".");
-    if (p.Length >= 1) { return p[0]; }
-    return v;
 }

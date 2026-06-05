@@ -67,7 +67,11 @@ string[] _append(string[] arr, int count, string v) {
 
 // ── golden-walk exclusions (added by test-vm fold) ───────────────────────────
 
-bool _isExcludedCat(string cat) {
+// Categories whose golden is NOT "run z42vm and diff stdout": cross-zpkg is a
+// multi-package e2e run handled separately; zbc-format / zpkg-format are
+// byte-format goldens (no stdout). Distinct from regen's _isNonRegenCat, which
+// excludes a different set (errors / parse / cross-zpkg).
+bool _isNonRunnableCat(string cat) {
     return cat == "cross-zpkg" || cat == "zbc-format" || cat == "zpkg-format";
 }
 
