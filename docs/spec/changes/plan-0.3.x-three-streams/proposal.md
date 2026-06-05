@@ -157,42 +157,53 @@ User 2026-06-05 第二轮裁决专门细化 B 主线。决议四点：
 | compile-perf bench corpus | 单文件 / 文件集 end-to-end 编译时间对比；**0.5.x 全子系统就绪后才启用**；0.3.x 只跑 per-subsystem micro-bench |
 | Perf gate 阈值 | median ≤ 3× · P99 ≤ 5× · 回归 > 15% 红线 |
 
-### 1. 目录布局（多 zpkg 子包，镜像 C# 9 项目结构）
+### 1. 目录布局（嵌套子目录 + 多 zpkg 子包，镜像 C# 9 项目结构）
 
-z42.compiler 不是单一 zpkg，而是**多个子包 1:1 镜像 C# 项目**，沿用现有 `z42.io` / `z42.io.binary` 平级 dotted-name 布局：
+z42.compiler 不是单一 zpkg，而是**多个子包 1:1 镜像 C# 项目**。**采用嵌套子目录布局**（2026-06-06 User 决议）—— 唯一新增的顶级目录 `src/libraries/z42.compiler/` 容纳所有子包，避免在 22 个 stdlib 顶级包旁边再多 7 个 `z42.compiler.*` 顶级目录污染视觉分组：
 
 ```
 src/libraries/
-├── z42.compiler.core/          # = z42.Core      (共享基础类型)
-│   ├── z42.toml
-│   ├── source.z42
-│   ├── src/
-│   ├── tests/
-│   └── README.md
-├── z42.compiler.syntax/        # = z42.Syntax    (Lexer + Parser + AST，0.3 B1+B4)
-│   ├── src/
-│   │   ├── lexer.z42
-│   │   ├── parser.z42
-│   │   └── ast.z42
-│   ├── tests/
-│   │   ├── lexer_tests.z42
-│   │   └── parser_tests.z42
-│   └── bench/
-│       ├── lexer_throughput.z42
-│       └── parser_throughput.z42
-├── z42.compiler.project/       # = z42.Project   (Manifest + workspace，0.3 B2)
-│   ├── src/
-│   ├── tests/
-│   └── bench/
-│       └── manifest_parse.z42
-├── z42.compiler.driver/        # = z42.Driver    (CLI + Main + 错误码，0.3 B3)
-│   ├── src/
-│   ├── tests/
-│   └── README.md
-├── z42.compiler.semantics/     # = z42.Semantics (占位，0.5+ 启动)
-├── z42.compiler.ir/            # = z42.IR        (占位，0.5+ 启动)
-└── z42.compiler.pipeline/      # = z42.Pipeline  (占位，0.5+ 启动)
+├── z42.cli/  z42.collections/ ... z42.yaml/    ← 现有 22 个 stdlib 包（不动）
+└── z42.compiler/                                ← 唯一新增顶级目录
+    ├── README.md                                ← 编译器整体说明 + 子包索引
+    ├── core/                                    → z42.compiler.core.zpkg      (lib)
+    │   ├── z42.toml                             ← [project].name = "z42.compiler.core"
+    │   ├── source.z42 + src/ + tests/
+    │   └── README.md
+    ├── syntax/                                  → z42.compiler.syntax.zpkg    (lib, 0.3 B1+B4)
+    │   ├── src/{lexer,parser,ast}.z42
+    │   ├── tests/{lexer,parser}_tests.z42
+    │   └── bench/{lexer,parser}_throughput.z42
+    ├── project/                                 → z42.compiler.project.zpkg   (lib, 0.3 B2)
+    │   ├── src/ + tests/
+    │   └── bench/manifest_parse.z42
+    ├── driver/                                  → z42.compiler.driver.zpkg    (exe, 0.3 B3)
+    │   ├── src/ + tests/ + README.md
+    ├── semantics/                               → z42.compiler.semantics.zpkg (lib, 0.5+ 启动；占位)
+    ├── ir/                                      → z42.compiler.ir.zpkg        (lib, 0.5+ 启动；占位)
+    └── pipeline/                                → z42.compiler.pipeline.zpkg  (lib, 0.5+ 启动；占位)
 ```
+
+**zpkg 命名与路径无关**：包名由各子包 `z42.toml` 的 `[project].name` 决定（如 `z42.compiler.core`），与目录名 `core/` 无关。最终产物名与平级布局完全一致 → `artifacts/build/libraries/dist/release/z42.compiler.core.zpkg`。
+
+**workspace 改动**（`src/libraries/z42.workspace.toml`，0.3.B0 落地时一并）：
+
+```toml
+[workspace]
+members = ["*", "z42.compiler/*"]              # 加一条 glob 覆盖 nested
+default-members = [
+    # ... 现有 22 个 ...
+    "z42.compiler/core",
+    "z42.compiler/syntax",
+    "z42.compiler/project",
+    "z42.compiler/driver",
+    "z42.compiler/semantics",
+    "z42.compiler/ir",
+    "z42.compiler/pipeline",
+]
+```
+
+Glob 实现已基于 `Microsoft.Extensions.FileSystemGlobbing`（[GlobExpander.cs](../../../../src/compiler/z42.Project/GlobExpander.cs)），原生支持多级模式，**无 C# 编译器代码改动**。
 
 **用户调用入口**：单一 `z42c.zpkg` = `z42.compiler.driver.zpkg` 的对外别名（与 C# `z42c.dll` 等价）。其他子包是 driver 通过 `using` 引入的库 zpkg，用户不直接调用。
 
