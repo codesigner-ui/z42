@@ -16,10 +16,10 @@ arch: aarch64
 build profile: release
 features: jit, native-interop
 exec modes: interp, jit
-Z42_LIBS: (unset; falls back to artifacts/build/libs/release)
+Z42_LIBS: (unset; falls back to artifacts/build/libraries/dist/release)
 Z42_PATH: (unset)
 Z42_LOG: (unset; defaults to z42=warn / z42=info under --verbose)
-libs dir: /Users/.../artifacts/build/libs/release
+libs dir: /Users/.../artifacts/build/libraries/dist/release
 ```
 
 bug 报告 + CI 预检 / 跨机器对比 build profile 用。
@@ -186,7 +186,7 @@ VM trace 已自动显示 `<file>:<line>:<col>` + 局部变量名（DBUG section 
 
 ```bash
 # 产出 sidecar
-( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )   # release 默认 strip + 产出 .zsym
+z42 xtask.zpkg build stdlib   # release 默认 strip + 产出 .zsym
 ```
 
 ## 0.8.7 之后（DAP debugger）

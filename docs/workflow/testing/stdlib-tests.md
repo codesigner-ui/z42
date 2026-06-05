@@ -5,15 +5,8 @@
 ## 命令
 
 ```bash
-z42 xtask.zpkg test lib             # 6 个库全跑
+z42 xtask.zpkg test lib             # 22 个库全跑
 z42 xtask.zpkg test lib z42.math    # 仅指定库
-```
-
-或 `just`：
-
-```bash
-just test-stdlib
-just test-stdlib z42.math
 ```
 
 ## 测试发现机制

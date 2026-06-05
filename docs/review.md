@@ -851,7 +851,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
    target: aarch64-apple-darwin
    features: jit, native-interop
    exec modes: interp, jit
-   libs dir: /Users/.../artifacts/build/libs/release
+   libs dir: /Users/.../artifacts/build/libraries/dist/release
    gc: ArcMagrGC (Rc-backed, Phase 3-OOM)
    build profile: release
    ```

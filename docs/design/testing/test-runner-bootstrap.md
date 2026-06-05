@@ -117,7 +117,7 @@ Stage 3 之后：
 | 调试复杂度 | 一层 Rust 栈 | ⚠️ 两层 z42 调用栈，工具支持要跟上 |
 | Bootstrap 风险 | 独立于 stdlib，stdlib 全坏 runner 仍能跑 | ⚠️ runner 依赖 stdlib，循环依赖风险 |
 
-性能差异对 CI 可接受（test 总数 < 1000，整体增量 < 5min），但**交互式 `just test-changed` / IDE 集成**会感受到延迟。Stage 4 reflection 不会改善这个，只能靠 z42 整体性能优化（JIT 路径覆盖 / AOT cache）。
+性能差异对 CI 可接受（test 总数 < 1000，整体增量 < 5min），但**交互式 `z42 xtask.zpkg test changed` / IDE 集成**会感受到延迟。Stage 4 reflection 不会改善这个，只能靠 z42 整体性能优化（JIT 路径覆盖 / AOT cache）。
 
 ---
 

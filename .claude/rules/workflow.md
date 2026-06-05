@@ -472,7 +472,7 @@ z42 xtask.zpkg test vm
 # 4. 跨 zpkg 端到端（catch / vcall / 元数据跨包行为）
 z42 xtask.zpkg test cross-zpkg
 
-# 5. stdlib [Test] dogfood（z42.test 26+ / 其他 5 lib）
+# 5. stdlib [Test] dogfood（22 lib 全量 [Test] 用例）
 z42 xtask.zpkg test lib
 ```
 
@@ -506,7 +506,7 @@ z42 xtask.zpkg test lib
 - ✅ dotnet test: N/N
 - ✅ z42 xtask.zpkg test vm: M/M（interp + JIT）
 - ✅ z42 xtask.zpkg test cross-zpkg: K/K
-- ✅ z42 xtask.zpkg test lib: 6/6 lib
+- ✅ z42 xtask.zpkg test lib: 22/22 lib
 - （可选）✅ z42 xtask.zpkg test dist: P/P
 
 ### Spec 覆盖（若有 spec）

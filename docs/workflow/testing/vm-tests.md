@@ -11,18 +11,11 @@ z42 xtask.zpkg test vm jit               # 仅 JIT
 z42 xtask.zpkg test vm --no-rebuild      # 跳过重建（反复跑同一测试时加速）
 ```
 
-或 `just`：
-
-```bash
-just test-vm
-just test-vm jit
-```
-
 ## 默认自动重建
 
 `z42 xtask.zpkg test vm` 入口自动按依赖顺序：
 
-1. `z42 xtask.zpkg build stdlib` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libs/release/`
+1. `z42 xtask.zpkg build stdlib` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libraries/dist/release/`
 2. `z42 xtask.zpkg regen` — 用最新 z42c 把所有 golden `source.z42` → `source.zbc`
 3. `cargo build` VM
 4. 逐个跑 golden test
@@ -76,7 +69,7 @@ src/tests/
 # 1. 选好类别：src/tests/<category>/<name>/source.z42
 # 2. 写 expected_output.txt（可选；空 = 用 Assert.* 自验证）
 # 3. z42 xtask.zpkg regen —— 编译 source.zbc
-# 4. just test-vm —— 验证
+# 4. z42 xtask.zpkg test vm —— 验证
 ```
 
 ## stdlib-bound 测试 vs vm-core 测试

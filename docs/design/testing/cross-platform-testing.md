@@ -423,7 +423,7 @@ jobs:
    - runner `RunOptions.platform.capabilities` 与 `test.required_caps` 做 superset 比对
 
 3. **Phase 3 — host CI 产 zbc artifact bundle**（轻量）
-   新 spec（小）：`./scripts/build-test-zbcs.sh` 把所有 `src/tests/**/*.z42` + `src/libraries/<lib>/tests/*.z42` 编译到 `artifacts/test-zbcs/`，CI upload
+   新 spec（小）：一个 xtask 子命令把所有 `src/tests/**/*.z42` + `src/libraries/<lib>/tests/*.z42` 编译到 `artifacts/test-zbcs/`，CI upload
 
 4. **Phase 4 — wasm 平台 + testing 子段**（独立）
    spec：[add-platform-wasm](../../spec/archive/2026-05-12-add-platform-wasm/)，加 Testing 段（vitest 消费 zbc bundle）

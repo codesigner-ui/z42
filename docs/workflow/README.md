@@ -5,12 +5,11 @@
 ## Quick Start
 
 ```bash
-just build          # 编译器 + VM
-just test           # 全部测试
-just clean          # 清 artifacts/
+z42 xtask.zpkg build all    # 编译器 + VM + stdlib
+z42 xtask.zpkg test         # 全部测试
 ```
 
-完整命令：[`justfile`](../../justfile)。
+完整命令：`z42 xtask.zpkg help`（源 = [`scripts/xtask*.z42`](../../scripts/)）。
 
 ## 我要做 ... → 看 ...
 
@@ -30,7 +29,7 @@ just clean          # 清 artifacts/
 | 只跑 git diff 影响的测试 | [`testing/changed-only.md`](testing/changed-only.md) |
 | 看 CI matrix / GREEN 标准 | [`ci.md`](ci.md) |
 | **本地打 9 个 per-arch SDK package** | [`packaging.md`](packaging.md) |
-| **在 Windows 上跑这些 .sh** | [`windows.md`](windows.md) |
+| **在 Windows 上跑 xtask** | [`windows.md`](windows.md) |
 | 打跨平台 release | [`release.md`](release.md) |
 | lldb / gdb / dap 调试 | [`debugging.md`](debugging.md) |
 
@@ -38,12 +37,13 @@ just clean          # 清 artifacts/
 
 ```
 artifacts/
-├── compiler/<proj>/bin/      dotnet build 产物（z42c.dll）
-├── rust/{debug,release}/     cargo build 产物（z42vm）
-├── libraries/<lib>/dist/     stdlib workspace .zpkg
-└── z42/
-    ├── bin/                  分发版 z42c + z42vm
-    └── libs/<lib>.zpkg       VM 默认加载路径
+├── build/
+│   ├── compiler/<proj>/bin/             dotnet build 产物（z42c.dll）
+│   ├── runtime/{debug,release}/         cargo build 产物（z42vm）
+│   └── libraries/
+│       ├── <lib>/release/dist/          per-lib workspace .zpkg
+│       └── dist/release/                flat 视图（namespace→zpkg）+ index.json，VM 默认加载路径
+└── xtask/xtask.zpkg                      编译后的 dev CLI
 ```
 
 `artifacts/` 和 `target/` 都 gitignore。

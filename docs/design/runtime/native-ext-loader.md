@@ -214,8 +214,8 @@ Suppose `z42.net` wants to follow this pattern. Steps:
 3. Add wrapper functions per symbol (parallel to the compression set)
 4. Add `bundled-net` feature in z42 main crate (mirroring
    `bundled-compression`) for wasm / mobile static link
-5. Update `package_desktop.sh` / `package_ios.sh` / `package_android.sh`
-   to build + ship `libz42_net.*`
+5. Update the `z42 xtask.zpkg build package` desktop / iOS / Android
+   paths to build + ship `libz42_net.*`
 6. CI `Verify package manifest` step asserts the new lib is present
 7. z42 facade uses `[Native(lib="z42_net", entry="__socket_connect")]`
    (etc.)

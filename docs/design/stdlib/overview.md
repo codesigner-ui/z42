@@ -271,15 +271,17 @@ The compiler enforces strict package-based using resolution
 
 When the VM needs to load a stdlib module it searches in order:
 1. `$Z42_LIBS` environment variable (if set and directory exists)
-2. `<vm-binary-dir>/../libs/`  (adjacent layout: `artifacts/build/runtime/release/z42vm` → `artifacts/build/libs/release/`)
-3. `<cwd>/artifacts/build/libs/release/`  (development: `cargo run` from project root)
+2. `<vm-binary-dir>/../libraries/dist/release/`  (adjacent layout: `artifacts/build/runtime/release/z42vm` → `artifacts/build/libraries/dist/release/`)
+3. `<cwd>/artifacts/build/libraries/dist/release/`  (development: `cargo run` from project root)
 
-Each path is expected to contain files named `<module-name>.zbc` or `<module-name>.zpkg`.
+Each path is the **flat dist view**: it contains files named `<module-name>.zbc` or
+`<module-name>.zpkg` plus an `index.json` (namespace → zpkg map) written alongside.
 Both formats are accepted; `.zpkg` (packed mode) is preferred when both exist as it
 carries version metadata.
 
-**Producing the `libs/` directory:** run `z42 xtask.zpkg build package` from the project root.
-This builds the VM binary and populates `artifacts/build/libs/release/` with stdlib artifacts.
+**Producing the flat dist directory:** run `z42 xtask.zpkg build stdlib` from the project root.
+This compiles the stdlib and populates `artifacts/build/libraries/dist/release/` (flat view +
+`index.json`); per-lib intermediate output lives at `artifacts/build/libraries/<lib>/release/dist/`.
 Until M7 (`[Native]` attribute support), the `.zbc`/`.zpkg` files are placeholders.
 
 ---

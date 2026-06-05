@@ -10,9 +10,10 @@
 - Parse TOML 文本 → 值树（`TomlValue` 根表）
 - Serialise 值树 → canonical TOML 文本
 
-直接服务于 **z42 build-driver 自举**：`scripts/_lib/versions.sh` 等当前
-shell out 到 `python3 -c 'import tomllib; ...'` 的代码可以迁移成纯 z42
-脚本读 `versions.toml` / `*.z42.toml`。
+直接服务于 **z42 build-driver 自举**：原先 shell out 到
+`python3 -c 'import tomllib; ...'` 的 `scripts/_lib/versions.sh` 已迁移成纯 z42
+——xtask 的共享读取器 `scripts/xtask_versions.z42` 用 `Std.Toml` 读
+`versions.toml` / `*.z42.toml`。
 
 ## 架构
 
@@ -166,7 +167,8 @@ trailing / double underscore in each base), plain decimal preserved.
 
 ## 与 build-driver 的交接
 
-未来 `scripts/_lib/versions.sh` 重写为 z42：
+已落地：`scripts/_lib/versions.sh` 已被 xtask 的 `scripts/xtask_versions.z42` 取代，
+形如：
 
 ```z42
 using Std.Toml;
@@ -177,5 +179,4 @@ string rustVer = manifest.Get("build").Get("rust").AsString();
 // ... 调用 cargo build --release ... via Std.IO.Process
 ```
 
-完整 build-driver 路线见 [roadmap.md](roadmap.md) Deferred Backlog Index
-→ "z42 build-driver prerequisites"。
+完整 build-driver 自举见 `scripts/xtask*.z42`。

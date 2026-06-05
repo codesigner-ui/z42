@@ -46,7 +46,7 @@ z42 xtask.zpkg --help                             # 完整选项
 # 必备（所有 RID）
 dotnet --version              # .NET 8+；编译器 + z42c
 cargo --version               # Rust stable；VM
-z42 xtask.zpkg build stdlib   # stdlib zpkg → artifacts/build/libs/release/
+z42 xtask.zpkg build stdlib   # stdlib zpkg → artifacts/build/libraries/dist/release/
 dotnet build src/compiler/z42.slnx   # z42c.dll → artifacts/build/compiler/...
 
 # iOS RID（macOS only）
@@ -144,7 +144,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 |------|-----------|
 | `rid '<x>' not in supported whitelist` | 你给的 RID 不在 9 个白名单内；见 memory `project_supported_platforms` |
 | `cross-compiling to '<x>' from host '<y>' not supported` | host RID 不能 cross-compile 到目标 RID；换 host 或走 CI |
-| `error: stdlib not built at artifacts/build/libs/release` | 先 `z42 xtask.zpkg build stdlib` |
+| `error: stdlib not built at artifacts/build/libraries/dist/release` | 先 `z42 xtask.zpkg build stdlib` |
 | `error: z42c not built at ...z42c.dll` | 先 `dotnet build src/compiler/z42.slnx` |
 | `cargo-ndk not found` | `cargo install cargo-ndk --locked` |
 | `$ANDROID_NDK_HOME unset and NDK not found locally` | `z42 xtask.zpkg deps install --os android` 或 `export ANDROID_NDK_HOME=<path>` |

@@ -8,12 +8,6 @@
 z42 xtask.zpkg test cross-zpkg
 ```
 
-或 `just`：
-
-```bash
-just test-cross-zpkg
-```
-
 ## 用例布局
 
 ```

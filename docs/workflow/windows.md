@@ -35,10 +35,10 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 - 选 default host triple = `x86_64-pc-windows-msvc`（z42 windows-x64 用这个）
 - 装完后开 **新** Git Bash 窗口，`cargo --version` / `rustc --version` 都能跑
 
-### 4.（可选）`just` 任务跑跑
+### 4.（可选）xtask 任务跑跑
 
-- `cargo install just`
-- 然后 `just build` / `just test` 在 Git Bash 里跑
+- xtask 是编译产物（`artifacts/xtask/xtask.zpkg`），无需额外安装；先 `z42 xtask.zpkg build stdlib` 那一套编出来
+- 然后 `z42 xtask.zpkg build` / `z42 xtask.zpkg test` 在 Git Bash 里跑
 
 ### 5.（可选）Android SDK + NDK —— 用 Android Studio
 

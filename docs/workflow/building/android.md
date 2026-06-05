@@ -36,9 +36,10 @@ cargo install cargo-ndk
 
 ```bash
 dotnet build src/compiler/z42.slnx
+z42 xtask.zpkg build stdlib
 ```
 
-✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll` + `artifacts/build/libs/release/*.zpkg`。
+✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `z42 xtask.zpkg build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
 
 ❗ `dotnet: command not found` → 装 .NET 8+：https://dotnet.microsoft.com/download
 
@@ -54,7 +55,7 @@ cd src/toolchain/host/platforms/android
 ✅ 产物：
 - `z42vm/build/outputs/aar/z42vm-release.aar`
 - `z42vm/src/main/jniLibs/{arm64-v8a,x86_64}/libz42_platform_android.so`
-- `z42vm/src/main/assets/stdlib/*.zpkg` 6 个
+- `z42vm/src/main/assets/stdlib/*.zpkg`（22 个，从 `artifacts/build/libraries/dist/release/` 拷入）
 
 ❗ `error: linker not found for aarch64-linux-android` → `ANDROID_NDK_HOME` 错或 NDK 版本旧。
 ❗ `Could not resolve all dependencies` (Gradle) → JDK < 17 或不在 PATH。

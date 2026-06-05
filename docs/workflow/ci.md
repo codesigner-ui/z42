@@ -6,8 +6,9 @@ z42 CI 在 GitHub Actions 运行，配置见 [`.github/workflows/`](../../.githu
 
 | 文件 | 触发 | 内容 |
 |------|------|------|
-| [`ci.yml`](../../.github/workflows/ci.yml) | push / PR | `just ci`（build + test 全套）|
+| [`ci.yml`](../../.github/workflows/ci.yml) | push / PR | bootstrap（compiler + runtime + stdlib + xtask.zpkg）→ `z42 xtask.zpkg test all`（build + test 全套）|
 | [`bench-update.yml`](../../.github/workflows/bench-update.yml) | 定时 / 手动 | 跑 benchmark + 更新 baseline |
+| [`release.yml`](../../.github/workflows/release.yml) | tag / 手动 | 跨平台 SDK 包产出 |
 
 [`.github/workflows/README.md`](../../.github/workflows/README.md) 是当前 CI 入口说明。
 
@@ -27,7 +28,7 @@ z42 xtask.zpkg test cross-zpkg                        # 100% 通过
 简化入口：
 
 ```bash
-just ci      # build + test 全套
+z42 xtask.zpkg test      # build + test 全套
 ```
 
 任何测试失败（含 pre-existing）都不得 commit / push —— 见 workflow.md "禁止行为"。
@@ -52,7 +53,7 @@ just ci      # build + test 全套
 
 ## 多平台 CI matrix
 
-当前仅 macOS（GHA `macos-latest`，主开发机）。0.2.5 上线 macOS / Linux / Windows × x86_64/arm64 完整 matrix。详见 [`building/cross-platform.md`](building/cross-platform.md)。
+`ci.yml` 已在 4-OS matrix 上跑 build + test：`ubuntu-latest` / `ubuntu-24.04-arm` / `macos-15` / `windows-latest`。详见 [`building/cross-platform.md`](building/cross-platform.md)。
 
 ## Release 自动化
 

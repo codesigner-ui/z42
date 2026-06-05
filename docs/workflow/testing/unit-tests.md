@@ -8,10 +8,10 @@ z42 编译器层 xUnit 测试在 [`src/compiler/z42.Tests/`](../../../src/compil
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ```
 
-或 `just`：
+或经 xtask：
 
 ```bash
-just test-compiler
+z42 xtask.zpkg test compiler
 ```
 
 ## 跑单个 / 部分 test

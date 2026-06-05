@@ -11,36 +11,29 @@ z42 xtask.zpkg test changed --dry-run       # 只打印计划，不执行
 Z42_TEST_CHANGED_BASE=origin/main z42 xtask.zpkg test changed
 ```
 
-或 `just`：
-
-```bash
-just test-changed
-just test-changed --dry-run
-```
-
 ## 文件 → 测试映射
 
 | 改动 | 触发 |
 |------|------|
-| `src/libraries/<lib>/src/*` | `just test-stdlib <lib>` + `just test-vm` |
-| `src/libraries/<lib>/tests/*` | `just test-stdlib <lib>` |
-| `src/runtime/src/*` / `Cargo.toml` / `build.rs` | `cargo test` + `just test-vm` |
+| `src/libraries/<lib>/src/*` | `z42 xtask.zpkg test lib <lib>` + `z42 xtask.zpkg test vm` |
+| `src/libraries/<lib>/tests/*` | `z42 xtask.zpkg test lib <lib>` |
+| `src/runtime/src/*` / `Cargo.toml` / `build.rs` | `cargo test` + `z42 xtask.zpkg test vm` |
 | `src/runtime/tests/*` | `cargo test` |
-| `src/tests/cross-zpkg/*` | `just test-cross-zpkg` |
-| `src/tests/*` | `just test-vm` |
-| `src/compiler/*` | `just test-compiler` + `just test-vm` |
-| `src/toolchain/*` | runner cargo test + `just test-stdlib` |
+| `src/tests/cross-zpkg/*` | `z42 xtask.zpkg test cross-zpkg` |
+| `src/tests/*` | `z42 xtask.zpkg test vm` |
+| `src/compiler/*` | `z42 xtask.zpkg test compiler` + `z42 xtask.zpkg test vm` |
+| `src/toolchain/*` | runner cargo test + `z42 xtask.zpkg test lib` |
 | `*.md` / `docs/**` / `.claude/**` | 不触发 |
-| `justfile` / `*.workspace.toml` / `build.rs` | 全套 `just test` |
-| 其他 `src/**` | 全套 `just test`（防御性） |
+| `*.workspace.toml` / `build.rs` / `scripts/xtask*.z42` | 全套 `z42 xtask.zpkg test` |
+| 其他 `src/**` | 全套 `z42 xtask.zpkg test`（防御性） |
 
 完整规则见 [`docs/design/testing/testing.md`](../../design/testing/testing.md) "增量测试" 段。
 
 ## 局限
 
 - 不考虑跨文件传递依赖（改 stdlib 内部 helper 不会触发依赖该 helper 的 cross-zpkg 测试）
-- workspace toml / build.rs / justfile 触发全套（粗粒度）
-- 适合**内循环加速**；推送前仍跑 `just test` 全套
+- workspace toml / build.rs / xtask 源码触发全套（粗粒度）
+- 适合**内循环加速**；推送前仍跑 `z42 xtask.zpkg test` 全套
 
 ## 实施
 
