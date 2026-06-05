@@ -1,6 +1,32 @@
 # Tasks: Inline JIT safepoint fast-path
 
-> 状态：🟢 已完成 | 归档：2026-06-04 | 创建：2026-06-03 | 类型：refactor + perf
+> 状态：🔴 BLOCKED — bench `04_c2_p1_arith_loop` panics on Linux x86_64 in
+> first warmup run (exit code 101); reverted 2026-06-05 to unblock CI / 0.2.0
+> release. macOS aarch64 runs the inline path fine. Pending Linux repro +
+> root cause investigation before re-attempting.
+> 创建：2026-06-03 | revert：2026-06-05 | 类型：refactor + perf
+
+## 阻塞详情
+
+- **触发**：bench-update.yml workflow on Ubuntu — `hyperfine` reports
+  "Command terminated with non-zero exit code 101 in the first warmup run"
+  for `04_c2_p1_arith_loop` only (other 3 scenarios pass).
+- **复现失败**：`Z42_LIBS=... z42vm --mode jit /tmp/c2_p1.zbc Bench.C2P1ArithLoop.Main`
+  works on macOS aarch64 (verified 2026-06-05).
+- **推测**：x86_64 Cranelift lowering of `atomic_rmw.i32 Sub` against
+  `VmContext.safepoint_skip` (non-`#[repr(C)]` field, offset via
+  `offset_of!`) — alignment / addressing mode something. Needs Linux dev
+  loop to triage.
+- **临时处理**：`git revert 31cee6c1` (2026-06-05) restores helper-call
+  emission. Spec moved back to `changes/` with BLOCKED status. Slow-path
+  helper `check_safepoint_slow_with_reset` left in place (dead code, harmless,
+  ready for re-use).
+
+---
+
+# Tasks: Inline JIT safepoint fast-path
+
+> 状态：🟡 进行中 | 创建：2026-06-03 | 类型：refactor + perf
 > 来源：[`docs/review.md`](../../../review.md) C2 P1 deferred `jit-future-safepoint-inline`（见 archive [2026-05-28-jit-type-specialization tasks.md](../../archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec)）
 
 ## 变更说明

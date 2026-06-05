@@ -52,12 +52,12 @@
 
 ## Out-of-scope items deferred for future spec
 
-- **`jit_check_safepoint` inline** ✅ landed 2026-06-03 as
-  [`2026-06-03-inline-jit-safepoint-check`](../2026-06-03-inline-jit-safepoint-check/tasks.md)
-  — emit `atomic_rmw sub + brif` at all 5 sites (function entry +
-  post-Call/CallIndirect + backward Br + BrCond), slow path defers to
-  the new `jit_check_safepoint_slow` helper. Block-splitting handled by
-  `emit_safepoint_check` utility in translate.rs.
+- **`jit_check_safepoint` inline** — at every backward branch this
+  still costs ~5 ns for the helper call + atomic fetch_sub. Inlining
+  the atomic + branch via Cranelift `atomic_rmw` would push the
+  benchmark toward ~1.8×; not implemented because it needs careful
+  block-splitting (fast-path takes the new fallthrough block;
+  slow-path branches to a helper call site). 1-2 day spec.
 - **F64 specialization** — same shape as I64 (load f64 + native
   `fadd`/`fsub`/etc. + store TAG_F64 + payload), but no F64-heavy
   benchmark exists yet to motivate. Add when needed.

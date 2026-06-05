@@ -384,45 +384,6 @@ pub struct VmContext {
     pub(crate) safepoint_skip:    std::sync::atomic::AtomicU32,
 }
 
-/// Byte offset of `VmContext.safepoint_skip` for use in JIT-emitted
-/// safepoint-check fast paths (inline-jit-safepoint-check, 2026-06-03).
-/// `atomic_rmw sub` emitted by translate.rs runs at this address.
-///
-/// `offset_of!` evaluates at compile time; the value tracks Rust's
-/// chosen field layout (default `#[repr(Rust)]` may reorder fields, but
-/// `offset_of!` always reports the actual layout for *this* build).
-pub const VM_CONTEXT_SAFEPOINT_SKIP_OFFSET: i32 =
-    std::mem::offset_of!(VmContext, safepoint_skip) as i32;
-
-#[cfg(test)]
-mod safepoint_offset_tests {
-    use super::*;
-
-    /// Offset must fit i32 (Cranelift `iadd_imm` operand width).
-    /// VmContext is large (~600 B with embedded VmCore), so this is a
-    /// real assertion — tripping prompts a redesign (move safepoint_skip
-    /// closer to the top or use repr(C) with explicit placement).
-    #[test]
-    fn safepoint_skip_offset_fits_i32() {
-        let off = std::mem::offset_of!(VmContext, safepoint_skip);
-        assert!(off < i32::MAX as usize,
-            "VmContext.safepoint_skip offset {off} exceeds i32::MAX — \
-             reorder fields or pin layout with repr(C)");
-    }
-
-    /// `AtomicU32` is 4-byte aligned. The atomic_rmw emitted by the JIT
-    /// requires natural alignment for the load/store; Rust guarantees
-    /// this for `AtomicU32` fields, but a `#[repr(packed)]` or unusual
-    /// embedding could break it. Assert here so any layout regression
-    /// surfaces immediately rather than as a SIGBUS on aarch64.
-    #[test]
-    fn safepoint_skip_is_aligned_to_4() {
-        let off = std::mem::offset_of!(VmContext, safepoint_skip);
-        assert_eq!(off % 4, 0,
-            "VmContext.safepoint_skip @ offset {off} is not 4-byte aligned");
-    }
-}
-
 // `Default` removed: `new()` now returns `Pin<Box<VmContext>>`, which
 // cannot satisfy `Default::default() -> Self`. Test helpers that
 // previously used `VmContext::default()` should call `VmContext::new()`

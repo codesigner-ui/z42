@@ -124,22 +124,6 @@ pub fn check_safepoint(ctx: &VmContext) {
 /// If multiple threads see the flag, only the first swap-true claims;
 /// the rest see false and skip (subsequent allocs that still trip pressure
 /// re-set the flag).
-/// Slow-path entry used by JIT-inlined safepoint checks
-/// (inline-jit-safepoint-check, 2026-06-03). The inline emit fast-path
-/// already did `fetch_sub(1)` on the counter and branched here when the
-/// previous value was `<= 1`. This wrapper resets the counter to the
-/// throttle limit (matching the interp/helper [`check_safepoint`]
-/// semantics) and runs the real slow check.
-///
-/// Why not call `check_safepoint` again from the JIT slow block: that
-/// would `fetch_sub` a second time, double-counting and prematurely
-/// re-tripping the slow path on the next iter.
-#[inline(never)]
-pub(crate) fn check_safepoint_slow_with_reset(ctx: &VmContext) {
-    ctx.safepoint_skip.store(throttle_n(), Ordering::Relaxed);
-    check_safepoint_slow(ctx);
-}
-
 #[inline(never)]
 fn check_safepoint_slow(ctx: &VmContext) {
     let phase = *ctx.core.gc_phase.lock();
