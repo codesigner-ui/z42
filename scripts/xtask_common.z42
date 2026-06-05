@@ -127,3 +127,14 @@ string _runtimeManifest() { return "src/runtime/Cargo.toml"; }
 Process _cargoRelease() {
     return new Process("cargo").Arg("build").Arg("--release");
 }
+
+// ── tool presence ────────────────────────────────────────────────────────────
+
+// "is <bin> on PATH" — spawn `<bin> --version`; spawn-failure (not found) → false.
+// Shared primitive: deps-install presence checks + package-time tooling gates.
+bool _have(string bin) {
+    try {
+        new Process(bin).Arg("--version").Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run();
+        return true;
+    } catch (Exception e) { return false; }
+}

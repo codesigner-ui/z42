@@ -19,10 +19,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
     Directory.Create(nativeOut);
 
     // ── 0. tooling: cargo-ndk + ANDROID_NDK_HOME + rust target ───────────
-    bool haveCargoNdk = false;
-    try { new Process("cargo-ndk").Arg("--version").Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run(); haveCargoNdk = true; }
-    catch (Exception e) { haveCargoNdk = false; }
-    if (!haveCargoNdk) {
+    if (!_have("cargo-ndk")) {
         ConsoleError.WriteLine("error: cargo-ndk not found. install: cargo install cargo-ndk --locked (or z42 xtask.zpkg deps install --os android)");
         return 1;
     }

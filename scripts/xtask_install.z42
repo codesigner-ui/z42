@@ -155,14 +155,7 @@ int _depsInstallNode(bool force) {
 // xtask_versions.z42 module — same Z42Xtask namespace, so callers are unchanged.
 
 // ── host helpers ─────────────────────────────────────────────────────────────
-
-// "is <bin> on PATH" — spawn `<bin> --version`; spawn-failure (not found) → false.
-bool _have(string bin) {
-    try {
-        new Process(bin).Arg("--version").Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run();
-        return true;
-    } catch (Exception e) { return false; }
-}
+// _have (is <bin> on PATH) is the shared tool-presence primitive in xtask_common.z42.
 
 string _detectOs() {
     if (Platform.IsWindows()) { return "windows"; }
