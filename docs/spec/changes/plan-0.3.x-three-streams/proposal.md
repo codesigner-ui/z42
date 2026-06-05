@@ -157,57 +157,90 @@ User 2026-06-05 第二轮裁决专门细化 B 主线。决议四点：
 | compile-perf bench corpus | 单文件 / 文件集 end-to-end 编译时间对比；**0.5.x 全子系统就绪后才启用**；0.3.x 只跑 per-subsystem micro-bench |
 | Perf gate 阈值 | median ≤ 3× · P99 ≤ 5× · 回归 > 15% 红线 |
 
-### 1. 目录布局
+### 1. 目录布局（多 zpkg 子包，镜像 C# 9 项目结构）
+
+z42.compiler 不是单一 zpkg，而是**多个子包 1:1 镜像 C# 项目**，沿用现有 `z42.io` / `z42.io.binary` 平级 dotted-name 布局：
 
 ```
-src/libraries/z42.compiler/
-├── z42.compiler.toml         # [project].name = "z42.compiler"
-├── README.md
-├── src/
-│   ├── syntax/               # Lexer + Parser + AST (0.3 B1+B4)
-│   ├── project/              # ProjectManifest + workspace (0.3 B2)
-│   ├── driver/               # CLI + 错误码格式化 (0.3 B3)
-│   ├── core/                 # 共享基础类型
-│   ├── semantics/            # 占位（0.5 启动；L3-G/C 后）
-│   ├── ir/                   # 占位（0.5+）
-│   └── pipeline/             # 占位（0.5+）
-└── tests/
-    ├── lexer_tests.z42       # z42 端单元测试
-    ├── parser_tests.z42
-    ├── project_tests.z42
-    ├── driver_tests.z42
-    └── bit_identical/        # 与 C# 实现产物的对账 harness
-        ├── lexer_oracle.z42  # 跑 z42 Lexer + dotnet z42c lex → 逐字节比对
-        └── ...
+src/libraries/
+├── z42.compiler.core/          # = z42.Core      (共享基础类型)
+│   ├── z42.toml
+│   ├── source.z42
+│   ├── src/
+│   ├── tests/
+│   └── README.md
+├── z42.compiler.syntax/        # = z42.Syntax    (Lexer + Parser + AST，0.3 B1+B4)
+│   ├── src/
+│   │   ├── lexer.z42
+│   │   ├── parser.z42
+│   │   └── ast.z42
+│   ├── tests/
+│   │   ├── lexer_tests.z42
+│   │   └── parser_tests.z42
+│   └── bench/
+│       ├── lexer_throughput.z42
+│       └── parser_throughput.z42
+├── z42.compiler.project/       # = z42.Project   (Manifest + workspace，0.3 B2)
+│   ├── src/
+│   ├── tests/
+│   └── bench/
+│       └── manifest_parse.z42
+├── z42.compiler.driver/        # = z42.Driver    (CLI + Main + 错误码，0.3 B3)
+│   ├── src/
+│   ├── tests/
+│   └── README.md
+├── z42.compiler.semantics/     # = z42.Semantics (占位，0.5+ 启动)
+├── z42.compiler.ir/            # = z42.IR        (占位，0.5+ 启动)
+└── z42.compiler.pipeline/      # = z42.Pipeline  (占位，0.5+ 启动)
 ```
 
-**产物**：单一 `z42.compiler.zpkg`（与其他 stdlib package 同等地位，由 `xtask build stdlib` 一并构建）。
+**用户调用入口**：单一 `z42c.zpkg` = `z42.compiler.driver.zpkg` 的对外别名（与 C# `z42c.dll` 等价）。其他子包是 driver 通过 `using` 引入的库 zpkg，用户不直接调用。
+
+**包间依赖图**（与 C# 项目引用一致）：
+
+```
+core ◄── syntax    ◄── pipeline ◄── driver
+core ◄── project   ◄── pipeline
+core ◄── semantics ◄── pipeline
+core ◄── ir        ◄── pipeline
+```
+
+driver 是唯一 exe-kind zpkg；其余 6 个是 lib-kind zpkg。
+
+**0.3.x 阶段实际落地的子包**（4/7）：core / syntax / project / driver；semantics / ir / pipeline 三个空壳目录 + README 说明 "0.5.x 启动"。
+
+**bit-identical CI gate 粒度**：以**包**为单位对账（每个 z42.compiler.<sub>.zpkg 与对应 C# `z42.<Sub>.dll` 的产物输出逐字节比对），不到子文件级。
+
+**产物**：`xtask build stdlib` 自动发现 7 个 z42.compiler.* 子包，并行构建；产出至 `artifacts/libraries/dist/<profile>/z42.compiler.*.zpkg`。
 
 **1.0 byte-identical 切换路径**：
 
 ```bash
 # 当 1.0 替换 gate 全部满足时：
 git mv src/compiler/ src/compiler-bootstrap-archive/
-# z42.compiler.zpkg 成为 ship 形态的唯一编译器；launcher 内置调用它
+# 7 个 z42.compiler.* zpkg 成为 ship 形态的唯一编译器
+# launcher 内置 `z42c` 短命令 → 调用 z42.compiler.driver.zpkg
 # src/compiler-bootstrap-archive/ 保留一段时间用于 byte-identical regression 回归
 ```
 
 ### 2. CLI parity（无桥接策略）
 
-z42c-selfhost 通过 launcher 调用：
+z42c-selfhost = `z42.compiler.driver.zpkg` 通过 launcher 调用（driver 内 `using` 其他子包）：
 
 ```bash
 # 0.3.x 内支持（独立 z42 实现，无 dotnet 依赖）
-.z42/z42 artifacts/libraries/dist/release/z42.compiler.zpkg -- lex foo.z42
-.z42/z42 artifacts/libraries/dist/release/z42.compiler.zpkg -- parse foo.z42
-.z42/z42 artifacts/libraries/dist/release/z42.compiler.zpkg -- manifest-check z42.toml
+.z42/z42 artifacts/libraries/dist/release/z42.compiler.driver.zpkg -- lex foo.z42
+.z42/z42 artifacts/libraries/dist/release/z42.compiler.driver.zpkg -- parse foo.z42
+.z42/z42 artifacts/libraries/dist/release/z42.compiler.driver.zpkg -- manifest-check z42.toml
 
-# 0.3.x 内**不**支持（用户调用时报 "not implemented"）
-.z42/z42 ... z42.compiler.zpkg -- build src/libraries/z42.io/
-.z42/z42 ... z42.compiler.zpkg -- disasm foo.zbc
+# 0.3.x 内**不**支持（用户调用时报 "not implemented"，因 semantics/ir/pipeline 子包未就绪）
+.z42/z42 ... z42.compiler.driver.zpkg -- build src/libraries/z42.io/
+.z42/z42 ... z42.compiler.driver.zpkg -- disasm foo.zbc
 
-# build / 完整管线在 0.5+ 全子系统完成后才启用
+# build / 完整管线在 0.5+ semantics/ir/pipeline 三子包完成后才启用
 ```
+
+**1.0 切换后**：launcher 加 `z42c` 短命令，等价于 `z42 z42.compiler.driver.zpkg --`。0.3–0.5 期间用户仍使用 `dotnet z42c.dll` / 现有 `z42c` 入口（指向 C# 实现）。
 
 **关键**：z42 端不调用 dotnet z42c.dll 作为 fallback。两实现完全独立，对 PR 干扰为零；0.3.x 期间 default 编译器仍是 C# 实现。
 

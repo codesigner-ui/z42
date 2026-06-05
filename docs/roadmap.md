@@ -79,7 +79,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 >
 > **B 主线无桥接策略**（2026-06-06 第二轮裁决）：0.3.x z42 实现只 ship 能独立跑的命令（`lex` / `parse` / `manifest-check`）；`build` 命令在 0.3.x 报 "not implemented"，**禁止**调 dotnet z42c.dll 作 fallback。两实现完全独立，确保并行开发零干扰。详见 [plan-0.3.x-three-streams §B 主线深度规划](spec/changes/plan-0.3.x-three-streams/proposal.md#b-主线深度规划编译器自举)。
 >
-> **z42 编译器源码位置**：`src/libraries/z42.compiler/`（与 stdlib package 一致布局；ship 为 `z42.compiler.zpkg`，与 `project_mobile_no_compiler` memory "1.0 后 zpkg 全平台分发" 一致）。
+> **z42 编译器源码位置**：`src/libraries/z42.compiler.{core,syntax,project,driver,semantics,ir,pipeline}/` 共 **7 个子包** 1:1 镜像 C# 9 项目结构（z42.Tests / z42.Bench 不需对应子包，按 z42 惯例并入各子包 `tests/` + `bench/`），沿用现有 `z42.io` / `z42.io.binary` 平级 dotted-name 模式。driver 是 exe-kind 入口（= 1.0 后的 `z42c.zpkg`），其余 6 个是 lib-kind。0.3.x 实际落地 core/syntax/project/driver 四个；semantics/ir/pipeline 三个空壳占位。与 `project_mobile_no_compiler` memory "1.0 后 zpkg 全平台分发" 一致。
 >
 > **compile-perf gate 启用时机**：end-to-end compile-perf bench + CI gate 在 **0.5.x** 全子系统就绪后启用（阈值 median ≤ 3× / P99 ≤ 5× / 回归 > 15% red）。0.3.x 期间只跑 per-subsystem micro-bench（Lexer throughput / Parser nodes/s / Manifest ops/s），baseline 入库但不设硬阈值。
 >
