@@ -45,8 +45,10 @@ int _testVm(string[] argv) {
 // ── test cross-zpkg ─────────────────────────────────────────────────────────
 
 // `test cross-zpkg [interp|jit]` — native, bash-free. Mirrors
-// the former scripts/test-cross-zpkg.sh: build compiler (slnx) + DEBUG runtime, ensure
-// stdlib present, compile test-cross-zpkg.z42, run it with Z42_VM_MODE.
+// the former scripts/test-cross-zpkg.sh: build compiler (slnx) + DEBUG runtime,
+// ensure stdlib present, then run the in-process cross-zpkg driver
+// (_testCrossZpkgImpl, xtask_test_cross.z42) with the parsed mode — no separate
+// compile + zpkg spawn.
 int _testCrossZpkg(string[] argv) {
     string mode = _at(argv, 2);
     if (mode.Length == 0) { mode = "interp"; }
@@ -58,14 +60,7 @@ int _testCrossZpkg(string[] argv) {
     if (!File.Exists(Path.Join(root, "artifacts/build/libraries/dist/release/z42.core.zpkg"))) {
         int cs = _buildStdlib(); if (cs != 0) { return cs; }
     }
-    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
-    int cb = _exec(new Process("dotnet")
-        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("scripts/test-cross-zpkg.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
-    if (cb != 0) { return cb; }
-    return _exec(new Process(_z42vm()).Arg("scripts/dist/test-cross-zpkg.zpkg")
-        .Env("Z42_LIBS", libs).Env("Z42_VM_MODE", mode));
+    return _testCrossZpkgImpl(mode);
 }
 
 // ── test dist (packaged-distribution e2e) ────────────────────────────────────

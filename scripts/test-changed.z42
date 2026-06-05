@@ -262,7 +262,7 @@ _MapResult _mapFile(string f) {
         r.touchedAny = true;
         return r;
     }
-    if (f == "scripts/test-cross-zpkg.z42") {
+    if (f == "scripts/xtask_test_cross.z42") {
         r.commands = new string[1];
         r.commands[0] = "xtask test cross-zpkg";
         r.touchedAny = true;
