@@ -37,7 +37,7 @@ The split is the conventional **intermediate / output / vendored** model
 | `src/compiler/`            | `build/compiler/`                           | dotnet `bin`/`obj` for `z42c` |
 | `src/runtime/`             | `build/runtime/<cargo-target>/<profile>/`   | cargo target: `z42vm`, `libz42.*`, the `z42` trampoline, `z42-test-runner` |
 | `src/libraries/<lib>/`     | `build/libraries/<lib>/<profile>/`          | **per-lib** compile, private to the build (`dist/<lib>.zpkg` + `cache/`) |
-| (aggregate copy-out)       | `build/libraries/dist/<profile>/`           | flat single-dir view of **all** stdlib `.zpkg` + `index.json` — the `Z42_LIBS` lookup target |
+| (aggregate copy-out)       | `build/libraries/dist/<profile>/`           | flat single-dir view of **all** stdlib `.zpkg` — the `Z42_LIBS` lookup target |
 | `src/toolchain/launcher/`  | `build/toolchain/launcher/`                 | `z42.launcher.zpkg` (toml `dist_dir`) + `home/` (dev `$Z42_HOME`) |
 | `scripts/` (`xtask*.z42`)  | `artifacts/xtask/` (NOT under `build/`)     | `xtask.zpkg` — the build **driver** CLI; output sits at `artifacts/xtask/` (sibling of `build/`, not inside it) since it runs *before* and *drives* the builds. Sources live in `scripts/` alongside `install-z42.*` |
 | `src/tests/`               | — (no build output)                         | |
@@ -47,8 +47,9 @@ The split is the conventional **intermediate / output / vendored** model
 Each stdlib library builds privately into `build/libraries/<lib>/<profile>/`
 (with `debug`/`release` distinction). **z42vm and packaging must not depend on
 those per-lib subdirs** — they need a single flat directory. So after
-compiling, `z42 xtask.zpkg build stdlib` copies every lib's `.zpkg`/`.zsym` + an
-`index.json` into the aggregate `build/libraries/dist/<profile>/`. That dir
+compiling, `z42 xtask.zpkg build stdlib` copies every lib's `.zpkg`/`.zsym`
+into the aggregate `build/libraries/dist/<profile>/` (no namespace index — the
+VM reads each zpkg's `NSPC` section). That dir
 is:
 - z42vm's dev-mode `Z42_LIBS` fallback
   ([`src/runtime/src/main.rs`](../../../src/runtime/src/main.rs) `resolve_libs_dir`,

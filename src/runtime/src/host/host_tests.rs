@@ -712,6 +712,63 @@ fn load_stdlib_bytes(name: &str) -> Option<Vec<u8>> {
     std::fs::read(path).ok()
 }
 
+// ── z42_zpkg_read_namespaces (drop-index-json-self-describing) ──────────
+
+unsafe extern "C" fn ns_collect(ns: *const c_char, len: usize, ud: *mut c_void) {
+    let out = unsafe { &mut *(ud as *mut Vec<String>) };
+    let slice = unsafe { std::slice::from_raw_parts(ns as *const u8, len) };
+    out.push(String::from_utf8_lossy(slice).into_owned());
+}
+
+#[test]
+fn zpkg_read_namespaces_lists_nspc() {
+    // Needs a real stdlib zpkg; skip cleanly if the workspace isn't built.
+    let core = match load_stdlib_bytes("z42.core.zpkg") {
+        Some(b) => b,
+        None => {
+            eprintln!("skip: corelib not built");
+            return;
+        }
+    };
+    let mut out: Vec<String> = Vec::new();
+    let status = unsafe {
+        z42_zpkg_read_namespaces(
+            core.as_ptr(),
+            core.len(),
+            Some(ns_collect),
+            &mut out as *mut Vec<String> as *mut c_void,
+        )
+    };
+    assert_eq!(status, Z42HostStatus::Ok);
+    // z42.core.zpkg resolves by its package name ("z42.core", the prelude
+    // key) plus the namespaces it declares (Std, ...) — exactly the keys a
+    // hand-maintained index would otherwise have to encode (and drift from).
+    assert!(out.iter().any(|n| n == "z42.core"), "expected z42.core in {out:?}");
+    assert!(out.iter().any(|n| n == "Std"), "expected Std in {out:?}");
+}
+
+#[test]
+fn zpkg_read_namespaces_rejects_garbage() {
+    let garbage = b"NOTAZPKG".to_vec();
+    let status = unsafe {
+        z42_zpkg_read_namespaces(
+            garbage.as_ptr(),
+            garbage.len(),
+            Some(ns_collect),
+            ptr::null_mut(),
+        )
+    };
+    assert_eq!(status, Z42HostStatus::BadZbc);
+}
+
+#[test]
+fn zpkg_read_namespaces_null_visitor_is_bad_config() {
+    let bytes = b"whatever".to_vec();
+    let status =
+        unsafe { z42_zpkg_read_namespaces(bytes.as_ptr(), bytes.len(), None, ptr::null_mut()) };
+    assert_eq!(status, Z42HostStatus::BadConfig);
+}
+
 #[test]
 #[cfg(z42_have_embedding_hello)]
 fn resolver_via_map_resolver_loads_corelib_without_search_paths() {

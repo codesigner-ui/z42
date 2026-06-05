@@ -1,59 +1,48 @@
-# Spec: zpkg 自描述解析（注入 + NSPC 索引）
+# Spec: zpkg NSPC 自描述解析
 
 ## ADDED Requirements
 
-### Requirement: 宿主可注入 zpkg 字节
+### Requirement: 从 zpkg 读取解析键
 
-#### Scenario: 注入后按 namespace 解析
-- **WHEN** 宿主在 `z42_host_load_zbc` 前调用 `z42_host_add_zpkg(handle, bytes, len)` 注入一个
-  含 `NSPC = [z42.core, Std, Std.Exceptions]` 的 zpkg，随后加载一个 `import Std.Exceptions`
-  的 .zbc
-- **THEN** runtime 从注入字节读 NSPC，将 `Std.Exceptions` 解析到该 zpkg 的 module，加载成功
+#### Scenario: 返回包名 + namespace
+- **WHEN** 对 `z42.core.zpkg` 字节调用 `z42_zpkg_read_namespaces`
+- **THEN** visitor 被回调返回其**包名** `z42.core`（prelude 解析键）**及**它声明的 namespace
+  （`Std` 等）；状态 `OK`
 
-#### Scenario: 一个 zpkg 提供多个 namespace
-- **WHEN** 注入的单个 zpkg 同时提供 `Std` 与 `Std.Exceptions`
-- **THEN** 两个 namespace 都解析到**同一** module，且该 zpkg 字节只解析一次（不重复 merge）
+#### Scenario: 一个 zpkg 多 namespace
+- **WHEN** 该 zpkg 的 NSPC 声明多个 namespace
+- **THEN** 每个 namespace 都被回调一次（连同包名），resolver 据此把它们都映射到同一份字节
 
-#### Scenario: 注入顺序不影响结果（确定性）
-- **WHEN** 以不同顺序注入同一组 zpkg
-- **THEN** 最终 namespace → module 索引一致；多包共享同名 namespace 时 first-wins 结果稳定
-  （按文件名 Ordinal 排序后裁决）
+#### Scenario: 非法字节
+- **WHEN** 传入非 zpkg 字节（坏 magic / 版本不符）
+- **THEN** 返回 `ERR_BAD_ZBC`，不回调
 
-### Requirement: 解析链统一为读 NSPC
+#### Scenario: visitor 为 NULL
+- **WHEN** `visit` 为 NULL
+- **THEN** 返回 `ERR_BAD_CONFIG`
 
-#### Scenario: 桌面扫描与注入互不排斥
-- **WHEN** 既配置了 corelib/search_paths，又注入了部分 zpkg
-- **THEN** 解析顺序为 `注入索引 → corelib → search_paths 扫描 → silent miss`；注入命中的
-  namespace 不再走扫描
+### Requirement: 平台默认 resolver 读 NSPC
 
-#### Scenario: 未提供的 namespace 静默放过
-- **WHEN** 用户 .zbc import 一个既未注入、也不在 search_paths 的 namespace
-- **THEN** `z42_host_load_zbc` 仍返回成功；仅当 invoke 用到该 namespace 的函数时报
-  "undefined function"（保持现有 lazy 语义）
+#### Scenario: 枚举 + 读 NSPC 建表
+- **WHEN** iOS `BundleZpkgResolver` / Android `AssetZpkgResolver` / WASM `bundleStdlib*` 构造
+- **THEN** 枚举可见 `*.zpkg`，对每个调 `z42_zpkg_read_namespaces`（或其语言绑定）建
+  `namespace → bytes` 表；**不读** `index.json`
+
+#### Scenario: 加载 hook 不变
+- **WHEN** 运行时 `load_zbc` 对每个 namespace 调 `resolver.resolve(ns)`
+- **THEN** 行为与改造前一致；仅 resolver 内部的映射来源从 index.json 变为 NSPC
 
 ## MODIFIED Requirements
 
-### Requirement: 宿主获取 stdlib 的方式
-
-**Before:** runtime 调用宿主提供的 pull resolver `ZpkgResolver::resolve(ns) -> bytes`
-（C ABI `Z42ZpkgResolverFn`）；宿主须自带 `namespace → 文件` 映射，移动/WASM 默认 resolver
-读 `index.json` 完成映射。
-
-**After:** 删除 pull resolver。宿主改为 `z42_host_add_zpkg` 主动注册字节（移动/WASM），或由
-runtime 扫描 `search_paths`（桌面）。两条路径都由 runtime 读 zpkg 的 `NSPC` 认领 namespace，
-**不存在 index.json**。
-
 ### Requirement: stdlib 发行布局
 
-**Before:** `libs/` 含 `*.zpkg` + `*.zsym` + `index.json`（手维护 namespace 映射）。
+**Before:** flat dist / `libs/` / bundle / asset 含 `*.zpkg` + 手维护 `index.json`。
 
-**After:** `libs/` 含 `*.zpkg` + `*.zsym`，无 `index.json`。浏览器 WASM bundle 额外含 build
-生成的纯文件名清单（`stdlib/files.json`），不含 namespace 映射。
+**After:** 只含 `*.zpkg`（+ `*.zsym`）。浏览器 WASM bundle 额外含 build 生成的纯文件名清单
+`files.json`（非 namespace 映射）。namespace 归属一律读 NSPC。
 
 ## Pipeline Steps
-
-受影响阶段（运行期 host 加载链，非编译 pipeline）：
-- [x] Host API（`z42_host_add_zpkg` 新增 / `Z42ZpkgResolverFn` 删除）
-- [x] `build_host_module` 解析循环
-- [x] NSPC 读取复用（`read_zpkg_namespaces`）
-- [ ] 编译 pipeline（Lexer/Parser/TypeCheck/Codegen）—— 不涉及
+- [x] Host C ABI（`z42_zpkg_read_namespaces` 新增）
+- [x] 平台 facade resolver（iOS/Android/WASM 读 NSPC）
+- [x] 加载 hook（`ZpkgResolver` 保留不变）
+- [ ] 编译 pipeline —— 不涉及

@@ -16,63 +16,53 @@ interface ZpkgResolver {
 }
 
 /**
- * Default Android resolver. Resolution order:
- *   1. **Namespace index** (`<subdir>/index.json`) — map
- *      `"Std.IO" → "z42.io.zpkg"` etc. Index is produced by host
- *      `scripts/build-stdlib.sh` and shipped via `build.sh`.
- *   2. **Filename fallback** — namespace-as-filename
- *      (`<subdir>/<namespace>.zpkg`); preserves the simple
- *      "one namespace per file" convention for hosts that don't ship
- *      an index.
+ * Default Android resolver. Builds a `namespace → bytes` map by
+ * enumerating `<subdir>/*.zpkg` in the app's assets and reading each
+ * one's `NSPC` section (via [Z42VM.readNamespaces]) — there is no
+ * `index.json`. A single zpkg that ships several namespaces (e.g.
+ * `z42.core.zpkg` provides `z42.core` + `Std` + `Std.Exceptions`) maps
+ * all of them, which a `namespace == filename` guess could not.
  *
- * Index makes the resolver correct for stdlib where one zpkg provides
- * multiple namespaces (e.g. `z42.core.zpkg` ships `Std` + `Std.Exceptions`).
- *
- * Spec: docs/spec/archive/2026-05-12-fix-bundle-resolver-namespace-index/
+ * Spec: docs/spec/changes/drop-index-json-self-describing/
  */
 class AssetZpkgResolver(
     private val assets: AssetManager,
     private val subdir: String = "stdlib",
 ) : ZpkgResolver {
-    private val index: Map<String, String> = loadIndex()
+    private val byNamespace: Map<String, ByteArray> = loadNamespaceMap()
 
-    override fun resolve(namespace: String): ByteArray? {
-        // 1. Index-driven lookup.
-        index[namespace]?.let { filename ->
-            try {
-                return assets.open("$subdir/$filename").use { it.readBytes() }
+    override fun resolve(namespace: String): ByteArray? = byNamespace[namespace]
+
+    /**
+     * Enumerate `<subdir>/*.zpkg` and read each one's NSPC section to
+     * assemble the namespace → bytes map. First-wins on duplicates;
+     * filenames sorted for deterministic resolution.
+     */
+    private fun loadNamespaceMap(): Map<String, ByteArray> {
+        val map = HashMap<String, ByteArray>()
+        val files = try {
+            assets.list(subdir)?.filter { it.endsWith(".zpkg") }?.sorted() ?: emptyList()
+        } catch (_: IOException) {
+            emptyList()
+        }
+        for (name in files) {
+            val bytes = try {
+                assets.open("$subdir/$name").use { it.readBytes() }
             } catch (_: IOException) {
-                /* fall through to filename fallback */
+                continue
+            }
+            for (ns in Z42VM.readNamespaces(bytes)) {
+                if (!map.containsKey(ns)) map[ns] = bytes
             }
         }
-        // 2. Filename fallback (namespace-as-basename).
-        return try {
-            assets.open("$subdir/$namespace.zpkg").use { it.readBytes() }
-        } catch (_: IOException) {
-            null
-        }
-    }
-
-    private fun loadIndex(): Map<String, String> = try {
-        val text = assets.open("$subdir/index.json").use {
-            it.readBytes().toString(Charsets.UTF_8)
-        }
-        val obj = org.json.JSONObject(text)
-        val result = HashMap<String, String>(obj.length())
-        val keys = obj.keys()
-        while (keys.hasNext()) {
-            val k = keys.next()
-            result[k] = obj.getString(k)
-        }
-        result
-    } catch (_: Exception) {
-        emptyMap()
+        return map
     }
 }
 
 /**
  * HashMap-backed resolver useful for tests and for hosts that build
- * the zpkg dictionary at startup (e.g. fetched over network).
+ * the zpkg dictionary at startup (e.g. fetched over network, or a REPL
+ * that injects packages on demand).
  */
 class MapZpkgResolver(
     initial: Map<String, ByteArray> = emptyMap(),

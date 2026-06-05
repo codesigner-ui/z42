@@ -23,7 +23,7 @@ dotnet build src/compiler/z42.slnx
 ./build.sh
 ```
 
-产物：`Z42VM.xcframework/` (ios-arm64 + ios-arm64_x86_64-simulator + macos-arm64) + `Resources/stdlib/*.zpkg,index.json`。详见 [`docs/workflow/building/ios.md`](../../../../docs/workflow/building/ios.md)。
+产物：`Z42VM.xcframework/` (ios-arm64 + ios-arm64_x86_64-simulator + macos-arm64) + `Resources/stdlib/*.zpkg`（无 index——`BundleZpkgResolver` 读各 zpkg 的 NSPC）。详见 [`docs/workflow/building/ios.md`](../../../../docs/workflow/building/ios.md)。
 
 ## Run tests
 

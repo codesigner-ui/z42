@@ -102,5 +102,14 @@ class Z42VM(
             System.loadLibrary("z42_platform_android")
             System.loadLibrary("z42vm_jni")
         }
+
+        /**
+         * Read the namespaces a zpkg provides (its NSPC section) via
+         * `z42_zpkg_read_namespaces`. Stateless — needs no VM instance.
+         * [AssetZpkgResolver] uses it to map namespace → bytes from the
+         * asset packages directly, so no index file is shipped.
+         */
+        @JvmStatic
+        external fun readNamespaces(bytes: ByteArray): Array<String>
     }
 }

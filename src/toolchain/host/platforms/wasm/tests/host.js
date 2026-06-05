@@ -6,7 +6,7 @@
 // Spec: docs/spec/changes/add-wasm-tests/specs/wasm-tests/spec.md
 //       docs/spec/archive/2026-05-12-define-platform-test-contract/specs/platform-test-contract/spec.md
 
-import init, { Z42VM } from '../pkg-web/z42_wasm.js';
+import init, { Z42VM, readNamespaces } from '../pkg-web/z42_wasm.js';
 import { mapResolver, bundleStdlibBrowser } from '../js/stdlib-resolver.js';
 
 // ── Bootstrap. ──────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ function makeCollector() {
 }
 
 async function makeVMWithSink() {
-    const resolver = await bundleStdlibBrowser(STDLIB_URL);
+    const resolver = await bundleStdlibBrowser(STDLIB_URL, readNamespaces);
     const collector = makeCollector();
     const vm = new Z42VM({
         zpkgResolver: resolver,

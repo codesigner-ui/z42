@@ -182,8 +182,8 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
     File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
 
-    // [4/7] stdlib zpkg + zsym + index.json
-    Console.WriteLine("[4/7] stdlib zpkg + zsym + index.json");
+    // [4/7] stdlib zpkg + zsym
+    Console.WriteLine("[4/7] stdlib zpkg + zsym");
     c = _pkgCopyLibs(libs, pkgDir); if (c != 0) { return c; }
 
     // [5/7] examples/hello_c
@@ -262,9 +262,6 @@ int _pkgCopyLibs(string libsDir, string pkgDir) {
             File.Copy(Path.Join(libsDir, f), Path.Join(pkgDir, "libs/" + f));
         }
     }
-    string idx = Path.Join(libsDir, "index.json");
-    if (!File.Exists(idx)) { ConsoleError.WriteLine("error: " + idx + " missing"); return 1; }
-    File.Copy(idx, Path.Join(pkgDir, "libs/index.json"));
     return 0;
 }
 

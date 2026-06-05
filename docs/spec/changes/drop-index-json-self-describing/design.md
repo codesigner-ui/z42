@@ -1,96 +1,57 @@
-# Design: 以 zpkg 自描述取代 index.json
+# Design: 以 zpkg NSPC 自描述取代 index.json
 
 ## Architecture
 
-唯一原则：**zpkg 的 `NSPC` section 是 namespace 归属的唯一真相源。namespace → 文件/字节
-的映射只能扫 NSPC 派生，绝不手写。** 解析机制只有一个，按平台不同的只是"zpkg 字节从哪来"。
+唯一原则：**namespace（及包名）归属由 zpkg 的 `NSPC`/`META` section 权威表达；任何
+`namespace → 文件/字节` 映射只能扫这些 section 派生，不再手维护 `index.json`。**
+
+嵌入式加载链分两层、互不相干（用户来信澄清）：
+- **加载 hook**（保留）：宿主→运行时提供 zpkg 字节的回调（`ZpkgResolver::resolve(ns) → bytes`，
+  C `Z42ZpkgResolverFn`）。桌面扫 `search_paths`、移动/wasm 由平台 resolver 或宿主提供。
+- **namespace 归属**（本变更改造）：从"读 index.json"改为"读 zpkg 的 NSPC"。
 
 ```
-                    ┌─────────────────────────────────────────┐
-   字节来源（平台异）│  桌面: 扫 search_paths/*.zpkg（发现式）   │
-                    │  移动/WASM: 宿主 z42_host_add_zpkg 注入   │
-                    └────────────────────┬────────────────────┘
-                                         │  (统一)
-                                         ▼
-                    runtime 对每块字节读 NSPC → namespace → module 索引
-                                         │
-                                         ▼
-              load_zbc: 按 import_namespaces 查索引，merge 进 user module
+runtime build_host_module: for ns in ["z42.core"] + imports:
+    resolver.resolve(ns) → bytes        ← hook 不变
+        resolver 内部: namespace → bytes 表由"扫 zpkg + 读 NSPC"派生（不再读 index.json）
+    或 corelib / search_paths (NSPC 扫描)
 ```
-
-旧 pull 模型（`resolve(ns) -> bytes`，宿主自带 ns→bytes 预言机）被删除 —— 它是 index.json
-的根源。
 
 ## Decisions
 
-### Decision 1: push 注入取代 pull resolver
+### D1: 保留加载 hook
+**问题**：是否随 index.json 一起删掉 `ZpkgResolver` 回调？
+**决定**：**保留**。hook 是嵌入式（web playground / 移动 REPL / 网络加载）提供字节的必要机制，
+与 index.json（namespace 映射）正交。
 
-**问题：** 移动/WASM 如何把 stdlib zpkg 交给 runtime？
-**选项：**
-- A（pull，现状）：runtime 调 `resolver.resolve(ns)`，宿主答字节 → 宿主必须知道 ns→文件 → 需 index.json。
-- B（push，本设计）：宿主 `z42_host_add_zpkg(bytes)` 注入；runtime 读 NSPC 自己认领 ns。宿主零映射知识。
+### D2: 新增 `z42_zpkg_read_namespaces` helper
+**决定**：C ABI `z42_zpkg_read_namespaces(bytes, len, visit, user_data)`，visitor 回调每个
+**解析键**。复用 Rust `read_zpkg_meta`（已存在），暴露 wasm-bindgen `readNamespaces` + Android
+JNI `Z42VM.readNamespaces`。让 Swift/Kotlin/JS 不重写 zpkg 二进制解析。
 
-**决定：** 选 B 并**删除** A。pre-1.0 不留兼容（philosophy.md「不为旧版本提供兼容」）。
-注入字节在 `HostState` 内累积，`z42_host_load_zbc` 时已建好 `namespace → Module` 索引。
+### D3: 解析键 = 包名 + namespace（关键）
+**问题**：helper 只返回 NSPC namespace 够吗？
+**实测**：`z42.core.zpkg` 的 NSPC = `[Std, Std.Collections]`，**不含 `z42.core`**。但运行时请求
+prelude 是按**包名** `z42.core`。旧 index.json 同时含包名键 + namespace 键。
+**决定**：helper 返回 **`META.name`（包名）+ 每个 NSPC namespace**。resolver 据此建表，
+`resolve("z42.core")`（prelude）与 `resolve("Std.IO")`（import）都命中。
 
-### Decision 2: 解析顺序
+### D4: 浏览器枚举替身
+**问题**：浏览器经 HTTP 无法 `readdir`。
+**决定**：`build.sh` 拷 zpkg 时顺手 `ls` 出 `files.json`（纯文件名数组，派生、零手维护、**非**
+namespace 映射）；浏览器 fetch 它 → 逐个 fetch zpkg → 读 NSPC 建表。Node `readdir` 直接枚举。
 
-`build_host_module` 对每个 namespace（`["z42.core"] + user.import_namespaces`）按序：
-
-1. **注入索引**（来自 `z42_host_add_zpkg` 的字节，已读 NSPC）→ 命中用该 module
-2. **corelib**（`z42.core` 的已知路径，桌面 corelib）
-3. **桌面 search_paths 扫描**（`resolve_namespace` 读 NSPC）→ 命中加载
-4. **silent miss**：load 仍 OK，invoke 时报 "undefined function"（保持现有语义）
-
-> 注入索引与 search_paths 互不排斥：注入优先，未注入的 namespace 仍可被桌面扫描兜底。
-
-### Decision 3: 注入索引以 module 还是 bytes 缓存
-
-**决定：** 注入时**立即** `load_artifact_from_bytes` 解析为 `Module` 并记录其 `NSPC`
-namespace 列表，存 `Vec<(namespaces, Module)>`。理由：注入发生在 load 前，eager 解析一次即可，
-避免 load 时重复 parse；与现有 "merge 进 user module" 流程对接最直接。
-
-### Decision 4: NSPC 读取复用
-
-**决定：** Rust 侧复用既有 `metadata::zbc_reader::read_zpkg_namespaces(bytes)`
-（[zbc_reader.rs:1505](../../../../src/runtime/src/metadata/zbc_reader.rs)）。WASM JS 侧通过
-新增 wasm-bindgen 导出 `read_namespaces(bytes) -> string[]`（薄封装同一函数）让 JS resolver
-不必重写 zpkg 解析。**无需新增 z42c CLI 子命令**（因 stdlib.lock 已 Out of Scope）。
-
-### Decision 5: 浏览器 WASM 的枚举替身
-
-**问题：** 浏览器经 HTTP 无法 `readdir` stdlib 目录。
-**决定：** `build.sh` 在把 zpkg 拷进 `js/stdlib/` 时，顺手生成一份**文件名清单**
-（如 `stdlib/files.json` = `["z42.core.zpkg", ...]`，纯文件名数组，**非** namespace 映射）。
-浏览器 JS fetch 清单 → 逐个 fetch zpkg → `read_namespaces` 认领。Node 端直接 `readdirSync`，
-不需清单。
-
-> 文件名清单是 build 一次性 `ls` 产物，零手维护，且不含会漂移的 namespace 映射 —— 与"消除
-> index.json"目标一致。它**不**是 stdlib.lock（版本/完整性那套仍 Deferred）。
-
-### Decision 6: 确定性
-
-注入索引构建、search_paths 扫描、文件名清单生成，凡 first-wins 注册前一律按文件名
-`Ordinal` 排序（[common-pitfalls §1](../../../../.claude/rules/common-pitfalls.md)），保证多包共享
-namespace（如 z42.core 提供 Std/Std.Exceptions）时跨平台行为一致。
+### D5: 不新增注入 API
+"主动注入"（web playground/REPL）用现有 `MapResolver`（宿主读 NSPC 填表）经 hook 提供，
+无需 `z42_host_add_zpkg`。
 
 ## Implementation Notes
-
-- `Z42HostConfig` 删 `zpkg_resolver` / `zpkg_resolver_user_data` 两字段；新增注入走独立 API
-  调用而非 config（注入可在 init 后、load 前多次）。
-- `HostState` 加 `injected: Vec<InjectedZpkg>` 字段（namespaces + Module）。
-- `merge_modules` / `build_type_registry` 等下游不变，只是 module 来源多了"注入"一路。
-- WASM `src/resolver.rs` 的 `JsCallbackResolver`（pull）整体替换为注入路径。
-- 删除 `install_zpkg_resolver`（mod.rs）及其 Rust Tier-2 用例。
+- `ZpkgInfo{ name, namespaces, ... }` 由 `read_zpkg_meta` 返回；helper visit `name` 后 visit 每个 `namespaces`。
+- visitor 的 `ns` 是 `len` 字节 UTF-8（无 NUL），仅调用期有效，host 须立即拷贝。
+- Android JNI：visitor JNIEnv-free（收集 C 串），调用后再建 `String[]`。
+- 平台 resolver 枚举按文件名排序（确定性，common-pitfalls §1）。
 
 ## Testing Strategy
-
-- **Rust 单元**（`host/inject_tests.rs`）：
-  - 注入一个多 namespace zpkg（z42.core），`Std.Exceptions` 与 `Std` 都解析到同一 module。
-  - 注入顺序打乱 → 索引结果一致（确定性）。
-  - 未注入且无 search_paths → silent miss，load OK、invoke 报错。
-- **VM e2e**（`src/tests/host/inject-multi-namespace/`）：一个 import `Std.IO` 的 .zbc 经注入
-  z42.io 后正确运行。
-- **WASM**：更新 `tests/r1-r7.spec.ts` / `tests/host.js`，验证读 NSPC 路径取代 index.json 后
-  Node + 浏览器均能解析。
-- **GREEN gate**：`z42 xtask.zpkg test`（含 dist：发行接口变更需 `test dist`）。
+- Rust 单元（host_tests.rs）：`z42_zpkg_read_namespaces` 对真实 z42.core.zpkg 返回 `z42.core` + `Std`；garbage → BadZbc；null visitor → BadConfig。
+- 回归：删 `dist/index.json` 后 host 测试仍全绿（证明运行时不依赖 index.json）。
+- GREEN：`cargo test`（绿）；C# `dotnet test`（绿）；mobile/wasm facade 构建 = CI（本机无 Xcode/NDK/wasm-pack）。

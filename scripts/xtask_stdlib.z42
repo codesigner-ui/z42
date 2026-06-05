@@ -3,13 +3,14 @@
 // shelled out to a separate .z42 via `dotnet -- run` now runs in-process.
 //
 // Compiles the z42 stdlib workspace (z42c build --workspace, release) + verifies
-// each zpkg + assembles the flat dist view (hard-link) + writes index.json.
+// each zpkg + assembles the flat dist view (hard-link). No namespace index is
+// written — the VM + embedding hosts read each zpkg's NSPC section.
 //
 // Cold-bootstrap note: this runs INSIDE xtask.zpkg, so xtask (and the stdlib it
 // depends on) must already exist. The CI/local cold bootstrap therefore keeps a
 // raw `dotnet -- build --workspace` primer (the C# compiler building stdlib with
 // NO z42 program) BEFORE compiling xtask; _buildStdlibCore then re-runs the
-// workspace build (cached) + assembles the flat view + index.json afterward.
+// workspace build (cached) + assembles the flat view afterward (no namespace index).
 // `build --workspace` itself compiles stdlib from source, so this is self-
 // sufficient — no separate primer is needed once xtask is running.
 namespace Z42Xtask;
@@ -80,11 +81,10 @@ int _buildStdlibCore() {
         i = i + 1;
     }
     Console.WriteLine("  flat view: " + flatDir + "/   (VM single-dir lookup target)");
-
-    // ── index.json ───────────────────────────────────────────────────────
-    string indexPath = Path.Join(flatDir, "index.json");
-    File.WriteAllText(indexPath, _indexJson());
-    Console.WriteLine("  index:     " + indexPath);
+    // No namespace index is emitted: the VM (desktop dir scan) and embedding
+    // resolvers (Bundle / Asset / wasm, via z42_zpkg_read_namespaces) both
+    // read each zpkg's NSPC section to map namespaces. See
+    // docs/spec/changes/drop-index-json-self-describing/.
     return 0;
 }
 
@@ -115,39 +115,6 @@ string[] _stdlibList() {
     libs[21] = "z42.numerics";
     return libs;
 }
-
-// namespace → zpkg index (byte-identical to the former bash heredoc / build-stdlib.z42).
-string _indexJson() {
-    string s = "{\n";
-    s = s + "  \"z42.core\":        \"z42.core.zpkg\",\n";
-    s = s + "  \"Std\":             \"z42.core.zpkg\",\n";
-    s = s + "  \"Std.Exceptions\":  \"z42.core.zpkg\",\n";
-    s = s + "  \"Std.IO\":          \"z42.io.zpkg\",\n";
-    s = s + "  \"Std.Math\":        \"z42.math.zpkg\",\n";
-    s = s + "  \"Std.Text\":        \"z42.text.zpkg\",\n";
-    s = s + "  \"Std.Encoding\":    \"z42.encoding.zpkg\",\n";
-    s = s + "  \"Std.Collections\": \"z42.collections.zpkg\",\n";
-    s = s + "  \"Std.Test\":        \"z42.test.zpkg\",\n";
-    s = s + "  \"Std.Time\":        \"z42.time.zpkg\",\n";
-    s = s + "  \"Std.Toml\":        \"z42.toml.zpkg\",\n";
-    s = s + "  \"Std.Json\":        \"z42.json.zpkg\",\n";
-    s = s + "  \"Std.Random\":      \"z42.random.zpkg\",\n";
-    s = s + "  \"Std.Uri\":         \"z42.uri.zpkg\",\n";
-    s = s + "  \"Std.IO.Binary\":   \"z42.io.binary.zpkg\",\n";
-    s = s + "  \"Std.Diagnostics\": \"z42.diagnostics.zpkg\",\n";
-    s = s + "  \"Std.Regex\":       \"z42.regex.zpkg\",\n";
-    s = s + "  \"Std.Cli\":         \"z42.cli.zpkg\",\n";
-    s = s + "  \"Std.Crypto\":      \"z42.crypto.zpkg\",\n";
-    s = s + "  \"Std.Threading\":   \"z42.threading.zpkg\",\n";
-    s = s + "  \"Std.Compression\": \"z42.compression.zpkg\",\n";
-    s = s + "  \"Std.Archive\":     \"z42.compression.zpkg\",\n";
-    s = s + "  \"Std.Yaml\":        \"z42.yaml.zpkg\",\n";
-    s = s + "  \"Std.Net.Sockets\": \"z42.net.zpkg\",\n";
-    s = s + "  \"Std.Numerics\":    \"z42.numerics.zpkg\"\n";
-    s = s + "}\n";
-    return s;
-}
-
 
 void _cleanGlob(string dir, string pattern) {
     string[] hits = Path.Glob(dir, pattern);

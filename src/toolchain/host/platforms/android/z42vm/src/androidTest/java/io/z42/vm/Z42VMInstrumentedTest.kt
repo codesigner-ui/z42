@@ -6,7 +6,7 @@
 // Resources (produced by `../build.sh`, exposed via `Context.assets`):
 //   test-fixtures/hello.zbc        — single line "hello, world"
 //   test-fixtures/multi_line.zbc   — three lines "a" / "b" / "c"
-//   stdlib/*.zpkg                  — corelib + Std.IO + ... + index.json
+//   stdlib/*.zpkg                  — corelib + Std.IO + ... (NSPC self-describing)
 //
 // Spec: docs/spec/archive/2026-05-12-add-android-tests/specs/android-tests/spec.md
 //       docs/spec/archive/2026-05-12-define-platform-test-contract/specs/platform-test-contract/spec.md

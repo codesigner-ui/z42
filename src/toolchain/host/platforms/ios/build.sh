@@ -77,16 +77,12 @@ if [[ -d "$LIBS_DIR" ]]; then
     mkdir -p "$STDLIB_DIR"
     cp "$LIBS_DIR"/*.zpkg "$STDLIB_DIR/" 2>/dev/null || true
     ls "$STDLIB_DIR"/*.zpkg 2>/dev/null | xargs -n1 basename | sed 's/^/  - /' || true
-    # Namespace index — BundleZpkgResolver maps "Std.IO" → "z42.io.zpkg".
-    if [[ -f "$LIBS_DIR/index.json" ]]; then
-        cp "$LIBS_DIR/index.json" "$STDLIB_DIR/index.json"
-        echo "  - index.json"
-    else
-        echo "warning: $LIBS_DIR/index.json missing — BundleZpkgResolver will fall back to namespace-as-filename" >&2
-    fi
+    # No namespace index is shipped: the embedding host injects each zpkg
+    # (z42_host_add_zpkg) and the runtime reads its NSPC section to map
+    # namespaces. See docs/spec/changes/drop-index-json-self-describing/.
 else
     echo "warning: stdlib libs dir not found at $LIBS_DIR" >&2
-    echo "         build the standard library first: ./scripts/build-stdlib.sh" >&2
+    echo "         build the standard library first: z42 xtask.zpkg build stdlib" >&2
 fi
 
 # ── (3) Cargo build × N targets (iOS slice(s) + host extras for swift test). ────

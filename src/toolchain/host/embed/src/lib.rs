@@ -178,6 +178,22 @@ impl ZpkgResolver for SearchPathsResolver {
     }
 }
 
+/// Read the keys a zpkg can be resolved by — its package name (e.g.
+/// `"z42.core"`, by which the prelude is requested) plus every namespace
+/// it declares in `NSPC`. Tier 3 facades use this to build a resolution
+/// map directly from the packages they ship — no separate index file.
+/// Mirrors the C ABI `z42_zpkg_read_namespaces`.
+pub fn read_zpkg_namespaces(bytes: &[u8]) -> Result<Vec<String>, HostError> {
+    let info = z42::metadata::zbc_reader::read_zpkg_meta(bytes)
+        .map_err(|e| HostError::BadZbc(format!("read zpkg metadata: {e:#}")))?;
+    let mut keys = Vec::with_capacity(info.namespaces.len() + 1);
+    if !info.name.is_empty() {
+        keys.push(info.name);
+    }
+    keys.extend(info.namespaces);
+    Ok(keys)
+}
+
 /// Errors surfaced by every `z42-host` API. `message` carries the
 /// runtime's diagnostic from `z42_host_last_error`.
 #[derive(Debug, Clone)]

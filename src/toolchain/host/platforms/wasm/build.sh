@@ -2,8 +2,8 @@
 # Build `@z42/wasm` end-to-end:
 #   1. Verify required tooling.
 #   2. Compile test fixtures from examples/embedding/*.z42 → js/fixtures/.
-#   3. Copy stdlib zpkgs + index.json from artifacts/build/libraries/dist/release/
-#      into js/stdlib/.
+#   3. Copy stdlib zpkgs from artifacts/build/libraries/dist/release/ into
+#      js/stdlib/ and emit a files.json fetch-list for the browser.
 #   4. Run wasm-pack for web + nodejs targets.
 #
 # Spec: docs/spec/archive/2026-05-12-add-platform-wasm/
@@ -76,25 +76,30 @@ for src in hello multi_line; do
     dotnet "$DRIVER_DLL" "$src_file" --emit zbc -o "$out_file"
 done
 
-# ── (3) Stdlib bundle (zpkgs + namespace index). ─────────────────────────
+# ── (3) Stdlib bundle (zpkgs + generated browser fetch-list). ────────────
+#
+# The runtime resolves namespaces from each zpkg's NSPC section, so no
+# namespace→file index is shipped. The browser cannot enumerate a remote
+# directory over HTTP, so we emit a plain `files.json` listing the zpkg
+# filenames it should fetch + inject (Node enumerates the dir directly).
+# files.json is a derived `ls` product — never hand-maintained.
 
 LIBS_DIR="$ROOT/artifacts/build/libraries/dist/release"
 STDLIB_DIR="$HERE/js/stdlib"
 
 if [[ -d "$LIBS_DIR" ]]; then
-    echo "copying stdlib zpkgs + index from $LIBS_DIR"
+    echo "copying stdlib zpkgs from $LIBS_DIR"
     mkdir -p "$STDLIB_DIR"
+    rm -f "$STDLIB_DIR"/*.zpkg
     cp "$LIBS_DIR"/*.zpkg "$STDLIB_DIR/" 2>/dev/null || true
     ls "$STDLIB_DIR"/*.zpkg 2>/dev/null | xargs -n1 basename | sed 's/^/  - /' || true
-    if [[ -f "$LIBS_DIR/index.json" ]]; then
-        cp "$LIBS_DIR/index.json" "$STDLIB_DIR/index.json"
-        echo "  - index.json"
-    else
-        echo "warning: $LIBS_DIR/index.json missing — bundleStdlib* will fall back to namespace-as-filename" >&2
-    fi
+    ( cd "$STDLIB_DIR" && ls *.zpkg 2>/dev/null | sort \
+        | python3 -c "import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()], indent=2))" \
+        > files.json )
+    echo "  - files.json (browser fetch-list)"
 else
     echo "warning: stdlib libs dir not found at $LIBS_DIR" >&2
-    echo "         build the standard library first: ./scripts/build-stdlib.sh" >&2
+    echo "         build the standard library first: z42 xtask.zpkg build stdlib" >&2
 fi
 
 # ── (4) wasm-pack: produce pkg-web/ + pkg-nodejs/. ──────────────────────
@@ -111,7 +116,7 @@ echo ""
 echo "built:"
 echo "  $HERE/pkg-web/"
 echo "  $HERE/pkg-nodejs/"
-echo "  $STDLIB_DIR/                         (zpkgs + index.json)"
+echo "  $STDLIB_DIR/                         (zpkgs + files.json)"
 echo "  $FIX_DIR/                            (test fixtures)"
 echo ""
 echo "run tests:  ./test.sh   (Node.js via artifacts/tools/node — run ./scripts/install-node-local.sh first)"

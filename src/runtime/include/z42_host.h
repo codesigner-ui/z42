@@ -97,6 +97,18 @@ typedef int (*Z42ZpkgResolverFn)(
     size_t*         out_length,
     void*           user_data);
 
+/* ── zpkg namespace introspection ────────────────────────────────────────── */
+
+/*
+ * Visitor for z42_zpkg_read_namespaces: called once per resolution key a
+ * zpkg answers to — its package name (e.g. "z42.core") and each namespace
+ * it declares in NSPC (e.g. "Std", "Std.IO"). `ns` is `len` UTF-8 bytes
+ * (NOT NUL-terminated), valid only for the duration of the call — copy
+ * before returning. Lets a resolver build its map from the package
+ * itself, so no separate index file is needed.
+ */
+typedef void (*Z42NamespaceVisitor)(const char* ns, size_t len, void* user_data);
+
 /* ── Configuration ───────────────────────────────────────────────────────── */
 
 typedef struct Z42HostConfig {
@@ -177,6 +189,18 @@ Z42HostStatus z42_host_initialize(const Z42HostConfig* cfg,
 Z42HostStatus z42_host_load_zbc(Z42HostRef host,
                                 const uint8_t* bytes, size_t length,
                                 Z42ModuleRef* out_module);
+
+/*
+ * Read the keys a zpkg can be resolved by — its package name plus every
+ * namespace it declares in NSPC — invoking `visit` once per key.
+ * Stateless — needs no initialized VM. Lets a resolver build its map from
+ * the package itself (no index file). Returns ERR_BAD_ZBC if `bytes`
+ * isn't a parseable zpkg.
+ *
+ * Spec: docs/spec/changes/drop-index-json-self-describing/
+ */
+Z42HostStatus z42_zpkg_read_namespaces(const uint8_t* bytes, size_t length,
+                                       Z42NamespaceVisitor visit, void* user_data);
 
 /*
  * Resolve an entry by fully qualified name. FQN format:

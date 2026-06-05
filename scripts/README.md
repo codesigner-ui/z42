@@ -24,9 +24,9 @@ bootstrap」。
 > **冷启动 bootstrap（鸡生蛋的真正破解点）**：`xtask.zpkg` 依赖 stdlib 才能编译，
 > 所以冷树上先由 **C# 编译器**直接 `dotnet -- build --workspace`（不涉及任何 z42
 > 程序）产出 primer stdlib（`.zpkg`/`.zsym`）→ 编译 `xtask.zpkg` → 再
-> `z42 xtask.zpkg build stdlib`（即 `xtask_stdlib.z42`）做扁平视图 + `index.json`。
-> z42c 只读 `.zsym`、VM 扫目录，二者都不需要 `index.json` 即可编译/运行 xtask，所以
-> 这个次序无死锁。
+> `z42 xtask.zpkg build stdlib`（即 `xtask_stdlib.z42`）做扁平视图。z42c 只读 `.zsym`、
+> VM 扫目录（读各 zpkg 的 NSPC section 认领 namespace），都不需要任何 namespace 索引即可
+> 编译/运行 xtask，所以这个次序无死锁。
 
 > 所有版本号的唯一真相源是仓库根 `versions.toml`（xtask 经 `Std.Toml` 原生解析，
 > 见共享模块 `xtask_versions.z42`）。
@@ -37,7 +37,7 @@ bootstrap」。
 |------|---------|---------|---------|
 | `z42 xtask.zpkg deps install` | **首次 clone / 平台版本变动** | `versions.toml` | rust targets + cargo-ndk + wasm-pack；按平台装 NDK / 构建 SDK |
 | `z42 xtask.zpkg deps check` | 改 `versions.toml` 后对账 | `versions.toml` + 投影文件 | versions.toml ↔ Cargo.toml / build.gradle.kts / ios/Package.swift 一致性 |
-| `z42 xtask.zpkg build stdlib` | 改了 stdlib `.z42` 源 | `dotnet` + `z42.Driver` | `artifacts/build/libraries/dist/release/<lib>.zpkg` + `index.json` |
+| `z42 xtask.zpkg build stdlib` | 改了 stdlib `.z42` 源 | `dotnet` + `z42.Driver` | `artifacts/build/libraries/dist/release/<lib>.zpkg`（扁平视图，无 namespace 索引） |
 | `z42 xtask.zpkg build package [release\|debug] [--rid R]` | 准备发行 / 测发行包 | `dotnet` + `cargo` | `artifacts/packages/z42-<version>-<rid>-<config>/{bin,libs,native}`（末尾自动跑 SHA-256 invariant） |
 | `z42 xtask.zpkg regen` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | 更新 `src/tests/**/source.zbc` + `src/libraries/*/tests/**/source.zbc` |
 | `z42 xtask.zpkg audit` | 新增 test `source.z42` | `z42.regex` | 自动补缺失的 `using` 声明 |
@@ -88,7 +88,7 @@ z42 xtask.zpkg test changed
 
 **改了 stdlib `.z42` 源**：
 ```bash
-z42 xtask.zpkg build stdlib       # 重编 stdlib zpkg + index.json
+z42 xtask.zpkg build stdlib       # 重编 stdlib zpkg（扁平视图，无 namespace 索引）
 z42 xtask.zpkg test vm
 ```
 
@@ -117,7 +117,7 @@ cold bootstrap: dotnet -- build --workspace (primer)  →  build scripts/xtask.z
 |------|------|
 | `xtask.z42` | 入口 + 命令路由（build / test / deps / regen / audit / bench）|
 | `xtask_versions.z42` | 共享 `versions.toml` 读取器（`_vget` / `_vRead` / `_vReadOr` / `_scalarStr`）|
-| `xtask_stdlib.z42` | `build stdlib`：z42c `build --workspace` + 扁平视图 + `index.json` |
+| `xtask_stdlib.z42` | `build stdlib`：z42c `build --workspace` + 扁平视图（无 namespace 索引） |
 | `xtask_test.z42` | `test` 路由 + `_testAll` / `_testLib` + 发行包发现 |
 | `xtask_test_vm.z42` / `xtask_test_cross.z42` / `xtask_test_dist.z42` / `xtask_test_changed.z42` | 各测试 stage 实现 |
 | `xtask_golden.z42` | 共享 golden 枚举 / 入口推导 helpers（被多个 test stage 复用）|

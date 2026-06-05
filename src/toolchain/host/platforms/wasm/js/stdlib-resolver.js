@@ -1,38 +1,29 @@
-// Built-in ZpkgResolver helpers for `@z42/wasm`. Both flavours return a
-// resolver function `(namespace) => Uint8Array | null` matching the
-// ZpkgResolverFn shape in index.d.ts.
+// Built-in stdlib resolvers for `@z42/wasm`. Each returns a ZpkgResolver
+// function `(namespace) => Uint8Array | null` — the shape Z42VM's
+// `zpkgResolver` option expects (the load hook is unchanged).
 //
-// Resolution model — namespace index + filename fallback:
-//   1. Each helper pre-fetches/reads `stdlib/index.json` which maps
-//      namespaces (`"Std.IO"`) → zpkg filenames (`"z42.io.zpkg"`).
-//      That index is produced by host `scripts/build-stdlib.sh`.
-//   2. Each known stdlib zpkg is fetched/read once, by *filename*.
-//   3. The returned resolver looks up the requested namespace in a
-//      `Map<string, Uint8Array>` built from the index. When the index
-//      is missing or doesn't list the namespace, the resolver falls
-//      back to `<namespace>.zpkg` (legacy "one namespace per file"
-//      convention; preserved for custom hosts that publish single-
-//      namespace packages without shipping an index).
+// Resolution model — read NSPC, no index file:
+//   The runtime asks the resolver for a namespace's bytes. These helpers
+//   build the namespace → bytes map by reading each zpkg's NSPC section
+//   (via the wasm `readNamespaces` export), so a single zpkg that ships
+//   several namespaces (e.g. z42.core.zpkg → z42.core + Std + Std.Exceptions)
+//   maps all of them. There is no hand-maintained `index.json`.
 //
-// Browser: fetch() each zpkg + index upfront; resolver call is sync.
-// Node.js: synchronous fs.readFileSync from the package's `stdlib/` dir.
+//   Node.js: enumerate the package's `stdlib/` dir via readdir.
+//   Browser: HTTP can't list a directory, so fetch a build-generated
+//     `files.json` (a plain list of zpkg filenames, derived — never
+//     hand-maintained) and fetch each.
 //
-// Spec: docs/spec/archive/2026-05-12-fix-bundle-resolver-namespace-index/
+//   `readNamespaces` is the wasm export — import it from the resolved
+//   target (`pkg-web` / `pkg-nodejs` / `@z42/wasm`) and pass it in.
+//
+// Spec: docs/spec/changes/drop-index-json-self-describing/
 //       docs/spec/archive/2026-05-12-add-wasm-tests/  (wasm side)
 
-const STDLIB_NAMES = [
-    'z42.core',
-    'z42.io',
-    'z42.collections',
-    'z42.math',
-    'z42.test',
-    'z42.text',
-];
-
 /**
- * Build a synchronous resolver from a pre-populated namespace → bytes
- * map. The runtime calls this once per dependency at `loadZbc` time;
- * backing storage is a plain Map for O(1) lookup.
+ * Build a synchronous resolver from a pre-populated namespace → bytes map.
+ * Also the building block for active injection: a host that already holds
+ * zpkg bytes (web playground / REPL) builds the map and passes the resolver.
  */
 export function mapResolver(byNamespace) {
     return function resolve(namespace) {
@@ -41,120 +32,81 @@ export function mapResolver(byNamespace) {
 }
 
 /**
- * Node-only: synchronously load every namespace known via the stdlib
- * index + every legacy `<name>.zpkg` from the package's `stdlib/` dir.
- * Returns a resolver function.
- *
- *     import { bundleStdlibNode } from '@z42/wasm/stdlib-resolver';
- *     const resolver = await bundleStdlibNode();
- *     const vm = new Z42VM({ zpkgResolver: resolver });
+ * Read each zpkg's NSPC and assemble a namespace → bytes map. `zpkgs` is
+ * an iterable of `Uint8Array`; `readNamespaces` is the wasm export
+ * `(bytes) => string[]`. First-wins on duplicate namespaces.
  */
-export async function bundleStdlibNode() {
+export function buildNamespaceMap(zpkgs, readNamespaces) {
+    const byNamespace = new Map();
+    for (const bytes of zpkgs) {
+        let namespaces;
+        try {
+            namespaces = readNamespaces(bytes);
+        } catch {
+            continue; // not a parseable zpkg — skip
+        }
+        for (const ns of namespaces) {
+            if (!byNamespace.has(ns)) byNamespace.set(ns, bytes);
+        }
+    }
+    return byNamespace;
+}
+
+/**
+ * Node-only: read every `*.zpkg` from the package's `stdlib/` dir, map
+ * namespaces via NSPC, return a resolver.
+ *
+ *     import { readNamespaces } from '@z42/wasm';
+ *     const vm = new Z42VM({ zpkgResolver: await bundleStdlibNode(readNamespaces) });
+ */
+export async function bundleStdlibNode(readNamespaces) {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const url = await import('node:url');
 
     const here = path.dirname(url.fileURLToPath(import.meta.url));
     const stdlibDir = path.join(here, 'stdlib');
+    if (!fs.existsSync(stdlibDir)) return mapResolver(new Map());
 
-    const index = readIndexNode(fs, path, stdlibDir);
-    const byFilename = readZpkgsNode(fs, path, stdlibDir, index);
-    return mapResolver(buildNamespaceMap(index, byFilename));
+    const zpkgs = fs.readdirSync(stdlibDir)
+        .filter((f) => f.endsWith('.zpkg'))
+        .sort()
+        .map((f) => new Uint8Array(fs.readFileSync(path.join(stdlibDir, f))));
+    return mapResolver(buildNamespaceMap(zpkgs, readNamespaces));
 }
 
 /**
- * Browser-only: pre-fetch the stdlib index + every referenced zpkg via
- * `fetch` relative to `baseUrl`. Returns a Promise that resolves to a
- * synchronous resolver function once all fetches complete.
+ * Browser-only: fetch every zpkg listed in the build-generated
+ * `files.json` under `baseUrl`, map namespaces via NSPC, return a resolver.
  *
- *     import { bundleStdlibBrowser } from '@z42/wasm/stdlib-resolver';
+ *     import { readNamespaces } from '@z42/wasm';
  *     const resolver = await bundleStdlibBrowser(
- *         new URL('./stdlib/', import.meta.url)
- *     );
+ *         new URL('./stdlib/', import.meta.url), readNamespaces);
  *     const vm = new Z42VM({ zpkgResolver: resolver });
  */
-export async function bundleStdlibBrowser(baseUrl) {
+export async function bundleStdlibBrowser(baseUrl, readNamespaces) {
     if (!(baseUrl instanceof URL)) {
         baseUrl = new URL(baseUrl, location.href);
     }
-    const index = await fetchIndexBrowser(baseUrl);
-    const byFilename = await fetchZpkgsBrowser(baseUrl, index);
-    return mapResolver(buildNamespaceMap(index, byFilename));
+    const filenames = (await fetchFileList(baseUrl)).slice().sort();
+    const zpkgs = (await Promise.all(filenames.map(async (filename) => {
+        const res = await fetch(new URL(filename, baseUrl));
+        return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+    }))).filter((b) => b !== null);
+    return mapResolver(buildNamespaceMap(zpkgs, readNamespaces));
 }
 
-// ── Helpers — index loaders. ────────────────────────────────────────
+// ── Helpers. ────────────────────────────────────────────────────────
 
-function readIndexNode(fs, path, stdlibDir) {
-    const file = path.join(stdlibDir, 'index.json');
-    if (!fs.existsSync(file)) return {};
+async function fetchFileList(baseUrl) {
     try {
-        return JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch {
-        return {};
-    }
-}
-
-async function fetchIndexBrowser(baseUrl) {
-    try {
-        const res = await fetch(new URL('index.json', baseUrl));
-        if (!res.ok) return {};
-        return await res.json();
-    } catch {
-        return {};
-    }
-}
-
-// ── Helpers — zpkg loaders (load every file referenced by the index
-// plus each legacy `<STDLIB_NAME>.zpkg`; de-dupe by filename). ──────
-
-function readZpkgsNode(fs, path, stdlibDir, index) {
-    const byFilename = new Map();
-    const filenames = new Set(Object.values(index));
-    for (const name of STDLIB_NAMES) {
-        filenames.add(`${name}.zpkg`);  // legacy fallback
-    }
-    for (const filename of filenames) {
-        const file = path.join(stdlibDir, filename);
-        if (fs.existsSync(file)) {
-            byFilename.set(filename, new Uint8Array(fs.readFileSync(file)));
-        }
-    }
-    return byFilename;
-}
-
-async function fetchZpkgsBrowser(baseUrl, index) {
-    const filenames = new Set(Object.values(index));
-    for (const name of STDLIB_NAMES) {
-        filenames.add(`${name}.zpkg`);  // legacy fallback
-    }
-    const byFilename = new Map();
-    await Promise.all([...filenames].map(async (filename) => {
-        const url = new URL(filename, baseUrl);
-        const res = await fetch(url);
+        const res = await fetch(new URL('files.json', baseUrl));
         if (res.ok) {
-            byFilename.set(filename, new Uint8Array(await res.arrayBuffer()));
+            const list = await res.json();
+            if (Array.isArray(list)) return list;
         }
-    }));
-    return byFilename;
-}
-
-// ── Helpers — assemble namespace → bytes from index + fallback. ─────
-
-function buildNamespaceMap(index, byFilename) {
-    const byNamespace = new Map();
-    // 1. Index-driven (covers multi-namespace-per-file: z42.core ships
-    //    Std + Std.Exceptions etc).
-    for (const [namespace, filename] of Object.entries(index)) {
-        const bytes = byFilename.get(filename);
-        if (bytes) byNamespace.set(namespace, bytes);
+    } catch {
+        /* fall through to empty list */
     }
-    // 2. Legacy filename fallback: namespace == basename (one zpkg per
-    //    namespace). Hosts without an index still resolve correctly.
-    for (const name of STDLIB_NAMES) {
-        if (!byNamespace.has(name)) {
-            const bytes = byFilename.get(`${name}.zpkg`);
-            if (bytes) byNamespace.set(name, bytes);
-        }
-    }
-    return byNamespace;
+    return [];
 }

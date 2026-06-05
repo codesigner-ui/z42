@@ -14,14 +14,14 @@
 ## 直接构建
 
 ```bash
-z42 xtask.zpkg build stdlib            # 编译全部 lib + 扁平视图 + index.json（dev 默认）
+z42 xtask.zpkg build stdlib            # 编译全部 lib + 扁平视图（dev 默认）
 z42 xtask.zpkg test dist               # 用打包发行版 z42c 编译并验证（package 后测试用）
 ```
 
-`build stdlib` 的逻辑现已 fold 进 xtask（`scripts/xtask_stdlib.z42`），一条命令做三件事：
+`build stdlib` 的逻辑现已 fold 进 xtask（`scripts/xtask_stdlib.z42`），一条命令做两件事：
 (1) `z42c build --workspace --release` 编译 22 个 lib；(2) hard-link 成扁平视图
-`artifacts/build/libraries/dist/release/`（VM 单目录加载点）；(3) 写 namespace→zpkg 的
-`index.json`。核心编译步骤等价于：
+`artifacts/build/libraries/dist/release/`（VM 单目录加载点）。不写 namespace 索引——VM
+与嵌入宿主都读各 zpkg 的 `NSPC` section 认领 namespace。核心编译步骤等价于：
 
 ```bash
 ( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
@@ -29,8 +29,8 @@ z42 xtask.zpkg test dist               # 用打包发行版 z42c 编译并验证
 
 > **冷启动**：`xtask.zpkg` 本身依赖 stdlib 才能编译，所以冷树上先由 C# 编译器直接跑上面
 > 这条 `build --workspace`（primer，无 z42 程序参与）产出 `.zpkg`/`.zsym` → 编译
-> `xtask.zpkg` → 再 `z42 xtask.zpkg build stdlib` 补扁平视图 + `index.json`。z42c 只读
-> `.zsym`、VM 扫目录，都不需要 `index.json` 即可编译/运行 xtask，故此次序无死锁。
+> `xtask.zpkg` → 再 `z42 xtask.zpkg build stdlib` 补扁平视图。z42c 只读 `.zsym`、VM 扫目录
+> （读各 zpkg 的 `NSPC` section），都不需要任何 namespace 索引即可编译/运行 xtask，故此次序无死锁。
 
 ## 增量编译（C5）
 
@@ -50,11 +50,10 @@ artifacts/build/libraries/
 ├── <lib>/release/dist/<lib>.zpkg   # 每个 lib 的 workspace 构建产物（+ .zsym）
 ├── <lib>/release/cache/*.zbc       # 增量编译中间产物
 └── dist/release/                   # 扁平视图（hard-link）= VM 单目录加载点
-    ├── <lib>.zpkg + <lib>.zsym     #   build stdlib hard-link 过来
-    └── index.json                  #   namespace → zpkg 索引
+    └── <lib>.zpkg + <lib>.zsym     #   build stdlib hard-link 过来（无 namespace 索引——读 NSPC）
 ```
 
-`z42 xtask.zpkg build stdlib` 同时产每-lib 构建产物 + 扁平视图 + `index.json`；
+`z42 xtask.zpkg build stdlib` 同时产每-lib 构建产物 + 扁平视图；
 `z42 xtask.zpkg build package` 在分发版打包阶段把扁平视图整份拷进 SDK 的 `libs/`。
 
 ## 分发链端到端

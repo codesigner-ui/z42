@@ -508,6 +508,67 @@ pub unsafe extern "C" fn z42_host_last_error(_host: *mut Z42Host) -> Z42Error {
     snapshot_last_error()
 }
 
+// ── zpkg introspection ──────────────────────────────────────────────────
+
+/// Read the keys a zpkg can be resolved by — its **package name** (e.g.
+/// `"z42.core"`; the prelude is requested by package name) plus every
+/// **namespace** it declares in `NSPC` (e.g. `"Std"`, `"Std.IO"`). For
+/// each key the runtime calls `visit(key, len, user_data)` once.
+///
+/// This lets embedding hosts build a resolution map from the package
+/// itself — no separate index file. Stateless: does not require an
+/// initialized VM, and never mutates host state. Returns `ERR_BAD_ZBC`
+/// when the bytes aren't a parseable zpkg.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn z42_zpkg_read_namespaces(
+    bytes: *const u8,
+    length: usize,
+    visit: config::Z42NamespaceVisitor,
+    user_data: *mut c_void,
+) -> Z42HostStatus {
+    guard(|| {
+        let Some(visit) = visit else {
+            return set_error(
+                Z42HostStatus::BadConfig,
+                "z42_zpkg_read_namespaces: visit callback is NULL",
+            );
+        };
+        if bytes.is_null() && length != 0 {
+            return set_error(
+                Z42HostStatus::BadZbc,
+                "z42_zpkg_read_namespaces: bytes pointer is NULL but length is non-zero",
+            );
+        }
+        let slice = if length == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(bytes, length) }
+        };
+        match crate::metadata::zbc_reader::read_zpkg_meta(slice) {
+            Ok(info) => {
+                // Package name first (the corelib prelude "z42.core" is
+                // requested by package name, not a declared namespace),
+                // then each NSPC namespace. SAFETY: each `&str` outlives
+                // the synchronous callback; the host copies before return.
+                if !info.name.is_empty() {
+                    let b = info.name.as_bytes();
+                    unsafe { visit(b.as_ptr() as *const c_char, b.len(), user_data) };
+                }
+                for ns in &info.namespaces {
+                    let b = ns.as_bytes();
+                    unsafe { visit(b.as_ptr() as *const c_char, b.len(), user_data) };
+                }
+                clear_error();
+                Z42HostStatus::Ok
+            }
+            Err(e) => set_error(
+                Z42HostStatus::BadZbc,
+                format!("z42_zpkg_read_namespaces: cannot read zpkg metadata: {e:#}"),
+            ),
+        }
+    })
+}
+
 // ── Tier 2 escape hatch: install a Rust ZpkgResolver post-init ──────────
 
 /// Install a Rust [`ZpkgResolver`] trait object into the running host

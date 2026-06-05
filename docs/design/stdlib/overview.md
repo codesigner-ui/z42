@@ -275,13 +275,13 @@ When the VM needs to load a stdlib module it searches in order:
 3. `<cwd>/artifacts/build/libraries/dist/release/`  (development: `cargo run` from project root)
 
 Each path is the **flat dist view**: it contains files named `<module-name>.zbc` or
-`<module-name>.zpkg` plus an `index.json` (namespace → zpkg map) written alongside.
-Both formats are accepted; `.zpkg` (packed mode) is preferred when both exist as it
-carries version metadata.
+`<module-name>.zpkg`. Both formats are accepted; `.zpkg` (packed mode) is preferred
+when both exist as it carries version metadata. No namespace index is written — the
+VM (and embedding hosts) read each zpkg's `NSPC` section to map namespaces.
 
 **Producing the flat dist directory:** run `z42 xtask.zpkg build stdlib` from the project root.
-This compiles the stdlib and populates `artifacts/build/libraries/dist/release/` (flat view +
-`index.json`); per-lib intermediate output lives at `artifacts/build/libraries/<lib>/release/dist/`.
+This compiles the stdlib and populates `artifacts/build/libraries/dist/release/` (flat view);
+per-lib intermediate output lives at `artifacts/build/libraries/<lib>/release/dist/`.
 Until M7 (`[Native]` attribute support), the `.zbc`/`.zpkg` files are placeholders.
 
 ---

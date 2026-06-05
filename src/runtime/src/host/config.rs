@@ -28,6 +28,14 @@ pub type Z42ZpkgResolverFn = Option<
     ) -> i32,
 >;
 
+/// Visitor for [`super::z42_zpkg_read_namespaces`]: invoked once per
+/// resolution key a zpkg answers to — its package name and each namespace
+/// it declares in `NSPC`. `ns` is a UTF-8 byte range of `len` bytes (NOT
+/// NUL-terminated); valid only for the duration of the call, so the host
+/// must copy it before returning.
+pub type Z42NamespaceVisitor =
+    Option<unsafe extern "C" fn(ns: *const c_char, len: usize, user_data: *mut c_void)>;
+
 /// `Z42ExecMode` — must stay in sync with the C enum.
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

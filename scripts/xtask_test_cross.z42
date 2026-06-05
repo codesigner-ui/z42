@@ -225,14 +225,14 @@ void _copyZpkgs(string srcDir, string dstDir) {
 
 // Stdlib artifacts live in the FLAT dist view at
 // artifacts/build/libraries/dist/release (the same layout Z42_LIBS / _z42vm
-// consume). Copy *.zpkg + *.zsym + index.json from there.
+// consume). Copy *.zpkg + *.zsym from there.
 void _copyStdlibZpkgs(string distDir, string dstDir) {
     if (!Directory.Exists(distDir)) return;
     string[] entries = Directory.Enumerate(distDir);
     int i = 0;
     while (i < entries.Length) {
         string fname = entries[i];
-        if (fname.EndsWith(".zpkg") || fname.EndsWith(".zsym") || fname == "index.json") {
+        if (fname.EndsWith(".zpkg") || fname.EndsWith(".zsym")) {
             string src = Path.Join(distDir, fname);
             string dst = Path.Join(dstDir, fname);
             try { File.Copy(src, dst); } catch (Exception e) { /* skip */ }

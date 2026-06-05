@@ -77,3 +77,10 @@ export class Z42VMError extends Error {
 
 /** Initialise the wasm module. Required once per page / process. */
 export default function init(input?: BufferSource | URL): Promise<void>;
+
+/**
+ * Read the namespaces a zpkg provides (its NSPC section). The
+ * `stdlib-resolver.js` helpers use this to map namespace → bytes from the
+ * packages directly — no `index.json`.
+ */
+export function readNamespaces(bytes: Uint8Array): string[];

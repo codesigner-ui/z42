@@ -140,6 +140,14 @@ impl Z42VM {
     }
 }
 
+/// Read the namespaces a zpkg provides (its `NSPC` section), as a JS array
+/// of strings. The stdlib helpers use this to map namespace → bytes from
+/// the packages directly — no `index.json`.
+#[wasm_bindgen(js_name = readNamespaces)]
+pub fn read_namespaces(bytes: &[u8]) -> Result<Vec<String>, JsValue> {
+    z42_host::read_zpkg_namespaces(bytes).map_err(to_js_error)
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 fn read_property(obj: &JsValue, key: &str) -> Option<JsValue> {

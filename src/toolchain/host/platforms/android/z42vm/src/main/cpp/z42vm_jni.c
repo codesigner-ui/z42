@@ -327,3 +327,54 @@ Java_io_z42_vm_Z42VM_nativeShutdown(JNIEnv* env, jobject self, jlong handle) {
     }
     free(h);
 }
+
+/* ── z42_zpkg_read_namespaces bridge (static) ────────────────────────────
+ *
+ * Stateless: reads a zpkg's NSPC section so AssetZpkgResolver can build a
+ * namespace → bytes map from the asset packages directly — no index.json.
+ * The visitor collects C strings (JNIEnv-free); String[] is built after.
+ */
+
+typedef struct {
+    char** items;
+    size_t count;
+    size_t cap;
+} NsCollector;
+
+static void ns_collect(const char* ns, size_t len, void* user_data) {
+    NsCollector* c = (NsCollector*)user_data;
+    if (c->count == c->cap) {
+        size_t ncap = c->cap ? c->cap * 2 : 8;
+        char** ni = (char**)realloc(c->items, ncap * sizeof(char*));
+        if (!ni) return;
+        c->items = ni;
+        c->cap = ncap;
+    }
+    char* s = (char*)malloc(len + 1);
+    if (!s) return;
+    memcpy(s, ns, len);
+    s[len] = '\0';
+    c->items[c->count++] = s;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_io_z42_vm_Z42VM_readNamespaces(JNIEnv* env, jclass clazz, jbyteArray bytes) {
+    (void)clazz;
+    jsize len = (*env)->GetArrayLength(env, bytes);
+    jbyte* buf = (*env)->GetByteArrayElements(env, bytes, NULL);
+
+    NsCollector c = { NULL, 0, 0 };
+    z42_zpkg_read_namespaces((const uint8_t*)buf, (size_t)len, ns_collect, &c);
+    if (buf) (*env)->ReleaseByteArrayElements(env, bytes, buf, JNI_ABORT);
+
+    jclass str_class = (*env)->FindClass(env, "java/lang/String");
+    jobjectArray arr = (*env)->NewObjectArray(env, (jsize)c.count, str_class, NULL);
+    for (size_t i = 0; i < c.count; i++) {
+        jstring js = (*env)->NewStringUTF(env, c.items[i]);
+        (*env)->SetObjectArrayElement(env, arr, (jsize)i, js);
+        (*env)->DeleteLocalRef(env, js);
+        free(c.items[i]);
+    }
+    free(c.items);
+    return arr;
+}

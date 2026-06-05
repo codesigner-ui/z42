@@ -164,7 +164,7 @@ z42 xtask.zpkg build package release --rid windows-x64
 ls artifacts/packages/z42-0.1.0-windows-x64-release/
 #  bin/z42c.exe bin/z42vm.exe
 #  native/z42.dll native/z42.lib native/include/{z42_abi.h,z42_host.h}
-#  libs/*.zpkg + index.json
+#  libs/*.zpkg
 #  examples/{hello_c, hello_rust}/
 #  manifest.toml
 ```

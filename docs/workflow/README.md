@@ -58,7 +58,7 @@ artifacts/
 │   ├── runtime/{debug,release}/         cargo build 产物（z42vm）
 │   └── libraries/
 │       ├── <lib>/release/dist/          per-lib workspace .zpkg
-│       └── dist/release/                flat 视图（namespace→zpkg）+ index.json，VM 默认加载路径
+│       └── dist/release/                flat 视图（VM 默认加载路径；无 namespace 索引——读 NSPC）
 └── xtask/xtask.zpkg                      编译后的 dev CLI
 ```
 
