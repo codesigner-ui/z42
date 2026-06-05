@@ -1,0 +1,110 @@
+name: Bench PR Regression
+
+# Trigger: pull requests that touch performance-sensitive code.
+# Runs the full e2e bench against the PR branch, diffs the JSON against the
+# latest baseline published on `bench-baselines` by bench-update.yml, fails
+# the workflow when any time metric regresses by more than the configured
+# threshold.
+#
+# Threshold: 10% time per the 0.2.3 退出标准 — matches `xtask bench --diff
+# --threshold-time 0.10`. Memory is informational (the bench harness doesn't
+# track RSS yet; --threshold-memory keeps its default).
+#
+# Trigger paths intentionally narrow — doc-only PRs skip the run.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/runtime/**'
+      - 'src/libraries/**'
+      - 'src/compiler/**'
+      - 'bench/**'
+      - 'scripts/xtask*.z42'
+      - 'scripts/xtask.z42.toml'
+      - '.github/workflows/bench-pr.yml'
+
+concurrency:
+  group: bench-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  bench-regression:
+    name: bench regression (ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Fetch enough history that `git rev-parse --abbrev-ref HEAD` works
+          # for the bench JSON metadata.
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install hyperfine
+        run: |
+          wget -q https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine_1.20.0_amd64.deb
+          sudo dpkg -i hyperfine_1.20.0_amd64.deb
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - uses: ./.github/actions/xtask-bootstrap
+
+      - name: Run full e2e bench (xtask)
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- bench
+
+      - name: Fetch baseline from bench-baselines branch
+        id: baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `bench-update.yml` publishes baselines/e2e-ubuntu-latest.json to the
+          # dedicated `bench-baselines` branch on every push to main. Pull it
+          # without touching the worktree.
+          if git fetch origin bench-baselines:bench-baselines 2>/dev/null; then
+            git show bench-baselines:baselines/e2e-ubuntu-latest.json \
+              > /tmp/baseline.json
+            echo "have_baseline=1" >> "$GITHUB_OUTPUT"
+            echo "→ baseline fetched from bench-baselines branch"
+          else
+            echo "have_baseline=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::bench-baselines branch not present yet (bench-update has never run); skipping regression diff"
+          fi
+
+      - name: Diff against baseline (>10% time fails)
+        if: steps.baseline.outputs.have_baseline == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- \
+            bench --diff \
+              --current bench/results/e2e.json \
+              --baseline /tmp/baseline.json \
+              --threshold-time 0.10

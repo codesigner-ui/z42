@@ -64,7 +64,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.2.0 | `.zbc` v1.x 格式冻结（strict-pin + 6 fixture 字节 golden + workflow.md bump 流程）— [archive/2026-05-14-freeze-zbc-v1](spec/archive/2026-05-14-freeze-zbc-v1/) | 1 周 |
 | 0.2.1 | `.zpkg` indexed/packed 格式冻结（strict-pin + 4 fixture 字节 golden + 0.5 → 0.6 catch-up bump）— [archive/2026-05-14-freeze-zpkg-v0](spec/archive/2026-05-14-freeze-zpkg-v0/)；`z42c disasm` 完整化作为另一半（视实施 — follow-up spec）| 1 周 |
 | 0.2.2 | Benchmark 套件骨架（`cargo bench` + BenchmarkDotNet）+ 初始基线 | 1.5 周 |
-| 0.2.3 | Perf CI + 性能预算（≥10% 退化阻塞 commit）| 1 周 |
+| 0.2.3 | ✅ Perf CI + 性能预算 (`.github/workflows/bench-pr.yml`, 2026-06-05) — PR-side workflow fetches baseline from `bench-baselines` branch, runs `xtask bench --diff --threshold-time 0.10`, fails on >10% time regression | 1 周 |
 | 0.2.4 | `z42c new/init/fmt/clean` 收尾 + `z42-fmt` 独立 binary + `lint-manifest` | 1 周 |
 | 0.2.5 | 多平台 CI matrix（5 平台 build/test 全绿）+ CI 模板 | 1.5 周 |
 | 0.2.6 | Release 自动化：git tag → 跨平台 z42c/z42vm 二进制 + zpkg 自动产出（[archive/2026-05-14-add-release-automation](spec/archive/2026-05-14-add-release-automation/) — Q12 已裁决）| 1 周 |

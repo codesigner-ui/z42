@@ -55,14 +55,24 @@ export PATH="$PWD/.z42:$PWD/.z42/bin:$PATH"     # put z42 / z42c / z42vm on PATH
 ### 2. Build the xtask CLI, then drive everything through it
 
 ```bash
-z42c build scripts/xtask.z42.toml --release   # build the dev CLI → artifacts/xtask/xtask.zpkg
-z42 xtask.zpkg build all                        # compiler + runtime + stdlib
-z42 xtask.zpkg test                             # full gate (compiler + vm + cross-zpkg + stdlib)
-z42 xtask.zpkg --help                           # all commands (build / test / deps / regen / bench / package)
+# build the dev CLI against the downloaded stdlib (Z42_LIBS points z42c at .z42/libs):
+Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → artifacts/xtask/xtask.zpkg
+
+z42 xtask.zpkg build all     # compiler + runtime + stdlib (from source)
+z42 xtask.zpkg test          # full gate (compiler + vm + cross-zpkg + stdlib)
+z42 xtask.zpkg --help        # all commands (build / test / deps / regen / bench / package)
 ```
 
-> **Building the whole toolchain from source** (no prebuilt download), and the
-> full bootstrap details, live in [docs/workflow/building/](docs/workflow/building/).
+### 3. Run a z42 program
+
+```bash
+z42c build examples/hello.z42.toml --release    # → examples/dist/hello.zpkg
+z42 examples/dist/hello.zpkg                     # run it via the launcher
+```
+
+> **Prerequisites:** git + .NET 10 SDK + Rust stable (`dotnet --version && rustc --version`).
+> **Building the whole toolchain from source** (no prebuilt download) and the full
+> bootstrap details live in [docs/workflow/building/](docs/workflow/building/).
 > Full build / test / packaging / CI / release workflows: [docs/workflow/](docs/workflow/).
 Collaboration workflow: [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
