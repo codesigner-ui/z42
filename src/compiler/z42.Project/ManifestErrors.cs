@@ -43,6 +43,13 @@ public static class Z42Errors
     public const string WS008 = "WS008";  // UnknownManifestKey (warning)
     public const string WS009 = "WS009";  // RedundantEntryKey (warning)
 
+    // ── tests/bench manifest config（add-tests-bench-manifest-config, 2026-06-06）─
+    public const string WS012 = "WS012";  // TestDepInProductionDeps (warning)
+    public const string WS040 = "WS040";  // TestEntryMissingName (error)
+    public const string WS041 = "WS041";  // TestEntryMissingSrc (error)
+    public const string WS042 = "WS042";  // TestBenchEntryDuplicateName (error)
+    public const string WS043 = "WS043";  // TestEntrySrcNotFound (error)
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     public static ManifestException ForbiddenSectionInMember(string memberPath, string sectionName) =>
@@ -203,4 +210,38 @@ public static class Z42Errors
             $"  --> {manifestPath}\n" +
             $"  note: auto-detect would resolve to the same Main()\n" +
             $"  help: remove this line — z42c finds Main() automatically when unambiguous");
+
+    // ── tests/bench manifest config factory methods ──────────────────────────
+
+    public static ManifestException TestDepInProductionDeps(
+        string manifestPath, string depName, string suggestedSection) =>
+        new($"warning[{WS012}]: test-only dep '{depName}' in [dependencies]\n" +
+            $"  --> {manifestPath}\n" +
+            $"  note: this dep will be embedded in the release zpkg metadata even though it's only needed for tests/bench\n" +
+            $"  help: move '{depName}' to [{suggestedSection}.dependencies] to keep release artifacts clean");
+
+    public static ManifestException TestEntryMissingName(
+        string manifestPath, string entryKind, int entryIndex) =>
+        new($"error[{WS040}]: [[{entryKind}]] entry #{entryIndex} missing required field 'name'\n" +
+            $"  --> {manifestPath}\n" +
+            $"  help: every [[{entryKind}]] block must declare a unique 'name' string");
+
+    public static ManifestException TestEntryMissingSrc(
+        string manifestPath, string entryKind, string entryName) =>
+        new($"error[{WS041}]: [[{entryKind}]] '{entryName}' missing required field 'src'\n" +
+            $"  --> {manifestPath}\n" +
+            $"  help: declare 'src = \"<path/to/entry.z42>\"' relative to the package root");
+
+    public static ManifestException TestBenchEntryDuplicateName(
+        string manifestPath, string entryKind, string entryName) =>
+        new($"error[{WS042}]: duplicate [[{entryKind}]] name '{entryName}'\n" +
+            $"  --> {manifestPath}\n" +
+            $"  help: each [[{entryKind}]] block must have a unique 'name' (used for filter + output zpkg naming)");
+
+    public static ManifestException TestEntrySrcNotFound(
+        string manifestPath, string entryKind, string entryName, string srcPath, string resolvedPath) =>
+        new($"error[{WS043}]: [[{entryKind}]] '{entryName}'.src path does not exist\n" +
+            $"  --> {manifestPath}\n" +
+            $"  declared:  {srcPath}\n" +
+            $"  resolved:  {resolvedPath}");
 }

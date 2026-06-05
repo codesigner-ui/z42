@@ -20,6 +20,17 @@ public sealed class ProjectManifest
     /// Declared dependencies from `[dependencies]`. Empty list = no section (auto-scan mode).
     public DependencySection     Dependencies { get; init; } = new();
 
+    // add-tests-bench-manifest-config (2026-06-06): [tests] / [bench] / [[test]] / [[bench]] schema.
+    /// `[tests]` table: shared test config (include/exclude globs + dev-deps).
+    /// Defaults to `tests/*.z42` + `tests/*/source.z42` convention discovery.
+    public TestBenchConfig       Tests        { get; init; } = TestBenchConfig.DefaultTests;
+    /// `[bench]` table: shared bench config. Mirrors `[tests]` but rooted at `bench/`.
+    public TestBenchConfig       Bench        { get; init; } = TestBenchConfig.DefaultBench;
+    /// `[[test]]` array: explicit per-test overrides (name + src + sources glob + per-entry deps).
+    public IReadOnlyList<TestBenchEntry> TestEntries  { get; init; } = [];
+    /// `[[bench]]` array: explicit per-bench overrides.
+    public IReadOnlyList<TestBenchEntry> BenchEntries { get; init; } = [];
+
     // ── Discovery ─────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -69,6 +80,13 @@ public sealed class ProjectManifest
         var debug       = ParseProfile(model, "debug",   ProfileSection.DefaultDebug, tomlPath, warnings);
         var release     = ParseProfile(model, "release", ProfileSection.DefaultRelease, tomlPath, warnings);
         var deps        = ParseDependencies(model);
+        var tests       = ParseTestBenchConfig(model, "tests", TestBenchConfig.DefaultTests,
+                                               tomlPath, warnings);
+        var bench       = ParseTestBenchConfig(model, "bench", TestBenchConfig.DefaultBench,
+                                               tomlPath, warnings);
+        var testEntries = ParseTestBenchEntries(model, "test",  tomlPath, warnings);
+        var benchEntries= ParseTestBenchEntries(model, "bench", tomlPath, warnings);
+        ScanDepsForTestOnlyLeaks(deps, tomlPath, warnings);
         ScanTopLevelKeys(model, tomlPath, warnings);
 
         var manifest = new ProjectManifest
@@ -80,6 +98,10 @@ public sealed class ProjectManifest
             Release      = release,
             ExeTargets   = exeTargets,
             Dependencies = deps,
+            Tests        = tests,
+            Bench        = bench,
+            TestEntries  = testEntries,
+            BenchEntries = benchEntries,
         };
         return new ProjectManifestLoadResult(manifest, warnings);
     }
@@ -93,6 +115,9 @@ public sealed class ProjectManifest
     static readonly HashSet<string> KnownTopLevelKeys = new(StringComparer.Ordinal)
     {
         "project", "sources", "build", "exe", "dependencies", "profile",
+        // add-tests-bench-manifest-config (2026-06-06):
+        // [tests] / [bench] tables + [[test]] / [[bench]] arrays
+        "tests", "bench", "test", "benchmark",
     };
     static readonly HashSet<string> KnownProjectKeys = new(StringComparer.Ordinal)
     {
@@ -116,6 +141,28 @@ public sealed class ProjectManifest
     static readonly HashSet<string> KnownProfileKeys = new(StringComparer.Ordinal)
     {
         "mode", "optimize", "debug", "strip", "pack",
+    };
+
+    // add-tests-bench-manifest-config (2026-06-06): known schema for the
+    // new tables + entry arrays. `dependencies` is allowed under both
+    // `[tests]` and `[bench]` (dev-deps; the value is a sub-table of
+    // package = "version" pairs, same shape as top-level [dependencies]).
+    static readonly HashSet<string> KnownTestsBenchKeys = new(StringComparer.Ordinal)
+    {
+        "include", "exclude", "dependencies",
+    };
+    static readonly HashSet<string> KnownTestBenchEntryKeys = new(StringComparer.Ordinal)
+    {
+        "name", "src", "sources", "dependencies",
+    };
+
+    // Names that designate "test-only" dependencies that should live under
+    // [tests.dependencies] / [bench.dependencies] rather than [dependencies].
+    // Surface WS012 if any appear at the top-level [dependencies] table.
+    // Curated, not heuristic: lying low to keep false-positive rate at 0%.
+    static readonly HashSet<string> KnownTestOnlyDeps = new(StringComparer.Ordinal)
+    {
+        "z42.test",
     };
 
     static void ScanUnknownKeys(
@@ -427,6 +474,118 @@ public sealed class ProjectManifest
         }
         return new DependencySection(entries, true);
     }
+
+    // ── tests/bench schema parsers (add-tests-bench-manifest-config) ──────────
+
+    /// Parse a `[tests]` or `[bench]` shared-config table. Falls back to
+    /// `defaultConfig` (which carries convention-discovery globs) when absent.
+    static TestBenchConfig ParseTestBenchConfig(
+        TomlTable model, string section, TestBenchConfig defaultConfig,
+        string tomlPath, List<ManifestException> warnings)
+    {
+        if (!model.TryGetValue(section, out var raw) || raw is not TomlTable t)
+            return defaultConfig;
+
+        ScanUnknownKeys(t, KnownTestsBenchKeys, section, tomlPath, warnings);
+
+        var include = t.TryGetStringArray("include") ?? defaultConfig.Include.ToArray();
+        var exclude = t.TryGetStringArray("exclude") ?? defaultConfig.Exclude.ToArray();
+        var deps    = ParseInlineDependencies(t, "dependencies");
+        return new TestBenchConfig(include, exclude, deps);
+    }
+
+    /// Parse `[[test]]` (entryKind="test") or `[[bench]]` (entryKind="bench")
+    /// arrays. Emits WS040 (missing name) / WS041 (missing src) / WS042
+    /// (duplicate name) / WS043 (src not found).
+    static IReadOnlyList<TestBenchEntry> ParseTestBenchEntries(
+        TomlTable model, string entryKind, string tomlPath,
+        List<ManifestException> warnings)
+    {
+        if (!model.TryGetValue(entryKind, out var raw)) return [];
+
+        var tables = raw switch
+        {
+            TomlTableArray tba => tba.Cast<TomlTable>().ToList(),
+            TomlArray arr      => arr.OfType<TomlTable>().ToList(),
+            _                  => null,
+        };
+        if (tables is null) return [];
+
+        string projectDir = Path.GetDirectoryName(Path.GetFullPath(tomlPath)) ?? "";
+        var entries  = new List<TestBenchEntry>();
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+
+        for (int i = 0; i < tables.Count; i++)
+        {
+            var t = tables[i];
+            ScanUnknownKeys(t, KnownTestBenchEntryKeys, $"[[{entryKind}]] #{i}",
+                            tomlPath, warnings);
+
+            string? name = t.TryGetString("name");
+            string? src  = t.TryGetString("src");
+
+            if (string.IsNullOrWhiteSpace(name))
+                throw Z42Errors.TestEntryMissingName(tomlPath, entryKind, i);
+
+            if (!seenNames.Add(name!))
+                throw Z42Errors.TestBenchEntryDuplicateName(tomlPath, entryKind, name!);
+
+            if (string.IsNullOrWhiteSpace(src))
+                throw Z42Errors.TestEntryMissingSrc(tomlPath, entryKind, name!);
+
+            // WS043: src path existence — best-effort relative to manifest dir.
+            // Tolerate empty projectDir (single-file edge cases via Discover).
+            if (projectDir.Length > 0)
+            {
+                string resolved = Path.Combine(projectDir, src!);
+                if (!File.Exists(resolved))
+                    throw Z42Errors.TestEntrySrcNotFound(
+                        tomlPath, entryKind, name!, src!, resolved);
+            }
+
+            var sources = t.TryGetStringArray("sources") ?? [];
+            var deps    = ParseInlineDependencies(t, "dependencies");
+            entries.Add(new TestBenchEntry(name!, src!, sources, deps));
+        }
+        return entries;
+    }
+
+    /// Parse a `dependencies = { ... }` inline-table inside an entry block,
+    /// or a `[X.dependencies]` sub-table. Same value shape as top-level
+    /// [dependencies] but materialised as a list (no auto-scan flag).
+    static IReadOnlyList<DeclaredDep> ParseInlineDependencies(
+        TomlTable parent, string key)
+    {
+        if (!parent.TryGetValue(key, out var raw) || raw is not TomlTable t)
+            return [];
+
+        var entries = new List<DeclaredDep>();
+        foreach (var kv in t)
+        {
+            string name    = kv.Key;
+            string version = kv.Value is string s ? s : "*";
+            entries.Add(new DeclaredDep(name, version));
+        }
+        return entries;
+    }
+
+    /// Scan top-level `[dependencies]` for known test-only packages and
+    /// emit WS012 per leak. Migration warning, never throws.
+    static void ScanDepsForTestOnlyLeaks(
+        DependencySection deps, string tomlPath,
+        List<ManifestException> warnings)
+    {
+        if (!deps.IsDeclared) return;
+        foreach (var dep in deps.Entries)
+        {
+            if (!KnownTestOnlyDeps.Contains(dep.Name)) continue;
+            // Heuristic: if the name contains "bench" → suggest bench section,
+            // otherwise default to tests (covers z42.test).
+            string section = dep.Name.Contains(".bench", StringComparison.Ordinal)
+                ? "bench" : "tests";
+            warnings.Add(Z42Errors.TestDepInProductionDeps(tomlPath, dep.Name, section));
+        }
+    }
 }
 
 // ── Section records ────────────────────────────────────────────────────────────
@@ -502,6 +661,34 @@ public sealed record ProfileSection(
     public static ProfileSection DefaultDebug   => new("interp", 0, true,  false, null);
     public static ProfileSection DefaultRelease => new("jit",    3, false, true,  null);
 }
+
+/// add-tests-bench-manifest-config (2026-06-06): `[tests]` / `[bench]`
+/// shared-config record. Both sections share an identical shape; the
+/// only difference is the convention root (`tests/` vs `bench/`), captured
+/// in `DefaultTests` / `DefaultBench`.
+public sealed record TestBenchConfig(
+    IReadOnlyList<string>      Include,
+    IReadOnlyList<string>      Exclude,
+    IReadOnlyList<DeclaredDep> Dependencies)
+{
+    public TestBenchConfig() : this([], [], []) { }
+    public static TestBenchConfig DefaultTests =>
+        new(["tests/*.z42", "tests/*/source.z42"], [], []);
+    public static TestBenchConfig DefaultBench =>
+        new(["bench/*.z42", "bench/*/source.z42"], [], []);
+}
+
+/// add-tests-bench-manifest-config (2026-06-06): a single `[[test]]` or
+/// `[[bench]]` entry. `Name` becomes the synthetic mini-manifest's
+/// package name (`<lib>.test.<name>` or `<lib>.bench.<name>`). `Src`
+/// is the entry file (relative to package root). `Sources` is an
+/// optional explicit glob set; when empty, the dir-mode convention
+/// auto-includes `<dirname>/**/*.z42`.
+public sealed record TestBenchEntry(
+    string                     Name,
+    string                     Src,
+    IReadOnlyList<string>      Sources,
+    IReadOnlyList<DeclaredDep> Dependencies);
 
 /// add-manifest-hygiene-warnings (2026-06-04): manifest plus any
 /// hygiene warnings collected during parsing (WS008 unknown-key,

@@ -81,6 +81,60 @@ public static class WorkspaceCatalog
             "add-manifest-hygiene-warnings (2026-06-04).",
             "// [project] entry = \"App.Main\" but App.Main is the only Main → WS009"),
 
+        // ── WS012, WS040-WS043: tests/bench manifest config ──────────────────
+
+        [Z42Errors.WS012] = new(
+            "Test-only dependency declared under [dependencies] (warning)",
+            "A package known to be test-only (e.g. `z42.test`) appears under " +
+            "the top-level `[dependencies]` table. This embeds the dep in the " +
+            "release zpkg metadata even though it's only needed when compiling " +
+            "tests or benches. Move the entry to `[tests.dependencies]` (test) " +
+            "or `[bench.dependencies]` (bench) — those are dev-deps, merged in " +
+            "only for test/bench builds and stripped from production artefacts. " +
+            "add-tests-bench-manifest-config (2026-06-06).",
+            "// [dependencies]\n" +
+            "// \"z42.test\" = \"0.1.0\"   # → WS012: move to [tests.dependencies]"),
+
+        [Z42Errors.WS040] = new(
+            "[[test]] / [[bench]] entry missing required field 'name'",
+            "Every `[[test]]` or `[[bench]]` block must declare a unique " +
+            "`name` string — it becomes the synthetic mini-manifest's package " +
+            "name (`<lib>.test.<name>` / `<lib>.bench.<name>`) and the filter " +
+            "argument for `xtask test --filter <name>`. " +
+            "add-tests-bench-manifest-config (2026-06-06).",
+            "[[test]]\nsrc = \"tests/foo.z42\"   # → WS040: missing 'name'"),
+
+        [Z42Errors.WS041] = new(
+            "[[test]] / [[bench]] entry missing required field 'src'",
+            "Every `[[test]]` or `[[bench]]` block must declare `src = " +
+            "\"<path/to/entry.z42>\"` (relative to the package root). For " +
+            "dir-mode multi-file tests, point `src` at the dir's " +
+            "`source.z42` entry file. " +
+            "add-tests-bench-manifest-config (2026-06-06).",
+            "[[test]]\nname = \"foo\"   # → WS041: missing 'src'"),
+
+        [Z42Errors.WS042] = new(
+            "[[test]] / [[bench]] entries share the same name",
+            "Each `name` is used as a synthetic-manifest package name and as " +
+            "the test/bench filter identifier. Duplicates break the filter and " +
+            "would silently overwrite output artefacts. Test and bench " +
+            "namespaces are independent — `[[test]] name = \"x\"` and " +
+            "`[[bench]] name = \"x\"` coexist; only collisions within the same " +
+            "kind trigger WS042. " +
+            "add-tests-bench-manifest-config (2026-06-06).",
+            "[[test]]\nname = \"x\"\nsrc = \"tests/a.z42\"\n" +
+            "[[test]]\nname = \"x\"\nsrc = \"tests/b.z42\"   # → WS042"),
+
+        [Z42Errors.WS043] = new(
+            "[[test]].src / [[bench]].src path does not exist",
+            "The `src` path declared in a `[[test]]` or `[[bench]]` block " +
+            "doesn't resolve to a real file under the package directory. " +
+            "Usually a typo, a stale entry, or a forgotten file move. " +
+            "Resolution is relative to the directory containing the " +
+            "`*.z42.toml` manifest. " +
+            "add-tests-bench-manifest-config (2026-06-06).",
+            "[[test]]\nname = \"foo\"\nsrc = \"tests/typo.z42\"   # → WS043 if path absent"),
+
         // ── WS010-011: Policy ────────────────────────────────────────────────
 
         [Z42Errors.WS010] = new(

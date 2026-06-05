@@ -10,7 +10,7 @@
 
 ## Phase 2 — C# 编译器 schema 扩展
 
-- [ ] 2.1 [ManifestErrors.cs](../../../../src/compiler/z42.Project/ManifestErrors.cs)：添加 WS010 + E0410 + E0411 + E0412 + E0413 错误码常量 + factory 方法
+- [ ] 2.1 [ManifestErrors.cs](../../../../src/compiler/z42.Project/ManifestErrors.cs)：添加 WS012 + WS040 + WS041 + WS042 + WS043 错误码常量 + factory 方法
 - [ ] 2.2 [ProjectManifest.cs](../../../../src/compiler/z42.Project/ProjectManifest.cs)：
     - [ ] 2.2.1 新增 record：`TestsConfig` / `BenchConfig` / `TestEntry` / `BenchEntry`（含 `Name` / `Src` / `Sources` / `Dependencies`）
     - [ ] 2.2.2 `ProjectManifest` 字段加 `Tests`, `Bench`, `TestEntries`, `BenchEntries`
@@ -18,11 +18,11 @@
     - [ ] 2.2.4 `KnownTestsKeys` / `KnownBenchKeys`（include / exclude / dependencies）
     - [ ] 2.2.5 `KnownTestEntryKeys` / `KnownBenchEntryKeys`（name / src / sources / dependencies）
     - [ ] 2.2.6 `ParseTests` / `ParseBench` / `ParseTestEntries` / `ParseBenchEntries` helper（依现有 helper 模式）
-    - [ ] 2.2.7 `LoadWithWarnings` 中扫描 `[dependencies]`：若包含已知 test-only deps（z42.test）→ emit WS010
-    - [ ] 2.2.8 [[test]] / [[bench]] 缺 name / src → E0410 / E0411；重名 → E0412；src 不存在 → E0413
+    - [ ] 2.2.7 `LoadWithWarnings` 中扫描 `[dependencies]`：若包含已知 test-only deps（z42.test）→ emit WS012
+    - [ ] 2.2.8 [[test]] / [[bench]] 缺 name / src → WS040 / WS041；重名 → WS042；src 不存在 → WS043
 - [ ] 2.3 C# 单元测试（[z42.Tests](../../../../src/compiler/z42.Tests)）：
     - [ ] 2.3.1 ProjectManifestTests：parse [tests] / [bench] / [[test]] / [[bench]] 各组合
-    - [ ] 2.3.2 ManifestErrorsTests：WS010 / E0410-E0413 round-trip
+    - [ ] 2.3.2 ManifestErrorsTests：WS012 / WS040-WS043 round-trip
 - [ ] 2.4 GREEN：`dotnet test src/compiler/z42.Tests/z42.Tests.csproj`
 - [ ] 2.5 commit + push（compiler schema 单元）
 
@@ -67,7 +67,7 @@
     - [ ] z42.uri
     - [ ] z42.yaml
 - [ ] 4.3 每包迁移后跑 `xtask test stdlib <name>` 单包验证
-- [ ] 4.4 全量验证：`xtask test stdlib`（22 包）零 WS010 触发 + 全绿
+- [ ] 4.4 全量验证：`xtask test stdlib`（22 包）零 WS012 触发 + 全绿
 
 ## Phase 5 — 多文件测试 demo
 
@@ -93,7 +93,7 @@
 - [ ] dotnet test src/compiler/z42.Tests/z42.Tests.csproj 全绿
 - [ ] xtask test stdlib 全绿（22 包）
 - [ ] xtask bench stdlib 跑通（per-package micro-bench）
-- [ ] 全 stdlib 扫描 WS010 零触发
+- [ ] 全 stdlib 扫描 WS012 零触发
 - [ ] 一个 dir-mode 多文件测试 demo 跑通
 - [ ] CI release-guard step 零命中
 - [ ] `xtask clean tests` / `clean bench` 独立可清，不影响生产产物

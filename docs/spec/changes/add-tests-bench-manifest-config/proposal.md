@@ -149,15 +149,20 @@ src/libraries/z42.yaml/
 
 ### 4. 新增 ManifestErrors
 
-| 码 | 文案 | 触发 |
-|---|------|------|
-| WS010 | `warning[WS010]: test-only dep '{name}' in [dependencies] — move to [tests.dependencies] / [bench.dependencies] to keep it out of release zpkg metadata` | `z42.test` 等出现在 `[dependencies]` |
-| E0410 | `error[E0410]: [[test]] missing required field 'name'` | `[[test]]` 无 name |
-| E0411 | `error[E0411]: [[test]] missing required field 'src'` | `[[test]]` 无 src |
-| E0412 | `error[E0412]: [[test]] / [[bench]] entries with duplicate name '{name}'` | 重名 |
-| E0413 | `error[E0413]: [[test]].src '{path}' does not exist` | path 不存在 |
+> **代码分配**（与现有 ManifestErrors.cs 已用代码不冲突）：
+> - WS012：warning，sits in 已有 WS007/WS008/WS009 warning 组旁边的空位
+> - WS040-WS043：errors，新开块跟在 WS030-WS039 workspace 错误后
+> - 注：z42 manifest 体系一律用 `WS` 前缀（区分严重度靠 message 里的 `error[WSxxx]:` vs `warning[WSxxx]:`），不用 `E04xx`
 
-WS010 是 warning（pre-1.0 一次切干净；migration 期内提示但不阻塞）。E04xx 是 hard error。
+| 码 | 严重度 | 文案 | 触发 |
+|---|:---:|------|------|
+| WS012 | warning | `warning[WS012]: test-only dep '{name}' in [dependencies] — move to [tests.dependencies] / [bench.dependencies] to keep it out of release zpkg metadata` | `z42.test` 等出现在 `[dependencies]` |
+| WS040 | error | `error[WS040]: [[test]] missing required field 'name'` | `[[test]]` 无 name |
+| WS041 | error | `error[WS041]: [[test]] missing required field 'src'` | `[[test]]` 无 src |
+| WS042 | error | `error[WS042]: [[test]] / [[bench]] entries with duplicate name '{name}'` | 重名 |
+| WS043 | error | `error[WS043]: [[test]].src '{path}' does not exist` | path 不存在 |
+
+WS012 是 warning（pre-1.0 一次切干净；migration 期内提示但不阻塞）。WS040-043 是 hard error。
 
 ---
 
