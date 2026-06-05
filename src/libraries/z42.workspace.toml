@@ -61,6 +61,8 @@ license = "MIT"
 # restructure-build-output-dirs (2026-06-06): three independent dir fields;
 # output_dir set explicitly so cache/dist 都派生自同一前缀，且 dist 加上
 # 额外的 "dist" 后缀维持旧布局（${output_dir}/dist 是默认 — 故省略
-# dist_dir 等同于显式 ${output_dir}/dist）。
+# dist_dir 等同于显式 ${output_dir}/dist）。output_dir 是 workspace-root-relative；
+# cache_dir 由 CentralizedBuildLayout 相对 output_dir 解析，故必须用 ${output_dir}
+# 模板 —— 重写完整前缀会双重叠加成 .../libraries/artifacts/build/libraries/...。
 output_dir = "../../artifacts/build/libraries/${member_name}/${profile}"
-cache_dir  = "../../artifacts/build/libraries/${member_name}/${profile}/cache"
+cache_dir  = "${output_dir}/cache"
