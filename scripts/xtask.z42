@@ -245,6 +245,8 @@ void _help() {
     Console.WriteLine("         --os <android|ios|wasm>   + that platform's essential build deps");
     Console.WriteLine("         node | android-emulator   step-specific deps (lazy)");
     Console.WriteLine("         --check | --drift | --print-env | --force");
+    Console.WriteLine("    regen [release] [--no-stdlib]   regenerate golden .zbc fixtures");
+    Console.WriteLine("    audit                    scan src/ + insert missing 'using' directives");
     Console.WriteLine("    bench [--diff]           benchmarks");
     Console.WriteLine("    help, -h, --help");
 }
