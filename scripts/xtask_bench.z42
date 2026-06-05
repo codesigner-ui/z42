@@ -26,6 +26,14 @@ int _bench(string[] argv) {
     string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
     if (!File.Exists(vm)) { int rc = _buildRuntime(); if (rc != 0) { return rc; } }
     string libs = _libsDir(root);
+    // 2026-06-05: bench scenarios `using Std.IO.Console` so stdlib must be
+    // built and present at `libs` before z42vm runs the .zbc. CI bench
+    // workflow only bootstraps xtask itself (against nightly .z42/libs), so
+    // the source-built `libs` dir starts empty — build it here.
+    if (!File.Exists(Path.Join(libs, "z42.core.zpkg"))) {
+        int sc = _buildStdlib();
+        if (sc != 0) { return sc; }
+    }
     string work = Directory.CreateTempDir("xtask-bench");
 
     string benchmarks = "";
