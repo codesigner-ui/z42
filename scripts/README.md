@@ -2,41 +2,64 @@
 
 ## 职责
 
-仓库根级开发脚本：编译 stdlib、打包发行、回归 golden test、跨包端到端验证。
-所有脚本都用 `bash`，假定从仓库任意位置调用都能定位 root（脚本顶部 `cd` 到
-项目根），不依赖当前工作目录。
+仓库的开发 CLI 与启动引导。绝大多数开发命令（build / test / package / deps /
+regen / audit / bench）都已收敛到一个自举的 z42 程序 **xtask**：源码是本目录的
+`xtask*.z42`，编译成单个 `artifacts/xtask/xtask.zpkg`，统一经 launcher 调用：
 
-## 脚本一览
+```
+z42 xtask.zpkg <command> [args]
+```
 
-| 脚本 / 命令 | 触发时机 | 关键依赖 | 主要产物 |
+仅两类文件不是 xtask：
+
+- **`build-stdlib.z42`** —— stdlib 构建逻辑。它必须保持独立、由 driver 直接
+  `dotnet run -- run scripts/build-stdlib.z42` 解释执行，因为它跑在 **冷启动
+  bootstrap** 阶段（`xtask.zpkg` 尚未编译出来、而 xtask 本身又依赖它产出的
+  stdlib —— 鸡生蛋）。`xtask build stdlib` 内部即调用它。
+- **`install-z42.{sh,bat,command}` / `install.sh`** —— 安装引导脚本（下载/解包预
+  编译发行版到 `$Z42_HOME`）。它们运行在「还没有 z42 工具链」的最前端，故保持
+  shell。
+
+> 所有版本号的唯一真相源是仓库根 `versions.toml`（xtask 经 `Std.Toml` 原生解析，
+> 见共享模块 `xtask_versions.z42`）。
+
+## 命令一览
+
+| 命令 | 触发时机 | 关键依赖 | 主要产物 |
 |------|---------|---------|---------|
-| `z42 xtask.zpkg deps install` | **首次 clone / 平台版本变动** | 读 `<repo>/versions.toml`；`scripts/_lib/versions.sh` | 装 rust targets + cargo-ndk + wasm-pack；下载 Android NDK 到 `artifacts/tools/android-sdk/ndk/<version>/` |
+| `z42 xtask.zpkg deps install` | **首次 clone / 平台版本变动** | `versions.toml` | rust targets + cargo-ndk + wasm-pack；按平台装 NDK / 构建 SDK |
+| `z42 xtask.zpkg deps check` | 改 `versions.toml` 后对账 | `versions.toml` + 投影文件 | versions.toml ↔ Cargo.toml / build.gradle.kts / ios/Package.swift 一致性 |
+| `z42 xtask.zpkg build stdlib` | 改了 stdlib `.z42` 源 | `dotnet` + `z42.Driver` | `artifacts/build/libraries/dist/release/<lib>.zpkg` + `index.json` |
+| `z42 xtask.zpkg build package [release\|debug] [--rid R]` | 准备发行 / 测发行包 | `dotnet` + `cargo` | `artifacts/packages/z42-<version>-<rid>-<config>/{bin,libs,native}`（末尾自动跑 SHA-256 invariant） |
+| `z42 xtask.zpkg regen` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | 更新 `src/tests/**/source.zbc` + `src/libraries/*/tests/**/source.zbc` |
+| `z42 xtask.zpkg audit` | 新增 test `source.z42` | `z42.regex` | 自动补缺失的 `using` 声明 |
 | `z42 xtask.zpkg test` | **每次 commit / 归档前必跑** | 下面各 stage | 串联全部 GREEN 验证 |
-| `build-stdlib.sh` | 改了 stdlib `.z42` 源 | `dotnet`（或 `--use-dist` 用打包过的 z42c） | `artifacts/build/libraries/<lib>/<profile>/dist/<lib>.zpkg` |
-| `package.sh` | 准备发行 / 测发行包 | `dotnet publish` + `cargo build` | `artifacts/packages/z42-<version>-<rid>-<config>/{bin,libs,native}` |
-| `z42 xtask.zpkg regen` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | 更新 `src/tests/<cat>/<name>/source.zbc` + `src/libraries/<lib>/tests/<name>/source.zbc` |
-| `z42 xtask.zpkg test vm` | 跑 VM 端到端 golden test（最常用） | `cargo build` + `z42 xtask.zpkg regen` 的产物 | 终端报告 interp / jit 通过率 |
-| `z42 xtask.zpkg test cross-zpkg` | 跨包路径 / 元数据相关变更 | `dotnet` + `cargo build` | 终端报告 target/ext/main 三方协作通过率 |
-| `z42 xtask.zpkg test lib` | stdlib 源 / 编译器变动 | `build-stdlib.sh` + `z42-test-runner` | 6 个 stdlib lib 的 [Test] 通过率 |
-| `z42 xtask.zpkg test dist` | 验证打包后的发行版能独立工作 | `package.sh` + `build-stdlib.sh` 的产物 | 终端报告 packaged z42c+z42vm 跑 golden 通过率 |
+| `z42 xtask.zpkg test vm [interp\|jit]` | 跑 VM 端到端 golden（最常用） | `cargo build` + regen 产物 | interp / jit 通过率 |
+| `z42 xtask.zpkg test cross-zpkg` | 跨包路径 / 元数据相关变更 | `dotnet` + `cargo build` | target/ext/main 三方协作通过率 |
+| `z42 xtask.zpkg test lib` | stdlib 源 / 编译器变动 | `build stdlib` + `z42-test-runner` | 各 stdlib lib 的 `[Test]` 通过率 |
+| `z42 xtask.zpkg test dist` | 验证打包后发行版能独立工作 | `build package` 产物 | packaged z42c+z42vm 跑 golden 通过率 |
+| `z42 xtask.zpkg test changed [base]` | 增量自测（按改动文件挑 stage） | 上述各命令（in-process 调度） | 仅跑受影响的 stage |
 
-### `deps install` 模式
+### `deps install` —— 两层依赖模型
 
 | 命令 | 行为 |
 |------|------|
-| `z42 xtask.zpkg deps install` | 安装所有 missing 项（跨平台 toolchain + 三个 platform 块） |
-| `z42 xtask.zpkg deps install android` | 仅 android（同样支持 ios / wasm） |
-| `z42 xtask.zpkg deps install --check` | 只 verify，不下载 / 不安装；missing 项报 `✗` |
+| `z42 xtask.zpkg deps install` | 跨平台 toolchain 存在性检查（rust / dotnet / node） |
+| `z42 xtask.zpkg deps install --os <android\|ios\|wasm>` | **TIER 1**：该平台的「必要构建依赖」（android = rust targets + cargo-ndk + JDK + 构建 SDK；ios = rust targets + Xcode；wasm = rust targets + wasm-pack） |
+| `z42 xtask.zpkg deps install node` | **TIER 2**（步骤级，惰性）：Node LTS（wasm js / playground 测试用） |
+| `z42 xtask.zpkg deps install android-emulator` | **TIER 2**：emulator + system-image + AVD + Gradle（android 仪器测试用） |
+| `z42 xtask.zpkg deps install --check` | 只 verify，不下载 / 不安装；missing 报 `✗` |
 | `z42 xtask.zpkg deps install --drift` | 拿 `[platform.*]` 跟 Package.swift / build.gradle.kts 对账 |
-| `z42 xtask.zpkg deps install android --print-env` | 输出可 `eval` 的 `export ANDROID_NDK_HOME=...` |
+| `z42 xtask.zpkg deps install --os android --print-env` | 输出可 `eval` 的 `export ANDROID_NDK_HOME=...` |
 
 ## 典型流程
 
 **首次 clone / 新 dev 环境**：
 ```bash
-z42 xtask.zpkg deps install --check    # 看缺什么
-z42 xtask.zpkg deps install             # 装齐缺的（NDK / rust targets / cargo-ndk / wasm-pack）
-z42 xtask.zpkg deps install --drift     # 校验 Package.swift / build.gradle.kts 跟 versions.toml 一致
+z42 xtask.zpkg deps install --check          # 看缺什么
+z42 xtask.zpkg deps install                  # 装跨平台 toolchain
+z42 xtask.zpkg deps install --os android     # 需要打 android 时再装该平台必备
+z42 xtask.zpkg deps install --drift          # 校验投影文件跟 versions.toml 一致
 ```
 
 **commit 前 / 归档前（必跑，workflow 阶段 8 全绿入口）**：
@@ -51,36 +74,49 @@ z42 xtask.zpkg test               # 串联 dotnet build/test + test vm + test cr
 ```bash
 z42 xtask.zpkg regen              # 改了编译器后重生 .zbc 基线
 z42 xtask.zpkg test vm            # 跑 VM 端到端（interp + jit）
+# 或只测受改动影响的 stage：
+z42 xtask.zpkg test changed
 ```
 
 **改了 stdlib `.z42` 源**：
 ```bash
-./scripts/build-stdlib.sh         # 重编 stdlib zpkg
-z42 xtask.zpkg regen              # golden 用到的 stdlib 也会被引用
+z42 xtask.zpkg build stdlib       # 重编 stdlib zpkg + index.json
 z42 xtask.zpkg test vm
 ```
 
 **完整发行验证**：
 ```bash
-./scripts/package.sh release      # 打包 z42c + z42vm
-./scripts/build-stdlib.sh         # 编 stdlib（可选 --use-dist 用 packaged z42c）
-z42 xtask.zpkg test dist            # 端到端验证发行包
-```
-
-**跨包 e2e**（改 zpkg 路径解析、元数据格式时必跑）：
-```bash
-z42 xtask.zpkg test cross-zpkg
+z42 xtask.zpkg build package release   # 打 host-RID 发行包
+z42 xtask.zpkg test dist               # 端到端验证发行包（packaged z42c/z42vm 跑 golden + launcher smoke）
 ```
 
 ## 依赖关系图
 
 ```
                           ┌─→ dotnet build / test
-                          ├─→ test vm
-z42 xtask.zpkg test ──────┼─→ test cross-zpkg
-                          └─→ test lib   (← build-stdlib.sh)
+                          ├─→ test vm        (xtask_test_vm + xtask_golden)
+z42 xtask.zpkg test ──────┼─→ test cross-zpkg (xtask_test_cross + xtask_golden)
+                          └─→ test lib
 
-z42 xtask.zpkg regen ─→ z42 xtask.zpkg test vm    (开发循环单独用)
+z42 xtask.zpkg regen ─→ z42 xtask.zpkg test vm     (开发循环单独用)
+
+cold bootstrap: dotnet run -- run scripts/build-stdlib.z42  →  build scripts/xtask.z42.toml
 ```
 
-每个脚本的详细 Usage（参数、模式选择）见脚本顶部注释。
+## xtask 源码结构
+
+| 文件 | 职责 |
+|------|------|
+| `xtask.z42` | 入口 + 命令路由（build / test / deps / regen / audit / bench）|
+| `xtask_versions.z42` | 共享 `versions.toml` 读取器（`_vget` / `_vRead` / `_vReadOr` / `_scalarStr`）|
+| `xtask_test.z42` | `test` 路由 + `_testAll` / `_testLib` + 发行包发现 |
+| `xtask_test_vm.z42` / `xtask_test_cross.z42` / `xtask_test_dist.z42` / `xtask_test_changed.z42` | 各测试 stage 实现 |
+| `xtask_golden.z42` | 共享 golden 枚举 / 入口推导 helpers（被多个 test stage 复用）|
+| `xtask_regen.z42` | `regen` 重生 `.zbc` 基线 |
+| `xtask_deps.z42` | `deps check` 版本漂移检查 |
+| `xtask_audit.z42` | `audit` 补缺失 `using` |
+| `xtask_install*.z42` | `deps install` 各平台 / SDK 安装 |
+| `xtask_package*.z42` | `build package` 各 RID 类别（desktop / ios / android / wasm）|
+| `xtask_bench.z42` | `bench` 基准测试 |
+
+每个命令的详细 Usage 见 `z42 xtask.zpkg --help` 与各源文件顶部注释。
