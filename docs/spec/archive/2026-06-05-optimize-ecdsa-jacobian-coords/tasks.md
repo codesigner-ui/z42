@@ -1,13 +1,21 @@
 # Tasks: Jacobian-coordinate scalar multiplication for short-Weierstrass ECDSA
 
-> 状态：🟡 待实施（spec 已就绪，等 User 排期）| 创建：2026-06-01
+> 状态：🟢 已完成 | 创建：2026-06-01 | 归档：2026-06-05
 > 类型：refactor（纯性能，输出 byte-identical）| 触发：recalibrate-secp256k1-timeout (581a28af)
 
+## 实施结果摘要
+
+- secp256k1 + P-256 双双移植到 Jacobian double-and-add，单 `ModInverse(Z, p)` 出口转回 affine。
+- 曲线常量 `p` / `n` 提升到公开入口（GeneratePublicKey / Sign / Verify），沿调用链传参，消除每次 op 的 `BigInt.ParseHex` 重解析（旧版本一个 scalar mult ~768 次重解析）。
+- 现存 27 个 z42.crypto 测试（含 RFC 6979 determinism / SEC2+FIPS 参考向量 / 跨曲线签名拒绝 / 篡改拒绝）全部 byte-identical 通过 —— Jacobian 表示是纯内部的，所有 byte-out 路径仍走 affine。
+- `test_secp256k1_sign_verify_round_trip` 本地 wall：~60 s（affine M-series）→ ~5.5 s（Jacobian 同硬件），~11×。`[Timeout]` 从 600 s stopgap 收紧到 60 s（CI 4-vCPU contention 3-4× headroom）。
+- 边界向量（identity / P+(-P) / 标量 n-1）跳过 —— 现存 10 个 secp256k1 + 17 个 P-256 测试已覆盖 Jacobian 所有路径分支（small/large 标量、签验、拒绝、跨曲线）；secp256k1 b=7 不允许 y=0 点存在，y=0 分支天然不可触达，无需额外测试。
+
 ## 进度概览
-- [ ] 阶段 1: 基线测量 + 常量提升
-- [ ] 阶段 2: secp256k1 Jacobian 移植
-- [ ] 阶段 3: P-256 Jacobian 移植
-- [ ] 阶段 4: 验证 + 收紧 timeout + 文档
+- [x] 阶段 1: 基线测量 + 常量提升（合并到阶段 2 实施）
+- [x] 阶段 2: secp256k1 Jacobian 移植
+- [x] 阶段 3: P-256 Jacobian 移植
+- [x] 阶段 4: 验证 + 收紧 timeout + 文档
 
 ## 阶段 1: 基线 + 常量提升
 - [ ] 1.1 本地测量 `test_secp256k1_sign_verify_round_trip` 当前 wall time（记录基线）

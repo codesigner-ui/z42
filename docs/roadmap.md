@@ -342,7 +342,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 绕过点（代码） | 正解 spec | 状态 |
 |------|------|------|
 | `src/runtime/tests/cross_thread_smoke.rs::concurrent_gc_mode_stress_no_race_no_leak` 在 **windows `#[ignore]`**（并发 GC stale-mark race；windows-only、本地不可复现）| [spec/changes/investigate-concurrent-gc-stale-mark-race](spec/changes/investigate-concurrent-gc-stale-mark-race/) 阶段 3：loom/shuttle 验证 + 协议修复 | ⏳ 待排期 |
-| `src/libraries/z42.crypto/tests/ecdsa_secp256k1_vectors.z42` 的 `[Timeout]` **放宽到 600s**（解释执行 EC 标量乘慢，原 240s 在 CI 争用下超时）| [spec/changes/optimize-ecdsa-jacobian-coords](spec/changes/optimize-ecdsa-jacobian-coords/)：Jacobian 坐标（每次标量乘 1 次求逆，~100×）；落地后收紧 timeout | ⏳ 待排期 |
+| ~~`src/libraries/z42.crypto/tests/ecdsa_secp256k1_vectors.z42` 的 `[Timeout]` 600s stopgap~~ | ✅ 已修复 2026-06-05 by [spec/archive/2026-06-05-optimize-ecdsa-jacobian-coords](spec/archive/2026-06-05-optimize-ecdsa-jacobian-coords/)：secp256k1 + P-256 都迁到 Jacobian 坐标（一次 ModInverse / scalar mult），round-trip 本地 ~60s → ~5.5s。`[Timeout]` 收紧到 60s | ✅ 完成 |
 
 ### Backlog 项实施流程
 

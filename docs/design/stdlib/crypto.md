@@ -87,7 +87,7 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
 - ECDSA over secp256k1 (Bitcoin/Ethereum, RFC 6979) — `Std.Crypto.EcdsaSecp256k1` (add-ecdsa-secp256k1, 2026-05-28)
   - Same API surface as `EcdsaP256` (`GeneratePublicKey` / `Sign` / `Verify`); only the curve constants differ
   - Curve `y² = x³ + 7 mod p` (Koblitz form, a=0); SEC2-defined generator + order
-  - Point-doubling specialised for a=0 (no `-3` term); add formula same as P-256
+  - Jacobian-coordinate scalar mult (optimize-ecdsa-jacobian-coords, 2026-06-05) — affine `(x,y)` lifted to Jacobian `(X,Y,1)`, double-and-add stays in Jacobian, **single** `ModInverse(Z, p)` at exit converts back to affine. Affine output is byte-identical to the pre-2026-06-05 affine version (Jacobian is a purely internal representation; all existing SEC2 + Bitcoin/Ethereum vectors pass unchanged). Doubling uses a=0 specialisation `M = 3X²` (drops the generic `+a·Z⁴` term)
   - Use cases: Bitcoin transaction signing, Ethereum sender recovery (via ecrecover-style), Lightning Network channel announcements, BIP-32 hierarchical-deterministic key derivation
   - Verified against SEC2 generator (d=1 → G) + 2G doubling reference + cross-curve signature rejection (P-256 sig invalid under secp256k1) + sign/verify round trips + determinism
 
@@ -95,7 +95,7 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `GeneratePublicKey(byte[32] privateScalar) -> byte[64]` — uncompressed `X || Y` encoding
   - `Sign(byte[32] privateScalar, byte[] message) -> byte[64]` — `r || s` (32 bytes each, BE); deterministic via RFC 6979 HMAC-SHA-256 nonce derivation
   - `Verify(byte[64] publicKey, byte[] message, byte[64] signature) -> bool` — never throws on bad sig; rejects off-curve points + out-of-range r/s
-  - Short Weierstrass curve `y² = x³ - 3x + b mod p` in affine coordinates; per-op modular inverse (simpler than Jacobian; adequate for low-rate use)
+  - Short Weierstrass curve `y² = x³ - 3x + b mod p` with **Jacobian-coordinate** scalar multiplication (optimize-ecdsa-jacobian-coords, 2026-06-05) — single `ModInverse(Z, p)` per scalar mult (~384× fewer inversions vs the original affine implementation). Doubling uses a=-3 specialisation `M = 3·(X−Z²)·(X+Z²)` (the canonical NIST/FIPS 186-4 factorisation). Output is byte-identical to the affine version; existing FIPS / RFC 6979 vectors pass unchanged
   - RFC 6979 deterministic nonce so signatures are reproducible across implementations — eliminates the low-entropy-RNG footgun that's caused real-world ECDSA key recovery (PS3, Sony, Bitcoin wallets)
   - Use cases: JWT ES256, x509 certificates with ECDSA, TLS 1.3 (when negotiated), most modern API signing schemes
   - Verified against RFC 6979 §A.2.5 reference vectors (sign "sample" + "test" with the canonical d, plus verify round trips)

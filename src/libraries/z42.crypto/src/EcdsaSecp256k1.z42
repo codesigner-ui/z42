@@ -8,6 +8,16 @@ using Std.Numerics;
 // SEC2 + RFC 6979 deterministic nonce. Used by Bitcoin, Ethereum,
 // Lightning Network, most blockchain protocols.
 //
+// optimize-ecdsa-jacobian-coords (2026-06-05): scalar multiplication now
+// runs in Jacobian coordinates (Z=1 lift on entry, single ModInverse on
+// exit), eliminating the ~384 ModInverses/scalarMult that the old affine
+// double-and-add paid. Curve constants `p` / `n` are parsed once per
+// public entry and threaded down, replacing per-op `_curvePrime()` /
+// `_curveOrder()` calls that re-decoded a 64-hex-char string ~768× per
+// scalar mult. Output is byte-identical to the affine version — all
+// existing test vectors pass unchanged (the Jacobian rep is purely
+// internal and converted back to affine before any byte serialisation).
+//
 // Curve: short Weierstrass `y² = x³ + 7 mod p`, a = 0 (Bitcoin chose this
 // "Koblitz" form for endomorphism-based fast scalar mul, not used here).
 //   p  = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
@@ -17,7 +27,7 @@ using Std.Numerics;
 //   n  = FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
 //
 // API surface mirrors `EcdsaP256` exactly — only the curve constants
-// + the point-doubling formula differ (a = 0 simplifies λ).
+// + the doubling formula differ (a = 0 simplifies M = 3X²).
 //
 // Tested against well-known Bitcoin/Ethereum reference vectors.
 
@@ -29,12 +39,13 @@ public static class EcdsaSecp256k1 {
             throw new ArgumentException(
                 "EcdsaSecp256k1: private scalar must be 32 bytes, got " + privateScalar.Length.ToString());
         }
+        BigInt p = EcdsaSecp256k1._curvePrime();
         BigInt n = EcdsaSecp256k1._curveOrder();
         BigInt d = EcdsaSecp256k1._readBEBigInt(privateScalar);
         if (d.IsZero() || d.CompareTo(n) >= 0) {
             throw new ArgumentException("EcdsaSecp256k1: private scalar must be in [1, n-1]");
         }
-        BigInt[] Q = EcdsaSecp256k1._scalarMultBase(d);
+        BigInt[] Q = EcdsaSecp256k1._scalarMultBase(d, p);
         if (Q == null) {
             throw new ArgumentException("EcdsaSecp256k1: degenerate public key (scalar produced identity)");
         }
@@ -46,6 +57,7 @@ public static class EcdsaSecp256k1 {
             throw new ArgumentException(
                 "EcdsaSecp256k1: private scalar must be 32 bytes, got " + privateScalar.Length.ToString());
         }
+        BigInt p = EcdsaSecp256k1._curvePrime();
         BigInt n = EcdsaSecp256k1._curveOrder();
         BigInt d = EcdsaSecp256k1._readBEBigInt(privateScalar);
         if (d.IsZero() || d.CompareTo(n) >= 0) {
@@ -56,7 +68,7 @@ public static class EcdsaSecp256k1 {
         int attempt = 0;
         while (attempt < 16) {
             BigInt k = EcdsaSecp256k1._deterministicK(d, hash, n, attempt);
-            BigInt[] R = EcdsaSecp256k1._scalarMultBase(k);
+            BigInt[] R = EcdsaSecp256k1._scalarMultBase(k, p);
             if (R != null) {
                 BigInt r = EcdsaSecp256k1._modN(R[0], n);
                 if (!r.IsZero()) {
@@ -87,8 +99,8 @@ public static class EcdsaSecp256k1 {
             throw new ArgumentException(
                 "EcdsaSecp256k1.Verify: signature must be 64 bytes (r || s), got " + signature.Length.ToString());
         }
-        BigInt n = EcdsaSecp256k1._curveOrder();
         BigInt p = EcdsaSecp256k1._curvePrime();
+        BigInt n = EcdsaSecp256k1._curveOrder();
         byte[] xBytes = new byte[32];
         byte[] yBytes = new byte[32];
         int i = 0;
@@ -98,7 +110,7 @@ public static class EcdsaSecp256k1 {
         if (qx.CompareTo(p) >= 0 || qy.CompareTo(p) >= 0) { return false; }
         BigInt[] Q = new BigInt[2];
         Q[0] = qx; Q[1] = qy;
-        if (!EcdsaSecp256k1._isOnCurve(Q)) { return false; }
+        if (!EcdsaSecp256k1._isOnCurve(Q, p)) { return false; }
         byte[] rBytes = new byte[32];
         byte[] sBytes = new byte[32];
         int j = 0;
@@ -112,9 +124,9 @@ public static class EcdsaSecp256k1 {
         BigInt sInv = s.ModInverse(n);
         BigInt u1 = EcdsaSecp256k1._modN(e.Multiply(sInv), n);
         BigInt u2 = EcdsaSecp256k1._modN(r.Multiply(sInv), n);
-        BigInt[] u1G = EcdsaSecp256k1._scalarMultBase(u1);
-        BigInt[] u2Q = EcdsaSecp256k1._scalarMult(u2, Q);
-        BigInt[] R = EcdsaSecp256k1._pointAdd(u1G, u2Q);
+        BigInt[] u1G = EcdsaSecp256k1._scalarMultBase(u1, p);
+        BigInt[] u2Q = EcdsaSecp256k1._scalarMult(u2, Q, p);
+        BigInt[] R = EcdsaSecp256k1._pointAdd(u1G, u2Q, p);
         if (R == null) { return false; }
         BigInt x1ModN = EcdsaSecp256k1._modN(R[0], n);
         return x1ModN.CompareTo(r) == 0;
@@ -137,8 +149,7 @@ public static class EcdsaSecp256k1 {
 
     // ── Field helpers ────────────────────────────────────────────────────────
 
-    static BigInt _modP(BigInt a) {
-        BigInt p = EcdsaSecp256k1._curvePrime();
+    static BigInt _modP(BigInt a, BigInt p) {
         BigInt r = a.Mod(p);
         if (r._sign < 0) { r = r.Add(p); }
         return r;
@@ -150,11 +161,11 @@ public static class EcdsaSecp256k1 {
     }
 
     /// `(x, y)` lies on `y² = x³ + 7 mod p` (a = 0, b = 7).
-    static bool _isOnCurve(BigInt[] P) {
+    static bool _isOnCurve(BigInt[] P, BigInt p) {
         if (P == null) { return false; }
         BigInt x = P[0]; BigInt y = P[1];
-        BigInt lhs = EcdsaSecp256k1._modP(y.Multiply(y));
-        BigInt rhs = EcdsaSecp256k1._modP(x.Multiply(x).Multiply(x).Add(new BigInt(7L)));
+        BigInt lhs = EcdsaSecp256k1._modP(y.Multiply(y), p);
+        BigInt rhs = EcdsaSecp256k1._modP(x.Multiply(x).Multiply(x).Add(new BigInt(7L)), p);
         return lhs.CompareTo(rhs) == 0;
     }
 
@@ -164,65 +175,175 @@ public static class EcdsaSecp256k1 {
         return e;
     }
 
-    // ── Short Weierstrass point arithmetic (affine, a = 0) ───────────────────
+    // ── Affine point arithmetic ──────────────────────────────────────────────
+    // Used only for the final 2-point sum in Verify (one ModInverse each, runs
+    // twice per Verify max — not on the hot scalar-mult path). Internal
+    // scalar mult goes through Jacobian.
 
-    /// Doubling specialised for a = 0 — λ = 3x² / (2y), no `-3` term.
-    static BigInt[] _pointDouble(BigInt[] P) {
+    /// Affine doubling specialised for a = 0 — λ = 3x² / (2y), no `-3` term.
+    static BigInt[] _pointDouble(BigInt[] P, BigInt p) {
         if (P == null) { return null; }
         BigInt y = P[1];
         if (y.IsZero()) { return null; }
-        BigInt p = EcdsaSecp256k1._curvePrime();
         BigInt x = P[0];
         BigInt three = new BigInt(3L);
-        BigInt num = EcdsaSecp256k1._modP(three.Multiply(x.Multiply(x)));
-        BigInt den = EcdsaSecp256k1._modP(y.Multiply(new BigInt(2L)));
-        BigInt lam = EcdsaSecp256k1._modP(num.Multiply(den.ModInverse(p)));
-        BigInt x3 = EcdsaSecp256k1._modP(lam.Multiply(lam).Subtract(x.Multiply(new BigInt(2L))));
-        BigInt y3 = EcdsaSecp256k1._modP(lam.Multiply(x.Subtract(x3)).Subtract(y));
+        BigInt num = EcdsaSecp256k1._modP(three.Multiply(x.Multiply(x)), p);
+        BigInt den = EcdsaSecp256k1._modP(y.Multiply(new BigInt(2L)), p);
+        BigInt lam = EcdsaSecp256k1._modP(num.Multiply(den.ModInverse(p)), p);
+        BigInt x3 = EcdsaSecp256k1._modP(lam.Multiply(lam).Subtract(x.Multiply(new BigInt(2L))), p);
+        BigInt y3 = EcdsaSecp256k1._modP(lam.Multiply(x.Subtract(x3)).Subtract(y), p);
         BigInt[] R = new BigInt[2];
         R[0] = x3; R[1] = y3;
         return R;
     }
 
-    /// Point addition — same formula as P-256 (curve `a` doesn't appear).
-    static BigInt[] _pointAdd(BigInt[] P, BigInt[] Q) {
+    /// Affine point addition. Same formula as P-256 (curve `a` doesn't appear).
+    static BigInt[] _pointAdd(BigInt[] P, BigInt[] Q, BigInt p) {
         if (P == null) { return Q; }
         if (Q == null) { return P; }
         BigInt px = P[0]; BigInt py = P[1];
         BigInt qx = Q[0]; BigInt qy = Q[1];
         if (px.CompareTo(qx) == 0) {
-            BigInt sumY = EcdsaSecp256k1._modP(py.Add(qy));
+            BigInt sumY = EcdsaSecp256k1._modP(py.Add(qy), p);
             if (sumY.IsZero()) { return null; }
-            return EcdsaSecp256k1._pointDouble(P);
+            return EcdsaSecp256k1._pointDouble(P, p);
         }
-        BigInt p = EcdsaSecp256k1._curvePrime();
-        BigInt num = EcdsaSecp256k1._modP(qy.Subtract(py));
-        BigInt den = EcdsaSecp256k1._modP(qx.Subtract(px));
-        BigInt lam = EcdsaSecp256k1._modP(num.Multiply(den.ModInverse(p)));
-        BigInt x3 = EcdsaSecp256k1._modP(lam.Multiply(lam).Subtract(px).Subtract(qx));
-        BigInt y3 = EcdsaSecp256k1._modP(lam.Multiply(px.Subtract(x3)).Subtract(py));
+        BigInt num = EcdsaSecp256k1._modP(qy.Subtract(py), p);
+        BigInt den = EcdsaSecp256k1._modP(qx.Subtract(px), p);
+        BigInt lam = EcdsaSecp256k1._modP(num.Multiply(den.ModInverse(p)), p);
+        BigInt x3 = EcdsaSecp256k1._modP(lam.Multiply(lam).Subtract(px).Subtract(qx), p);
+        BigInt y3 = EcdsaSecp256k1._modP(lam.Multiply(px.Subtract(x3)).Subtract(py), p);
         BigInt[] R = new BigInt[2];
         R[0] = x3; R[1] = y3;
         return R;
     }
 
-    static BigInt[] _scalarMult(BigInt k, BigInt[] P) {
-        BigInt[] result = null;
-        BigInt[] cur = P;
+    // ── Jacobian point arithmetic (a = 0) ────────────────────────────────────
+    // Jacobian rep `[X, Y, Z]` maps to affine `(x, y) = (X/Z², Y/Z³)`.
+    // `Z = 0` represents the point at infinity. All field arithmetic stays
+    // mod p; the single ModInverse is paid at `_jacToAffine` exit.
+
+    /// Jacobian doubling, a = 0 specialisation:
+    ///   S  = 4 X Y²
+    ///   M  = 3 X²              ← a = 0 drops the `+ a·Z⁴` term
+    ///   X' = M² − 2 S
+    ///   Y' = M (S − X') − 8 Y⁴
+    ///   Z' = 2 Y Z
+    /// Infinity (Z=0) and y=0 both produce Z'=0 → identity.
+    static BigInt[] _jacDouble(BigInt[] J, BigInt p) {
+        BigInt Y = J[1];
+        BigInt Z = J[2];
+        if (Z.IsZero() || Y.IsZero()) {
+            BigInt[] inf = new BigInt[3];
+            inf[0] = BigInt.One;
+            inf[1] = BigInt.One;
+            inf[2] = BigInt.Zero;
+            return inf;
+        }
+        BigInt X = J[0];
+        BigInt two   = new BigInt(2L);
+        BigInt three = new BigInt(3L);
+        BigInt four  = new BigInt(4L);
+        BigInt eight = new BigInt(8L);
+        BigInt Y2  = EcdsaSecp256k1._modP(Y.Multiply(Y), p);
+        BigInt Y4  = EcdsaSecp256k1._modP(Y2.Multiply(Y2), p);
+        BigInt S   = EcdsaSecp256k1._modP(four.Multiply(X).Multiply(Y2), p);
+        BigInt M   = EcdsaSecp256k1._modP(three.Multiply(X.Multiply(X)), p);
+        BigInt X3  = EcdsaSecp256k1._modP(M.Multiply(M).Subtract(two.Multiply(S)), p);
+        BigInt Y3  = EcdsaSecp256k1._modP(M.Multiply(S.Subtract(X3)).Subtract(eight.Multiply(Y4)), p);
+        BigInt Z3  = EcdsaSecp256k1._modP(two.Multiply(Y).Multiply(Z), p);
+        BigInt[] R = new BigInt[3];
+        R[0] = X3; R[1] = Y3; R[2] = Z3;
+        return R;
+    }
+
+    /// Jacobian addition, generic short-Weierstrass:
+    ///   U1 = X1 Z2², U2 = X2 Z1²
+    ///   S1 = Y1 Z2³, S2 = Y2 Z1³
+    ///   if U1 == U2: S1 == S2 → doubling; else → infinity
+    ///   H = U2 − U1; R = S2 − S1
+    ///   X3 = R² − H³ − 2 U1 H²
+    ///   Y3 = R (U1 H² − X3) − S1 H³
+    ///   Z3 = H Z1 Z2
+    static BigInt[] _jacAdd(BigInt[] J1, BigInt[] J2, BigInt p) {
+        if (J1[2].IsZero()) { return J2; }
+        if (J2[2].IsZero()) { return J1; }
+        BigInt X1 = J1[0]; BigInt Y1 = J1[1]; BigInt Z1 = J1[2];
+        BigInt X2 = J2[0]; BigInt Y2 = J2[1]; BigInt Z2 = J2[2];
+        BigInt Z1sq = EcdsaSecp256k1._modP(Z1.Multiply(Z1), p);
+        BigInt Z2sq = EcdsaSecp256k1._modP(Z2.Multiply(Z2), p);
+        BigInt Z1cu = EcdsaSecp256k1._modP(Z1sq.Multiply(Z1), p);
+        BigInt Z2cu = EcdsaSecp256k1._modP(Z2sq.Multiply(Z2), p);
+        BigInt U1   = EcdsaSecp256k1._modP(X1.Multiply(Z2sq), p);
+        BigInt U2   = EcdsaSecp256k1._modP(X2.Multiply(Z1sq), p);
+        BigInt S1   = EcdsaSecp256k1._modP(Y1.Multiply(Z2cu), p);
+        BigInt S2   = EcdsaSecp256k1._modP(Y2.Multiply(Z1cu), p);
+        if (U1.CompareTo(U2) == 0) {
+            if (S1.CompareTo(S2) != 0) {
+                // P + (−P) → identity.
+                BigInt[] inf = new BigInt[3];
+                inf[0] = BigInt.One; inf[1] = BigInt.One; inf[2] = BigInt.Zero;
+                return inf;
+            }
+            return EcdsaSecp256k1._jacDouble(J1, p);
+        }
+        BigInt H   = EcdsaSecp256k1._modP(U2.Subtract(U1), p);
+        BigInt Rc  = EcdsaSecp256k1._modP(S2.Subtract(S1), p);
+        BigInt H2  = EcdsaSecp256k1._modP(H.Multiply(H), p);
+        BigInt H3  = EcdsaSecp256k1._modP(H2.Multiply(H), p);
+        BigInt U1H2 = EcdsaSecp256k1._modP(U1.Multiply(H2), p);
+        BigInt two  = new BigInt(2L);
+        BigInt X3  = EcdsaSecp256k1._modP(Rc.Multiply(Rc).Subtract(H3).Subtract(two.Multiply(U1H2)), p);
+        BigInt Y3  = EcdsaSecp256k1._modP(Rc.Multiply(U1H2.Subtract(X3)).Subtract(S1.Multiply(H3)), p);
+        BigInt Z3  = EcdsaSecp256k1._modP(H.Multiply(Z1).Multiply(Z2), p);
+        BigInt[] Rr = new BigInt[3];
+        Rr[0] = X3; Rr[1] = Y3; Rr[2] = Z3;
+        return Rr;
+    }
+
+    /// Convert Jacobian `[X, Y, Z]` back to affine `(x, y) = (X·Z⁻², Y·Z⁻³)`.
+    /// Returns `null` (affine identity convention) when `Z == 0`.
+    /// This is the ONLY ModInverse per scalar mult — was ~384 inversions in
+    /// the affine version (one per double / add inside the loop).
+    static BigInt[] _jacToAffine(BigInt[] J, BigInt p) {
+        if (J[2].IsZero()) { return null; }
+        BigInt Zinv  = J[2].ModInverse(p);
+        BigInt Zinv2 = EcdsaSecp256k1._modP(Zinv.Multiply(Zinv), p);
+        BigInt Zinv3 = EcdsaSecp256k1._modP(Zinv2.Multiply(Zinv), p);
+        BigInt x = EcdsaSecp256k1._modP(J[0].Multiply(Zinv2), p);
+        BigInt y = EcdsaSecp256k1._modP(J[1].Multiply(Zinv3), p);
+        BigInt[] R = new BigInt[2];
+        R[0] = x; R[1] = y;
+        return R;
+    }
+
+    /// Scalar multiplication via Jacobian double-and-add (LSB-first). Lifts
+    /// affine `P` to Jacobian `(X, Y, 1)`, runs the loop in Jacobian coords
+    /// (zero ModInverse per iteration), then converts back to affine for the
+    /// caller — preserving the old null-or-affine return convention.
+    ///
+    /// Not constant-time — adequate for verify-side public scalars; the
+    /// sign-side scalar comes from RFC 6979 deterministic derivation so the
+    /// leak surface is bounded to that mix.
+    static BigInt[] _scalarMult(BigInt k, BigInt[] P, BigInt p) {
+        BigInt[] R = new BigInt[3];
+        R[0] = BigInt.One; R[1] = BigInt.One; R[2] = BigInt.Zero;   // Jacobian identity
+        BigInt[] cur = new BigInt[3];
+        cur[0] = P[0]; cur[1] = P[1]; cur[2] = BigInt.One;          // lift affine → Jacobian
         int bitLen = k.BitLength();
         int i = 0;
         while (i < bitLen) {
             if (k.TestBit(i)) {
-                result = EcdsaSecp256k1._pointAdd(result, cur);
+                R = EcdsaSecp256k1._jacAdd(R, cur, p);
             }
-            cur = EcdsaSecp256k1._pointDouble(cur);
+            cur = EcdsaSecp256k1._jacDouble(cur, p);
             i = i + 1;
         }
-        return result;
+        return EcdsaSecp256k1._jacToAffine(R, p);
     }
 
-    static BigInt[] _scalarMultBase(BigInt k) {
-        return EcdsaSecp256k1._scalarMult(k, EcdsaSecp256k1._basePoint());
+    static BigInt[] _scalarMultBase(BigInt k, BigInt p) {
+        return EcdsaSecp256k1._scalarMult(k, EcdsaSecp256k1._basePoint(), p);
     }
 
     static byte[] _pointToBytes(BigInt[] P) {
