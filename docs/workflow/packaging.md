@@ -44,7 +44,7 @@ z42 xtask.zpkg --help                             # 完整选项
 
 ```bash
 # 必备（所有 RID）
-dotnet --version              # .NET 8+；编译器 + z42c
+dotnet --version              # .NET 10+；编译器 + z42c
 cargo --version               # Rust stable；VM
 z42 xtask.zpkg build stdlib   # stdlib zpkg → artifacts/build/libraries/dist/release/
 dotnet build src/compiler/z42.slnx   # z42c.dll → artifacts/build/compiler/...

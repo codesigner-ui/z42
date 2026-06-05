@@ -1,6 +1,6 @@
 # Windows 开发支持
 
-> **TL;DR：** 装 **Git for Windows**（自带 Git Bash）+ .NET 8 SDK + Rust toolchain，然后 z42 build CLI（xtask）在 Git Bash 终端里直接跑。z42 不提供 PowerShell `.ps1` 镜像 —— bash 脚本是单一真相源。
+> **TL;DR：** 装 **Git for Windows**（自带 Git Bash）+ .NET 10 SDK + Rust toolchain，然后 z42 build CLI（xtask）在 Git Bash 终端里直接跑。z42 不提供 PowerShell `.ps1` 镜像 —— bash 脚本是单一真相源。
 
 ## 为什么 Git Bash 不是 PowerShell
 
@@ -24,9 +24,9 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 - 安装时全默认即可（"Use Git from the command line and also from 3rd-party software" + "Use the OpenSSL library" + "Checkout as-is, commit Unix-style line endings"）
 - 装完后开始菜单有 "Git Bash"；右键资源管理器有 "Git Bash Here"
 
-### 2. .NET 8 SDK
+### 2. .NET 10 SDK
 
-- 官网：https://dotnet.microsoft.com/download/dotnet/8.0 (Windows x64 Installer .exe)
+- 官网：https://dotnet.microsoft.com/download/dotnet/10.0 (Windows x64 Installer .exe)
 - 装完后 PowerShell + Git Bash 都能 `dotnet --version`
 
 ### 3. Rust toolchain (stable)

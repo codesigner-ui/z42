@@ -212,7 +212,7 @@ void _checkRust(TomlValue toml) {
 }
 
 void _checkDotnet(TomlValue toml) {
-    if (!_have("dotnet")) { ConsoleError.WriteLine("error: dotnet not found. Install .NET 8+ (https://dotnet.microsoft.com)."); return; }
+    if (!_have("dotnet")) { ConsoleError.WriteLine("error: dotnet not found. Install .NET 10+ (https://dotnet.microsoft.com)."); return; }
     string want = _vget(toml, "toolchain.dotnet.sdk");
     string actual = _cmdOut("dotnet", new string[]{ "--version" });
     if (actual.Length == 0) { ConsoleError.WriteLine("warning: cannot read 'dotnet --version'; skip check"); return; }

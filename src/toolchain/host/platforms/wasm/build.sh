@@ -19,7 +19,7 @@ ROOT="$(cd "$HERE/../../../../.." && pwd)"
 # 源自 versions.toml。版本下限改为 presence-only 守卫（原 compare 仅 warning）。
 command -v python3 >/dev/null 2>&1 || { echo "error: python3 required to read versions.toml" >&2; exit 1; }
 command -v rustc   >/dev/null 2>&1 || echo "warning: rustc not found (https://rustup.rs)" >&2
-command -v dotnet  >/dev/null 2>&1 || echo "warning: dotnet not found (.NET 8+)" >&2
+command -v dotnet  >/dev/null 2>&1 || echo "warning: dotnet not found (.NET 10+)" >&2
 command -v node    >/dev/null 2>&1 || echo "warning: node not found (versions.toml [toolchain.node])" >&2
 _vget()  { python3 -c "import tomllib;d=tomllib.load(open('$ROOT/versions.toml','rb'))
 for p in '$1'.split('.'): d=d[p]

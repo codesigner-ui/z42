@@ -28,7 +28,7 @@ z42 xtask.zpkg build stdlib
 
 ✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `z42 xtask.zpkg build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
 
-❗ `dotnet: command not found` → 装 .NET 8+：https://dotnet.microsoft.com/download
+❗ `dotnet: command not found` → 装 .NET 10+：https://dotnet.microsoft.com/download
 
 ## Step 3 — Build the iOS facade
 
