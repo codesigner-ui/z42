@@ -69,15 +69,40 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.2.5 | 多平台 CI matrix（5 平台 build/test 全绿）+ CI 模板 | 1.5 周 |
 | 0.2.6 | Release 自动化：git tag → 跨平台 z42c/z42vm 二进制 + zpkg 自动产出（[archive/2026-05-14-add-release-automation](spec/archive/2026-05-14-add-release-automation/) — Q12 已裁决）| 1 周 |
 
-### 0.3.x — 测试体系 & VM 质量 + GC v1
+### 0.3.x — stdlib 整理 + 自举启动 + 反射 MVP（2026-06-05 重排）
 
-| 子版本 | 内容 | 估时 |
-|------|------|:----:|
-| 0.3.0 | Golden 全 L1 覆盖 + interp/JIT 一致性 CI | 2 周 |
-| 0.3.1 | 调试符号：行号映射稳定 + 局部变量名 + 栈回溯优化 | 2 周 |
-| 0.3.2 | 热重载 VM 端完整实现（interp 模式）| 2 周 |
-| 0.3.3 | **GC v1**：抽象 GC 接口 + mark-and-sweep（替换 `Rc<RefCell>`）| 2–3 周 |
-| 0.3.4 | Profiler hooks：函数 entry/exit + allocation + GC 事件 | 1 周 |
+退出标准：（A）stdlib 重组完成 + 每包 bench baseline + BigInt/Coll/String/IO/JSON 三轮 perf 攻坚；（B）C# 编译器 4 个易做子系统（Lexer / Project / Driver / Parser）的 z42 实现产物在 CI 上与 C# 实现产物**逐字节对账通过**；（C）反射 MVP（只读元数据 + `typeof` + Attribute reflection）落地。
+
+> **三主线并行**：A（stdlib）/ B（自举）/ C（反射）三条主线，0.3.0 GC v1 是共同前置；0.3.3 起三条同时段并行推进。
+>
+> **B 主线不在 0.3.x 完成**：仅完成无 L3 依赖的 4 个子系统（Lexer / Project / Driver / Parser）+ 建立逐子系统 bit-identical CI gate。剩余 Semantic / TypeChecker / IR / ZbcWriter / Pipeline 推迟到 0.5.x（L3-G 泛型 + L3-C lambda 落地后），届时启动 `0.5.B*` 完成 byte-identical 替换。
+>
+> **C 主线 MVP 不含 Method.Invoke**：完整 Invoke 强依赖 generic instantiation，推 0.5.x L3-R 完整版。
+>
+> **C3 Attribute reflection 前置依赖**：用户自定义 attribute 机制（features.md §X，尚未排版本）需先落地；该子项的 spec 起草时需顺带起草 attribute 机制 spec。
+
+| 子版本 | 主线 | 内容 | 估时 |
+|------|:---:|------|:----:|
+| 0.3.0 | 前置 | **GC v1**：抽象 GC 接口 + mark-and-sweep（替换 `Rc<RefCell>`）— A/B/C 共同前置（从原 0.3.3 提前）| 2–3 周 |
+| 0.3.1 | A0+B0+C0 | 三主线 spec 同步起草：包结构审计 spec / 自举 CI 架构 spec / 反射 API spec | 1.5 周 |
+| 0.3.2 | A1 | 反映包审计裁决：重组目录 + 改 namespace + 调用点全量更新（pre-1.0 一次切干净）| 1.5 周 |
+| 0.3.3 | A2 ‖ B1 ‖ C1 | A2: bench baseline（每包 micro-bench → `bench-baselines`）‖ B1: Lexer in z42 ‖ C1: runtime metadata 暴露 + `Type/MethodInfo/FieldInfo/PropertyInfo` + `GetMembers` 系列 | 2 周 |
+| 0.3.4 | A3 ‖ B2 ‖ C2 | A3: perf #1 BigInt Karatsuba + List/Dict 热路径 ‖ B2: Project manifest reader in z42 ‖ C2: `typeof(T)` 编译器关键字 + `obj.GetType()` runtime intrinsic + z42.reflection 包公开 | 1.5 周 |
+| 0.3.5 | A4 ‖ B3 ‖ C3 | A4: perf #2 String / StringBuilder / Path / Encoding ‖ B3: Driver CLI / 错误码格式化 in z42 ‖ C3: Attribute reflection（前置：用户自定义 attribute 机制 spec）| 1.5 周 |
+| 0.3.6 | A5 ‖ B4 | A5: perf #3 JSON / YAML / TOML reader（共用 lexer 抽取）‖ B4: Parser in z42（AST 用 class + 虚方法替代 sealed record + visitor）| 3 周 |
+| 0.3.7 | 收尾 | CI bit-identical gate（B1–B4 全绿）+ stdlib bench delta report（A 全 perf 攻坚的提升量化） | 1 周 |
+
+**║ = 三主线在该子版本并行推进**
+
+**原 0.3.x 项重排（2026-06-05）**：
+
+| 原项 | 重排目的地 | 原因 |
+|------|----------|------|
+| Golden 全 L1 覆盖 + interp/JIT 一致性 CI | 0.4.x 起 | 与 stdlib v1 同期，新 API 同步 golden |
+| 调试符号 | 0.4.x 起 | |
+| 热重载 VM 完整实现 | 0.5.x 起 | features.md §12 本就标 "GC v1 后落地" |
+| GC v1 | **0.3.0**（提前）| A/B 共同前置 |
+| Profiler hooks | 0.4.x 起 | |
 
 ### 0.4.x — 标准库 v1 + test/bench/docgen 工具链
 
@@ -116,9 +141,15 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 ```
 0.1 ─► 0.2 ─► 0.3 ──┬──► 0.4 ──► 0.5 ──► 0.6 ──► 0.7 ──► 0.8 ──► 0.9 ──► 0.10 ──► 1.0
        │       │   │           │                                            │
-       │       │   │           └─── reflection ───► 0.5.6 (test 增强)        │
+       │       │   ├── reflection MVP (0.3 C) ──► reflection 完整 (0.5.1–0.5.3 + test 增强 0.5.6)
        │       │   │                                                        │
-       │       │   └─── GC v1 ─────► GC v2 (0.6) ─► GC v3 (0.8) ───────────► │
+       │       │   ├── 自举易做四子系统 (0.3 B：Lexer/Project/Driver/Parser)
+       │       │   │           ──► 自举剩余子系统 (0.5 B：Sem/TC/IR/ZbcWriter/Pipeline)
+       │       │   │                          ──► byte-identical 替换 (1.0 自举)
+       │       │   │                                                        │
+       │       │   ├── GC v1 (0.3.0，从 0.3.3 提前) ──► GC v2 (0.6) ──► GC v3 (0.8) ─►
+       │       │   │                                                        │
+       │       │   └── stdlib 重组 + perf (0.3 A) ──► stdlib v1 (0.4)
        │       │                                                            │
        │       └─── benchmark 套件 ─► perf CI (0.2.3) ──持续生效──────────► │
        │                                                                    │
@@ -126,12 +157,17 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 ```
 
 强依赖链：
+- 0.3 A perf 攻坚 ◄── 0.3.0 GC v1（无稳定 GC 的 micro-opt 无意义）
+- 0.3 B 自举易做四件 ◄── 0.3.0 GC v1（z42 端编译器对 GC 压力大）
+- 0.3 B 剩余子系统（Sem/TC/IR/...）◄── 0.5 L3-G 泛型 + L3-C lambda（visitor pattern + AST 集合需 generic）
+- 0.3 C3 Attribute reflection ◄── 用户自定义 attribute 机制（features.md §X，0.3.5 前先 spec）
+- 0.5 反射完整版 Method.Invoke ◄── 0.5 L3-G 泛型 instantiation
 - 0.5 反射 ◄── 0.10 性能数据自查（type metadata access）
 - 0.6 unmanaged ◄── 0.9.6 C ABI 头文件
 - 0.7 Result ◄── 0.8 async（async fn 通常返回 `Task<Result<T,E>>`）
 - 0.8 GC v3 ◄── 0.9.5 VM 组件化
 - 0.10 性能基线 ◄── 1.0 稳定承诺
-- 1.0 自举 ◄── 0.5+ 全部 L3 特性（编译器自身需 lambda / generic / async）
+- 1.0 自举（byte-identical 替换）◄── 0.5+ 全部 L3 特性（编译器自身需 lambda / generic / async）
 
 ---
 
@@ -142,10 +178,10 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | features.md 章节 | 所属 minor | 当前状态 |
 |------|:------:|:----:|
 | §1 Type System / §2 Null Safety / §3 Memory Management / §4 Error Handling (exceptions) / §5 Type Definitions (class/struct/record) / §6 Functions / §7 Control Flow / §8 Strings / §9 Collections / §10 Imports / §11 Numeric Aliases | 0.1.x | ✅ L1 |
-| §12 Hot Reload | 0.3.2 | 🟡 设计有；GC v1 后真热更新落地 |
-| §13 Execution Mode Annotations | 0.1.x（注解）→ 0.3.x（运行时切换）| 🟡 注解 ✅；运行时切换待 |
+| §12 Hot Reload | 0.5.x（从 0.3.2 推后；GC v1 后真热更新落地）| 🟡 设计有 |
+| §13 Execution Mode Annotations | 0.1.x（注解）→ 0.5.x（运行时切换；从 0.3.x 推后）| 🟡 注解 ✅；运行时切换待 |
 | §14 Generics + Trait | 0.5.x | ✅ G1-G4 + L3-Impl 提前落地 |
-| §15 Reflection | 0.5.1–0.5.3 | 📋 L3-R 统一批次 |
+| §15 Reflection | **MVP 0.3.x（只读元数据 + typeof + Attribute）/ 完整 0.5.1–0.5.3（含 Method.Invoke）** | 📋 MVP 提前；L3-R 完整版仍在 0.5 |
 | §16 Lambda + Closure | 0.6.0 | ✅ L2-C1 + L3-C2 核心提前落地 |
 | §17 Result + ADT + match | 0.7.x | 📋 |
 | §18 可裁剪 / Tree-shaking / 200KB 子集 | 0.9.x（嵌入 / 裁剪）+ 1.0-rc（AOT 静态链接）| 📋 |
