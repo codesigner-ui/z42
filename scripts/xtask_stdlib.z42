@@ -169,7 +169,7 @@ string _indexJson() {
 // Latest packaged z42c under artifacts/packages/*/bin/ (alphabetical-last; z42.io
 // has no mtime API — Path.Glob/Enumerate is sorted). "" when not found.
 string _findPackagedZ42c(string root) {
-    string packagesRoot = Path.Join(root, "artifacts/packages");
+    string packagesRoot = _packagesDir(root);
     if (!Directory.Exists(packagesRoot)) { return ""; }
     string[] subs = Directory.Enumerate(packagesRoot);
     string latest = "";

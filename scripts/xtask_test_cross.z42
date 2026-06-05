@@ -28,10 +28,8 @@ int _testCrossZpkgImpl(string mode) {
     string root = _root();
 
     string testsDir = Path.Join(root, "src/tests/cross-zpkg");
-    string driverDll = Path.Join(root,
-        "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
-    string stdlibDist = Path.Join(root,
-        "artifacts/build/libraries/dist/release");
+    string driverDll = _driverDll(root);
+    string stdlibDist = _libsDir(root);
 
     if (!File.Exists(driverDll)) {
         ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);

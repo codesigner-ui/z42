@@ -34,7 +34,7 @@ int _buildPackage(string[] argv) {
     if (version.Length == 0) { ConsoleError.WriteLine("error: versions.toml [project].version missing"); return 1; }
     string pkgName = "z42-" + version + "-" + rid + "-" + profile;
     if (variant.Length > 0) { pkgName = pkgName + "-" + variant; }
-    string pkgDir = Path.Join(root, "artifacts/packages/" + pkgName);
+    string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Package:    " + pkgName);
     Console.WriteLine("Output:     " + pkgDir);
     Console.WriteLine("Target RID: " + rid + "  (category=" + category + ")");
@@ -166,7 +166,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     _makeExe(Path.Join(pkgDir, "z42"));
     Console.WriteLine("      ✓ z42 (trampoline, package root)");
-    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
+    string libs = _libsDir(root);
     c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
         .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
         .Env("Z42_LIBS", libs));
@@ -273,7 +273,7 @@ int _pkgEmitHelloC(string root, string pkgDir) {
     Directory.Create(dst);
     File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
     File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md.host"), Path.Join(dst, "README.md"));
-    string driver = Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    string driver = _driverDll(root);
     if (!File.Exists(driver)) {
         ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler");
         return 1;
@@ -371,7 +371,7 @@ string _quotedExisting(string dir, string a, string b) {
 int _pkgSha256Check(string root, string pkgDir) {
     bool fail = false;
     // 1. libs/* vs the flat dist source of truth
-    string libsSrc = Path.Join(root, "artifacts/build/libraries/dist/release");
+    string libsSrc = _libsDir(root);
     string pkgLibs = Path.Join(pkgDir, "libs");
     if (Directory.Exists(pkgLibs)) {
         foreach (var f in Directory.Enumerate(pkgLibs)) {

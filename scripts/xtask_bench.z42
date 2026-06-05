@@ -25,7 +25,7 @@ int _bench(string[] argv) {
     Directory.Create(resultsDir);
     string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
     if (!File.Exists(vm)) { int rc = _buildRuntime(); if (rc != 0) { return rc; } }
-    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
+    string libs = _libsDir(root);
     string work = Directory.CreateTempDir("xtask-bench");
 
     string benchmarks = "";

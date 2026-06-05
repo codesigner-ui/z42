@@ -18,7 +18,7 @@ using Std.IO;
 
 int _regenGolden() {
     string root = _root();
-    string driverDll = Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    string driverDll = _driverDll(root);
     if (!File.Exists(driverDll)) {
         ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);
         return 1;

@@ -102,14 +102,14 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
 
     // [6/7] stdlib libs + examples/hello_c
     Console.WriteLine("[6/7] stdlib + examples/hello_c");
-    c = _pkgCopyLibs(Path.Join(root, "artifacts/build/libraries/dist/release"), pkgDir); if (c != 0) { return c; }
+    c = _pkgCopyLibs(_libsDir(root), pkgDir); if (c != 0) { return c; }
     string dst = Path.Join(pkgDir, "examples/hello_c");
     Directory.Create(dst);
     File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
     string readmeSrc = Path.Join(root, "examples/embedding/hello_c/README.md.ios");
     if (!File.Exists(readmeSrc)) { readmeSrc = Path.Join(root, "examples/embedding/hello_c/README.md.host"); }
     File.Copy(readmeSrc, Path.Join(dst, "README.md"));
-    string driver = Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+    string driver = _driverDll(root);
     if (!File.Exists(driver)) { ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler"); return 1; }
     c = _exec(new Process("dotnet").Arg(driver).Arg(Path.Join(root, "examples/embedding/hello.z42"))
         .Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));

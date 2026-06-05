@@ -103,7 +103,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
 
     // ── 7. stdlib libs + examples/hello_c ───────────────────────────────
     Console.WriteLine("[7/8] stdlib + examples/hello_c");
-    c = _pkgCopyLibs(Path.Join(root, "artifacts/build/libraries/dist/release"), pkgDir); if (c != 0) { return c; }
+    c = _pkgCopyLibs(_libsDir(root), pkgDir); if (c != 0) { return c; }
     c = _pkgEmitHelloC(root, pkgDir); if (c != 0) { return c; }
 
     // ── 8. manifest.toml ─────────────────────────────────────────────────

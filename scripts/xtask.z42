@@ -199,7 +199,7 @@ int _regenCore(bool release, bool rebuildStdlib) {
     string root = _root();
     if (rebuildStdlib) { int c = _buildStdlib(); if (c != 0) { return c; } }
     // build the compiler driver only if z42c.dll is absent (avoids MSB3492 on slnx)
-    if (!File.Exists(Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll"))) {
+    if (!File.Exists(_driverDll(root))) {
         string cfg = release ? "Release" : "Debug";
         int c = _exec(new Process("dotnet").Arg("build").Arg("-q")
             .Arg("src/compiler/z42.Driver/z42.Driver.csproj").Arg("-c").Arg(cfg));

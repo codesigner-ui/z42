@@ -1,0 +1,26 @@
+// xtask — shared repo-relative artifact paths (unify-scripts-into-xtask, 2026-06-05).
+// Single source for the long, error-prone paths that were hardcoded across many
+// xtask modules — especially the stdlib flat dist, which shifted location during
+// the artifacts-layout reorg and is the value Z42_LIBS / the VM load from.
+// Same Z42Xtask namespace; callers pass the repo root (from _root()).
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+// stdlib flat dist (= the Z42_LIBS value the compiler + VM load stdlib from):
+//   artifacts/build/libraries/dist/release
+string _libsDir(string root) {
+    return Path.Join(root, "artifacts/build/libraries/dist/release");
+}
+
+// the built C# compiler driver DLL:
+//   artifacts/build/compiler/z42.Driver/bin/z42c.dll
+string _driverDll(string root) {
+    return Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+}
+
+// SDK packages output root:  artifacts/packages
+string _packagesDir(string root) {
+    return Path.Join(root, "artifacts/packages");
+}
