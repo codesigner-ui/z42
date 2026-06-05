@@ -26,16 +26,19 @@
 - [ ] 2.4 GREEN：`dotnet test src/compiler/z42.Tests/z42.Tests.csproj`
 - [ ] 2.5 commit + push（compiler schema 单元）
 
-## Phase 3 — xtask dir-mode 发现 + synthetic mini-manifest
+## Phase 3 — xtask dir-mode 发现 + synthetic mini-manifest + 输出目录隔离
 
 - [ ] 3.1 [xtask_test.z42](../../../../scripts/xtask_test.z42)：
     - [ ] 3.1.1 测试发现循环：识别 `tests/<name>/source.z42` dir-mode
     - [ ] 3.1.2 dir-mode 测试编译路径：合成 synthetic mini-manifest 至 cache，传 `--manifest` 给 z42c
     - [ ] 3.1.3 [tests.dependencies] + [[test]].dependencies 三层 dep 合并（合入合成 manifest 的 [dependencies]）
-- [ ] 3.2 [xtask_bench.z42](../../../../scripts/xtask_bench.z42)：同 3.1，识别 `bench/*.z42` + `bench/<name>/source.z42`；合 [bench.dependencies]
+    - [ ] 3.1.4 合成 manifest 强制 `[build].output_dir = <parent.output_dir>/tests` — 不可被 [[test]] 覆盖
+    - [ ] 3.1.5 zpkg 命名：单文件测试 `<lib>.test.<filename_no_ext>`；dir-mode `<lib>.test.<dirname>`
+- [ ] 3.2 [xtask_bench.z42](../../../../scripts/xtask_bench.z42)：同 3.1，识别 `bench/*.z42` + `bench/<name>/source.z42`；合 [bench.dependencies]；output_dir 走 `<parent>/bench`
 - [ ] 3.3 sort 修复：现有 `Directory.Enumerate` 接 first-wins → 加显式 sort（common-pitfalls §1）
-- [ ] 3.4 xtask 单元测试 / integration smoke
-- [ ] 3.5 commit + push（xtask dir-mode 单元）
+- [ ] 3.4 [xtask.z42](../../../../scripts/xtask.z42)：`clean tests` / `clean bench` 子命令
+- [ ] 3.5 xtask 单元测试 / integration smoke
+- [ ] 3.6 commit + push（xtask dir-mode 单元）
 
 ## Phase 4 — 22 stdlib z42.toml 迁移
 
@@ -71,17 +74,27 @@
 - [ ] 5.1 选一个有意义的 stdlib 包（推荐 z42.crypto 或 z42.compression）改造一个测试为 dir-mode
 - [ ] 5.2 验证 dir-mode 路径全跑通
 
-## Phase 6 — 文档同步
+## Phase 6 — CI 守门 + 文档同步
 
-- [ ] 6.1 [docs/design/compiler/](../../../design/compiler/) 若有 manifest schema 文档 → 同步新 schema
-- [ ] 6.2 [docs/design/runtime/](../../../design/runtime/) 若有 zpkg 文档 → 说明 release 产物剥离 [tests] / [bench] 字段
-- [ ] 6.3 `.claude/rules/` 是否需补 "test-only deps 必须用 [tests.dependencies]" 规则？（待评估）
-- [ ] 6.4 spec 归档：docs/spec/changes/ → docs/spec/archive/
+- [ ] 6.1 [.github/workflows/](../../../../.github/workflows/) 新增 release-guard step（或并入现有 build-and-test）：
+    - [ ] 6.1.1 `find dist/ -name '*.test.*.zpkg' -o -name '*.bench.*.zpkg'` 零命中
+    - [ ] 6.1.2 `find tests/dist/` 反向：不许出现无 `.test.` infix 的 zpkg
+- [ ] 6.2 [docs/design/compiler/project.md](../../../design/compiler/project.md) 同步新 schema：
+    - [ ] 6.2.1 `[tests]` / `[bench]` 段语义
+    - [ ] 6.2.2 `[[test]]` / `[[bench]]` 数组
+    - [ ] 6.2.3 三层 dep 合并模型
+    - [ ] 6.2.4 输出目录布局（与 §restructure-build-output-dirs 的 output_dir/cache_dir/dist_dir 衔接）
+- [ ] 6.3 [docs/design/runtime/zpkg.md](../../../design/runtime/zpkg.md)（若存在）：说明 release 产物剥离 [tests] / [bench] 字段
+- [ ] 6.4 `.claude/rules/` 是否需补 "test-only deps 必须用 [tests.dependencies]" 规则？（待评估）
+- [ ] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/
 
 ## 验收（GREEN）
 
 - [ ] dotnet test src/compiler/z42.Tests/z42.Tests.csproj 全绿
 - [ ] xtask test stdlib 全绿（22 包）
+- [ ] xtask bench stdlib 跑通（per-package micro-bench）
 - [ ] 全 stdlib 扫描 WS010 零触发
 - [ ] 一个 dir-mode 多文件测试 demo 跑通
+- [ ] CI release-guard step 零命中
+- [ ] `xtask clean tests` / `clean bench` 独立可清，不影响生产产物
 - [ ] roadmap.md / 0.3.x A 主线相关行同步
