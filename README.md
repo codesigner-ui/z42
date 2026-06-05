@@ -35,26 +35,31 @@ A **full-stack systems programming language** designed for productivity and perf
 
 ## Quick Start
 
-Day-to-day build / test / packaging is unified behind [`just`](https://github.com/casey/just):
+Day-to-day build / test / packaging is unified behind **xtask** — a self-hosted
+z42 CLI (source `scripts/xtask*.z42`, compiled to `artifacts/xtask/xtask.zpkg`,
+run via the launcher):
 
 ```bash
-brew install just      # or: cargo install just / sudo apt install just / scoop install just
-
-just                   # list available tasks
-just build             # compiler + runtime
-just test              # all tests
+z42 xtask.zpkg build all     # compiler + runtime + stdlib
+z42 xtask.zpkg test          # full gate (compiler + vm + cross-zpkg + stdlib)
+z42 xtask.zpkg --help        # all commands (build / test / deps / regen / bench / package)
 ```
 
-Or call the underlying tools directly:
+On a fresh clone, bootstrap the toolchain (including `xtask.zpkg`) from source once:
 
 ```bash
-# Build compiler + runtime
-dotnet build src/compiler/z42.slnx
-cargo build --manifest-path src/runtime/Cargo.toml
+dotnet build src/compiler/z42.slnx                              # z42c (compiler)
+cargo build --release --manifest-path src/runtime/Cargo.toml    # z42vm (runtime)
+# primer stdlib (raw compiler build so xtask can compile), then build xtask.zpkg:
+( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
+dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
+```
 
-# Compile and run
-dotnet run --project src/compiler/z42.Driver -- hello.z42 --emit zbc -o hello.zbc
-cargo run --manifest-path src/runtime/Cargo.toml -- hello.zbc
+Or compile + run a single program directly:
+
+```bash
+dotnet run --project src/compiler/z42.Driver -- examples/hello.z42 --emit zbc -o hello.zbc
+cargo run --release --manifest-path src/runtime/Cargo.toml -- hello.zbc
 ```
 
 Full build / test / packaging / CI / release workflows: [docs/workflow/](docs/workflow/).
@@ -88,6 +93,7 @@ z42/
 │   ├── runtime/           # Rust VM (interp / JIT / AOT)
 │   ├── libraries/         # Standard library (.z42 source)
 │   └── toolchain/         # Companion toolchain (host / debugger / packager / workload)
+├── scripts/               # xtask dev CLI (build / test / package) + install primers
 ├── docs/design/           # Language design documents
 ├── examples/              # Example programs
 └── .claude/               # Collaboration docs (CLAUDE.md, workflow rules)
