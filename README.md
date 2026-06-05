@@ -35,34 +35,35 @@ A **full-stack systems programming language** designed for productivity and perf
 
 ## Quick Start
 
-Day-to-day build / test / packaging is unified behind **xtask** — a self-hosted
-z42 CLI (source `scripts/xtask*.z42`, compiled to `artifacts/xtask/xtask.zpkg`,
-run via the launcher):
+### 1. Get z42
+
+z42's build/test/dev tooling is **itself written in z42** (the `xtask` CLI), so
+you bootstrap by first downloading a prebuilt launcher — the one native primer
+(chicken-and-egg: you need a working z42 to run the z42-implemented tooling):
 
 ```bash
-z42 xtask.zpkg build all     # compiler + runtime + stdlib
-z42 xtask.zpkg test          # full gate (compiler + vm + cross-zpkg + stdlib)
-z42 xtask.zpkg --help        # all commands (build / test / deps / regen / bench / package)
+git clone https://github.com/codesigner-ui/z42 && cd z42
+./scripts/install-z42.sh                       # → ./.z42/  (z42 launcher + z42c + z42vm + stdlib)
+                                               #   Windows: scripts\install-z42.bat
+export PATH="$PWD/.z42:$PWD/.z42/bin:$PATH"     # put z42 / z42c / z42vm on PATH
 ```
 
-On a fresh clone, bootstrap the toolchain (including `xtask.zpkg`) from source once:
+> `install-z42.sh` downloads the prebuilt package (version from
+> `versions.toml [toolchain.z42].launcher`, default `nightly`) into a
+> project-local, gitignored `./.z42/` — it never touches your system.
+
+### 2. Build the xtask CLI, then drive everything through it
 
 ```bash
-dotnet build src/compiler/z42.slnx                              # z42c (compiler)
-cargo build --release --manifest-path src/runtime/Cargo.toml    # z42vm (runtime)
-# primer stdlib (raw compiler build so xtask can compile), then build xtask.zpkg:
-( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
-dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
+z42c build scripts/xtask.z42.toml --release   # build the dev CLI → artifacts/xtask/xtask.zpkg
+z42 xtask.zpkg build all                        # compiler + runtime + stdlib
+z42 xtask.zpkg test                             # full gate (compiler + vm + cross-zpkg + stdlib)
+z42 xtask.zpkg --help                           # all commands (build / test / deps / regen / bench / package)
 ```
 
-Or compile + run a single program directly:
-
-```bash
-dotnet run --project src/compiler/z42.Driver -- examples/hello.z42 --emit zbc -o hello.zbc
-cargo run --release --manifest-path src/runtime/Cargo.toml -- hello.zbc
-```
-
-Full build / test / packaging / CI / release workflows: [docs/workflow/](docs/workflow/).
+> **Building the whole toolchain from source** (no prebuilt download), and the
+> full bootstrap details, live in [docs/workflow/building/](docs/workflow/building/).
+> Full build / test / packaging / CI / release workflows: [docs/workflow/](docs/workflow/).
 Collaboration workflow: [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
 ---
