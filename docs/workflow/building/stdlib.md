@@ -1,6 +1,6 @@
 # 标准库构建
 
-标准库源码在 [`src/libraries/`](../../../src/libraries/)，6 个包：`z42.core` / `z42.io` / `z42.math` / `z42.text` / `z42.collections` / `z42.test`。每个 `.zpkg` 产物给 VM 加载。
+标准库源码在 [`src/libraries/`](../../../src/libraries/)，22 个包（`z42.core` / `z42.io` / `z42.math` / `z42.text` / `z42.collections` / `z42.test` / `z42.toml` / `z42.json` / `z42.regex` / `z42.crypto` / `z42.net` / `z42.numerics` / … 完整列表见 `src/libraries/`）。每个 `.zpkg` 产物给 VM 加载。
 
 ## 何时需要重新编译
 
@@ -14,17 +14,23 @@
 ## 直接构建
 
 ```bash
-z42 xtask.zpkg build stdlib            # 用 dotnet run 编译（dev 默认）
-z42 xtask.zpkg test dist               # 用 artifacts/build/runtime/release/z42c 编译并验证（package 后测试用）
+z42 xtask.zpkg build stdlib            # 编译全部 lib + 扁平视图 + index.json（dev 默认）
+z42 xtask.zpkg test dist               # 用打包发行版 z42c 编译并验证（package 后测试用）
 ```
 
-等价于：
+`build stdlib` 的逻辑现已 fold 进 xtask（`scripts/xtask_stdlib.z42`），一条命令做三件事：
+(1) `z42c build --workspace --release` 编译 22 个 lib；(2) hard-link 成扁平视图
+`artifacts/build/libraries/dist/release/`（VM 单目录加载点）；(3) 写 namespace→zpkg 的
+`index.json`。核心编译步骤等价于：
 
 ```bash
 ( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
 ```
 
-随后产物自动从 `artifacts/build/libraries/<lib>/dist/<lib>.zpkg` sync 到 `artifacts/build/libs/release/<lib>.zpkg`（VM 默认加载路径）。
+> **冷启动**：`xtask.zpkg` 本身依赖 stdlib 才能编译，所以冷树上先由 C# 编译器直接跑上面
+> 这条 `build --workspace`（primer，无 z42 程序参与）产出 `.zpkg`/`.zsym` → 编译
+> `xtask.zpkg` → 再 `z42 xtask.zpkg build stdlib` 补扁平视图 + `index.json`。z42c 只读
+> `.zsym`、VM 扫目录，都不需要 `index.json` 即可编译/运行 xtask，故此次序无死锁。
 
 ## 增量编译（C5）
 
@@ -40,14 +46,16 @@ z42 xtask.zpkg test dist               # 用 artifacts/build/runtime/release/z42
 ## artifacts 布局
 
 ```
-artifacts/
-├── libraries/<lib>/             # workspace 模式 stdlib 构建产物
-│   ├── dist/<lib>.zpkg          # 最终包
-│   └── cache/*.zbc              # 中间产物（debug/indexed 模式时生成）
-└── z42/libs/<lib>.zpkg          # VM 默认加载路径（z42 xtask.zpkg build stdlib sync 过来）
+artifacts/build/libraries/
+├── <lib>/release/dist/<lib>.zpkg   # 每个 lib 的 workspace 构建产物（+ .zsym）
+├── <lib>/release/cache/*.zbc       # 增量编译中间产物
+└── dist/release/                   # 扁平视图（hard-link）= VM 单目录加载点
+    ├── <lib>.zpkg + <lib>.zsym     #   build stdlib hard-link 过来
+    └── index.json                  #   namespace → zpkg 索引
 ```
 
-`z42 xtask.zpkg build stdlib` 同时写两端；`z42 xtask.zpkg build package` 在分发版打包阶段额外保证一份最终拷贝（路径见 `z42 xtask.zpkg build package`）。
+`z42 xtask.zpkg build stdlib` 同时产每-lib 构建产物 + 扁平视图 + `index.json`；
+`z42 xtask.zpkg build package` 在分发版打包阶段把扁平视图整份拷进 SDK 的 `libs/`。
 
 ## 分发链端到端
 

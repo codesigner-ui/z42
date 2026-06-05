@@ -259,31 +259,11 @@ _MapResult _mapFile(string f) {
         return r;
     }
 
-    // Test infrastructure (z42 job scripts xtask delegates to).
-    if (f == "scripts/test-vm.z42" || f == "scripts/regen-golden-tests.z42") {
-        r.commands = new string[1];
-        r.commands[0] = "xtask test vm";
-        r.touchedAny = true;
-        return r;
-    }
-    if (f == "scripts/build-stdlib.z42") {
-        r.commands = new string[1];
-        r.commands[0] = "xtask test lib";
-        r.touchedAny = true;
-        return r;
-    }
-    if (f == "scripts/xtask_test_cross.z42") {
-        r.commands = new string[1];
-        r.commands[0] = "xtask test cross-zpkg";
-        r.touchedAny = true;
-        return r;
-    }
-
-    // xtask CLI source / manifest (the build+test driver) or a workspace
-    // config → full sweep (was the justfile branch before the migration).
-    if (f == "scripts/xtask.z42"
-        || f == "scripts/xtask_test.z42"
-        || f == "scripts/xtask.z42.toml"
+    // All xtask CLI source is now ONE compiled xtask.zpkg (the test-vm / regen /
+    // cross / dist / stdlib logic all folded in), so any scripts/xtask* change
+    // rebuilds the whole CLI → full sweep. A change to the stdlib-build module
+    // (xtask_stdlib.z42) also affects every downstream test. Workspace config too.
+    if (_startsWith(f, "scripts/xtask")
         || _endsWith(f, ".workspace.toml")) {
         r.needsFull = true;
         r.touchedAny = true;

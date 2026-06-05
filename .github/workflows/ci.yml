@@ -60,10 +60,10 @@ jobs:
             ${{ runner.os }}-nuget-
 
       # migrate-scripts-to-z42: bootstrap the native build CLI (replaces
-      # `just build`). Builds the compiler (slnx) + release
-      # z42vm + stdlib (cold-start primer then build-stdlib.z42 for the flat
-      # dist + index.json) + xtask.zpkg. After this, every other step drives
-      # work through `z42vm xtask.zpkg …`. Runs on all OSes (git-bash on Win).
+      # `just build`). Builds the compiler (slnx) + release z42vm + a primer
+      # stdlib, compiles xtask.zpkg, then `xtask build stdlib` for the final flat
+      # dist + index.json. After this, every other step drives work through
+      # `z42vm xtask.zpkg …`. Runs on all OSes (git-bash on Win).
       - name: Bootstrap (compiler + runtime + stdlib + xtask.zpkg)
         shell: bash
         run: |
@@ -71,6 +71,9 @@ jobs:
           dotnet build src/compiler/z42.slnx --nologo -v quiet
           cargo build --release --manifest-path src/runtime/Cargo.toml
           libs="$PWD/artifacts/build/libraries/dist/release"
+          # PRIMER (raw C# compiler, no z42 program): build stdlib from source so
+          # xtask can COMPILE its `using Std.*` (z42c reads .zsym; index.json — the
+          # VM lookup index — is regenerated below by `xtask build stdlib`).
           if [ ! -f "$libs/z42.core.zpkg" ]; then
             ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
             mkdir -p "$libs"
@@ -78,8 +81,11 @@ jobs:
               cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
             done
           fi
-          Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- run scripts/build-stdlib.z42
           Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
+          # build-stdlib logic folded into xtask (xtask_stdlib.z42): workspace build
+          # (cached) + flat view + index.json, in-process.
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
 
       # migrate-scripts-to-z42: version-drift check via xtask (replaces the
       # feature-matrix `bash scripts/check-versions-drift.sh` step). ubuntu only —

@@ -97,48 +97,15 @@ int _cargoFeature(string feat) {
         .Arg("--no-default-features").Arg("--features").Arg(feat));
 }
 
-// `build stdlib` — native, bash-free. On a cold tree (no flat dist) run the
-// primer: raw z42c workspace build so build-stdlib.z42's own `using Std.*`
-// resolves; then run build-stdlib.z42 for the incremental build + flat-view
-// assembly. Mirrors scripts/build-stdlib.sh (retained as fallback).
+// `build stdlib` — in-process (unify-scripts-into-xtask). Folded from the former
+// standalone scripts/build-stdlib.z42 into xtask_stdlib.z42 (_buildStdlibCore):
+// z42c build --workspace (release) + verify + flat-view + index.json. No primer
+// here — `build --workspace` compiles stdlib from source, so it's self-sufficient
+// once xtask is running. The COLD bootstrap (CI composite / fresh clone) keeps a
+// raw `dotnet -- build --workspace` primer BEFORE compiling xtask (to satisfy
+// xtask's own `using Std.*`), then runs `xtask build stdlib` afterward.
 int _buildStdlib() {
-    string root = _root();
-    string coreZpkg = Path.Join(root, "artifacts/build/libraries/dist/release/z42.core.zpkg");
-    if (!File.Exists(coreZpkg)) {
-        Console.WriteLine("  (primer: bootstrapping stdlib for the first time)");
-        // Must run from src/libraries so `build --workspace` finds the workspace
-        // toml; --project is therefore relative to that dir. _execIn (not _exec)
-        // because _exec would override the working directory to _root().
-        int pc = _execIn(new Process("dotnet")
-            .Arg("run").Arg("--project").Arg("../compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-            .Arg("--").Arg("build").Arg("--workspace").Arg("--release"),
-            Path.Join(root, "src/libraries"));
-        if (pc != 0) { return pc; }
-        _primerFlatView(root);
-    }
-    // incremental build + flat-view assembly (build-stdlib.z42 is bash-free internally)
-    return _exec(new Process("dotnet")
-        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("run").Arg("scripts/build-stdlib.z42"));
-}
-
-// Cold-start: copy each per-lib dist's zpkg/zsym into the flat dist view so the
-// driver can resolve build-stdlib.z42's stdlib imports. (build-stdlib.z42 then
-// re-asserts the flat view itself.) Directory.Enumerate returns names, not paths.
-void _primerFlatView(string root) {
-    string flat = Path.Join(root, "artifacts/build/libraries/dist/release");
-    Directory.Create(flat);
-    string libsRoot = Path.Join(root, "artifacts/build/libraries");
-    foreach (var libName in Directory.Enumerate(libsRoot)) {
-        string d = Path.Join(libsRoot, libName + "/release/dist");
-        if (Directory.Exists(d)) {
-            foreach (var fname in Directory.Enumerate(d)) {
-                if (fname.EndsWith(".zpkg") || fname.EndsWith(".zsym")) {
-                    File.Copy(Path.Join(d, fname), Path.Join(flat, fname));
-                }
-            }
-        }
-    }
+    return _buildStdlibCore(false);
 }
 
 // ── test ──────────────────────────────────────────────────────────────────
