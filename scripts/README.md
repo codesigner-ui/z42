@@ -4,11 +4,16 @@
 
 仓库的开发 CLI 与启动引导。绝大多数开发命令（build / test / package / deps /
 regen / audit / bench）都已收敛到一个自举的 z42 程序 **xtask**：源码是本目录的
-`xtask*.z42`，编译成单个 `artifacts/xtask/xtask.zpkg`，统一经 launcher 调用：
+`xtask*.z42`，编译成单个 `artifacts/xtask/xtask.zpkg`，经 launcher 调用：
 
 ```
-z42 xtask.zpkg <command> [args]
+z42c build scripts/xtask.z42.toml --release    # 构建 → artifacts/xtask/xtask.zpkg
+z42 xtask.zpkg <command> [args]                # 经 launcher 运行
 ```
+
+xtask 本身是一个 z42 程序，由 launcher **运行**——它不是通用 `z42` launcher 的一
+部分（launcher 保持通用运行时）。冷启动如何先产出 `xtask.zpkg` 见下文「冷启动
+bootstrap」。
 
 本目录的 `.z42` 全部是 xtask 模块（含 stdlib 构建逻辑 `xtask_stdlib.z42`）。唯一
 的非 xtask 文件是安装引导脚本：
