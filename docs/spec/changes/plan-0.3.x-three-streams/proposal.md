@@ -157,53 +157,69 @@ User 2026-06-05 第二轮裁决专门细化 B 主线。决议四点：
 | compile-perf bench corpus | 单文件 / 文件集 end-to-end 编译时间对比；**0.5.x 全子系统就绪后才启用**；0.3.x 只跑 per-subsystem micro-bench |
 | Perf gate 阈值 | median ≤ 3× · P99 ≤ 5× · 回归 > 15% 红线 |
 
-### 1. 目录布局（嵌套子目录 + 多 zpkg 子包，镜像 C# 9 项目结构）
+### 1. 目录布局（独立顶级目录 + 多 zpkg 子包，镜像 C# 9 项目结构）
 
-z42.compiler 不是单一 zpkg，而是**多个子包 1:1 镜像 C# 项目**。**采用嵌套子目录布局**（2026-06-06 User 决议）—— 唯一新增的顶级目录 `src/libraries/z42.compiler/` 容纳所有子包，避免在 22 个 stdlib 顶级包旁边再多 7 个 `z42.compiler.*` 顶级目录污染视觉分组：
+z42.compiler 不是单一 zpkg，而是**多个子包 1:1 镜像 C# 项目**。**位置：`src/z42.compiler/` 作为独立顶级目录**（2026-06-06 User 决议），与 `src/compiler/`（C# bootstrap）平级。语义对齐：两者都是"编译器实现"，不是 stdlib —— `src/libraries/` 保持纯粹只放 stdlib 包。
 
 ```
-src/libraries/
-├── z42.cli/  z42.collections/ ... z42.yaml/    ← 现有 22 个 stdlib 包（不动）
-└── z42.compiler/                                ← 唯一新增顶级目录
-    ├── README.md                                ← 编译器整体说明 + 子包索引
-    ├── core/                                    → z42.compiler.core.zpkg      (lib)
-    │   ├── z42.toml                             ← [project].name = "z42.compiler.core"
-    │   ├── source.z42 + src/ + tests/
-    │   └── README.md
-    ├── syntax/                                  → z42.compiler.syntax.zpkg    (lib, 0.3 B1+B4)
-    │   ├── src/{lexer,parser,ast}.z42
-    │   ├── tests/{lexer,parser}_tests.z42
-    │   └── bench/{lexer,parser}_throughput.z42
-    ├── project/                                 → z42.compiler.project.zpkg   (lib, 0.3 B2)
-    │   ├── src/ + tests/
-    │   └── bench/manifest_parse.z42
-    ├── driver/                                  → z42.compiler.driver.zpkg    (exe, 0.3 B3)
-    │   ├── src/ + tests/ + README.md
-    ├── semantics/                               → z42.compiler.semantics.zpkg (lib, 0.5+ 启动；占位)
-    ├── ir/                                      → z42.compiler.ir.zpkg        (lib, 0.5+ 启动；占位)
-    └── pipeline/                                → z42.compiler.pipeline.zpkg  (lib, 0.5+ 启动；占位)
+src/
+├── compiler/                                ← C# bootstrap 编译器（现状）
+├── z42.compiler/                            ← 新增顶级目录，与 src/compiler/ 平级
+│   ├── z42.workspace.toml                   ← 独立 workspace（与 stdlib 解耦）
+│   ├── README.md                            ← 编译器整体说明 + 子包索引
+│   ├── core/                                → z42.compiler.core.zpkg      (lib)
+│   │   ├── z42.toml                         ← [project].name = "z42.compiler.core"
+│   │   ├── source.z42 + src/ + tests/
+│   │   └── README.md
+│   ├── syntax/                              → z42.compiler.syntax.zpkg    (lib, 0.3 B1+B4)
+│   │   ├── src/{lexer,parser,ast}.z42
+│   │   ├── tests/{lexer,parser}_tests.z42
+│   │   └── bench/{lexer,parser}_throughput.z42
+│   ├── project/                             → z42.compiler.project.zpkg   (lib, 0.3 B2)
+│   │   ├── src/ + tests/
+│   │   └── bench/manifest_parse.z42
+│   ├── driver/                              → z42.compiler.driver.zpkg    (exe, 0.3 B3)
+│   │   ├── src/ + tests/ + README.md
+│   ├── semantics/                           → z42.compiler.semantics.zpkg (lib, 0.5+ 启动；占位)
+│   ├── ir/                                  → z42.compiler.ir.zpkg        (lib, 0.5+ 启动；占位)
+│   └── pipeline/                            → z42.compiler.pipeline.zpkg  (lib, 0.5+ 启动；占位)
+├── runtime/                                 ← Rust VM
+├── libraries/                               ← 22 个 stdlib 包（保持纯净，不动）
+└── toolchain/                               ← launcher / debugger / ...
 ```
 
-**zpkg 命名与路径无关**：包名由各子包 `z42.toml` 的 `[project].name` 决定（如 `z42.compiler.core`），与目录名 `core/` 无关。最终产物名与平级布局完全一致 → `artifacts/build/libraries/dist/release/z42.compiler.core.zpkg`。
+**zpkg 命名与路径无关**：包名由各子包 `z42.toml` 的 `[project].name` 决定（如 `z42.compiler.core`），与目录名 `core/` 无关。产物 → `artifacts/build/<某路径>/dist/release/z42.compiler.core.zpkg`（具体路径由 0.3.B0 build 决议时定）。
 
-**workspace 改动**（`src/libraries/z42.workspace.toml`，0.3.B0 落地时一并）：
+**独立 workspace**（`src/z42.compiler/z42.workspace.toml`，0.3.B0 落地时创建）：
 
 ```toml
 [workspace]
-members = ["*", "z42.compiler/*"]              # 加一条 glob 覆盖 nested
+members = ["*"]                          # 自动发现 core/syntax/project/driver/...
 default-members = [
-    # ... 现有 22 个 ...
-    "z42.compiler/core",
-    "z42.compiler/syntax",
-    "z42.compiler/project",
-    "z42.compiler/driver",
-    "z42.compiler/semantics",
-    "z42.compiler/ir",
-    "z42.compiler/pipeline",
+    "core",
+    "syntax",
+    "project",
+    "driver",
+    "semantics",
+    "ir",
+    "pipeline",
 ]
+
+[workspace.project]
+version = "0.1.0"                        # 与 stdlib 独立 versioning
 ```
 
-Glob 实现已基于 `Microsoft.Extensions.FileSystemGlobbing`（[GlobExpander.cs](../../../../src/compiler/z42.Project/GlobExpander.cs)），原生支持多级模式，**无 C# 编译器代码改动**。
+**stdlib workspace 不动**（`src/libraries/z42.workspace.toml`）：仍然 `members = ["*"]`，与 z42.compiler 完全解耦。
+
+**xtask 命令扩展**（0.3.B0 落地时一并）：
+
+```
+xtask build compiler-z42        # 编译 src/z42.compiler/ 整个 workspace
+xtask test  compiler-z42        # 跑各子包 tests/
+xtask build all                  # 自动级联：runtime + compiler + stdlib + compiler-z42
+```
+
+zero C# 编译器代码改动 —— workspace 机制本来就支持多个独立 workspace；xtask 只是新增 dispatch。
 
 **用户调用入口**：单一 `z42c.zpkg` = `z42.compiler.driver.zpkg` 的对外别名（与 C# `z42c.dll` 等价）。其他子包是 driver 通过 `using` 引入的库 zpkg，用户不直接调用。
 
@@ -224,14 +240,15 @@ driver 是唯一 exe-kind zpkg；其余 6 个是 lib-kind zpkg。
 
 **产物**：`xtask build stdlib` 自动发现 7 个 z42.compiler.* 子包，并行构建；产出至 `artifacts/libraries/dist/<profile>/z42.compiler.*.zpkg`。
 
-**1.0 byte-identical 切换路径**：
+**1.0 byte-identical 切换路径**（独立顶级目录后更干净）：
 
 ```bash
 # 当 1.0 替换 gate 全部满足时：
-git mv src/compiler/ src/compiler-bootstrap-archive/
-# 7 个 z42.compiler.* zpkg 成为 ship 形态的唯一编译器
+git rm -r src/compiler/                       # 删 C# bootstrap
+# 选项 A：保留 src/z42.compiler/ 名（与 zpkg 命名一致）
+# 选项 B：git mv src/z42.compiler/ src/compiler/  # 沿用历史目录名
 # launcher 内置 `z42c` 短命令 → 调用 z42.compiler.driver.zpkg
-# src/compiler-bootstrap-archive/ 保留一段时间用于 byte-identical regression 回归
+# 删除前可短期标 archive，待 byte-identical regression 跑稳后 git rm
 ```
 
 ### 2. CLI parity（无桥接策略）
@@ -240,9 +257,10 @@ z42c-selfhost = `z42.compiler.driver.zpkg` 通过 launcher 调用（driver 内 `
 
 ```bash
 # 0.3.x 内支持（独立 z42 实现，无 dotnet 依赖）
-.z42/z42 artifacts/libraries/dist/release/z42.compiler.driver.zpkg -- lex foo.z42
-.z42/z42 artifacts/libraries/dist/release/z42.compiler.driver.zpkg -- parse foo.z42
-.z42/z42 artifacts/libraries/dist/release/z42.compiler.driver.zpkg -- manifest-check z42.toml
+# 产物路径具体格式由 0.3.B0 build 决议时定
+.z42/z42 artifacts/build/.../z42.compiler.driver.zpkg -- lex foo.z42
+.z42/z42 artifacts/build/.../z42.compiler.driver.zpkg -- parse foo.z42
+.z42/z42 artifacts/build/.../z42.compiler.driver.zpkg -- manifest-check z42.toml
 
 # 0.3.x 内**不**支持（用户调用时报 "not implemented"，因 semantics/ir/pipeline 子包未就绪）
 .z42/z42 ... z42.compiler.driver.zpkg -- build src/libraries/z42.io/
