@@ -66,11 +66,11 @@ int _testCrossZpkg(string[] argv) {
 // ── test dist (packaged-distribution e2e) ────────────────────────────────────
 
 // `test dist [interp|jit]` — native port of the former scripts/test-dist.sh.
-// Build the toolchain + a host release package (if absent), compile test-dist.z42,
-// then run it — test-dist.z42 drives the PACKAGED z42c/z42vm against the goldens
-// + a launcher smoke. Not in the default GREEN gate (run on demand).
+// Build the toolchain + a host release package (if absent), then run the
+// in-process dist e2e (_testDistRun, xtask_test_dist.z42) which drives the
+// PACKAGED z42c/z42vm against the goldens + a launcher smoke — no separate
+// compile + zpkg spawn. Not in the default GREEN gate (run on demand).
 int _testDist(string[] argv) {
-    string mode = _at(argv, 2);
     string root = _root();
     int c = _buildCompiler(); if (c != 0) { return c; }
     c = _exec(new Process("cargo").Arg("build").Arg("--release").Arg("-q")
@@ -83,15 +83,7 @@ int _testDist(string[] argv) {
         string[] pa = new string[3]; pa[0] = "build"; pa[1] = "package"; pa[2] = "release";
         c = _buildPackage(pa); if (c != 0) { return c; }
     }
-    string libs = Path.Join(root, "artifacts/build/libraries/dist/release");
-    c = _exec(new Process("dotnet")
-        .Arg("run").Arg("--project").Arg("src/compiler/z42.Driver").Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("scripts/test-dist.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
-    if (c != 0) { return c; }
-    Process p = new Process(_z42vm()).Arg("scripts/dist/test-dist.zpkg").Env("Z42_LIBS", libs);
-    if (mode.Length > 0) { p = p.Env("Z42_DIST_MODES", mode); }
-    return _exec(p);
+    return _testDistRun(argv);
 }
 
 bool _hasReleasePkg(string root) {
@@ -101,6 +93,24 @@ bool _hasReleasePkg(string root) {
         if (name.StartsWith("z42-") && name.EndsWith("-release")) { return true; }
     }
     return false;
+}
+
+// latest artifacts/packages/z42-*-release dir (absolute path), or "" if none.
+// Lives here alongside _hasReleasePkg; called by _testDistRun (xtask_test_dist.z42).
+string _latestReleasePkg(string root) {
+    string pkgs = Path.Join(root, "artifacts/packages");
+    if (!Directory.Exists(pkgs)) { return ""; }
+    string best = "";
+    foreach (var name in Directory.Enumerate(pkgs)) {
+        if (name.StartsWith("z42-") && name.EndsWith("-release")) {
+            string full = Path.Join(pkgs, name);
+            if (Directory.Exists(full)) {
+                // Prefer the lexicographically-greatest (stable; usually one host pkg).
+                if (best.Length == 0 || name.CompareTo(Path.GetFileName(best)) > 0) { best = full; }
+            }
+        }
+    }
+    return best;
 }
 
 // ── test all (unified GREEN gate) ───────────────────────────────────────────
