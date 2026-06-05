@@ -1,31 +1,33 @@
-// port-test-changed (2026-05-27): test-changed.sh → z42 self-host.
+// xtask — `test changed` body (unify-scripts-into-xtask; folded from the former
+// standalone scripts/test-changed.z42). Same Z42Xtask namespace.
 //
 // Inspect uncommitted git changes, map each file to a coarse test command,
 // dedupe, and run the union in order. Mirrors docs/design/testing/testing.md
-// "增量测试" mapping. Same semantics as the bash version:
-//   - base ref defaults to HEAD; env Z42_TEST_CHANGED_BASE or argv[0] override
-//   - --dry-run prints plan but doesn't execute
-//   - first failing command short-circuits the remainder
+// "增量测试" mapping. Driven in-process by `_testChanged` (xtask.z42), which
+// parses the legacy CLI (base ref positional + --dry-run) and calls
+// `_testChangedRun(base_, dryRun)` directly.
 //
-// Driven by `xtask test changed`, which spawns this script via the driver and
-// passes base/dry-run + Z42_XTASK_CMD (the resolved launcher invocation) as env.
-// Plan commands are stored as logical `xtask <scope>`; _resolveXtask() rewrites
-// the leading `xtask ` to Z42_XTASK_CMD at run time so each scope re-invokes the
-// same xtask — no `just`, no shell-out to a separate CLI.
-namespace Z42TestChangedScript;
+// Each mapped plan command is a logical `xtask test …` (run by re-entering the
+// in-process test router `_test`, NOT by shelling out) or a raw `cargo …`
+// (run via `_exec(new Process("cargo")…)`). First failing command
+// short-circuits the remainder.
+//
+// Shared helpers (_root / _exec / _at / _splitWords / _append / _sortStrings)
+// live in xtask.z42 / xtask_golden.z42 (same namespace) and are not redefined
+// here. The file-classification / git-output helpers below are module-private.
+namespace Z42Xtask;
 
 using Std;
 using Std.IO;
 
-void Main() {
-    // ── Resolve base ref + dry-run from env vars (see bash wrapper) ──────
-    string base_ = _envOpt("Z42_TEST_CHANGED_BASE", "HEAD");
-    bool dryRun = _envOpt("Z42_TEST_CHANGED_DRY_RUN", "0") == "1";
-
+// `test changed` body — run in-process. Returns the overall exit code:
+// 0 on success, 2 when not a git repo / spawn failure, or the first failing
+// command's exit code. `base_` is the diff base (default "HEAD" resolved by
+// the caller); `dryRun` prints the plan without executing.
+int _testChangedRun(string base_, bool dryRun) {
     if (!_isInGitRepo()) {
         ConsoleError.WriteLine("[test-changed] error: not a git repository");
-        Environment.Exit(2);
-        return;
+        return 2;
     }
 
     Console.WriteLine("[test-changed] base = " + base_);
@@ -37,7 +39,7 @@ void Main() {
 
     if (changed.Length == 0) {
         Console.WriteLine("[test-changed] no changed files; nothing to run");
-        return;
+        return 0;
     }
 
     Console.WriteLine("[test-changed] changed files (" + changed.Length.ToString() + "):");
@@ -88,7 +90,7 @@ void Main() {
             Console.WriteLine(
                 "[test-changed] no test commands mapped (changes don't affect any test scope)");
         }
-        return;
+        return 0;
     }
 
     // ── Plan output ──────────────────────────────────────────────────────
@@ -101,38 +103,21 @@ void Main() {
 
     if (dryRun) {
         Console.WriteLine("[test-changed] --dry-run: not executing");
-        return;
+        return 0;
     }
 
     // ── Execution ────────────────────────────────────────────────────────
     Console.WriteLine("[test-changed] running...");
     Console.WriteLine("");
 
-    // How to invoke xtask itself. xtask's `_testChanged` passes the resolved
-    // launcher invocation (`<z42vm> artifacts/xtask/xtask.zpkg --`) via this env;
-    // when run standalone, fall back to a PATH `xtask`. Plan commands store the
-    // logical `xtask …` form; substitute the real invocation at run time.
-    string xtaskCmd = _envOpt("Z42_XTASK_CMD", "xtask");
-
     int exitCode = 0;
     pi = 0;
     while (pi < planCount) {
-        string cmd = _resolveXtask(plan[pi], xtaskCmd);
+        string cmd = plan[pi];
         Console.WriteLine("──── " + cmd + " ────");
-        ProcessResult r;
-        try {
-            r = new Process("bash")
-                .Arg("-c").Arg(cmd)
-                .Stdout(Stdio.Inherit())
-                .Stderr(Stdio.Inherit())
-                .Run();
-        } catch (Exception e) {
-            ConsoleError.WriteLine("[test-changed] spawn failed: " + e.Message);
-            Environment.Exit(2);
-            return;
-        }
-        if (r.ExitCode != 0) {
-            exitCode = r.ExitCode;
+        int rc = _runPlanCmd(cmd);
+        if (rc != 0) {
+            exitCode = rc;
             Console.WriteLine("[test-changed] command failed: " + cmd
                 + "  (exit " + exitCode.ToString() + ")");
             break;
@@ -144,7 +129,32 @@ void Main() {
     if (exitCode == 0) {
         Console.WriteLine("[test-changed] result: ok");
     }
-    Environment.Exit(exitCode);
+    return exitCode;
+}
+
+// Run one plan command in-process. Logical `xtask test …` re-enters the test
+// router `_test` (argv[0] == "test"); raw `cargo …` runs via _exec. Returns the
+// command's exit code (2 on an unrecognized prefix, which shouldn't occur given
+// the mapping only ever emits these two shapes).
+int _runPlanCmd(string cmd) {
+    string[] toks = _splitWords(cmd);
+    if (toks.Length == 0) { return 0; }
+    if (toks[0] == "xtask") {
+        // Drop the leading "xtask"; the remainder ("test", "vm", …) is the
+        // _test argv (sub = argv[1]).
+        string[] argv = new string[toks.Length - 1];
+        int i = 1;
+        while (i < toks.Length) { argv[i - 1] = toks[i]; i = i + 1; }
+        return _test(argv);
+    }
+    if (toks[0] == "cargo") {
+        Process p = new Process("cargo");
+        int i = 1;
+        while (i < toks.Length) { p = p.Arg(toks[i]); i = i + 1; }
+        return _exec(p);
+    }
+    ConsoleError.WriteLine("[test-changed] internal error: unrecognized plan command: " + cmd);
+    return 2;
 }
 
 // ── Mapping ──────────────────────────────────────────────────────────────
@@ -300,17 +310,6 @@ _MapResult _mapFile(string f) {
     return r;
 }
 
-// Substitute the logical `xtask ` prefix with the real launcher invocation.
-// Plan commands are stored as `xtask test vm` etc. for readable plan output;
-// at run time the leading `xtask ` becomes `<z42vm> …/xtask.zpkg -- `. Non-xtask
-// commands (cargo …) pass through unchanged.
-string _resolveXtask(string cmd, string xtaskCmd) {
-    if (_startsWith(cmd, "xtask ")) {
-        return xtaskCmd + " " + cmd.Substring(6);
-    }
-    return cmd;
-}
-
 // ── Git helpers ──────────────────────────────────────────────────────────
 
 bool _isInGitRepo() {
@@ -338,15 +337,7 @@ string _gitOutput(string[] args) {
     }
 }
 
-// ── String / array helpers ───────────────────────────────────────────────
-
-string _envOpt(string name, string fallback) {
-    string? v = Environment.GetEnvironmentVariable(name);
-    if (v == null) return fallback;
-    string nonNull = v ?? "";
-    if (nonNull.Length == 0) return fallback;
-    return nonNull;
-}
+// ── String / array helpers (module-private) ──────────────────────────────
 
 bool _startsWith(string s, string prefix) {
     if (s.Length < prefix.Length) return false;
@@ -440,10 +431,12 @@ string[] _dedupeNonEmpty(string[] xs) {
         }
         i = i + 1;
     }
-    _sortStrings(result, n);
+    // Tighten to exactly the deduped elements, then sort with the shared
+    // arity-1 _sortStrings (xtask_golden.z42) which sorts the whole array.
     string[] tight = new string[n];
     int t = 0;
     while (t < n) { tight[t] = result[t]; t = t + 1; }
+    _sortStrings(tight);
     return tight;
 }
 
@@ -455,32 +448,3 @@ bool _contains(string[] arr, int count, string v) {
     }
     return false;
 }
-
-void _sortStrings(string[] arr, int count) {
-    int i = 1;
-    while (i < count) {
-        string key = arr[i];
-        int j = i - 1;
-        while (j >= 0 && key.CompareTo(arr[j]) < 0) {
-            arr[j + 1] = arr[j];
-            j = j - 1;
-        }
-        arr[j + 1] = key;
-        i = i + 1;
-    }
-}
-
-string[] _append(string[] arr, int count, string v) {
-    if (count < arr.Length) {
-        arr[count] = v;
-        return arr;
-    }
-    int newCap = arr.Length * 2;
-    if (newCap < 4) { newCap = 4; }
-    string[] bigger = new string[newCap];
-    int i = 0;
-    while (i < count) { bigger[i] = arr[i]; i = i + 1; }
-    bigger[count] = v;
-    return bigger;
-}
-
