@@ -75,7 +75,15 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 > **三主线并行**：A（stdlib）/ B（自举）/ C（反射）三条主线，0.3.0 GC v1 是共同前置；0.3.3 起三条同时段并行推进。
 >
-> **B 主线不在 0.3.x 完成**：仅完成无 L3 依赖的 4 个子系统（Lexer / Project / Driver / Parser）+ 建立逐子系统 bit-identical CI gate。剩余 Semantic / TypeChecker / IR / ZbcWriter / Pipeline 推迟到 0.5.x（L3-G 泛型 + L3-C lambda 落地后），届时启动 `0.5.B*` 完成 byte-identical 替换。
+> **B 主线不在 0.3.x 完成**：仅完成无 L3 依赖的 4 个子系统（Lexer / Project / Driver / Parser）+ 建立逐子系统 bit-identical CI gate + per-subsystem micro-bench baseline。剩余 Semantic / TypeChecker / IR / ZbcWriter / Pipeline 推迟到 0.5.x（L3-G 泛型 + L3-C lambda 落地后），届时启动 `0.5.B*` 完成 byte-identical 替换。
+>
+> **B 主线无桥接策略**（2026-06-06 第二轮裁决）：0.3.x z42 实现只 ship 能独立跑的命令（`lex` / `parse` / `manifest-check`）；`build` 命令在 0.3.x 报 "not implemented"，**禁止**调 dotnet z42c.dll 作 fallback。两实现完全独立，确保并行开发零干扰。详见 [plan-0.3.x-three-streams §B 主线深度规划](spec/changes/plan-0.3.x-three-streams/proposal.md#b-主线深度规划编译器自举)。
+>
+> **z42 编译器源码位置**：`src/libraries/z42.compiler/`（与 stdlib package 一致布局；ship 为 `z42.compiler.zpkg`，与 `project_mobile_no_compiler` memory "1.0 后 zpkg 全平台分发" 一致）。
+>
+> **compile-perf gate 启用时机**：end-to-end compile-perf bench + CI gate 在 **0.5.x** 全子系统就绪后启用（阈值 median ≤ 3× / P99 ≤ 5× / 回归 > 15% red）。0.3.x 期间只跑 per-subsystem micro-bench（Lexer throughput / Parser nodes/s / Manifest ops/s），baseline 入库但不设硬阈值。
+>
+> **REPL（Python 风格交互式）**：作为 0.5.x B 完成态的 capstone deliverable（依赖 Semantic + TypeChecker + 持久化符号表），单独 spec `add-z42-repl`；**0.3.x 不实现**。
 >
 > **C 主线 MVP 不含 Method.Invoke**：完整 Invoke 强依赖 generic instantiation，推 0.5.x L3-R 完整版。
 >
