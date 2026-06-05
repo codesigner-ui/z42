@@ -77,60 +77,9 @@ int _testDistRun(string[] argv) {
     string[] modes = _splitWords(modeArg);
     int mi = 0;
     while (mi < modes.Length) {
-        string mode = modes[mi];
-        Console.WriteLine("══════════════════════════════════════");
-        Console.WriteLine(" Mode: " + mode);
-        Console.WriteLine("══════════════════════════════════════");
-
-        _DistCase[] cases = _enumerateDistCases(root, mode);
-        int pass = 0;
-        int fail = 0;
-        int compileFail = 0;
-        int i = 0;
-        while (i < cases.Length) {
-            _DistCase c = cases[i];
-            string zbc = Path.Join(work, c.name + "-" + mode + ".zbc");
-            // Compile source.z42 → zbc with the packaged z42c.
-            int cc = -1;
-            try {
-                cc = new Process(z42c).Arg(c.source).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc)
-                    .Env("Z42_LIBS", libsDir)
-                    .Stdout(Stdio.Null()).Stderr(Stdio.Null())
-                    .Run().ExitCode;
-            } catch (Exception e) { cc = -1; }
-            if (cc != 0) {
-                compileFail = compileFail + 1;
-                Console.WriteLine("  FAIL: " + c.name + " (compile failed)");
-                i = i + 1;
-                continue;
-            }
-            // Run zbc with the packaged z42vm (entry passed explicitly — z42vm requires it).
-            string actual;
-            try {
-                ProcessResult r = new Process(z42vm).Arg(zbc).Arg(c.entryName).Arg("--mode").Arg(mode)
-                    .Env("Z42_LIBS", libsDir)
-                    .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe())
-                    .Run();
-                actual = _stripTrailingNewlines(r.Stdout + r.Stderr);
-            } catch (Exception e) { actual = "<spawn error: " + e.Message + ">"; }
-            string expected = "";
-            if (File.Exists(c.expected)) { expected = _stripTrailingNewlines(File.ReadAllText(c.expected)); }
-            if (actual == expected) {
-                pass = pass + 1;
-            } else {
-                fail = fail + 1;
-                Console.WriteLine("  FAIL: " + c.name);
-                Console.WriteLine("    expected: " + _firstLine(expected));
-                Console.WriteLine("    actual:   " + _firstLine(actual));
-            }
-            i = i + 1;
-        }
-        Console.WriteLine("");
-        Console.WriteLine("  Result: " + pass.ToString() + " passed, " + fail.ToString()
-            + " failed, " + compileFail.ToString() + " compile errors");
-        Console.WriteLine("");
-        overallPass = overallPass + pass;
-        overallFail = overallFail + fail + compileFail;
+        int[] mres = _runDistMode(modes[mi], root, z42c, z42vm, libsDir, work);
+        overallPass = overallPass + mres[0];
+        overallFail = overallFail + mres[1];
         mi = mi + 1;
     }
 
@@ -139,6 +88,67 @@ int _testDistRun(string[] argv) {
     Console.WriteLine("══════════════════════════════════════");
     if (overallFail > 0) { return 1; }
     return 0;
+}
+
+// One mode's golden run: compile + run every dist case with the packaged
+// z42c/z42vm, diff stdout, print per-case + per-mode summary. Returns
+// [pass, fail] where fail folds in compile errors (as the caller aggregates).
+int[] _runDistMode(string mode, string root, string z42c, string z42vm, string libsDir, string work) {
+    Console.WriteLine("══════════════════════════════════════");
+    Console.WriteLine(" Mode: " + mode);
+    Console.WriteLine("══════════════════════════════════════");
+
+    _DistCase[] cases = _enumerateDistCases(root, mode);
+    int pass = 0;
+    int fail = 0;
+    int compileFail = 0;
+    int i = 0;
+    while (i < cases.Length) {
+        _DistCase c = cases[i];
+        string zbc = Path.Join(work, c.name + "-" + mode + ".zbc");
+        // Compile source.z42 → zbc with the packaged z42c.
+        int cc = -1;
+        try {
+            cc = new Process(z42c).Arg(c.source).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc)
+                .Env("Z42_LIBS", libsDir)
+                .Stdout(Stdio.Null()).Stderr(Stdio.Null())
+                .Run().ExitCode;
+        } catch (Exception e) { ConsoleError.WriteLine("  (compile spawn error: " + e.Message + ")"); cc = -1; }
+        if (cc != 0) {
+            compileFail = compileFail + 1;
+            Console.WriteLine("  FAIL: " + c.name + " (compile failed)");
+            i = i + 1;
+            continue;
+        }
+        // Run zbc with the packaged z42vm (entry passed explicitly — z42vm requires it).
+        string actual;
+        try {
+            ProcessResult r = new Process(z42vm).Arg(zbc).Arg(c.entryName).Arg("--mode").Arg(mode)
+                .Env("Z42_LIBS", libsDir)
+                .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe())
+                .Run();
+            actual = _stripTrailingNewlines(r.Stdout + r.Stderr);
+        } catch (Exception e) { actual = "<spawn error: " + e.Message + ">"; }
+        string expected = "";
+        if (File.Exists(c.expected)) { expected = _stripTrailingNewlines(File.ReadAllText(c.expected)); }
+        if (actual == expected) {
+            pass = pass + 1;
+        } else {
+            fail = fail + 1;
+            Console.WriteLine("  FAIL: " + c.name);
+            Console.WriteLine("    expected: " + _firstLine(expected));
+            Console.WriteLine("    actual:   " + _firstLine(actual));
+        }
+        i = i + 1;
+    }
+    Console.WriteLine("");
+    Console.WriteLine("  Result: " + pass.ToString() + " passed, " + fail.ToString()
+        + " failed, " + compileFail.ToString() + " compile errors");
+    Console.WriteLine("");
+    int[] res = new int[2];
+    res[0] = pass;
+    res[1] = fail + compileFail;
+    return res;
 }
 
 // ── Launcher smoke: returns [pass, fail] ───────────────────────────────────

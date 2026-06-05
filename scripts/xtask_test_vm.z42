@@ -30,7 +30,6 @@ using Std.Text;
 // Returns 0 if every case in every mode passes, 1 on any failure (or setup error).
 int _runVmGoldens(string[] modes, int jobs) {
     string root = _root();
-
     if (jobs < 1) { jobs = 1; }
 
     string vmBin = Path.Join(root, "artifacts/build/runtime/debug/z42vm");
@@ -50,7 +49,6 @@ int _runVmGoldens(string[] modes, int jobs) {
         Console.WriteLine(" Mode: " + mode);
         Console.WriteLine("══════════════════════════════════════");
 
-        // Enumerate cases for this mode.
         _Case[] cases = _enumerateCases(root, mode);
         if (cases.Length == 0) {
             ConsoleError.WriteLine("❌ no runnable golden fixtures found.");
@@ -58,65 +56,14 @@ int _runVmGoldens(string[] modes, int jobs) {
             return 1;
         }
 
-        int pass = 0;
-        int fail = 0;
-        string[] failures = new string[8];
-        int      failCount = 0;
-
-        if (jobs <= 1) {
-            int i = 0;
-            while (i < cases.Length) {
-                bool ok = _runOneCase(vmBin, cases[i], mode);
-                if (ok) {
-                    pass = pass + 1;
-                } else {
-                    fail = fail + 1;
-                    failures = _append(failures, failCount, cases[i].name);
-                    failCount = failCount + 1;
-                }
-                i = i + 1;
-            }
-        } else {
-            int i = 0;
-            while (i < cases.Length) {
-                int batchSize = jobs;
-                if (i + batchSize > cases.Length) { batchSize = cases.Length - i; }
-
-                ProcessHandle[] handles = new ProcessHandle[batchSize];
-                _Case[]         batch   = new _Case[batchSize];
-                int b = 0;
-                while (b < batchSize) {
-                    batch[b] = cases[i + b];
-                    handles[b] = _spawnCase(vmBin, batch[b], mode);
-                    b = b + 1;
-                }
-
-                // Wait + aggregate in original order.
-                b = 0;
-                while (b < batchSize) {
-                    ProcessResult r = handles[b].Wait();
-                    bool ok = _judgeResult(batch[b], r);
-                    if (ok) {
-                        pass = pass + 1;
-                    } else {
-                        _printFailLine(batch[b], r);
-                        fail = fail + 1;
-                        failures = _append(failures, failCount, batch[b].name);
-                        failCount = failCount + 1;
-                    }
-                    b = b + 1;
-                }
-                i = i + batchSize;
-            }
-        }
-
+        int[] pf = _runVmCases(cases, vmBin, mode, jobs);
         Console.WriteLine("");
-        Console.WriteLine("  Result: " + pass.ToString() + " passed, "
-            + fail.ToString() + " failed");
+        Console.WriteLine("  Result: " + pf[0].ToString() + " passed, "
+            + pf[1].ToString() + " failed");
         Console.WriteLine("");
 
-        overallPass = overallPass + pass;
-        overallFail = overallFail + fail;
+        overallPass = overallPass + pf[0];
+        overallFail = overallFail + pf[1];
         mi = mi + 1;
     }
 
@@ -129,6 +76,62 @@ int _runVmGoldens(string[] modes, int jobs) {
         return 1;
     }
     return 0;
+}
+
+// Run all cases for one mode — sequential (jobs<=1) or parallel batches.
+// Returns [pass, fail].
+int[] _runVmCases(_Case[] cases, string vmBin, string mode, int jobs) {
+    if (jobs > 1) { return _runVmBatch(cases, vmBin, mode, jobs); }
+    int pass = 0;
+    int fail = 0;
+    int i = 0;
+    while (i < cases.Length) {
+        if (_runOneCase(vmBin, cases[i], mode)) { pass = pass + 1; }
+        else { fail = fail + 1; }
+        i = i + 1;
+    }
+    int[] res = new int[2];
+    res[0] = pass;
+    res[1] = fail;
+    return res;
+}
+
+// Parallel: spawn `jobs` cases per batch, wait on the batch, then judge + print
+// failures in original order so the terminal stays readable. Returns [pass, fail].
+int[] _runVmBatch(_Case[] cases, string vmBin, string mode, int jobs) {
+    int pass = 0;
+    int fail = 0;
+    int i = 0;
+    while (i < cases.Length) {
+        int batchSize = jobs;
+        if (i + batchSize > cases.Length) { batchSize = cases.Length - i; }
+
+        ProcessHandle[] handles = new ProcessHandle[batchSize];
+        _Case[]         batch   = new _Case[batchSize];
+        int b = 0;
+        while (b < batchSize) {
+            batch[b] = cases[i + b];
+            handles[b] = _spawnCase(vmBin, batch[b], mode);
+            b = b + 1;
+        }
+
+        b = 0;
+        while (b < batchSize) {
+            ProcessResult r = handles[b].Wait();
+            if (_judgeResult(batch[b], r)) {
+                pass = pass + 1;
+            } else {
+                _printFailLine(batch[b], r);
+                fail = fail + 1;
+            }
+            b = b + 1;
+        }
+        i = i + batchSize;
+    }
+    int[] res = new int[2];
+    res[0] = pass;
+    res[1] = fail;
+    return res;
 }
 
 // ── Case shape ───────────────────────────────────────────────────────────
