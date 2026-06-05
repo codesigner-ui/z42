@@ -58,5 +58,9 @@ license = "MIT"
 # 例：artifacts/build/libraries/z42.core/release/dist/z42.core.zpkg
 #     artifacts/build/libraries/z42.core/release/cache/<file>.zbc
 # package.sh 把 <member>/<profile>/dist/<name>.zpkg 复制到 packages/<pkg>/libs/。
-out_dir   = "../../artifacts/build/libraries/${member_name}/${profile}/dist"
-cache_dir = "../../artifacts/build/libraries/${member_name}/${profile}/cache"
+# restructure-build-output-dirs (2026-06-06): three independent dir fields;
+# output_dir set explicitly so cache/dist 都派生自同一前缀，且 dist 加上
+# 额外的 "dist" 后缀维持旧布局（${output_dir}/dist 是默认 — 故省略
+# dist_dir 等同于显式 ${output_dir}/dist）。
+output_dir = "../../artifacts/build/libraries/${member_name}/${profile}"
+cache_dir  = "../../artifacts/build/libraries/${member_name}/${profile}/cache"

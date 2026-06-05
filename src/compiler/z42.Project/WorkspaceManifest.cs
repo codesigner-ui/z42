@@ -146,12 +146,16 @@ public sealed class WorkspaceManifest
         if (!ws.TryGetValue("build", out var raw) || raw is not TomlTable t)
             return WorkspaceBuildShared.Default;
 
-        string outDir   = t.TryGetString("out_dir")   ?? "dist";
-        string cacheDir = t.TryGetString("cache_dir") ?? ".cache";
-        bool inc        = t.TryGetBool("incremental") ?? true;
-        string mode     = t.TryGetString("mode")      ?? "interp";
+        // restructure-build-output-dirs (2026-06-06): three dir fields are
+        // raw (unset = null); effective compute lives in
+        // CentralizedBuildLayout. Workspace `out_dir` is gone.
+        string? outputDir = t.TryGetString("output_dir");
+        string? cacheDir  = t.TryGetString("cache_dir");
+        string? distDir   = t.TryGetString("dist_dir");
+        bool    inc       = t.TryGetBool("incremental") ?? true;
+        string  mode      = t.TryGetString("mode")      ?? "interp";
 
-        return new WorkspaceBuildShared(outDir, cacheDir, inc, mode);
+        return new WorkspaceBuildShared(outputDir, cacheDir, distDir, inc, mode);
     }
 
     static IReadOnlyDictionary<string, object> ParsePolicy(TomlTable model)
@@ -199,12 +203,24 @@ public sealed record WorkspaceDeclaredDep(
     string  Version,
     string? Path);
 
-/// <summary>[workspace.build] 占位字段（C1 解析；C3 实施集中产物布局）。</summary>
+/// <summary>
+/// `[workspace.build]` shared defaults inherited by members.
+///
+/// restructure-build-output-dirs (2026-06-06): three dir fields
+/// (`OutputDir` / `CacheDir` / `DistDir`) are raw (unset = null);
+/// effective absolute paths are computed in `CentralizedBuildLayout`
+/// with member values overriding when set, otherwise falling back to
+/// these workspace defaults, otherwise to global defaults
+/// (`output_dir` → workspace_root, `cache_dir` → `${output_dir}/.cache`,
+/// `dist_dir` → `${output_dir}/dist`). Old `OutDir` field (default
+/// `"dist"`) retired with the project-level rename.
+/// </summary>
 public sealed record WorkspaceBuildShared(
-    string OutDir,
-    string CacheDir,
-    bool   Incremental,
-    string Mode)
+    string? OutputDir,
+    string? CacheDir,
+    string? DistDir,
+    bool    Incremental,
+    string  Mode)
 {
-    public static WorkspaceBuildShared Default => new("dist", ".cache", true, "interp");
+    public static WorkspaceBuildShared Default => new(null, null, null, true, "interp");
 }

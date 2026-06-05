@@ -15,10 +15,17 @@ public static class PolicyFieldPath
     }
 
     /// <summary>所有有效的字段路径前缀（用于 WS011 fuzzy 建议）。</summary>
+    /// <remarks>
+    /// restructure-build-output-dirs (2026-06-06): legacy `build.out_dir`
+    /// retired; replaced by the three-field set `build.output_dir` /
+    /// `build.cache_dir` / `build.dist_dir`. Policy files that reference
+    /// the old path get a fuzzy-match suggestion toward `build.dist_dir`.
+    /// </remarks>
     public static readonly IReadOnlyList<string> KnownPaths = new[]
     {
-        "build.out_dir",
+        "build.output_dir",
         "build.cache_dir",
+        "build.dist_dir",
         "build.incremental",
         "build.mode",
         "project.kind",
@@ -41,9 +48,24 @@ public static class PolicyFieldPath
     /// <summary>判断字段路径是否被识别。</summary>
     public static bool IsKnown(string path) => KnownPaths.Contains(path, StringComparer.Ordinal);
 
+    /// <summary>
+    /// Renamed policy field paths — explicit migration table when the
+    /// canonical target is too far from the typo for Levenshtein to
+    /// match (e.g. `build.outdir` / `build.out_dir` → `build.dist_dir`,
+    /// distance ≈ 4-5). restructure-build-output-dirs (2026-06-06).
+    /// </summary>
+    static readonly Dictionary<string, string> KnownRenames = new(StringComparer.Ordinal)
+    {
+        ["build.out_dir"] = "build.dist_dir",
+        ["build.outdir"]  = "build.dist_dir",   // common typo + rename in one go
+    };
+
     /// <summary>找编辑距离最近的有效路径，用于错误提示。</summary>
     public static string? FuzzyMatch(string path)
     {
+        if (KnownRenames.TryGetValue(path, out var renamed) && KnownPaths.Contains(renamed))
+            return renamed;
+
         string? best = null;
         int bestDist = int.MaxValue;
         foreach (var known in KnownPaths)
@@ -63,8 +85,9 @@ public static class PolicyFieldPath
     {
         return path switch
         {
-            "build.out_dir"      => m.Build.OutDir,
+            "build.output_dir"   => m.Build.OutputDir,
             "build.cache_dir"    => m.Build.CacheDir,
+            "build.dist_dir"     => m.Build.DistDir,
             "build.incremental"  => m.Build.Incremental,
             "build.mode"         => m.Build.Mode,
             "project.kind"       => m.Kind.ToString().ToLowerInvariant(),

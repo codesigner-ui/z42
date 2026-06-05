@@ -20,7 +20,7 @@ public sealed class WorkspaceBuildOrchestratorTests
             Description:   null,
             Pack:          null,
             Sources:       new SourcesSection(["src/**/*.z42"], []),
-            Build:         new BuildSection("dist", "interp", true),
+            Build:         new BuildSection(),
             Dependencies:  resolvedDeps,
             Origins:       new Dictionary<string, FieldOrigin>(),
             ManifestPath:  Path.Combine(root, $"{name}/{name}.z42.toml"),

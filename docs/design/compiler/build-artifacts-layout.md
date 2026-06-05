@@ -38,7 +38,7 @@ The split is the conventional **intermediate / output / vendored** model
 | `src/runtime/`             | `build/runtime/<cargo-target>/<profile>/`   | cargo target: `z42vm`, `libz42.*`, the `z42` trampoline, `z42-test-runner` |
 | `src/libraries/<lib>/`     | `build/libraries/<lib>/<profile>/`          | **per-lib** compile, private to the build (`dist/<lib>.zpkg` + `cache/`) |
 | (aggregate copy-out)       | `build/libraries/dist/<profile>/`           | flat single-dir view of **all** stdlib `.zpkg` + `index.json` — the `Z42_LIBS` lookup target |
-| `src/toolchain/launcher/`  | `build/toolchain/launcher/`                 | `z42.launcher.zpkg` (toml `out_dir`) + `home/` (dev `$Z42_HOME`) |
+| `src/toolchain/launcher/`  | `build/toolchain/launcher/`                 | `z42.launcher.zpkg` (toml `dist_dir`) + `home/` (dev `$Z42_HOME`) |
 | `scripts/` (`xtask*.z42`)  | `artifacts/xtask/` (NOT under `build/`)     | `xtask.zpkg` — the build **driver** CLI; output sits at `artifacts/xtask/` (sibling of `build/`, not inside it) since it runs *before* and *drives* the builds. Sources live in `scripts/` alongside `install-z42.*` |
 | `src/tests/`               | — (no build output)                         | |
 
@@ -65,7 +65,7 @@ folded into the layout refactor on 2026-06-04.)
 - **`launcher.zpkg`** is the launcher core's build product. It used to emit
   to `src/toolchain/launcher/core/dist/` — a build output *inside the source
   tree*, the one place that violated "outputs go to `artifacts/`." Its toml
-  `out_dir` now points up into `build/toolchain/launcher/`.
+  `dist_dir` now points up into `build/toolchain/launcher/`.
 - **`home/`** is the dev `$Z42_HOME` that the xtask launcher-env step
   assembles (a throwaway "fake `~/.z42`": `launcher/{z42vm, launcher.zpkg,
   libs→…}` + linked dev runtime) so ported scripts run as Exe-zpkgs via the
@@ -81,5 +81,5 @@ folded into the layout refactor on 2026-06-04.)
 
 - `artifacts/` is wholly git-ignored, so `deps/` cannot carry a *tracked*
   README — the convention is documented here instead.
-- A launcher-project `z42c clean` removes its `out_dir`
+- A launcher-project `z42c clean` removes its `dist_dir`
   (`build/toolchain/launcher`), including `home/`; both are regenerable.

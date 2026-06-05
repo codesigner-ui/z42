@@ -42,9 +42,13 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
 
         var foo = LoadFoo();
         foo.IsCentralized.Should().BeTrue();
-        foo.EffectiveOutDir.Should().Be(Path.GetFullPath(Path.Combine(_root, "dist")));
+        // restructure-build-output-dirs (2026-06-06): default cascade —
+        // output_dir = workspace_root, dist = ${output_dir}/dist,
+        // cache = ${output_dir}/.cache (+ member subdir anti-collision).
+        foo.EffectiveOutputDir.Should().Be(Path.GetFullPath(_root));
+        foo.EffectiveDistDir.Should().Be(Path.GetFullPath(Path.Combine(_root, "dist")));
         foo.EffectiveCacheDir.Should().Be(Path.GetFullPath(Path.Combine(_root, ".cache", "foo")));
-        foo.EffectiveProductPath.Should().Be(Path.Combine(foo.EffectiveOutDir, "foo.zpkg"));
+        foo.EffectiveProductPath.Should().Be(Path.Combine(foo.EffectiveDistDir, "foo.zpkg"));
     }
 
     [Fact]
@@ -54,12 +58,12 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
             [workspace]
             members = ["libs/*"]
             [workspace.build]
-            out_dir = "dist/${profile}"
+            dist_dir = "dist/${profile}"
             """);
         Member("libs/foo", "foo.z42.toml", "[project]\nname = \"foo\"\nkind = \"lib\"\n");
 
         var foo = LoadFoo(profile: "release");
-        foo.EffectiveOutDir.Should().Be(Path.GetFullPath(Path.Combine(_root, "dist", "release")));
+        foo.EffectiveDistDir.Should().Be(Path.GetFullPath(Path.Combine(_root, "dist", "release")));
         foo.EffectiveProductPath.Should().EndWith(Path.Combine("dist", "release", "foo.zpkg"));
     }
 
@@ -91,41 +95,54 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
         var loader = new ManifestLoader();
         var rm = loader.LoadStandalone(Path.Combine(singleDir, "foo.z42.toml"));
         rm.IsCentralized.Should().BeFalse();
-        rm.EffectiveOutDir.Should().EndWith("dist");
+        // restructure-build-output-dirs (2026-06-06): single-project mode
+        // also populates EffectiveDistDir (renamed from EffectiveOutDir).
+        rm.EffectiveDistDir.Should().EndWith("dist");
     }
 
     // ── 默认锁定字段（D5）─────────────────────────────────────────────────
 
     [Fact]
-    public void DefaultLock_BuildOutDir_MemberOverride_WS010()
+    public void DefaultLock_BuildDistDir_MemberOverride_WS010()
     {
-        Workspace("[workspace]\nmembers = [\"libs/*\"]\n");  // 默认锁定 build.out_dir
-        Member("libs/foo", "foo.z42.toml", """
-            [project]
-            name = "foo"
-            kind = "lib"
-            [build]
-            out_dir = "custom_dist"
-            """);
-
-        var act = () => LoadFoo();
-        act.Should().Throw<ManifestException>().WithMessage("*WS010*build.out_dir*custom_dist*");
-    }
-
-    [Fact]
-    public void DefaultLock_MemberMatchesWorkspace_NoConflict()
-    {
+        // restructure-build-output-dirs (2026-06-06): default-locked path
+        // renamed `build.out_dir` → `build.dist_dir`; workspace defaults
+        // to null (unset = cascade) so any explicit member override is a
+        // conflict.
         Workspace("[workspace]\nmembers = [\"libs/*\"]\n");
         Member("libs/foo", "foo.z42.toml", """
             [project]
             name = "foo"
             kind = "lib"
             [build]
-            out_dir = "dist"
+            dist_dir = "custom_dist"
+            """);
+
+        var act = () => LoadFoo();
+        act.Should().Throw<ManifestException>().WithMessage("*WS010*build.dist_dir*custom_dist*");
+    }
+
+    [Fact]
+    public void DefaultLock_MemberMatchesWorkspace_NoConflict()
+    {
+        // Both workspace and member set the same dist_dir → no conflict;
+        // origin promoted to PolicyLocked.
+        Workspace("""
+            [workspace]
+            members = ["libs/*"]
+            [workspace.build]
+            dist_dir = "dist"
+            """);
+        Member("libs/foo", "foo.z42.toml", """
+            [project]
+            name = "foo"
+            kind = "lib"
+            [build]
+            dist_dir = "dist"
             """);
 
         var foo = LoadFoo();
-        foo.Origins["build.out_dir"].Kind.Should().Be(OriginKind.PolicyLocked);
+        foo.Origins["build.dist_dir"].Kind.Should().Be(OriginKind.PolicyLocked);
     }
 
     // ── 显式 policy 字段 ──────────────────────────────────────────────────
@@ -171,6 +188,9 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
     [Fact]
     public void WS011_FuzzyMatchSuggestion()
     {
+        // restructure-build-output-dirs (2026-06-06): nearest known field
+        // for typo `outdir` is now `build.dist_dir` (renamed from
+        // `out_dir`); Levenshtein distance ≤ 3.
         Workspace("""
             [workspace]
             members = ["libs/*"]
@@ -180,7 +200,7 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
         Member("libs/foo", "foo.z42.toml", "[project]\nname = \"foo\"\nkind = \"lib\"\n");
 
         var act = () => LoadFoo();
-        act.Should().Throw<ManifestException>().WithMessage("*WS011*outdir*build.out_dir*");
+        act.Should().Throw<ManifestException>().WithMessage("*WS011*outdir*build.dist_dir*");
     }
 
     // ── PolicyLocked Origin 标注 ──────────────────────────────────────────
@@ -188,20 +208,25 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
     [Fact]
     public void PolicyLocked_OriginInResolvedManifest()
     {
+        // restructure-build-output-dirs (2026-06-06): need to mirror
+        // workspace + member on `dist_dir` so the policy match promotes
+        // member's MemberDirect origin to PolicyLocked.
         Workspace("""
             [workspace]
             members = ["libs/*"]
+            [workspace.build]
+            dist_dir = "dist"
             """);
         Member("libs/foo", "foo.z42.toml", """
             [project]
             name = "foo"
             kind = "lib"
             [build]
-            out_dir = "dist"
+            dist_dir = "dist"
             """);
 
         var foo = LoadFoo();
-        foo.Origins["build.out_dir"].Kind.Should().Be(OriginKind.PolicyLocked);
-        foo.Origins["build.out_dir"].FilePath.Should().EndWith("z42.workspace.toml");
+        foo.Origins["build.dist_dir"].Kind.Should().Be(OriginKind.PolicyLocked);
+        foo.Origins["build.dist_dir"].FilePath.Should().EndWith("z42.workspace.toml");
     }
 }

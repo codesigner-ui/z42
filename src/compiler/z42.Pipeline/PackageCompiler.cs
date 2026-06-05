@@ -30,12 +30,23 @@ public static partial class PackageCompiler
 
         string profileLabel = useRelease ? "release" : "debug";
         string projectDir   = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
-        string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
-        // [build].cache_dir (optional) redirects the incremental cache like out_dir
-        // redirects products; null → BuildTarget falls back to projectDir/.cache.
-        string? explicitCacheDir = manifest.Build.CacheDir is null
-            ? null
-            : Path.GetFullPath(Path.Combine(projectDir, manifest.Build.CacheDir));
+
+        // restructure-build-output-dirs (2026-06-06): single-project mode reuses
+        // CentralizedBuildLayout for consistent cascade defaults
+        // (`output_dir` → projectDir, `cache_dir` → `${output_dir}/.cache`,
+        // `dist_dir` → `${output_dir}/dist`). Member name + profile threaded
+        // for template expansion symmetry with workspace mode.
+        var layout = new CentralizedBuildLayout().Resolve(
+            workspace:        null,
+            workspaceRoot:    projectDir,
+            memberName:       manifest.Project.Name,
+            memberDir:        projectDir,
+            profile:          profileLabel,
+            memberLocalBuild: manifest.Build,
+            expander:         new PathTemplateExpander());
+
+        string outDir          = layout.EffectiveDistDir;
+        string? explicitCacheDir = layout.EffectiveCacheDir;
 
         // 1.5b split-debug-symbols: effective `strip` resolution priority:
         //   1) CLI `--strip-symbols=...` override
@@ -84,7 +95,11 @@ public static partial class PackageCompiler
     {
         string profileLabel = useRelease ? "release" : "debug";
         string memberDir    = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
-        string outDir       = member.IsCentralized ? member.EffectiveOutDir : Path.GetFullPath(Path.Combine(memberDir, member.Build.OutDir));
+        // restructure-build-output-dirs (2026-06-06): EffectiveDistDir is
+        // always populated by ManifestLoader (uses CentralizedBuildLayout
+        // for both workspace and single-project paths), so the IsCentralized
+        // split is no longer needed here — read directly.
+        string outDir       = member.EffectiveDistDir;
 
         Console.Error.WriteLine(
             checkOnly
@@ -115,9 +130,11 @@ public static partial class PackageCompiler
         // 构造一个最小 DependencySection 供 BuildTarget 使用（已声明依赖列表）
         var declaredDeps = ResolvedDependenciesToDeclared(member.Dependencies);
 
-        // workspace 模式：传 EffectiveCacheDir（artifacts/libraries/<member>/cache）；
-        // 单工程 fallback：传 null 让 BuildTarget 用默认 projectDir/.cache
-        string? cacheDir = member.IsCentralized ? member.EffectiveCacheDir : null;
+        // restructure-build-output-dirs (2026-06-06): EffectiveCacheDir is
+        // always populated by ManifestLoader; passing it through reaches
+        // the incremental-build cache layer for both workspace and
+        // single-project paths.
+        string? cacheDir = member.EffectiveCacheDir;
 
         return BuildTarget(
             member.MemberName,

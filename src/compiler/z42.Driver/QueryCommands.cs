@@ -110,18 +110,23 @@ static class QueryCommands
 
         Console.Out.WriteLine();
         Console.Out.WriteLine("[build]");
-        WriteField("out_dir",   m.Build.OutDir,         m, "build.out_dir");
-        WriteField("cache_dir", "(workspace policy)",   m, "build.cache_dir");   // 实际 dir 在 EffectiveCacheDir
-        WriteField("mode",      m.Build.Mode,           m, "build.mode");
+        // restructure-build-output-dirs (2026-06-06): print raw nullable
+        // dir fields (null = unset → walks cascade); effective absolute
+        // paths shown in the [centralized layout] block below.
+        WriteField("output_dir", m.Build.OutputDir ?? "(unset → effective default)", m, "build.output_dir");
+        WriteField("cache_dir",  m.Build.CacheDir  ?? "(unset → effective default)", m, "build.cache_dir");
+        WriteField("dist_dir",   m.Build.DistDir   ?? "(unset → effective default)", m, "build.dist_dir");
+        WriteField("mode",       m.Build.Mode,                                       m, "build.mode");
 
-        if (m.IsCentralized)
-        {
-            Console.Out.WriteLine();
-            Console.Out.WriteLine("[centralized layout]");
-            Console.Out.WriteLine($"  effective_out_dir      = {m.EffectiveOutDir}");
-            Console.Out.WriteLine($"  effective_cache_dir    = {m.EffectiveCacheDir}");
-            Console.Out.WriteLine($"  effective_product_path = {m.EffectiveProductPath}");
-        }
+        // restructure-build-output-dirs (2026-06-06): effective paths are
+        // always populated (workspace and single-project alike); print
+        // them so users can confirm where artifacts actually land.
+        Console.Out.WriteLine();
+        Console.Out.WriteLine(m.IsCentralized ? "[centralized layout]" : "[effective layout]");
+        Console.Out.WriteLine($"  effective_output_dir   = {m.EffectiveOutputDir}");
+        Console.Out.WriteLine($"  effective_cache_dir    = {m.EffectiveCacheDir}");
+        Console.Out.WriteLine($"  effective_dist_dir     = {m.EffectiveDistDir}");
+        Console.Out.WriteLine($"  effective_product_path = {m.EffectiveProductPath}");
 
         if (m.Dependencies.Count > 0)
         {

@@ -19,7 +19,8 @@ entry = "Hello.Main"
 # src   = ["tools/**/*.z42"]   # 可选：独立源文件集
 
 [build]
-out_dir = "dist"
+# dist_dir / cache_dir / output_dir omitted → cascade defaults
+# (output_dir = this dir; dist_dir = ${output_dir}/dist; cache_dir = ${output_dir}/.cache)
 
 [profile.debug]
 mode     = "interp"

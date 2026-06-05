@@ -11,10 +11,15 @@ namespace Z42.Project;
 public sealed class PolicyEnforcer
 {
     /// <summary>D3.2 默认锁定字段。即使 [policy] 段为空也自动锁定。</summary>
+    /// <remarks>
+    /// restructure-build-output-dirs (2026-06-06): three output dir
+    /// fields all locked by default so workspaces can pin the layout.
+    /// </remarks>
     public static readonly IReadOnlyList<string> DefaultLockedPaths = new[]
     {
-        "build.out_dir",
+        "build.output_dir",
         "build.cache_dir",
+        "build.dist_dir",
     };
 
     /// <summary>
@@ -31,11 +36,15 @@ public sealed class PolicyEnforcer
         // 计算最终锁定字典：默认 ∪ 显式 [policy]
         var locked = new Dictionary<string, object?>(StringComparer.Ordinal);
 
-        // 默认锁定：值取自 [workspace.build]
-        if (DefaultLockedPaths.Contains("build.out_dir"))
-            locked["build.out_dir"] = workspace.WorkspaceBuild.OutDir;
+        // 默认锁定：值取自 [workspace.build]（raw 值，null 表示 workspace
+        // 没显式设；与 member raw 值 null-vs-null 比较自然等价，PolicyFieldPath
+        // 也会返回 raw 值）。
+        if (DefaultLockedPaths.Contains("build.output_dir"))
+            locked["build.output_dir"] = workspace.WorkspaceBuild.OutputDir;
         if (DefaultLockedPaths.Contains("build.cache_dir"))
             locked["build.cache_dir"] = workspace.WorkspaceBuild.CacheDir;
+        if (DefaultLockedPaths.Contains("build.dist_dir"))
+            locked["build.dist_dir"] = workspace.WorkspaceBuild.DistDir;
 
         // 显式 [policy] 段
         foreach (var kv in workspace.Policy)

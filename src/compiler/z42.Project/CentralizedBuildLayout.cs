@@ -1,81 +1,182 @@
 namespace Z42.Project;
 
 /// <summary>
-/// 计算 workspace 模式下 member 产物路径与 cache 路径。
+/// Compute the effective output directories for a member build.
 ///
-/// 默认布局（D3.3）：
-///   产物：&lt;workspace_root&gt;/&lt;out_dir&gt;/&lt;member&gt;.zpkg     （一层）
-///   cache: &lt;workspace_root&gt;/&lt;cache_dir&gt;/&lt;member&gt;/    （按 member 分目录）
+/// restructure-build-output-dirs (2026-06-06): three-field model.
 ///
-/// out_dir / cache_dir 支持模板变量：${workspace_dir} / ${profile} / ${member_name}。
-/// 单工程模式（workspace=null）走 member-local 兼容路径。
+///     output_dir = member.OutputDir
+///                ?? workspace.OutputDir
+///                ?? workspace_root (workspace mode) / member_dir (single-project mode)
+///     cache_dir  = member.CacheDir
+///                ?? workspace.CacheDir
+///                ?? `${output_dir}/.cache`
+///     dist_dir   = member.DistDir
+///                ?? workspace.DistDir
+///                ?? `${output_dir}/dist`
+///
+/// In workspace mode, when `cache_dir` is shared across members and the
+/// template does not include `${member_name}`, the layout appends the
+/// member name as a subdirectory automatically to avoid two members
+/// stomping each other's intermediate `.zbc` files. The same protection
+/// is NOT applied to `dist_dir` — distributable products are named
+/// `<member>.zpkg` so collisions are already avoided.
+///
+/// All raw values pass through `PathTemplateExpander` so `${workspace_dir}`
+/// / `${profile}` / `${member_name}` / `${output_dir}` are interpolated
+/// before path resolution. Single-project mode skips `${workspace_dir}`
+/// expansion (it has no meaning there).
 /// </summary>
 public sealed class CentralizedBuildLayout
 {
     public sealed record Layout(
         bool   IsCentralized,
-        string EffectiveOutDir,
+        string EffectiveOutputDir,
         string EffectiveCacheDir,
+        string EffectiveDistDir,
         string EffectiveProductPath);
 
     /// <summary>
-    /// 计算单个 member 的产物与 cache 路径。
+    /// Resolve the effective three output paths for a single member.
     /// </summary>
     public Layout Resolve(
-        WorkspaceManifest? workspace,
-        string             workspaceRoot,
-        string             memberName,
-        string             memberDir,
-        string             profile,
-        BuildSection       memberLocalBuild,
+        WorkspaceManifest?   workspace,
+        string               workspaceRoot,
+        string               memberName,
+        string               memberDir,
+        string               profile,
+        BuildSection         memberLocalBuild,
         PathTemplateExpander expander)
     {
         if (workspace is null)
         {
-            // 单工程模式：用 member-local 配置（与 ProjectManifest 行为一致）
-            string localOut = Path.GetFullPath(Path.Combine(memberDir, memberLocalBuild.OutDir));
-            string localCache = Path.GetFullPath(Path.Combine(memberDir, ".cache"));
-            return new Layout(
-                IsCentralized:        false,
-                EffectiveOutDir:      localOut,
-                EffectiveCacheDir:    localCache,
-                EffectiveProductPath: Path.Combine(localOut, $"{memberName}.zpkg"));
+            return ResolveSingleProject(memberName, memberDir, profile, memberLocalBuild, expander);
         }
+        return ResolveWorkspace(workspace, workspaceRoot, memberName, memberDir, profile, memberLocalBuild, expander);
+    }
 
-        // workspace 模式：从 [workspace.build] 派生（用户用 ${member_name} 等模板控制布局）
+    static Layout ResolveSingleProject(
+        string               memberName,
+        string               memberDir,
+        string               profile,
+        BuildSection         build,
+        PathTemplateExpander expander)
+    {
+        // Single-project context: no workspace_dir; ${output_dir} is the
+        // member dir itself when the raw `output_dir` field is unset.
+        var ctx = new PathTemplateExpander.Context(
+            WorkspaceDir: memberDir,   // 自身作为根（${workspace_dir} 在单工程模式 = memberDir）
+            MemberDir:    memberDir,
+            MemberName:   memberName,
+            Profile:      profile);
+
+        // output_dir
+        string outputRaw = build.OutputDir ?? memberDir;
+        string outputAbs = ExpandAndResolve(outputRaw, ctx, memberDir, expander, "[build].output_dir");
+
+        // cache_dir
+        string cacheRaw = build.CacheDir ?? "${output_dir}/.cache";
+        var cacheCtx = ctx with { /* OutputDir 通过专门 expander overload 注入 */ };
+        string cacheExpanded = ExpandWithOutputDir(cacheRaw, ctx, outputAbs, expander, "[build].cache_dir");
+        string cacheAbs = ResolveAbsolute(cacheExpanded, outputAbs);
+
+        // dist_dir
+        string distRaw = build.DistDir ?? "${output_dir}/dist";
+        string distExpanded = ExpandWithOutputDir(distRaw, ctx, outputAbs, expander, "[build].dist_dir");
+        string distAbs = ResolveAbsolute(distExpanded, outputAbs);
+
+        string product = System.IO.Path.Combine(distAbs, $"{memberName}.zpkg");
+        return new Layout(
+            IsCentralized:        false,
+            EffectiveOutputDir:   outputAbs,
+            EffectiveCacheDir:    cacheAbs,
+            EffectiveDistDir:     distAbs,
+            EffectiveProductPath: product);
+    }
+
+    static Layout ResolveWorkspace(
+        WorkspaceManifest    workspace,
+        string               workspaceRoot,
+        string               memberName,
+        string               memberDir,
+        string               profile,
+        BuildSection         memberLocalBuild,
+        PathTemplateExpander expander)
+    {
         var ctx = new PathTemplateExpander.Context(
             WorkspaceDir: workspaceRoot,
             MemberDir:    memberDir,
             MemberName:   memberName,
             Profile:      profile);
 
-        string outDirRaw   = workspace.WorkspaceBuild.OutDir;
-        string cacheDirRaw = workspace.WorkspaceBuild.CacheDir;
+        var wsBuild = workspace.WorkspaceBuild;
+        string ownerForLog = workspace.ManifestPath;
 
-        string outExpanded   = expander.Expand(outDirRaw,   ctx, workspace.ManifestPath, "[workspace.build].out_dir",   PathTemplateExpander.FieldKind.Path);
-        string cacheExpanded = expander.Expand(cacheDirRaw, ctx, workspace.ManifestPath, "[workspace.build].cache_dir", PathTemplateExpander.FieldKind.Path);
+        // output_dir: member > workspace > workspace_root
+        (string outputRaw, string outputField) = memberLocalBuild.OutputDir is { } mo
+            ? (mo, "[build].output_dir")
+            : wsBuild.OutputDir is { } wo
+                ? (wo, "[workspace.build].output_dir")
+                : (workspaceRoot, "[workspace.build].output_dir(default)");
+        string outputAbs = ExpandAndResolve(outputRaw, ctx, workspaceRoot, expander, outputField, ownerForLog);
 
-        string outAbs = Path.IsPathRooted(outExpanded)
-            ? Path.GetFullPath(outExpanded)
-            : Path.GetFullPath(Path.Combine(workspaceRoot, outExpanded));
+        // cache_dir: member > workspace > `${output_dir}/.cache`
+        (string cacheRaw, string cacheField, bool cacheIsDefault) = memberLocalBuild.CacheDir is { } mc
+            ? (mc, "[build].cache_dir", false)
+            : wsBuild.CacheDir is { } wc
+                ? (wc, "[workspace.build].cache_dir", false)
+                : ("${output_dir}/.cache", "[workspace.build].cache_dir(default)", true);
+        string cacheExpanded = ExpandWithOutputDir(cacheRaw, ctx, outputAbs, expander, cacheField, ownerForLog);
+        string cacheAbs = ResolveAbsolute(cacheExpanded, outputAbs);
+        // Anti-collision fallback: when raw cache template does not include
+        // ${member_name}, append the member name as a subdir so cache files
+        // from different members don't overwrite each other.
+        if (!cacheRaw.Contains("${member_name}"))
+            cacheAbs = System.IO.Path.Combine(cacheAbs, memberName);
 
-        string cacheAbs = Path.IsPathRooted(cacheExpanded)
-            ? Path.GetFullPath(cacheExpanded)
-            : Path.GetFullPath(Path.Combine(workspaceRoot, cacheExpanded));
+        // dist_dir: member > workspace > `${output_dir}/dist`
+        (string distRaw, string distField) = memberLocalBuild.DistDir is { } md
+            ? (md, "[build].dist_dir")
+            : wsBuild.DistDir is { } wd
+                ? (wd, "[workspace.build].dist_dir")
+                : ("${output_dir}/dist", "[workspace.build].dist_dir(default)");
+        string distExpanded = ExpandWithOutputDir(distRaw, ctx, outputAbs, expander, distField, ownerForLog);
+        string distAbs = ResolveAbsolute(distExpanded, outputAbs);
 
-        // cache_dir 由用户通过 ${member_name} 模板控制按 member 隔离；
-        // 若用户未在模板中含 ${member_name}（避免不同 member 的同名源文件互相覆盖），
-        // 则自动追加 memberName 子目录作为兜底
-        string memberCache = cacheDirRaw.Contains("${member_name}")
-            ? cacheAbs
-            : Path.Combine(cacheAbs, memberName);
-
-        string product = Path.Combine(outAbs, $"{memberName}.zpkg");
-
+        string product = System.IO.Path.Combine(distAbs, $"{memberName}.zpkg");
         return new Layout(
             IsCentralized:        true,
-            EffectiveOutDir:      outAbs,
-            EffectiveCacheDir:    memberCache,
+            EffectiveOutputDir:   outputAbs,
+            EffectiveCacheDir:    cacheAbs,
+            EffectiveDistDir:     distAbs,
             EffectiveProductPath: product);
     }
+
+    // ── helpers ──────────────────────────────────────────────────────────
+
+    static string ExpandAndResolve(
+        string raw, PathTemplateExpander.Context ctx, string baseDir,
+        PathTemplateExpander expander, string fieldPath, string? ownerForLog = null)
+    {
+        string expanded = expander.Expand(raw, ctx, ownerForLog ?? "(synthetic)", fieldPath, PathTemplateExpander.FieldKind.Path);
+        return ResolveAbsolute(expanded, baseDir);
+    }
+
+    static string ExpandWithOutputDir(
+        string raw, PathTemplateExpander.Context ctx, string outputAbs,
+        PathTemplateExpander expander, string fieldPath, string? ownerForLog = null)
+    {
+        // ${output_dir} is resolved BEFORE the expander runs so the
+        // expander's standard variable set stays unchanged. Use a literal
+        // marker substitution (output_dir is an absolute path; no further
+        // expansion needed).
+        string preExpanded = raw.Replace("${output_dir}", outputAbs);
+        string expanded = expander.Expand(preExpanded, ctx, ownerForLog ?? "(synthetic)", fieldPath, PathTemplateExpander.FieldKind.Path);
+        return expanded;
+    }
+
+    static string ResolveAbsolute(string path, string baseDir) =>
+        System.IO.Path.IsPathRooted(path)
+            ? System.IO.Path.GetFullPath(path)
+            : System.IO.Path.GetFullPath(System.IO.Path.Combine(baseDir, path));
 }

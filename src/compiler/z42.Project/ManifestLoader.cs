@@ -168,21 +168,26 @@ public sealed class ManifestLoader
         var sourcesInclude = ExpandPathArray(sourcesView.Include, ctx, member.ManifestPath, "[sources].include");
         var sourcesExclude = ExpandPathArray(sourcesView.Exclude, ctx, member.ManifestPath, "[sources].exclude");
 
-        // [build]：member 自己的或默认；记录 origin 以便 C3 PolicyEnforcer 区分"显式声明"
+        // [build]：member 自己的或默认；记录 origin 以便 C3 PolicyEnforcer 区分"显式声明"。
+        // restructure-build-output-dirs (2026-06-06): 三个 dir 字段都是 raw nullable；
+        // 模板展开 + effective 计算全部在 CentralizedBuildLayout 里做（避免在此双重展开）。
         BuildSection build;
         bool buildDeclared = member.Build is not null;
         if (buildDeclared)
         {
             build = member.Build!;
-            string outDir = _expander.Expand(build.OutDir, ctx, member.ManifestPath, "[build].out_dir", PathTemplateExpander.FieldKind.Path);
-            build = build with { OutDir = outDir };
             // 记录每个显式声明字段的来源（PolicyEnforcer 用此判断 member 是否要被检查）
-            origins["build.out_dir"] = new FieldOrigin(member.ManifestPath, "build.out_dir", OriginKind.MemberDirect);
-            origins["build.mode"]    = new FieldOrigin(member.ManifestPath, "build.mode",    OriginKind.MemberDirect);
+            if (build.OutputDir is not null)
+                origins["build.output_dir"] = new FieldOrigin(member.ManifestPath, "build.output_dir", OriginKind.MemberDirect);
+            if (build.CacheDir is not null)
+                origins["build.cache_dir"]  = new FieldOrigin(member.ManifestPath, "build.cache_dir",  OriginKind.MemberDirect);
+            if (build.DistDir is not null)
+                origins["build.dist_dir"]   = new FieldOrigin(member.ManifestPath, "build.dist_dir",   OriginKind.MemberDirect);
+            origins["build.mode"] = new FieldOrigin(member.ManifestPath, "build.mode", OriginKind.MemberDirect);
         }
         else
         {
-            build = new BuildSection("dist", "interp", true);
+            build = new BuildSection();
         }
 
         // [dependencies]：合并（含 workspace 引用展开）
@@ -218,8 +223,9 @@ public sealed class ManifestLoader
             WorkspaceRoot: workspace?.Manifest.RootDirectory)
         {
             IsCentralized        = layout.IsCentralized,
-            EffectiveOutDir      = layout.EffectiveOutDir,
+            EffectiveOutputDir   = layout.EffectiveOutputDir,
             EffectiveCacheDir    = layout.EffectiveCacheDir,
+            EffectiveDistDir     = layout.EffectiveDistDir,
             EffectiveProductPath = layout.EffectiveProductPath,
         };
 

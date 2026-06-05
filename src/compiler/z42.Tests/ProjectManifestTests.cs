@@ -208,10 +208,10 @@ public sealed class ProjectManifestTests : IDisposable
         m.SelectProfile(release: true).Should().Be(m.Release);
     }
 
-    // ── [build].cache_dir (add-build-cache-dir) ───────────────────────────────
+    // ── [build] output_dir / cache_dir / dist_dir (restructure-build-output-dirs) ──
 
     [Fact]
-    public void Build_CacheDir_ParsedWhenSet()
+    public void Build_AllThreeDirs_ParsedWhenSet()
     {
         var m = Load("hello.z42.toml", """
             [project]
@@ -219,24 +219,47 @@ public sealed class ProjectManifestTests : IDisposable
             entry = "Hello.main"
 
             [build]
-            out_dir   = "../artifacts/hello"
-            cache_dir = "../artifacts/hello/.cache"
+            output_dir = "../artifacts/hello"
+            dist_dir   = "../artifacts/hello/dist"
+            cache_dir  = "../artifacts/hello/.cache"
             """);
+        m.Build.OutputDir.Should().Be("../artifacts/hello");
+        m.Build.DistDir.Should().Be("../artifacts/hello/dist");
         m.Build.CacheDir.Should().Be("../artifacts/hello/.cache");
     }
 
     [Fact]
-    public void Build_CacheDir_NullWhenOmitted()
+    public void Build_AllThreeDirs_NullWhenOmitted()
     {
+        // restructure-build-output-dirs (2026-06-06): unset = null (raw);
+        // effective paths come from CentralizedBuildLayout's cascade
+        // defaults, not from BuildSection field defaults.
         var m = Load("hello.z42.toml", """
             [project]
             kind  = "exe"
+            entry = "Hello.main"
+            """);
+        m.Build.OutputDir.Should().BeNull();
+        m.Build.CacheDir.Should().BeNull();
+        m.Build.DistDir.Should().BeNull();
+    }
+
+    [Fact]
+    public void Build_LegacyOutDir_TriggersWS008()
+    {
+        // restructure-build-output-dirs (2026-06-06): old `out_dir` field
+        // retired; appears as WS008 unknown-key with Levenshtein
+        // suggestion `dist_dir`.
+        var result = LoadWithWarnings("hello.z42.toml", """
+            [project]
+            kind = "exe"
             entry = "Hello.main"
 
             [build]
             out_dir = "dist"
             """);
-        m.Build.CacheDir.Should().BeNull();
+        result.Warnings.Should().Contain(w =>
+            w.Message.Contains("out_dir") && w.Message.Contains("dist_dir"));
     }
 
     // ── unknown fields ignored ────────────────────────────────────────────────
@@ -424,6 +447,8 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void LoadWithWarnings_KnownKeysOnly_NoWarnings()
     {
+        // restructure-build-output-dirs (2026-06-06): `out_dir` is now an
+        // unknown key (replaced by `output_dir` / `cache_dir` / `dist_dir`).
         var r = LoadWithWarnings("clean.z42.toml", """
             [project]
             name = "clean"
@@ -436,7 +461,8 @@ public sealed class ProjectManifestTests : IDisposable
             include = ["**/*.z42"]
             exclude = []
             [build]
-            out_dir = "dist"
+            output_dir = ".."
+            dist_dir = "../dist"
             cache_dir = "../artifacts/clean/.cache"
             mode = "interp"
             incremental = true

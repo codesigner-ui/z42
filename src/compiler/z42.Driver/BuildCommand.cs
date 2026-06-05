@@ -180,15 +180,16 @@ static class BuildCommand
             int removed = 0;
             if (pkg is null)
             {
-                // 全 workspace clean：删除 [workspace.build] out_dir + cache_dir
-                string outAbs = Path.IsPathRooted(ws.Manifest.WorkspaceBuild.OutDir)
-                    ? ws.Manifest.WorkspaceBuild.OutDir
-                    : Path.GetFullPath(Path.Combine(ws.Manifest.RootDirectory, ws.Manifest.WorkspaceBuild.OutDir));
-                string cacheAbs = Path.IsPathRooted(ws.Manifest.WorkspaceBuild.CacheDir)
-                    ? ws.Manifest.WorkspaceBuild.CacheDir
-                    : Path.GetFullPath(Path.Combine(ws.Manifest.RootDirectory, ws.Manifest.WorkspaceBuild.CacheDir));
+                // 全 workspace clean：删除 [workspace.build] dist_dir + cache_dir。
+                // restructure-build-output-dirs (2026-06-06): 走 effective 默认
+                // (workspace.OutputDir ?? workspace_root) + (dist ?? ${output_dir}/dist) /
+                // (cache ?? ${output_dir}/.cache) —— 与 build 路径计算保持一致。
+                var wsBuild = ws.Manifest.WorkspaceBuild;
+                string outputAbs = ResolveWorkspacePath(wsBuild.OutputDir, ws.Manifest.RootDirectory, ws.Manifest.RootDirectory);
+                string distAbs   = ResolveWorkspacePath(wsBuild.DistDir,  outputAbs,                  Path.Combine(outputAbs, "dist"));
+                string cacheAbs  = ResolveWorkspacePath(wsBuild.CacheDir, outputAbs,                  Path.Combine(outputAbs, ".cache"));
 
-                foreach (var dir in new[] { outAbs, cacheAbs })
+                foreach (var dir in new[] { distAbs, cacheAbs })
                 {
                     if (!Directory.Exists(dir)) continue;
                     Directory.Delete(dir, recursive: true);
@@ -377,7 +378,8 @@ static class BuildCommand
         }
 
         string projectDir = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
-        string outDir     = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
+        // restructure-build-output-dirs (2026-06-06): cascade-defaulted dist_dir.
+        string outDir     = manifest.ResolveBuildLayout(projectDir).EffectiveDistDir;
 
         // Determine target name
         string targetName = bin ?? manifest.Project.Name;
@@ -437,8 +439,12 @@ static class BuildCommand
         }
 
         string projectDir = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
-        string outDir     = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
-        string cacheDir   = Path.GetFullPath(Path.Combine(projectDir, ".cache"));
+        // restructure-build-output-dirs (2026-06-06): clean uses the same
+        // effective dist_dir / cache_dir cascade as build (any explicit
+        // `[build].cache_dir` is honoured; defaults to `${output_dir}/.cache`).
+        var cleanLayout = manifest.ResolveBuildLayout(projectDir);
+        string outDir   = cleanLayout.EffectiveDistDir;
+        string cacheDir = cleanLayout.EffectiveCacheDir;
 
         int removed = 0;
         foreach (var dir in new[] { outDir, cacheDir })
@@ -455,6 +461,21 @@ static class BuildCommand
             Console.Error.WriteLine($"    Finished cleaning {manifest.Project.Name}");
 
         return 0;
+    }
+
+    /// <summary>
+    /// Resolve a workspace-level path field (output_dir / cache_dir /
+    /// dist_dir): if explicit and absolute → use as-is; if explicit and
+    /// relative → combine with workspaceRoot; if null → use the supplied
+    /// fallback (which itself may be derived from a parent effective path).
+    /// restructure-build-output-dirs (2026-06-06).
+    /// </summary>
+    static string ResolveWorkspacePath(string? raw, string workspaceRoot, string fallback)
+    {
+        if (raw is null) return Path.GetFullPath(fallback);
+        return Path.IsPathRooted(raw)
+            ? Path.GetFullPath(raw)
+            : Path.GetFullPath(Path.Combine(workspaceRoot, raw));
     }
 
     /// Locate the z42vm binary. Search order:

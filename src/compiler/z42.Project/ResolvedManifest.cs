@@ -30,11 +30,23 @@ public sealed record ResolvedManifest(
     // ── C3 集中产物字段 ──────────────────────────────────────────────────────
     /// <summary>true = workspace 模式（产物集中到 workspace 根）；false = 单工程模式。</summary>
     public bool   IsCentralized        { get; init; }
-    /// <summary>产物绝对路径目录（已经过 ${profile} 等模板展开）。</summary>
-    public string EffectiveOutDir      { get; init; } = "";
-    /// <summary>中间产物绝对路径目录（按 member 分子目录）。</summary>
+    /// <summary>
+    /// 顶层输出根目录（绝对路径）。restructure-build-output-dirs (2026-06-06):
+    /// `${output_dir}` 模板变量解析为该值。member.OutputDir > workspace.OutputDir
+    /// > workspace_root (workspace 模式) / member_dir (单工程模式) 的级联默认。
+    /// </summary>
+    public string EffectiveOutputDir   { get; init; } = "";
+    /// <summary>
+    /// 中间产物绝对路径目录（.zbc / 索引 / 增量元数据）。默认 `${EffectiveOutputDir}/.cache`，
+    /// workspace 模式下若 cache_dir 模板不含 `${member_name}` 会自动追加 member 子目录避免碰撞。
+    /// </summary>
     public string EffectiveCacheDir    { get; init; } = "";
-    /// <summary>该 member 产物完整路径（&lt;EffectiveOutDir&gt;/&lt;name&gt;.zpkg）。</summary>
+    /// <summary>
+    /// 最终分发产物绝对路径目录（.zpkg / exe）。默认 `${EffectiveOutputDir}/dist`。
+    /// 替代了原 `EffectiveOutDir` 字段。
+    /// </summary>
+    public string EffectiveDistDir     { get; init; } = "";
+    /// <summary>该 member 产物完整路径（&lt;EffectiveDistDir&gt;/&lt;name&gt;.zpkg）。</summary>
     public string EffectiveProductPath { get; init; } = "";
 }
 

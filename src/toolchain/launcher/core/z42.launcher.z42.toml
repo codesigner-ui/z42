@@ -23,7 +23,10 @@ include = ["*.z42"]
 # artifacts tree (mirrors src/toolchain/launcher) instead of a dist/ dir
 # inside src/. Relative from this toml's dir (src/toolchain/launcher/core)
 # up 4 levels to the repo root, then into artifacts/build/toolchain/launcher.
-out_dir = "../../../../artifacts/build/toolchain/launcher"
+# restructure-build-output-dirs (2026-06-06): legacy flat layout — set
+# dist_dir directly (no nested dist/ subdir). cache_dir / output_dir
+# stay defaulted (cache lands beside the dist by default).
+dist_dir = "../../../../artifacts/build/toolchain/launcher"
 
 [profile.release]
 mode     = "interp"

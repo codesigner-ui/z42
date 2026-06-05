@@ -28,8 +28,9 @@ description = "z42 workspace-basic example"
 "greeter" = { path = "libs/greeter", version = "0.1.0" }
 
 [workspace.build]
-out_dir   = "dist"
-cache_dir = ".cache"
+# Cascade defaults are exactly "dist" / ".cache" relative to workspace
+# root; omit the fields for clarity. To override either, set
+# `output_dir` (root) or `dist_dir` / `cache_dir` (independent override).
 
 [profile.debug]
 mode  = "interp"

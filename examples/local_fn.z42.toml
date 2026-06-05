@@ -12,7 +12,7 @@ name  = "local_fn"
 entry = "Demo.LocalFn.Main"
 
 [build]
-out_dir = "dist"
+# Cascade defaults: dist_dir = ${output_dir}/dist (== ./dist)
 
 [profile.debug]
 mode     = "interp"

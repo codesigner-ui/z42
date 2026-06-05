@@ -35,11 +35,22 @@ public sealed class PathTemplateExpander
     public enum FieldKind { Path, Scalar }
 
     /// <summary>白名单字段路径（用于 WS039 错误信息提示）。</summary>
+    /// <remarks>
+    /// restructure-build-output-dirs (2026-06-06): replaced
+    /// `[workspace.build].out_dir` with the three-field set; same for
+    /// project-level `[build]`. `${output_dir}` is a synthesised
+    /// variable substituted by CentralizedBuildLayout before this
+    /// expander runs (not in the variable table here).
+    /// </remarks>
     public static readonly IReadOnlyList<string> AllowedFieldPaths = new[]
     {
         "include[]",
-        "[workspace.build].out_dir",
+        "[build].output_dir",
+        "[build].cache_dir",
+        "[build].dist_dir",
+        "[workspace.build].output_dir",
         "[workspace.build].cache_dir",
+        "[workspace.build].dist_dir",
         "[workspace.dependencies].*.path",
         "[dependencies].*.path",
         "[sources].include[]",

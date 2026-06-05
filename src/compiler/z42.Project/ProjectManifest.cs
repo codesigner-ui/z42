@@ -108,7 +108,10 @@ public sealed class ProjectManifest
     };
     static readonly HashSet<string> KnownBuildKeys = new(StringComparer.Ordinal)
     {
-        "out_dir", "cache_dir", "mode", "incremental",
+        // restructure-build-output-dirs (2026-06-06): legacy `out_dir`
+        // removed; old field surfaces as WS008 unknown-key + Levenshtein
+        // suggestion → `dist_dir`.
+        "output_dir", "cache_dir", "dist_dir", "mode", "incremental",
     };
     static readonly HashSet<string> KnownProfileKeys = new(StringComparer.Ordinal)
     {
@@ -138,9 +141,31 @@ public sealed class ProjectManifest
         }
     }
 
-    /// <summary>Levenshtein-1-or-2 match against a known-key set.</summary>
+    /// <summary>
+    /// Known schema renames — when a retired key is spelled exactly, give
+    /// the canonical migration target rather than relying on Levenshtein
+    /// (which won't catch e.g. `out_dir` → `dist_dir`, distance ≈ 4).
+    /// restructure-build-output-dirs (2026-06-06) introduced the first
+    /// entry. Stays a curated map, not a blanket alias table — pre-1.0
+    /// "no compatibility" still holds (we don't accept the old key, we
+    /// just tell the user which new key replaces it).
+    /// </summary>
+    static readonly Dictionary<string, string> KnownRenames = new(StringComparer.Ordinal)
+    {
+        ["out_dir"] = "dist_dir",
+    };
+
+    /// <summary>
+    /// Best-effort suggestion for an unknown manifest key. Checks the
+    /// curated rename map first (handles schema migrations across major
+    /// names), then falls back to Levenshtein-≤2 fuzzy match against
+    /// `known`.
+    /// </summary>
     static string? NearestKnown(string candidate, HashSet<string> known)
     {
+        if (KnownRenames.TryGetValue(candidate, out var renamed) && known.Contains(renamed))
+            return renamed;
+
         string? best = null;
         int bestDist = 3;     // strict: only suggest when within edit distance 2
         foreach (var k in known)
@@ -211,6 +236,31 @@ public sealed class ProjectManifest
 
         return files;
     }
+
+    // ── Effective build paths (single-project mode helper) ────────────────────
+    //
+    // restructure-build-output-dirs (2026-06-06): single-project consumers
+    // (z42c build / z42c clean / z42c run / QueryCommands) reach into
+    // BuildSection's three raw nullable dir fields then need to apply the
+    // same cascade defaults as workspace mode. Centralise here so callers
+    // don't reimplement the `${output_dir}/.cache` / `${output_dir}/dist`
+    // fallbacks each time.
+
+    /// <summary>
+    /// Resolve effective absolute output paths for a single-project build.
+    /// Mirrors what `CentralizedBuildLayout.Resolve(workspace: null, ...)`
+    /// would return, but available without a member name / profile context.
+    /// </summary>
+    public CentralizedBuildLayout.Layout ResolveBuildLayout(
+        string projectDir, string profileLabel = "debug") =>
+        new CentralizedBuildLayout().Resolve(
+            workspace:        null,
+            workspaceRoot:    projectDir,
+            memberName:       Project.Name,
+            memberDir:        projectDir,
+            profile:          profileLabel,
+            memberLocalBuild: Build,
+            expander:         new PathTemplateExpander());
 
     // ── Profile selection ──────────────────────────────────────────────────────
 
@@ -329,14 +379,20 @@ public sealed class ProjectManifest
         TomlTable model, string tomlPath, List<ManifestException> warnings)
     {
         if (!model.TryGetValue("build", out var raw) || raw is not TomlTable t)
-            return new BuildSection("dist", "interp", true);
+            return new BuildSection();
         ScanUnknownKeys(t, KnownBuildKeys, "build", tomlPath, warnings);
 
-        string outDir      = t.TryGetString("out_dir") ?? "dist";
-        string mode        = t.TryGetString("mode")    ?? "interp";
-        bool   incremental = t.TryGetBool("incremental") ?? true;
+        // restructure-build-output-dirs (2026-06-06): three dir fields are
+        // raw (unset = null); effective absolute paths are computed later
+        // in CentralizedBuildLayout / ResolvedManifest. Old `out_dir` is
+        // gone — KnownBuildKeys does not list it, so any toml that still
+        // sets it surfaces as WS008 unknown-key + Levenshtein suggestion.
+        string? outputDir  = t.TryGetString("output_dir");
         string? cacheDir   = t.TryGetString("cache_dir");
-        return new BuildSection(outDir, mode, incremental, cacheDir);
+        string? distDir    = t.TryGetString("dist_dir");
+        string  mode       = t.TryGetString("mode")        ?? "interp";
+        bool    incremental = t.TryGetBool("incremental")  ?? true;
+        return new BuildSection(outputDir, cacheDir, distDir, mode, incremental);
     }
 
     static ProfileSection ParseProfile(
@@ -404,15 +460,23 @@ public sealed record SourcesSection(
     public SourcesSection() : this(["src/**/*.z42"], []) { }
 }
 
+/// <summary>
+/// `[build]` section of `.z42.toml`. All three directory fields are raw
+/// (unset = `null`); effective absolute paths are computed in
+/// `CentralizedBuildLayout.Resolve` / `ResolvedManifest`.
+///
+/// restructure-build-output-dirs (2026-06-06): legacy `out_dir` field
+/// retired; replaced by `output_dir` (root) / `cache_dir` (intermediate)
+/// / `dist_dir` (final artifacts). Old `out_dir` triggers WS008 via
+/// `KnownBuildKeys` with a Levenshtein suggestion toward `dist_dir`.
+/// </summary>
 public sealed record BuildSection(
-    string OutDir,
-    string Mode,
-    bool   Incremental,
-    string? CacheDir = null
-)
-{
-    public BuildSection() : this("dist", "interp", true) { }
-}
+    string? OutputDir   = null,
+    string? CacheDir    = null,
+    string? DistDir     = null,
+    string  Mode        = "interp",
+    bool    Incremental = true
+);
 
 /// A single declared dependency entry: `"pkg-name" = "version"`.
 public sealed record DeclaredDep(string Name, string Version);

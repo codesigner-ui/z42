@@ -169,7 +169,8 @@ ManifestLoader.LoadWorkspace(ctx, profile)
   │           - workspace 模式 → dist/<member>.zpkg + cache/<member>/
   │           - 单工程 → fallback 到 member-local
   │     g. ★ C3: PolicyEnforcer.Enforce()
-  │           - 默认锁定 build.out_dir / build.cache_dir
+  │           - 默认锁定 build.output_dir / build.cache_dir / build.dist_dir
+  │             (restructure-build-output-dirs, 2026-06-06)
   │           - 显式 [policy] 段（WS011 fuzzy 建议）
   │           - 仅检查 member 显式声明的字段（origin = MemberDirect/IncludePreset）
   │           - 一致 → Origins 标 PolicyLocked；冲突 → WS010
