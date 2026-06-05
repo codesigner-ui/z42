@@ -112,7 +112,7 @@ Git Bash 内部把 `C:\foo\bar` 映射为 `/c/foo/bar`。但 .NET / Cargo 这种
 
 仓库带 [`.gitattributes`](../../.gitattributes)：
 
-- `*.sh` / `justfile` / `Makefile` 强制 LF（Git Bash 跑 CRLF 的 .sh 会报 `bad interpreter`）
+- `*.sh` / `Makefile` 强制 LF（Git Bash 跑 CRLF 的 .sh 会报 `bad interpreter`）
 - `*.cs` / `*.rs` / `*.md` 等用 git autocrlf 默认（Windows 用户编辑器看 CRLF，git 存 LF）
 - `*.z42` 强制 LF：编译器对源文件做 `SHA256(text)` 作为 `SourceHash` 写入 `.zpkg`；如果 Windows checkout 是 CRLF，hash 会和提交的 LF golden fixture 飘移，导致 `Z42.Tests.Zpkg.FormatGoldenTests.ByteEqual` 失败
 - `*.zpkg` / `*.zbc` / `*.wasm` / `*.dll` 等 binary（永不转换）

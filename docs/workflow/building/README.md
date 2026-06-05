@@ -12,6 +12,6 @@
 | [`ios.md`](ios.md) | 🟢 iOS facade（`Z42VM.xcframework` SwiftPM 包）|
 | [`android.md`](android.md) | 🟢 Android facade（`z42vm.aar` AAR module）|
 
-桌面日常用 **xtask**（编译产物 `artifacts/xtask/xtask.zpkg`，源码 `scripts/xtask*.z42`）：`z42 xtask.zpkg build` / `z42 xtask.zpkg clean` / `z42 xtask.zpkg test`。
+桌面日常用 **xtask**（编译产物 `artifacts/xtask/xtask.zpkg`，源码 `scripts/xtask*.z42`）：`z42 xtask.zpkg build [all]` / `z42 xtask.zpkg test`。
 
 平台 facade 的源码 + 跨平台契约见 [`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)；设计与决策见 [`docs/spec/`](../../spec/)。

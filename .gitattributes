@@ -4,7 +4,6 @@
 
 *.sh        text eol=lf
 *.bash      text eol=lf
-justfile    text eol=lf
 Makefile    text eol=lf
 *.mk        text eol=lf
 

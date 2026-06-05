@@ -44,7 +44,6 @@ cargo run --manifest-path src/runtime/Cargo.toml -- src/tests/<category>/<name>/
 ```bash
 z42 xtask.zpkg regen                 # 重生 golden（内部先 build stdlib + driver）
 z42 xtask.zpkg regen --no-stdlib     # 跳过 stdlib 重建（已 build 过）
-z42 xtask.zpkg regen --only <name>   # 仅指定 golden
 ```
 
 ## 测试目录组织

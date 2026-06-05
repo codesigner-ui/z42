@@ -4,15 +4,19 @@
 
 ## 前置：先拿到 z42
 
+**前置工具**：git + .NET 10 SDK + Rust stable（`dotnet --version && rustc --version` 自检）。
+
 所有命令都经 `z42` launcher 跑，而 z42 的工具链本身用 z42 写（`xtask`）——所以先下载一个预编译 launcher 引导（鸡生蛋的唯一原生 primer）：
 
 ```bash
 ./scripts/install-z42.sh                       # → ./.z42/（z42 launcher + z42c + z42vm + stdlib）；Windows: install-z42.bat
 export PATH="$PWD/.z42:$PWD/.z42/bin:$PATH"     # z42 / z42c / z42vm 上 PATH
-z42c build scripts/xtask.z42.toml --release    # 首次构建 dev CLI → artifacts/xtask/xtask.zpkg
+# 用下载的 stdlib 编 dev CLI（Z42_LIBS 指 z42c 去 .z42/libs 找 stdlib）：
+Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → artifacts/xtask/xtask.zpkg
 ```
 
 > 从源码整套构建（不下预编译）见 [`building/`](building/)；冷启动 bootstrap 机制见 [`building/stdlib.md`](building/stdlib.md)。
+> 可选环境变量：`Z42_LIBS`（stdlib 扁平目录，默认 `artifacts/build/libraries/dist/release/`）、`Z42_PORTABLE_VM`（z42vm 路径）——CI 显式设置，本地默认即可。
 
 ## Quick Start
 

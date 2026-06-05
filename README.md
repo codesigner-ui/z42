@@ -63,12 +63,15 @@ z42 xtask.zpkg test          # full gate (compiler + vm + cross-zpkg + stdlib)
 z42 xtask.zpkg --help        # all commands (build / test / deps / regen / bench / package)
 ```
 
-### 3. Run a z42 program
+### 3. Compile + run a z42 program
 
 ```bash
-z42c build examples/hello.z42.toml --release    # → examples/dist/hello.zpkg
-z42 examples/dist/hello.zpkg                     # run it via the launcher
+z42c build path/to/app.z42.toml --release   # → <out_dir>/<name>.zpkg  (see examples/*.z42.toml)
+z42 <out_dir>/<name>.zpkg                    # run it via the launcher
 ```
+
+A green `z42 xtask.zpkg test` already proves the toolchain compiles and runs z42
+end-to-end. See [examples/](examples/) for project layouts.
 
 > **Prerequisites:** git + .NET 10 SDK + Rust stable (`dotnet --version && rustc --version`).
 > **Building the whole toolchain from source** (no prebuilt download) and the full
