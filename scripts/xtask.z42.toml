@@ -19,8 +19,10 @@ include = ["xtask.z42", "xtask_common.z42", "xtask_stdlib.z42", "xtask_versions.
 
 [build]
 # xtask is the build DRIVER, so its output lives at artifacts/xtask — NOT under
-# artifacts/build/ (which is where the things xtask builds go).
-out_dir = "../artifacts/xtask"
+# artifacts/build/ (which is where the things xtask builds go). cache_dir keeps the
+# incremental .zbc cache out of scripts/ (it would otherwise default to scripts/.cache).
+out_dir   = "../artifacts/xtask"
+cache_dir = "../artifacts/xtask/.cache"
 
 [profile.release]
 mode     = "interp"

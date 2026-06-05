@@ -208,6 +208,37 @@ public sealed class ProjectManifestTests : IDisposable
         m.SelectProfile(release: true).Should().Be(m.Release);
     }
 
+    // ── [build].cache_dir (add-build-cache-dir) ───────────────────────────────
+
+    [Fact]
+    public void Build_CacheDir_ParsedWhenSet()
+    {
+        var m = Load("hello.z42.toml", """
+            [project]
+            kind  = "exe"
+            entry = "Hello.main"
+
+            [build]
+            out_dir   = "../artifacts/hello"
+            cache_dir = "../artifacts/hello/.cache"
+            """);
+        m.Build.CacheDir.Should().Be("../artifacts/hello/.cache");
+    }
+
+    [Fact]
+    public void Build_CacheDir_NullWhenOmitted()
+    {
+        var m = Load("hello.z42.toml", """
+            [project]
+            kind  = "exe"
+            entry = "Hello.main"
+
+            [build]
+            out_dir = "dist"
+            """);
+        m.Build.CacheDir.Should().BeNull();
+    }
+
     // ── unknown fields ignored ────────────────────────────────────────────────
 
     [Fact]
@@ -406,6 +437,7 @@ public sealed class ProjectManifestTests : IDisposable
             exclude = []
             [build]
             out_dir = "dist"
+            cache_dir = "../artifacts/clean/.cache"
             mode = "interp"
             incremental = true
             [profile.release]

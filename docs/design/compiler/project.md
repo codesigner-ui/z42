@@ -174,6 +174,7 @@ pack = false           # 工程级 pack 默认值（最低优先级）
 
 [build]
 out_dir     = "dist"   # 产物目录，默认 "dist/"
+cache_dir   = ".cache" # 增量缓存目录，默认 projectDir/.cache（相对 toml 所在目录解析）
 incremental = true     # 启用增量编译，默认 true
 
 [profile.debug]
@@ -189,7 +190,8 @@ strip = true           # 默认剥离 DBUG → 配套 <name>.zsym sidecar
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `out_dir` | string | `"dist"` | 产物输出目录 |
+| `out_dir` | string | `"dist"` | 产物输出目录（相对 toml 所在目录解析） |
+| `cache_dir` | string | `projectDir/.cache` | 增量编译缓存（`.zbc`）目录；相对 toml 所在目录解析。不设则落 `projectDir/.cache`。用于把缓存移出源码树（如 xtask 设 `"../artifacts/xtask/.cache"`）。仅单工程 `[build]` 适用 —— workspace 成员由 `[workspace.build].cache_dir` 集中布局 |
 | `incremental` | bool | `true` | 基于 source hash 跳过未改动文件 |
 
 **`pack` 字段说明（三层优先级，高→低）：**

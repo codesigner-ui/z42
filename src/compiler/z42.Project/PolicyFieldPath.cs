@@ -64,7 +64,7 @@ public static class PolicyFieldPath
         return path switch
         {
             "build.out_dir"      => m.Build.OutDir,
-            "build.cache_dir"    => null,                    // C1 BuildSection 暂无 cache_dir 字段
+            "build.cache_dir"    => m.Build.CacheDir,
             "build.incremental"  => m.Build.Incremental,
             "build.mode"         => m.Build.Mode,
             "project.kind"       => m.Kind.ToString().ToLowerInvariant(),

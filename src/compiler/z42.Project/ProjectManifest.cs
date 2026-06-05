@@ -108,7 +108,7 @@ public sealed class ProjectManifest
     };
     static readonly HashSet<string> KnownBuildKeys = new(StringComparer.Ordinal)
     {
-        "out_dir", "mode", "incremental",
+        "out_dir", "cache_dir", "mode", "incremental",
     };
     static readonly HashSet<string> KnownProfileKeys = new(StringComparer.Ordinal)
     {
@@ -335,7 +335,8 @@ public sealed class ProjectManifest
         string outDir      = t.TryGetString("out_dir") ?? "dist";
         string mode        = t.TryGetString("mode")    ?? "interp";
         bool   incremental = t.TryGetBool("incremental") ?? true;
-        return new BuildSection(outDir, mode, incremental);
+        string? cacheDir   = t.TryGetString("cache_dir");
+        return new BuildSection(outDir, mode, incremental, cacheDir);
     }
 
     static ProfileSection ParseProfile(
@@ -406,7 +407,8 @@ public sealed record SourcesSection(
 public sealed record BuildSection(
     string OutDir,
     string Mode,
-    bool   Incremental
+    bool   Incremental,
+    string? CacheDir = null
 )
 {
     public BuildSection() : this("dist", "interp", true) { }

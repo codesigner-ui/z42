@@ -31,6 +31,11 @@ public static partial class PackageCompiler
         string profileLabel = useRelease ? "release" : "debug";
         string projectDir   = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
         string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
+        // [build].cache_dir (optional) redirects the incremental cache like out_dir
+        // redirects products; null → BuildTarget falls back to projectDir/.cache.
+        string? explicitCacheDir = manifest.Build.CacheDir is null
+            ? null
+            : Path.GetFullPath(Path.Combine(projectDir, manifest.Build.CacheDir));
 
         // 1.5b split-debug-symbols: effective `strip` resolution priority:
         //   1) CLI `--strip-symbols=...` override
@@ -63,8 +68,9 @@ public static partial class PackageCompiler
             projectDir,
             outDir,
             manifest.Dependencies,
-            useIncremental: useIncremental,
-            stripSymbols:   stripSymbols);
+            explicitCacheDir: explicitCacheDir,
+            useIncremental:   useIncremental,
+            stripSymbols:     stripSymbols);
     }
 
     // ── Workspace mode entry (C4a) ────────────────────────────────────────────
