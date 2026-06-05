@@ -29,7 +29,7 @@ int _testVm(string[] argv) {
     }
     if (rebuild) { int c = _regenCore(false, true); if (c != 0) { return c; } }
     int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
-        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml"));
+        .Arg("--manifest-path").Arg(_runtimeManifest()));
     if (cd != 0) { return cd; }
     int cc = _exec(new Process("cargo").Arg("build").Arg("-q")
         .Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
@@ -54,7 +54,7 @@ int _testCrossZpkg(string[] argv) {
     if (mode.Length == 0) { mode = "interp"; }
     int c = _buildCompiler(); if (c != 0) { return c; }
     int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
-        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml"));
+        .Arg("--manifest-path").Arg(_runtimeManifest()));
     if (cr != 0) { return cr; }
     string root = _root();
     if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
@@ -73,8 +73,8 @@ int _testCrossZpkg(string[] argv) {
 int _testDist(string[] argv) {
     string root = _root();
     int c = _buildCompiler(); if (c != 0) { return c; }
-    c = _exec(new Process("cargo").Arg("build").Arg("--release").Arg("-q")
-        .Arg("--manifest-path").Arg("src/runtime/Cargo.toml")); if (c != 0) { return c; }
+    c = _exec(_cargoRelease().Arg("-q")
+        .Arg("--manifest-path").Arg(_runtimeManifest())); if (c != 0) { return c; }
     if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
         c = _buildStdlib(); if (c != 0) { return c; }
     }
@@ -123,9 +123,9 @@ int _testAll() {
     // build wave (once): stdlib + compiler driver + release runtime + golden zbc
     int c = _regenCore(false, true); if (c != 0) { return c; }
     // extra tooling the test stages need
-    c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/Cargo.toml")); if (c != 0) { return c; }            // debug z42vm
+    c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg(_runtimeManifest())); if (c != 0) { return c; }            // debug z42vm
     c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml")); if (c != 0) { return c; }
-    c = _exec(new Process("cargo").Arg("build").Arg("--release").Arg("-q").Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml")); if (c != 0) { return c; }
+    c = _exec(_cargoRelease().Arg("-q").Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml")); if (c != 0) { return c; }
     c = _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.slnx").Arg("--nologo").Arg("-v").Arg("quiet")); if (c != 0) { return c; }
     // stage 1: compiler (dotnet test)
     Console.WriteLine("\n=== stage: compiler tests ===");
@@ -177,7 +177,7 @@ int _testLib(string[] argv) {
         Console.WriteLine("→ Preparing tooling (stdlib + z42vm + z42-test-runner; release)...");
         int c = _buildStdlib(); if (c != 0) { return c; }
         c = _buildRuntime(); if (c != 0) { return c; }
-        c = _exec(new Process("cargo").Arg("build").Arg("--release")
+        c = _exec(_cargoRelease()
             .Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
         if (c != 0) { return c; }
         c = _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
@@ -223,7 +223,7 @@ int _testLib(string[] argv) {
             string testFile = Path.Join(testsDir, f);
             string zbc = Path.Join(work, lib + "_" + f + ".zbc");
             int cc = _exec(new Process("dotnet")
-                .Arg("run").Arg("--no-build").Arg("--project").Arg("src/compiler/z42.Driver").Arg("-c").Arg("Release")
+                .Arg("run").Arg("--no-build").Arg("--project").Arg(_driverProj()).Arg("-c").Arg("Release")
                 .Arg("--").Arg(testFile).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc));
             if (cc != 0) {
                 Console.WriteLine("✗ COMPILE ERROR: " + f);

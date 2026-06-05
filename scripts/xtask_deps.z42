@@ -25,7 +25,7 @@ int _checkVersionsDrift() {
 
     // ── project ──────────────────────────────────────────────────────────
     Console.WriteLine("── project ──────────────────────────────────────────────────────────────");
-    string cargoText = File.ReadAllText(Path.Join(root, "src/runtime/Cargo.toml"));
+    string cargoText = File.ReadAllText(Path.Join(root, _runtimeManifest()));
     string wantVer = _scalarStr(toml.Get("project").Get("version"));
     string gotVer  = _extractCargoWorkspaceVersion(cargoText);
     failCount = failCount + _check("src/runtime/Cargo.toml [workspace.package].version", wantVer, gotVer);

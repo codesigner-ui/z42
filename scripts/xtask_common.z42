@@ -1,0 +1,129 @@
+// xtask — shared common code (unify-scripts-into-xtask, 2026-06-05). One home for
+// the infrastructure every xtask module reuses: repo-root + process-exec helpers,
+// the long artifact paths, the relative source paths, and the bin-invocation
+// builders (cargo / dotnet-driver). Same Z42Xtask namespace, so callers reference
+// these by bare name across files.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+// ── repo root + process exec ─────────────────────────────────────────────────
+
+// Repo root via git (spawned directly — no bash), falling back to CWD.
+string _root() {
+    ProcessResult r = new Process("git").Arg("rev-parse").Arg("--show-toplevel").Run();
+    if (r.ExitCode == 0) { return r.Stdout.Trim(); }
+    return Environment.GetCurrentDirectory();
+}
+
+// Run a prepared Process at the repo root, inheriting stdio; return its exit code.
+int _exec(Process p) {
+    return p.WorkingDirectory(_root())
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run().ExitCode;
+}
+
+// Like _exec but runs in an explicit working directory instead of _root().
+// Needed by the stdlib primer, which must invoke `z42c build --workspace` from
+// src/libraries (where the workspace toml lives) with --project relative to it.
+// (Passing a WorkingDirectory to _exec is silently overridden to _root().)
+int _execIn(Process p, string wd) {
+    return p.WorkingDirectory(wd)
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run().ExitCode;
+}
+
+// Run a shell command at the repo root (git toplevel), inheriting stdio.
+// Legacy path — delegates to bash. Native handlers use _exec instead.
+int _sh(string cmd) {
+    string full = "cd \"$(git rev-parse --show-toplevel)\" && " + cmd;
+    ProcessResult r = new Process("bash")
+        .Arg("-c").Arg(full)
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run();
+    return r.ExitCode;
+}
+
+// Make xtask's z42vm visible to the child C# Driver (`dotnet -- run/build`),
+// whose FindVm() locates z42vm via (1) Z42VM env, (2) artifacts/build/runtime/...,
+// (3) PATH. The launcher exports Z42_PORTABLE_VM (the vm we run on) but NOT
+// Z42VM, and in download/portable mode there is no z42vm at the default build
+// path before the first build-stdlib — so FindVm fails. Export our own vm as
+// Z42VM (std::env::set_var → inherited by spawned Commands) so every delegated
+// compile/run resolves it. No-op in dev where _z42vm() is a bare name (PATH).
+void _ensureDriverVm() {
+    string cur = Environment.GetEnvironmentVariable("Z42VM") ?? "";
+    if (cur.Length > 0) { return; }
+    string vm = _z42vm();
+    if (File.Exists(vm)) { Environment.SetEnvironmentVariable("Z42VM", vm); }
+}
+
+// Resolve the z42vm this process is running on, to execute compiled zpkgs.
+// The launcher exports Z42_PORTABLE_VM (portable) / sets Z42_HOME (installed/dev).
+string _z42vm() {
+    string pv = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (pv.Length > 0) { return pv; }
+    string vmname = Platform.IsWindows() ? "z42vm.exe" : "z42vm";
+    string home = Environment.GetEnvironmentVariable("Z42_HOME") ?? "";
+    if (home.Length > 0) { return Path.Join(home, Path.Join("launcher", vmname)); }
+    return vmname;
+}
+
+// ── argv helpers ─────────────────────────────────────────────────────────────
+
+string _at(string[] a, int i) {
+    if (i < a.Length) { return a[i]; }
+    return "";
+}
+
+string _join(string[] a, int from) {
+    string s = "";
+    int i = from;
+    while (i < a.Length) {
+        if (s.Length > 0) { s = s + " "; }
+        s = s + a[i];
+        i = i + 1;
+    }
+    return s;
+}
+
+// ── artifact paths (absolute, repo-root-relative) ────────────────────────────
+
+// stdlib flat dist (= the Z42_LIBS value the compiler + VM load stdlib from):
+//   artifacts/build/libraries/dist/release
+string _libsDir(string root) {
+    return Path.Join(root, "artifacts/build/libraries/dist/release");
+}
+
+// the built C# compiler driver DLL:
+//   artifacts/build/compiler/z42.Driver/bin/z42c.dll
+string _driverDll(string root) {
+    return Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
+}
+
+// SDK packages output root:  artifacts/packages
+string _packagesDir(string root) {
+    return Path.Join(root, "artifacts/packages");
+}
+
+// ── source paths (relative — passed to --project / --manifest-path from cwd=root) ──
+
+// the C# compiler driver project (dotnet run --project): src/compiler/z42.Driver
+string _driverProj() { return "src/compiler/z42.Driver"; }
+
+// the Rust VM/runtime cargo manifest (--manifest-path): src/runtime/Cargo.toml
+string _runtimeManifest() { return "src/runtime/Cargo.toml"; }
+
+// ── bin-invocation builders (return a Process; callers add args + _exec) ─────
+
+// `cargo build --release` — the common Rust build prefix. Callers append
+// `.Arg("-q")` / `.Arg("--manifest-path").Arg(m)` / `--features` / `-p` /
+// `--target` etc. then `_exec` it. (cargo ignores flag order, so the few
+// `-q`-before-manifest sites are unaffected.)
+Process _cargoRelease() {
+    return new Process("cargo").Arg("build").Arg("--release");
+}

@@ -8,7 +8,7 @@ kind    = "exe"
 pack    = true
 
 [sources]
-include = ["xtask.z42", "xtask_paths.z42", "xtask_stdlib.z42", "xtask_versions.z42", "xtask_test.z42", "xtask_test_vm.z42", "xtask_test_cross.z42", "xtask_test_dist.z42", "xtask_test_changed.z42", "xtask_package.z42", "xtask_bench.z42", "xtask_install.z42", "xtask_install_android.z42", "xtask_package_ios.z42", "xtask_package_android.z42", "xtask_package_wasm.z42", "xtask_audit.z42", "xtask_deps.z42", "xtask_golden.z42", "xtask_regen.z42"]
+include = ["xtask.z42", "xtask_common.z42", "xtask_stdlib.z42", "xtask_versions.z42", "xtask_test.z42", "xtask_test_vm.z42", "xtask_test_cross.z42", "xtask_test_dist.z42", "xtask_test_changed.z42", "xtask_package.z42", "xtask_bench.z42", "xtask_install.z42", "xtask_install_android.z42", "xtask_package_ios.z42", "xtask_package_android.z42", "xtask_package_wasm.z42", "xtask_audit.z42", "xtask_deps.z42", "xtask_golden.z42", "xtask_regen.z42"]
 
 [dependencies]
 "z42.core"  = "0.1.0"   # String / Console

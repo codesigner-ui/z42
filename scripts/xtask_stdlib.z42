@@ -43,7 +43,7 @@ int _buildStdlibCore(bool useDist) {
         compilerLeadArgs = new string[7];
         compilerLeadArgs[0] = "run";
         compilerLeadArgs[1] = "--project";
-        compilerLeadArgs[2] = Path.Join(root, "src/compiler/z42.Driver");
+        compilerLeadArgs[2] = Path.Join(root, _driverProj());
         compilerLeadArgs[3] = "-c";
         compilerLeadArgs[4] = "Release";
         compilerLeadArgs[5] = "--no-build";
