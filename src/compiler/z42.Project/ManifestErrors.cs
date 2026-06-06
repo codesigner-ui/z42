@@ -43,6 +43,9 @@ public static class Z42Errors
     public const string WS008 = "WS008";  // UnknownManifestKey (warning)
     public const string WS009 = "WS009";  // RedundantEntryKey (warning)
 
+    // ── stdlib 自动可用（simplify-stdlib-auto-import, 2026-06-06）─
+    public const string WS013 = "WS013";  // RedundantStdlibDep (warning)
+
     // ── tests/bench manifest config（add-tests-bench-manifest-config, 2026-06-06）─
     public const string WS012 = "WS012";  // TestDepInProductionDeps (warning)
     public const string WS040 = "WS040";  // TestEntryMissingName (error)
@@ -212,6 +215,13 @@ public static class Z42Errors
             $"  help: remove this line — z42c finds Main() automatically when unambiguous");
 
     // ── tests/bench manifest config factory methods ──────────────────────────
+
+    public static ManifestException RedundantStdlibDep(
+        string manifestPath, string depName, string section) =>
+        new($"warning[{WS013}]: stdlib dependency '{depName}' is redundant in [{section}]\n" +
+            $"  --> {manifestPath}\n" +
+            $"  note: standard-library packages (z42.* / Std.*) are bundled with the toolchain and always available — the compiler resolves them from each zpkg's NSPC regardless of declaration (like Rust's `std`, never in Cargo.toml)\n" +
+            $"  help: remove '{depName}' — only third-party packages belong in [{section}]");
 
     public static ManifestException TestDepInProductionDeps(
         string manifestPath, string depName, string suggestedSection) =>

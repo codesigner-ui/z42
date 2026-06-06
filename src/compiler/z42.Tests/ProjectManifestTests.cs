@@ -541,12 +541,14 @@ public sealed class ProjectManifestTests : IDisposable
     public void LoadWithWarnings_DependenciesSection_NoFalsePositives()
     {
         // [dependencies] keys are package names — any string is valid.
+        // (Third-party names only: stdlib `z42.*` deps would trigger WS013
+        // under simplify-stdlib-auto-import; covered by dedicated WS013 tests.)
         var r = LoadWithWarnings("deps.z42.toml", """
             [project]
             kind = "lib"
             [dependencies]
-            "z42.core" = "0.1.0"
-            "my-utils" = "*"
+            "my-utils"     = "*"
+            "acme.widgets" = "1.0"
             """);
         r.Warnings.Should().BeEmpty();
     }

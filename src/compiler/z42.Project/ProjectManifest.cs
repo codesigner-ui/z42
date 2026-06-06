@@ -96,6 +96,7 @@ public sealed class ProjectManifest
         // not a thing user-authored manifests would collide with.
         if (!IsSyntheticHarnessProject(project.Name))
             ScanDepsForTestOnlyLeaks(deps, tomlPath, warnings);
+        ScanForRedundantStdlibDeps(project.Name, deps, tests, bench, tomlPath, warnings);
         ScanTopLevelKeys(model, tomlPath, warnings);
 
         var manifest = new ProjectManifest
@@ -604,6 +605,32 @@ public sealed class ProjectManifest
                 ? "bench" : "tests";
             warnings.Add(Z42Errors.TestDepInProductionDeps(tomlPath, dep.Name, section));
         }
+    }
+
+    /// Emit WS013 for redundant standard-library deps. stdlib (z42.* /
+    /// Std.*) is toolchain-bundled and always available (resolved from each
+    /// zpkg's NSPC regardless of declaration, like Rust's `std`), so a
+    /// non-stdlib project never needs to declare it. z42.*-named packages
+    /// are exempt — the stdlib's own inter-package deps are genuine
+    /// build-order edges, and synthetic `<lib>.test.<unit>` harnesses (also
+    /// z42.*-prefixed) legitimately list z42.test.
+    /// simplify-stdlib-auto-import (2026-06-06). Migration warning, never throws.
+    static void ScanForRedundantStdlibDeps(
+        string projectName, DependencySection deps,
+        TestBenchConfig tests, TestBenchConfig bench,
+        string tomlPath, List<ManifestException> warnings)
+    {
+        if (projectName.StartsWith("z42.", StringComparison.Ordinal)) return;
+
+        void Scan(IEnumerable<string> names, string section)
+        {
+            foreach (var name in names)
+                if (name.StartsWith("z42.", StringComparison.Ordinal))
+                    warnings.Add(Z42Errors.RedundantStdlibDep(tomlPath, name, section));
+        }
+        if (deps.IsDeclared) Scan(deps.Entries.Select(e => e.Name), "dependencies");
+        Scan(tests.Dependencies.Select(d => d.Name), "tests.dependencies");
+        Scan(bench.Dependencies.Select(d => d.Name), "bench.dependencies");
     }
 }
 

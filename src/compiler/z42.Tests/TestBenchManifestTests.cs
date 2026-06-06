@@ -357,6 +357,8 @@ public sealed class TestBenchManifestTests : IDisposable
     [Fact]
     public void WS012_NormalDeps_NoWarning()
     {
+        // z42.core / z42.text aren't test-only → no WS012. (They ARE stdlib,
+        // so simplify-stdlib-auto-import's WS013 fires — verified below.)
         var r = LoadWithWarnings("a.z42.toml", """
             [project]
             kind = "lib"
@@ -364,7 +366,69 @@ public sealed class TestBenchManifestTests : IDisposable
             "z42.core" = "0.1.0"
             "z42.text" = "0.1.0"
             """);
-        r.Warnings.Should().BeEmpty();
+        r.Warnings.Where(w => w.Message.Contains("WS012")).Should().BeEmpty();
+        r.Warnings.Should().Contain(w => w.Message.Contains("WS013"));
+    }
+
+    // ── WS013 (redundant stdlib dependency) ──────────────────────────────
+
+    [Fact]
+    public void WS013_UserProjectDeclaresStdlib_Warns()
+    {
+        var r = LoadWithWarnings("demo.z42.toml", """
+            [project]
+            name = "demo"
+            kind = "exe"
+            [dependencies]
+            "z42.io" = "0.1.0"
+            """);
+        r.Warnings.Should().Contain(w =>
+            w.Message.Contains("WS013") &&
+            w.Message.Contains("z42.io") &&
+            w.Message.Contains("dependencies"));
+    }
+
+    [Fact]
+    public void WS013_UserProjectStdlibInTestsDeps_Warns()
+    {
+        var r = LoadWithWarnings("demo.z42.toml", """
+            [project]
+            name = "demo"
+            kind = "exe"
+            [tests.dependencies]
+            "z42.test" = "0.1.0"
+            """);
+        r.Warnings.Should().Contain(w =>
+            w.Message.Contains("WS013") &&
+            w.Message.Contains("tests.dependencies"));
+    }
+
+    [Fact]
+    public void WS013_StdlibPackageInterDep_Exempt()
+    {
+        // A z42.* package's inter-package dep is a genuine build-order edge,
+        // not a redundant stdlib declaration → no WS013.
+        var r = LoadWithWarnings("z42.io.z42.toml", """
+            [project]
+            name = "z42.io"
+            kind = "lib"
+            [dependencies]
+            "z42.time" = "0.1.0"
+            """);
+        r.Warnings.Where(w => w.Message.Contains("WS013")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void WS013_ThirdPartyDep_NoWarning()
+    {
+        var r = LoadWithWarnings("demo.z42.toml", """
+            [project]
+            name = "demo"
+            kind = "exe"
+            [dependencies]
+            "acme.widgets" = "1.0"
+            """);
+        r.Warnings.Where(w => w.Message.Contains("WS013")).Should().BeEmpty();
     }
 
     // ── WS012 suppression for synthetic harness projects ────────────────

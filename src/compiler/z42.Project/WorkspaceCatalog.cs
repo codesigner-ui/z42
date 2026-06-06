@@ -102,6 +102,21 @@ public static class WorkspaceCatalog
             "// \"z42.test\" = \"0.1.0\"   # → WS012: move to [tests.dependencies]\n" +
             "// (silenced when [project].name contains '.test.' / '.bench.')"),
 
+        [Z42Errors.WS013] = new(
+            "Redundant standard-library dependency declared (warning)",
+            "A `z42.*` (standard-library) package is declared under " +
+            "`[dependencies]` / `[tests.dependencies]` / `[bench.dependencies]`. " +
+            "The stdlib is bundled with the toolchain and always available — the " +
+            "compiler resolves `Std.*` / `z42.*` symbols from each zpkg's NSPC " +
+            "regardless of declaration (like Rust's `std`, which is never listed " +
+            "in Cargo.toml). Declaring it is redundant.\n\nExempt: `z42.*`-named " +
+            "packages — the stdlib's own inter-package deps are genuine build-order " +
+            "edges, and synthetic `<lib>.test.<unit>` harnesses (also `z42.*`-" +
+            "prefixed) legitimately list z42.test. " +
+            "simplify-stdlib-auto-import (2026-06-06).",
+            "// [dependencies]\n" +
+            "// \"z42.io\" = \"0.1.0\"   # → WS013: remove — stdlib is auto-available"),
+
         [Z42Errors.WS040] = new(
             "[[test]] / [[bench]] entry missing required field 'name'",
             "Every `[[test]]` or `[[bench]]` block must declare a unique " +
