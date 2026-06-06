@@ -42,32 +42,11 @@
 
 ## Phase 4 — 22 stdlib z42.toml 迁移
 
-- [ ] 4.1 编写迁移脚本（一次性 helper，**不**入仓库）：自动把 z42.test 从 `[dependencies]` 挪到 `[tests.dependencies]`
-- [ ] 4.2 逐包 commit（22 包）：
-    - [ ] z42.cli
-    - [ ] z42.collections
-    - [ ] z42.compression
-    - [ ] z42.core
-    - [ ] z42.crypto
-    - [ ] z42.diagnostics
-    - [ ] z42.encoding
-    - [ ] z42.io
-    - [ ] z42.io.binary
-    - [ ] z42.json
-    - [ ] z42.math
-    - [ ] z42.net
-    - [ ] z42.numerics
-    - [ ] z42.random
-    - [ ] z42.regex
-    - [ ] z42.test（自身不需迁移；其他包依赖它）
-    - [ ] z42.text
-    - [ ] z42.threading
-    - [ ] z42.time
-    - [ ] z42.toml
-    - [ ] z42.uri
-    - [ ] z42.yaml
-- [ ] 4.3 每包迁移后跑 `xtask test stdlib <name>` 单包验证
-- [ ] 4.4 全量验证：`xtask test stdlib`（22 包）零 WS012 触发 + 全绿
+> 状态：✅ 已落地 by [`6aac4c5d stdlib: migrate 21 packages to [tests.dependencies] = z42.test`](https://github.com/codesigner-ui/z42/commit/6aac4c5d) (2026-06-06)。21 个使用 z42.test 的 stdlib 包统一在一个 commit 里完成迁移（z42.test 自身不需迁移）；spec 原"逐包 commit"细分降级为单 commit 批量执行，因为 21 处都是同形 diff + 必须一起绿才算成功，分 commit 反而不可拆。
+
+- [x] 4.1 一次性 sed/awk migration（commit 内不入仓库，commit 即落地）
+- [x] 4.2 21 包合并到 commit `6aac4c5d`（z42.test 自身不迁）
+- [x] 4.3 / 4.4 全量验证：commit 落地时 `xtask test stdlib` 全绿；本 spec Phase 3 落地后再次跑 `xtask test stdlib z42.core --no-build` 通过 6/6（验证新 xtask + 已迁移 toml 仍 GREEN）
 
 ## Phase 5 — 多文件测试 demo
 
