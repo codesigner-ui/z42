@@ -520,6 +520,120 @@ strip    = true
 
 ---
 
+## L5b — 测试与 Bench 配置（add-tests-bench-manifest-config, 2026-06-06）
+
+声明测试和 benchmark 编译单元的位置、共享依赖、产物布局。设计原则与 Cargo 同代际但更精简：约定优先 + 显式覆盖 + dev-deps 隔离。
+
+### 约定（自动发现）
+
+```
+<package>/
+├── z42.toml
+├── src/                              ← 产品代码
+├── tests/
+│   ├── foo_basic.z42                 ← 单文件测试（独立编译单元）
+│   ├── bar_errors.z42                ← 同上
+│   └── integration_roundtrip/        ← 多文件测试（dir-mode）
+│       ├── source.z42                ← 入口（约定名，不可改）；含 Main()
+│       ├── _helpers.z42              ← 同 dir 内任意 *.z42 递归 include
+│       └── data/                     ← 非 .z42 数据文件；运行时相对路径读取
+├── bench/                            ← 与 tests/ 同构
+│   ├── lexer_throughput.z42
+│   └── e2e_pipeline/
+│       └── source.z42
+└── examples/                          ← 约定预留（future iteration）
+```
+
+**约定规则**：
+
+1. `tests/*.z42` 顶层文件 → 各自独立测试程序
+2. `tests/<name>/source.z42` 入口 + 同目录递归 `*.z42` → 合成一个多文件测试程序
+3. `bench/*.z42` 与 `bench/<name>/source.z42` → 同 1/2 规则
+4. 子目录内非 `.z42` 文件（fixture / data）随测试产物打包，运行时 cwd 切到 `<test_dir>`，相对路径读取
+5. `_` 前缀的 `.z42` 文件是 dir-mode 内的辅助；不是 test/bench 入口
+
+### `[tests]` / `[bench]` 段
+
+共享配置 + dev-deps 隔离。Cargo 的 `[dev-dependencies]` 等价物。
+
+```toml
+[tests]
+# 字段全可省 → 走约定：tests/*.z42 + tests/*/source.z42
+# include = ["tests/*.z42", "tests/*/source.z42"]
+# exclude = ["tests/_skip/*"]
+
+[tests.dependencies]
+"z42.test" = "0.1.0"   # 仅测试合入；release zpkg 元数据不含
+
+[bench]
+[bench.dependencies]
+"z42.test" = "0.1.0"   # Bencher 在 z42.test 包内
+```
+
+### `[[test]]` / `[[bench]]` 数组（显式覆盖）
+
+当一个测试 / bench 路径不规则或独享 dep 时：
+
+```toml
+[[test]]
+name = "compile_perf_e2e"        # 必填；filter 用 + 合成包名
+src  = "tests/perf/runner.z42"    # 必填；入口
+sources = ["tests/perf/*.z42", "tests/perf/_lib/*.z42"]   # 可选；显式 include 集
+[test.dependencies]               # 该 test 独享 dev-dep（Cargo `[[test]]` 没有的能力）
+"z42.compression" = "0.1.0"
+```
+
+### 三层依赖合并
+
+测试编译时合并三层依赖：
+
+```
+final_deps = parent.[dependencies]
+          ∪ parent.[tests.dependencies]    (测试时；bench 时合 [bench.dependencies])
+          ∪ this_[[test]].dependencies     (若有匹配 [[test]] 块)
+```
+
+冲突解决优先级：`[[test]]` > `[tests]` > `[dependencies]`（精确覆盖广泛）。
+
+**Release 产物**：`xtask build`（非 test 路径）忽略所有 `[tests]` / `[bench]` / `[[test]]` / `[[bench]]` 字段；release zpkg 元数据只含 `[dependencies]`。
+
+### 编译产物布局
+
+测试 / bench 产物在每个 package 的 `output_dir` 下并列两个独立子树，与 L3 [build] 的 `output_dir` / `cache_dir` / `dist_dir` 三字段模型对齐（见 [restructure-build-output-dirs](../../spec/archive/2026-06-06-restructure-build-output-dirs/)）：
+
+```
+artifacts/build/libraries/<lib>/<profile>/
+├── cache/                          ← 生产中间产物
+├── dist/<lib>.zpkg                 ← 生产分发产物（只放生产 zpkg）
+├── tests/                          ← 测试子树
+│   ├── cache/<test_name>/          ← 每测试独立 cache
+│   └── dist/                       ← 测试可执行
+│       ├── <lib>.test.<name>.zpkg              ← 单文件
+│       └── <lib>.test.<dir_name>.zpkg          ← dir-mode
+└── bench/                          ← bench 子树（与 tests 同构）
+    ├── cache/<bench_name>/
+    └── dist/
+        └── <lib>.bench.<name>.zpkg
+```
+
+**zpkg 命名硬约束**：`.test.` / `.bench.` infix 是文件名硬规则（也是 CI 守门正则的 anchor）。`tests_dir` / `bench_dir` 字段**不暴露** — 强制 `<output_dir>/tests/` 和 `<output_dir>/bench/`；改路径走 `output_dir`，两子树一并变。
+
+### 错误码
+
+| 码 | 严重度 | 触发 |
+|---|:---:|------|
+| WS012 | warning | test-only dep 出现在 `[dependencies]`（leak 提示） |
+| WS040 | error | `[[test]]` / `[[bench]]` 缺 `name` |
+| WS041 | error | `[[test]]` / `[[bench]]` 缺 `src` |
+| WS042 | error | 同一 kind（test 或 bench）内 name 重复 |
+| WS043 | error | `[[test]].src` / `[[bench]].src` 路径不存在 |
+
+`KnownTestOnlyDeps` 当前为 `{ "z42.test" }`，curated set，不靠启发式。Test / bench 命名 namespace 独立 — `[[test]] name = "x"` 与 `[[bench]] name = "x"` 可共存。
+
+详见 [add-tests-bench-manifest-config spec](../../spec/changes/add-tests-bench-manifest-config/proposal.md)。
+
+---
+
 ## L6 — 工作区（Workspace）
 
 管理多工程 monorepo，统一构建、版本与共享元数据。
