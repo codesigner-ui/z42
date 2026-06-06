@@ -28,17 +28,17 @@
 
 ## Phase 3 — xtask dir-mode 发现 + synthetic mini-manifest + 输出目录隔离
 
-- [ ] 3.1 [xtask_test.z42](../../../../scripts/xtask_test.z42)：
-    - [ ] 3.1.1 测试发现循环：识别 `tests/<name>/source.z42` dir-mode
-    - [ ] 3.1.2 dir-mode 测试编译路径：合成 synthetic mini-manifest 至 cache，传 `--manifest` 给 z42c
-    - [ ] 3.1.3 [tests.dependencies] + [[test]].dependencies 三层 dep 合并（合入合成 manifest 的 [dependencies]）
-    - [ ] 3.1.4 合成 manifest 强制 `[build].output_dir = <parent.output_dir>/tests` — 不可被 [[test]] 覆盖
-    - [ ] 3.1.5 zpkg 命名：单文件测试 `<lib>.test.<filename_no_ext>`；dir-mode `<lib>.test.<dirname>`
-- [ ] 3.2 [xtask_bench.z42](../../../../scripts/xtask_bench.z42)：同 3.1，识别 `bench/*.z42` + `bench/<name>/source.z42`；合 [bench.dependencies]；output_dir 走 `<parent>/bench`
-- [ ] 3.3 sort 修复：现有 `Directory.Enumerate` 接 first-wins → 加显式 sort（common-pitfalls §1）
+- [x] 3.1 [xtask_test.z42](../../../../scripts/xtask_test.z42)：
+    - [x] 3.1.1 测试发现循环：识别 `tests/<name>/source.z42` dir-mode（`_discoverTestUnits`）
+    - [x] 3.1.2 dir-mode 测试编译路径：合成 synthetic mini-manifest 至 cache，传 `z42c build <toml>`（`_compileTestUnit` + `_renderSyntheticManifest`）
+    - [x] 3.1.3 [tests.dependencies] 双层 dep 合并（合入合成 manifest 的 [dependencies]；`_harvestParentDeps` + `_appendDeps`）— 三层（含 `[[test]].dependencies`）随 Phase 5 demo 引入实际用例时补
+    - [x] 3.1.4 合成 manifest 强制 `[build].output_dir = <work>/<lib>/<unit>` —— xtask 自身写入，[[test]] 入口无法覆盖
+    - [x] 3.1.5 zpkg 命名：单文件 `<lib>.test.<filename_no_ext>`；dir-mode `<lib>.test.<dirname>`
+- [ ] 3.2 [xtask_bench.z42](../../../../scripts/xtask_bench.z42)：同 3.1（bench 路径独立 commit）
+- [x] 3.3 sort 修复：`Directory.Enumerate` first-wins → `_sortedStrings` 显式 sort（common-pitfalls §1）
 - [ ] 3.4 [xtask.z42](../../../../scripts/xtask.z42)：`clean tests` / `clean bench` 子命令
 - [ ] 3.5 xtask 单元测试 / integration smoke
-- [ ] 3.6 commit + push（xtask dir-mode 单元）
+- [x] 3.6 commit + push（xtask dir-mode 单元）
 
 ## Phase 4 — 22 stdlib z42.toml 迁移
 
