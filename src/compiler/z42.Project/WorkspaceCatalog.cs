@@ -91,9 +91,16 @@ public static class WorkspaceCatalog
             "tests or benches. Move the entry to `[tests.dependencies]` (test) " +
             "or `[bench.dependencies]` (bench) — those are dev-deps, merged in " +
             "only for test/bench builds and stripped from production artefacts. " +
+            "\n\nSuppressed for projects whose `[project].name` contains `.test.` " +
+            "or `.bench.` infix — xtask's dir-mode path generates synthetic " +
+            "harness manifests (e.g. `z42.json.test.parse_basic`) that " +
+            "legitimately depend on z42.test (the harness IS the framework). " +
+            "User-authored packages should avoid the `.test.` / `.bench.` infix " +
+            "in their name to keep the leak warning active. " +
             "add-tests-bench-manifest-config (2026-06-06).",
             "// [dependencies]\n" +
-            "// \"z42.test\" = \"0.1.0\"   # → WS012: move to [tests.dependencies]"),
+            "// \"z42.test\" = \"0.1.0\"   # → WS012: move to [tests.dependencies]\n" +
+            "// (silenced when [project].name contains '.test.' / '.bench.')"),
 
         [Z42Errors.WS040] = new(
             "[[test]] / [[bench]] entry missing required field 'name'",

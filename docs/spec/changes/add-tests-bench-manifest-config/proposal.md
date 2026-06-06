@@ -164,6 +164,14 @@ src/libraries/z42.yaml/
 
 WS012 是 warning（pre-1.0 一次切干净；migration 期内提示但不阻塞）。WS040-043 是 hard error。
 
+#### WS012 例外：synthetic harness 项目
+
+`[project].name` 中含 `.test.` 或 `.bench.` infix 时，WS012 抑制 — xtask 的 dir-mode 路径会生成 `<lib>.test.<unit>` / `<lib>.bench.<unit>` 形态的 synthetic mini-manifest，这些 manifest **合法**在 `[dependencies]` 写 z42.test（harness 项目本质是测试程序、不是 release artifact，不存在 "leak" 概念）。
+
+实现：[ProjectManifest.IsSyntheticHarnessProject](../../../../src/compiler/z42.Project/ProjectManifest.cs)，substring contains 检查。
+
+**约束**：用户自定义 zpkg 应避免在包名中使用 `.test.` / `.bench.` infix；命中 = 该包失去 WS012 leak 提示（pre-1.0 阶段可接受 false negative；正式用户文档需说明）。
+
 ---
 
 ### 5. 编译模型

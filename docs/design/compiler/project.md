@@ -622,13 +622,15 @@ artifacts/build/libraries/<lib>/<profile>/
 
 | 码 | 严重度 | 触发 |
 |---|:---:|------|
-| WS012 | warning | test-only dep 出现在 `[dependencies]`（leak 提示） |
+| WS012 | warning | test-only dep 出现在 `[dependencies]`（leak 提示）|
 | WS040 | error | `[[test]]` / `[[bench]]` 缺 `name` |
 | WS041 | error | `[[test]]` / `[[bench]]` 缺 `src` |
 | WS042 | error | 同一 kind（test 或 bench）内 name 重复 |
 | WS043 | error | `[[test]].src` / `[[bench]].src` 路径不存在 |
 
 `KnownTestOnlyDeps` 当前为 `{ "z42.test" }`，curated set，不靠启发式。Test / bench 命名 namespace 独立 — `[[test]] name = "x"` 与 `[[bench]] name = "x"` 可共存。
+
+**WS012 例外**：`[project].name` 含 `.test.` 或 `.bench.` infix 时抑制。xtask dir-mode 生成的 synthetic mini-manifest（`<lib>.test.<unit>` / `<lib>.bench.<unit>`）合法在 `[dependencies]` 写 z42.test —— harness 项目本质是测试程序，不存在 leak。用户 zpkg 命名应避免该 infix。
 
 详见 [add-tests-bench-manifest-config spec](../../spec/changes/add-tests-bench-manifest-config/proposal.md)。
 

@@ -367,6 +367,57 @@ public sealed class TestBenchManifestTests : IDisposable
         r.Warnings.Should().BeEmpty();
     }
 
+    // ── WS012 suppression for synthetic harness projects ────────────────
+    //
+    // xtask's dir-mode path generates `<lib>.test.<unit>` / `<lib>.bench.
+    // <unit>` mini-manifests that legitimately depend on z42.test (the
+    // harness IS the test framework). The IsSyntheticHarnessProject check
+    // skips WS012 for names containing ".test." or ".bench." infix —
+    // matches the same naming convention enforced by xtask + the CI
+    // release-guard regex.
+
+    [Fact]
+    public void WS012_SuppressedForSyntheticTestHarness()
+    {
+        // [project].name explicitly matches xtask's synthetic naming.
+        var r = LoadWithWarnings("z42.json.test.parse_basic.z42.toml", """
+            [project]
+            name = "z42.json.test.parse_basic"
+            kind = "exe"
+            [dependencies]
+            "z42.test" = "0.1.0"
+            """);
+        r.Warnings.Where(w => w.Message.Contains("WS012")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void WS012_SuppressedForSyntheticBenchHarness()
+    {
+        var r = LoadWithWarnings("z42.numerics.bench.bigint_pow.z42.toml", """
+            [project]
+            name = "z42.numerics.bench.bigint_pow"
+            kind = "exe"
+            [dependencies]
+            "z42.test" = "0.1.0"
+            """);
+        r.Warnings.Where(w => w.Message.Contains("WS012")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void WS012_FiresForNamesWithoutInfix()
+    {
+        // 'testing' has no ".test." infix (no dot after 'test') — must
+        // still warn. Sentinel against a too-loose substring impl.
+        var r = LoadWithWarnings("a.z42.toml", """
+            [project]
+            name = "myorg.testing"
+            kind = "lib"
+            [dependencies]
+            "z42.test" = "0.1.0"
+            """);
+        r.Warnings.Should().Contain(w => w.Message.Contains("WS012"));
+    }
+
     // ── KnownTopLevelKeys covers tests/bench/test/benchmark ─────────────
 
     [Fact]
