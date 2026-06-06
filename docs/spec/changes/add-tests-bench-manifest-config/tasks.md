@@ -72,25 +72,26 @@
 
 ## Phase 6 — CI 守门 + 文档同步
 
-- [ ] 6.1 [.github/workflows/](../../../../.github/workflows/) 新增 release-guard step（或并入现有 build-and-test）：
-    - [ ] 6.1.1 `find dist/ -name '*.test.*.zpkg' -o -name '*.bench.*.zpkg'` 零命中
-    - [ ] 6.1.2 `find tests/dist/` 反向：不许出现无 `.test.` infix 的 zpkg
-- [ ] 6.2 [docs/design/compiler/project.md](../../../design/compiler/project.md) 同步新 schema：
-    - [ ] 6.2.1 `[tests]` / `[bench]` 段语义
-    - [ ] 6.2.2 `[[test]]` / `[[bench]]` 数组
-    - [ ] 6.2.3 三层 dep 合并模型
-    - [ ] 6.2.4 输出目录布局（与 §restructure-build-output-dirs 的 output_dir/cache_dir/dist_dir 衔接）
-- [ ] 6.3 [docs/design/runtime/zpkg.md](../../../design/runtime/zpkg.md)（若存在）：说明 release 产物剥离 [tests] / [bench] 字段
-- [ ] 6.4 `.claude/rules/` 是否需补 "test-only deps 必须用 [tests.dependencies]" 规则？（待评估）
-- [ ] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/
+- [x] 6.1 [.github/workflows/ci.yml](../../../../.github/workflows/ci.yml) 新增 release-guard step（build-and-test job 内，ubuntu-latest only）：
+    - [x] 6.1.1 forward：production `dist/` 不许含 `.test.` / `.bench.` zpkg（排除 `*/tests/dist/*` 和 `*/bench/dist/*` 子树）—— commit `55e318fc` 起步 + `<本commit>` 完善排除规则
+    - [x] 6.1.2 reverse：`tests/dist/` 只许含 `.test.` zpkg；`bench/dist/` 只许含 `.bench.` zpkg（commit `<本commit>`，防未来 refactor 把生产 zpkg 写进 harness 子树）
+- [x] 6.2 [docs/design/compiler/project.md](../../../design/compiler/project.md) 同步新 schema（commit `823ef37f` L5b 章节 + `abd94e25` synthetic 抑制条款）：
+    - [x] 6.2.1 `[tests]` / `[bench]` 段语义
+    - [x] 6.2.2 `[[test]]` / `[[bench]]` 数组
+    - [x] 6.2.3 三层 dep 合并模型
+    - [x] 6.2.4 输出目录布局（与 §restructure-build-output-dirs 的 output_dir/cache_dir/dist_dir 衔接）
+    - [x] 6.2.5 WS012 synthetic harness 例外
+- [x] 6.3 [docs/design/runtime/zpkg.md L104](../../../design/runtime/zpkg.md) 已说明 release zpkg DEPS 段不含 [tests.dependencies] / [bench.dependencies] / [[test]].dependencies；CI release-guard 作最后防线（与本 spec 同期归档）
+- [x] 6.4 评估结论：**不**需补 `.claude/rules/` 规则。WS012 已机械化由编译器执行，rule 是给 Claude 看的人工约定；compiler-enforced 规则不必在 .claude 复述（同 WS001-WS043 全家族均无对应 .claude rule）
+- [ ] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/（**阻塞**：Phase 5 BLOCKED + Phase 3.4 未做；解锁后归档）
 
 ## 验收（GREEN）
 
-- [ ] dotnet test src/compiler/z42.Tests/z42.Tests.csproj 全绿
-- [ ] xtask test stdlib 全绿（22 包）
-- [ ] xtask bench stdlib 跑通（per-package micro-bench）
-- [ ] 全 stdlib 扫描 WS012 零触发
-- [ ] 一个 dir-mode 多文件测试 demo 跑通
-- [ ] CI release-guard step 零命中
-- [ ] `xtask clean tests` / `clean bench` 独立可清，不影响生产产物
+- [x] dotnet test src/compiler/z42.Tests/z42.Tests.csproj 全绿（1516/1516，含 TestBenchManifestTests 32 facts + DiagnosticCatalogRoutingTests 7 facts）
+- [x] xtask test stdlib 全绿（22 包，265 test files；commit `6aac4c5d` 落地时验证）
+- [ ] xtask bench stdlib 跑通（per-package micro-bench；Phase 3.2 待做）
+- [x] 全 stdlib 扫描 WS012 零触发（21 包均无 z42.test 在 [dependencies]）
+- [ ] 一个 dir-mode 多文件测试 demo 跑通（Phase 5 BLOCKED 在 aggregate-zpkg-tidx）
+- [x] CI release-guard step（forward + reverse）落地
+- [ ] `xtask clean tests` / `clean bench` 独立可清（Phase 3.4 未做：xtask 无 `clean` 命令；需 design 讨论）
 - [ ] roadmap.md / 0.3.x A 主线相关行同步

@@ -116,17 +116,54 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Forward: production dist/ must not contain test/bench zpkgs.
+          # Excludes the per-lib tests/dist/ and bench/dist/ subdirs by
+          # requiring the `/dist/` path component to NOT be preceded by
+          # `/tests/` or `/bench/`.
           violators=$(
             find artifacts/build/libraries -type f \
               \( -name '*.test.*.zpkg' -o -name '*.bench.*.zpkg' \) \
-              -path '*/dist/*' 2>/dev/null || true
+              -path '*/dist/*' \
+              ! -path '*/tests/dist/*' \
+              ! -path '*/bench/dist/*' \
+              2>/dev/null || true
           )
           if [ -n "$violators" ]; then
             echo "::error::test/bench harness zpkgs leaked into release dist/:"
             echo "$violators"
             exit 1
           fi
-          echo "release guard: 0 .test./.bench. zpkgs in dist/ (OK)"
+          echo "release guard (forward): 0 .test./.bench. zpkgs in production dist/ (OK)"
+
+      # Reverse guard: anything inside <lib>/<profile>/tests/dist/ MUST
+      # carry the `.test.` infix; same for bench/dist/. Belt-and-suspenders
+      # against a future refactor that accidentally writes a production
+      # zpkg into the test/bench output tree. add-tests-bench-manifest-config
+      # Phase 6.1.2 (2026-06-06).
+      - name: Release guard (tests/dist contents are .test. only)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # tests/dist/ must contain only `.test.` zpkgs
+          tests_strangers=$(
+            find artifacts/build/libraries -path '*/tests/dist/*' \
+              -type f -name '*.zpkg' ! -name '*.test.*.zpkg' \
+              2>/dev/null || true
+          )
+          # bench/dist/ must contain only `.bench.` zpkgs
+          bench_strangers=$(
+            find artifacts/build/libraries -path '*/bench/dist/*' \
+              -type f -name '*.zpkg' ! -name '*.bench.*.zpkg' \
+              2>/dev/null || true
+          )
+          if [ -n "$tests_strangers" ] || [ -n "$bench_strangers" ]; then
+            echo "::error::non-harness zpkg appeared in tests/dist/ or bench/dist/:"
+            [ -n "$tests_strangers" ] && echo "$tests_strangers"
+            [ -n "$bench_strangers" ] && echo "$bench_strangers"
+            exit 1
+          fi
+          echo "release guard (reverse): tests/dist + bench/dist contain only harness zpkgs (OK)"
 
       # Test on Unix runners (existing scripts are bash).
       # --parallel: wave-based stage-level concurrency (W1/W2/W3).
