@@ -17,7 +17,7 @@
 //   `readNamespaces` is the wasm export — import it from the resolved
 //   target (`pkg-web` / `pkg-nodejs` / `@z42/wasm`) and pass it in.
 //
-// Spec: docs/spec/changes/drop-index-json-self-describing/
+// Spec: docs/spec/archive/2026-06-06-drop-index-json-self-describing/
 //       docs/spec/archive/2026-05-12-add-wasm-tests/  (wasm side)
 
 /**

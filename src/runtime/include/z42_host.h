@@ -197,7 +197,7 @@ Z42HostStatus z42_host_load_zbc(Z42HostRef host,
  * the package itself (no index file). Returns ERR_BAD_ZBC if `bytes`
  * isn't a parseable zpkg.
  *
- * Spec: docs/spec/changes/drop-index-json-self-describing/
+ * Spec: docs/spec/archive/2026-06-06-drop-index-json-self-describing/
  */
 Z42HostStatus z42_zpkg_read_namespaces(const uint8_t* bytes, size_t length,
                                        Z42NamespaceVisitor visit, void* user_data);

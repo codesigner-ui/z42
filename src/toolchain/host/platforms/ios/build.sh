@@ -79,7 +79,7 @@ if [[ -d "$LIBS_DIR" ]]; then
     ls "$STDLIB_DIR"/*.zpkg 2>/dev/null | xargs -n1 basename | sed 's/^/  - /' || true
     # No namespace index is shipped: the embedding host injects each zpkg
     # (z42_host_add_zpkg) and the runtime reads its NSPC section to map
-    # namespaces. See docs/spec/changes/drop-index-json-self-describing/.
+    # namespaces. See docs/spec/archive/2026-06-06-drop-index-json-self-describing/.
 else
     echo "warning: stdlib libs dir not found at $LIBS_DIR" >&2
     echo "         build the standard library first: z42 xtask.zpkg build stdlib" >&2
@@ -137,7 +137,7 @@ TEST_STDLIB="$HERE/Tests/Z42VMTests/Resources/stdlib"
 if [[ -d "$LIBS_DIR" ]]; then
     mkdir -p "$TEST_STDLIB"
     cp "$LIBS_DIR"/*.zpkg "$TEST_STDLIB/" 2>/dev/null || true
-    [[ -f "$LIBS_DIR/index.json" ]] && cp "$LIBS_DIR/index.json" "$TEST_STDLIB/index.json"
+    rm -f "$TEST_STDLIB/index.json"   # no namespace index — BundleZpkgResolver reads NSPC
 fi
 
 echo ""

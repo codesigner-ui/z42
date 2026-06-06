@@ -90,7 +90,7 @@ if [[ -d "$LIBS_DIR" ]]; then
     ls "$STDLIB_DIR"/*.zpkg 2>/dev/null | xargs -n1 basename | sed 's/^/  - /' || true
     # No namespace index is shipped: AssetZpkgResolver reads each zpkg's
     # NSPC section to map namespaces. See
-    # docs/spec/changes/drop-index-json-self-describing/.
+    # docs/spec/archive/2026-06-06-drop-index-json-self-describing/.
     rm -f "$STDLIB_DIR/index.json"
 else
     echo "warning: stdlib libs dir not found at $LIBS_DIR" >&2
