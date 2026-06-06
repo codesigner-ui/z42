@@ -28,7 +28,7 @@
 正当 wire format 变化时（minor bump）：
 
 ```bash
-./scripts/build-stdlib.sh           # 必要 — fixture 用 stdlib 解析 namespace
+z42 xtask.zpkg build stdlib         # 必要 — fixture 用 stdlib 解析 namespace
 ./src/tests/zpkg-format/generate-fixtures.sh
 git diff src/tests/zpkg-format/     # review 哪些 fixture 受影响
 ```
@@ -54,5 +54,5 @@ git diff src/tests/zpkg-format/     # review 哪些 fixture 受影响
 
 ## 依赖关系
 
-- 上游：`scripts/build-stdlib.sh` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— fixture compile 需要 stdlib 解析 namespace
+- 上游：`z42 xtask.zpkg build stdlib` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— fixture compile 需要 stdlib 解析 namespace
 - 下游：`FormatGoldenTests` harness + `FormatInvariantTests`

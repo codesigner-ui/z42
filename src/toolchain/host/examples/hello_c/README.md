@@ -29,7 +29,7 @@ stdout: [host] hello, world
 4. `cc main.c -lz42 + native libs → out/hello_c`
 5. 跑 binary，assert stdout
 
-依赖：`cc` / `cargo` / `dotnet`。如果 stdlib zpkgs 未就绪，build.sh 自动调 `./scripts/build-stdlib.sh`。
+依赖：`cc` / `cargo` / `dotnet`。如果 stdlib zpkgs 未就绪，build.sh 会报错并提示先跑 `z42 xtask.zpkg build stdlib`。
 
 ## Why 主线 build 不带 staticlib
 

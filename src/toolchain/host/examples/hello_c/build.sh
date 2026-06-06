@@ -90,8 +90,9 @@ if [[ ! -f "$DRIVER_DLL" ]]; then
     dotnet build "$ROOT/src/compiler/z42.slnx"
 fi
 if [[ ! -d "$LIBS_DIR" ]] || ! ls "$LIBS_DIR"/*.zpkg >/dev/null 2>&1; then
-    echo "building stdlib…"
-    "$ROOT/scripts/build-stdlib.sh"
+    echo "error: stdlib not built at $LIBS_DIR" >&2
+    echo "       build it first: z42 xtask.zpkg build stdlib" >&2
+    exit 1
 fi
 
 # ── (4) Compile the fixture (.z42 → .zbc). ──────────────────────────────

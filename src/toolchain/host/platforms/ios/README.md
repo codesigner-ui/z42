@@ -17,7 +17,7 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
 
 # 2. 编 compiler + stdlib
 dotnet build src/compiler/z42.slnx
-./scripts/build-stdlib.sh
+z42 xtask.zpkg build stdlib
 
 # 3. 编 iOS facade（含 macOS arm64 slice 给 swift test 用）
 ./build.sh

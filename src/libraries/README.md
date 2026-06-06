@@ -2,7 +2,7 @@
 
 ## 职责
 
-z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `build-stdlib.sh` 编译为 `.zpkg` 产物后供用户程序引用。
+z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `z42 xtask.zpkg build stdlib` 编译为 `.zpkg` 产物后供用户程序引用。
 
 ## 库列表
 
@@ -69,8 +69,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 ## 构建
 
 ```bash
-./scripts/build-stdlib.sh           # debug
-./scripts/build-stdlib.sh release   # release
+z42 xtask.zpkg build stdlib         # 编译全部 lib + 扁平视图（release）
 ```
 
 每次构建会：
@@ -81,7 +80,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 
 ## 修改后
 
-修改任意 `.z42` 源文件后重跑 `build-stdlib.sh` 即可 —— 无需再手动 `package.sh` 或 `cp` 同步（这是 wave1-path-script 实施时反复踩到的坑，已修）。
+修改任意 `.z42` 源文件后重跑 `z42 xtask.zpkg build stdlib` 即可 —— 无需再手动 `package.sh` 或 `cp` 同步（这是 wave1-path-script 实施时反复踩到的坑，已修）。
 
 ---
 

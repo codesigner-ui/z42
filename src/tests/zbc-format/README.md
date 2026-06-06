@@ -30,7 +30,7 @@
 正当 wire format 变化时（minor bump）：
 
 ```bash
-./scripts/build-stdlib.sh           # 必要 — fixture 用 stdlib 解析
+z42 xtask.zpkg build stdlib         # 必要 — fixture 用 stdlib 解析
 ./src/tests/zbc-format/generate-fixtures.sh
 git diff src/tests/zbc-format/      # review 哪些 fixture 受影响
 ```
@@ -53,5 +53,5 @@ git diff src/tests/zbc-format/      # review 哪些 fixture 受影响
 
 ## 依赖关系
 
-- 上游：`scripts/build-stdlib.sh` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— `cross-import-token` / `with-tidx` 需要 stdlib 才能解析
+- 上游：`z42 xtask.zpkg build stdlib` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— `cross-import-token` / `with-tidx` 需要 stdlib 才能解析
 - 下游：`FormatGoldenTests` harness（`src/compiler/z42.Tests/Zbc/`）
