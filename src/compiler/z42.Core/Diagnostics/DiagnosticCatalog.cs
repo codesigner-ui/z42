@@ -265,9 +265,23 @@ public static class DiagnosticCatalog
             "Package declares reserved namespace",
             "A non-prelude package declares a namespace under the reserved `Std` / `Std.*` prefix. " +
             "These prefixes are reserved for the standard library (z42.core, z42.io, ...). " +
-            "Rename your namespace to avoid future conflicts. This is a warning, not an error.",
+            "Rename your namespace to avoid future conflicts. This is a dependency-scan warning " +
+            "(an already-built third-party zpkg squats `Std.*`); declaring it in your own source " +
+            "is a hard error — see E0605.",
             "// in some-third-party.zpkg:\n" +
             "namespace Std.Acme;  // W0603: `Std` is reserved"),
+
+        [DiagnosticCodes.ReservedNamespaceDeclaration] = new(
+            "Source declares reserved standard-library namespace",
+            "A third-party package (one whose name does not start with `z42.`) declares a " +
+            "namespace under the reserved `Std` / `Std.*` prefix in its own source. These prefixes " +
+            "belong exclusively to the standard library (z42.core, z42.io, ...), the same way Rust " +
+            "reserves `std` / `core` / `alloc`. This guarantees that any `Std.*` a program uses " +
+            "resolves to the official, auto-available stdlib and can never be shadowed by a " +
+            "third-party package. Rename your namespace to your own prefix. (This is the hard-error " +
+            "counterpart of W0603, which only warns when consuming an already-built offending zpkg.)",
+            "// in my-app (package name `acme.app`):\n" +
+            "namespace Std.Widgets;  // E0605: `Std.*` is reserved for stdlib — use `Acme.Widgets`"),
 
         [DiagnosticCodes.CapturedValueSnapshotAssign] = new(
             "Assignment to captured value-type variable is local to the closure",

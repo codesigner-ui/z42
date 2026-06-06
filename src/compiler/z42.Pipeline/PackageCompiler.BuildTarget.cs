@@ -1,6 +1,7 @@
 using Z42.Core;
 using Z42.Core.Diagnostics;
 using Z42.Core.Features;
+using Z42.Core.Text;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
@@ -95,7 +96,7 @@ public static partial class PackageCompiler
         }
 
         // 仅 fresh files 走完整 parse + typecheck + irgen；cached 注入 ExportedModule
-        var freshUnits = TryCompileSourceFiles(probe.FreshFiles, depIndex, tsigCache, probe.CachedExportsByNs);
+        var freshUnits = TryCompileSourceFiles(probe.FreshFiles, name, depIndex, tsigCache, probe.CachedExportsByNs);
         if (freshUnits is null) return 1;
 
         // 重建 cached CU：cache zbc 是 fullMode（含 STRS/TYPE/SIGS/EXPT/IMPT 完整 sections），
@@ -437,6 +438,7 @@ public static partial class PackageCompiler
     /// 按用户 using 严格过滤后的（prelude + activated 包），与运行时语义一致。
     static List<CompiledUnit>? TryCompileSourceFiles(
         IReadOnlyList<string>     sourceFiles,
+        string                    packageName,
         DependencyIndex           depIndex,
         TsigCache?                tsigCache = null,
         IReadOnlyDictionary<string, ExportedModule>? cachedExports = null)
@@ -486,6 +488,17 @@ public static partial class PackageCompiler
             catch (Z42.Project.NativeManifestException ex)
             {
                 Console.Error.WriteLine($"error[{ex.Code}]: {ex.Message}");
+                parseErrors++;
+                continue;
+            }
+
+            // simplify-stdlib-auto-import (2026-06-06): `Std` / `Std.*` is reserved
+            // for the standard library — a third-party package declaring it in its
+            // own source is a hard error (E0605). See CheckReservedNamespaceDeclaration.
+            var reservedNsDiag = CheckReservedNamespaceDeclaration(packageName, cu.Namespace, cu.Span);
+            if (reservedNsDiag is not null)
+            {
+                Console.Error.WriteLine(reservedNsDiag.ToString());
                 parseErrors++;
                 continue;
             }
@@ -668,6 +681,37 @@ public static partial class PackageCompiler
                     yield return new UsingDiag(unit, usingNs, UsingDiagKind.Unused);
             }
         }
+    }
+
+    /// simplify-stdlib-auto-import (2026-06-06): the `Std` / `Std.*` namespace
+    /// prefix is reserved for the standard library (z42.* packages), the same way
+    /// Rust reserves `std` / `core` / `alloc`. A third-party package (name not
+    /// starting with `z42.`) declaring such a namespace in its own source is a hard
+    /// error (E0605) — this guarantees every `Std.*` a program references resolves
+    /// to the official, auto-available stdlib and can never be shadowed by a
+    /// third-party package.
+    ///
+    /// W0603 is the softer dependency-scan counterpart (warns when *consuming* an
+    /// already-built zpkg that squats the prefix); this is the source-level gate
+    /// that prevents producing such a package in the first place.
+    ///
+    /// Returns the E0605 diagnostic to emit, or null when the declaration is fine
+    /// (stdlib package, no namespace, or a non-reserved namespace). Exposed
+    /// `internal` for unit testing the decision logic without a full build.
+    internal static Diagnostic? CheckReservedNamespaceDeclaration(
+        string packageName, string? declaredNamespace, Span span)
+    {
+        if (PreludePackages.IsStdlibPackage(packageName)) return null;     // z42.* may use Std.*
+        if (declaredNamespace is null) return null;                       // default namespace
+        if (!PreludePackages.IsReservedNamespace(declaredNamespace)) return null;
+
+        return Diagnostic.Error(
+            DiagnosticCodes.ReservedNamespaceDeclaration,
+            $"namespace `{declaredNamespace}` is reserved for the standard library; " +
+            $"package `{packageName}` (third-party) must not declare it — " +
+            $"`Std` / `Std.*` belong to z42.* stdlib packages only. " +
+            $"Rename it to your own prefix.",
+            span);
     }
 
     /// Back-compat alias for tests that only care about unresolved (not unused).

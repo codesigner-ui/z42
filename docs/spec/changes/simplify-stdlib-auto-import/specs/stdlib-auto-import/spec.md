@@ -26,7 +26,7 @@
 
 #### Scenario: 第三方包声明 Std.* → 编译错误
 - **WHEN** 一个非 `z42.*` 包的源文件声明 `namespace Std.Foo;`
-- **THEN** 编译报错（E0918）：`Std.*` 是官方 stdlib 保留命名空间
+- **THEN** 编译报错（E0605）：`Std.*` 是官方 stdlib 保留命名空间
 
 #### Scenario: stdlib 包声明 Std.* → 通过
 - **WHEN** `z42.io` 包内声明 `namespace Std.IO;`
@@ -44,5 +44,5 @@
 ## Pipeline Steps
 - [x] 依赖解析（已有 isStdlib 旁路，不改）
 - [ ] Manifest lint（新增 WS013）
-- [ ] Namespace 校验（新增 Std.* 保留 E0918）
+- [ ] Namespace 校验（新增 Std.* 保留 E0605）
 - [ ] 文档 + 示例清理
