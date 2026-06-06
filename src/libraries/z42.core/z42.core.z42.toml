@@ -7,3 +7,6 @@ kind    = "lib"
 # It is loaded automatically at VM startup — user projects must NOT declare
 # it as a dependency. The compiler and VM inject it unconditionally.
 [dependencies]
+
+[tests.dependencies]
+"z42.test" = "0.1.0"

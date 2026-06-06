@@ -7,3 +7,6 @@ kind    = "lib"
 "z42.core"     = "0.1.0"
 "z42.encoding" = "0.1.0"   # Hex for HashHex convenience
 "z42.numerics" = "0.1.0"   # BigInt for Ed25519 / EcdsaP256 / EcdsaSecp256k1 / Poly1305 / Rsa / X25519
+
+[tests.dependencies]
+"z42.test" = "0.1.0"

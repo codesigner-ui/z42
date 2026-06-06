@@ -6,3 +6,6 @@ kind    = "lib"
 [dependencies]
 "z42.core"        = "0.1.0"
 "z42.diagnostics" = "0.1.0"   # Log.Error for Timer callback exception swallow (add-z42-threading-timer, 2026-05-30)
+
+[tests.dependencies]
+"z42.test" = "0.1.0"

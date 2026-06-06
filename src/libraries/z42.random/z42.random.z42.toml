@@ -11,3 +11,6 @@ kind    = "lib"
 # crypto → numerics → random → crypto cycle. FromEntropy() seed deferred
 # to `random-future-seed-from-entropy-residual` (needs entropy primitive
 # accessible from z42.random without bringing in crypto).
+
+[tests.dependencies]
+"z42.test" = "0.1.0"
