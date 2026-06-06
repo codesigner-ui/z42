@@ -86,7 +86,16 @@ public sealed class ProjectManifest
                                                tomlPath, warnings);
         var testEntries = ParseTestBenchEntries(model, "test",  tomlPath, warnings);
         var benchEntries= ParseTestBenchEntries(model, "bench", tomlPath, warnings);
-        ScanDepsForTestOnlyLeaks(deps, tomlPath, warnings);
+        // add-tests-bench-manifest-config Phase 5 (2026-06-06): suppress
+        // WS012 for synthetic test/bench harness projects. xtask's
+        // dir-mode path generates `<lib>.test.<unit>` / `<lib>.bench.<unit>`
+        // mini-manifests that legitimately declare z42.test in
+        // [dependencies] (a synthetic test project genuinely depends on
+        // the framework — there is no "release artifact" to keep clean).
+        // The .test. / .bench. infix is xtask's own naming convention,
+        // not a thing user-authored manifests would collide with.
+        if (!IsSyntheticHarnessProject(project.Name))
+            ScanDepsForTestOnlyLeaks(deps, tomlPath, warnings);
         ScanTopLevelKeys(model, tomlPath, warnings);
 
         var manifest = new ProjectManifest
@@ -155,6 +164,16 @@ public sealed class ProjectManifest
     {
         "name", "src", "sources", "dependencies",
     };
+
+    /// <summary>
+    /// True if `name` matches xtask's synthetic harness naming convention
+    /// (`<lib>.test.<unit>` / `<lib>.bench.<unit>`). Used to skip
+    /// hygiene checks that don't apply to xtask-generated mini-manifests.
+    /// add-tests-bench-manifest-config Phase 5 (2026-06-06).
+    /// </summary>
+    static bool IsSyntheticHarnessProject(string name) =>
+        name.Contains(".test.", StringComparison.Ordinal)
+            || name.Contains(".bench.", StringComparison.Ordinal);
 
     // Names that designate "test-only" dependencies that should live under
     // [tests.dependencies] / [bench.dependencies] rather than [dependencies].

@@ -50,8 +50,17 @@
 
 ## Phase 5 — 多文件测试 demo
 
-- [ ] 5.1 选一个有意义的 stdlib 包（推荐 z42.crypto 或 z42.compression）改造一个测试为 dir-mode
-- [ ] 5.2 验证 dir-mode 路径全跑通
+> 状态：🔴 BLOCKED — xtask 端 dir-mode 基础设施已完整（Phase 3 + Phase 5 polish 落地：dir-mode 发现 / synthetic manifest 写入到源目录旁 / 删除清理 / `[profile.*].pack = true` 强制 packed / `IsSyntheticHarnessProject` 抑制 WS012）；端到端阻塞在 VM 侧 zpkg loader 的 TIDX 聚合，2026-06-06 试跑 secp256k1 demo 时确认。
+>
+> **触发**：synthetic 多文件项目编译产出 packed zpkg；z42-test-runner 调 `load_artifact(zpkg)` 时，[src/runtime/src/metadata/loader.rs:312-321](../../../../src/runtime/src/metadata/loader.rs#L312-L321) 显式写 `test_index: vec![]` 并附注释 _"R1: zpkg test metadata aggregation deferred. R3 runner reads individual .zbc files directly via load_artifact, where TIDX sections are populated. Setting empty here is correct for now."_ 测试发现因此为空，runner 退出 3 (no tests found)。
+>
+> **要做的事**：在 `load_zpkg_bytes` 里枚举每个内嵌模块的 TIDX，按 merge_modules 已有的函数/字符串偏移规则 remap `method_id` + `skip_reason_str_idx`，concat 后 vec 一并填入 `LoadedArtifact.test_index`。需要一并暴露 `read_zpkg_modules` 已有但没向外露的 TIDX 段。预计 1-2 天工作量，应作为独立 spec 推出（`vm` 类型，需 spec-first）。
+>
+> Phase 5 demo 文件本身（`tests/secp256k1/{source,vectors}.z42`）在本次试跑后已恢复回单文件 `tests/ecdsa_secp256k1_vectors.z42`；落地 TIDX 聚合后再 re-introduce。
+
+- [ ] 5.0 [起 spec `aggregate-zpkg-tidx`]：vm-side 改动，在 zpkg 加载时聚合多 module TIDX 段
+- [ ] 5.1 demo 重做：选一个 stdlib 包（推荐 z42.crypto）改造一个测试为 dir-mode
+- [ ] 5.2 验证 dir-mode 路径全跑通（compile → load_artifact → test discovery → run）
 
 ## Phase 6 — CI 守门 + 文档同步
 
