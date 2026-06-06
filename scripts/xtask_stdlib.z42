@@ -45,7 +45,7 @@ int _buildStdlibCore() {
     if (br.ExitCode != 0) { return br.ExitCode; }
 
     // ── Verify zpkg products ─────────────────────────────────────────────
-    string[] libs = _stdlibList();
+    string[] libs = _stdlibList(root);
     int ok = 0;
     int fail = 0;
     int i = 0;
@@ -84,36 +84,16 @@ int _buildStdlibCore() {
     // No namespace index is emitted: the VM (desktop dir scan) and embedding
     // resolvers (Bundle / Asset / wasm, via z42_zpkg_read_namespaces) both
     // read each zpkg's NSPC section to map namespaces. See
-    // docs/spec/changes/drop-index-json-self-describing/.
+    // docs/spec/archive/2026-06-06-drop-index-json-self-describing/.
     return 0;
 }
 
-// 22-element list matching workspace topological + bash heredoc ordering.
-string[] _stdlibList() {
-    string[] libs = new string[22];
-    libs[0]  = "z42.core";
-    libs[1]  = "z42.io";
-    libs[2]  = "z42.io.binary";
-    libs[3]  = "z42.math";
-    libs[4]  = "z42.text";
-    libs[5]  = "z42.encoding";
-    libs[6]  = "z42.collections";
-    libs[7]  = "z42.test";
-    libs[8]  = "z42.time";
-    libs[9]  = "z42.toml";
-    libs[10] = "z42.json";
-    libs[11] = "z42.random";
-    libs[12] = "z42.uri";
-    libs[13] = "z42.diagnostics";
-    libs[14] = "z42.regex";
-    libs[15] = "z42.cli";
-    libs[16] = "z42.crypto";
-    libs[17] = "z42.threading";
-    libs[18] = "z42.compression";
-    libs[19] = "z42.yaml";
-    libs[20] = "z42.net";
-    libs[21] = "z42.numerics";
-    return libs;
+// Stdlib member list — derived from the workspace manifest's `default-members`
+// (single source of truth; no hand-maintained duplicate that could drift, cf.
+// the old index.json). Order is irrelevant here: z42c `build --workspace`
+// topo-sorts; this list only drives the verify + hard-link loops.
+string[] _stdlibList(string root) {
+    return _vgetListFromFile(root, "src/libraries/z42.workspace.toml", "workspace.default-members");
 }
 
 void _cleanGlob(string dir, string pattern) {
