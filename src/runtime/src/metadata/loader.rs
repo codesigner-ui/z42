@@ -203,15 +203,24 @@ fn load_zpkg_bytes_with_sidecar(
     }
 
     let meta = read_zpkg_meta(raw).context("cannot read zpkg metadata")?;
-    let mut module_pairs = read_zpkg_modules(raw).context("cannot load modules from zpkg")?;
+    let mut module_triples = read_zpkg_modules(raw).context("cannot load modules from zpkg")?;
 
     // Apply sidecar (if present + valid + build_id matches) to per-module
     // function debug fields before flattening.
     if let Some(sym) = sym_raw {
-        apply_zpkg_sidecar(&mut module_pairs, raw, sym, sym_path);
+        apply_zpkg_sidecar(&mut module_triples, raw, sym, sym_path);
     }
 
-    let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
+    // aggregate-zpkg-tidx (2026-06-06): walk per-module TIDX bytes BEFORE
+    // moving the modules into merge_modules — we need each module's local
+    // function count + string pool length to compute the cumulative
+    // offsets that remap `method_id` and `*_str_idx` into the merged
+    // module's index space. Empty `tidx_bytes` (modules with no [Test])
+    // contribute zero entries but still bump the offset counters.
+    let aggregated_test_index =
+        aggregate_zpkg_test_index(&module_triples).context("aggregating zpkg TIDX entries")?;
+
+    let modules: Vec<Module> = module_triples.into_iter().map(|(m, _, _)| m).collect();
     let mut module = merge_modules(modules).context("merging zpkg modules")?;
 
     // interned_strings: populated inside merge_modules.
@@ -221,17 +230,65 @@ fn load_zpkg_bytes_with_sidecar(
     build_block_indices(&mut module);
     build_func_index(&mut module);
 
+    // Resolve `*_str_idx` → `Option<String>` against the merged pool BEFORE
+    // `rebuild_string_pool` is called (it isn't here — `merge_modules`
+    // concatenates pools verbatim), so the resolved strings stay valid for
+    // the runner.
+    let mut test_index = aggregated_test_index;
+    super::test_index::resolve_test_index_strings(&mut test_index, &module.string_pool);
+
     Ok(LoadedArtifact {
         module,
         entry_hint: meta.entry,
         dependencies: meta.dependencies,
         import_namespaces: vec![],
-        test_index: vec![],
+        test_index,
     })
 }
 
+/// aggregate-zpkg-tidx (2026-06-06): merge per-module TIDX bytes into a
+/// flat `Vec<TestEntry>` whose `method_id` / `*_str_idx` values reference
+/// the merged module's `functions[]` / `string_pool[]` index space.
+///
+/// Cumulative offsets mirror `merge_modules`' string-pool / function-list
+/// concatenation order: module N's local indices land at
+/// `[prev modules' counts, …]`. `*_str_idx == 0` ("no string") stays 0
+/// since it's a sentinel, not a real index.
+pub(crate) fn aggregate_zpkg_test_index(
+    module_triples: &[(super::bytecode::Module, String, Vec<u8>)],
+) -> Result<Vec<super::test_index::TestEntry>> {
+    let mut aggregated = Vec::new();
+    let mut cumulative_func: u32 = 0;
+    let mut cumulative_str:  u32 = 0;
+    for (module, _ns, tidx_bytes) in module_triples {
+        let func_offset = cumulative_func;
+        let str_offset  = cumulative_str;
+        cumulative_func = cumulative_func.saturating_add(module.functions.len() as u32);
+        cumulative_str  = cumulative_str.saturating_add(module.string_pool.len() as u32);
+        if tidx_bytes.is_empty() { continue; }
+        let mut entries = super::test_index::read_test_index(tidx_bytes)
+            .context("decoding per-module TIDX in zpkg")?;
+        for e in entries.iter_mut() {
+            // `method_id` is a 0-based index into module.functions[];
+            // bump by cumulative function count of prior modules.
+            e.method_id = e.method_id.saturating_add(func_offset);
+            // `*_str_idx` is 1-based with 0 = absent. Only adjust when
+            // non-zero.
+            if e.skip_reason_str_idx       != 0 { e.skip_reason_str_idx       = e.skip_reason_str_idx.saturating_add(str_offset); }
+            if e.skip_platform_str_idx     != 0 { e.skip_platform_str_idx     = e.skip_platform_str_idx.saturating_add(str_offset); }
+            if e.skip_feature_str_idx      != 0 { e.skip_feature_str_idx      = e.skip_feature_str_idx.saturating_add(str_offset); }
+            if e.expected_throw_type_idx   != 0 { e.expected_throw_type_idx   = e.expected_throw_type_idx.saturating_add(str_offset); }
+            for tc in e.test_cases.iter_mut() {
+                if tc.arg_repr_str_idx != 0 { tc.arg_repr_str_idx = tc.arg_repr_str_idx.saturating_add(str_offset); }
+            }
+        }
+        aggregated.extend(entries);
+    }
+    Ok(aggregated)
+}
+
 fn apply_zpkg_sidecar(
-    module_pairs: &mut Vec<(Module, String)>,
+    module_pairs: &mut Vec<(Module, String, Vec<u8>)>,
     main: &[u8],
     sym: &[u8],
     sym_path: Option<&Path>,
@@ -265,7 +322,7 @@ fn apply_zpkg_sidecar(
     // Match by namespace: sidecar order matches main MODS order, but we
     // double-check ns equality to be defensive against future MDBG layout
     // changes.
-    for ((module, ns), (sym_ns, fns)) in module_pairs.iter_mut().zip(sidecar.modules.into_iter()) {
+    for ((module, ns, _tidx), (sym_ns, fns)) in module_pairs.iter_mut().zip(sidecar.modules.into_iter()) {
         if ns != &sym_ns {
             tracing::warn!(
                 "{display_path}: sidecar module ns mismatch (main={ns}, sidecar={sym_ns}); skipped this module"
@@ -297,9 +354,16 @@ fn load_zpkg_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
     }
 
     let meta = read_zpkg_meta(raw).context("cannot read zpkg metadata")?;
-    let module_pairs = read_zpkg_modules(raw).context("cannot load modules from zpkg")?;
+    let module_triples = read_zpkg_modules(raw).context("cannot load modules from zpkg")?;
 
-    let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
+    // aggregate-zpkg-tidx (2026-06-06): same aggregation as load_zpkg
+    // (the sidecar-aware variant); kept inline because this path has no
+    // sidecar to merge first. See the docs on `aggregate_zpkg_test_index`
+    // for the cumulative-offset semantics.
+    let aggregated_test_index =
+        aggregate_zpkg_test_index(&module_triples).context("aggregating zpkg TIDX entries")?;
+
+    let modules: Vec<Module> = module_triples.into_iter().map(|(m, _, _)| m).collect();
     let mut module = merge_modules(modules).context("merging zpkg modules")?;
 
     // interned_strings: populated inside merge_modules.
@@ -309,15 +373,15 @@ fn load_zpkg_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
     build_block_indices(&mut module);
     build_func_index(&mut module);
 
+    let mut test_index = aggregated_test_index;
+    super::test_index::resolve_test_index_strings(&mut test_index, &module.string_pool);
+
     Ok(LoadedArtifact {
         module,
         entry_hint: meta.entry,
         dependencies: meta.dependencies,
         import_namespaces: vec![],
-        // R1: zpkg test metadata aggregation deferred. R3 runner reads
-        // individual .zbc files directly via load_artifact, where TIDX
-        // sections are populated. Setting empty here is correct for now.
-        test_index: vec![],
+        test_index,
     })
 }
 

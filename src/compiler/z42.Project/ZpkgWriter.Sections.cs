@@ -273,6 +273,20 @@ public static partial class ZpkgWriter
             // with only param-less / pre-IrType functions).
             byte[] regtData = ZbcWriter.BuildRegtSection(mod.Functions);
 
+            // aggregate-zpkg-tidx (zpkg 0.10 → 0.11, 2026-06-06): per-module
+            // TIDX bytes. Reuses `ZbcWriter.BuildTidxSection` so the wire
+            // format is byte-identical to the standalone .zbc TIDX section
+            // (TIDX v=3); the only zpkg-side addition is the `tidx_len`
+            // u32 prefix below. tidx_len = 0 → no annotations on this
+            // module → skip the body (mirrors DBUG / REGT length pattern).
+            // Reader (Rust load_zpkg_bytes) accumulates each module's
+            // entries with a cumulative function-id offset so the global
+            // `LoadedArtifact.test_index` resolves through the merged
+            // module's `functions[]` index space.
+            byte[] tidxData = (mod.TestIndex is { Count: > 0 } testIndex)
+                ? ZbcWriter.BuildTidxSection(testIndex, remaps[mi])
+                : Array.Empty<byte>();
+
             w.Write((uint)pool.Idx(zbc.Namespace));
             w.Write((uint)pool.Idx(zbc.SourceFile));
             w.Write((uint)pool.Idx(zbc.SourceHash));
@@ -286,6 +300,8 @@ public static partial class ZpkgWriter
             if (dbugData.Length > 0) w.Write(dbugData);
             w.Write((uint)regtData.Length);
             if (regtData.Length > 0) w.Write(regtData);
+            w.Write((uint)tidxData.Length);
+            if (tidxData.Length > 0) w.Write(tidxData);
 
             firstSigIdx += (uint)mod.Functions.Count;
         }

@@ -691,7 +691,10 @@ public static partial class ZbcWriter
         return ms.ToArray();
     }
 
-    private static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex, int[] strRemap)
+    // public for ZpkgWriter (aggregate-zpkg-tidx, 2026-06-06): the
+    // zpkg path needs per-module TIDX bytes embedded in MODS — same
+    // wire format, just emitted in a different container.
+    public static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex, int[] strRemap)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);

@@ -122,7 +122,7 @@ fn zbc_version_constants_pinned() {
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 10, "zpkg minor at 0.10 (catch-up to ZpkgWriter VersionMinor=10, add-test-timeout-attribute WIP commit 85e869d7; inner zbc still at 1.8 — the new TIDX v=3 timeout_ms field lands in the spec's follow-up implementation commit)");
+    assert_eq!(ZPKG_VERSION_MINOR, 11, "zpkg minor at 0.11 (aggregate-zpkg-tidx, 2026-06-06: per-module MODS slots gained `tidx_len u32 + tidx_data` trailing fields after REGT; inner zbc unchanged at 1.9 — TIDX wire format is the same v=3, only its zpkg embedding is new)");
 }
 
 #[test]

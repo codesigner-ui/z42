@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 10;  // 2026-05-30 add-test-timeout-attribute: inner zbc bumped to 1.9 (TIDX v=3 carries per-test timeout_ms i32). No new zpkg-only fields; minor bumps purely to track inner-zbc coupling per .claude/rules/version-bumping.md. Pre-0.10 not readable.
+    public const ushort VersionMinor = 11;  // 2026-06-06 aggregate-zpkg-tidx: per-module MODS record gains length-prefixed `tidx_len + tidx_data` after REGT. ZbcWriter.BuildTidxSection bytes reused; reader-side aggregation accumulates method_id by cumulative function offset and string indices by cumulative pool offset. Inner zbc unchanged (1.9 stays). Pre-0.11 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

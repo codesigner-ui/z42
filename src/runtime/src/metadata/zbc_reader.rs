@@ -45,14 +45,14 @@ pub const ZBC_VERSION_MINOR: u16 = 9;
 // procedure (zbc bump → 4 zbc steps + 4 zpkg steps in the same commit).
 
 pub const ZPKG_VERSION_MAJOR: u16 = 0;
-// 2026-05-30 sync to ZpkgWriter VersionMinor=10 (add-test-timeout-attribute
-// WIP commit `85e869d7`). Inner zbc still at 1.8 — that commit bumped the
-// outer-zpkg wrapper version alone, leaving the reader pinned at 0.9 and
-// breaking every package load (build-stdlib / regen-golden / test-vm all
-// fail with "zpkg minor 10 not supported"). Inner zbc bump (TIDX v=3 with
-// per-test timeout_ms i32) plus reader logic for the new field lands in
-// the spec's follow-up implementation commit.
-pub const ZPKG_VERSION_MINOR: u16 = 10;
+// 2026-06-06 aggregate-zpkg-tidx: bumped to 0.11 to match ZpkgWriter; the
+// only zpkg wire-format delta is the per-module trailing `tidx_len: u32 +
+// tidx_data` after REGT inside MODS. Reader for those new fields lives
+// below in `read_mods_section` (returns 3-tuple incl. raw TIDX bytes);
+// `loader::load_zpkg_bytes` aggregates entries with cumulative function +
+// string-pool offsets so the public LoadedArtifact.test_index resolves
+// against the merged module's index space.
+pub const ZPKG_VERSION_MINOR: u16 = 11;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -1282,7 +1282,13 @@ pub fn read_zpkg_meta(data: &[u8]) -> Result<ZpkgInfo> {
 }
 
 /// Read all modules from a packed zpkg. Returns (Module, namespace) pairs.
-pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
+/// Decode every inner module from a binary zpkg, returning
+/// `(Module, namespace, raw_tidx_bytes)` per module. `raw_tidx_bytes`
+/// is the verbatim TIDX section payload for that module (empty when
+/// the module has no [Test] / [Benchmark]). aggregate-zpkg-tidx
+/// (zpkg 0.11, 2026-06-06): the third element is new — callers that
+/// don't care about test metadata can ignore it.
+pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String, Vec<u8>)>> {
     if data.len() < 16 { bail!("zpkg file too short") }
     if &data[0..4] != ZPKG_MAGIC { bail!("not a binary zpkg (bad magic)") }
 
@@ -1378,11 +1384,20 @@ fn read_deps_section(sec: &[u8], pool: &[String]) -> Result<Vec<ZpkgDep>> {
     Ok(deps)
 }
 
+/// Decode the MODS section of a packed zpkg into one entry per inner
+/// module. Returns the per-module `(Module, namespace, raw_tidx_bytes)`
+/// triple — `raw_tidx_bytes` is empty when the module has no TIDX
+/// annotation, otherwise carries the verbatim TIDX section payload (NOT
+/// including the `tidx_len u32` framing). aggregate-zpkg-tidx
+/// (2026-06-06) introduced the third element; the caller in
+/// `loader::load_zpkg_bytes` decodes + remaps each module's entries
+/// against the cumulative function + string-pool offsets so the merged
+/// `LoadedArtifact.test_index` resolves through the unified index space.
 fn read_mods_section(
     sec: &[u8],
     pool: &[String],
     global_sigs: &[FuncSig],
-) -> Result<Vec<(Module, String)>> {
+) -> Result<Vec<(Module, String, Vec<u8>)>> {
     let mut c = Cursor::new(sec);
     let mod_count = c.read_u32()? as usize;
     let mut result = Vec::with_capacity(mod_count);
@@ -1406,6 +1421,15 @@ fn read_mods_section(
         // with no IrType-tagged functions).
         let regt_len    = c.read_u32()? as usize;
         let regt_data   = c.read_bytes(regt_len)?;
+        // aggregate-zpkg-tidx (zpkg 0.11, 2026-06-06): per-member TIDX
+        // body, length-prefixed like DBUG / REGT. 0 bytes = module has
+        // no [Test] / [Benchmark] annotations — caller skips
+        // `read_test_index`. Stored verbatim; caller-side aggregation
+        // walks each module's entries with cumulative function + string
+        // offsets to map module-local `method_id` / `*_str_idx` values
+        // into the merged-module index space.
+        let tidx_len    = c.read_u32()? as usize;
+        let tidx_bytes  = c.read_bytes(tidx_len)?.to_vec();
 
         let namespace = pool_str_owned(pool, ns_idx)?;
         let sigs_slice = &global_sigs[first_sig..first_sig + func_count.min(global_sigs.len() - first_sig.min(global_sigs.len()))];
@@ -1491,7 +1515,7 @@ fn read_mods_section(
             // Populated inside `merge_modules` (these per-namespace modules
             // are always merged before consumption).
             interned_strings: Vec::new(),
-        }, namespace));
+        }, namespace, tidx_bytes));
 
         sig_offset += func_count;
         let _ = sig_offset; // used for validation if needed

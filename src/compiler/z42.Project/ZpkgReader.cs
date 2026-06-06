@@ -204,6 +204,15 @@ public static partial class ZpkgReader
                 // jit-type-specialization C2 P0 (zpkg 0.9 / zbc 1.8): per-member REGT body.
                 uint regtBodySize  = r.ReadUInt32();
                 r.BaseStream.Seek(regtBodySize, SeekOrigin.Current);
+                // aggregate-zpkg-tidx (zpkg 0.11, 2026-06-06): per-member TIDX
+                // body. Skip without decoding — this probe only needs source
+                // file / hash / namespace per module; the runtime side decodes
+                // TIDX content. WITHOUT this seek, the per-module cursor
+                // drifts after the first module's TIDX region for any package
+                // containing more than one module → cache lookups fall back
+                // to AllFresh and incremental builds rebuild everything.
+                uint tidxBodySize  = r.ReadUInt32();
+                r.BaseStream.Seek(tidxBodySize, SeekOrigin.Current);
                 result.Add((sourceFile, sourceHash, ns));
             }
             return result;

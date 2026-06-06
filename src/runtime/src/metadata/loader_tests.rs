@@ -533,3 +533,210 @@ fn fixup_idempotent_when_no_new_resolutions() {
     let pass2 = crate::metadata::loader::try_fixup_inheritance(&mut global);
     assert_eq!(pass2, 0, "second pass is no-op");
 }
+
+// ── aggregate_zpkg_test_index (aggregate-zpkg-tidx, 2026-06-06) ──────────────
+//
+// These exercise the pure aggregation helper. End-to-end loader path
+// (decode zpkg → aggregate → resolve strings) is covered by the
+// xtask test stdlib smoke once a Phase 5 dir-mode demo lands; here we
+// test the offset math in isolation against hand-constructed input.
+
+use crate::metadata::bytecode::Module;
+use crate::metadata::test_index::{TestEntry, TestEntryKind, TestFlags, TestCase};
+
+/// Build a fresh empty Module with `func_count` synthetic Function
+/// stubs and `str_count` placeholder strings — just enough for the
+/// aggregator to compute offsets against. Functions / strings carry
+/// no semantics; the aggregator only reads `module.functions.len()`
+/// and `module.string_pool.len()`.
+fn make_stub_module(func_count: usize, str_count: usize) -> Module {
+    let functions = (0..func_count)
+        .map(|i| crate::metadata::bytecode::Function {
+            name:         format!("f{i}"),
+            param_count:  0,
+            ret_type:     "void".to_owned(),
+            exec_mode:    crate::metadata::ExecMode::Interp,
+            blocks:       vec![],
+            is_static:    false,
+            max_reg:      0,
+            cold:         None,
+            reg_types:    Box::new([]),
+            block_index:  std::collections::HashMap::new(),
+            resolved:     std::sync::OnceLock::new(),
+        })
+        .collect();
+    let string_pool = (0..str_count).map(|i| format!("s{i}")).collect();
+    Module {
+        name: "stub".to_owned(),
+        string_pool,
+        classes: vec![],
+        functions,
+        type_registry: std::collections::HashMap::new(),
+        type_registry_vec: Vec::new(),
+        func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots: 0,
+        interned_strings: Vec::new(),
+    }
+}
+
+/// Encode a single TIDX section payload (matching what
+/// `ZbcWriter.BuildTidxSection` would write) from a hand-built
+/// list of `TestEntry`. The aggregator decodes back via
+/// `read_test_index`; the bytes here are the round-trip vehicle.
+fn encode_tidx(entries: &[TestEntry]) -> Vec<u8> {
+    let mut out = Vec::new();
+    // magic "TIDX" → on-disk bytes 54 49 44 58 → LE u32 0x58_44_49_54
+    out.extend_from_slice(&0x58_44_49_54u32.to_le_bytes());
+    out.push(3u8); // version
+    out.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+    for e in entries {
+        out.extend_from_slice(&e.method_id.to_le_bytes());
+        out.push(e.kind as u8);
+        out.extend_from_slice(&e.flags.bits().to_le_bytes());
+        out.extend_from_slice(&e.skip_reason_str_idx.to_le_bytes());
+        out.extend_from_slice(&e.skip_platform_str_idx.to_le_bytes());
+        out.extend_from_slice(&e.skip_feature_str_idx.to_le_bytes());
+        out.extend_from_slice(&e.expected_throw_type_idx.to_le_bytes());
+        out.extend_from_slice(&(e.test_cases.len() as u32).to_le_bytes());
+        for tc in &e.test_cases {
+            out.extend_from_slice(&tc.arg_repr_str_idx.to_le_bytes());
+        }
+        out.extend_from_slice(&(e.timeout_ms as i32).to_le_bytes());
+    }
+    out
+}
+
+fn empty_entry(method_id: u32, skip_reason_str_idx: u32) -> TestEntry {
+    TestEntry {
+        method_id,
+        kind: TestEntryKind::Test,
+        flags: TestFlags::empty(),
+        skip_reason_str_idx,
+        skip_platform_str_idx: 0,
+        skip_feature_str_idx: 0,
+        expected_throw_type_idx: 0,
+        test_cases: vec![],
+        timeout_ms: 0,
+        skip_reason: None,
+        skip_platform: None,
+        skip_feature: None,
+        expected_throw_type: None,
+    }
+}
+
+#[test]
+fn aggregate_zpkg_tidx_empty_module_list_yields_empty_vec() {
+    let triples: Vec<(Module, String, Vec<u8>)> = vec![];
+    let result = crate::metadata::loader::aggregate_zpkg_test_index(&triples).unwrap();
+    assert!(result.is_empty());
+}
+
+#[test]
+fn aggregate_zpkg_tidx_single_module_no_offset() {
+    let module = make_stub_module(3, 10);
+    let entries = vec![empty_entry(1, 0), empty_entry(2, 5)];
+    let tidx_bytes = encode_tidx(&entries);
+    let triples = vec![(module, "ns".to_owned(), tidx_bytes)];
+
+    let result = crate::metadata::loader::aggregate_zpkg_test_index(&triples).unwrap();
+    assert_eq!(result.len(), 2);
+    // Single module → cumulative function offset is 0.
+    assert_eq!(result[0].method_id, 1);
+    assert_eq!(result[1].method_id, 2);
+    // Same for the string pool offset.
+    assert_eq!(result[1].skip_reason_str_idx, 5);
+}
+
+#[test]
+fn aggregate_zpkg_tidx_multi_module_method_id_remap() {
+    // Module 0: 3 functions, 1 test pointing at fn 2.
+    let m0 = make_stub_module(3, 0);
+    let m0_tidx = encode_tidx(&[empty_entry(2, 0)]);
+    // Module 1: 5 functions, 2 tests at local fn 0 and fn 4.
+    let m1 = make_stub_module(5, 0);
+    let m1_tidx = encode_tidx(&[empty_entry(0, 0), empty_entry(4, 0)]);
+
+    let triples = vec![
+        (m0, "a".to_owned(), m0_tidx),
+        (m1, "b".to_owned(), m1_tidx),
+    ];
+    let result = crate::metadata::loader::aggregate_zpkg_test_index(&triples).unwrap();
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].method_id, 2);     // M0: 2 + 0
+    assert_eq!(result[1].method_id, 0 + 3); // M1: 0 + cum(M0)=3
+    assert_eq!(result[2].method_id, 4 + 3); // M1: 4 + cum(M0)=3
+}
+
+#[test]
+fn aggregate_zpkg_tidx_multi_module_str_remap() {
+    // Module 0: 0 funcs, 10 strings, 1 test referencing skip_reason str
+    // idx 4 (1-based local idx).
+    let m0 = make_stub_module(0, 10);
+    let m0_tidx = encode_tidx(&[empty_entry(0, 4)]);
+    // Module 1: 0 funcs, 5 strings, 1 test referencing skip_reason str
+    // idx 3 (1-based local idx in M1 → global 3 + cum(M0 str)=10 = 13).
+    let m1 = make_stub_module(0, 5);
+    let m1_tidx = encode_tidx(&[empty_entry(0, 3)]);
+
+    let triples = vec![
+        (m0, "a".to_owned(), m0_tidx),
+        (m1, "b".to_owned(), m1_tidx),
+    ];
+    let result = crate::metadata::loader::aggregate_zpkg_test_index(&triples).unwrap();
+    assert_eq!(result.len(), 2);
+    // M0's TIDX has cumulative offset 0 → idx 4 stays 4.
+    assert_eq!(result[0].skip_reason_str_idx, 4);
+    // M1's TIDX has cumulative string offset 10 → idx 3 becomes 13.
+    assert_eq!(result[1].skip_reason_str_idx, 13);
+
+    // `0 = no string` sentinel must not be offset.
+    assert_eq!(result[0].skip_platform_str_idx, 0);
+    assert_eq!(result[1].skip_platform_str_idx, 0);
+}
+
+#[test]
+fn aggregate_zpkg_tidx_zero_len_skips_without_panic() {
+    let m0 = make_stub_module(2, 4);
+    let m1 = make_stub_module(2, 4);
+    let m2 = make_stub_module(2, 4);
+    // Middle module has no TIDX bytes but still contributes to the
+    // cumulative function / string offsets.
+    let m0_tidx = encode_tidx(&[empty_entry(1, 0)]);
+    let m1_tidx: Vec<u8> = vec![]; // empty
+    let m2_tidx = encode_tidx(&[empty_entry(1, 0)]);
+
+    let triples = vec![
+        (m0, "a".to_owned(), m0_tidx),
+        (m1, "b".to_owned(), m1_tidx),
+        (m2, "c".to_owned(), m2_tidx),
+    ];
+    let result = crate::metadata::loader::aggregate_zpkg_test_index(&triples).unwrap();
+    assert_eq!(result.len(), 2);
+    // First entry from M0: offset 0 → method_id = 1.
+    assert_eq!(result[0].method_id, 1);
+    // Second entry from M2: cum offset = M0.funcs (2) + M1.funcs (2) = 4
+    // → method_id = 1 + 4 = 5. M1's empty TIDX still advanced the offset.
+    assert_eq!(result[1].method_id, 5);
+}
+
+#[test]
+fn aggregate_zpkg_tidx_test_case_arg_repr_remap() {
+    // Module 1 (cum string offset = 6) has a test with a parameterized
+    // TestCase referencing arg_repr str idx 2 (local 1-based) which must
+    // become 2 + 6 = 8 after aggregation.
+    let m0 = make_stub_module(0, 6);
+    let m0_tidx = encode_tidx(&[]);
+    let m1 = make_stub_module(0, 4);
+    let mut entry = empty_entry(0, 0);
+    entry.test_cases = vec![TestCase { arg_repr_str_idx: 2 }];
+    let m1_tidx = encode_tidx(&[entry]);
+
+    let triples = vec![
+        (m0, "a".to_owned(), m0_tidx),
+        (m1, "b".to_owned(), m1_tidx),
+    ];
+    let result = crate::metadata::loader::aggregate_zpkg_test_index(&triples).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].test_cases.len(), 1);
+    assert_eq!(result[0].test_cases[0].arg_repr_str_idx, 8);
+}

@@ -125,6 +125,21 @@ public static partial class ZpkgReader
             uint regtBodySize  = r.ReadUInt32();
             byte[] regtData    = regtBodySize > 0 ? r.ReadBytes((int)regtBodySize) : [];
 
+            // aggregate-zpkg-tidx (zpkg 0.11, 2026-06-06): per-member TIDX
+            // body — length-prefixed verbatim TIDX section payload. The C#
+            // side reader here just consumes the bytes to advance the
+            // cursor; the runtime side (zbc_reader::read_mods_section) is
+            // the consumer that decodes + aggregates. ZpkgReader is used
+            // primarily for sidecar attach + round-trip tests; the IrModule
+            // shape preserved here doesn't carry TIDX (it's flattened from
+            // ZbcFile.Module.TestIndex at write-time, not the other
+            // direction). Decoding back into IrModule.TestIndex is left for
+            // when round-trip equality on TIDX is needed (no current
+            // consumer; ZbcGoldenJsonFormatter does its own decode path).
+            uint tidxBodySize  = r.ReadUInt32();
+            byte[] tidxData    = tidxBodySize > 0 ? r.ReadBytes((int)tidxBodySize) : [];
+            _ = tidxData;  // bytes consumed; intentionally not yet wired into IrModule
+
             // Decode function bodies using global pool
             var funcBodies = ZbcReader.DecodeFuncSectionPublic(funcData, pool);
             var classes    = typeData.Length > 0
