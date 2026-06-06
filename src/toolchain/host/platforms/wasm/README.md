@@ -71,13 +71,13 @@ playwright 在 headless chromium 中跑 7 个 platform-test-contract scenario（
 完整 TS 类型见 [`js/index.d.ts`](js/index.d.ts)：
 
 ```ts
-import init, { Z42VM } from '@z42/wasm';
+import init, { Z42VM, readNamespaces } from '@z42/wasm';
 import { bundleStdlibNode } from '@z42/wasm/stdlib-resolver';
 
 await init();  // 浏览器需要 await fetch；Node 路径自动从 fs 读
 
 const vm = new Z42VM({
-    zpkgResolver: await bundleStdlibNode(),
+    zpkgResolver: await bundleStdlibNode(readNamespaces),
     stdoutHandler: (bytes) => process.stdout.write(bytes),
 });
 const module = vm.loadZbc(zbcBytes);
@@ -96,10 +96,10 @@ vm.dispose();
 
 ### 内置 resolver helpers
 
-`@z42/wasm/stdlib-resolver` 提供两套预 fetch 工具：
+`@z42/wasm/stdlib-resolver` 提供两套工具（都需传入 wasm 的 `readNamespaces` 导出——用它读各 zpkg 的 `NSPC` 建 namespace→bytes 表，不再依赖 `index.json`）：
 
-- `bundleStdlibNode()` — Node 同步从 npm 包内 `stdlib/` 加载所有 stdlib zpkg
-- `bundleStdlibBrowser(baseUrl)` — 浏览器 fetch + 返回 Promise
+- `bundleStdlibNode(readNamespaces)` — Node 从包内 `stdlib/` 枚举并加载所有 stdlib zpkg
+- `bundleStdlibBrowser(baseUrl, readNamespaces)` — 浏览器 fetch build 生成的 `files.json` + 各 zpkg
 
 两套都返回 `(name) => Uint8Array | null` 形态的 resolver。
 

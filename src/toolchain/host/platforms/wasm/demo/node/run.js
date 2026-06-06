@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Z42VM } from '../../pkg-nodejs/z42_wasm.js';
+import { Z42VM, readNamespaces } from '../../pkg-nodejs/z42_wasm.js';
 import { bundleStdlibNode } from '../../js/stdlib-resolver.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +29,7 @@ async function main() {
     }
 
     // 1. Build the stdlib resolver from packaged zpkg bytes.
-    const resolver = await bundleStdlibNode();
+    const resolver = await bundleStdlibNode(readNamespaces);
 
     // 2. Set up stdout capture (with a [host] tag so it's obvious the
     //    sink fired rather than direct console.log).
