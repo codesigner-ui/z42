@@ -100,6 +100,34 @@ jobs:
           Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
             artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- deps check
 
+      # add-tests-bench-manifest-config Phase 6.1 (2026-06-06): release guard.
+      # xtask's dir-mode tests / benches produce synthetic
+      # `<lib>.test.<unit>.zpkg` / `<lib>.bench.<unit>.zpkg` artifacts under
+      # an xtask-controlled output_dir (currently /tmp/.../xtask-testlib*/);
+      # they must NEVER land in the production `dist/` tree under
+      # `artifacts/build/libraries/<lib>/<profile>/`. A regression here
+      # (e.g. forgotten output_dir override in a future xtask path) would
+      # silently ship test scaffolding to end users via the SDK package.
+      # The guard scans every per-lib dist tree and fails on the first
+      # `.test.` / `.bench.` infix hit. ubuntu-only (path semantics
+      # identical across platforms; one check is enough).
+      - name: Release guard (no .test./.bench. zpkgs in dist/)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          violators=$(
+            find artifacts/build/libraries -type f \
+              \( -name '*.test.*.zpkg' -o -name '*.bench.*.zpkg' \) \
+              -path '*/dist/*' 2>/dev/null || true
+          )
+          if [ -n "$violators" ]; then
+            echo "::error::test/bench harness zpkgs leaked into release dist/:"
+            echo "$violators"
+            exit 1
+          fi
+          echo "release guard: 0 .test./.bench. zpkgs in dist/ (OK)"
+
       # Test on Unix runners (existing scripts are bash).
       # --parallel: wave-based stage-level concurrency (W1/W2/W3).
       # --jobs=4: intra-stage parallelism for test-lib.sh and test-vm.sh;

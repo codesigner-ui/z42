@@ -54,7 +54,15 @@
 >
 > **触发**：synthetic 多文件项目编译产出 packed zpkg；z42-test-runner 调 `load_artifact(zpkg)` 时，[src/runtime/src/metadata/loader.rs:312-321](../../../../src/runtime/src/metadata/loader.rs#L312-L321) 显式写 `test_index: vec![]` 并附注释 _"R1: zpkg test metadata aggregation deferred. R3 runner reads individual .zbc files directly via load_artifact, where TIDX sections are populated. Setting empty here is correct for now."_ 测试发现因此为空，runner 退出 3 (no tests found)。
 >
-> **要做的事**：在 `load_zpkg_bytes` 里枚举每个内嵌模块的 TIDX，按 merge_modules 已有的函数/字符串偏移规则 remap `method_id` + `skip_reason_str_idx`，concat 后 vec 一并填入 `LoadedArtifact.test_index`。需要一并暴露 `read_zpkg_modules` 已有但没向外露的 TIDX 段。预计 1-2 天工作量，应作为独立 spec 推出（`vm` 类型，需 spec-first）。
+> **2026-06-06 后续调查发现 gap 比初始估计大**：进一步看 [src/compiler/z42.Project/ZpkgWriter.cs](../../../../src/compiler/z42.Project/ZpkgWriter.cs) 和 [src/runtime/src/metadata/zbc_reader.rs](../../../../src/runtime/src/metadata/zbc_reader.rs) `read_mods_section` 后确认：ZpkgWriter 根本**不**写 TIDX 段到 zpkg（per-module MODS 段只含 FUNC / TYPE / DBUG / REGT）。reader 端 aggregate 无源头可读 —— 必须同时改 writer。完整解锁需：
+>
+> 1. **格式扩展**：每 module MODS 后加 TIDX 段（或顶层 zpkg 加一个聚合 TIDX）
+> 2. **writer**：ZbcWriter / ZpkgWriter 同步写
+> 3. **reader**：`read_mods_section` 读 TIDX 并 remap `method_id` / `skip_reason_str_idx`（merge_modules 已有的 function/string 偏移规则可复用）
+> 4. **zpkg minor bump**：strict-pin policy，写完成步 1 + version-bumping.md 4 处全套更新（ZbcWriter / zbc_reader / zpkg.md changelog / 6+4 fixture regen）
+> 5. **VM 侧 LoadedArtifact.test_index 填充**：把 reader 输出回 [loader.rs](../../../../src/runtime/src/metadata/loader.rs)
+>
+> 估时上修：~3-4 天（zpkg 格式 + writer + reader + fixture regen + 测试）。比初始 1-2 day 估算翻倍，因 minor bump 触发整套 wire-format protocol。仍是 `vm` 类型，必须 spec-first。
 >
 > Phase 5 demo 文件本身（`tests/secp256k1/{source,vectors}.z42`）在本次试跑后已恢复回单文件 `tests/ecdsa_secp256k1_vectors.z42`；落地 TIDX 聚合后再 re-introduce。
 
