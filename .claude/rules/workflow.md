@@ -165,6 +165,8 @@ docs/spec/changes/<change-name>/
 
 命名：动词开头，kebab-case，≤ 5 词。如 `add-for-loop`、`fix-type-check-crash`。
 
+**并行占用登记（必做）**：创建容器同时，按 [`parallel-development.md`](parallel-development.md) 声明本 change 占用的子系统，逐个查 `docs/spec/changes/ACTIVE.md`——任一被占则**停下排队**，全部空闲才登记为持有者并继续。
+
 ---
 
 ## 阶段 3：编写 proposal.md（Why）
@@ -209,6 +211,8 @@ docs/spec/changes/<change-name>/
 | 两个 spec 都修改同一 markdown 文档的不同段 | ✅ 冲突 → 串行（避免 merge 冲突） |
 
 > 拿不准时按冲突处理（串行实施），代价远低于事后 merge 冲突排查。
+
+> **并行执行（src 代码）**：上表是 docs/markdown 的细则；`src/` 代码的并行判定改用**子系统互斥锁**——见 [`parallel-development.md`](parallel-development.md) + `docs/spec/changes/ACTIVE.md` 账本。开 change 前查账本，子系统被占则排队。
 
 ## Out of Scope
 - [明确排除，防止范围蔓延]
@@ -527,6 +531,7 @@ z42 xtask.zpkg test lib
 
 1. 将 tasks.md 状态改为 `🟢 已完成`，更新日期
 2. 移动目录：`docs/spec/changes/<name>/` → `docs/spec/archive/YYYY-MM-DD-<name>/`
+   - **释放子系统锁**：从 `docs/spec/changes/ACTIVE.md` 摘除本 change 持有的全部子系统行（见 [`parallel-development.md`](parallel-development.md)）
 3. **同步到长期规范**（所有变更类型均需执行，按下表）：
 
    | 变更类型 | 必须更新的文档 |
