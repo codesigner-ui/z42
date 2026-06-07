@@ -8,6 +8,23 @@ namespace Z42.Driver;
 
 static class BuildCommand
 {
+    // fix-run-forward-script-args (2026-06-07): args after the first literal `--`
+    // are stashed here by Program.Main (split off before System.CommandLine
+    // parses) and read by the `run` handler to forward to the executed program.
+    internal static string[] ForwardedScriptArgs = [];
+
+    /// Split argv at the FIRST literal `--`: everything before is z42c's own CLI
+    /// (parsed by System.CommandLine), everything after is forwarded verbatim to
+    /// the program that `run` executes. No `--` → (args, []). Doing this in
+    /// Program.Main keeps the `--` and trailing tokens away from
+    /// System.CommandLine (beta4 prints help when post-`--` tokens are present).
+    internal static (string[] Pre, string[] Forwarded) SplitForwardedArgs(string[] args)
+    {
+        int i = System.Array.IndexOf(args, "--");
+        if (i < 0) return (args, []);
+        return (args[..i], args[(i + 1)..]);
+    }
+
     // ── Command factories ─────────────────────────────────────────────────────
 
     public static Command Create()
@@ -119,6 +136,15 @@ static class BuildCommand
             var release = ctx.ParseResult.GetValueForOption(releaseOpt);
             var bin     = ctx.ParseResult.GetValueForOption(binOpt);
             var mode    = ctx.ParseResult.GetValueForOption(modeOpt) ?? "interp";
+            // fix-run-forward-script-args (2026-06-07): everything after a literal
+            // `--` separator is forwarded to the running z42 program, not parsed by
+            // z42c. Program.Main splits these off BEFORE System.CommandLine sees
+            // them (System.CommandLine beta4 otherwise prints help when post-`--`
+            // tokens are present) and stashes them here; we hand them to z42vm
+            // after its own `--` so the program reads them via
+            // Std.IO.Environment.GetCommandLineArgs(). e.g.
+            //   z42c run app.z42 -- a b c   →   program argv = ["a","b","c"]
+            var scriptArgs = ForwardedScriptArgs;
 
             // Script mode: explicit .z42 path.
             if (path is not null && path.EndsWith(".z42", StringComparison.OrdinalIgnoreCase))
@@ -129,11 +155,11 @@ static class BuildCommand
                     ctx.ExitCode = 2;
                     return;
                 }
-                ctx.ExitCode = RunScript(path, mode);
+                ctx.ExitCode = RunScript(path, mode, scriptArgs);
                 return;
             }
 
-            ctx.ExitCode = RunProject(path, release, bin, mode);
+            ctx.ExitCode = RunProject(path, release, bin, mode, scriptArgs);
         });
 
         return cmd;
@@ -236,7 +262,7 @@ static class BuildCommand
     // add-z42c-run-script (2026-05-17): single-file script mode.
     // 编译 `.z42` 到临时 zbc → 自动检测 Main entry → exec z42vm。
     // 用于无 manifest 的 build/test scripts（Phase 1 of shell → z42 自举）。
-    static int RunScript(string scriptPath, string mode)
+    static int RunScript(string scriptPath, string mode, string[] scriptArgs)
     {
         var src = new FileInfo(scriptPath);
         if (!src.Exists)
@@ -313,6 +339,12 @@ static class BuildCommand
             psi.ArgumentList.Add(entry);
             psi.ArgumentList.Add("--mode");
             psi.ArgumentList.Add(mode);
+            // Forward script args after `--` so z42vm hands them to the program.
+            if (scriptArgs.Length > 0)
+            {
+                psi.ArgumentList.Add("--");
+                foreach (var a in scriptArgs) psi.ArgumentList.Add(a);
+            }
 
             var proc = Process.Start(psi)!;
             proc.WaitForExit();
@@ -354,7 +386,7 @@ static class BuildCommand
         return (null, null);
     }
 
-    static int RunProject(string? explicitToml, bool useRelease, string? bin, string mode)
+    static int RunProject(string? explicitToml, bool useRelease, string? bin, string mode, string[] scriptArgs)
     {
         // 1. Build first
         int buildCode = PackageCompiler.Run(explicitToml, useRelease, bin);
@@ -410,11 +442,17 @@ static class BuildCommand
             return 1;
         }
 
-        // 4. Execute
-        var psi = new ProcessStartInfo(vm, $"\"{zpkgPath}\" --mode {mode}")
+        // 4. Execute (ArgumentList avoids quoting pitfalls and lets us forward
+        // user args after `--`, same contract as script mode).
+        var psi = new ProcessStartInfo(vm) { UseShellExecute = false };
+        psi.ArgumentList.Add(zpkgPath);
+        psi.ArgumentList.Add("--mode");
+        psi.ArgumentList.Add(mode);
+        if (scriptArgs.Length > 0)
         {
-            UseShellExecute = false,
-        };
+            psi.ArgumentList.Add("--");
+            foreach (var a in scriptArgs) psi.ArgumentList.Add(a);
+        }
         var proc = Process.Start(psi)!;
         proc.WaitForExit();
         return proc.ExitCode;

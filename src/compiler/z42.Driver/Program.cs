@@ -197,4 +197,10 @@ rootCmd.SetHandler((InvocationContext ctx) =>
     ctx.ExitCode = SingleFileCompiler.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, dumpBound);
 });
 
-return await rootCmd.InvokeAsync(args);
+// fix-run-forward-script-args (2026-06-07): split off args after the first `--`
+// (forwarded verbatim by `run` to the executed program) before System.CommandLine
+// parses, so they don't trip beta4's post-`--` help behaviour. Only `run` reads
+// them; other commands ignore the stash.
+var (preArgs, forwardedArgs) = BuildCommand.SplitForwardedArgs(args);
+BuildCommand.ForwardedScriptArgs = forwardedArgs;
+return await rootCmd.InvokeAsync(preArgs);

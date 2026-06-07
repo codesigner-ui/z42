@@ -35,9 +35,11 @@ dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc] [-o <
 ```bash
 dotnet run --project src/compiler/z42.Driver -- build [<name>.z42.toml] [--release] [--bin <name>]
 dotnet run --project src/compiler/z42.Driver -- check [<name>.z42.toml] [--bin <name>]
-dotnet run --project src/compiler/z42.Driver -- run   [<name>.z42.toml] [--release] [--bin <name>] [--mode interp|jit|aot]
+dotnet run --project src/compiler/z42.Driver -- run   [<path>] [--release] [--bin <name>] [--mode interp|jit|aot] [-- <program args>]
 dotnet run --project src/compiler/z42.Driver -- clean [<name>.z42.toml]
 ```
+
+> `run` 接受 `.z42.toml`(项目)或单个 `.z42`(脚本)。**`--` 之后的参数透传给被运行的 z42 程序**(经 `Std.IO.Environment.GetCommandLineArgs()` 读取),不被 z42c 解析。例:`z42c run app.z42 -- --verbose input.txt` → 程序看到 `["--verbose", "input.txt"]`。(注意:经 `dotnet run --project ... -- run app.z42 -- a b` 时,dotnet 已消费第一个 `--`;原生 `z42c run app.z42 -- a b` 直接可用。)
 
 manifest 字段定义见 [`docs/design/compiler/project.md`](../../design/compiler/project.md)；增量编译机制见 manifest 内 `[build]` + cache 行为说明。
 
