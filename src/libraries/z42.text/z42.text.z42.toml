@@ -5,6 +5,3 @@ kind    = "lib"
 
 [dependencies]
 "z42.core" = "0.1.0"
-
-[tests.dependencies]
-"z42.test" = "0.1.0"

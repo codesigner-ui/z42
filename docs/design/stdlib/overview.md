@@ -246,6 +246,13 @@ Rules:
 - It is a compile-time error to redeclare a top-level name that shadows a `Std` export without an explicit alias (L3).
 - User projects **must not** declare `z42.core` as an explicit dependency in their `.z42.toml`; it is injected automatically by the compiler and VM.
 
+**All stdlib is auto-available — never declare it (simplify-stdlib-auto-import 2026-06-06):**
+The rule above generalizes to the *entire* standard library, not just `z42.core`. Every `z42.*` package is bundled with the toolchain and unconditionally visible to the compiler (`ScanLibsForNamespaces` / `BuildDepIndex` skip the declared-deps filter for `z42.*`), the same way Rust never lists `std` in `Cargo.toml`. `using Std.IO;` works with an empty `[dependencies]`; the `using` is what activates the namespace, **not** a manifest declaration.
+
+- `[dependencies]` / `[tests.dependencies]` / `[bench.dependencies]` are for **third-party** packages only.
+- Declaring a `z42.*` package in a non-`z42.*` project's deps → **WS013** warning (redundant, remove it). `z42.*` packages declaring `z42.*` inter-deps are exempt — those drive workspace build ordering.
+- The stdlib's own per-package manifests therefore carry **no** `[tests.dependencies] "z42.test"` (z42.test is stdlib, auto-loaded); the historical declarations were removed in this change.
+
 ### strict-using-resolution (2026-04-28)
 
 The compiler enforces strict package-based using resolution
@@ -259,13 +266,19 @@ The compiler enforces strict package-based using resolution
 - **多包同 namespace 允许**：例 `Std.Collections` 由 z42.core (List/Dictionary)
   与 z42.collections (Queue/Stack) 共同提供 — 合法，前提是类型名不冲突。
   同 (namespace, class-name) 多包提供 → E0601。
-- **保留前缀**：第三方包（不以 `z42.` 开头）声明 `Std` / `Std.*` namespace →
-  W0603 软警告，不阻断（避免阻止外部包临时调试）。
+- **保留前缀（simplify-stdlib-auto-import 2026-06-06 起为硬错误）**：`Std` / `Std.*` 专属官方 stdlib
+  （同 Rust 保留 `std`/`core`/`alloc`）。两层防线：
+  - **源码层 E0605（硬错误）**：第三方包（不以 `z42.` 开头）在自己源码声明 `namespace Std.*`（或裸 `Std`）→
+    **编译错误**，从源头阻止产出占用 `Std.*` 的包。这保证程序里任何 `Std.*` 一定解析到自动可用的官方 stdlib，
+    永不被 shadow（auto-import 安全的前提）。
+  - **依赖扫描层 W0603（软警告）**：消费一个**已构建**的、NSPC 占用了 `Std.*` 的第三方 zpkg → 警告（该 zpkg
+    可能由旧版本 / 非 z42 工具产出）。E0605 落地后正常工具链产不出这种包，W0603 退化为对陈旧 / 外部产物的软网。
 
 **诊断码**（[error-codes.md](../compiler/error-codes.md)）：
 - E0601 NamespaceCollision — 跨包同 (ns, name) 冲突
 - E0602 UnresolvedUsing — using 指向未加载的 namespace
-- W0603 ReservedNamespace — 非 stdlib 包占用 Std.* 前缀
+- E0605 ReservedNamespaceDeclaration — 第三方包源码声明 Std.* 前缀（硬错误）
+- W0603 ReservedNamespace — 消费已构建的占用 Std.* 的第三方 zpkg（软警告）
 
 ### stdlib Search Path (VM)
 

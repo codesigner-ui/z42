@@ -426,7 +426,17 @@ entry   = "MyApp.main"
 
 这意味着 `using` 语句中的命名空间名称与 `[dependencies]` 中的包名**无需一致**，由 zpkg 自身的 manifest 决定。
 
-**stdlib 无需声明：** `z42.core` 由 VM 启动时自动注入，其他 stdlib 模块（`z42.io`、`z42.math` 等）按需从 libs/ 自动加载，均不需要出现在 `[dependencies]` 中。
+**stdlib 自动可用，永不声明（Rust-std 模型，simplify-stdlib-auto-import 2026-06-06）：**
+
+标准库（`Std.*` 命名空间 / `z42.*` 包）跟工具链一起分发，**始终可用，无需在任何 manifest section 声明**——就像 Rust 从不在 `Cargo.toml` 写 `std`，`use std::...` 直接可用。机制：编译器对 `meta.Name` 以 `z42.` 开头的包**无条件可见**（`ScanLibsForNamespaces` / `BuildDepIndex` 的 isStdlib 旁路），与是否声明无关；版本跟工具链走。
+
+由此确立的约定：
+
+- **`[dependencies]` / `[tests.dependencies]` / `[bench.dependencies]` 只用于第三方依赖。** stdlib（`z42.*`）出现在其中纯属冗余。
+- **WS013 lint（warning）**：非 `z42.*` 项目在任一 deps section 声明了 `z42.*` 包 → 警告「冗余，可删」。（`z42.*` 包**自身**声明 `z42.*` inter-dep 不警告——那是 workspace build 排序需要的，见下「workspace member 构建顺序」。）
+- **`Std.*` 命名空间保留（E0605，硬错误）**：非 `z42.*` 包在源码声明 `namespace Std.*`（或裸 `Std`）→ **编译错误**。`Std` / `Std.*` 专属官方 stdlib（同 Rust 保留 `std`/`core`/`alloc`），保证程序里任何 `Std.*` 一定解析到官方、自动可用的 stdlib，永不被第三方 shadow。（消费一个已构建的、占用 `Std.*` 的第三方 zpkg 时另有 W0603 warning 作软网。）
+
+> 历史背景：早期约定 / 示例鼓励「用啥 stdlib 声明啥」，但编译器本就自动加载，声明从无作用。本次把隐式机制正式化为「显式约定 + lint 守护」。stdlib 各包 manifest 自身曾带的 `[tests.dependencies] "z42.test"` 也一并清掉（z42.test 是 stdlib，自动可用）。
 
 **有 `[dependencies]` vs 无 `[dependencies]`：**
 

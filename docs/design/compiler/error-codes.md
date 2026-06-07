@@ -157,7 +157,8 @@ L1 `[Native]` dispatch 一组（E0901–E0904，已启用）+ Tier1 C ABI 编译
 |--------|--------------------------------------|----------------|
 | E0601  | Type name collision across packages  | 两个被激活的包在同一 namespace 下声明同名 class（first-wins 已禁用） |
 | E0602  | Unresolved `using` namespace         | `using <ns>;` 声明的 namespace 没有任何已加载包提供 |
-| W0603  | Package declares reserved namespace  | 非 stdlib 包（不以 `z42.` 开头）声明 `Std` / `Std.*` 命名空间（warn-only） |
+| W0603  | Package declares reserved namespace  | **依赖扫描层**：消费一个已构建的、NSPC 占用了 `Std.*` 的第三方 zpkg（warn-only，对陈旧 / 外部产物的软网） |
+| E0605  | Source declares reserved stdlib namespace | **源码层（硬错误）**：非 `z42.*` 包在自己源码声明 `namespace Std.*`（或裸 `Std`）→ 编译失败。`Std`/`Std.*` 专属官方 stdlib，保证 auto-import 的 `Std.*` 永不被 shadow（simplify-stdlib-auto-import 2026-06-06） |
 
 ---
 

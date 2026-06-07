@@ -7,6 +7,3 @@ kind    = "lib"
 "z42.core" = "0.1.0"
 "z42.text" = "0.1.0"
 "z42.io"   = "0.1.0"   # Stream overloads on Parse / WriteTo (StreamReader / StreamWriter)
-
-[tests.dependencies]
-"z42.test" = "0.1.0"
