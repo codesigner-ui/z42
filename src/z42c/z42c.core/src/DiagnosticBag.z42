@@ -1,0 +1,79 @@
+// 编译期诊断收集器：累积多条 error/warning 再统一报告。镜像 C# `DiagnosticBag`。
+//
+// z42 暂不支持「类字段带泛型参数」—— `private List<Diagnostic> items;` 的类型参数
+// 会被 parser 静默丢弃（取出元素退化为无约束 T，无法调 .IsError()）。沿用 stdlib
+// 既有模式（TomlValue._arrayItems / Process._args）：`T[] + int count` 并行数组
+// （typed array 的元素访问会正确单态化为 Diagnostic）。详见 self-hosting.md 受限写法。
+//
+// 渲染（PrintAll / Pretty / 颜色 / 文件读取）暂不移植——driver 子系统需要时补。
+namespace Z42.Core;
+
+public sealed class DiagnosticBag {
+    private Diagnostic[] _items;
+    private int _count;
+
+    public DiagnosticBag() {
+        this._items = new Diagnostic[4];
+        this._count = 0;
+    }
+
+    public void Add(Diagnostic d) {
+        if (this._count == this._items.Length) { this.Grow(); }
+        this._items[this._count] = d;
+        this._count = this._count + 1;
+    }
+
+    public void Error(string code, string message, Span span) {
+        this.Add(Diagnostic.Error(code, message, span));
+    }
+    public void Warning(string code, string message, Span span) {
+        this.Add(Diagnostic.Warning(code, message, span));
+    }
+    public void Info(string code, string message, Span span) {
+        this.Add(Diagnostic.Info(code, message, span));
+    }
+
+    public int Count() { return this._count; }
+
+    /// 返回第 i 条诊断（调用方按 0 <= i < Count() 迭代）。
+    public Diagnostic Get(int i) { return this._items[i]; }
+
+    public int ErrorCount() {
+        int n = 0;
+        int i = 0;
+        while (i < this._count) {
+            if (this._items[i].IsError()) { n = n + 1; }
+            i = i + 1;
+        }
+        return n;
+    }
+
+    public bool HasErrors() {
+        int i = 0;
+        while (i < this._count) {
+            if (this._items[i].IsError()) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    public bool HasWarnings() {
+        int i = 0;
+        while (i < this._count) {
+            if (this._items[i].IsWarning()) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    private void Grow() {
+        int newCap = this._items.Length * 2;
+        Diagnostic[] bigger = new Diagnostic[newCap];
+        int i = 0;
+        while (i < this._count) {
+            bigger[i] = this._items[i];
+            i = i + 1;
+        }
+        this._items = bigger;
+    }
+}

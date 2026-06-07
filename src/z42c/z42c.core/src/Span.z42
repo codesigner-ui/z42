@@ -1,0 +1,20 @@
+// 源码位置范围：byte offset [Start, End) + 行列号（用于诊断显示）。
+// 镜像 C# z42.Core 的 `readonly record struct Span`；受限写法用 class + public 字段
+// （z42 无 record；byte-identical 目标针对 z42c 的产物字节，不要求内部表示与 C# 同）。
+namespace Z42.Core;
+
+public sealed class Span {
+    public int Start;
+    public int End;
+    public int Line;
+    public int Column;
+    public string File;
+
+    public Span(int start, int end, int line, int column, string file) {
+        this.Start = start;
+        this.End = end;
+        this.Line = line;
+        this.Column = column;
+        this.File = file;
+    }
+}

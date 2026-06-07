@@ -1,0 +1,41 @@
+// 单条编译诊断（error / warning / info）。镜像 C# `sealed record Diagnostic`。
+// Severity 用 int（见 DiagnosticSeverity）。Properties（结构化键值）暂不移植
+// （Lexer/Parser 不需要；driver 渲染期再补，见 self-hosting.md increment 计划）。
+namespace Z42.Core;
+
+public sealed class Diagnostic {
+    public int Severity;
+    public string Code;
+    public string Message;
+    public Span Span;
+
+    public Diagnostic(int severity, string code, string message, Span span) {
+        this.Severity = severity;
+        this.Code = code;
+        this.Message = message;
+        this.Span = span;
+    }
+
+    public bool IsError() { return this.Severity == DiagnosticSeverity.Error; }
+    public bool IsWarning() { return this.Severity == DiagnosticSeverity.Warning; }
+
+    // 镜像 C# ToString(): "file(line,col): severity code: message"
+    public string Format() {
+        string sev = "info";
+        if (this.Severity == DiagnosticSeverity.Error) { sev = "error"; }
+        else if (this.Severity == DiagnosticSeverity.Warning) { sev = "warning"; }
+        return this.Span.File + "(" + this.Span.Line.ToString() + ","
+            + this.Span.Column.ToString() + "): " + sev + " " + this.Code + ": " + this.Message;
+    }
+
+    // ── 工厂 ────────────────────────────────────────────────────────────────
+    public static Diagnostic Error(string code, string message, Span span) {
+        return new Diagnostic(DiagnosticSeverity.Error, code, message, span);
+    }
+    public static Diagnostic Warning(string code, string message, Span span) {
+        return new Diagnostic(DiagnosticSeverity.Warning, code, message, span);
+    }
+    public static Diagnostic Info(string code, string message, Span span) {
+        return new Diagnostic(DiagnosticSeverity.Info, code, message, span);
+    }
+}

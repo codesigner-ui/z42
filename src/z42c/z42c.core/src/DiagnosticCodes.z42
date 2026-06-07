@@ -1,0 +1,83 @@
+// 已知诊断错误码。镜像 C# `static class DiagnosticCodes`（const string → static string）。
+//   E01xx Lexer / E02xx Parser / E03xx Features / E04xx TypeCheck / E05xx IrGen /
+//   E06xx Package·import / E09xx Native·Test / E10xx 调用实参绑定。
+namespace Z42.Core;
+
+public static class DiagnosticCodes {
+    // Lexer
+    public static string UnterminatedString = "E0101";
+    public static string InvalidEscape       = "E0102";
+    public static string InvalidNumericLit   = "E0103";
+
+    // Parser
+    public static string UnexpectedToken     = "E0201";
+    public static string ExpectedToken       = "E0202";
+    public static string UnexpectedEof       = "E0203";
+    public static string MissingReturnType   = "E0204";
+    public static string AmbiguousExpression = "E0205";
+
+    // Feature gates
+    public static string FeatureDisabled     = "E0301";
+
+    // Type checker
+    public static string UndefinedSymbol       = "E0401";
+    public static string TypeMismatch          = "E0402";
+    public static string MissingReturn         = "E0403";
+    public static string AccessViolation       = "E0404";
+    public static string InvalidModifier       = "E0405";
+    public static string IntLiteralOutOfRange  = "E0406";
+    public static string UninitializedVariable = "E0407";
+    public static string DuplicateDeclaration  = "E0408";
+    public static string VoidAssignment        = "E0409";
+    public static string InvalidBreakContinue  = "E0410";
+    public static string InvalidInheritance    = "E0411";
+    public static string InterfaceMismatch     = "E0412";
+    public static string InvalidImpl           = "E0413";
+    public static string EventFieldExternalAccess = "E0414";
+    public static string InvalidCatchType         = "E0420";
+    public static string InvalidDefaultType       = "E0421";
+    public static string GenericFuncConstraintViolation = "E0422";
+    public static string InvalidFuncConstraint    = "E0423";
+    public static string IllegalCast              = "E0424";
+
+    // IrGen
+    public static string UnsupportedSyntax   = "E0501";
+
+    // Package / import resolution
+    public static string NamespaceCollision  = "E0601";
+    public static string UnresolvedUsing     = "E0602";
+    public static string ReservedNamespace            = "W0603";
+    public static string CapturedValueSnapshotAssign  = "W0604";
+    public static string ReservedNamespaceDeclaration = "E0605";
+
+    // Internal compiler error
+    public static string InternalCompilerError = "E0900";
+
+    // Native / InternalCall
+    public static string ExternRequiresNative     = "E0903";
+    public static string NativeRequiresExtern     = "E0904";
+    public static string NativeAttributeMalformed = "E0907";
+
+    // Native interop — pinned block
+    public static string PinnedNotPinnable = "E0908a";
+    public static string PinnedControlFlow = "E0908b";
+
+    // Native interop — manifest reader / synthesis
+    public static string ManifestParseError              = "E0909";
+    public static string NativeImportSynthesisFailure    = "E0916";
+
+    // Test framework
+    public static string TestSignatureInvalid          = "E0911";
+    public static string BenchmarkSignatureInvalid     = "E0912";
+    public static string ShouldThrowTypeInvalid        = "E0913";
+    public static string SkipReasonMissing             = "E0914";
+    public static string SetupTeardownSignatureInvalid = "E0915";
+    public static string TimeoutValueInvalid           = "E0917";
+
+    // E10xx: call-site argument binding
+    public static string PositionalAfterNamed     = "E1001";
+    public static string UnknownArgumentName      = "E1002";
+    public static string DuplicateArgumentName    = "E1003";
+    public static string ParameterDoublySpecified = "E1004";
+    public static string MissingRequiredArgument  = "E1005";
+}

@@ -54,6 +54,16 @@ driver    ◄── pipeline, ir, core
 
 **dogfood 缺口处理**：写到某处今天的 z42 子集**无法表达**（不是不优雅）→ 停下汇报 → 判定 L1/L2 可补 / 必须拉 L3 → L1/L2 当次 spec 实现；必须 L3 则 features.md 逐项评估是否为自举提前。**禁止在编译器代码里写 workaround**（[[feedback_dogfood_fill_gaps]]）。
 
+**受限写法补充（实做中发现，均沿用 stdlib 既有模式，非 workaround）**：
+
+| 发现 | C# 写法 | z42 受限写法 | 依据 |
+|------|--------|-------------|------|
+| **无 `enum` 关键字** | `enum DiagnosticSeverity { ... }` | `static class` + `int` 常量 | stdlib `SplitOptions` / `SeekOrigin` / `FileMode` |
+| **类字段不能带泛型参数**（`private List<X> f;` 的 `<X>` 被 parser 静默丢弃 → 取元素退化为无约束 `T`，无法调其方法）| `List<Diagnostic> _items` | **typed array + count**：`Diagnostic[] _items; int _count;` + 手动 `Grow()` | stdlib `TomlValue._arrayItems` / `Process._args`（typed array 元素访问会正确单态化）|
+| **`List<T>` 过度约束** `where T: IEquatable<T> + IComparable<T>`（`IComparable` 对 Token/AST 无意义）| `List<T>` 任意元素 | 用 typed array 规避（同上）；确需有序/查找集合时按需实现接口或 `Sort(comparer)` | List.z42 约束注释 |
+
+> 这三条决定编译器内部**集合一律用 typed array + count 并行数组**（而非 `List<T>` 字段）。`enum` / 泛型字段 / List 约束放松若后续作为独立语言增强落地，编译器代码随之迁移。
+
 ## 构建与依赖解析
 
 **构建**：`z42c build --workspace --release`（cwd=`src/z42c`）→ 拓扑序编译 7 子包 → `artifacts/build/z42c/<member>/<profile>/{dist,cache}/`。经 xtask：`z42 xtask.zpkg build compiler-z42`。

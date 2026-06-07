@@ -6,7 +6,15 @@
 ## 核心文件
 | 文件 | 职责 |
 |------|------|
-| `src/CoreSkeleton.z42` | 占位（`namespace Z42.Core`）；真实 Span/Diagnostic/Features 待 0.3.3+ |
+| `src/Span.z42` | 源码位置范围 `[Start,End)` + 行列 + File |
+| `src/DiagnosticSeverity.z42` | Error/Warning/Info（int 常量；z42 暂无 enum）|
+| `src/Diagnostic.z42` | 单条诊断（Severity/Code/Message/Span + IsError + Format + 工厂）|
+| `src/DiagnosticBag.z42` | 诊断收集器（typed array + count；Add/Error/Count/Get/ErrorCount/HasErrors）|
+| `src/DiagnosticCodes.z42` | E01xx–E10xx 错误码常量（镜像 C# `DiagnosticCodes`）|
+| `src/CoreSkeleton.z42` | **过渡占位**：尚未移植的 syntax/semantics/pipeline/driver 仍引用它；各自移植到真实 core 时移除 |
+
+> 受限写法（无 enum / 类字段无泛型 / List 约束 → typed array）见 [self-hosting.md](../../../docs/design/compiler/self-hosting.md)。
+> 待移植：LanguageFeatures（increment 2）/ DiagnosticRenderer·Catalog·Category（increment 3）/ PreludePackages。
 
 ## 入口点
 `Z42.Core`（命名空间，镜像 C# 同名）。

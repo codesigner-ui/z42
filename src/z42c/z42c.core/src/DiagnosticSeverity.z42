@@ -1,0 +1,10 @@
+// 诊断级别。镜像 C# `enum DiagnosticSeverity { Error, Warning, Info }`。
+// z42 暂无 enum 关键字 → 沿用 stdlib 既有模式（SplitOptions / SeekOrigin / FileMode）：
+// static class + int 常量。(dogfood: 若 enum 后续落地，此处随之迁移。)
+namespace Z42.Core;
+
+public static class DiagnosticSeverity {
+    public static int Error = 0;
+    public static int Warning = 1;
+    public static int Info = 2;
+}
