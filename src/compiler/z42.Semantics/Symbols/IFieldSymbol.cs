@@ -29,7 +29,9 @@ public sealed class FieldSymbol : IFieldSymbol
     public SymbolKind Kind => SymbolKind.Field;
     /// Internally settable for two-phase construction (see MethodSymbol).
     public Z42Type? ContainingType { get; internal set; }
-    public Z42Type Type { get; }
+    /// Internally settable for the post-collection type-reference fixup
+    /// (SymbolCollector.FinalizeTypeReferences) — see MethodSymbol.Signature.
+    public Z42Type Type { get; internal set; }
     public bool IsStatic { get; }
     public bool IsEvent { get; }
     public FieldDecl? Decl { get; }

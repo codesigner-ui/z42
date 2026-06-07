@@ -90,7 +90,7 @@ public sealed class SubcommandRouter {
                 string[] rest = new string[n];
                 int j = 0;
                 while (j < n) { rest[j] = argv[j + 1]; j = j + 1; }
-                var pr = this._parsers[i].Parse(rest);
+                ParseResult pr = this._parsers[i].Parse(rest);
                 return new SubcommandMatch(this._names[i], pr);
             }
             i = i + 1;

@@ -508,6 +508,10 @@ public sealed partial class SymbolCollector
         var done = new HashSet<string>();
         foreach (var name in _classes.Keys.ToList())
             FinalizeInheritanceOne(name, done);
+        // All CUs collected → upgrade any forward/cross-file class references that
+        // degraded to Z42PrimType during per-CU resolution (SymbolCollector.TypeFixup).
+        // Runs after inheritance so inherited members are covered too.
+        FinalizeTypeReferences();
     }
 
     /// fix-memorystream-override-visibility (2026-05-24): run deferred `override`-method

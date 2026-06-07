@@ -333,6 +333,26 @@ ResolveTypeName 里走 `_ => new Z42PrimType(name)` fallback，被降级。
 **禁止在 IsAssignableTo 加 PrimType↔ClassType 同名兼容分支**（症状级补丁）。
 两阶段加载是经典 C# / Java 编译器的"先建骨架再填字段"做法，从源头物理消除降级。
 
+#### intra-package 同名降级 fixup（2026-06-07 fix-array-indexed-method-e0402）
+
+上面解决的是**跨 zpkg imported** 类型的降级。**本包内跨 CU** 的 forward
+reference 有同样的病根但走不同代码路径：`SymbolCollector` 逐 CU 收集，
+`ResolveType` 在解析某成员类型时若引用的类**所在 CU 还没被收集**（CU 收集
+顺序非确定 —— common-pitfalls §1 文件枚举顺序），就降级为 `Z42PrimType(name)`。
+单包 build 与 workspace build 可能落到相反的 CU 顺序，于是同一份源码在 workspace
+fresh 构建报 `E0402: cannot assign T to T`、单包构建却通过（典型现场：
+`z42.cli` 的 `ParseResult pr = this._parsers[i].Parse(rest)`，`ArgParser.Parse`
+跨文件返回 `ParseResult`）。
+
+修复 = `SymbolCollector.FinalizeTypeReferences()`（[SymbolCollector.TypeFixup.cs](../../../src/compiler/z42.Semantics/TypeCheck/SymbolCollector.TypeFixup.cs)）：
+所有 CU 收集完后、在 `FinalizeInheritance()` 末尾跑一趟，把本包成员签名（方法
+参数/返回、字段类型、free function、含 array/option/func/instantiated 嵌套）里
+凡 `Z42PrimType(name)` 且 `name` 命中 `_classes` / `_interfaces` 的，**就地升级**
+回真实 `Z42ClassType` / `Z42InterfaceType`（imported 名跳过，避免同名误升级）。
+`MethodSymbol.Signature` / `FieldSymbol.Type` 为此加了 `internal set`（与
+`ContainingType` 同样的两阶段构造模式）。同样**禁止**改 IsAssignableTo —— 这是
+与上面 imported 两阶段对称的"一次性 fixup 物理消除降级"。
+
 **ResolveTypeName 签名**：
 
 ```csharp

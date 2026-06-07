@@ -52,7 +52,12 @@ public sealed class MethodSymbol : IMethodSymbol
     /// Resolves the chicken-and-egg between Z42ClassType.Methods (holds IMethodSymbol)
     /// and IMethodSymbol.ContainingType (holds Z42ClassType).
     public Z42Type? ContainingType { get; internal set; }
-    public Z42FuncType Signature { get; }
+    /// Internally settable for the post-collection type-reference fixup
+    /// (SymbolCollector.FinalizeTypeReferences): a forward / cross-file class
+    /// in this signature may have degraded to Z42PrimType during per-CU
+    /// collection; it is upgraded back to the real Z42ClassType once every CU
+    /// is collected.
+    public Z42FuncType Signature { get; internal set; }
     public FunctionModifiers Modifiers { get; }
     public FunctionDecl? Decl { get; }
     public IReadOnlyList<TestAttribute>? TestAttributes { get; }
