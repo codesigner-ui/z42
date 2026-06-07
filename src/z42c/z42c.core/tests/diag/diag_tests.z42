@@ -1,0 +1,79 @@
+// z42c.core 诊断地基单测（Span / Diagnostic / DiagnosticBag / DiagnosticCodes）。
+// 用 Assert.Equal 覆盖（bool 走 Equal(true/false, ...)，不依赖 True/False 是否存在）。
+namespace Z42cCoreDiagTests;
+
+using Std;
+using Std.Test;
+using Z42.Core;
+
+[Test]
+void test_span_fields() {
+    var sp = new Span(5, 10, 2, 3, "a.z42");
+    Assert.Equal(5, sp.Start);
+    Assert.Equal(10, sp.End);
+    Assert.Equal(2, sp.Line);
+    Assert.Equal(3, sp.Column);
+    Assert.Equal("a.z42", sp.File);
+}
+
+[Test]
+void test_diagnostic_error_factory() {
+    var sp = new Span(0, 0, 1, 1, "f.z42");
+    var d = Diagnostic.Error(DiagnosticCodes.UnexpectedToken, "boom", sp);
+    Assert.Equal(true, d.IsError());
+    Assert.Equal(false, d.IsWarning());
+    Assert.Equal("E0201", d.Code);
+    Assert.Equal("boom", d.Message);
+}
+
+[Test]
+void test_diagnostic_warning_factory() {
+    var sp = new Span(0, 0, 1, 1, "x");
+    var w = Diagnostic.Warning(DiagnosticCodes.ReservedNamespace, "warn", sp);
+    Assert.Equal(true, w.IsWarning());
+    Assert.Equal(false, w.IsError());
+}
+
+[Test]
+void test_diagnostic_format() {
+    var d = Diagnostic.Error("E0001", "msg", new Span(0, 0, 7, 4, "f.z42"));
+    Assert.Equal("f.z42(7,4): error E0001: msg", d.Format());
+}
+
+[Test]
+void test_bag_counts() {
+    var sp = new Span(0, 0, 1, 1, "x");
+    var bag = new DiagnosticBag();
+    Assert.Equal(0, bag.Count());
+    Assert.Equal(false, bag.HasErrors());
+    bag.Error(DiagnosticCodes.UnterminatedString, "e1", sp);
+    bag.Warning(DiagnosticCodes.ReservedNamespace, "w1", sp);
+    bag.Error(DiagnosticCodes.UnexpectedEof, "e2", sp);
+    Assert.Equal(3, bag.Count());
+    Assert.Equal(2, bag.ErrorCount());
+    Assert.Equal(true, bag.HasErrors());
+    Assert.Equal(true, bag.HasWarnings());
+}
+
+[Test]
+void test_bag_get_and_grow() {
+    var sp = new Span(0, 0, 1, 1, "x");
+    var bag = new DiagnosticBag();
+    // 超过初始容量 4，触发 Grow()
+    int i = 0;
+    while (i < 10) {
+        bag.Error(DiagnosticCodes.InternalCompilerError, "e" + i.ToString(), sp);
+        i = i + 1;
+    }
+    Assert.Equal(10, bag.Count());
+    Assert.Equal("E0900", bag.Get(0).Code);
+    Assert.Equal("e7", bag.Get(7).Message);
+}
+
+[Test]
+void test_diagnostic_codes_values() {
+    Assert.Equal("E0101", DiagnosticCodes.UnterminatedString);
+    Assert.Equal("E0201", DiagnosticCodes.UnexpectedToken);
+    Assert.Equal("E0602", DiagnosticCodes.UnresolvedUsing);
+    Assert.Equal("E1005", DiagnosticCodes.MissingRequiredArgument);
+}

@@ -77,6 +77,29 @@ driver    ◄── pipeline, ir, core
 
 详见 [compiler-architecture.md](compiler-architecture.md) 对应段。
 
+### 运行 / 测试 z42c（单一 flat libs 目录 — 重要）
+
+**运行期 `Z42_LIBS` 是单个目录（非 colon-list），且必须含全部依赖 zpkg。** 跑 z42c 产物
+（driver / 测试）时，先把「z42c 7 包 + stdlib」**合并到一个 flat 目录**（`xtask test
+compiler-z42` 自动组装 `artifacts/build/z42c/alllibs/<profile>/`），再 `Z42_LIBS=<该目录>`：
+
+```
+Z42_PORTABLE_VM=<z42vm> Z42_LIBS=<flat 含 z42c.*+z42.*> z42vm z42c.driver.zpkg
+```
+
+> **踩坑记录（2026-06-07）**：误把 `Z42_LIBS` 当成 colon-list 传多个目录 → 运行期当成单个
+> 非法路径 → 回退到仅 stdlib → z42c 包未加载 → `VCall: function not found` + 静态字段读
+> null。一度误判为 VM/编译器跨包 bug，实为 harness 配置。**跨包方法调用与静态字段在运行
+> 时完全正常**（driver 端到端 + z42c.core 7/7 单测验证），7 包架构运行时成立。
+
+### 测试通道（z42c [Test]）
+
+测试单元布局：`src/z42c/<member>/tests/<unit>/{<name>.z42.toml(kind=lib) + *.z42}`。
+`xtask test compiler-z42` = build 7 子包 smoke + 组装 flat 目录 + 逐单元 `z42c build <toml>
+--release`（Z42_LIBS=flat）+ `z42-test-runner <zpkg>`（Z42_PORTABLE_VM + Z42_LIBS=flat）。
+`z42.test` 是 stdlib 自动可用（**不**在 toml 声明，避免 WS013）。z42c-selfhost 仍为
+opt-in soak，不入默认 GREEN gate。
+
 ## CLI parity（无桥接）
 
 z42c.driver 只 ship 已就绪命令，**绝不** fallback 到 dotnet z42c.dll。逐子版本解锁：

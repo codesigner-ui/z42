@@ -77,5 +77,91 @@ int _testCompilerZ42() {
     Console.WriteLine("test compiler-z42: " + ok.ToString() + "/"
         + members.Length.ToString() + " zpkg present");
     if (fail > 0) { return 1; }
+
+    // ── z42c [Test] units ────────────────────────────────────────────────
+    return _testCompilerZ42Units(root, profile, members);
+}
+
+// Build + run each z42c [Test] unit through z42-test-runner.
+//
+// RUNTIME 关键：z42vm 的 Z42_LIBS 是 *单个* 目录（非 colon-list），且必须含全部
+// 依赖 zpkg。故先组装一个「z42c 7 包 + stdlib」合并 flat 目录，编译期与运行期
+// 都指向它（dogfood：跨包方法调用与静态字段在运行时完全可用，只要 lib 全在一个
+// flat 目录里——这正是当初误用 colon-list Z42_LIBS 导致 "VCall not found" 的根因）。
+//
+// 测试单元布局：src/z42c/<member>/tests/<unit>/{<name>.z42.toml + *.z42}。
+// kind=lib（runner 按 [Test] 方法 fork z42vm，不需 Main）；z42.test 自动可用。
+int _testCompilerZ42Units(string root, string profile, string[] members) {
+    string flat = Path.Join(root, "artifacts/build/z42c/alllibs/" + profile);
+    Directory.Create(flat);
+    _cleanGlob(flat, "*.zpkg");
+    // stdlib（z42.test / z42.core prelude / ...）
+    _linkAll(Path.Join(root, "artifacts/build/libraries/dist/" + profile), flat, "*.zpkg");
+    // z42c 7 包
+    int i = 0;
+    while (i < members.Length) {
+        _linkAll(Path.Join(root, "artifacts/build/z42c/" + members[i] + "/" + profile + "/dist"),
+                 flat, "*.zpkg");
+        i = i + 1;
+    }
+
+    string vm     = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string runner = Path.Join(root, "artifacts/build/runtime/release/z42-test-runner");
+    if (!File.Exists(runner)) {
+        ConsoleError.WriteLine("error: z42-test-runner not found at " + runner
+            + " (cargo build --release --manifest-path src/toolchain/test-runner/Cargo.toml)");
+        return 2;
+    }
+
+    int totalFailed = 0;
+    int totalUnits = 0;
+    i = 0;
+    while (i < members.Length) {
+        string testsDir = Path.Join(root, "src/z42c/" + members[i] + "/tests");
+        if (Directory.Exists(testsDir)) {
+            foreach (var unit in _sortedStrings(Directory.Enumerate(testsDir))) {
+                string unitDir = Path.Join(testsDir, unit);
+                if (!Directory.Exists(unitDir)) { continue; }
+                string[] tomls = Path.Glob(unitDir, "*.z42.toml");
+                if (tomls.Length == 0) { continue; }
+                totalUnits = totalUnits + 1;
+                Console.WriteLine("");
+                Console.WriteLine("── z42c test: " + members[i] + " / " + unit + " ──");
+                // compile (release/packed) with Z42_LIBS=flat
+                ProcessResult br = new Process("dotnet")
+                    .Arg("run").Arg("--no-build").Arg("--project").Arg(Path.Join(root, _driverProj()))
+                    .Arg("-c").Arg("Release").Arg("--")
+                    .Arg("build").Arg(tomls[0]).Arg("--release")
+                    .Env("Z42_LIBS", flat)
+                    .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run();
+                if (br.ExitCode != 0) {
+                    Console.WriteLine("  ✗ compile failed: " + unit);
+                    totalFailed = totalFailed + 1;
+                    continue;
+                }
+                // run each produced test zpkg through the runner
+                string[] zps = Path.Glob(Path.Join(unitDir, "dist"), "*.zpkg");
+                int j = 0;
+                while (j < zps.Length) {
+                    int rc = new Process(runner)
+                        .Arg(zps[j])
+                        .Env("Z42_PORTABLE_VM", vm)
+                        .Env("Z42_LIBS", flat)
+                        .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+                    if (rc != 0) { totalFailed = totalFailed + 1; }
+                    j = j + 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+
+    Console.WriteLine("");
+    if (totalFailed > 0) {
+        Console.WriteLine("❌ z42c [Test]: " + totalFailed.ToString() + " unit(s) failed (of "
+            + totalUnits.ToString() + ")");
+        return 1;
+    }
+    Console.WriteLine("✅ z42c [Test]: all " + totalUnits.ToString() + " unit(s) passed");
     return 0;
 }
