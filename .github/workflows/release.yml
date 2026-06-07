@@ -44,11 +44,13 @@ jobs:
             tag="${{ inputs.version }}"
           fi
           # read versions.toml [project].version (no versions.sh; this job has no
-          # z42 toolchain — same awk pattern as scripts/install-z42.sh).
+          # z42 toolchain — same awk pattern as scripts/install-z42.sh). Split on
+          # the quote so a trailing comment (`version = "0.2.0"  # ...`) doesn't
+          # leak into the value (the old gsub /.*"|".*/ kept the comment).
           repo_version=$(awk '
             /^\[project\]/ {inblock=1; next}
             /^\[/ {inblock=0}
-            inblock && /^version/ {gsub(/.*"|".*/,""); print; exit}
+            inblock && /^version/ {split($0, a, "\""); print a[2]; exit}
           ' versions.toml)
           if [ "$tag" != "$repo_version" ]; then
             echo "drift: tag=$tag versions.toml=$repo_version" >&2

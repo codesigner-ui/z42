@@ -28,7 +28,7 @@ STAMP="$DEST/.bootstrap-stamp"
 VER="$(awk '
   /^\[toolchain\.z42\]/ {inblock=1; next}
   /^\[/ {inblock=0}
-  inblock && /^launcher/ {gsub(/.*"|".*/,""); print; exit}
+  inblock && /^launcher/ {split($0, a, "\""); print a[2]; exit}
 ' "$REPO/versions.toml" 2>/dev/null)"
 VER="${VER:-nightly}"
 if [ "$VER" = "nightly" ]; then TAG="nightly"; else TAG="v$VER"; fi
