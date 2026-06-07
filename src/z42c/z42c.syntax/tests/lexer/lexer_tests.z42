@@ -1,0 +1,115 @@
+// z42c.syntax Lexer 单测：标识符/关键字/字面量/符号/注释/位置。
+namespace Z42cSyntaxLexerTests;
+
+using Std;
+using Std.Test;
+using Z42.Syntax;
+using Z42.Core;
+
+// 辅助：lex 后返回第 i 个 token。
+[Test]
+void test_identifier() {
+    var lx = new Lexer("abc", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(2, lx.TokenCount());                 // abc + Eof
+    Assert.Equal(TokenKind.Identifier, lx.TokenAt(0).Kind);
+    Assert.Equal("abc", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.Eof, lx.TokenAt(1).Kind);
+}
+
+[Test]
+void test_keywords() {
+    var lx = new Lexer("class int if foreach", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.Class, lx.TokenAt(0).Kind);
+    Assert.Equal(TokenKind.Int, lx.TokenAt(1).Kind);
+    Assert.Equal(TokenKind.If, lx.TokenAt(2).Kind);
+    Assert.Equal(TokenKind.Foreach, lx.TokenAt(3).Kind);
+}
+
+[Test]
+void test_underscore_is_own_token() {
+    var lx = new Lexer("_", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.Underscore, lx.TokenAt(0).Kind);
+    // _abc 仍是标识符
+    var lx2 = new Lexer("_abc", "t.z42");
+    lx2.Tokenize();
+    Assert.Equal(TokenKind.Identifier, lx2.TokenAt(0).Kind);
+    Assert.Equal("_abc", lx2.TokenAt(0).Text);
+}
+
+[Test]
+void test_int_and_float() {
+    var lx = new Lexer("123 3.14", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("123", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(1).Kind);
+    Assert.Equal("3.14", lx.TokenAt(1).Text);
+}
+
+[Test]
+void test_member_access_not_float() {
+    // `a.b` → Identifier Dot Identifier（点后非数字，不是浮点）
+    var lx = new Lexer("a.b", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.Identifier, lx.TokenAt(0).Kind);
+    Assert.Equal(TokenKind.Dot, lx.TokenAt(1).Kind);
+    Assert.Equal(TokenKind.Identifier, lx.TokenAt(2).Kind);
+}
+
+[Test]
+void test_string_literal() {
+    var lx = new Lexer("\"hello\"", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.StringLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("\"hello\"", lx.TokenAt(0).Text);   // raw lexeme，含引号
+}
+
+[Test]
+void test_symbols_longest_match() {
+    var lx = new Lexer("== -> += << ( ) ;", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.EqEq, lx.TokenAt(0).Kind);
+    Assert.Equal(TokenKind.Arrow, lx.TokenAt(1).Kind);
+    Assert.Equal(TokenKind.PlusEq, lx.TokenAt(2).Kind);
+    Assert.Equal(TokenKind.LtLt, lx.TokenAt(3).Kind);
+    Assert.Equal(TokenKind.LParen, lx.TokenAt(4).Kind);
+    Assert.Equal(TokenKind.RParen, lx.TokenAt(5).Kind);
+    Assert.Equal(TokenKind.Semicolon, lx.TokenAt(6).Kind);
+}
+
+[Test]
+void test_snippet_token_sequence() {
+    var lx = new Lexer("int x = 1;", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(6, lx.TokenCount());   // int x = 1 ; Eof
+    Assert.Equal(TokenKind.Int, lx.TokenAt(0).Kind);
+    Assert.Equal(TokenKind.Identifier, lx.TokenAt(1).Kind);
+    Assert.Equal(TokenKind.Eq, lx.TokenAt(2).Kind);
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(3).Kind);
+    Assert.Equal(TokenKind.Semicolon, lx.TokenAt(4).Kind);
+    Assert.Equal(TokenKind.Eof, lx.TokenAt(5).Kind);
+}
+
+[Test]
+void test_comments_skipped() {
+    var lx = new Lexer("// line comment\n/* block */ x", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(2, lx.TokenCount());   // x + Eof
+    Assert.Equal(TokenKind.Identifier, lx.TokenAt(0).Kind);
+    Assert.Equal("x", lx.TokenAt(0).Text);
+}
+
+[Test]
+void test_line_column_tracking() {
+    var lx = new Lexer("a\n  b", "t.z42");
+    lx.Tokenize();
+    // a @ line 1 col 1
+    Assert.Equal(1, lx.TokenAt(0).Span.Line);
+    Assert.Equal(1, lx.TokenAt(0).Span.Column);
+    // b @ line 2 col 3
+    Assert.Equal(2, lx.TokenAt(1).Span.Line);
+    Assert.Equal(3, lx.TokenAt(1).Span.Column);
+}

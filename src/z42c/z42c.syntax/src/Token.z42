@@ -1,0 +1,17 @@
+// 一个词法 token：Kind（见 TokenKind）+ 原始 lexeme 文本 + 源码 Span。
+// 镜像 C# z42.Syntax `Token`（LeadingTrivia 暂不移植——formatter/IDE 用，pipeline 忽略）。
+namespace Z42.Syntax;
+
+using Z42.Core;
+
+public sealed class Token {
+    public int    Kind;
+    public string Text;
+    public Span   Span;
+
+    public Token(int kind, string text, Span span) {
+        this.Kind = kind;
+        this.Text = text;
+        this.Span = span;
+    }
+}

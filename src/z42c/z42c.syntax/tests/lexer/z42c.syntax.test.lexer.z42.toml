@@ -1,0 +1,13 @@
+# z42c.syntax Lexer 单测（port-z42c-syntax increment 1）。
+# kind=lib（runner 按 [Test] fork z42vm）；z42.test stdlib 自动可用。
+[project]
+name    = "z42c.syntax.test.lexer"
+version = "0.1.0"
+kind    = "lib"
+
+[sources]
+include = ["**/*.z42"]
+
+[dependencies]
+"z42c.syntax" = "0.1.0"
+"z42c.core"   = "0.1.0"

@@ -1,0 +1,68 @@
+// Token 类型常量。镜像 C# z42.Syntax `enum TokenKind`（z42 无 enum → static class + int）。
+// 值仅需互异（token 是编译器内部、不入 zbc）；顺序沿用 C# 枚举便于对照。
+namespace Z42.Syntax;
+
+public static class TokenKind {
+    // 字面量
+    public static int IntLiteral = 0; public static int FloatLiteral = 1;
+    public static int StringLiteral = 2; public static int CharLiteral = 3;
+    public static int InterpolatedStringLiteral = 4; public static int RawStringLiteral = 5;
+    public static int True = 6; public static int False = 7;
+    // 标识符
+    public static int Identifier = 8;
+    // C# 关键字
+    public static int Namespace = 9; public static int Using = 10; public static int Var = 11;
+    public static int Static = 12; public static int Public = 13; public static int Private = 14;
+    public static int Protected = 15; public static int Internal = 16;
+    public static int Ref = 17; public static int Out = 18;
+    public static int Class = 19; public static int Struct = 20; public static int Enum = 21;
+    public static int Interface = 22; public static int Record = 23; public static int Delegate = 24;
+    public static int Event = 25; public static int Abstract = 26; public static int Sealed = 27;
+    public static int Override = 28; public static int Virtual = 29; public static int New = 30;
+    public static int Extern = 31; public static int Async = 32; public static int Await = 33;
+    public static int Return = 34; public static int If = 35; public static int Else = 36;
+    public static int While = 37; public static int For = 38; public static int Foreach = 39;
+    public static int In = 40; public static int Do = 41; public static int Break = 42;
+    public static int Continue = 43; public static int Switch = 44; public static int Case = 45;
+    public static int Default = 46; public static int Try = 47; public static int Catch = 48;
+    public static int Finally = 49; public static int Throw = 50; public static int Pinned = 51;
+    public static int Import = 52; public static int Typeof = 53; public static int Is = 54;
+    public static int As = 55; public static int Null = 56; public static int Where = 57;
+    public static int Operator = 58;
+    // z42 保留关键字
+    public static int Fn = 59; public static int Let = 60; public static int Mut = 61;
+    public static int Trait = 62; public static int Impl = 63; public static int Use = 64;
+    public static int Module = 65; public static int Spawn = 66; public static int NoneKw = 67;
+    public static int ErrorKw = 68;
+    // 类型关键字
+    public static int String = 69; public static int Int = 70; public static int Long = 71;
+    public static int Short = 72; public static int Double = 73; public static int Float = 74;
+    public static int Byte = 75; public static int Uint = 76; public static int Ulong = 77;
+    public static int Ushort = 78; public static int Sbyte = 79; public static int Object = 80;
+    public static int Bool = 81; public static int Char = 82; public static int Void = 83;
+    public static int I8 = 84; public static int I16 = 85; public static int I32 = 86; public static int I64 = 87;
+    public static int U8 = 88; public static int U16 = 89; public static int U32 = 90; public static int U64 = 91;
+    public static int F32 = 92; public static int F64 = 93;
+    // 符号
+    public static int LParen = 94; public static int RParen = 95; public static int LBrace = 96;
+    public static int RBrace = 97; public static int LBracket = 98; public static int RBracket = 99;
+    public static int Comma = 100; public static int Dot = 101; public static int DotDot = 102;
+    public static int Colon = 103; public static int ColonColon = 104; public static int Semicolon = 105;
+    public static int Arrow = 106; public static int FatArrow = 107; public static int Question = 108;
+    public static int QuestionQuestion = 109; public static int Bang = 110; public static int Ampersand = 111;
+    public static int Pipe = 112; public static int Caret = 113; public static int Tilde = 114;
+    public static int Plus = 115; public static int Minus = 116; public static int Star = 117;
+    public static int Slash = 118; public static int Percent = 119; public static int Eq = 120;
+    public static int EqEq = 121; public static int BangEq = 122; public static int Lt = 123;
+    public static int LtEq = 124; public static int Gt = 125; public static int GtEq = 126;
+    public static int LtLt = 127; public static int GtGt = 128; public static int AmpAmp = 129;
+    public static int PipePipe = 130; public static int PlusEq = 131; public static int MinusEq = 132;
+    public static int StarEq = 133; public static int SlashEq = 134; public static int PercentEq = 135;
+    public static int PlusPlus = 136; public static int MinusMinus = 137; public static int AmpEq = 138;
+    public static int PipeEq = 139; public static int CaretEq = 140;
+    // 属性
+    public static int Hash = 141; public static int LBracketHash = 142;
+    // 特殊
+    public static int Underscore = 143; public static int Newline = 144; public static int Eof = 145;
+    public static int Error_Unknown = 146;
+}

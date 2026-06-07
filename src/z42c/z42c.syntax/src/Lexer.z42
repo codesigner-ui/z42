@@ -1,0 +1,299 @@
+// 手写词法器（z42c.syntax，自举 increment：syntax #1）。
+// 镜像 C# z42.Syntax 的 token KINDS + 词法规则；内部用直写式扫描（非组合子框架）——
+// byte-identical 目标针对 z42c 产物，不要求 lexer 内部结构与 C# 同，只要 token 流一致。
+//
+// 覆盖：空白/换行/行注释(//)/块注释(/* */) 作 trivia 跳过；标识符+关键字（全表）；
+// 整数/浮点字面量；字符串 "..."（含转义跳过，raw lexeme 保留引号）；字符 '...'；
+// 全套符号/运算符（最长匹配）；EOF。
+// 延后（后续 increment）：插值串 $""、raw 串 """、hex/bin/数字分隔符/后缀、转义解码。
+namespace Z42.Syntax;
+
+using Z42.Core;
+
+public sealed class Lexer {
+    private string _src;
+    private string _file;
+    private int    _pos;
+    private int    _line;
+    private int    _col;
+    private DiagnosticBag _diags;
+
+    // 关键字表（并行数组；无泛型字段）
+    private string[] _kwNames;
+    private int[]    _kwKinds;
+    private int      _kwCount;
+
+    // 输出 token（typed array + count）
+    private Token[]  _toks;
+    private int      _tokCount;
+
+    // 当前 token 起点（_emit 用）
+    private int _sPos;
+    private int _sLine;
+    private int _sCol;
+
+    public Lexer(string src, string file) {
+        this._src = src;
+        this._file = file;
+        this._pos = 0;
+        this._line = 1;
+        this._col = 1;
+        this._diags = new DiagnosticBag();
+        this._toks = new Token[64];
+        this._tokCount = 0;
+        this._kwNames = new string[128];
+        this._kwKinds = new int[128];
+        this._kwCount = 0;
+        this._initKeywords();
+    }
+
+    public DiagnosticBag Diagnostics() { return this._diags; }
+    public int   TokenCount()    { return this._tokCount; }
+    public Token TokenAt(int i)  { return this._toks[i]; }
+
+    // ── 公开入口 ────────────────────────────────────────────────────────────
+    public void Tokenize() {
+        while (this._pos < this._src.Length) {
+            this._skipTrivia();
+            if (this._pos >= this._src.Length) { break; }
+            this._sPos = this._pos; this._sLine = this._line; this._sCol = this._col;
+            this._lexOne();
+        }
+        this._sPos = this._pos; this._sLine = this._line; this._sCol = this._col;
+        this._emit(TokenKind.Eof, "");
+    }
+
+    // ── 字符工具 ────────────────────────────────────────────────────────────
+    private string _src2() { return this._src; }
+    // 越界返回空格哨兵（调用方主循环已用 _pos<Length 守卫，哨兵仅供前瞻安全）
+    private char _ch(int i) {
+        if (i < this._src.Length) { return this._src.CharAt(i); }
+        return ' ';
+    }
+    private bool _isDigit(char c) { return c >= '0' && c <= '9'; }
+    private bool _isAlpha(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+    }
+    private bool _isAlnum(char c) { return this._isAlpha(c) || this._isDigit(c); }
+
+    private char _advance() {
+        char c = this._src.CharAt(this._pos);
+        this._pos = this._pos + 1;
+        if (c == '\n') { this._line = this._line + 1; this._col = 1; }
+        else { this._col = this._col + 1; }
+        return c;
+    }
+
+    // ── trivia（空白 + 注释）────────────────────────────────────────────────
+    private void _skipTrivia() {
+        while (this._pos < this._src.Length) {
+            char c = this._ch(this._pos);
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                this._advance();
+            } else if (c == '/' && this._ch(this._pos + 1) == '/') {
+                while (this._pos < this._src.Length && this._ch(this._pos) != '\n') { this._advance(); }
+            } else if (c == '/' && this._ch(this._pos + 1) == '*') {
+                this._advance(); this._advance();   // consume /*
+                while (this._pos < this._src.Length) {
+                    if (this._ch(this._pos) == '*' && this._ch(this._pos + 1) == '/') {
+                        this._advance(); this._advance(); break;
+                    }
+                    this._advance();
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    // ── 单 token 分派 ───────────────────────────────────────────────────────
+    private void _lexOne() {
+        char c = this._ch(this._pos);
+        if (this._isAlpha(c))      { this._lexIdent(); }
+        else if (this._isDigit(c)) { this._lexNumber(); }
+        else if (c == '"')         { this._lexString(); }
+        else if (c == '\'')        { this._lexChar(); }
+        else                       { this._lexSymbol(); }
+    }
+
+    private void _lexIdent() {
+        int start = this._pos;
+        while (this._pos < this._src.Length && this._isAlnum(this._ch(this._pos))) { this._advance(); }
+        string text = this._src.Substring(start, this._pos - start);
+        if (text == "_") { this._emit(TokenKind.Underscore, text); return; }
+        int kind = this._kwLookup(text);
+        if (kind >= 0) { this._emit(kind, text); }
+        else { this._emit(TokenKind.Identifier, text); }
+    }
+
+    private void _lexNumber() {
+        int start = this._pos;
+        while (this._pos < this._src.Length && this._isDigit(this._ch(this._pos))) { this._advance(); }
+        bool isFloat = false;
+        if (this._ch(this._pos) == '.' && this._isDigit(this._ch(this._pos + 1))) {
+            isFloat = true;
+            this._advance();   // consume .
+            while (this._pos < this._src.Length && this._isDigit(this._ch(this._pos))) { this._advance(); }
+        }
+        string text = this._src.Substring(start, this._pos - start);
+        if (isFloat) { this._emit(TokenKind.FloatLiteral, text); }
+        else { this._emit(TokenKind.IntLiteral, text); }
+    }
+
+    private void _lexString() {
+        int start = this._pos;
+        this._advance();   // opening "
+        while (this._pos < this._src.Length && this._ch(this._pos) != '"') {
+            if (this._ch(this._pos) == '\\') { this._advance(); }   // skip escaped char
+            if (this._pos < this._src.Length) { this._advance(); }
+        }
+        if (this._pos >= this._src.Length) {
+            this._diags.Error(DiagnosticCodes.UnterminatedString, "unterminated string literal", this._curSpan(start));
+        } else {
+            this._advance();   // closing "
+        }
+        this._emit(TokenKind.StringLiteral, this._src.Substring(start, this._pos - start));
+    }
+
+    private void _lexChar() {
+        int start = this._pos;
+        this._advance();   // opening '
+        while (this._pos < this._src.Length && this._ch(this._pos) != '\'') {
+            if (this._ch(this._pos) == '\\') { this._advance(); }
+            if (this._pos < this._src.Length) { this._advance(); }
+        }
+        if (this._pos < this._src.Length) { this._advance(); }   // closing '
+        this._emit(TokenKind.CharLiteral, this._src.Substring(start, this._pos - start));
+    }
+
+    // ── 符号（最长匹配）─────────────────────────────────────────────────────
+    private void _lexSymbol() {
+        char c = this._ch(this._pos);
+        char d = this._ch(this._pos + 1);
+        // 两字符
+        if (c == '-' && d == '>') { this._adv2(); this._emit(TokenKind.Arrow, "->"); return; }
+        if (c == '=' && d == '>') { this._adv2(); this._emit(TokenKind.FatArrow, "=>"); return; }
+        if (c == '=' && d == '=') { this._adv2(); this._emit(TokenKind.EqEq, "=="); return; }
+        if (c == '!' && d == '=') { this._adv2(); this._emit(TokenKind.BangEq, "!="); return; }
+        if (c == '<' && d == '=') { this._adv2(); this._emit(TokenKind.LtEq, "<="); return; }
+        if (c == '>' && d == '=') { this._adv2(); this._emit(TokenKind.GtEq, ">="); return; }
+        if (c == '<' && d == '<') { this._adv2(); this._emit(TokenKind.LtLt, "<<"); return; }
+        if (c == '>' && d == '>') { this._adv2(); this._emit(TokenKind.GtGt, ">>"); return; }
+        if (c == '&' && d == '&') { this._adv2(); this._emit(TokenKind.AmpAmp, "&&"); return; }
+        if (c == '|' && d == '|') { this._adv2(); this._emit(TokenKind.PipePipe, "||"); return; }
+        if (c == '?' && d == '?') { this._adv2(); this._emit(TokenKind.QuestionQuestion, "??"); return; }
+        if (c == ':' && d == ':') { this._adv2(); this._emit(TokenKind.ColonColon, "::"); return; }
+        if (c == '.' && d == '.') { this._adv2(); this._emit(TokenKind.DotDot, ".."); return; }
+        if (c == '+' && d == '+') { this._adv2(); this._emit(TokenKind.PlusPlus, "++"); return; }
+        if (c == '-' && d == '-') { this._adv2(); this._emit(TokenKind.MinusMinus, "--"); return; }
+        if (c == '+' && d == '=') { this._adv2(); this._emit(TokenKind.PlusEq, "+="); return; }
+        if (c == '-' && d == '=') { this._adv2(); this._emit(TokenKind.MinusEq, "-="); return; }
+        if (c == '*' && d == '=') { this._adv2(); this._emit(TokenKind.StarEq, "*="); return; }
+        if (c == '/' && d == '=') { this._adv2(); this._emit(TokenKind.SlashEq, "/="); return; }
+        if (c == '%' && d == '=') { this._adv2(); this._emit(TokenKind.PercentEq, "%="); return; }
+        if (c == '&' && d == '=') { this._adv2(); this._emit(TokenKind.AmpEq, "&="); return; }
+        if (c == '|' && d == '=') { this._adv2(); this._emit(TokenKind.PipeEq, "|="); return; }
+        if (c == '^' && d == '=') { this._adv2(); this._emit(TokenKind.CaretEq, "^="); return; }
+        // 单字符
+        this._advance();
+        if (c == '(') { this._emit(TokenKind.LParen, "("); return; }
+        if (c == ')') { this._emit(TokenKind.RParen, ")"); return; }
+        if (c == '{') { this._emit(TokenKind.LBrace, "{"); return; }
+        if (c == '}') { this._emit(TokenKind.RBrace, "}"); return; }
+        if (c == '[') { this._emit(TokenKind.LBracket, "["); return; }
+        if (c == ']') { this._emit(TokenKind.RBracket, "]"); return; }
+        if (c == ',') { this._emit(TokenKind.Comma, ","); return; }
+        if (c == '.') { this._emit(TokenKind.Dot, "."); return; }
+        if (c == ':') { this._emit(TokenKind.Colon, ":"); return; }
+        if (c == ';') { this._emit(TokenKind.Semicolon, ";"); return; }
+        if (c == '?') { this._emit(TokenKind.Question, "?"); return; }
+        if (c == '!') { this._emit(TokenKind.Bang, "!"); return; }
+        if (c == '&') { this._emit(TokenKind.Ampersand, "&"); return; }
+        if (c == '|') { this._emit(TokenKind.Pipe, "|"); return; }
+        if (c == '^') { this._emit(TokenKind.Caret, "^"); return; }
+        if (c == '~') { this._emit(TokenKind.Tilde, "~"); return; }
+        if (c == '+') { this._emit(TokenKind.Plus, "+"); return; }
+        if (c == '-') { this._emit(TokenKind.Minus, "-"); return; }
+        if (c == '*') { this._emit(TokenKind.Star, "*"); return; }
+        if (c == '/') { this._emit(TokenKind.Slash, "/"); return; }
+        if (c == '%') { this._emit(TokenKind.Percent, "%"); return; }
+        if (c == '=') { this._emit(TokenKind.Eq, "="); return; }
+        if (c == '<') { this._emit(TokenKind.Lt, "<"); return; }
+        if (c == '>') { this._emit(TokenKind.Gt, ">"); return; }
+        if (c == '#') { this._emit(TokenKind.Hash, "#"); return; }
+        // 未知字符
+        string bad = this._src.Substring(this._sPos, this._pos - this._sPos);
+        this._diags.Error(DiagnosticCodes.InvalidNumericLit, "unexpected character", this._curSpan(this._sPos));
+        this._emit(TokenKind.Error_Unknown, bad);
+    }
+
+    private void _adv2() { this._advance(); this._advance(); }
+
+    private Span _curSpan(int start) {
+        return new Span(start, this._pos, this._sLine, this._sCol, this._file);
+    }
+
+    // ── 输出 ────────────────────────────────────────────────────────────────
+    private void _emit(int kind, string text) {
+        if (this._tokCount == this._toks.Length) { this._growToks(); }
+        this._toks[this._tokCount] = new Token(kind, text,
+            new Span(this._sPos, this._pos, this._sLine, this._sCol, this._file));
+        this._tokCount = this._tokCount + 1;
+    }
+
+    private void _growToks() {
+        int n = this._toks.Length * 2;
+        Token[] bigger = new Token[n];
+        int i = 0;
+        while (i < this._tokCount) { bigger[i] = this._toks[i]; i = i + 1; }
+        this._toks = bigger;
+    }
+
+    // ── 关键字表 ────────────────────────────────────────────────────────────
+    private int _kwLookup(string text) {
+        int i = 0;
+        while (i < this._kwCount) {
+            if (this._kwNames[i] == text) { return this._kwKinds[i]; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    private void _kw(string name, int kind) {
+        this._kwNames[this._kwCount] = name;
+        this._kwKinds[this._kwCount] = kind;
+        this._kwCount = this._kwCount + 1;
+    }
+
+    private void _initKeywords() {
+        this._kw("return", TokenKind.Return); this._kw("if", TokenKind.If); this._kw("else", TokenKind.Else);
+        this._kw("while", TokenKind.While); this._kw("for", TokenKind.For); this._kw("foreach", TokenKind.Foreach);
+        this._kw("in", TokenKind.In); this._kw("do", TokenKind.Do); this._kw("break", TokenKind.Break);
+        this._kw("continue", TokenKind.Continue); this._kw("switch", TokenKind.Switch); this._kw("case", TokenKind.Case);
+        this._kw("default", TokenKind.Default); this._kw("try", TokenKind.Try); this._kw("catch", TokenKind.Catch);
+        this._kw("finally", TokenKind.Finally); this._kw("throw", TokenKind.Throw); this._kw("pinned", TokenKind.Pinned);
+        this._kw("import", TokenKind.Import); this._kw("namespace", TokenKind.Namespace); this._kw("using", TokenKind.Using);
+        this._kw("var", TokenKind.Var); this._kw("static", TokenKind.Static); this._kw("public", TokenKind.Public);
+        this._kw("private", TokenKind.Private); this._kw("protected", TokenKind.Protected); this._kw("internal", TokenKind.Internal);
+        this._kw("ref", TokenKind.Ref); this._kw("out", TokenKind.Out); this._kw("class", TokenKind.Class);
+        this._kw("struct", TokenKind.Struct); this._kw("enum", TokenKind.Enum); this._kw("interface", TokenKind.Interface);
+        this._kw("record", TokenKind.Record); this._kw("delegate", TokenKind.Delegate); this._kw("event", TokenKind.Event);
+        this._kw("abstract", TokenKind.Abstract); this._kw("extern", TokenKind.Extern); this._kw("sealed", TokenKind.Sealed);
+        this._kw("override", TokenKind.Override); this._kw("virtual", TokenKind.Virtual); this._kw("new", TokenKind.New);
+        this._kw("async", TokenKind.Async); this._kw("await", TokenKind.Await); this._kw("typeof", TokenKind.Typeof);
+        this._kw("is", TokenKind.Is); this._kw("as", TokenKind.As); this._kw("where", TokenKind.Where);
+        this._kw("operator", TokenKind.Operator); this._kw("null", TokenKind.Null); this._kw("true", TokenKind.True);
+        this._kw("false", TokenKind.False); this._kw("string", TokenKind.String); this._kw("int", TokenKind.Int);
+        this._kw("long", TokenKind.Long); this._kw("short", TokenKind.Short); this._kw("double", TokenKind.Double);
+        this._kw("float", TokenKind.Float); this._kw("byte", TokenKind.Byte); this._kw("uint", TokenKind.Uint);
+        this._kw("ulong", TokenKind.Ulong); this._kw("ushort", TokenKind.Ushort); this._kw("sbyte", TokenKind.Sbyte);
+        this._kw("object", TokenKind.Object); this._kw("bool", TokenKind.Bool); this._kw("char", TokenKind.Char);
+        this._kw("void", TokenKind.Void); this._kw("i8", TokenKind.I8); this._kw("i16", TokenKind.I16);
+        this._kw("i32", TokenKind.I32); this._kw("i64", TokenKind.I64); this._kw("u8", TokenKind.U8);
+        this._kw("u16", TokenKind.U16); this._kw("u32", TokenKind.U32); this._kw("u64", TokenKind.U64);
+        this._kw("f32", TokenKind.F32); this._kw("f64", TokenKind.F64); this._kw("fn", TokenKind.Fn);
+        this._kw("let", TokenKind.Let); this._kw("mut", TokenKind.Mut); this._kw("trait", TokenKind.Trait);
+        this._kw("impl", TokenKind.Impl); this._kw("use", TokenKind.Use); this._kw("module", TokenKind.Module);
+        this._kw("spawn", TokenKind.Spawn); this._kw("none", TokenKind.NoneKw);
+    }
+}
