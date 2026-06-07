@@ -71,40 +71,39 @@ public sealed class IncrementalBuildIntegrationTests
                 if (Path.GetFileName(sub) != "dist")
                     Directory.Delete(sub, recursive: true);
 
-        // 第一次：全 fresh
+        // First build after a clean: every package reports all-fresh (cached: 0/N).
         var (code1, _, err1) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code1.Should().Be(0, err1);
-        err1.Should().Contain("cached: 0/");
-        err1.Should().NotContain("cached: 34/");   // 第一次必然不命中
+        var fresh1 = CachedCounts(err1);
+        fresh1.Should().NotBeEmpty("first build should report per-package cache status");
+        fresh1.Should().OnlyContain(c => c.Hit == 0,
+            "first build after a clean must be all-fresh; saw " + Describe(err1));
 
-        // 第二次：全 cached（39 = z42.core 文件数；2026-05-03 fix-delegate-reference-equality
-        // 新增 DelegateOps.z42（D-5 落地），43 → 44；2026-05-04 D-7-residual 新增
-        // Disposable.z42（IDisposable factory），44 → 45；2026-05-07
-        // reorganize-gc-stdlib 新增 GCHandle.z42 + HeapStats.z42，45 → 47；
-        // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
-        // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49。
-        // 2026-05-13 add-std-io-directory 新增 z42.io/Directory.z42，z42.io 4 → 5。
-        // 2026-05-14 add-z42-time 新增 z42.time 包（TimeSpan/DateTime/Stopwatch），3/3。
-        // 2026-05-15 add-platform-os-stdlib 新增 z42.core/Platform.z42（含 OSKind +
-        //   ArchKind 两个常量类，2026-05-15 fix-multi-file-static-init 解决了同文件多
-        //   class init 的命名冲突）+ OperatingSystem.z42，z42.core 49 → 51。
-        // 2026-05-15 add-narrow-int-primitives 新增 Primitives/{I8, I16, U8, U16, U32, U64}.z42
-        //   (6 文件)，z42.core 51 → 57。
-        // 2026-05-24 add-overflow-divide-by-zero-exceptions 新增 Exceptions/OverflowException.z42 +
-        //   Exceptions/DivideByZeroException.z42，z42.core 57 → 59。
-        // 2026-05-25 add-gc-oom-exception 新增 Exceptions/OutOfMemoryException.z42，59 → 60。
-        // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，z42.core 60 → 61；
-        // 2026-05-27 add-string-split-options 新增 SplitOptions.z42，61 → 62。
-        // 2026-XX (62159392) 新增 ByteLength 相关文件，62 → 63。
-        // 如果新增 / 删除 stdlib 文件需同步更新此处。
+        // Second build: every package must be fully cached (cached: N/N). Asserted
+        // dynamically — no per-package file count to hand-bump whenever a stdlib
+        // file is added or removed (the prior hardcoded 63/63, 5/5, 4/4, … drifted
+        // on every stdlib change). The invariant is "second build re-hits 100%".
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 63/63");
-        err2.Should().Contain("cached: 2/2");
-        err2.Should().Contain("cached: 5/5");
-        // 2026-05-27 add-timezone-basics 新增 z42.time/TimeZone.z42，3 → 4。
-        err2.Should().Contain("cached: 4/4");  // z42.time: TimeSpan + DateTime + Stopwatch + TimeZone
+        var cached2 = CachedCounts(err2);
+        cached2.Should().NotBeEmpty("second build should report per-package cache status");
+        cached2.Should().OnlyContain(c => c.Total > 0 && c.Hit == c.Total,
+            "second build must be fully cached; saw " + Describe(err2));
     }
+
+    /// Parse every `cached: <hit>/<total>` line z42c emits per workspace member.
+    static List<(int Hit, int Total)> CachedCounts(string output)
+    {
+        var list = new List<(int, int)>();
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(output, @"cached: (\d+)/(\d+)"))
+            list.Add((int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value)));
+        return list;
+    }
+
+    static string Describe(string output) =>
+        string.Join(", ", System.Text.RegularExpressions.Regex.Matches(output, @"cached: \d+/\d+")
+            .Select(m => m.Value));
 
     /// <summary>--no-incremental 强制全 fresh。</summary>
     [Fact]
