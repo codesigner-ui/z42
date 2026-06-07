@@ -10,7 +10,7 @@
 | RID | 用途 | Cargo target | SDK |
 |-----|------|--------------|-----|
 | `ios-arm64`     | iPhone 实机 / iPad / Apple TV / Vision Pro 实机 | `aarch64-apple-ios`     | `iphoneos` |
-| `ios-arm64-sim` | Apple silicon Mac 上 iOS 模拟器                   | `aarch64-apple-ios-sim` | `iphonesimulator` |
+| `iossim-arm64` | Apple silicon Mac 上 iOS 模拟器                   | `aarch64-apple-ios-sim` | `iphonesimulator` |
 
 打开 manifest.toml 看 `[package].rid` 字段确认当前 package 是哪个 slice。
 
@@ -52,7 +52,7 @@ xcrun -sdk iphoneos clang \
     -o hello_c main.c \
     ../../native/libz42.a
 
-# iOS simulator on Apple silicon (ios-arm64-sim)
+# iOS simulator on Apple silicon (iossim-arm64)
 xcrun -sdk iphonesimulator clang \
     -arch arm64 -mios-simulator-version-min=14.0 \
     -I ../../native/include \

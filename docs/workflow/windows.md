@@ -143,7 +143,7 @@ iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows
 |-----|----------------------------|------|
 | `windows-x64` | ✅ | 主要支持目标 |
 | `macos-arm64` / `linux-x64` / `linux-arm64` | ❌ | desktop RID 只支持同 host build |
-| `ios-arm64` / `ios-arm64-sim` | ❌ | 需要 macOS + Xcode |
+| `ios-arm64` / `iossim-arm64` | ❌ | 需要 macOS + Xcode |
 | `android-arm64` / `android-x64` | ⚠️ 可以但要装 Android Studio | 见上文 §5 |
 | `browser-wasm` | ✅ | 需要装 Node.js MSI + wasm-pack（见 §6）|
 

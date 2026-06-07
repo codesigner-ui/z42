@@ -84,7 +84,7 @@ string _detectHostRid() {
 
 string _ridCategory(string rid) {
     if (rid.StartsWith("macos-") || rid.StartsWith("linux-") || rid.StartsWith("windows-")) { return "desktop"; }
-    if (rid.StartsWith("ios-")) { return "ios"; }
+    if (rid.StartsWith("ios-") || rid.StartsWith("iossim-")) { return "ios"; }
     if (rid.StartsWith("android-")) { return "android"; }
     if (rid == "browser-wasm") { return "wasm"; }
     return "unknown";
@@ -96,7 +96,7 @@ string _ridToCargo(string rid) {
     if (rid == "linux-x64")     { return "x86_64-unknown-linux-gnu"; }
     if (rid == "windows-x64")   { return "x86_64-pc-windows-msvc"; }
     if (rid == "ios-arm64")     { return "aarch64-apple-ios"; }
-    if (rid == "ios-arm64-sim") { return "aarch64-apple-ios-sim"; }
+    if (rid == "iossim-arm64")  { return "aarch64-apple-ios-sim"; }
     if (rid == "android-arm64") { return "aarch64-linux-android"; }
     if (rid == "android-x64")   { return "x86_64-linux-android"; }
     if (rid == "browser-wasm")  { return "wasm32-unknown-unknown"; }

@@ -26,7 +26,7 @@ z42 xtask.zpkg --help                             # 完整选项
 | Desktop | `linux-x64` | x86_64 Linux | Linux x64 |
 | Desktop | `windows-x64` | x86_64 Windows | Windows x64 |
 | iOS | `ios-arm64` | iPhone / iPad / Vision Pro 实机 | macOS（任意 arch）|
-| iOS | `ios-arm64-sim` | Apple silicon Mac 上的 iOS 模拟器 | macOS（任意 arch）|
+| iOS | `iossim-arm64` | Apple silicon Mac 上的 iOS 模拟器 | macOS（任意 arch）|
 | Android | `android-arm64` | arm64-v8a（主流 Android 设备）| macOS / Linux（任意 arch）|
 | Android | `android-x64` | x86_64（emulator + Chromebook）| macOS / Linux |
 | wasm | `browser-wasm` | wasm32 + wasm-bindgen + npm | macOS / Linux / Windows |

@@ -524,7 +524,7 @@ jobs:
       # `z42 xtask.zpkg deps check` — migrate-scripts-to-z42.)
 
   # ── iOS packaging ──────────────────────────────────────────────────────
-  # Packages ios-arm64 + ios-arm64-sim. Requires Xcode (pre-installed on
+  # Packages ios-arm64 + iossim-arm64. Requires Xcode (pre-installed on
   # macos-15 arm64) + iOS Rust targets. The source bootstrap also builds z42c.
   package-ios:
     name: package-ios
@@ -565,13 +565,13 @@ jobs:
 
       - uses: ./.github/actions/xtask-bootstrap-source
 
-      - name: Package ios-arm64 + ios-arm64-sim (z42 xtask.zpkg build package)
+      - name: Package ios-arm64 + iossim-arm64 (z42 xtask.zpkg build package)
         shell: bash
         run: |
           set -euo pipefail
           vm="$PWD/artifacts/build/runtime/release/z42vm"
           libs="$PWD/artifacts/build/libraries/dist/release"
-          for rid in ios-arm64 ios-arm64-sim; do
+          for rid in ios-arm64 iossim-arm64; do
             Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" \
               "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid "$rid"
           done
@@ -579,7 +579,7 @@ jobs:
       - name: Verify iOS packages
         run: |
           set -euo pipefail
-          for rid in ios-arm64 ios-arm64-sim; do
+          for rid in ios-arm64 iossim-arm64; do
             pkg_dir=$(ls -d artifacts/packages/z42-*-${rid}-release | head -1)
             [ -d "$pkg_dir" ] || { echo "error: no $rid package"; exit 1; }
             echo "Package: $pkg_dir"
@@ -871,11 +871,12 @@ jobs:
               stripped=${name#z42-}            # <v>-<rid>-release
               stripped=${stripped%-release}    # <v>-<rid>
               # rid = last segment matching a known suffix (handles linux-x64,
-              # ios-arm64-sim, browser-wasm). Order matters: ios-arm64-sim
-              # must come before ios-arm64 so the longer suffix wins.
+              # iossim-arm64, browser-wasm). iOS device (ios-arm64) and simulator
+              # (iossim-arm64) now use distinct prefixes, so suffix matching is
+              # unambiguous regardless of list order.
               rid=""
               for candidate in linux-x64 linux-arm64 macos-arm64 windows-x64 \
-                               ios-arm64-sim ios-arm64 \
+                               iossim-arm64 ios-arm64 \
                                android-arm64 android-x64 browser-wasm; do
                   if [[ "$stripped" == *-"$candidate" ]]; then
                       rid="$candidate"
@@ -939,7 +940,7 @@ jobs:
           | Platform | Archive |
           |----------|---------|
           | iOS arm64 (device) | \`z42-nightly-ios-arm64.tar.gz\` |
-          | iOS arm64-sim | \`z42-nightly-ios-arm64-sim.tar.gz\` |
+          | iOS arm64 (simulator) | \`z42-nightly-iossim-arm64.tar.gz\` |
           | Android arm64 | \`z42-nightly-android-arm64.tar.gz\` |
           | Android x64 | \`z42-nightly-android-x64.tar.gz\` |
           | Browser WASM | \`z42-nightly-browser-wasm.tar.gz\` |

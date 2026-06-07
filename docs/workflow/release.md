@@ -55,7 +55,7 @@ git push origin v0.2.0
 |-----|--------|
 | linux-x64 / linux-arm64 / macos-arm64 | `z42-<v>-<rid>.tar.gz` |
 | windows-x64 | `z42-<v>-windows-x64.zip` |
-| ios-arm64 / ios-arm64-sim | `z42-<v>-<rid>.tar.gz` |
+| ios-arm64 / iossim-arm64 | `z42-<v>-<rid>.tar.gz` |
 | android-arm64 / android-x64 | `z42-<v>-<rid>.tar.gz` |
 | browser-wasm | `z42-<v>-browser-wasm.tar.gz` |
 | 校验和 | `SHA256SUMS`（coreutils 格式）|

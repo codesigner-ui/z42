@@ -535,7 +535,7 @@ Spec：[`docs/spec/archive/2026-06-06-drop-index-json-self-describing/`](../../s
 | 类别 | RID 枚举 | package 数 |
 |------|----------|----------|
 | Desktop SDK (host = C 嵌入同一份) | `macos-arm64` / `linux-arm64` / `linux-x64` / `windows-x64` | 4 |
-| iOS (per slice) | `ios-arm64` / `ios-arm64-sim` | 2 |
+| iOS (per slice) | `ios-arm64` / `iossim-arm64` | 2 |
 | Android (per ABI) | `android-arm64` / `android-x64` | 2 |
 | wasm | `browser-wasm` | 1 |
 
@@ -573,7 +573,7 @@ Phase 1 下游 spec：
 |-----|---------|------------------|
 | linux-x64 / linux-arm64 / macos-arm64 | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
 | windows-x64 | `.zip` | `z42-<v>-windows-x64.zip`（Windows 原生格式） |
-| ios-arm64 / ios-arm64-sim | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
+| ios-arm64 / iossim-arm64 | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
 | android-arm64 / android-x64 | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
 | browser-wasm | `.tar.gz` | `z42-<v>-browser-wasm.tar.gz` |
 
