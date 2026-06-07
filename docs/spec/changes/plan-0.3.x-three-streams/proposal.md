@@ -33,7 +33,7 @@
 |------|------|
 | C 主线 0.3.x 深度 | 只读元数据 + typeof/GetType + Attribute reflection；**不含 Method.Invoke**（强依赖 generic instantiation，推 0.5.x L3-R） |
 | GC v1 时机 | 前置到 0.3.0（A/B/C 共同前置） |
-| z42 编译器源码位置 | `src/z42.compiler/` 独立顶级目录，7 子包 1:1 镜像 C# 项目（详见下文 §B 主线深度规划）|
+| z42 编译器源码位置 | `src/z42c/` 独立顶级目录，7 子包 1:1 镜像 C# 项目（详见下文 §B 主线深度规划）|
 
 ## 三主线概览
 
@@ -114,7 +114,7 @@ Point { X = 1, Y = 2 }
 
 0.3.1   规划 + 三主线 spec 起草：
         A0 包审计 spec / B0 自举架构 spec（含受限写法约定 + 7 子系统计划）/ C0 反射 API spec
-        + 创建 src/z42.compiler/ workspace 骨架（7 子包占位 + xtask build/test compiler-z42）
+        + 创建 src/z42c/ workspace 骨架（7 子包占位 + xtask build/test compiler-z42）
 
 0.3.2   A1 包结构重组（先行，稳定 B 引用的包路径）
 
@@ -200,21 +200,21 @@ Point { X = 1, Y = 2 }
 
 ### 1. 目录布局（独立顶级目录 + 7 zpkg 子包，镜像 C# 项目）
 
-**位置：`src/z42.compiler/`** 独立顶级目录（2026-06-06 决议），与 `src/compiler/`（C# bootstrap）平级。`src/libraries/` 保持纯净只放 stdlib。
+**位置：`src/z42c/`** 独立顶级目录（2026-06-06 决议），与 `src/compiler/`（C# bootstrap）平级。`src/libraries/` 保持纯净只放 stdlib。
 
 ```
 src/
 ├── compiler/                                ← C# bootstrap 编译器（现状，0.3.x 仍 default）
-├── z42.compiler/                            ← 新增顶级目录
+├── z42c/                                   ← 新增顶级目录（2026-06-07 定名，dir==pkgname）
 │   ├── z42.workspace.toml                   ← 独立 workspace（与 stdlib 解耦）
 │   ├── README.md
-│   ├── core/        → z42.compiler.core.zpkg      (lib)
-│   ├── syntax/      → z42.compiler.syntax.zpkg    (lib)   ← Lexer + Parser + AST
-│   ├── project/     → z42.compiler.project.zpkg   (lib)   ← manifest reader
-│   ├── driver/      → z42.compiler.driver.zpkg    (exe)   ← CLI 入口 = z42c.zpkg
-│   ├── semantics/   → z42.compiler.semantics.zpkg (lib)   ← 0.3.5（原占位，现实做）
-│   ├── ir/          → z42.compiler.ir.zpkg        (lib)   ← 0.3.7（原占位，现实做）
-│   └── pipeline/    → z42.compiler.pipeline.zpkg  (lib)   ← 0.3.9（原占位，现实做）
+│   ├── z42c.core/        → z42c.core.zpkg      (lib)
+│   ├── z42c.syntax/      → z42c.syntax.zpkg    (lib)   ← Lexer + Parser + AST
+│   ├── z42c.project/     → z42c.project.zpkg   (lib)   ← manifest reader
+│   ├── z42c.driver/      → z42c.driver.zpkg    (exe)   ← CLI 入口 = z42c
+│   ├── z42c.semantics/   → z42c.semantics.zpkg (lib)   ← 0.3.5（原占位，现实做）
+│   ├── z42c.ir/          → z42c.ir.zpkg        (lib)   ← 0.3.7（原占位，现实做）
+│   └── z42c.pipeline/    → z42c.pipeline.zpkg  (lib)   ← 0.3.9（原占位，现实做）
 ├── runtime/
 ├── libraries/                               ← 22 stdlib 包（A 主线重组）
 └── toolchain/
@@ -233,7 +233,7 @@ core ◄── ir        ◄── pipeline
 
 driver 是唯一 exe-kind；其余 6 个是 lib-kind。**用户调用入口**：`z42c.zpkg` = `z42.compiler.driver.zpkg` 对外别名。
 
-**独立 workspace**（`src/z42.compiler/z42.workspace.toml`，0.3.1 创建）：`members = ["*"]` 自动发现，`[workspace.project].version = "0.1.0"`（与 stdlib 独立 versioning）。**stdlib workspace 不动**。
+**独立 workspace**（`src/z42c/z42.workspace.toml`，0.3.1 创建）：`members = ["*"]` 自动发现，`[workspace.project].version = "0.1.0"`（与 stdlib 独立 versioning）。**stdlib workspace 不动**。
 
 **xtask 扩展**（0.3.1）：`xtask build/test compiler-z42` + `xtask build all` 级联（runtime + compiler + stdlib + compiler-z42）。zero C# 编译器改动——纯新增 dispatch。
 

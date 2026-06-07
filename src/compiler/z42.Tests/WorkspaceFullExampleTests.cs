@@ -50,7 +50,7 @@ public sealed class WorkspaceFullExampleTests
         var order = new List<string>();
         var orch = new WorkspaceBuildOrchestrator
         {
-            CompileMember = (m, _) => { order.Add(m.MemberName); return 0; }
+            CompileMember = (m, _, _) => { order.Add(m.MemberName); return 0; }
         };
 
         var report = orch.Build(
@@ -79,7 +79,7 @@ public sealed class WorkspaceFullExampleTests
         var compiled = new HashSet<string>();
         var orch = new WorkspaceBuildOrchestrator
         {
-            CompileMember = (m, _) => { compiled.Add(m.MemberName); return 0; }
+            CompileMember = (m, _, _) => { compiled.Add(m.MemberName); return 0; }
         };
 
         // default-members = ["apps/hello"]，应该编译 hello + 其闭包

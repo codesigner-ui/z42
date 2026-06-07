@@ -1,0 +1,9 @@
+# z42c.syntax — 镜像 C# z42.Syntax（Lexer + Parser → AST）。
+# B0 骨架：占位类型，依赖 z42c.core。
+[project]
+name    = "z42c.syntax"
+version = "0.1.0"
+kind    = "lib"
+
+[dependencies]
+"z42c.core" = "0.1.0"

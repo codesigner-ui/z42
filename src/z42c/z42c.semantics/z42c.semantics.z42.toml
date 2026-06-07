@@ -1,0 +1,12 @@
+# z42c.semantics — 镜像 C# z42.Semantics（SymbolCollector / TypeCheck / Bound 节点 / Codegen）。
+# B0 骨架：占位类型，依赖 z42c.core + z42c.syntax + z42c.ir（与 C# 一致）。
+# 首个硬子系统（0.3.5–0.3.6 dogfood 高发段）。
+[project]
+name    = "z42c.semantics"
+version = "0.1.0"
+kind    = "lib"
+
+[dependencies]
+"z42c.core"   = "0.1.0"
+"z42c.syntax" = "0.1.0"
+"z42c.ir"     = "0.1.0"

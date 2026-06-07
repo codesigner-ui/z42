@@ -1,0 +1,8 @@
+# z42c.core — 镜像 C# z42.Core（Span / Diagnostic / DiagnosticBag / LanguageFeatures）。
+# B0 骨架：占位类型，无兄弟依赖（与 C# 一致：core 是无依赖叶子）。
+[project]
+name    = "z42c.core"
+version = "0.1.0"
+kind    = "lib"
+
+[dependencies]

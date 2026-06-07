@@ -77,7 +77,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 > **完整规划**见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排，supersede 2026-06-05 保守版）。以下为子版本索引。
 >
-> **B 主线＝本版本招牌（全自举，从原 1.0 拉到 0.3.x）**：7 子系统 = `z42.{Core,Syntax,Project,Driver,Semantics,IR,Pipeline}` 1:1 镜像 C# 项目，源码落 `src/z42.compiler/` 独立顶级目录（与 `src/compiler/` 平级）。**受限写法**：class+虚方法替代 record+match / 循环替代 LINQ / 异常替代 Result；只有自举真卡点才 dogfood 在 z42 里补该特性（禁止 workaround，per `feedback_dogfood_fill_gaps`）。**无桥接**：z42 端只 ship 就绪命令（0.3.4 起 lex/parse/manifest-check、0.3.9 起 build），0.3.x default 编译器仍是 C#，两实现并存逐字节对账。
+> **B 主线＝本版本招牌（全自举，从原 1.0 拉到 0.3.x）**：7 子系统 = `z42.{Core,Syntax,Project,Driver,Semantics,IR,Pipeline}` 1:1 镜像 C# 项目，源码落 `src/z42c/` 独立顶级目录（与 `src/compiler/` 平级；2026-06-07 User 裁决，覆盖原 `src/z42.compiler/`；子目录名==包名 `z42c.<sub>`，产物 `z42c.<sub>.zpkg`）。**受限写法**：class+虚方法替代 record+match / 循环替代 LINQ / 异常替代 Result；只有自举真卡点才 dogfood 在 z42 里补该特性（禁止 workaround，per `feedback_dogfood_fill_gaps`）。**无桥接**：z42 端只 ship 就绪命令（0.3.4 起 lex/parse/manifest-check、0.3.9 起 build），0.3.x default 编译器仍是 C#，两实现并存逐字节对账。
 >
 > **受限写法 ⇒ 不强制提前半个 L3**：match/ADT/LINQ/Result 完整版仍在 0.6/0.7；只有被自举单点阻断的特性才按 features.md 逐项评估提前。这是「受限写法」决策的直接后果。
 >
@@ -91,7 +91,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 子版本 | B 自举（招牌）| A stdlib | C 反射 |
 |:--:|------|------|------|
-| 0.3.1 | B0 架构 spec + 建 `src/z42.compiler/` 7 子包骨架 + xtask `build/test compiler-z42` | A0 包审计 spec | C0 反射 API spec（新建 `reflection.md`）|
+| 0.3.1 | B0 架构 spec + 建 `src/z42c/` 7 子包骨架 + xtask `build/test compiler-z42`（[scaffold-z42c-selfhost](spec/changes/scaffold-z42c-selfhost/)）| A0 包审计 spec | C0 反射 API spec（新建 `reflection.md`）|
 | 0.3.2 | — | A1 包重组（先行，稳定 B 引用路径）| — |
 | 0.3.3 | core + syntax（Lexer/Parser/AST）+ bit-identical gate | A2 bench baseline | C1 metadata 暴露 + 4 反射对象 + `GetMembers` 系列 |
 | 0.3.4 | project + driver（lex/parse/manifest-check 可跑）| A3 perf #1 BigInt/Coll | C2 `typeof(T)` + `obj.GetType()` + z42.reflection 包公开 |
@@ -279,7 +279,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | M7 | VM 元数据 + 标准库基础（core/io/collections）| L2 | 🟡 stdlib 基础已广；反射元数据 → 0.3.x C 主线 |
 | M8 | TypeChecker + Codegen 扩展（L3 特性）| L3 | 🟡 部分（泛型 / lambda / delegate 提前）|
 | M9 | VM AOT（LLVM/inkwell）| L3 | 📋 |
-| M10 | 自举（Self-hosting，7 子系统 byte-identical）| L3+ → 0.3.x | 🚧 当前焦点（0.3.x 启动）|
+| M10 | 自举（Self-hosting，7 子系统 byte-identical）| L3+ → 0.3.x | 🚧 进行中（B0 骨架 + 构建管线落地 2026-06-07 [scaffold-z42c-selfhost](spec/changes/scaffold-z42c-selfhost/)；架构见 [self-hosting.md](design/compiler/self-hosting.md)；core/syntax 等后续）|
 
 ---
 

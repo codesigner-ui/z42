@@ -1,0 +1,9 @@
+# z42c.project — 镜像 C# z42.Project（.z42.toml 解析 / 源文件发现 / zpkg builder）。
+# B0 骨架：占位类型，依赖 z42c.ir（与 C# 一致）。
+[project]
+name    = "z42c.project"
+version = "0.1.0"
+kind    = "lib"
+
+[dependencies]
+"z42c.ir" = "0.1.0"

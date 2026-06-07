@@ -255,13 +255,22 @@ private readonly Dictionary<string, List<ExportedModule>> _cache;
 3. `LoadForUsings(usings)` / `LoadAll()`：根据 `using` 声明（或全部已注册）聚合所有相关 zpkg 路径，
    首次访问时 `LoadZpkg` 解码 `TSIG` section，结果进 `_cache` 复用。
 
-**libs 搜索路径（`BuildLibsDirs(projectDir)`）**：编译期扫描哪些目录找依赖 zpkg，按优先级：
+**libs 搜索路径（`BuildLibsDirs(projectDir, workspaceLibDirs)`）**：编译期扫描哪些目录找依赖 zpkg，按优先级：
 
 1. project-local：`<projectDir>/libs`、workspace 布局 `<projectDir>/artifacts/build/libraries/<member>/<profile>/dist`、`artifacts/packages/<pkg>/libs`、legacy `artifacts/z42/libs` / `artifacts/libraries`；
 2. 向上 walk-up：对每一级父目录重复上述 workspace / packages / legacy 候选（让 `scripts/` 下的工程也能解析仓库级 stdlib）；
-3. **`Z42_LIBS` fallback（opt-xtask-bootstrap-stdlib, 2026-06-04）**：若设置了运行时 lib 环境变量 `Z42_LIBS`，按平台路径分隔符拆分后**追加到末尾**（最低优先级）。
+3. **当前 workspace 兄弟成员（scaffold-z42c-selfhost, 2026-06-07）**：见下。
+4. **`Z42_LIBS` fallback（opt-xtask-bootstrap-stdlib, 2026-06-04）**：若设置了运行时 lib 环境变量 `Z42_LIBS`，按平台路径分隔符拆分后**追加到末尾**（最低优先级）。
 
-> 第 3 条让"编译期"也认 `Z42_LIBS`（此前只有 VM 运行期认它）。用途：CI 的 `xtask-bootstrap` composite 用 `install-z42` 下载预编译 stdlib 到 `.z42/libs`，直接 `Z42_LIBS=.z42/libs z42c build xtask.z42.toml` 编 xtask.zpkg，**不必从源码重建 stdlib**——`.z42/libs` 不在任何固定布局候选里，靠这个 fallback 命中。追加到末尾保证：本地/已构建 stdlib 的常规编译走布局扫描（行为不变），只有布局扫描找不到时才用 `Z42_LIBS`。
+> 第 4 条让"编译期"也认 `Z42_LIBS`（此前只有 VM 运行期认它）。用途：CI 的 `xtask-bootstrap` composite 用 `install-z42` 下载预编译 stdlib 到 `.z42/libs`，直接 `Z42_LIBS=.z42/libs z42c build xtask.z42.toml` 编 xtask.zpkg，**不必从源码重建 stdlib**——`.z42/libs` 不在任何固定布局候选里，靠这个 fallback 命中。追加到末尾保证：本地/已构建 stdlib 的常规编译走布局扫描（行为不变），只有布局扫描找不到时才用 `Z42_LIBS`。
+
+#### Workspace 兄弟成员解析（scaffold-z42c-selfhost dogfood #1, 2026-06-07）
+
+**问题（根因）**：第 1/2 条的 workspace 布局把 `artifacts/build/libraries/` **硬编码**为唯一会扫描的 workspace 输出根。stdlib 兄弟依赖能解析纯属巧合——stdlib 恰好输出到那里。引入第二个 workspace（`src/z42c/` 自举编译器，输出 `artifacts/build/z42c/`）后，`z42c.syntax` 声明依赖 `z42c.core` 却扫不到 → `E0602: no loaded package provides this namespace`。
+
+**修复（精准、隔离、零字节漂移）**：`WorkspaceBuildOrchestrator.Build` 收集**本 workspace** 全体成员的 `EffectiveDistDir`（排序去重），经 `CompileMember`（Func 第 3 形参）→ `RunResolved` → `BuildTarget` → `BuildLibsDirs` 的 `workspaceLibDirs` 形参透传；`BuildLibsDirs` 在第 1/2 条扫描**之后**、按**规范化 full-path 去重**追加，并**排序**（[common-pitfalls.md §1](../../../.claude/rules/common-pitfalls.md) 确定性——dirs 顺序喂给 first-wins nsMap / BuildDepIndex）。
+
+效果：成员从**当前 workspace** 解析其 **`[dependencies]` 声明的**兄弟依赖（`ScanLibsForNamespaces` 的 `declaredDeps` 过滤未声明项），与该 workspace 输出位置无关。**零字节漂移保证**：已落在被扫描根的 workspace（stdlib），其成员 dist 早在 `dirs` 里 → 规范化去重后不新增条目、顺序不变 → nsMap / BuildDepIndex 内容与顺序不变。单工程构建 `workspaceLibDirs=null` → 行为完全不变。远程/下载依赖暂不支持（[self-hosting.md Deferred](self-hosting.md#deferred--future-work)）。
 
 ### 设计决策：namespace 可跨 zpkg（2026-04-25 vm-zpkg-dependency-loading）
 

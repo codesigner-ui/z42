@@ -29,13 +29,14 @@ public static partial class PackageCompiler
         DependencySection?    declaredDeps = null,
         string?               explicitCacheDir = null,
         bool                  useIncremental = true,
-        bool                  stripSymbols = false)
+        bool                  stripSymbols = false,
+        IReadOnlyList<string>? workspaceLibDirs = null)
     {
         // L3-G4g: libsDirs includes projectDir/libs, projectDir/artifacts/z42/libs,
         // plus a walk-up search for the repo-level `artifacts/z42/libs` so stdlib
         // packages compiling against each other (e.g. z42.collections → z42.core)
         // can resolve their dependencies.
-        var libsDirs    = BuildLibsDirs(projectDir);
+        var libsDirs    = BuildLibsDirs(projectDir, workspaceLibDirs);
         var tsigCache   = new TsigCache();
         var nsMap       = ScanLibsForNamespaces(libsDirs, tsigCache, declaredDeps);
         var depIndex    = BuildDepIndex(libsDirs, declaredDeps);
@@ -254,7 +255,7 @@ public static partial class PackageCompiler
     ///   - `artifacts/libraries/&lt;member&gt;/dist/`（旧 workspace 布局）
     ///
     /// 沿目录树向上搜索，让 stdlib 包先后编译时能找到上游 zpkg。
-    internal static string[] BuildLibsDirs(string projectDir)
+    internal static string[] BuildLibsDirs(string projectDir, IReadOnlyList<string>? workspaceLibDirs = null)
     {
         var dirs = new List<string>();
 
@@ -309,6 +310,33 @@ public static partial class PackageCompiler
             AddLegacyCandidate(Path.Combine(dir.FullName, "artifacts", "z42", "libs"));
             AddLegacyCandidate(Path.Combine(dir.FullName, "artifacts", "libraries"));
             dir = dir.Parent;
+        }
+
+        // Current-workspace sibling members (scaffold-z42c-selfhost, 2026-06-07):
+        // a workspace's members must resolve their *declared* sibling deps from the
+        // workspace being built — regardless of where that workspace outputs. The
+        // AddNewWorkspaceLayout scans above only cover artifacts/build/libraries
+        // (stdlib's output root); a workspace that outputs elsewhere (e.g. src/z42c
+        // → artifacts/build/z42c) would otherwise never find its siblings. The
+        // WorkspaceBuildOrchestrator passes every member's resolved dist dir here.
+        //
+        // Deduped by NORMALIZED full path so a workspace already outputting under a
+        // scanned root (stdlib) sees NO change to the dirs list (its sibling dists
+        // are already present) — zero byte drift for existing artifacts. Only a
+        // workspace outputting elsewhere actually gains entries. Sorted for
+        // cross-platform determinism (common-pitfalls.md §1) since dirs order feeds
+        // the first-wins nsMap / BuildDepIndex downstream. Single-project builds
+        // pass null → behaviour unchanged.
+        if (workspaceLibDirs is { Count: > 0 })
+        {
+            static string Norm(string p) { try { return Path.GetFullPath(p); } catch { return p; } }
+            var seen = new HashSet<string>(dirs.Select(Norm), StringComparer.Ordinal);
+            foreach (var raw in workspaceLibDirs.OrderBy(p => p, StringComparer.Ordinal))
+            {
+                string full = Norm(raw);
+                if (Directory.Exists(full) && seen.Add(full))
+                    dirs.Add(full);
+            }
         }
 
         // Z42_LIBS fallback: honor the runtime lib-search env at compile time too,

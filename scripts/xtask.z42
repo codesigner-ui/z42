@@ -60,6 +60,7 @@ int _build(string[] argv) {
     string sub  = _at(argv, 1);
     if (sub == "runtime")        { return _buildRuntime(); }
     if (sub == "compiler")       { return _buildCompiler(); }
+    if (sub == "compiler-z42")   { return _buildCompilerZ42(); }
     if (sub == "stdlib")         { return _buildStdlib(); }
     if (sub == "launcher")       { return _exec(_cargoRelease()
                                        .Arg("--manifest-path").Arg("src/toolchain/launcher/Cargo.toml")); }
@@ -68,9 +69,10 @@ int _build(string[] argv) {
     if (sub == "all") {
         int c = _buildRuntime();  if (c != 0) { return c; }
         c = _buildCompiler();     if (c != 0) { return c; }
-        return _buildStdlib();
+        c = _buildStdlib();       if (c != 0) { return c; }
+        return _buildCompilerZ42();
     }
-    ConsoleError.WriteLine("xtask build: unknown target '" + sub + "'  (runtime|compiler|stdlib|launcher|feature-matrix|package|all)");
+    ConsoleError.WriteLine("xtask build: unknown target '" + sub + "'  (runtime|compiler|compiler-z42|stdlib|launcher|feature-matrix|package|all)");
     return 2;
 }
 
@@ -121,11 +123,12 @@ int _test(string[] argv) {
     if (sub == "cross-zpkg") { return _testCrossZpkg(argv); }
     if (sub == "dist")       { return _testDist(argv); }
     if (sub == "compiler")   { return _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj")); }
+    if (sub == "compiler-z42") { return _testCompilerZ42(); }
     if (sub == "changed")    { return _testChanged(argv); }
     // a leading flag (e.g. --parallel / --jobs) → run the full gate (sequential;
     // --parallel/--scope wave optimization is a later increment).
     if (sub.StartsWith("-")) { return _testAll(); }
-    ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|dist|compiler|changed | empty=all)");
+    ConsoleError.WriteLine("xtask test: unknown target '" + sub + "'  (stdlib|vm|cross-zpkg|dist|compiler|compiler-z42|changed | empty=all)");
     return 2;
 }
 
@@ -282,7 +285,8 @@ void _help() {
     Console.WriteLine("COMMANDS:");
     Console.WriteLine("    build <what>      build components");
     Console.WriteLine("        runtime       cargo build z42vm + libz42 (--release)");
-    Console.WriteLine("        compiler      dotnet build z42c");
+    Console.WriteLine("        compiler      dotnet build z42c (C# bootstrap)");
+    Console.WriteLine("        compiler-z42  build z42 self-host compiler (src/z42c -> build/z42c)");
     Console.WriteLine("        stdlib [lib]  build stdlib (all or one) -> build/libraries/dist");
     Console.WriteLine("        launcher      trampoline + launcher.zpkg");
     Console.WriteLine("        package [--rid R]   full SDK package");
@@ -293,7 +297,8 @@ void _help() {
     Console.WriteLine("        stdlib [lib]  stdlib [Test] (all or one)");
     Console.WriteLine("        vm [interp|jit]   golden VM tests");
     Console.WriteLine("        cross-zpkg    cross-zpkg e2e");
-    Console.WriteLine("        compiler      dotnet test");
+    Console.WriteLine("        compiler      dotnet test (C# bootstrap)");
+    Console.WriteLine("        compiler-z42  build src/z42c + smoke (7 zpkg present; opt-in soak)");
     Console.WriteLine("        changed       only changed-area tests");
     Console.WriteLine("      flags: --parallel, --jobs N  (forwarded to the full `test` gate)");
     Console.WriteLine("");

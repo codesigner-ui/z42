@@ -1,0 +1,19 @@
+// z42c driver — 自举编译器 CLI 入口（= z42c）。B0 骨架：无桥接 banner，
+// 不实现任何命令、绝不 fallback 到 C# z42c.dll。命令逐子版本解锁
+// （lex/parse/manifest-check 0.3.4；build 0.3.9）。
+//
+// 引用 pipeline + core + ir（全部直接依赖）验证 exe→lib 跨包链接：构建本 exe
+// 即证明整条依赖图 driver→pipeline→{core,syntax,semantics,ir,project} 跨包编译通过。
+namespace Z42.Driver;
+
+using Z42.Core;
+using Z42.IR;
+using Z42.Pipeline;
+
+void Main() {
+    var pipe = new PipelineSkeleton();
+    var core = new CoreSkeleton();
+    var ir = new IrSkeleton();
+    Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap skeleton; no commands implemented yet");
+    Console.WriteLine("  wired: " + pipe.Name() + " + " + core.Name() + " + " + ir.Name());
+}

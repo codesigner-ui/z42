@@ -1,0 +1,81 @@
+// xtask — `build compiler-z42` / `test compiler-z42` impl
+// (scaffold-z42c-selfhost, 2026-06-07).
+//
+// Builds the z42 self-host compiler workspace (src/z42c — 7 子包 1:1 镜像 C#
+// bootstrap 的 7 项目) and smoke-tests that all 7 z42c.<sub>.zpkg are produced.
+// Mirrors xtask_stdlib.z42 (_buildStdlibCore) but targets src/z42c →
+// artifacts/build/z42c.
+//
+// NO Z42_LIBS needed: the C# z42c resolves declared workspace siblings from the
+// CURRENT workspace — WorkspaceBuildOrchestrator threads each member's dist dir
+// into BuildLibsDirs (scaffold-z42c-selfhost dogfood #1 root-cause fix). So a
+// plain `build --workspace` finds z42c.core → z42c.syntax → … → z42c.driver.
+//
+// 0.3.x: this is opt-in soak (NOT in the default `test` GREEN gate). byte-identical
+// 对账留待 0.3.3 起子系统有真实产物时上；本期只做 build + 产物存在性 smoke。
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+int _buildCompilerZ42() {
+    string root = _root();
+    string wsDir = Path.Join(root, "src/z42c");
+
+    Console.WriteLine("  building z42c self-host compiler workspace (release, 7 members)");
+    string[] compilerLeadArgs = new string[7];
+    compilerLeadArgs[0] = "run";
+    compilerLeadArgs[1] = "--project";
+    compilerLeadArgs[2] = Path.Join(root, _driverProj());
+    compilerLeadArgs[3] = "-c";
+    compilerLeadArgs[4] = "Release";
+    compilerLeadArgs[5] = "--no-build";
+    compilerLeadArgs[6] = "--";
+    string[] buildArgs = _concat3(compilerLeadArgs,
+        new string[]{"build", "--workspace"}, new string[]{"--release"});
+    ProcessResult br = new Process("dotnet")
+        .Args(buildArgs)
+        .WorkingDirectory(wsDir)
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run();
+    return br.ExitCode;
+}
+
+// smoke: build + assert each z42c.<sub>.zpkg product exists & is non-empty.
+// member list derives from the workspace manifest's default-members (single
+// source of truth; cf. _stdlibList). member name == [project].name == zpkg
+// basename, so the product path is build/z42c/<name>/release/dist/<name>.zpkg.
+int _testCompilerZ42() {
+    int bc = _buildCompilerZ42();
+    if (bc != 0) { return bc; }
+
+    string root = _root();
+    string profile = "release";
+    string buildRoot = Path.Join(root, "artifacts/build/z42c");
+    string[] members = _vgetListFromFile(root,
+        "src/z42c/z42.workspace.toml", "workspace.default-members");
+
+    int ok = 0;
+    int fail = 0;
+    int i = 0;
+    while (i < members.Length) {
+        string zpkg = Path.Join(buildRoot,
+            members[i] + "/" + profile + "/dist/" + members[i] + ".zpkg");
+        if (File.Exists(zpkg) && File.GetSize(zpkg) > 0L) {
+            long size = File.GetSize(zpkg);
+            Console.WriteLine("    ✓ " + members[i] + ".zpkg (" + size.ToString() + " bytes)");
+            ok = ok + 1;
+        } else {
+            Console.WriteLine("    ✗ " + members[i] + ".zpkg — workspace product missing at " + zpkg);
+            fail = fail + 1;
+        }
+        i = i + 1;
+    }
+
+    Console.WriteLine("");
+    Console.WriteLine("test compiler-z42: " + ok.ToString() + "/"
+        + members.Length.ToString() + " zpkg present");
+    if (fail > 0) { return 1; }
+    return 0;
+}

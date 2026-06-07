@@ -39,7 +39,7 @@ public sealed class WorkspaceBuildOrchestratorTests
         new(selected ?? Array.Empty<string>(), excluded ?? Array.Empty<string>(), all, checkOnly, release);
 
     static WorkspaceBuildOrchestrator MockOrchestrator(Func<ResolvedManifest, int> compileFunc) =>
-        new() { CompileMember = (m, _) => compileFunc(m) };
+        new() { CompileMember = (m, _, _) => compileFunc(m) };
 
     // ── 成员选择 ──────────────────────────────────────────────────────────
 
@@ -165,5 +165,52 @@ public sealed class WorkspaceBuildOrchestratorTests
         var orch = MockOrchestrator(_ => 0);
         var act = () => orch.Build(ws, Array.Empty<string>(), Opts(selected: new[] { "ghost" }));
         act.Should().Throw<ManifestException>().WithMessage("*ghost*not found*");
+    }
+
+    // ── workspace 兄弟解析（scaffold-z42c-selfhost dogfood #1）─────────────────
+
+    [Fact]
+    public void Build_ThreadsWorkspaceSiblingDistDirsToCompile()
+    {
+        // 每个成员编译时都应拿到「本 workspace 全体成员的 dist 目录」（排序去重），
+        // 以便从当前 workspace 解析 toml 声明的兄弟依赖。
+        var a = M("a", "/r") with { EffectiveDistDir = "/r/build/a/dist" };
+        var b = M("b", "/r", "a") with { EffectiveDistDir = "/r/build/b/dist" };
+        var ws = Workspace(a, b);
+
+        IReadOnlyList<string>? captured = null;
+        var orch = new WorkspaceBuildOrchestrator
+        {
+            CompileMember = (m, _, libs) => { captured = libs; return 0; }
+        };
+
+        orch.Build(ws, Array.Empty<string>(), Opts(all: true));
+
+        captured.Should().NotBeNull();
+        captured!.Should().Contain("/r/build/a/dist");
+        captured!.Should().Contain("/r/build/b/dist");
+        // 排序：a 在 b 前
+        captured!.Should().ContainInOrder("/r/build/a/dist", "/r/build/b/dist");
+    }
+
+    [Fact]
+    public void Build_WorkspaceSiblingDirs_DedupedAndEmptyFiltered()
+    {
+        // 空 EffectiveDistDir 过滤掉；重复目录去重。
+        var a = M("a", "/r") with { EffectiveDistDir = "/r/build/shared/dist" };
+        var b = M("b", "/r") with { EffectiveDistDir = "/r/build/shared/dist" }; // 同目录
+        var c = M("c", "/r");                                                    // 无 dist（"")
+        var ws = Workspace(a, b, c);
+
+        IReadOnlyList<string>? captured = null;
+        var orch = new WorkspaceBuildOrchestrator
+        {
+            CompileMember = (m, _, libs) => { captured = libs; return 0; }
+        };
+
+        orch.Build(ws, Array.Empty<string>(), Opts(all: true));
+
+        captured.Should().NotBeNull();
+        captured!.Should().Equal("/r/build/shared/dist"); // 去重 + 过滤空
     }
 }

@@ -119,6 +119,18 @@ public sealed class WorkspaceBuildOrchestrator
 
         var byNameSingle = workspace.Members.ToDictionary(m => m.MemberName, StringComparer.Ordinal);
 
+        // scaffold-z42c-selfhost (2026-06-07): 本 workspace 全体成员的 dist 目录，
+        // 透传给每个成员的编译，使成员能从「当前 workspace」解析其 toml 声明的兄弟依赖
+        // （不再仅限硬编码的 artifacts/build/libraries/）。排序去重保证确定性；
+        // BuildLibsDirs 端按规范化 full-path 去重，故已落在被扫描根的 workspace（stdlib）
+        // 零字节漂移。未声明的兄弟包仍被 declaredDeps 过滤掉。
+        var workspaceLibDirs = workspace.Members
+            .Select(m => m.EffectiveDistDir)
+            .Where(d => !string.IsNullOrEmpty(d))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(d => d, StringComparer.Ordinal)
+            .ToList();
+
         foreach (var layer in layers)
         {
             foreach (var name in layer)
@@ -132,7 +144,7 @@ public sealed class WorkspaceBuildOrchestrator
                     continue;
                 }
 
-                int exit = CompileMember(byNameSingle[name], opts);
+                int exit = CompileMember(byNameSingle[name], opts, workspaceLibDirs);
                 if (exit == 0) succeeded.Add(name);
                 else failed.Add(name);
             }
@@ -143,13 +155,14 @@ public sealed class WorkspaceBuildOrchestrator
 
     /// <summary>
     /// 调用 PackageCompiler 编译单个 member。可注入 mock 用于测试。
+    /// 第 3 形参 = 本 workspace 全体成员的 dist 目录（兄弟依赖解析用）。
     /// </summary>
-    public Func<ResolvedManifest, BuildOptions, int> CompileMember { get; init; } =
+    public Func<ResolvedManifest, BuildOptions, IReadOnlyList<string>, int> CompileMember { get; init; } =
         DefaultCompile;
 
-    static int DefaultCompile(ResolvedManifest member, BuildOptions opts)
+    static int DefaultCompile(ResolvedManifest member, BuildOptions opts, IReadOnlyList<string> workspaceLibDirs)
     {
-        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental, opts.StripSymbols);
+        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental, opts.StripSymbols, workspaceLibDirs);
     }
 
     static string RelativePath(WorkspaceLoadResult workspace, ResolvedManifest m)

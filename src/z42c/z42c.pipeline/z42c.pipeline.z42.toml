@@ -1,0 +1,14 @@
+# z42c.pipeline — 镜像 C# z42.Pipeline（单文件 + 包级编译编排）。
+# B0 骨架：占位类型，依赖 z42c.core + syntax + semantics + ir + project（与 C# 一致）。
+# 编排上述全部 → 端到端 build（0.3.9 实做）。
+[project]
+name    = "z42c.pipeline"
+version = "0.1.0"
+kind    = "lib"
+
+[dependencies]
+"z42c.core"      = "0.1.0"
+"z42c.syntax"    = "0.1.0"
+"z42c.semantics" = "0.1.0"
+"z42c.ir"        = "0.1.0"
+"z42c.project"   = "0.1.0"

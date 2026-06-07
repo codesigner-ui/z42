@@ -91,7 +91,8 @@ public static partial class PackageCompiler
     /// policy + 集中产物布局）。供 WorkspaceBuildOrchestrator 调用。
     /// </summary>
     public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly,
-        bool useIncremental = true, bool stripSymbols = false)
+        bool useIncremental = true, bool stripSymbols = false,
+        IReadOnlyList<string>? workspaceLibDirs = null)
     {
         string profileLabel = useRelease ? "release" : "debug";
         string memberDir    = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
@@ -148,7 +149,8 @@ public static partial class PackageCompiler
             declaredDeps,
             explicitCacheDir: cacheDir,
             useIncremental: useIncremental,
-            stripSymbols:   stripSymbols);
+            stripSymbols:   stripSymbols,
+            workspaceLibDirs: workspaceLibDirs);
     }
 
     static IReadOnlyList<string> ResolveSourceFilesFromResolved(ResolvedManifest member, string memberDir)
