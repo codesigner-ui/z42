@@ -190,7 +190,11 @@ int _testLib(string[] argv) {
         ConsoleError.WriteLine("error: z42-test-runner not found at " + runner + " (run without --no-build)");
         return 2;
     }
-    string work = Directory.CreateTempDir("xtask-testlib");
+    // add-tests-bench-manifest-config §6 (2026-06-07): test artifacts persist
+    // under each lib's output_dir in a parallel `tests/` subtree
+    // (<lib>/<profile>/tests/{dist,cache}/) instead of a throwaway temp dir, so
+    // they're inspectable, incrementally cached, and visible to the CI
+    // release-guard. _compileTestUnit derives the path from root + lib.
     string libsRoot = Path.Join(root, "src/libraries");
     string[] libList;
     if (nReq > 0) {
@@ -227,7 +231,7 @@ int _testLib(string[] argv) {
         foreach (var u in units) {
             totalFiles = totalFiles + 1;
             string testZpkg = "";
-            int cc = _compileTestUnit(work, lib, u, parentDeps, ref testZpkg);
+            int cc = _compileTestUnit(root, lib, u, parentDeps, ref testZpkg);
             if (cc != 0) {
                 Console.WriteLine("✗ COMPILE ERROR: " + u.UnitName);
                 totalFailed = totalFailed + 1;
@@ -450,11 +454,19 @@ void _appendDeps(DepBundle b, TomlValue depsTable) {
 /// mini-manifest at `<work>/<lib>/<unit>/test.z42.toml`, calls
 /// `z42c build <synthetic>`, and returns the produced `.zpkg` path.
 /// Sets `outArtifact` to the runnable bytecode path on success.
-int _compileTestUnit(string work, string lib, TestUnit u,
+int _compileTestUnit(string root, string lib, TestUnit u,
                      DepBundle parentDeps, ref string outArtifact) {
     string projName = lib + ".test." + u.UnitName;
+    // Persistent per-lib test subtree (add-tests-bench-manifest-config §6):
+    //   <root>/artifacts/build/libraries/<lib>/release/tests/{dist,cache/<unit>}/
+    // dist/ is shared across the lib's units; cache/ is per-unit to avoid
+    // source.zbc collisions between two dir-mode units.
+    string testsBase = Path.Join(root,
+        "artifacts/build/libraries/" + lib + "/release/tests");
+    string distDir = Path.Join(testsBase, "dist");
+    Directory.Create(distDir);
     if (!u.IsDirMode) {
-        string zbc = Path.Join(work, projName + ".zbc");
+        string zbc = Path.Join(distDir, projName + ".zbc");
         int cc = _exec(new Process("dotnet")
             .Arg("run").Arg("--no-build").Arg("--project").Arg(_driverProj())
             .Arg("-c").Arg("Release")
@@ -468,17 +480,15 @@ int _compileTestUnit(string work, string lib, TestUnit u,
     // accept `..` or absolute paths in globs. To keep `include = "**/*.z42"`
     // simple and stable, the synthetic toml is written NEXT TO the test
     // source files (inside `tests/<unit>/`) using a unique name; the
-    // `[build].output_dir` is overridden to xtask's work dir so no build
-    // artifacts pollute the source tree, and the toml itself is deleted
-    // after the build. The unique name `.xtask-<projName>.z42.toml`
-    // prefixes a `.` so the file is naturally git-ignored on most setups
-    // and won't collide with user manifests.
-    string unitWork = Path.Join(work, lib + "/" + u.UnitName);
-    Directory.Create(unitWork);
+    // `[build].output_dir` is set to the persistent <lib>/release/tests
+    // subtree so the .zpkg lands in the shared `tests/dist/`, and the toml
+    // itself is deleted after the build. The unique name
+    // `.xtask-<projName>.z42.toml` prefixes a `.` so the file is naturally
+    // git-ignored on most setups and won't collide with user manifests.
     string syntheticToml = Path.Join(u.DirPath, ".xtask-" + projName + ".z42.toml");
     string includeGlob = "**/*.z42";
     File.WriteAllText(syntheticToml,
-        _renderSyntheticManifest(projName, includeGlob, unitWork, parentDeps));
+        _renderSyntheticManifest(projName, includeGlob, testsBase, u.UnitName, parentDeps));
     int bc = _exec(new Process("dotnet")
         .Arg("run").Arg("--no-build").Arg("--project").Arg(_driverProj())
         .Arg("-c").Arg("Release")
@@ -492,9 +502,9 @@ int _compileTestUnit(string work, string lib, TestUnit u,
     }
     // PackageCompiler emits `<output_dir>/dist/<name>.zpkg` per
     // restructure-build-output-dirs cascade (dist_dir defaults to
-    // ${output_dir}/dist; this synthetic toml omits dist_dir so we follow
-    // that default).
-    outArtifact = Path.Join(unitWork, "dist/" + projName + ".zpkg");
+    // ${output_dir}/dist; the synthetic toml omits dist_dir → shared
+    // <testsBase>/dist/, and overrides cache_dir to a per-unit subdir).
+    outArtifact = Path.Join(distDir, projName + ".zpkg");
     return 0;
 }
 
@@ -503,7 +513,7 @@ int _compileTestUnit(string work, string lib, TestUnit u,
 /// fixed-shape; this also avoids any quoting / ordering surprises in
 /// generated output that diff would flag during reproducibility checks.
 string _renderSyntheticManifest(string projName, string includeGlob,
-                                 string outputDir, DepBundle deps) {
+                                 string outputDir, string cacheSubdir, DepBundle deps) {
     string body = "# Auto-generated by xtask test (add-tests-bench-manifest-config Phase 3, 2026-06-06).\n"
         + "# Synthesised per-test mini-manifest; not committed to source control.\n"
         + "# kind=lib: test files don't have Main(); [Test]-annotated methods\n"
@@ -519,9 +529,12 @@ string _renderSyntheticManifest(string projName, string includeGlob,
         + "include = [\"" + includeGlob + "\"]\n"
         + "\n"
         + "[build]\n"
-        + "# Phase 3.1.4 — output_dir is xtask-controlled; [[test]] entries\n"
-        + "# cannot override it (synthetic manifest is regenerated each run).\n"
+        + "# output_dir is xtask-controlled; [[test]] entries cannot override it\n"
+        + "# (synthetic manifest is regenerated each run). cache_dir is a per-unit\n"
+        + "# subdir so two dir-mode units' source.zbc don't collide; dist_dir is\n"
+        + "# omitted → shared ${output_dir}/dist (all <lib>.test.*.zpkg together).\n"
         + "output_dir = \"" + outputDir + "\"\n"
+        + "cache_dir  = \"${output_dir}/cache/" + cacheSubdir + "\"\n"
         + "\n"
         + "# Force packed-mode zpkg in both profiles: the in-process VM (and the\n"
         + "# z42-test-runner that drives it) can only load packed zpkgs; default\n"
