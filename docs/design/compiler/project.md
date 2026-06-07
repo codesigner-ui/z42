@@ -618,15 +618,31 @@ artifacts/build/libraries/<lib>/<profile>/
 ├── tests/                          ← 测试子树
 │   ├── cache/<test_name>/          ← 每测试独立 cache
 │   └── dist/                       ← 测试可执行
-│       ├── <lib>.test.<name>.zpkg              ← 单文件
-│       └── <lib>.test.<dir_name>.zpkg          ← dir-mode
+│       ├── <lib>.test.<name>.zbc               ← 单文件（emit-zbc 路径；runner 直接吃 .zbc）
+│       └── <lib>.test.<dir_name>.zpkg          ← dir-mode（合成 manifest → z42c build → packed zpkg）
 └── bench/                          ← bench 子树（与 tests 同构）
     ├── cache/<bench_name>/
     └── dist/
-        └── <lib>.bench.<name>.zpkg
+        ├── <lib>.bench.<name>.zbc              ← 单文件
+        └── <lib>.bench.<dir_name>.zpkg         ← dir-mode
 ```
 
+> 单文件单元走轻量 `z42c --emit zbc` 产 `.zbc`；dir-mode 单元(多文件)合成 mini-manifest 跑 `z42c build` 产 packed `.zpkg`。两者都由 z42-test-runner 经 TIDX 发现 + 调度，落同一 `<subtree>/dist/`。统一单文件也产 `.zpkg` 是后续可选 polish（runner 无所谓）。
+
 **zpkg 命名硬约束**：`.test.` / `.bench.` infix 是文件名硬规则（也是 CI 守门正则的 anchor）。`tests_dir` / `bench_dir` 字段**不暴露** — 强制 `<output_dir>/tests/` 和 `<output_dir>/bench/`；改路径走 `output_dir`，两子树一并变。
+
+### xtask 命令 ↔ 目录（Phase 3.2 / 3.4，2026-06-07）
+
+| 命令 | 写入 | 读取 deps |
+|------|------|----------|
+| `z42 xtask.zpkg test stdlib [lib]`  | `<lib>/<profile>/tests/{cache/<unit>,dist}/` | `[dependencies]` + `[tests.dependencies]` |
+| `z42 xtask.zpkg bench stdlib [lib]` | `<lib>/<profile>/bench/{cache/<unit>,dist}/` | `[dependencies]` + `[bench.dependencies]` |
+| `z42 xtask.zpkg clean`              | 删每个 `<lib>/<profile>/{cache,dist}` + 聚合 `libraries/dist/`（**保留** tests/bench） | — |
+| `z42 xtask.zpkg clean tests`        | 删每个 `<lib>/<profile>/tests/` | — |
+| `z42 xtask.zpkg clean bench`        | 删每个 `<lib>/<profile>/bench/` | — |
+| `z42 xtask.zpkg clean all`          | 删整个 `artifacts/build/`（全量重置） | — |
+
+`bench`（无 `stdlib` 子参）仍是 e2e hyperfine 场景跑器，与 per-lib micro-bench 分流。[Benchmark] 单元由 z42-test-runner 与 [Test] 同调度（zero-arg 调用 + Bencher 采样）。
 
 ### 错误码
 
