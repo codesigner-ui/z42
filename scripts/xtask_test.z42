@@ -142,7 +142,7 @@ int _testAll() {
     // stage 4: stdlib [Test] (no build)
     Console.WriteLine("\n=== stage: stdlib [Test] ===");
     string[] lA = new string[4]; lA[0] = "test"; lA[1] = "lib"; lA[2] = "--no-build"; lA[3] = "--jobs=4";
-    c = _testLib(lA); if (c != 0) { return c; }
+    c = _testLib(lA, "test"); if (c != 0) { return c; }
     Console.WriteLine("\n✅ GREEN — all stages passed (compiler + vm + cross-zpkg + stdlib)");
     return 0;
 }
@@ -153,7 +153,13 @@ int _testAll() {
 // harness. Mirrors the former scripts/test-lib.sh (sequential; --jobs parallel batching is
 // a later optimization). Each src/libraries/<lib>/tests/*.z42 is compiled to
 // .zbc via z42c then run through z42-test-runner; results aggregated.
-int _testLib(string[] argv) {
+int _testLib(string[] argv, string kind) {
+    // kind = "test" → discover <lib>/tests/, merge [tests.dependencies], emit
+    // <lib>.test.<unit> to <lib>/release/tests/. "bench" → <lib>/bench/,
+    // [bench.dependencies], <lib>.bench.<unit> to <lib>/release/bench/. The
+    // z42-test-runner runs both [Test] and [Benchmark] regardless.
+    string subdir = (kind == "bench") ? "bench" : "tests";
+    string label  = (kind == "bench") ? "bench" : "test";
     bool noBuild = false;
     string filter = "";
     string jobs = "1";   // forwarded to z42-test-runner ([Test]-method parallelism)
@@ -212,7 +218,7 @@ int _testLib(string[] argv) {
     int totalFiles = 0;
     int libsTested = 0;
     foreach (var lib in libList) {
-        string testsDir = Path.Join(libsRoot, lib + "/tests");
+        string testsDir = Path.Join(libsRoot, lib + "/" + subdir);
         if (!Directory.Exists(testsDir)) { continue; }
         // Phase 3.1.1: discover BOTH single-file tests (tests/*.z42) and
         // dir-mode tests (tests/<name>/source.z42). Sort for determinism.
@@ -222,16 +228,16 @@ int _testLib(string[] argv) {
         libsTested = libsTested + 1;
         Console.WriteLine("");
         Console.WriteLine("════════════════════════════════════════════════");
-        Console.WriteLine("  " + lib + "  (" + units.Length.ToString() + " test unit(s))");
+        Console.WriteLine("  " + lib + "  (" + units.Length.ToString() + " " + label + " unit(s))");
         Console.WriteLine("════════════════════════════════════════════════");
         // Phase 3.1.3: read parent <lib>.z42.toml once to harvest [dependencies]
-        // + [tests.dependencies] for synthetic manifest dep merge.
+        // + [<subdir>.dependencies] for synthetic manifest dep merge.
         string parentToml = Path.Join(libsRoot, lib + "/" + lib + ".z42.toml");
-        DepBundle parentDeps = _harvestParentDeps(parentToml);
+        DepBundle parentDeps = _harvestParentDeps(parentToml, subdir);
         foreach (var u in units) {
             totalFiles = totalFiles + 1;
             string testZpkg = "";
-            int cc = _compileTestUnit(root, lib, u, parentDeps, ref testZpkg);
+            int cc = _compileTestUnit(root, lib, u, parentDeps, kind, ref testZpkg);
             if (cc != 0) {
                 Console.WriteLine("✗ COMPILE ERROR: " + u.UnitName);
                 totalFailed = totalFailed + 1;
@@ -246,11 +252,11 @@ int _testLib(string[] argv) {
     Console.WriteLine("");
     Console.WriteLine("════════════════════════════════════════════════");
     if (totalFailed > 0) {
-        Console.WriteLine("  ❌ stdlib tests: " + totalFailed.ToString()
+        Console.WriteLine("  ❌ stdlib " + label + ": " + totalFailed.ToString()
             + " file(s) failed (of " + totalFiles.ToString() + " in " + libsTested.ToString() + " lib(s))");
         return 1;
     }
-    Console.WriteLine("  ✅ stdlib tests: all " + totalFiles.ToString()
+    Console.WriteLine("  ✅ stdlib " + label + ": all " + totalFiles.ToString()
         + " file(s) passed (in " + libsTested.ToString() + " lib(s))");
     return 0;
 }
@@ -389,7 +395,7 @@ bool _dirHasTestMethods(string dir) {
 /// `[dependencies]` + `[tests.dependencies]` as a single merged list.
 /// Returns an empty bundle when the toml is missing or has no dep
 /// sections (z42.test stdlib itself doesn't depend on anything).
-DepBundle _harvestParentDeps(string tomlPath) {
+DepBundle _harvestParentDeps(string tomlPath, string section) {
     DepBundle b = new DepBundle();
     b.Names = new string[32];
     b.Versions = new string[32];
@@ -404,10 +410,11 @@ DepBundle _harvestParentDeps(string tomlPath) {
     if (root.ContainsKey("dependencies")) {
         _appendDeps(b, root.Get("dependencies"));
     }
-    if (root.ContainsKey("tests")) {
-        TomlValue tests = root.Get("tests");
-        if (tests.ContainsKey("dependencies")) {
-            _appendDeps(b, tests.Get("dependencies"));
+    // section = "tests" → merge [tests.dependencies]; "bench" → [bench.dependencies].
+    if (root.ContainsKey(section)) {
+        TomlValue sec = root.Get(section);
+        if (sec.ContainsKey("dependencies")) {
+            _appendDeps(b, sec.Get("dependencies"));
         }
     }
     return b;
@@ -455,14 +462,18 @@ void _appendDeps(DepBundle b, TomlValue depsTable) {
 /// `z42c build <synthetic>`, and returns the produced `.zpkg` path.
 /// Sets `outArtifact` to the runnable bytecode path on success.
 int _compileTestUnit(string root, string lib, TestUnit u,
-                     DepBundle parentDeps, ref string outArtifact) {
-    string projName = lib + ".test." + u.UnitName;
-    // Persistent per-lib test subtree (add-tests-bench-manifest-config §6):
-    //   <root>/artifacts/build/libraries/<lib>/release/tests/{dist,cache/<unit>}/
+                     DepBundle parentDeps, string kind, ref string outArtifact) {
+    // kind = "test" → <lib>.test.<unit> under tests/; "bench" → <lib>.bench.<unit>
+    // under bench/. Both run through the same z42-test-runner (which dispatches
+    // [Test] and [Benchmark] identically).
+    string subdir = (kind == "bench") ? "bench" : "tests";
+    string projName = lib + "." + kind + "." + u.UnitName;
+    // Persistent per-lib subtree (add-tests-bench-manifest-config §6):
+    //   <root>/artifacts/build/libraries/<lib>/release/<subdir>/{dist,cache/<unit>}/
     // dist/ is shared across the lib's units; cache/ is per-unit to avoid
     // source.zbc collisions between two dir-mode units.
     string testsBase = Path.Join(root,
-        "artifacts/build/libraries/" + lib + "/release/tests");
+        "artifacts/build/libraries/" + lib + "/release/" + subdir);
     string distDir = Path.Join(testsBase, "dist");
     Directory.Create(distDir);
     if (!u.IsDirMode) {

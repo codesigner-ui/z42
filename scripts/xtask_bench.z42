@@ -14,6 +14,13 @@ using Std.Json;
 //   --diff: compare current results against a baseline (see _benchDiff) instead
 //           of running benchmarks.
 int _bench(string[] argv) {
+    // add-tests-bench-manifest-config Phase 3.2: `bench stdlib [lib]` / `bench lib`
+    // run the per-library micro-benchmarks ([Benchmark] units under
+    // src/libraries/<lib>/bench/) via the shared lib-harness path, emitting to
+    // <lib>/release/bench/dist/. Bare `bench` (no sub) stays the e2e hyperfine
+    // scenario runner below.
+    string sub = _at(argv, 1);
+    if (sub == "stdlib" || sub == "lib") { return _testLib(argv, "bench"); }
     foreach (var a in argv) { if (a == "--diff") { return _benchDiff(argv); } }
     bool quick = false;
     foreach (var a in argv) { if (a == "--quick") { quick = true; } }

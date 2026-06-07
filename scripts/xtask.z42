@@ -113,8 +113,8 @@ int _buildStdlib() {
 int _test(string[] argv) {
     string sub  = _at(argv, 1);
     if (sub == "" || sub == "all") { return _testAll(); }
-    if (sub == "stdlib")     { return _testLib(argv); }
-    if (sub == "lib")        { return _testLib(argv); }
+    if (sub == "stdlib")     { return _testLib(argv, "test"); }
+    if (sub == "lib")        { return _testLib(argv, "test"); }
     if (sub == "vm")         { return _testVm(argv); }
     if (sub == "cross-zpkg") { return _testCrossZpkg(argv); }
     if (sub == "dist")       { return _testDist(argv); }
