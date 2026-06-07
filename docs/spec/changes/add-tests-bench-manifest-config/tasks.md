@@ -50,7 +50,9 @@
 
 ## Phase 5 — 多文件测试 demo
 
-> 状态：🔴 BLOCKED — xtask 端 dir-mode 基础设施已完整（Phase 3 + Phase 5 polish 落地：dir-mode 发现 / synthetic manifest 写入到源目录旁 / 删除清理 / `[profile.*].pack = true` 强制 packed / `IsSyntheticHarnessProject` 抑制 WS012）；端到端阻塞在 VM 侧 zpkg loader 的 TIDX 聚合，2026-06-06 试跑 secp256k1 demo 时确认。
+> 状态：✅ 已完成（2026-06-07）—— TIDX 聚合阻塞已解除。spec [`aggregate-zpkg-tidx`](../../archive/2026-06-06-aggregate-zpkg-tidx/) 落地 VM 侧 zpkg loader 的多 module TIDX 聚合（commit `0b453b2e`）；secp256k1 dir-mode demo re-introduce（commit `7b2a1b2a`，并修了 GoldenTests dir-mode 误把 [Test] 库测试当 Main 型 golden 的问题）。端到端验证：`xtask test stdlib z42.crypto` 中 secp256k1 dir-mode 10/10 [Test] 全过；VM goldens `OK: secp256k1`。
+>
+> （历史）原阻塞：xtask 端 dir-mode 基础设施已完整（Phase 3 + Phase 5 polish 落地：dir-mode 发现 / synthetic manifest 写入到源目录旁 / 删除清理 / `[profile.*].pack = true` 强制 packed / `IsSyntheticHarnessProject` 抑制 WS012）；端到端阻塞在 VM 侧 zpkg loader 的 TIDX 聚合，2026-06-06 试跑 secp256k1 demo 时确认。
 >
 > **触发**：synthetic 多文件项目编译产出 packed zpkg；z42-test-runner 调 `load_artifact(zpkg)` 时，[src/runtime/src/metadata/loader.rs:312-321](../../../../src/runtime/src/metadata/loader.rs#L312-L321) 显式写 `test_index: vec![]` 并附注释 _"R1: zpkg test metadata aggregation deferred. R3 runner reads individual .zbc files directly via load_artifact, where TIDX sections are populated. Setting empty here is correct for now."_ 测试发现因此为空，runner 退出 3 (no tests found)。
 >
@@ -66,9 +68,9 @@
 >
 > Phase 5 demo 文件本身（`tests/secp256k1/{source,vectors}.z42`）在本次试跑后已恢复回单文件 `tests/ecdsa_secp256k1_vectors.z42`；落地 TIDX 聚合后再 re-introduce。
 
-- [ ] 5.0 [起 spec `aggregate-zpkg-tidx`]：vm-side 改动，在 zpkg 加载时聚合多 module TIDX 段
-- [ ] 5.1 demo 重做：选一个 stdlib 包（推荐 z42.crypto）改造一个测试为 dir-mode
-- [ ] 5.2 验证 dir-mode 路径全跑通（compile → load_artifact → test discovery → run）
+- [x] 5.0 [起 spec `aggregate-zpkg-tidx`]：vm-side 改动，在 zpkg 加载时聚合多 module TIDX 段 —— 已落地并归档（commit `0b453b2e`）
+- [x] 5.1 demo 重做：z42.crypto 的 secp256k1 测试改造为 dir-mode（`tests/secp256k1/{source,vectors}.z42`，commit `7b2a1b2a`）
+- [x] 5.2 验证 dir-mode 路径全跑通（compile → load_artifact → test discovery → run）—— secp256k1 10/10 + VM golden `OK: secp256k1`
 
 ## Phase 6 — CI 守门 + 文档同步
 
@@ -83,7 +85,7 @@
     - [x] 6.2.5 WS012 synthetic harness 例外
 - [x] 6.3 [docs/design/runtime/zpkg.md L104](../../../design/runtime/zpkg.md) 已说明 release zpkg DEPS 段不含 [tests.dependencies] / [bench.dependencies] / [[test]].dependencies；CI release-guard 作最后防线（与本 spec 同期归档）
 - [x] 6.4 评估结论：**不**需补 `.claude/rules/` 规则。WS012 已机械化由编译器执行，rule 是给 Claude 看的人工约定；compiler-enforced 规则不必在 .claude 复述（同 WS001-WS043 全家族均无对应 .claude rule）
-- [ ] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/（**阻塞**：Phase 5 BLOCKED + Phase 3.4 未做；解锁后归档）
+- [ ] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/（**仍阻塞**：Phase 5 已解锁完成（2026-06-07），但 Phase 3.2 bench / Phase 3.4 `clean tests|bench` / Phase 3.5 xtask 单测仍未做；这些清完才能归档本 spec）
 
 ## 验收（GREEN）
 
@@ -91,7 +93,7 @@
 - [x] xtask test stdlib 全绿（22 包，265 test files；commit `6aac4c5d` 落地时验证）
 - [ ] xtask bench stdlib 跑通（per-package micro-bench；Phase 3.2 待做）
 - [x] 全 stdlib 扫描 WS012 零触发（21 包均无 z42.test 在 [dependencies]）
-- [ ] 一个 dir-mode 多文件测试 demo 跑通（Phase 5 BLOCKED 在 aggregate-zpkg-tidx）
+- [x] 一个 dir-mode 多文件测试 demo 跑通（z42.crypto/tests/secp256k1，10/10；Phase 5 解锁 by aggregate-zpkg-tidx）
 - [x] CI release-guard step（forward + reverse）落地
 - [ ] `xtask clean tests` / `clean bench` 独立可清（Phase 3.4 未做：xtask 无 `clean` 命令；需 design 讨论）
 - [ ] roadmap.md / 0.3.x A 主线相关行同步
