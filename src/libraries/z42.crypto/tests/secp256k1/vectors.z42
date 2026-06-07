@@ -1,0 +1,82 @@
+// add-tests-bench-manifest-config Phase 5 (2026-06-06): test fixture
+// half of the dir-mode demo split. Hex constants + helper byte-array
+// builders for the secp256k1 conformance + round-trip suites. Pulled
+// out so source.z42 can stay focused on [Test] methods and adding new
+// reference vectors (from SEC2 / Bitcoin / Ethereum specs) doesn't
+// noise up the test logic file. Both files compile into the same
+// synthetic `<lib>.test.secp256k1.zpkg` package — the dir-mode
+// xtask path globs `tests/secp256k1/**/*.z42` into a single project,
+// and aggregate-zpkg-tidx (2026-06-06) makes the merged zpkg's TIDX
+// discoverable by z42-test-runner.
+namespace Z42CryptoEcdsaSecp256k1VectorsTests;
+
+using Std;
+using Std.Encoding;
+
+public static class SecpVectors {
+    // ── 32-byte big-endian private scalars ────────────────────────────────
+
+    /// d = 1 — produces the curve generator G as its public key.
+    public static byte[] PrivateScalarOne() {
+        byte[] d = new byte[32];
+        d[31] = (byte)0x01;
+        return d;
+    }
+
+    /// d = 2 — produces 2·G.
+    public static byte[] PrivateScalarTwo() {
+        byte[] d = new byte[32];
+        d[31] = (byte)0x02;
+        return d;
+    }
+
+    /// Bitcoin / Ethereum sample private key used across sign / verify /
+    /// determinism / tamper tests. Same constant in the underlying
+    /// SEC2 reference suites.
+    public static byte[] BitcoinSamplePrivateKey() {
+        return Hex.Decode("c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721");
+    }
+
+    // ── Expected public keys (uncompressed X || Y, hex-encoded) ────────────
+
+    /// G = secp256k1 generator (SEC2):
+    ///   Gx = 79BE667E…
+    ///   Gy = 483ADA77…
+    public static string GeneratorHex() {
+        return "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8";
+    }
+
+    /// 2·G = well-known secp256k1 doubling reference:
+    ///   2G.x = C6047F94…
+    ///   2G.y = 1AE168FE…
+    public static string TwoGHex() {
+        return "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee51ae168fea63dc339a3c58419466ceaeef7f632653266d0e1236431a950cfe52a";
+    }
+
+    /// Known-valid P-256 (NOT secp256k1) signature used by the
+    /// cross-curve-rejection test. Plugs a known-valid foreign signature
+    /// into the secp256k1 verifier so we can confirm it rejects rather
+    /// than accidentally validates.
+    public static byte[] P256ForeignSignature() {
+        return Hex.Decode("efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8");
+    }
+
+    // ── Synthetic invalid-shape fixtures ───────────────────────────────────
+
+    /// 64-byte pseudo-public-key that does NOT lie on the curve;
+    /// `i * 7 + 3` mod 256 — deterministic and trivially off-curve.
+    public static byte[] OffCurvePseudoPublicKey() {
+        byte[] pk = new byte[64];
+        int i = 0;
+        while (i < 64) { pk[i] = (byte)(i * 7 + 3); i = i + 1; }
+        return pk;
+    }
+
+    /// 64-byte signature with r = 1, s = 1 (valid range, off-curve PK).
+    public static byte[] TrivialUnitSignature() {
+        byte[] sig = new byte[64];
+        sig[31] = (byte)0x01;   // r low byte = 1
+        sig[63] = (byte)0x01;   // s low byte = 1
+        return sig;
+    }
+}

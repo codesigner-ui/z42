@@ -190,6 +190,22 @@ public sealed class GoldenTests
                 string sourceFile = Path.Combine(dir, "source.z42");
                 if (!File.Exists(sourceFile)) continue;
 
+                // add-tests-bench-manifest-config (2026-06): dir-mode tests under
+                // src/libraries/<lib>/tests/ whose source.z42 is [Test]/[Benchmark]-based
+                // are owned by the z42-test-runner (dispatched via `z42 xtask.zpkg test
+                // lib/stdlib`, which has its own dir-mode discovery) and have no Main —
+                // not golden-runnable, exactly like the FLAT lib tests excluded below
+                // (line ~214). The flat exclusion blanket-skips all src/libraries flat
+                // .z42; the dir-mode equivalent keys on "is this a runner-owned [Test]
+                // dir?" so genuine Main-based golden dir tests (z42.math/tests/math,
+                // z42.collections/tests/*) keep running here. Without this, converting a
+                // flat [Test] lib test to a multi-file dir (source.z42 + vectors.z42,
+                // e.g. z42.crypto/tests/secp256k1) makes GoldenTests try to run it as a
+                // Main-based golden → "no Main/main function in compiled IR".
+                if (root.StartsWith(LibrariesRoot, StringComparison.Ordinal)
+                    && ContainsTestRunnerAttribute(sourceFile))
+                    continue;
+
                 bool isErrorCase = dir.Contains(Path.DirectorySeparatorChar + "errors" + Path.DirectorySeparatorChar)
                                 && File.Exists(Path.Combine(dir, "expected_error.txt"));
                 bool isParseCase = dir.Contains(Path.DirectorySeparatorChar + "parse"  + Path.DirectorySeparatorChar);
@@ -226,6 +242,26 @@ public sealed class GoldenTests
                 yield return [name, file, /* dir (no sidecars) */ null!];
             }
         }
+    }
+
+    /// True when <paramref name="sourceFile"/> declares a `[Test]` or `[Benchmark]`
+    /// method — i.e. it is a z42-test-runner-owned assertion test, not a Main-based
+    /// golden run case. Lightweight line scan (discovery runs before compilation);
+    /// an attribute appears on its own line as `[Test]` / `[Benchmark]` (optionally
+    /// `[Test(...)]`). Used to exclude dir-mode library tests from GoldenTests run
+    /// cases (see DiscoverCases dir-mode branch).
+    private static bool ContainsTestRunnerAttribute(string sourceFile)
+    {
+        foreach (var raw in File.ReadLines(sourceFile))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("[Test]", StringComparison.Ordinal)
+                || line.StartsWith("[Test(", StringComparison.Ordinal)
+                || line.StartsWith("[Benchmark]", StringComparison.Ordinal)
+                || line.StartsWith("[Benchmark(", StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     // ── Features loader ────────────────────────────────────────────────────
