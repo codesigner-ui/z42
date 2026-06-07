@@ -51,13 +51,15 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 ---
 
-## 当前焦点（next 4–6 周）
+## 当前焦点
 
-**M6 工程支持 + 测试体系 + 错误码体系** + **M7 VM 元数据 + 标准库基础**，对应 SemVer **0.2.x → 0.3.x → 0.4.x**。
+**0.3.x 自举线**：以 GC v1 为地基，三主线并行——A（stdlib 重组 + perf）‖ B（**编译器全自举**：7 子系统用 z42 重写到 byte-identical）‖ C（反射 MVP），REPL 作为自举完成后的 capstone。详见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排）。
 
-### 0.2.x — 工程化 & 包系统 + perf CI 立项
+> **2026-06-07 重排要点**：全端到端自举从 1.0 拉到 0.3.x 作为本线招牌；自举采用「受限写法 + dogfood 补真卡点」（不为自举强制提前整个 0.6/0.7 的 match/LINQ/Result）；REPL 从 0.5.x 拉到 0.3.x capstone。连锁影响见下文 [长期 SemVer 路线](#长期-semver-路线05--10) 重排。
 
-退出标准：`.zbc` v1.x / `.zpkg` 格式冻结；perf CI 上线；多平台 CI matrix 全绿；release 自动化产出跨平台 binary。
+### 0.2.x — 工程化 & 包系统 + perf CI ✅ 收尾
+
+退出标准（已达成）：`.zbc` v1.x / `.zpkg` 格式冻结 ✅；perf CI 上线 ✅；多平台 CI matrix 全绿 ✅；release 自动化产出跨平台 binary ✅。
 
 | 子版本 | 内容 | 估时 |
 |------|------|:----:|
@@ -65,52 +67,48 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.2.1 | `.zpkg` indexed/packed 格式冻结（strict-pin + 4 fixture 字节 golden + 0.5 → 0.6 catch-up bump）— [archive/2026-05-14-freeze-zpkg-v0](spec/archive/2026-05-14-freeze-zpkg-v0/)；`z42c disasm` 完整化作为另一半（视实施 — follow-up spec）| 1 周 |
 | 0.2.2 | Benchmark 套件骨架（`cargo bench` + BenchmarkDotNet）+ 初始基线 | 1.5 周 |
 | 0.2.3 | ✅ Perf CI + 性能预算 (`.github/workflows/bench-pr.yml`, 2026-06-05) — PR-side workflow fetches baseline from `bench-baselines` branch, runs `xtask bench --diff --threshold-time 0.10`, fails on >10% time regression | 1 周 |
-| 0.2.4 | 🟡 部分 — ✅ `lint-manifest` WS008/WS009 (2026-06-04 `2c5a1881`); ❌ `z42c new/init/fmt/clean` + 独立 `z42-fmt` binary 推后 | 1 周 |
-| 0.2.5 | 多平台 CI matrix（5 平台 build/test 全绿）+ CI 模板 | 1.5 周 |
-| 0.2.6 | Release 自动化：git tag → 跨平台 z42c/z42vm 二进制 + zpkg 自动产出（[archive/2026-05-14-add-release-automation](spec/archive/2026-05-14-add-release-automation/) — Q12 已裁决）| 1 周 |
+| 0.2.4 | 🟡 部分 — ✅ `lint-manifest` WS008/WS009 (2026-06-04 `2c5a1881`); ❌ `z42c new/init/fmt/clean` + 独立 `z42-fmt` binary 推 0.4.x | 1 周 |
+| 0.2.5 | ✅ 多平台 CI matrix（[ci.yml](../.github/workflows/ci.yml) 5 平台 build/test）+ CI 模板 | 1.5 周 |
+| 0.2.6 | ✅ Release 自动化（[release.yml](../.github/workflows/release.yml) tag → 跨平台 binary + zpkg；[archive/2026-05-14-add-release-automation](spec/archive/2026-05-14-add-release-automation/)）| 1 周 |
 
-### 0.3.x — stdlib 整理 + 自举启动 + 反射 MVP（2026-06-05 重排）
+### 0.3.x — 自举线（GC v1 地基 → stdlib ‖ 全自举 ‖ 反射 → REPL）（2026-06-07 重排）
 
-退出标准：（A）stdlib 重组完成 + 每包 bench baseline + BigInt/Coll/String/IO/JSON 三轮 perf 攻坚；（B）C# 编译器 4 个易做子系统（Lexer / Project / Driver / Parser）的 z42 实现产物在 CI 上与 C# 实现产物**逐字节对账通过**；（C）反射 MVP（只读元数据 + `typeof` + Attribute reflection）落地。
+退出标准：（A）stdlib 重组完成 + 每包 bench baseline + 三轮 perf 攻坚；（B）**编译器 7 子系统全部用 z42 重写**，byte-identical CI gate 7 日零飘移 + end-to-end compile-perf median ≤ 3× C# + z42c-selfhost 下全测试绿；（C）反射 MVP（只读元数据 + `typeof`/`GetType` + Attribute）；（capstone）z42 原生 REPL。
 
-> **三主线并行**：A（stdlib）/ B（自举）/ C（反射）三条主线，0.3.0 GC v1 是共同前置；0.3.3 起三条同时段并行推进。
+> **完整规划**见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排，supersede 2026-06-05 保守版）。以下为子版本索引。
 >
-> **B 主线不在 0.3.x 完成**：仅完成无 L3 依赖的 4 个子系统（Lexer / Project / Driver / Parser）+ 建立逐子系统 bit-identical CI gate + per-subsystem micro-bench baseline。剩余 Semantic / TypeChecker / IR / ZbcWriter / Pipeline 推迟到 0.5.x（L3-G 泛型 + L3-C lambda 落地后），届时启动 `0.5.B*` 完成 byte-identical 替换。
+> **B 主线＝本版本招牌（全自举，从原 1.0 拉到 0.3.x）**：7 子系统 = `z42.{Core,Syntax,Project,Driver,Semantics,IR,Pipeline}` 1:1 镜像 C# 项目，源码落 `src/z42.compiler/` 独立顶级目录（与 `src/compiler/` 平级）。**受限写法**：class+虚方法替代 record+match / 循环替代 LINQ / 异常替代 Result；只有自举真卡点才 dogfood 在 z42 里补该特性（禁止 workaround，per `feedback_dogfood_fill_gaps`）。**无桥接**：z42 端只 ship 就绪命令（0.3.4 起 lex/parse/manifest-check、0.3.9 起 build），0.3.x default 编译器仍是 C#，两实现并存逐字节对账。
 >
-> **B 主线无桥接策略**（2026-06-06 第二轮裁决）：0.3.x z42 实现只 ship 能独立跑的命令（`lex` / `parse` / `manifest-check`）；`build` 命令在 0.3.x 报 "not implemented"，**禁止**调 dotnet z42c.dll 作 fallback。两实现完全独立，确保并行开发零干扰。详见 [plan-0.3.x-three-streams §B 主线深度规划](spec/changes/plan-0.3.x-three-streams/proposal.md#b-主线深度规划编译器自举)。
+> **受限写法 ⇒ 不强制提前半个 L3**：match/ADT/LINQ/Result 完整版仍在 0.6/0.7；只有被自举单点阻断的特性才按 features.md 逐项评估提前。这是「受限写法」决策的直接后果。
 >
-> **z42 编译器源码位置**：`src/z42.compiler/{core,syntax,project,driver,semantics,ir,pipeline}/` 共 **7 个子包**，作为 **`src/` 下独立顶级目录**与 `src/compiler/`（C# bootstrap）平级（2026-06-06 User 决议；不放在 `src/libraries/` 下以保持 stdlib 语义纯净）。1:1 镜像 C# 9 项目结构（z42.Tests / z42.Bench 不需对应子包，按 z42 惯例并入各子包 `tests/` + `bench/`）。zpkg 命名由各子包 manifest 决定（如 `z42.compiler.core.zpkg`），与目录路径无关。driver 是 exe-kind 入口（= 1.0 后的 `z42c.zpkg`），其余 6 个是 lib-kind。0.3.x 实际落地 core/syntax/project/driver 四个；semantics/ir/pipeline 三个空壳占位。`src/z42.compiler/z42.workspace.toml` 独立 workspace（与 stdlib workspace 解耦），xtask 新增 `build/test compiler-z42` target。1.0 切换时 `git rm -r src/compiler/`，z42.compiler 成唯一编译器。与 `project_mobile_no_compiler` memory "1.0 后 zpkg 全平台分发" 一致。
->
-> **compile-perf gate 启用时机**：end-to-end compile-perf bench + CI gate 在 **0.5.x** 全子系统就绪后启用（阈值 median ≤ 3× / P99 ≤ 5× / 回归 > 15% red）。0.3.x 期间只跑 per-subsystem micro-bench（Lexer throughput / Parser nodes/s / Manifest ops/s），baseline 入库但不设硬阈值。
->
-> **REPL（Python 风格交互式）**：作为 0.5.x B 完成态的 capstone deliverable（依赖 Semantic + TypeChecker + 持久化符号表），单独 spec `add-z42-repl`；**0.3.x 不实现**。
+> **REPL = capstone（从原 0.5.x 拉到 0.3.x）**：自举端到端 build 跑通后落地（前置 Semantic/TypeChecker/IR 均在本线内交付），单独 spec `add-z42-repl`。
 >
 > **C 主线 MVP 不含 Method.Invoke**：完整 Invoke 强依赖 generic instantiation，推 0.5.x L3-R 完整版。
 >
-> **C3 Attribute reflection 前置依赖**：用户自定义 attribute 机制（features.md §X，尚未排版本）需先落地；该子项的 spec 起草时需顺带起草 attribute 机制 spec。
+> **C3 Attribute reflection 前置**：用户自定义 attribute 机制 spec 需先落地（0.3.4 起草）。
 
-| 子版本 | 主线 | 内容 | 估时 |
-|------|:---:|------|:----:|
-| 0.3.0 | 前置 | **GC v1**：抽象 GC 接口 + mark-and-sweep（替换 `Rc<RefCell>`）— A/B/C 共同前置（从原 0.3.3 提前）| 2–3 周 |
-| 0.3.1 | A0+B0+C0 | 三主线 spec 同步起草：包结构审计 spec / 自举 CI 架构 spec / 反射 API spec | 1.5 周 |
-| 0.3.2 | A1 | 反映包审计裁决：重组目录 + 改 namespace + 调用点全量更新（pre-1.0 一次切干净）| 1.5 周 |
-| 0.3.3 | A2 ‖ B1 ‖ C1 | A2: bench baseline（每包 micro-bench → `bench-baselines`）‖ B1: Lexer in z42 ‖ C1: runtime metadata 暴露 + `Type/MethodInfo/FieldInfo/PropertyInfo` + `GetMembers` 系列 | 2 周 |
-| 0.3.4 | A3 ‖ B2 ‖ C2 | A3: perf #1 BigInt Karatsuba + List/Dict 热路径 ‖ B2: Project manifest reader in z42 ‖ C2: `typeof(T)` 编译器关键字 + `obj.GetType()` runtime intrinsic + z42.reflection 包公开 | 1.5 周 |
-| 0.3.5 | A4 ‖ B3 ‖ C3 | A4: perf #2 String / StringBuilder / Path / Encoding ‖ B3: Driver CLI / 错误码格式化 in z42 ‖ C3: Attribute reflection（前置：用户自定义 attribute 机制 spec）| 1.5 周 |
-| 0.3.6 | A5 ‖ B4 | A5: perf #3 JSON / YAML / TOML reader（共用 lexer 抽取）‖ B4: Parser in z42（AST 用 class + 虚方法替代 sealed record + visitor）| 3 周 |
-| 0.3.7 | 收尾 | CI bit-identical gate（B1–B4 全绿）+ stdlib bench delta report（A 全 perf 攻坚的提升量化） | 1 周 |
+**0.3.0（地基）**：GC v1 —— 抽象 GC 接口 + mark-and-sweep（替换 `Rc<RefCell>`），A/B/C 共同前置（估 2–3 周）。
 
-**║ = 三主线在该子版本并行推进**
+| 子版本 | B 自举（招牌）| A stdlib | C 反射 |
+|:--:|------|------|------|
+| 0.3.1 | B0 架构 spec + 建 `src/z42.compiler/` 7 子包骨架 + xtask `build/test compiler-z42` | A0 包审计 spec | C0 反射 API spec（新建 `reflection.md`）|
+| 0.3.2 | — | A1 包重组（先行，稳定 B 引用路径）| — |
+| 0.3.3 | core + syntax（Lexer/Parser/AST）+ bit-identical gate | A2 bench baseline | C1 metadata 暴露 + 4 反射对象 + `GetMembers` 系列 |
+| 0.3.4 | project + driver（lex/parse/manifest-check 可跑）| A3 perf #1 BigInt/Coll | C2 `typeof(T)` + `obj.GetType()` + z42.reflection 包公开 |
+| 0.3.5 | **semantics**（首个硬子系统，dogfood 高发段）| A4 perf #2 String/IO | C3 Attribute（前置 attribute 机制 spec）|
+| 0.3.6 | typecheck | A5 perf #3 JSON/YAML/TOML | — |
+| 0.3.7 | ir（codegen + lowering，寄存器 SSA）| | |
+| 0.3.8 | emit（ZbcWriter/ZpkgWriter → byte-identical .zbc/.zpkg）| | |
+| 0.3.9 | pipeline → **端到端 z42 build 跑通** | | |
+| 0.3.10 | byte-identical gate 全 7 子系统绿 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
+| 0.3.11 | **REPL capstone**（z42 原生）| | |
+| 0.3.12 | 收尾：z42c-selfhost 下全 dotnet/xtask test 绿 + soak + A perf delta report | | |
 
-**原 0.3.x 项重排（2026-06-05）**：
+**‖ = 三主线在该子版本并行推进**。子版本号弹性——本线终点由退出标准定义，自举 dogfood 补特性时插入特性 spec 子版本。
 
-| 原项 | 重排目的地 | 原因 |
-|------|----------|------|
-| Golden 全 L1 覆盖 + interp/JIT 一致性 CI | 0.4.x 起 | 与 stdlib v1 同期，新 API 同步 golden |
-| 调试符号 | 0.4.x 起 | |
-| 热重载 VM 完整实现 | 0.5.x 起 | features.md §12 本就标 "GC v1 后落地" |
-| GC v1 | **0.3.0**（提前）| A/B 共同前置 |
-| Profiler hooks | 0.4.x 起 | |
+**重排沿革**：
+- **2026-06-07（全自举）**：原"B 只做 4 子系统（Lexer/Project/Driver/Parser）+ 剩余推 0.5.x"→ 全 7 子系统并入本线；原"REPL 推 0.5.x"→ 本线 capstone；原"byte-identical 推 1.0"→ 本线退出标准；原"compile-perf gate 0.5.x 启用"→ 0.3.10 启用。
+- **2026-06-05（从 0.3.x 移出，仍生效）**：Golden 全 L1 覆盖 + interp/JIT 一致性 CI / 调试符号 / Profiler hooks → 0.4.x 起；热重载 VM 完整实现 → 0.5.x 起；GC v1 → 0.3.0（提前）。
 
 ### 0.4.x — 标准库 v1 + test/bench/docgen 工具链
 
@@ -134,13 +132,13 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 版本 | 主题 | Phase | 估时 |
 |------|------|:----:|:----:|
-| **0.5.x** | 泛型完整 + Trait 静态分发 + 反射 + LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |
+| **0.5.x** | 泛型完整 + Trait 静态分发 + 反射**完整版**（Method.Invoke，依赖 generic instantiation）+ LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |
 | **0.6.x** | 函数式（Lambda / 命名参数 / 模式匹配 / `let` 不可变 / LINQ）+ unmanaged + GC v2 + linter | L3 | 9–11 周 |
 | **0.7.x** | `Result<T,E>` + `?` + ADT + `match` 穷尽检查 | L3 | 6–8 周 |
 | **0.8.x** | async / await + 多线程 + GC v3（generational + concurrent）+ DAP debugger | L3 | 12–16 周 |
 | **0.9.x** | 单文件脚本 + 嵌入 API GA + 可裁剪 + WASM target + Interop 2b（manifest reader / source generator）| L3 | 10–14 周 |
 | **0.10.x** | 性能强化（philosophy §9 五指标全部达标）| L3 | 8–12 周 |
-| **1.0.x** | 自举（z42 编译 z42 编译 z42 byte-identical）+ 跨架构 NativeAOT + Interop 3 + `z42up` 工具链 GA + SemVer / deprecation 启用 | L3+ | 14–18 周 |
+| **1.0.x** | 删 C# bootstrap（自举核心已在 **0.3.x** 完成 byte-identical）+ 跨架构 NativeAOT + Interop 3 + `z42up` 工具链 GA + SemVer / deprecation 启用 | L3+ | 8–12 周 |
 
 **累计估算**：~16–20 个月（按全职 1 人节奏）。
 
@@ -151,9 +149,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
        │       │   │           │                                            │
        │       │   ├── reflection MVP (0.3 C) ──► reflection 完整 (0.5.1–0.5.3 + test 增强 0.5.6)
        │       │   │                                                        │
-       │       │   ├── 自举易做四子系统 (0.3 B：Lexer/Project/Driver/Parser)
-       │       │   │           ──► 自举剩余子系统 (0.5 B：Sem/TC/IR/ZbcWriter/Pipeline)
-       │       │   │                          ──► byte-identical 替换 (1.0 自举)
+       │       │   ├── 编译器全自举 7 子系统 (0.3 B：Lex→Parse→Proj→Driver→Sem→TC→IR→Emit→Pipeline)
+       │       │   │           ──► byte-identical gate + compile-perf ≤3× (0.3.x 退出)
+       │       │   │                          ──► 删 C# bootstrap (1.0 收尾)
        │       │   │                                                        │
        │       │   ├── GC v1 (0.3.0，从 0.3.3 提前) ──► GC v2 (0.6) ──► GC v3 (0.8) ─►
        │       │   │                                                        │
@@ -166,8 +164,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 强依赖链：
 - 0.3 A perf 攻坚 ◄── 0.3.0 GC v1（无稳定 GC 的 micro-opt 无意义）
-- 0.3 B 自举易做四件 ◄── 0.3.0 GC v1（z42 端编译器对 GC 压力大）
-- 0.3 B 剩余子系统（Sem/TC/IR/...）◄── 0.5 L3-G 泛型 + L3-C lambda（visitor pattern + AST 集合需 generic）
+- 0.3 B 编译器全自举 ◄── 0.3.0 GC v1（z42 端编译器对 GC 压力大）
+- 0.3 B 自举受限写法 ◄── 泛型 G1-G4 + 闭包核心（已提前落地）；缺 match/LINQ/Result 用 class+虚方法 / 循环 / 异常替代，真卡点才 dogfood 提前
 - 0.3 C3 Attribute reflection ◄── 用户自定义 attribute 机制（features.md §X，0.3.5 前先 spec）
 - 0.5 反射完整版 Method.Invoke ◄── 0.5 L3-G 泛型 instantiation
 - 0.5 反射 ◄── 0.10 性能数据自查（type metadata access）
@@ -175,7 +173,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 - 0.7 Result ◄── 0.8 async（async fn 通常返回 `Task<Result<T,E>>`）
 - 0.8 GC v3 ◄── 0.9.5 VM 组件化
 - 0.10 性能基线 ◄── 1.0 稳定承诺
-- 1.0 自举（byte-identical 替换）◄── 0.5+ 全部 L3 特性（编译器自身需 lambda / generic / async）
+- 1.0 删 C# bootstrap ◄── 0.3.x 自举 byte-identical gate 跑稳（自举核心不再等全部 L3；受限写法已规避 match/LINQ/Result）
 
 ---
 
@@ -253,6 +251,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 当前 | `dotnet build` + `cargo build` + `dotnet test` + `z42 xtask.zpkg test vm` 全绿 |
 | 0.2.3 | Perf CI |
 | 0.2.5 | 多平台 CI matrix |
+| 0.3.10 | z42c-selfhost byte-identical gate（7 子系统逐字节对账）+ compile-perf ≤3× C# |
 | 0.4.6 | `z42c test` 100% 通过 |
 | 0.4.7 | `z42c bench --diff` 通过 |
 | 0.4.8 | `z42-doc` 无错 |
@@ -263,7 +262,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.8.7 | DAP conformance |
 | 0.9.7 | WASM target build & test |
 | 0.10.0 | philosophy §9 五指标自动化基线 |
-| 1.0.0 | 自举 byte-identical + 跨架构 perf 数字 |
+| 1.0.0 | C# bootstrap 删除后 z42c-selfhost 唯一编译器全绿 + 跨架构 perf 数字 |
 
 ---
 
@@ -276,11 +275,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | M3 | IR Codegen → `.zbc`（L1 特性全覆盖）| L1 → L2 | ✅ |
 | M4 | VM Interpreter（L1 特性全覆盖）| L1 | ✅ |
 | M5 | VM JIT（Cranelift，L1 特性）| L1 → L2 | ✅ |
-| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | 🚧 当前焦点 |
-| M7 | VM 元数据 + 标准库基础（core/io/collections）| L2 | 🚧 当前焦点 |
+| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | ✅ |
+| M7 | VM 元数据 + 标准库基础（core/io/collections）| L2 | 🟡 stdlib 基础已广；反射元数据 → 0.3.x C 主线 |
 | M8 | TypeChecker + Codegen 扩展（L3 特性）| L3 | 🟡 部分（泛型 / lambda / delegate 提前）|
 | M9 | VM AOT（LLVM/inkwell）| L3 | 📋 |
-| M10 | 自举（Self-hosting）| L3+ | 📋 |
+| M10 | 自举（Self-hosting，7 子系统 byte-identical）| L3+ → 0.3.x | 🚧 当前焦点（0.3.x 启动）|
 
 ---
 

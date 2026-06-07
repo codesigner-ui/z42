@@ -24,7 +24,7 @@ examples/       # .z42 示例源文件
 
 ## 实现计划
 
-见 `docs/roadmap.md`。当前焦点：**L2 阶段：M6（工程支持 + 测试体系 + 错误码）→ M7（VM 元数据 + 标准库）**。
+见 `docs/roadmap.md`。当前焦点：**0.3.x 自举线**——GC v1 地基 → A（stdlib 重组+perf）‖ B（**编译器全自举**：7 子系统用 z42 重写到 byte-identical）‖ C（反射 MVP）→ REPL capstone（2026-06-07 重排；规划见 `docs/spec/changes/plan-0.3.x-three-streams/proposal.md`）。
 
 ## 协作工作流（必须遵守）
 
