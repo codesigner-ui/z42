@@ -40,7 +40,11 @@
 - [ ] 3.2 z42c.core [Test] 全绿（z42-test-runner）
 - [ ] 3.3 commit + push（逐文件 stage）；ACTIVE.md 阶段 9 释放 z42c/toolchain
 
+## increment 2（LanguageFeatures — ✅ 已完成）
+- [x] `LanguageFeatures.z42`（snake_case 名 + 并行数组；Set/IsEnabled/Count + Phase1Profile/MinimalProfile）
+- [x] 4 单测（phase1 全开 / minimal 子集 / 未知→false / Set upsert 覆盖）→ tests/diag/features_tests.z42
+- [x] 验证：`xtask test compiler-z42` → 11/11（诊断 7 + 特性 4）全绿
+
 ## 备注（后续 increment）
-- LanguageFeatures（Dict<string,bool> + Minimal/Phase1 profile）→ increment 2
 - DiagnosticRenderer / DiagnosticCatalog / DiagnosticCategory（CLI 渲染 + explain）→ increment 3（driver 需要时）
 - PreludePackages → 随 project/pipeline 子系统

@@ -1,0 +1,50 @@
+// z42c.core LanguageFeatures 单测（与 diag_tests.z42 同测试单元）。
+namespace Z42cCoreFeaturesTests;
+
+using Std;
+using Std.Test;
+using Z42.Core;
+
+[Test]
+void test_phase1_profile_all_on() {
+    var f = LanguageFeatures.Phase1Profile();
+    Assert.Equal(true, f.IsEnabled("control_flow"));
+    Assert.Equal(true, f.IsEnabled("oop"));
+    Assert.Equal(true, f.IsEnabled("generics"));
+    Assert.Equal(true, f.IsEnabled("async"));
+    Assert.Equal(true, f.IsEnabled("native_interop"));
+    Assert.Equal(1, f.Phase);
+    Assert.Equal(21, f.Count());
+}
+
+[Test]
+void test_minimal_profile_subset() {
+    var f = LanguageFeatures.MinimalProfile();
+    Assert.Equal(true, f.IsEnabled("interpolated_str"));
+    Assert.Equal(true, f.IsEnabled("ternary"));
+    Assert.Equal(true, f.IsEnabled("cast"));
+    Assert.Equal(true, f.IsEnabled("bitwise"));
+    // 未 Set 的 → false
+    Assert.Equal(false, f.IsEnabled("control_flow"));
+    Assert.Equal(false, f.IsEnabled("oop"));
+}
+
+[Test]
+void test_unknown_feature_is_false() {
+    var f = LanguageFeatures.Phase1Profile();
+    Assert.Equal(false, f.IsEnabled("no_such_feature"));
+    Assert.Equal(false, f.IsEnabled(""));
+}
+
+[Test]
+void test_set_upsert_overrides() {
+    var f = new LanguageFeatures();
+    Assert.Equal(false, f.IsEnabled("oop"));
+    f.Set("oop", true);
+    Assert.Equal(true, f.IsEnabled("oop"));
+    Assert.Equal(1, f.Count());
+    // 覆盖已存在项，不新增
+    f.Set("oop", false);
+    Assert.Equal(false, f.IsEnabled("oop"));
+    Assert.Equal(1, f.Count());
+}

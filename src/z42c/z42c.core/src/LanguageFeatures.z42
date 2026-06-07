@@ -1,0 +1,84 @@
+// 语言特性开关。镜像 C# z42.Core `LanguageFeatures`（enum LanguageFeature + Dict）。
+// 受限写法：无 enum（特性名用 snake_case 字符串，同 grammar.peg [feat:NAME] 标签）；
+// 无泛型类字段（Dict<...> 被丢弃）→ 并行数组 string[] names + bool[] enabled + count。
+// IsEnabled(未知名) = false（拼写错误被发现，不静默启用）。
+namespace Z42.Core;
+
+public sealed class LanguageFeatures {
+    private string[] _names;
+    private bool[]   _enabled;
+    private int      _count;
+    public  int      Phase;   // 1 = Phase1（C# 9-12 子集）, 2 = Phase2（保留）
+
+    public LanguageFeatures() {
+        this._names   = new string[40];
+        this._enabled = new bool[40];
+        this._count   = 0;
+        this.Phase    = 1;
+    }
+
+    // upsert：已存在则覆盖，否则追加。
+    public void Set(string name, bool on) {
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == name) { this._enabled[i] = on; return; }
+            i = i + 1;
+        }
+        this._names[this._count]   = name;
+        this._enabled[this._count] = on;
+        this._count = this._count + 1;
+    }
+
+    // 未知特性默认 false（安全：拼写错误不会静默启用）。
+    public bool IsEnabled(string name) {
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == name) { return this._enabled[i]; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    public int Count() { return this._count; }
+
+    // ── 预置 profile ────────────────────────────────────────────────────────
+
+    // Phase 1 完整特性集（C# 12 子集全开）。
+    public static LanguageFeatures Phase1Profile() {
+        var f = new LanguageFeatures();
+        f.Set("interpolated_str", true);
+        f.Set("control_flow",     true);
+        f.Set("oop",              true);
+        f.Set("generics",         true);
+        f.Set("arrays",           true);
+        f.Set("exceptions",       true);
+        f.Set("pattern_match",    true);
+        f.Set("lambda",           true);
+        f.Set("async",            true);
+        f.Set("nullable",         true);
+        f.Set("null_coalesce",    true);
+        f.Set("ternary",          true);
+        f.Set("cast",             true);
+        f.Set("tuples",           true);
+        f.Set("delegates",        true);
+        f.Set("reflection",       true);
+        f.Set("list_patterns",    true);
+        f.Set("using_stmt",       true);
+        f.Set("threading",        true);
+        f.Set("bitwise",          true);
+        f.Set("native_interop",   true);
+        f.Phase = 1;
+        return f;
+    }
+
+    // 最小可运行子集（Hello World 所需）：仅 interpolated_str / ternary / cast / bitwise。
+    public static LanguageFeatures MinimalProfile() {
+        var f = new LanguageFeatures();
+        f.Set("interpolated_str", true);
+        f.Set("ternary",          true);
+        f.Set("cast",             true);
+        f.Set("bitwise",          true);
+        f.Phase = 1;
+        return f;
+    }
+}
