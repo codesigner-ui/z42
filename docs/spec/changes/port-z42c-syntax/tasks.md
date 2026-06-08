@@ -24,11 +24,20 @@
 - [x] 13 + 7 单测（postfix/assign 4 例补 parser；语句 7 例新单元 tests/stmt/）
 - [x] 验证：`xtask test compiler-z42` → 4 units 41 cases 全绿（core 11 + lexer 10 + parser 13 + stmt 7）
 
-## increment 4（后续）
-- [ ] Parser 补全：三目 `?:` / `??` / 位运算 / `is`·`as` / `new` / lambda / 复合赋值 `+=` 等 / `for`·`foreach`·`switch`·`try`
-- [ ] 顶层声明（namespace/using/class/struct/interface/enum/func/field/property）递归下降 + 抽象 Visitor
-- [ ] Lexer 补全：插值串 `$"..."` / raw 串 `"""..."""` / hex·bin·分隔符·后缀 / 转义解码
-- [ ] byte-identical：token 流 + AST JSON 与 C# `--dump-tokens` / `--dump-ast` 逐项对账
+## increment 4（顶层声明 — ✅ 已完成）
+- [x] AST：CompilationUnit / UsingDecl / ClassDecl / FieldDecl / MethodDecl / Param（Decl.z42，class 继承 + Dump）
+- [x] 递归下降：`ParseCompilationUnit`（file-scoped namespace + using + class）/ `_parseClass`（修饰符 + 基类/接口列表）/ `_parseMember`（field / method / ctor 消歧）/ 参数列表
+- [x] 类型文本解析：限定名 `a.b.c` + 泛型 `<...>`（深度计数含 `>>` 嵌套）+ 数组 `[]` + nullable `?`
+- [x] 修饰符：public/private/protected/internal/static/abstract/sealed/override/virtual/extern/async/new
+- [x] 10 单测（namespace+using / 空类 / 修饰符+基类 / 字段 / 方法 / 构造器 / 抽象无体 / 泛型+数组 / 嵌套泛型 / 完整类）→ tests/decl/
+- [x] 验证：`xtask test compiler-z42` → 5 units 51 cases 全绿（core 11 + lexer 10 + parser 13 + stmt 7 + decl 10）
+
+## increment 5（后续）
+- [ ] 顶层声明补全：struct / interface / enum / record / delegate / 顶层 func / property / 嵌套类 / 泛型形参 `<T>` + where 约束 / attribute `[X]`
+- [ ] 表达式补全：三目 `?:` / `??` / 位运算 / `is`·`as` / `new` / lambda / 复合赋值 `+=` / `for`·`foreach`·`switch`·`try` 语句
+- [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本）
+- [ ] Lexer 补全：插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码
+- [ ] byte-identical：token + AST JSON 与 C# `--dump-tokens` / `--dump-ast` 逐项对账
 
 ## 备注
 - SyntaxSkeleton.z42 暂留（semantics/pipeline/driver 仍引用，各自移植时移除）。

@@ -227,4 +227,175 @@ public sealed class Parser {
         if (k == TokenKind.F32 || k == TokenKind.F64) { return true; }
         return false;
     }
+
+    // ════ 顶层声明 ══════════════════════════════════════════════════════════
+    public CompilationUnit ParseCompilationUnit() {
+        bool hasNs = false;
+        string ns = "";
+        Decl[] decls = new Decl[16];
+        int n = 0;
+        while (this._peek().Kind != TokenKind.Eof) {
+            int k = this._peek().Kind;
+            if (k == TokenKind.Namespace) {
+                this._advance(); ns = this._parseQualifiedName(); hasNs = true; this._expectSemi();
+                continue;
+            }
+            if (k == TokenKind.Using) {
+                this._advance(); string un = this._parseQualifiedName(); this._expectSemi();
+                decls = this._growDecls(decls, n); decls[n] = new UsingDecl(un); n = n + 1;
+                continue;
+            }
+            string mods = this._parseModifiers();
+            if (this._peek().Kind == TokenKind.Class) {
+                ClassDecl c = this._parseClass(mods);
+                decls = this._growDecls(decls, n); decls[n] = c; n = n + 1;
+            } else {
+                this._diags.Error(DiagnosticCodes.UnexpectedToken, "expected class declaration", this._peek().Span);
+                this._advance();
+            }
+        }
+        return new CompilationUnit(hasNs, ns, decls, n);
+    }
+
+    private Decl[] _growDecls(Decl[] a, int n) {
+        if (n < a.Length) { return a; }
+        Decl[] b = new Decl[a.Length * 2];
+        int i = 0; while (i < n) { b[i] = a[i]; i = i + 1; }
+        return b;
+    }
+
+    private string _parseQualifiedName() {
+        string s = this._peek().Text;
+        this._advance();
+        while (this._peek().Kind == TokenKind.Dot) {
+            this._advance();
+            s = s + "." + this._peek().Text;
+            this._advance();
+        }
+        return s;
+    }
+
+    private string _parseModifiers() {
+        string s = "";
+        while (this._isModifier(this._peek().Kind)) {
+            if (s != "") { s = s + " "; }
+            s = s + this._peek().Text;
+            this._advance();
+        }
+        return s;
+    }
+
+    private bool _isModifier(int k) {
+        if (k == TokenKind.Public || k == TokenKind.Private || k == TokenKind.Protected || k == TokenKind.Internal) { return true; }
+        if (k == TokenKind.Static || k == TokenKind.Abstract || k == TokenKind.Sealed || k == TokenKind.Override) { return true; }
+        if (k == TokenKind.Virtual || k == TokenKind.Extern || k == TokenKind.Async || k == TokenKind.New) { return true; }
+        return false;
+    }
+
+    private ClassDecl _parseClass(string mods) {
+        this._advance();   // class
+        string name = this._peek().Text;
+        if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected class name", this._peek().Span); }
+        bool hasBase = false;
+        string baseText = "";
+        if (this._peek().Kind == TokenKind.Colon) {
+            this._advance();
+            baseText = this._parseTypeText();
+            hasBase = true;
+            while (this._peek().Kind == TokenKind.Comma) {
+                this._advance();
+                baseText = baseText + ", " + this._parseTypeText();
+            }
+        }
+        this._expect(TokenKind.LBrace, "{");
+        Decl[] members = new Decl[16];
+        int mc = 0;
+        while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            Decl mem = this._parseMember(name);
+            members = this._growDecls(members, mc); members[mc] = mem; mc = mc + 1;
+        }
+        this._expect(TokenKind.RBrace, "}");
+        return new ClassDecl(mods, name, hasBase, baseText, members, mc);
+    }
+
+    private Decl _parseMember(string className) {
+        string mods = this._parseModifiers();
+        // 构造器：标识符(==类名) 紧跟 '('
+        if (this._peek().Kind == TokenKind.Identifier && this._peek().Text == className
+            && this._peekAt(1).Kind == TokenKind.LParen) {
+            string cname = this._peek().Text;
+            this._advance();
+            return this._parseMethodTail(mods, true, "", cname);
+        }
+        string typeText = this._parseTypeText();
+        string name = this._peek().Text;
+        if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name", this._peek().Span); }
+        if (this._peek().Kind == TokenKind.LParen) {
+            return this._parseMethodTail(mods, false, typeText, name);
+        }
+        bool hasInit = false;
+        Expr init = new NullLitExpr();
+        if (this._peek().Kind == TokenKind.Eq) { this._advance(); init = this._parseExpr(0); hasInit = true; }
+        this._expectSemi();
+        return new FieldDecl(mods, typeText, name, hasInit, init);
+    }
+
+    private Decl _parseMethodTail(string mods, bool isCtor, string retType, string name) {
+        this._expect(TokenKind.LParen, "(");
+        Param[] ps = new Param[16];
+        int pc = 0;
+        if (this._peek().Kind != TokenKind.RParen) {
+            while (true) {
+                string pt = this._parseTypeText();
+                string pn = this._peek().Text;
+                if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+                else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected parameter name", this._peek().Span); }
+                if (pc == ps.Length) {
+                    Param[] b = new Param[ps.Length * 2];
+                    int i = 0; while (i < pc) { b[i] = ps[i]; i = i + 1; }
+                    ps = b;
+                }
+                ps[pc] = new Param(pt, pn); pc = pc + 1;
+                if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+            }
+        }
+        this._expect(TokenKind.RParen, ")");
+        bool hasBody = false;
+        Stmt body = new BlockStmt(new Stmt[0], 0);
+        if (this._peek().Kind == TokenKind.LBrace) { body = this._parseBlock(); hasBody = true; }
+        else { this._expectSemi(); }
+        return new MethodDecl(mods, isCtor, retType, name, ps, pc, hasBody, body);
+    }
+
+    // 类型文本：限定名 + 泛型 <...>（深度计数，含 >>）+ 数组 [] + nullable ?
+    private string _parseTypeText() {
+        string s = this._peek().Text;
+        this._advance();
+        while (this._peek().Kind == TokenKind.Dot) {
+            this._advance();
+            s = s + "." + this._peek().Text;
+            if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        }
+        if (this._peek().Kind == TokenKind.Lt) { s = s + this._consumeAngles(); }
+        while (this._peek().Kind == TokenKind.LBracket && this._peekAt(1).Kind == TokenKind.RBracket) {
+            this._advance(); this._advance(); s = s + "[]";
+        }
+        if (this._peek().Kind == TokenKind.Question) { this._advance(); s = s + "?"; }
+        return s;
+    }
+
+    private string _consumeAngles() {
+        string s = "";
+        int depth = 0;
+        while (this._peek().Kind != TokenKind.Eof) {
+            int k = this._peek().Kind;
+            if (k == TokenKind.Lt) { depth = depth + 1; s = s + "<"; this._advance(); }
+            else if (k == TokenKind.Gt) { depth = depth - 1; s = s + ">"; this._advance(); if (depth == 0) { break; } }
+            else if (k == TokenKind.GtGt) { depth = depth - 2; s = s + ">>"; this._advance(); if (depth <= 0) { break; } }
+            else { s = s + this._peek().Text; this._advance(); }
+        }
+        return s;
+    }
 }

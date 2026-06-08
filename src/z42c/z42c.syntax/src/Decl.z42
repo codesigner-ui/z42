@@ -1,0 +1,108 @@
+// AST 声明节点（z42c.syntax）。CompilationUnit / using / class / field / method / param。
+// 受限写法：class 继承 + virtual Dump()。类型/修饰符捕获为字符串文本（增量；TypeExpr 后续）。
+namespace Z42.Syntax;
+
+public sealed class Param {
+    public string TypeText;
+    public string Name;
+    public Param(string typeText, string name) { this.TypeText = typeText; this.Name = name; }
+    public string Dump() { return this.TypeText + " " + this.Name; }
+}
+
+public class Decl {
+    public virtual string Dump() { return "?decl"; }
+}
+
+public sealed class UsingDecl : Decl {
+    public string Name;
+    public UsingDecl(string name) { this.Name = name; }
+    public override string Dump() { return "(using " + this.Name + ")"; }
+}
+
+public sealed class FieldDecl : Decl {
+    public string Mods;
+    public string TypeText;
+    public string Name;
+    public bool   HasInit;
+    public Expr   Init;
+    public FieldDecl(string mods, string typeText, string name, bool hasInit, Expr init) {
+        this.Mods = mods; this.TypeText = typeText; this.Name = name;
+        this.HasInit = hasInit; this.Init = init;
+    }
+    public override string Dump() {
+        string m = this._modPart();
+        if (this.HasInit) { return "(field " + m + this.TypeText + " " + this.Name + " " + this.Init.Dump() + ")"; }
+        return "(field " + m + this.TypeText + " " + this.Name + ")";
+    }
+    private string _modPart() { if (this.Mods == "") { return ""; } return this.Mods + " "; }
+}
+
+public sealed class MethodDecl : Decl {
+    public string  Mods;
+    public bool    IsCtor;
+    public string  RetType;    // ctor 时为 ""
+    public string  Name;
+    public Param[] Params;
+    public int     ParamCount;
+    public bool    HasBody;
+    public Stmt    Body;        // 仅 HasBody 时有效
+    public MethodDecl(string mods, bool isCtor, string retType, string name,
+                      Param[] ps, int pc, bool hasBody, Stmt body) {
+        this.Mods = mods; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
+        this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
+    }
+    public override string Dump() {
+        string head = this.IsCtor ? "ctor" : "method";
+        string m = (this.Mods == "") ? "" : (this.Mods + " ");
+        string sig = "(" + head + " " + m;
+        if (!this.IsCtor) { sig = sig + this.RetType + " "; }
+        sig = sig + this.Name + " (";
+        int i = 0;
+        while (i < this.ParamCount) {
+            if (i > 0) { sig = sig + ", "; }
+            sig = sig + this.Params[i].Dump();
+            i = i + 1;
+        }
+        sig = sig + ")";
+        if (this.HasBody) { sig = sig + " " + this.Body.Dump(); }
+        return sig + ")";
+    }
+}
+
+public sealed class ClassDecl : Decl {
+    public string Mods;
+    public string Name;
+    public bool   HasBase;
+    public string BaseText;
+    public Decl[] Members;
+    public int    MemberCount;
+    public ClassDecl(string mods, string name, bool hasBase, string baseText, Decl[] members, int mc) {
+        this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.BaseText = baseText;
+        this.Members = members; this.MemberCount = mc;
+    }
+    public override string Dump() {
+        string m = (this.Mods == "") ? "" : (this.Mods + " ");
+        string s = "(class " + m + this.Name;
+        if (this.HasBase) { s = s + " : " + this.BaseText; }
+        int i = 0;
+        while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+public sealed class CompilationUnit {
+    public bool   HasNamespace;
+    public string Namespace;
+    public Decl[] Decls;
+    public int    DeclCount;
+    public CompilationUnit(bool hasNs, string ns, Decl[] decls, int dc) {
+        this.HasNamespace = hasNs; this.Namespace = ns; this.Decls = decls; this.DeclCount = dc;
+    }
+    public string Dump() {
+        string s = "(unit";
+        if (this.HasNamespace) { s = s + " (ns " + this.Namespace + ")"; }
+        int i = 0;
+        while (i < this.DeclCount) { s = s + " " + this.Decls[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}

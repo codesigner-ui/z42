@@ -1,0 +1,71 @@
+// z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本。
+namespace Z42cSyntaxDeclTests;
+
+using Std;
+using Std.Test;
+using Z42.Syntax;
+
+string parseUnit(string src) {
+    var p = new Parser(src, "t.z42");
+    var u = p.ParseCompilationUnit();
+    return u.Dump();
+}
+
+[Test]
+void test_namespace_and_usings() {
+    Assert.Equal("(unit (ns Foo.Bar) (using Std) (using Std.IO))",
+                 parseUnit("namespace Foo.Bar; using Std; using Std.IO;"));
+}
+
+[Test]
+void test_empty_class() {
+    Assert.Equal("(unit (class C))", parseUnit("class C {}"));
+}
+
+[Test]
+void test_class_modifiers_and_base() {
+    Assert.Equal("(unit (class public sealed Foo : Bar, IBaz))",
+                 parseUnit("public sealed class Foo : Bar, IBaz {}"));
+}
+
+[Test]
+void test_fields() {
+    Assert.Equal("(unit (class C (field private int x) (field public string Name \"a\")))",
+                 parseUnit("class C { private int x; public string Name = \"a\"; }"));
+}
+
+[Test]
+void test_method() {
+    Assert.Equal("(unit (class C (method public int Add (int a, int b) (block (return (+ a b))))))",
+                 parseUnit("class C { public int Add(int a, int b) { return a + b; } }"));
+}
+
+[Test]
+void test_constructor() {
+    Assert.Equal("(unit (class Point (ctor public Point (int x) (block (expr (= (. this x) x))))))",
+                 parseUnit("class Point { public Point(int x) { this.x = x; } }"));
+}
+
+[Test]
+void test_abstract_method_no_body() {
+    Assert.Equal("(unit (class C (method public abstract int Foo ())))",
+                 parseUnit("class C { public abstract int Foo(); }"));
+}
+
+[Test]
+void test_generic_and_array_types() {
+    Assert.Equal("(unit (class C (field private List<int> xs) (field private string[] names) (field private Dict<string,int> m)))",
+                 parseUnit("class C { private List<int> xs; private string[] names; private Dict<string, int> m; }"));
+}
+
+[Test]
+void test_nested_generic_type() {
+    Assert.Equal("(unit (class C (field private List<List<int>> m)))",
+                 parseUnit("class C { private List<List<int>> m; }"));
+}
+
+[Test]
+void test_full_class() {
+    Assert.Equal("(unit (ns App) (using Std) (class public Counter (field private int n) (ctor public Counter (int start) (block (expr (= (. this n) start)))) (method public int Next () (block (expr (= n (+ n 1))) (return n)))))",
+        parseUnit("namespace App; using Std; public class Counter { private int n; public Counter(int start) { this.n = start; } public int Next() { n = n + 1; return n; } }"));
+}
