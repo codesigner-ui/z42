@@ -207,9 +207,16 @@ the bytes that forwarded into the inner `Vec` *that* call — so
 multi-MB inputs surface decoded output progressively instead of
 waiting for `compressor_finish`. End-to-end correctness verified by
 the existing stream_pipeline + gzip_round_trip + zstd_round_trip
-tests (all GREEN unchanged); the v0→v1 contract change is invisible
-to callers using `Stream.WrapRead` / `WrapWrite` since both already
-treat the decoder as a chunk-by-chunk pipeline.
+tests (all GREEN unchanged).
+
+> **2026-06-09 更正（`compression-decoder-pull-mode`）**：上面这条原称"消费端
+> `Stream.WrapRead` 已是 chunk-by-chunk"——**与当时实际不符**。cdylib 虽 2026-05-27
+> 就流式，但 z42 消费端 `CompressionDecoderStream` 当时仍 v0 lazy-bulk（首次 `Read`
+> 即 `ReadAllBytes` + 一次性 feed + finish，全量驻留内存）。`compression-decoder-pull-mode`
+> (2026-06-09) 把消费端迁移到真 per-chunk pull（slot 跨 Read 持有，逐 chunk 从 `_src`
+> pull + `_CompressorFeed` 增量输出，src EOF 才 `_CompressorFinish`），流式解压**至此
+> 真正端到端**——多-GB/网络流不再在首个 `Read` 返回前 materialise 全量。`WrapWrite`
+> 一侧本就是真流式（每 `Write` 即时 feed/forward），不受影响。
 
 **Follow-up gaps** (separate specs):
 - `Tar.ExtractStream(Stream src, string dir)` — Tar reader currently

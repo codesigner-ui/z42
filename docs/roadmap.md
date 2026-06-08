@@ -352,7 +352,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | HMAC-SHA256 | v0 SHA-256 落地后的下一步；RFC 2104 公式 | [stdlib/crypto.md](design/stdlib/crypto.md#hmac-sha256) |
 | ~~Std.Crypto.SecureRandom (CSPRNG)~~ ✅ | **✅ 已落地 2026-05-26** (add-csprng-to-crypto)；wasm32 bridge 仍延后 | [stdlib/crypto.md](design/stdlib/crypto.md#csprng-wasm32-bridgestdcryptosecurerandom-on-wasm32) |
 | Zip.Write | byte[][] 类型系统或 2-pass workaround；v0 仅 Read | [stdlib/compression.md](design/stdlib/compression.md#compression-future-zip-write) |
-| Compression streaming decode | v0 是 accumulate-then-decompress | [stdlib/compression.md](design/stdlib/compression.md#compression-future-streaming-decode) |
+| ~~Compression streaming decode~~ ✅ | **cdylib 流式 2026-05-27** (`add-compression-streaming-decode`) + **z42 消费端 per-chunk pull 2026-06-09** (`compression-decoder-pull-mode`) → 流式解压端到端，不再 accumulate-then-decompress | [stdlib/compression.md](design/stdlib/compression.md#compression-future-streaming-decode) |
 | Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |
 | wasm zstd | 需 WASI SDK 或 ruzstd | [stdlib/compression.md](design/stdlib/compression.md#compression-future-wasm-zstd) |
 | YAML ~~anchors~~ ✅ / ~~tags~~ ✅ / ~~multi-line~~ ✅ / ~~multi-doc~~ ✅ / ~~timestamps~~ ✅ / ~~hex-octal~~ ✅ / ~~merge-keys~~ ✅ / complex-keys | **anchors / tags / multi-line / multi-doc / timestamps / numeric-bases / merge-keys 全部已落地** (2026-05-25 → 2026-06-01)；仅 `yaml-future-complex-keys` (`? key` 语法) 仍延后 — rare in practice | [stdlib/yaml.md](design/stdlib/yaml.md#deferred--future-work) |

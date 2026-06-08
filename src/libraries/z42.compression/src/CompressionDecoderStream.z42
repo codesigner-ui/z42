@@ -7,41 +7,48 @@ using Std.IO;
 // decoder Stream — caller reads decompressed bytes; the decoder
 // pulls compressed bytes from the wrapped source Stream as needed.
 //
-// v0 semantics: lazy bulk decode.
-//   * First call to `Read(...)` triggers `_src.ReadAllBytes()` →
-//     `__compressor_feed` (in one shot) → `__compressor_finish` →
-//     full decompressed payload buffered internally
-//   * Subsequent `Read` calls serve out of the buffer
-//   * EOF when buffer drained
+// add-compression-streaming-decode (2026-06-09): **true per-chunk streaming**.
+//   * Each `Read` serves out of an internal decompressed-output buffer.
+//   * When that buffer drains (and not yet at end): pull one CHUNK of
+//     compressed bytes from `_src`, feed it to the cdylib decoder slot via
+//     `_CompressorFeed` (which returns the *incremental* decompressed output
+//     produced so far), and buffer that. The decoder slot is held across
+//     `Read` calls — begun lazily on first `Read`, finished at `_src` EOF.
+//   * `_src` EOF → `_CompressorFinish` flushes the codec footer / tail output.
 //
-// This trades memory for code simplicity, matching the cdylib's
-// existing v0 decoder model (accumulate-then-decompress). True
-// streaming decode requires a flate2::Decompress state-machine
-// upgrade on the cdylib side (tracked in compression.md Deferred →
-// `compression-future-streaming-decode`); when that lands this class
-// migrates to per-chunk pull semantics without API change.
+// Memory is bounded by one compressed CHUNK + the decompressed output a single
+// chunk produces — multi-GB / network payloads no longer materialise in full
+// before the first `Read` returns. The public Stream API is unchanged
+// (replaces the former v0 "lazy bulk decode" which `ReadAllBytes()` + one-shot
+// fed the whole payload). The cdylib (`z42_compression`) was already streaming
+// (`flate2::write::*Decoder` + per-feed `std::mem::take`); v0 simply didn't
+// consume `_CompressorFeed`'s incremental return.
 //
-// Practical constraint: callers reading multi-GB compressed payloads
-// will materialise the full decompressed output in memory before any
-// `Read` returns. For HTTP responses, log entries, zpkg metadata
-// (v0 target use cases) this is fine.
+// Neither this stream closes `_src` — caller owns its lifecycle (matches the
+// `leaveOpen=true` convention of the other compression stream wrappers).
 
 public sealed class CompressionDecoderStream : Stream {
     private Stream _src;
     private int    _algo;
-    private byte[] _decoded;
-    private int    _decodedPos;
-    private bool   _materialised;
+    private long   _slotId;     // cdylib decoder slot; -1 = not begun
+    private byte[] _outBuf;     // decompressed output not yet served
+    private int    _outPos;
+    private bool   _srcEof;     // _src drained
+    private bool   _finished;   // _CompressorFinish already called (slot freed)
+    private bool   _closed;
 
     public CompressionDecoderStream(Stream src, int algo) {
         if (!src.CanRead()) {
             throw new ArgumentException("CompressionDecoderStream: src Stream is not readable");
         }
-        this._src           = src;
-        this._algo          = algo;
-        this._decoded       = new byte[0];
-        this._decodedPos    = 0;
-        this._materialised  = false;
+        this._src      = src;
+        this._algo     = algo;
+        this._slotId   = -1;
+        this._outBuf   = new byte[0];
+        this._outPos   = 0;
+        this._srcEof   = false;
+        this._finished = false;
+        this._closed   = false;
     }
 
     // ── Capability ───────────────────────────────────────────────────────
@@ -53,41 +60,75 @@ public sealed class CompressionDecoderStream : Stream {
     // ── Read ─────────────────────────────────────────────────────────────
 
     override int Read(byte[] buffer, int offset, int count) {
+        if (this._closed) {
+            throw new InvalidOperationException("CompressionDecoderStream: stream is closed");
+        }
         if (offset < 0 || count < 0 || offset + count > buffer.Length) {
             throw new ArgumentException("Read: buffer / offset / count out of range");
         }
         if (count == 0) { return 0; }
 
-        // Lazy materialise on first Read.
-        if (!this._materialised) {
-            byte[] compressed = this._src.ReadAllBytes();
-            long slotId = CompressionDecoderStream._CompressorBegin(this._algo, 0, true);
-            // Feed the entire compressed buffer (decoder accumulates internally).
-            CompressionDecoderStream._CompressorFeed(slotId, compressed);
-            this._decoded       = CompressionDecoderStream._CompressorFinish(slotId);
-            this._decodedPos    = 0;
-            this._materialised  = true;
+        // Pull/decode until the output buffer has bytes, or we hit true EOF.
+        int chunkSize = 65536;
+        while (this._outPos >= this._outBuf.Length && !this._finished) {
+            if (this._slotId < 0) {
+                this._slotId = CompressionDecoderStream._CompressorBegin(this._algo, 0, true);
+            }
+            if (this._srcEof) {
+                // No more compressed input → flush decoder tail and stop.
+                this._outBuf   = CompressionDecoderStream._CompressorFinish(this._slotId);
+                this._outPos   = 0;
+                this._finished = true;
+            } else {
+                byte[] chunk = new byte[chunkSize];
+                int nRead = this._src.Read(chunk, 0, chunkSize);
+                if (nRead <= 0) {
+                    this._srcEof = true;   // next loop iteration finishes
+                } else {
+                    // Feed exactly nRead bytes (Stream.Read may underfill the chunk).
+                    byte[] fed = chunk;
+                    if (nRead < chunkSize) {
+                        fed = new byte[nRead];
+                        int j = 0;
+                        while (j < nRead) { fed[j] = chunk[j]; j = j + 1; }
+                    }
+                    this._outBuf = CompressionDecoderStream._CompressorFeed(this._slotId, fed);
+                    this._outPos = 0;
+                    // feed may yield 0 bytes (input buffered, no full block yet) →
+                    // loop continues pulling the next chunk.
+                }
+            }
         }
 
-        int available = this._decoded.Length - this._decodedPos;
-        if (available <= 0) { return 0; }
+        int available = this._outBuf.Length - this._outPos;
+        if (available <= 0) { return 0; }   // EOF: finished and buffer drained
         int n = count;
         if (n > available) { n = available; }
         int i = 0;
         while (i < n) {
-            buffer[offset + i] = this._decoded[this._decodedPos + i];
+            buffer[offset + i] = this._outBuf[this._outPos + i];
             i = i + 1;
         }
-        this._decodedPos = this._decodedPos + n;
+        this._outPos = this._outPos + n;
         return n;
     }
 
     override void Close() {
-        // No held cdylib slot (decoder slot is freed during the lazy
-        // materialise's `_finish` call). _src lifecycle owned by caller.
-        // Reset decoded buffer so a re-used reference frees memory.
-        this._decoded       = new byte[0];
-        this._decodedPos    = 0;
+        // Free the cdylib slot if still held. If we never reached `_src` EOF
+        // (partial read then early Close), `_CompressorFinish` both flushes and
+        // frees the slot; we discard its output and swallow any tail error
+        // (an incomplete stream finish is expected on early abort).
+        if (this._slotId >= 0 && !this._finished) {
+            try {
+                CompressionDecoderStream._CompressorFinish(this._slotId);
+            } catch (Exception e) {
+                // intentionally ignored — early-abort cleanup
+            }
+            this._finished = true;
+        }
+        this._outBuf = new byte[0];
+        this._outPos = 0;
+        this._closed = true;
     }
 
     // ── Native bindings ──────────────────────────────────────────────────

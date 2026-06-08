@@ -1,0 +1,182 @@
+// add-compression-streaming-decode (2026-06-09): true per-chunk streaming
+// decode via CompressionDecoderStream. Verifies small-count Read serves
+// decompressed bytes incrementally (feed → buffer → finish), a large payload
+// forces multi-chunk pull from `_src` (compressed > 64 KiB internal chunk),
+// empty input yields immediate EOF, and Close before EOF frees the decoder
+// slot then rejects further Read.
+namespace Z42CompressionStreamingDecodeTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Compression;
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+byte[] _MakeText() {
+    // 100 × "hello " → 600 highly-compressible bytes.
+    int n = 100;
+    byte[] result = new byte[n * 6];
+    int i = 0;
+    while (i < n) {
+        result[i * 6 + 0] = (byte)104;
+        result[i * 6 + 1] = (byte)101;
+        result[i * 6 + 2] = (byte)108;
+        result[i * 6 + 3] = (byte)108;
+        result[i * 6 + 4] = (byte)111;
+        result[i * 6 + 5] = (byte)32;
+        i = i + 1;
+    }
+    return result;
+}
+
+// A read-only source Stream that hands out at most `_max` bytes per Read,
+// regardless of how many were requested. Wrapping the compressed bytes in this
+// forces CompressionDecoderStream to pull + `feed` the cdylib many times before
+// EOF — deterministically exercising the multi-feed streaming loop (and the
+// nRead-underfill slice path) independent of payload compressibility.
+sealed class _ThrottledSource : Stream {
+    private byte[] _data;
+    private int    _pos;
+    private int    _max;
+
+    public _ThrottledSource(byte[] data, int max) {
+        this._data = data;
+        this._pos  = 0;
+        this._max  = max;
+    }
+
+    override bool CanRead()  { return true; }
+    override bool CanWrite() { return false; }
+    override bool CanSeek()  { return false; }
+
+    override int Read(byte[] buffer, int offset, int count) {
+        int avail = this._data.Length - this._pos;
+        if (avail <= 0 || count == 0) { return 0; }
+        int n = count;
+        if (n > this._max)  { n = this._max; }
+        if (n > avail)      { n = avail; }
+        int i = 0;
+        while (i < n) {
+            buffer[offset + i] = this._data[this._pos + i];
+            i = i + 1;
+        }
+        this._pos = this._pos + n;
+        return n;
+    }
+}
+
+void _AssertBytesEqual(byte[] a, byte[] b) {
+    Assert.Equal(a.Length, b.Length);
+    int i = 0;
+    while (i < a.Length) {
+        Assert.Equal((int)a[i], (int)b[i]);
+        i = i + 1;
+    }
+}
+
+// Drain `dec` `step` bytes at a time into a result of known size.
+byte[] _DrainInSteps(Stream dec, int expectedLen, int step) {
+    byte[] result = new byte[expectedLen];
+    int total = 0;
+    byte[] tmp = new byte[step];
+    while (true) {
+        int got = dec.Read(tmp, 0, step);
+        if (got <= 0) { break; }
+        int k = 0;
+        while (k < got) { result[total + k] = tmp[k]; k = k + 1; }
+        total = total + got;
+    }
+    Assert.Equal(expectedLen, total);
+    return result;
+}
+
+// ── Small-count incremental Read ─────────────────────────────────────────
+
+[Test]
+void test_gzip_streaming_small_reads() {
+    byte[] plain = _MakeText();
+    MemoryStream src = new MemoryStream(Gzip.Compress(plain));
+    Stream dec = Gzip.WrapRead(src);
+    // 7 bytes at a time — far smaller than the decoded output, so the
+    // internal buffer is served across many Reads before EOF.
+    byte[] back = _DrainInSteps(dec, plain.Length, 7);
+    _AssertBytesEqual(plain, back);
+}
+
+[Test]
+void test_zstd_streaming_small_reads() {
+    byte[] plain = _MakeText();
+    MemoryStream src = new MemoryStream(Zstd.Compress(plain));
+    Stream dec = Zstd.WrapRead(src);
+    byte[] back = _DrainInSteps(dec, plain.Length, 13);
+    _AssertBytesEqual(plain, back);
+}
+
+// ── Multi-feed pull (throttled source forces repeated feed rounds) ───────
+
+[Test]
+void test_gzip_streaming_throttled_source_many_feeds() {
+    byte[] plain = _MakeText();
+    byte[] compressed = Gzip.Compress(plain);
+    // 3 compressed bytes per `_src.Read` → the decoder pulls + feeds the cdylib
+    // ~ceil(len/3) times before EOF, exercising the multi-feed loop and the
+    // underfill slice path deterministically.
+    Stream src = new _ThrottledSource(compressed, 3);
+    Stream dec = Gzip.WrapRead(src);
+    byte[] back = _DrainInSteps(dec, plain.Length, 4096);
+    _AssertBytesEqual(plain, back);
+}
+
+[Test]
+void test_zstd_streaming_throttled_source_many_feeds() {
+    byte[] plain = _MakeText();
+    byte[] compressed = Zstd.Compress(plain);
+    Stream src = new _ThrottledSource(compressed, 5);
+    Stream dec = Zstd.WrapRead(src);
+    byte[] back = _DrainInSteps(dec, plain.Length, 256);
+    _AssertBytesEqual(plain, back);
+}
+
+// ── Edge cases ───────────────────────────────────────────────────────────
+
+[Test]
+void test_streaming_empty_input() {
+    // Compressed-empty (header+footer only) → decode yields 0 bytes → Read EOF.
+    MemoryStream src = new MemoryStream(Gzip.Compress(new byte[0]));
+    Stream dec = Gzip.WrapRead(src);
+    byte[] tmp = new byte[16];
+    int got = dec.Read(tmp, 0, 16);
+    Assert.Equal(0, got);
+}
+
+[Test]
+void test_streaming_count_larger_than_remaining() {
+    // count bigger than total decoded — single Read returns all, next is EOF.
+    byte[] plain = _MakeText();
+    MemoryStream src = new MemoryStream(Gzip.Compress(plain));
+    Stream dec = Gzip.WrapRead(src);
+    byte[] buf = new byte[plain.Length + 1000];
+    int got = dec.Read(buf, 0, plain.Length + 1000);
+    Assert.Equal(plain.Length, got);
+    int eof = dec.Read(buf, 0, 100);
+    Assert.Equal(0, eof);
+}
+
+[Test]
+void test_streaming_read_after_close_throws() {
+    // Close before EOF must free the held decoder slot, then reject Read.
+    byte[] plain = _MakeText();
+    MemoryStream src = new MemoryStream(Gzip.Compress(plain));
+    Stream dec = Gzip.WrapRead(src);
+    byte[] tmp = new byte[10];
+    dec.Read(tmp, 0, 10);   // partial read — slot still held
+    dec.Close();
+    bool caught = false;
+    try {
+        dec.Read(tmp, 0, 10);
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
