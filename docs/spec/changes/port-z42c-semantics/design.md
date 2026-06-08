@@ -151,8 +151,10 @@ class TypeEnv {
 
 ---
 
-## 决策点（待 User 裁决）
+## 决策点（已裁决 2026-06-08）
 
-- **D1（调度）**：集中式 if-is 链（推荐，镜像 C# switch + 无 abstract 兜底）vs full Visitor（z42 无 abstract → 净增样板，不推荐）。
-- **D2（符号表）**：非泛型 SymbolMap（并行数组线性查找，起步；推荐）vs 起步即上 hashed-map。
-- **D3（增量起点）**：1A 最小集（非泛型 class + 简单方法体；推荐）确认 OK？
+- **D1（调度）= 集中式 if-is 链**。每调度点一个 `if (e is X){...} else if ... else throw ICE` 链，1:1 镜像 C# 集中 switch。z42 无 abstract → full Visitor 无编译期穷尽优势、净增样板，不取。**此即 6d 遗留的 Visitor 决策最终定型：z42c 不引入 Visitor 基类。**（将来若 z42 引入 abstract 且 Bound walker 增多，可回头评估加 Visitor。）
+- **D2（符号表）= 起步即上非泛型 hashed map**。`SymbolMap`（string → ISymbol）+ `TypeMap`（string → Z42Type）：内部 bucket 数组（key 的 hash → 桶；桶内 key+value+链/开放寻址）。**非泛型**（value 类型固定，规避类字段泛型限制）；可一个 `HashMapObj`（value=Object + 下行）复用，或两个近同类。查找 O(1)，起步即用（User 裁决，免后续从线性迁移）。
+- **D3（增量起点）= 1A 最小集**（非泛型 class + int/string 字段 + 简单方法体：var-decl/return/赋值/字面量/标识符/free-call stub）。
+
+> **本会话 scope = 设计 only（与 User 约定）。** 设计 + 决策已就绪；增量 1A 实施留新会话（后端最易错、需新鲜上下文）。实施时先建 `port-z42c-semantics` tasks.md + 占 ACTIVE.md（z42c 锁已在序列内）。
