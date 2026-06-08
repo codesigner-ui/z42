@@ -1,0 +1,41 @@
+// z42c.semantics Z42Type 单测（1A-1）：赋值兼容（数值拓宽 / error 吸收 / class·void）。
+namespace Z42cSemanticsTypeTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_prim_widening() {
+    var i = new Z42PrimType("int");
+    var l = new Z42PrimType("long");
+    var d = new Z42PrimType("double");
+    var s = new Z42PrimType("string");
+    Assert.Equal("int", i.Name());
+    Assert.Equal(true,  i.IsAssignableTo(i));    // 同型
+    Assert.Equal(true,  i.IsAssignableTo(l));    // int→long 拓宽
+    Assert.Equal(true,  i.IsAssignableTo(d));    // int→double
+    Assert.Equal(false, l.IsAssignableTo(i));    // long→int 收窄 ✗
+    Assert.Equal(false, i.IsAssignableTo(s));    // int→string ✗
+}
+
+[Test]
+void test_error_absorbs() {
+    var i = new Z42PrimType("int");
+    var err = new Z42ErrorType();
+    Assert.Equal(true, i.IsAssignableTo(err));   // 任何 → error（不级联报错）
+    Assert.Equal(true, err.IsAssignableTo(i));   // error → 任何
+}
+
+[Test]
+void test_class_and_void() {
+    var foo = new Z42ClassType("Foo", false, "");
+    var bar = new Z42ClassType("Bar", true, "Foo");
+    Assert.Equal("Foo", foo.Name());
+    Assert.Equal(true,  foo.IsAssignableTo(foo));  // 同名
+    Assert.Equal(false, bar.IsAssignableTo(foo));  // 继承赋值留 1C（1A-1 仅同名）
+    var v = new Z42VoidType();
+    Assert.Equal("void", v.Name());
+    Assert.Equal(false, v.IsAssignableTo(foo));
+    Assert.Equal(true,  v.IsAssignableTo(v));
+}
