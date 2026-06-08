@@ -55,8 +55,12 @@
 - [x] 3 单测（struct[含 ctor 消歧] / interface[方法签名+基接口] / enum[裸成员 / 底层类型+显式值+尾逗号]）→ tests/decl/
 - [x] 验证：`xtask test compiler-z42` → 5 units **68 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 13）
 
-## increment 6b-2（后续 — record / delegate / 顶层 func）
-- [ ] record（位置式 `record P(T a)` + 块式）/ delegate `delegate R Name(params);` / 顶层 func（class 外的自由函数）
+## increment 6b-2（record / delegate / 顶层 func — ✅ 已完成）
+- [x] 抽出 `_parseParamList` → `ParamList` holder（method/ctor/func/delegate/record 共用）；MethodDecl 加 `IsFree`（Dump head func/method/ctor）
+- [x] AST：DelegateDecl / RecordDecl（位置式 PosParams + 块体成员）；Decl.z42
+- [x] 递归下降：`_parseDelegate` / `_parseTopLevelFunc`（命名空间级自由函数）/ `_parseRecord`（位置式 `;` 或块体 `{}`，可带基类）+ ParseCompilationUnit dispatch（含 type-keyword/identifier 守卫）
+- [x] 3 单测（顶层 func[head=func] / delegate[含 public] / record[位置式;/位置+基类+块体/纯块式]）→ tests/decl/
+- [x] 验证：`xtask test compiler-z42` → 5 units **71 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 16）
 
 ## increment 6b-3（后续 — property）
 - [ ] auto-property `T Name { get; set; }` + 访问器修饰；interface 内属性签名

@@ -1,4 +1,5 @@
-// AST 声明节点（z42c.syntax）。CompilationUnit / using / class·struct·interface / enum / field / method / param。
+// AST 声明节点（z42c.syntax）。CompilationUnit / using / class·struct·interface / enum / record / delegate
+//   / 顶层 func（MethodDecl.IsFree）/ field / method / param。
 // 受限写法：class 继承 + virtual Dump()。类型/修饰符捕获为字符串文本（增量；TypeExpr 后续）。
 namespace Z42.Syntax;
 
@@ -7,6 +8,13 @@ public sealed class Param {
     public string Name;
     public Param(string typeText, string name) { this.TypeText = typeText; this.Name = name; }
     public string Dump() { return this.TypeText + " " + this.Name; }
+}
+
+// 解析期临时持有者：参数列表（Items + Count）。z42 无元组返回 → 用 holder。
+public sealed class ParamList {
+    public Param[] Items;
+    public int     Count;
+    public ParamList(Param[] items, int count) { this.Items = items; this.Count = count; }
 }
 
 public class Decl {
@@ -37,8 +45,10 @@ public sealed class FieldDecl : Decl {
     private string _modPart() { if (this.Mods == "") { return ""; } return this.Mods + " "; }
 }
 
+// 类成员方法 / ctor / 顶层自由函数（IsFree）共用。Dump head：ctor / func / method。
 public sealed class MethodDecl : Decl {
     public string  Mods;
+    public bool    IsFree;     // 顶层自由函数（命名空间级，无 this）
     public bool    IsCtor;
     public string  RetType;    // ctor 时为 ""
     public string  Name;
@@ -46,13 +56,13 @@ public sealed class MethodDecl : Decl {
     public int     ParamCount;
     public bool    HasBody;
     public Stmt    Body;        // 仅 HasBody 时有效
-    public MethodDecl(string mods, bool isCtor, string retType, string name,
+    public MethodDecl(string mods, bool isFree, bool isCtor, string retType, string name,
                       Param[] ps, int pc, bool hasBody, Stmt body) {
-        this.Mods = mods; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
+        this.Mods = mods; this.IsFree = isFree; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
         this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
     }
     public override string Dump() {
-        string head = this.IsCtor ? "ctor" : "method";
+        string head = this.IsCtor ? "ctor" : (this.IsFree ? "func" : "method");
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
         string sig = "(" + head + " " + m;
         if (!this.IsCtor) { sig = sig + this.RetType + " "; }
@@ -122,6 +132,58 @@ public sealed class EnumDecl : Decl {
         if (this.HasBase) { s = s + " : " + this.BaseText; }
         int i = 0;
         while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+// delegate R Name(params); —— 类型声明（无体）。泛型形参 <T>/where 留 6b-4。
+public sealed class DelegateDecl : Decl {
+    public string  Mods;
+    public string  RetType;
+    public string  Name;
+    public Param[] Params;
+    public int     ParamCount;
+    public DelegateDecl(string mods, string retType, string name, Param[] ps, int pc) {
+        this.Mods = mods; this.RetType = retType; this.Name = name;
+        this.Params = ps; this.ParamCount = pc;
+    }
+    public override string Dump() {
+        string m = (this.Mods == "") ? "" : (this.Mods + " ");
+        string s = "(delegate " + m + this.RetType + " " + this.Name + " (";
+        int i = 0;
+        while (i < this.ParamCount) {
+            if (i > 0) { s = s + ", "; }
+            s = s + this.Params[i].Dump();
+            i = i + 1;
+        }
+        return s + "))";
+    }
+}
+
+// record：位置式 `record P(T a, ...)`（PosParams）+ 可选基类 + 可选块体成员。
+// 位置式 desugar（合成字段/ctor）留给后端；parser 仅捕获结构。
+public sealed class RecordDecl : Decl {
+    public string  Mods;
+    public string  Name;
+    public Param[] PosParams;
+    public int     PosCount;
+    public bool    HasBase;
+    public string  BaseText;
+    public Decl[]  Members;
+    public int     MemberCount;
+    public RecordDecl(string mods, string name, Param[] pos, int pc,
+                      bool hasBase, string baseText, Decl[] members, int mc) {
+        this.Mods = mods; this.Name = name; this.PosParams = pos; this.PosCount = pc;
+        this.HasBase = hasBase; this.BaseText = baseText; this.Members = members; this.MemberCount = mc;
+    }
+    public override string Dump() {
+        string m = (this.Mods == "") ? "" : (this.Mods + " ");
+        string s = "(record " + m + this.Name;
+        int i = 0;
+        while (i < this.PosCount) { s = s + " (pos " + this.PosParams[i].Dump() + ")"; i = i + 1; }
+        if (this.HasBase) { s = s + " : " + this.BaseText; }
+        int j = 0;
+        while (j < this.MemberCount) { s = s + " " + this.Members[j].Dump(); j = j + 1; }
         return s + ")";
     }
 }

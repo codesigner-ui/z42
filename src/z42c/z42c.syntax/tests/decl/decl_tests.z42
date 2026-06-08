@@ -1,5 +1,5 @@
 // z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本（incr 4）
-//   + struct/interface/enum（incr 6b-1）。
+//   + struct/interface/enum（incr 6b-1）+ record/delegate/顶层func（incr 6b-2）。
 namespace Z42cSyntaxDeclTests;
 
 using Std;
@@ -96,4 +96,33 @@ void test_enum() {
     // 底层类型 + 显式值（含未显式的裸成员） + 尾随逗号
     Assert.Equal("(unit (enum public Flags : int (A 1) B (C 5)))",
                  parseUnit("public enum Flags : int { A = 1, B, C = 5, }"));
+}
+
+[Test]
+void test_top_level_func() {
+    // 顶层自由函数（head=func，区别于类成员 method）
+    Assert.Equal("(unit (func int Add (int a, int b) (block (return (+ a b)))))",
+                 parseUnit("int Add(int a, int b) { return a + b; }"));
+    Assert.Equal("(unit (ns T) (func string greet (string n) (block (return n))))",
+                 parseUnit("namespace T; string greet(string n) { return n; }"));
+}
+
+[Test]
+void test_delegate() {
+    Assert.Equal("(unit (delegate int BinOp (int a, int b)))",
+                 parseUnit("delegate int BinOp(int a, int b);"));
+    Assert.Equal("(unit (delegate public void Handler (string msg)))",
+                 parseUnit("public delegate void Handler(string msg);"));
+}
+
+[Test]
+void test_record() {
+    // 位置式（仅参数，`;` 结尾）
+    Assert.Equal("(unit (record Point (pos int X) (pos int Y)))",
+                 parseUnit("record Point(int X, int Y);"));
+    // 位置式 + 基类 + 块体成员
+    Assert.Equal("(unit (record public Person (pos string Name) : Base (method int Age () (block (return 0)))))",
+                 parseUnit("public record Person(string Name) : Base { int Age() { return 0; } }"));
+    // 块式（无位置参数）
+    Assert.Equal("(unit (record Empty))", parseUnit("record Empty { }"));
 }
