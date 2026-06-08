@@ -37,8 +37,12 @@
 - [x] 表达式：三目 `?:`（右结合 bp 20，正确低于 ?: 之上运算符、高于赋值）（Ast.z42 TernaryExpr）
 - [x] 5 单测（ternary 4 例 + foreach/break-continue/throw/ternary-in-stmt）；验证 → 5 units 56 cases 全绿
 
-## increment 5b/6（后续）
-- [ ] 表达式补全：`??` / 位运算（& ^ | << >>）/ `is`·`as` / `new` / lambda / 复合赋值 `+=` 等
+## increment 5b（表达式运算符补全 — ✅ 已完成）
+- [x] 位运算 & ^ | << >>（bp 48/46/44/65，左结合）+ `??`（bp 25 右结合）+ `is`/`as`（bp 60，右侧类型）+ 复合赋值 += -= *= /= %= &= |= ^=（AssignExpr 加 Op）+ `new T(args)`（ObjNewExpr）
+- [x] AST 新节点 IsExpr/AsExpr/ObjNewExpr；6 单测（bitwise/??/is·as/compound-assign/new）
+- [x] 验证：`xtask test compiler-z42` → 5 units 61 cases 全绿（core 11 + lexer 10 + parser 19 + stmt 11 + decl 10）
+
+## increment 6（后续）
 - [ ] 语句补全：C 式 `for(;;)` / `switch` / `try-catch-finally` / `do-while`
 - [ ] 顶层声明补全：struct / interface / enum / record / delegate / 顶层 func / property / 泛型形参 `<T>` + where / attribute `[X]`
 - [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本）

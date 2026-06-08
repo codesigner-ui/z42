@@ -60,6 +60,21 @@ public sealed class Parser {
                 left = new IndexExpr(left, idx);
                 continue;
             }
+            // is / as（bp 60，右侧为类型）
+            if ((k == TokenKind.Is || k == TokenKind.As) && minBp <= 60) {
+                bool isIs = (k == TokenKind.Is);
+                this._advance();
+                string ty = this._parseTypeText();
+                if (isIs) { left = new IsExpr(left, ty); } else { left = new AsExpr(left, ty); }
+                continue;
+            }
+            // ??（右结合，bp 25）
+            if (k == TokenKind.QuestionQuestion && minBp <= 25) {
+                this._advance();
+                Expr rr = this._parseExpr(25);
+                left = new BinaryExpr("??", left, rr);
+                continue;
+            }
             // 三目 ?:（右结合，bp 20）
             if (k == TokenKind.Question && minBp <= 20) {
                 this._advance();
@@ -69,11 +84,12 @@ public sealed class Parser {
                 left = new TernaryExpr(left, thenE, elseE);
                 continue;
             }
-            // 赋值（右结合，bp 10）
-            if (k == TokenKind.Eq && minBp <= 10) {
+            // 赋值 / 复合赋值（右结合，bp 10）
+            if (this._isAssignOp(k) && minBp <= 10) {
+                string aop = this._peek().Text;
                 this._advance();
                 Expr rhs = this._parseExpr(10);
-                left = new AssignExpr(left, rhs);
+                left = new AssignExpr(aop, left, rhs);
                 continue;
             }
             // 二元
@@ -120,6 +136,28 @@ public sealed class Parser {
             this._expect(TokenKind.RParen, ")");
             return inner;
         }
+        if (k == TokenKind.New) {
+            this._advance();
+            string ty = this._parseTypeText();
+            Expr[] args = new Expr[8];
+            int n = 0;
+            if (this._peek().Kind == TokenKind.LParen) {
+                this._advance();
+                if (this._peek().Kind != TokenKind.RParen) {
+                    while (true) {
+                        if (n == args.Length) {
+                            Expr[] b = new Expr[args.Length * 2];
+                            int i = 0; while (i < n) { b[i] = args[i]; i = i + 1; }
+                            args = b;
+                        }
+                        args[n] = this._parseExpr(0); n = n + 1;
+                        if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+                    }
+                }
+                this._expect(TokenKind.RParen, ")");
+            }
+            return new ObjNewExpr(ty, args, n);
+        }
         if (k == TokenKind.IntLiteral)    { this._advance(); return new IntLitExpr(t.Text); }
         if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text); }
         if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text); }
@@ -133,13 +171,25 @@ public sealed class Parser {
     }
 
     private int _infixBp(int k) {
-        if (k == TokenKind.PipePipe) { return 30; }
-        if (k == TokenKind.AmpAmp)   { return 40; }
+        if (k == TokenKind.PipePipe)  { return 30; }
+        if (k == TokenKind.AmpAmp)    { return 40; }
+        if (k == TokenKind.Pipe)      { return 44; }
+        if (k == TokenKind.Caret)     { return 46; }
+        if (k == TokenKind.Ampersand) { return 48; }
         if (k == TokenKind.EqEq || k == TokenKind.BangEq) { return 50; }
         if (k == TokenKind.Lt || k == TokenKind.LtEq || k == TokenKind.Gt || k == TokenKind.GtEq) { return 60; }
+        if (k == TokenKind.LtLt || k == TokenKind.GtGt) { return 65; }
         if (k == TokenKind.Plus || k == TokenKind.Minus)  { return 70; }
         if (k == TokenKind.Star || k == TokenKind.Slash || k == TokenKind.Percent) { return 80; }
         return 0;
+    }
+
+    private bool _isAssignOp(int k) {
+        if (k == TokenKind.Eq) { return true; }
+        if (k == TokenKind.PlusEq || k == TokenKind.MinusEq || k == TokenKind.StarEq) { return true; }
+        if (k == TokenKind.SlashEq || k == TokenKind.PercentEq) { return true; }
+        if (k == TokenKind.AmpEq || k == TokenKind.PipeEq || k == TokenKind.CaretEq) { return true; }
+        return false;
     }
 
     // ════ 语句 ══════════════════════════════════════════════════════════════

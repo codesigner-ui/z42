@@ -77,10 +77,11 @@ public sealed class IndexExpr : Expr {
 }
 
 public sealed class AssignExpr : Expr {
-    public Expr Target;
-    public Expr Value;
-    public AssignExpr(Expr target, Expr value) { this.Target = target; this.Value = value; }
-    public override string Dump() { return "(= " + this.Target.Dump() + " " + this.Value.Dump() + ")"; }
+    public string Op;    // "=" / "+=" / "-=" / ...
+    public Expr   Target;
+    public Expr   Value;
+    public AssignExpr(string op, Expr target, Expr value) { this.Op = op; this.Target = target; this.Value = value; }
+    public override string Dump() { return "(" + this.Op + " " + this.Target.Dump() + " " + this.Value.Dump() + ")"; }
 }
 
 public sealed class CallExpr : Expr {
@@ -105,5 +106,34 @@ public sealed class TernaryExpr : Expr {
     public TernaryExpr(Expr cond, Expr then, Expr els) { this.Cond = cond; this.Then = then; this.Else = els; }
     public override string Dump() {
         return "(?: " + this.Cond.Dump() + " " + this.Then.Dump() + " " + this.Else.Dump() + ")";
+    }
+}
+
+public sealed class IsExpr : Expr {
+    public Expr   E;
+    public string TypeText;
+    public IsExpr(Expr e, string typeText) { this.E = e; this.TypeText = typeText; }
+    public override string Dump() { return "(is " + this.E.Dump() + " " + this.TypeText + ")"; }
+}
+
+public sealed class AsExpr : Expr {
+    public Expr   E;
+    public string TypeText;
+    public AsExpr(Expr e, string typeText) { this.E = e; this.TypeText = typeText; }
+    public override string Dump() { return "(as " + this.E.Dump() + " " + this.TypeText + ")"; }
+}
+
+public sealed class ObjNewExpr : Expr {
+    public string TypeText;
+    public Expr[] Args;
+    public int    ArgCount;
+    public ObjNewExpr(string typeText, Expr[] args, int argCount) {
+        this.TypeText = typeText; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = "(new " + this.TypeText;
+        int i = 0;
+        while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
+        return s + ")";
     }
 }
