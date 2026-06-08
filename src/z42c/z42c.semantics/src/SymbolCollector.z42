@@ -1,0 +1,100 @@
+// 符号收集（port-z42c-semantics 1A-3，Pass 0）。CompilationUnit AST → SymbolTable。
+// 两阶段：A 先建类 stub（注册名字，使成员类型可解析兄弟类）→ B 填字段/方法签名 + 顶层 func。
+// 1A 范围：class/struct（字段 + 方法签名，跳 ctor[1D] / property[后续]）+ 顶层 func。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+
+public sealed class SymbolCollector {
+    public SymbolTable Collect(CompilationUnit cu) {
+        var table = new SymbolTable();
+        // Pass A：类 stub
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if (c.Kind == "class" || c.Kind == "struct") {
+                    bool hasBase = c.BaseCount > 0;
+                    string baseName = "";
+                    if (hasBase) { baseName = c.Bases[0].Dump(); }
+                    table.Classes.Put(c.Name, new Z42ClassType(c.Name, hasBase, baseName));
+                }
+            }
+            i = i + 1;
+        }
+        // Pass B：成员 + 顶层 func
+        i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if (c.Kind == "class" || c.Kind == "struct") { this._fillClass(table, c); }
+            } else if (d is MethodDecl) {
+                MethodDecl m = d as MethodDecl;            // 顶层 func（IsFree）
+                table.Functions.Put(m.Name, this._methodSymbol(table, m, ""));
+            }
+            i = i + 1;
+        }
+        return table;
+    }
+
+    private Decl _unwrap(Decl d) {
+        if (d is AttributedDecl) { AttributedDecl ad = d as AttributedDecl; return ad.Inner; }
+        return d;
+    }
+
+    private void _fillClass(SymbolTable table, ClassDecl c) {
+        Z42ClassType ct = table.Classes.Get(c.Name) as Z42ClassType;
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[j]);
+            if (mem is FieldDecl) {
+                FieldDecl fd = mem as FieldDecl;
+                Z42Type ft = table.ResolveType(fd.Type);
+                ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, this._hasWord(fd.Mods, "static"), c.Name));
+            } else if (mem is MethodDecl) {
+                MethodDecl md = mem as MethodDecl;
+                if (!md.IsCtor) {                          // ctor 延后（1D new）
+                    ct.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name));
+                }
+            }
+            j = j + 1;
+        }
+    }
+
+    private MethodSymbol _methodSymbol(SymbolTable table, MethodDecl md, string containing) {
+        Z42Type[] ps = new Z42Type[md.ParamCount];
+        int k = 0;
+        while (k < md.ParamCount) { ps[k] = table.ResolveType(md.Params[k].Type); k = k + 1; }
+        Z42Type ret = table.ResolveType(md.RetType);
+        var sig = new Z42FuncType(ps, md.ParamCount, ret);
+        return new MethodSymbol(md.Name, this._vis(md.Mods), sig, this._hasWord(md.Mods, "static"), containing, true, md);
+    }
+
+    private string _vis(string mods) {
+        if (this._hasWord(mods, "public"))    { return "public"; }
+        if (this._hasWord(mods, "private"))   { return "private"; }
+        if (this._hasWord(mods, "protected")) { return "protected"; }
+        if (this._hasWord(mods, "internal"))  { return "internal"; }
+        return "internal";
+    }
+
+    // mods 空格分隔；逐 token 比较（不依赖 String.Contains，避免子串误命中）。
+    private bool _hasWord(string s, string word) {
+        int n = s.Length;
+        int start = 0;
+        int i = 0;
+        while (i <= n) {
+            if (i == n || s.CharAt(i) == ' ') {
+                if (i > start) {
+                    string tok = s.Substring(start, i - start);
+                    if (tok == word) { return true; }
+                }
+                start = i + 1;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+}

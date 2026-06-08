@@ -1,0 +1,55 @@
+// z42c.semantics SymbolCollector 单测（1A-3）：源 → parse → 符号表（类字段/方法签名 + 顶层 func）。
+namespace Z42cSemanticsCollectTests;
+
+using Std;
+using Std.Test;
+using Z42.Syntax;
+using Z42.Semantics;
+
+SymbolTable collect(string src) {
+    var p = new Parser(src, "t.z42");
+    var cu = p.ParseCompilationUnit();
+    return new SymbolCollector().Collect(cu);
+}
+
+[Test]
+void test_collect_class_members() {
+    var table = collect("class Box { private int value; public int Get() { return value; } }");
+    Assert.Equal(true, table.HasClass("Box"));
+    var box = table.GetClass("Box");
+    Assert.Equal(true, box.Fields.ContainsKey("value"));
+    var f = box.Fields.Get("value") as FieldSymbol;
+    Assert.Equal("int", f.FieldType.Name());
+    Assert.Equal("private", f.Visibility);
+    Assert.Equal(true, box.Methods.ContainsKey("Get"));
+    var m = box.Methods.Get("Get") as MethodSymbol;
+    Assert.Equal("()->int", m.Signature.Dump());
+    Assert.Equal("public", m.Visibility);
+}
+
+[Test]
+void test_collect_method_signature_and_static() {
+    var table = collect("class Calc { public static int Add(int a, int b) { return a + b; } }");
+    var calc = table.GetClass("Calc");
+    var m = calc.Methods.Get("Add") as MethodSymbol;
+    Assert.Equal("(int,int)->int", m.Signature.Dump());
+    Assert.Equal(true, m.IsStatic);
+    Assert.Equal("Calc", m.ContainingTypeName);
+}
+
+[Test]
+void test_collect_top_level_func() {
+    var table = collect("int Add(int a, int b) { return a + b; }");
+    Assert.Equal(true, table.HasFunc("Add"));
+    var m = table.GetFunc("Add");
+    Assert.Equal("(int,int)->int", m.Signature.Dump());
+}
+
+[Test]
+void test_resolve_class_field_type() {
+    // 字段类型为兄弟类（两阶段 stub 保证可解析）
+    var table = collect("class Node { } class List { private Node head; }");
+    var list = table.GetClass("List");
+    var f = list.Fields.Get("head") as FieldSymbol;
+    Assert.Equal("Node", f.FieldType.Name());        // 解析到 Z42ClassType
+}

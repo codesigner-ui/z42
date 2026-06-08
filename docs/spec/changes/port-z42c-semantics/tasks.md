@@ -16,9 +16,11 @@
 - [x] 1A-2b `Symbol.z42`（MethodSymbol/FieldSymbol 独立 sealed class——1A 无混合集合，ISymbol 基类延后）+ `Z42FuncType`（签名）+ Z42ClassType 加 Fields/Methods（StrMap）
 - [x] 验证：`xtask test compiler-z42` → **9 units 104 cases** 全绿（map 3 + types 5）
 
-### 1A-3（SymbolCollector Pass 0）
-- [ ] `SymbolTable` + `SymbolCollector.Collect(cu)`（class[字段+方法签名] + func；两阶段 stub→fixup ContainingType）
-- [ ] tests/collect/（解析一个 class → 符号表断言）
+### 1A-3（SymbolCollector Pass 0 — ✅ 已完成）
+- [x] `SymbolTable`（Classes/Functions StrMap + `ResolveType` TypeExpr→Z42Type 桥：prim/void/class，Array/泛型→Unknown）
+- [x] `SymbolCollector.Collect(cu)`（两阶段：A 建类 stub → B 填字段/方法签名 + 顶层 func；unwrap AttributedDecl；跳 ctor；`_hasWord` 解析 static/visibility）
+- [x] tests/collect/（4 单测：类成员/方法签名+static/顶层 func/兄弟类字段类型解析）
+- [x] 验证：`xtask test compiler-z42` → **10 units 108 cases** 全绿（首个 syntax→semantics 跨包处理）
 
 ### 1A-4（Bound tree + TypeChecker.Infer + SemanticModel + SemanticDump）
 - [ ] Bound 最小集（LitInt/Ident/Assign/Call-stub/Error + VarDecl/Return/ExprStmt/Block，virtual Type/Dump）

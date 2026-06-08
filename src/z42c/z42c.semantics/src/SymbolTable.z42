@@ -1,0 +1,41 @@
+// 符号表（port-z42c-semantics 1A-3，Pass 0 产物）。类名→Z42ClassType / 顶层函数名→MethodSymbol。
+// 含 TypeExpr（语法）→ Z42Type（语义）的桥 ResolveType。1A：NamedType（prim/void/class）；
+// Array/Nullable/泛型实参 → Unknown（延后 1D/2A）。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+
+public sealed class SymbolTable {
+    public StrMap Classes;     // name → Z42ClassType
+    public StrMap Functions;   // name → MethodSymbol（顶层 func）
+    public SymbolTable() {
+        this.Classes = new StrMap();
+        this.Functions = new StrMap();
+    }
+
+    public bool          HasClass(string name) { return this.Classes.ContainsKey(name); }
+    public Z42ClassType  GetClass(string name) { return this.Classes.Get(name) as Z42ClassType; }
+    public bool          HasFunc(string name)  { return this.Functions.ContainsKey(name); }
+    public MethodSymbol  GetFunc(string name)  { return this.Functions.Get(name) as MethodSymbol; }
+
+    public Z42Type ResolveType(TypeExpr te) {
+        if (te is NamedType) {
+            NamedType nt = te as NamedType;
+            string n = nt.Name;
+            if (n == "void") { return new Z42VoidType(); }
+            if (this._isPrim(n)) { return new Z42PrimType(n); }
+            if (this.Classes.ContainsKey(n)) { return this.Classes.Get(n) as Z42ClassType; }
+            return new Z42UnknownType();   // imported / 未声明 / 数组元素 等 → 1A Unknown
+        }
+        return new Z42UnknownType();        // ArrayType / NullableType → 延后
+    }
+
+    private bool _isPrim(string n) {
+        if (n == "int" || n == "long" || n == "short" || n == "byte" || n == "sbyte") { return true; }
+        if (n == "uint" || n == "ulong" || n == "ushort") { return true; }
+        if (n == "double" || n == "float" || n == "bool" || n == "char" || n == "string" || n == "object") { return true; }
+        if (n == "i8" || n == "i16" || n == "i32" || n == "i64") { return true; }
+        if (n == "u8" || n == "u16" || n == "u32" || n == "u64" || n == "f32" || n == "f64") { return true; }
+        return false;
+    }
+}
