@@ -7,7 +7,9 @@
 // 成员 property：auto `{ get; set; }`（含访问器修饰 + 初值）；自定义 body / 表达式体 / init-only 延后。
 // 泛型：类型声明 + 方法 + delegate + record 的形参 `<T>`（文本捕获）+ `where T : ...` 约束（new()/class/struct/类型）。
 // attribute：前置 `[X]`/`[X(args)]`/`[A][B]`（顶层 + 成员）→ AttributedDecl 包裹；args 为表达式。
-// 延后（incr 6c+）：lambda；Lexer 补全；真实 Visitor + TypeExpr；byte-identical。
+// 类型：`_parseType()` 产 TypeExpr（incr 6d-1，用于 is/as/new/var-decl/foreach；含 >>/>>> 嵌套泛型拆分）；
+//       声明位的类型仍走 `_parseTypeText`（string，6d-2 切换）。
+// 延后：lambda；真实 Visitor（并入后端）；byte-identical。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -16,11 +18,13 @@ public sealed class Parser {
     private Lexer _lx;
     private int   _pos;
     private DiagnosticBag _diags;
+    private int   _pendingGt;   // 嵌套泛型 `>>`/`>>>` 拆分：close 时若吃了 GtGt，余下的 `>` 记此
 
     public Parser(string src, string file) {
         this._lx = new Lexer(src, file);
         this._lx.Tokenize();
         this._pos = 0;
+        this._pendingGt = 0;
         this._diags = new DiagnosticBag();
     }
 
@@ -70,7 +74,7 @@ public sealed class Parser {
             if ((k == TokenKind.Is || k == TokenKind.As) && minBp <= 60) {
                 bool isIs = (k == TokenKind.Is);
                 this._advance();
-                string ty = this._parseTypeText();
+                TypeExpr ty = this._parseType();
                 if (isIs) { left = new IsExpr(left, ty); } else { left = new AsExpr(left, ty); }
                 continue;
             }
@@ -144,7 +148,7 @@ public sealed class Parser {
         }
         if (k == TokenKind.New) {
             this._advance();
-            string ty = this._parseTypeText();
+            TypeExpr ty = this._parseType();
             Expr[] args = new Expr[8];
             int n = 0;
             if (this._peek().Kind == TokenKind.LParen) {
@@ -222,7 +226,7 @@ public sealed class Parser {
     private Stmt _parseForeach() {
         this._advance();   // foreach
         this._expect(TokenKind.LParen, "(");
-        string t = this._parseTypeText();
+        TypeExpr t = this._parseType();
         string n = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected loop variable", this._peek().Span); }
@@ -404,15 +408,14 @@ public sealed class Parser {
     }
 
     private Stmt _parseVarDecl() {
-        string typeText = this._peek().Text;
-        this._advance();
+        TypeExpr type = this._parseType();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected variable name", this._peek().Span); }
         this._expect(TokenKind.Eq, "=");
         Expr init = this._parseExpr(0);
         this._expectSemi();
-        return new VarDeclStmt(typeText, name, init);
+        return new VarDeclStmt(type, name, init);
     }
 
     private bool _isTypeKeyword(int k) {
@@ -828,6 +831,52 @@ public sealed class Parser {
         if (k == TokenKind.Class)  { this._advance(); return "class"; }
         if (k == TokenKind.Struct) { this._advance(); return "struct"; }
         return this._parseTypeText();
+    }
+
+    // 结构化类型（incr 6d）：限定名 + 泛型 <...>（递归，含 >>/>>> 拆分）+ 数组 [] + nullable ?。
+    private TypeExpr _parseType() {
+        string name = this._peek().Text;
+        this._advance();
+        while (this._peek().Kind == TokenKind.Dot) {
+            this._advance();
+            name = name + "." + this._peek().Text;
+            if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        }
+        TypeExpr[] args = new TypeExpr[4];
+        int ac = 0;
+        if (this._peek().Kind == TokenKind.Lt) {
+            this._advance();   // <
+            if (!this._tryCloseTypeArgs()) {   // 非空实参列表
+                while (true) {
+                    if (ac == args.Length) {
+                        TypeExpr[] b = new TypeExpr[args.Length * 2];
+                        int i = 0; while (i < ac) { b[i] = args[i]; i = i + 1; }
+                        args = b;
+                    }
+                    args[ac] = this._parseType(); ac = ac + 1;
+                    if (this._pendingGt == 0 && this._peek().Kind == TokenKind.Comma) { this._advance(); continue; }
+                    break;
+                }
+                if (!this._tryCloseTypeArgs()) {
+                    this._diags.Error(DiagnosticCodes.ExpectedToken, "expected '>'", this._peek().Span);
+                }
+            }
+        }
+        TypeExpr t = new NamedType(name, args, ac);
+        while (this._peek().Kind == TokenKind.LBracket && this._peekAt(1).Kind == TokenKind.RBracket) {
+            this._advance(); this._advance();
+            t = new ArrayType(t);
+        }
+        if (this._peek().Kind == TokenKind.Question) { this._advance(); t = new NullableType(t); }
+        return t;
+    }
+
+    // 消费一个类型实参闭合 `>`：优先用 pending（来自上层 GtGt 拆分），否则吃 Gt，或把 GtGt 拆成两个 `>`。
+    private bool _tryCloseTypeArgs() {
+        if (this._pendingGt > 0) { this._pendingGt = this._pendingGt - 1; return true; }
+        if (this._peek().Kind == TokenKind.Gt) { this._advance(); return true; }
+        if (this._peek().Kind == TokenKind.GtGt) { this._advance(); this._pendingGt = 1; return true; }
+        return false;
     }
 
     // 类型文本：限定名 + 泛型 <...>（深度计数，含 >>）+ 数组 [] + nullable ?

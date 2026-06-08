@@ -15,14 +15,14 @@ public sealed class ExprStmt : Stmt {
 }
 
 public sealed class VarDeclStmt : Stmt {
-    public string TypeText;
-    public string Name;
-    public Expr   Init;
-    public VarDeclStmt(string typeText, string name, Expr init) {
-        this.TypeText = typeText; this.Name = name; this.Init = init;
+    public TypeExpr Type;     // `var` 推断 → NamedType("var")
+    public string   Name;
+    public Expr     Init;
+    public VarDeclStmt(TypeExpr type, string name, Expr init) {
+        this.Type = type; this.Name = name; this.Init = init;
     }
     public override string Dump() {
-        return "(decl " + this.TypeText + " " + this.Name + " " + this.Init.Dump() + ")";
+        return "(decl " + this.Type.Dump() + " " + this.Name + " " + this.Init.Dump() + ")";
     }
 }
 
@@ -90,15 +90,15 @@ public sealed class ThrowStmt : Stmt {
 }
 
 public sealed class ForeachStmt : Stmt {
-    public string TypeText;
-    public string Name;
-    public Expr   Iter;
-    public Stmt   Body;
-    public ForeachStmt(string typeText, string name, Expr iter, Stmt body) {
-        this.TypeText = typeText; this.Name = name; this.Iter = iter; this.Body = body;
+    public TypeExpr Type;
+    public string   Name;
+    public Expr     Iter;
+    public Stmt     Body;
+    public ForeachStmt(TypeExpr type, string name, Expr iter, Stmt body) {
+        this.Type = type; this.Name = name; this.Iter = iter; this.Body = body;
     }
     public override string Dump() {
-        return "(foreach " + this.TypeText + " " + this.Name + " " + this.Iter.Dump() + " " + this.Body.Dump() + ")";
+        return "(foreach " + this.Type.Dump() + " " + this.Name + " " + this.Iter.Dump() + " " + this.Body.Dump() + ")";
     }
 }
 

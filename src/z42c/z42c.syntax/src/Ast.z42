@@ -110,28 +110,28 @@ public sealed class TernaryExpr : Expr {
 }
 
 public sealed class IsExpr : Expr {
-    public Expr   E;
-    public string TypeText;
-    public IsExpr(Expr e, string typeText) { this.E = e; this.TypeText = typeText; }
-    public override string Dump() { return "(is " + this.E.Dump() + " " + this.TypeText + ")"; }
+    public Expr     E;
+    public TypeExpr Type;
+    public IsExpr(Expr e, TypeExpr type) { this.E = e; this.Type = type; }
+    public override string Dump() { return "(is " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 
 public sealed class AsExpr : Expr {
-    public Expr   E;
-    public string TypeText;
-    public AsExpr(Expr e, string typeText) { this.E = e; this.TypeText = typeText; }
-    public override string Dump() { return "(as " + this.E.Dump() + " " + this.TypeText + ")"; }
+    public Expr     E;
+    public TypeExpr Type;
+    public AsExpr(Expr e, TypeExpr type) { this.E = e; this.Type = type; }
+    public override string Dump() { return "(as " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 
 public sealed class ObjNewExpr : Expr {
-    public string TypeText;
-    public Expr[] Args;
-    public int    ArgCount;
-    public ObjNewExpr(string typeText, Expr[] args, int argCount) {
-        this.TypeText = typeText; this.Args = args; this.ArgCount = argCount;
+    public TypeExpr Type;
+    public Expr[]   Args;
+    public int      ArgCount;
+    public ObjNewExpr(TypeExpr type, Expr[] args, int argCount) {
+        this.Type = type; this.Args = args; this.ArgCount = argCount;
     }
     public override string Dump() {
-        string s = "(new " + this.TypeText;
+        string s = "(new " + this.Type.Dump();
         int i = 0;
         while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
         return s + ")";

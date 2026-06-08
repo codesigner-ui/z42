@@ -1,0 +1,46 @@
+// 类型表达式 AST（z42c.syntax，incr 6d）。替换早期"类型文本字符串"为结构化节点，供后端解析。
+// 受限写法：class 继承 + virtual Dump()。Dump() 刻意复刻旧 type-text 规范文本（无空格泛型实参），
+// 使切换后现有 Dump 断言全绿。
+// 形态：NamedType（Foo / Foo.Bar / List<int>）/ ArrayType（T[]）/ NullableType（T?）。
+// 不含 FuncType `(T)->R`（闭包类型位，沿用延后）。
+namespace Z42.Syntax;
+
+public class TypeExpr {
+    public virtual string Dump() { return "?type"; }
+}
+
+// 限定名 + 可选泛型实参（递归 TypeExpr）。Name 保留点串（"Foo.Bar"）。
+public sealed class NamedType : TypeExpr {
+    public string     Name;
+    public TypeExpr[] Args;
+    public int        ArgCount;
+    public NamedType(string name, TypeExpr[] args, int argCount) {
+        this.Name = name; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = this.Name;
+        if (this.ArgCount > 0) {
+            s = s + "<";
+            int i = 0;
+            while (i < this.ArgCount) {
+                if (i > 0) { s = s + ","; }   // 无空格，同旧 _consumeAngles
+                s = s + this.Args[i].Dump();
+                i = i + 1;
+            }
+            s = s + ">";
+        }
+        return s;
+    }
+}
+
+public sealed class ArrayType : TypeExpr {
+    public TypeExpr Elem;
+    public ArrayType(TypeExpr elem) { this.Elem = elem; }
+    public override string Dump() { return this.Elem.Dump() + "[]"; }
+}
+
+public sealed class NullableType : TypeExpr {
+    public TypeExpr Inner;
+    public NullableType(TypeExpr inner) { this.Inner = inner; }
+    public override string Dump() { return this.Inner.Dump() + "?"; }
+}

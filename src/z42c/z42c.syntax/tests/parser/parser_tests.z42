@@ -145,3 +145,16 @@ void test_new() {
     Assert.Equal("(new List<int>)", parse("new List<int>()"));
     Assert.Equal("(call (. (new Point x y) Dist))", parse("new Point(x, y).Dist()"));
 }
+
+// incr 6d-1：TypeExpr 结构化（经 is/as/new）。验证嵌套泛型 >>/>>> 拆分、限定名、数组、nullable。
+[Test]
+void test_type_expr_forms() {
+    Assert.Equal("(is x Dict<string,int>)", parse("x is Dict<string, int>"));   // 空格归一
+    Assert.Equal("(as y List<List<int>>)", parse("y as List<List<int>>"));      // 嵌套 >>
+    Assert.Equal("(is z Map<K,List<V>>)", parse("z is Map<K, List<V>>"));       // 内层 List 与外层 Map 共享 >>
+    Assert.Equal("(is a A<B<C<int>>>)", parse("a is A<B<C<int>>>"));            // 三层 >>>（GtGt+Gt 拆分）
+    Assert.Equal("(new Foo.Bar<int>)", parse("new Foo.Bar<int>()"));           // 限定名 + 泛型
+    Assert.Equal("(is b int[])", parse("b is int[]"));                          // 数组
+    Assert.Equal("(as c T?)", parse("c as T?"));                               // nullable
+    Assert.Equal("(is d List<int>[])", parse("d is List<int>[]"));             // 泛型 + 数组
+}

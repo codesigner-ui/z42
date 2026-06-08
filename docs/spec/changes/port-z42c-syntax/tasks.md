@@ -95,7 +95,23 @@
 - [x] 3 单测（raw 串 / 插值串[含洞内嵌套串] / 转义解码）→ tests/lexer/
 - [x] 验证：`xtask test compiler-z42` → 5 units **86 cases** 全绿（core 11 / lexer 17 / parser 19 / stmt 15 / decl 24）
 
-> **increment 6c 全部完成**（Lexer 补全：数字格式 + raw/插值串 + 转义解码）。下一步 6d（Visitor + TypeExpr，架构性）。
+> **increment 6c 全部完成**（Lexer 补全：数字格式 + raw/插值串 + 转义解码）。
+
+## increment 6d（TypeExpr AST，架构性 — 设计见 design-6d-typeexpr-visitor.md）
+> User 裁决（2026-06-08）：D1=连 where 约束一并结构化；D2=Visitor 本增量不做（保留 Dump，并入后端 semantics）。
+
+### 6d-1（TypeExpr 节点 + is/as/new/var-decl/foreach — ✅ 已完成）
+- [x] 新文件 `TypeExpr.z42`：NamedType / ArrayType / NullableType（Dump 复刻规范 type-text，无空格泛型实参 → 现有断言全绿）
+- [x] `_parseType()`（递归泛型实参 + `_tryCloseTypeArgs`/`_pendingGt` 处理 `>>`/`>>>` 嵌套泛型 token 拆分）+ 数组 `[]` + nullable `?`
+- [x] 切换 Ast（IsExpr/AsExpr/ObjNewExpr）+ Stmt（VarDeclStmt/ForeachStmt）的 string TypeText → TypeExpr
+- [x] 1 新单测 test_type_expr_forms（空格归一/嵌套 `>>`/三层 `>>>`/限定名/数组/nullable/泛型+数组）+ 现有 is/as/new/foreach 断言全绿
+- [x] 验证：`xtask test compiler-z42` → 5 units **87 cases** 全绿（core 11 / lexer 17 / parser 20 / stmt 15 / decl 24）
+
+### 6d-2（后续 — Decl 类型字段 + 形参结构化）
+- [ ] Param/Field/Property/Method.RetType/Delegate.RetType/Class·Enum·Record.Bases → TypeExpr；TypeParams → string[] Names
+
+### 6d-3（后续 — where 约束结构化）
+- [ ] WhereClause/WhereConstraint（TypeExpr | new()/class/struct）于 Class/Delegate/Record/Method；移除残留 `_parseTypeText`/WhereText string
 
 ## increment 6d（后续 — Visitor + TypeExpr）
 - [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本字符串）
