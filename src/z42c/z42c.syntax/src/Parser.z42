@@ -1,0 +1,87 @@
+// 表达式解析器（Pratt / 优先级爬升）。z42c.syntax 自举 increment #2。
+// 镜像 C# z42.Syntax 的 Pratt binding-power 表（compiler-csharp.md）：
+//   || 30 / && 40 / == != 50 / < <= > >= 60 / + - 70 / * / % 80 / 一元前缀 85。
+// 本期：表达式（字面量/标识符/括号/一元 - ! ~ + / 二元）。
+// 延后：赋值/三目/??/位运算/is·as/postfix(. () [])/语句/声明。
+namespace Z42.Syntax;
+
+using Z42.Core;
+
+public sealed class Parser {
+    private Lexer _lx;
+    private int   _pos;
+    private DiagnosticBag _diags;
+
+    public Parser(string src, string file) {
+        this._lx = new Lexer(src, file);
+        this._lx.Tokenize();
+        this._pos = 0;
+        this._diags = new DiagnosticBag();
+    }
+
+    public DiagnosticBag Diagnostics() { return this._diags; }
+
+    public Expr ParseExpression() { return this._parseExpr(0); }
+
+    private Token _peek() { return this._lx.TokenAt(this._pos); }
+    private void  _advance() { this._pos = this._pos + 1; }
+
+    // Pratt 主循环：先解析前缀，再按 binding power 吞并中缀。
+    private Expr _parseExpr(int minBp) {
+        Expr left = this._parsePrefix();
+        while (true) {
+            int k  = this._peek().Kind;
+            int bp = this._infixBp(k);
+            if (bp == 0 || bp < minBp) { break; }
+            string op = this._peek().Text;
+            this._advance();
+            Expr right = this._parseExpr(bp + 1);   // 左结合：右侧用 bp+1
+            left = new BinaryExpr(op, left, right);
+        }
+        return left;
+    }
+
+    private Expr _parsePrefix() {
+        Token t = this._peek();
+        int k = t.Kind;
+
+        // 一元前缀
+        if (k == TokenKind.Minus || k == TokenKind.Bang || k == TokenKind.Tilde || k == TokenKind.Plus) {
+            this._advance();
+            Expr operand = this._parseExpr(85);
+            return new UnaryExpr(t.Text, operand);
+        }
+        // 括号分组（无独立节点：直接返回内部表达式，分组体现在树结构）
+        if (k == TokenKind.LParen) {
+            this._advance();
+            Expr inner = this._parseExpr(0);
+            if (this._peek().Kind == TokenKind.RParen) { this._advance(); }
+            else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected ')'", this._peek().Span); }
+            return inner;
+        }
+        // 字面量 / 标识符
+        if (k == TokenKind.IntLiteral)    { this._advance(); return new IntLitExpr(t.Text); }
+        if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text); }
+        if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text); }
+        if (k == TokenKind.True)          { this._advance(); return new BoolLitExpr(true); }
+        if (k == TokenKind.False)         { this._advance(); return new BoolLitExpr(false); }
+        if (k == TokenKind.Null)          { this._advance(); return new NullLitExpr(); }
+        if (k == TokenKind.Identifier)    { this._advance(); return new IdentExpr(t.Text); }
+
+        // 解析失败：报错并消费一个 token 防卡死
+        this._diags.Error(DiagnosticCodes.UnexpectedToken, "unexpected token in expression", t.Span);
+        this._advance();
+        return new IdentExpr("<error>");
+    }
+
+    // 中缀 binding power（0 = 非中缀运算符）。
+    private int _infixBp(int k) {
+        if (k == TokenKind.PipePipe) { return 30; }
+        if (k == TokenKind.AmpAmp)   { return 40; }
+        if (k == TokenKind.EqEq || k == TokenKind.BangEq) { return 50; }
+        if (k == TokenKind.Lt || k == TokenKind.LtEq || k == TokenKind.Gt || k == TokenKind.GtEq) { return 60; }
+        if (k == TokenKind.Plus || k == TokenKind.Minus)  { return 70; }
+        if (k == TokenKind.Star || k == TokenKind.Slash || k == TokenKind.Percent) { return 80; }
+        return 0;
+    }
+}

@@ -1,0 +1,63 @@
+// AST 表达式节点（z42c.syntax，自举 increment：syntax #2 Parser/AST）。
+// 受限写法：class 继承层级 + virtual 方法（不用 record + match）。每个节点 override
+// Dump() 返回规范 s-expression 串，便于测试断言结构 + 优先级（如 "(+ 1 (* 2 3))"）。
+// 增量：本期仅表达式（字面量/标识符/一元/二元）；语句/声明 + 真实 Visitor 留后续。
+namespace Z42.Syntax;
+
+public class Expr {
+    public virtual string Dump() { return "?"; }
+}
+
+public sealed class IntLitExpr : Expr {
+    public string Value;
+    public IntLitExpr(string value) { this.Value = value; }
+    public override string Dump() { return this.Value; }
+}
+
+public sealed class FloatLitExpr : Expr {
+    public string Value;
+    public FloatLitExpr(string value) { this.Value = value; }
+    public override string Dump() { return this.Value; }
+}
+
+public sealed class StringLitExpr : Expr {
+    public string Raw;   // raw lexeme，含引号
+    public StringLitExpr(string raw) { this.Raw = raw; }
+    public override string Dump() { return this.Raw; }
+}
+
+public sealed class BoolLitExpr : Expr {
+    public bool Value;
+    public BoolLitExpr(bool value) { this.Value = value; }
+    public override string Dump() { if (this.Value) { return "true"; } return "false"; }
+}
+
+public sealed class NullLitExpr : Expr {
+    public NullLitExpr() {}
+    public override string Dump() { return "null"; }
+}
+
+public sealed class IdentExpr : Expr {
+    public string Name;
+    public IdentExpr(string name) { this.Name = name; }
+    public override string Dump() { return this.Name; }
+}
+
+public sealed class UnaryExpr : Expr {
+    public string Op;
+    public Expr   Operand;
+    public UnaryExpr(string op, Expr operand) { this.Op = op; this.Operand = operand; }
+    public override string Dump() { return "(" + this.Op + " " + this.Operand.Dump() + ")"; }
+}
+
+public sealed class BinaryExpr : Expr {
+    public string Op;
+    public Expr   Left;
+    public Expr   Right;
+    public BinaryExpr(string op, Expr left, Expr right) {
+        this.Op = op; this.Left = left; this.Right = right;
+    }
+    public override string Dump() {
+        return "(" + this.Op + " " + this.Left.Dump() + " " + this.Right.Dump() + ")";
+    }
+}
