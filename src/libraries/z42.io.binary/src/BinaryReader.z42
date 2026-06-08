@@ -188,6 +188,25 @@ public class BinaryReader {
         return (hi << 32) | lo;
     }
 
+    // ── Float (IEEE-754; add-binary-float 2026-06-09) ─────────────────────
+    //
+    // Inverse of BinaryWriter.Write{Single,Double}{LE,BE}: read the 4/8-byte
+    // integer pattern then reinterpret via BitConverter-style natives. Single
+    // widens f32→f64 on the way out.
+
+    // Single returns `double` (widened from the 4-byte f32) — mirrors
+    // ReadInt16LE returning `int`.
+    public double ReadSingleLE() { return BinaryReader._SingleFromBits(this.ReadInt32LE()); }
+    public double ReadSingleBE() { return BinaryReader._SingleFromBits(this.ReadInt32BE()); }
+    public double ReadDoubleLE() { return BinaryReader._DoubleFromBits(this.ReadInt64LE()); }
+    public double ReadDoubleBE() { return BinaryReader._DoubleFromBits(this.ReadInt64BE()); }
+
+    [Native("__single_from_bits")]
+    private static extern double _SingleFromBits(int bits);
+
+    [Native("__double_from_bits")]
+    private static extern double _DoubleFromBits(long bits);
+
     // ── Varint (protobuf-style 7-bit; add-io-binary-varint 2026-05-26) ────
 
     /// Read a varint-encoded i64. Reads bytes until one is encountered

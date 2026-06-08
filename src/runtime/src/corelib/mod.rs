@@ -134,6 +134,11 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__double_equals",     convert::builtin_double_equals),
     ("__double_hash_code",  convert::builtin_double_hash_code),
     ("__double_to_string",  convert::builtin_double_to_string),
+    // add-binary-float (2026-06-09): IEEE-754 bit reinterpret for BinaryReader/Writer
+    ("__single_to_bits",    convert::builtin_single_to_bits),
+    ("__single_from_bits",  convert::builtin_single_from_bits),
+    ("__double_to_bits",    convert::builtin_double_to_bits),
+    ("__double_from_bits",  convert::builtin_double_from_bits),
     ("__char_equals",       convert::builtin_char_equals),
     ("__char_hash_code",    convert::builtin_char_hash_code),
     ("__char_to_string",    convert::builtin_char_to_string),

@@ -210,6 +210,30 @@ pub fn builtin_double_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Valu
     Ok(Value::Str(a.to_string().into()))
 }
 
+// add-binary-float (2026-06-09): IEEE-754 bit reinterpretation backing
+// Std.IO.BinaryReader/Writer float serialization. z42 has no pure-script
+// `reinterpret` (the BitConverter gap), so these expose f32/f64 ↔ raw bits.
+// `__single_*` round-trips through f32 (4-byte IEEE-754) — the value rides the
+// VM as F64, but the on-wire pattern is single precision. The 32-bit pattern is
+// carried zero-extended in the i64 low word (BinaryWriter.WriteInt32* writes the
+// low 4 bytes); `as u32` on the way back recovers it regardless of sign-extension.
+pub fn builtin_single_to_bits(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let a = arg_f64(args, 0, "BitConverter.SingleToBits")?;
+    Ok(Value::I64((a as f32).to_bits() as i64))
+}
+pub fn builtin_single_from_bits(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let bits = arg_i64(args, 0, "BitConverter.SingleFromBits")?;
+    Ok(Value::F64(f32::from_bits(bits as u32) as f64))
+}
+pub fn builtin_double_to_bits(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let a = arg_f64(args, 0, "BitConverter.DoubleToBits")?;
+    Ok(Value::I64(a.to_bits() as i64))
+}
+pub fn builtin_double_from_bits(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let bits = arg_i64(args, 0, "BitConverter.DoubleFromBits")?;
+    Ok(Value::F64(f64::from_bits(bits as u64)))
+}
+
 // 2026-04-27 wave1-bool-script: 3 `builtin_bool_*` removed.
 // `Std.Boolean.Equals` / `GetHashCode` / `ToString` 现在是 z42 脚本实现。
 

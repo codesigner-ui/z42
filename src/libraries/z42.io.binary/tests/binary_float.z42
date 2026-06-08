@@ -1,0 +1,133 @@
+// add-binary-float (2026-06-09): IEEE-754 float serialization for
+// BinaryReader/Writer. Known bit patterns (exact byte layout, LE/BE) + value
+// round-trips (Single narrows through f32, Double is exact f64).
+namespace Z42IoBinaryFloatTests;
+
+using Std;
+using Std.Test;
+using Std.IO.Binary;
+
+// ── Known IEEE-754 byte patterns ─────────────────────────────────────────
+
+[Test]
+void test_single_le_known_pattern() {
+    // 1.0f = 0x3F800000 → LE bytes 00 00 80 3F
+    var w = new BinaryWriter();
+    w.WriteSingleLE(1.0);
+    byte[] b = w.ToArray();
+    Assert.Equal(4, b.Length);
+    Assert.Equal(0x00, (int)b[0]);
+    Assert.Equal(0x00, (int)b[1]);
+    Assert.Equal(0x80, (int)b[2]);
+    Assert.Equal(0x3F, (int)b[3]);
+}
+
+[Test]
+void test_single_be_known_pattern() {
+    // BE is the byte-reversed LE pattern.
+    var w = new BinaryWriter();
+    w.WriteSingleBE(1.0);
+    byte[] b = w.ToArray();
+    Assert.Equal(0x3F, (int)b[0]);
+    Assert.Equal(0x80, (int)b[1]);
+    Assert.Equal(0x00, (int)b[2]);
+    Assert.Equal(0x00, (int)b[3]);
+}
+
+[Test]
+void test_double_le_known_pattern() {
+    // 1.0 = 0x3FF0000000000000 → LE bytes 00 00 00 00 00 00 F0 3F
+    var w = new BinaryWriter();
+    w.WriteDoubleLE(1.0);
+    byte[] b = w.ToArray();
+    Assert.Equal(8, b.Length);
+    Assert.Equal(0x00, (int)b[0]);
+    Assert.Equal(0x00, (int)b[5]);
+    Assert.Equal(0xF0, (int)b[6]);
+    Assert.Equal(0x3F, (int)b[7]);
+}
+
+[Test]
+void test_double_be_known_pattern() {
+    var w = new BinaryWriter();
+    w.WriteDoubleBE(1.0);
+    byte[] b = w.ToArray();
+    Assert.Equal(0x3F, (int)b[0]);
+    Assert.Equal(0xF0, (int)b[1]);
+    Assert.Equal(0x00, (int)b[7]);
+}
+
+// ── Round-trips ──────────────────────────────────────────────────────────
+
+double _rtSingleLE(double v) {
+    var w = new BinaryWriter();
+    w.WriteSingleLE(v);
+    var r = new BinaryReader(w.ToArray());
+    return r.ReadSingleLE();
+}
+double _rtSingleBE(double v) {
+    var w = new BinaryWriter();
+    w.WriteSingleBE(v);
+    var r = new BinaryReader(w.ToArray());
+    return r.ReadSingleBE();
+}
+double _rtDoubleLE(double v) {
+    var w = new BinaryWriter();
+    w.WriteDoubleLE(v);
+    var r = new BinaryReader(w.ToArray());
+    return r.ReadDoubleLE();
+}
+double _rtDoubleBE(double v) {
+    var w = new BinaryWriter();
+    w.WriteDoubleBE(v);
+    var r = new BinaryReader(w.ToArray());
+    return r.ReadDoubleBE();
+}
+
+[Test]
+void test_single_round_trip_f32_exact() {
+    // Values exactly representable in f32 → narrowing is lossless → exact ==.
+    Assert.True(_rtSingleLE(0.0) == 0.0);
+    Assert.True(_rtSingleLE(1.0) == 1.0);
+    Assert.True(_rtSingleLE(-1.0) == -1.0);
+    Assert.True(_rtSingleLE(0.5) == 0.5);
+    Assert.True(_rtSingleLE(-2.25) == -2.25);
+    Assert.True(_rtSingleLE(1024.0) == 1024.0);
+    Assert.True(_rtSingleBE(-2.25) == -2.25);
+    Assert.True(_rtSingleBE(0.5) == 0.5);
+}
+
+[Test]
+void test_double_round_trip_exact() {
+    Assert.True(_rtDoubleLE(0.0) == 0.0);
+    Assert.True(_rtDoubleLE(1.0) == 1.0);
+    Assert.True(_rtDoubleLE(-1.0) == -1.0);
+    Assert.True(_rtDoubleLE(3.141592653589793) == 3.141592653589793);
+    Assert.True(_rtDoubleBE(3.141592653589793) == 3.141592653589793);
+    Assert.True(_rtDoubleBE(0.5) == 0.5);
+}
+
+[Test]
+void test_single_narrows_then_stable() {
+    // 0.1 is not f32-exact: the first write rounds to f32(0.1); reading and
+    // rewriting is then idempotent (no further loss), and the result is close.
+    double once = _rtSingleLE(0.1);
+    double twice = _rtSingleLE(once);
+    Assert.True(once == twice);
+    Assert.EqualApprox(once, 0.1, 0.0001);
+}
+
+[Test]
+void test_mixed_sequence_round_trip() {
+    // Floats compose with the integer serializers in one stream.
+    var w = new BinaryWriter();
+    w.WriteByte(42);
+    w.WriteSingleLE(1.5);
+    w.WriteDoubleBE(-9.75);
+    w.WriteInt32LE(123456);
+    var r = new BinaryReader(w.ToArray());
+    Assert.Equal(42, r.ReadByte());
+    Assert.True(r.ReadSingleLE() == 1.5);
+    Assert.True(r.ReadDoubleBE() == -9.75);
+    Assert.Equal(123456, r.ReadInt32LE());
+}

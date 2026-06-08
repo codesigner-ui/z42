@@ -134,13 +134,16 @@ Int64 read 不需要因为 `(long)int << 32` 路径里的 i64 overflow 自然给
 > `.`-bounded prefix（不再只取前两段），3+ 段 stdlib namespace 现可被 lazy loader
 > 命中。namespace 从 `Std.Binary` 还原为 `Std.IO.Binary`。
 
-### io-binary-future-float-double
+### ~~io-binary-future-float-double~~ — **✅ 已落地 2026-06-09 (`add-binary-float`)**
 
-- **来源**：`WriteFloat32 / Float64 / ReadFloat32 / Float64`（IEEE 754 编码）
-- **触发原因**：需 `BitConverter.Int32BitsToFloat` / `DoubleToInt64Bits` 这种
-  bit-level 转换；z42 当前没有；不能纯脚本实现（需 VM intrinsic）
-- **触发条件**：z42.core 或 z42.math 落地 `BitConverter` API（独立 spec）
-- **当前 workaround**：调用方手算 IEEE 754（极少 用户场景）
+Shipped: `BinaryWriter.WriteSingle{LE,BE}(double)` / `WriteDouble{LE,BE}(double)`
++ `BinaryReader.ReadSingle{LE,BE}() → double` / `ReadDouble{LE,BE}() → double`。
+取/返 `double`（宽浮点），Single 在线缆上是 4-byte IEEE-754 f32（写时 round，读时
+widen），Double 是精确 8-byte f64 —— 对齐既有 `WriteInt16LE(int)` 的"宽入窄线"约定。
+bit-level 转换由 4 个 corelib intrinsic 提供（`__single_to_bits` / `__single_from_bits`
+/ `__double_to_bits` / `__double_from_bits`，`f32/f64::to_bits/from_bits`），不需要
+独立的 `BitConverter` 类。8 tests：1.0f/1.0 已知字节模式（LE/BE）、f32-exact 与 f64
+round-trip、0.1 narrowing 稳定性、与整数序列化器混合组合。
 
 ### ~~io-binary-future-stream~~ — ✅ 已落地 2026-05-24 (`refactor-binary-reader-stream`)
 
