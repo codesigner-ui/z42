@@ -46,6 +46,22 @@ pub fn builtin_file_move(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Null)
 }
 
+// add-file-last-write-time (2026-06-09): 文件 mtime，返回 unix epoch 毫秒 (i64)。
+// 单位对齐 `__time_now_ms`；stdlib 侧 `File.GetLastWriteTime` 用 `DateTime.FromUnixMs`
+// 包装成 `DateTime`。这是 freshness / incremental / cache 检查的硬依赖
+// （migrate-scripts-to-z42 标注的 P0 stdlib gap）。文件不存在 / 无权限 →
+// `metadata()` 失败，anyhow 错误上抛为 z42 Exception（沿用本模块 IO 错误约定）。
+pub fn builtin_file_last_write_time_ms(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use std::time::UNIX_EPOCH;
+    let path = arg_str(args, 0, "__file_last_write_time_ms")?;
+    let modified = std::fs::metadata(path)?.modified()?;
+    let millis = modified
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);   // pre-epoch mtime（极罕见）→ 0（freshness 视作最旧）
+    Ok(Value::I64(millis))
+}
+
 // add-z42-io-ergonomics-bytes-glob (2026-05-27): one-shot binary IO.
 // Slot-based FileStream covers streaming; these natives are the
 // `byte[]`-in/out fast path matching BCL `File.ReadAllBytes` /

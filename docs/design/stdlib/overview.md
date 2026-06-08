@@ -356,7 +356,7 @@ Depends on Platform HAL.
 src/libraries/z42.io/src/
 ├── Console.z42       # Console.Write, WriteLine, ReadLine
 ├── Stdio.z42         # IsTty + raw stdin/stdout helpers
-├── File.z42          # File.ReadAllText, WriteAllText, Exists, Delete
+├── File.z42          # File.ReadAllText, WriteAllText, Exists, Delete, GetLastWriteTime
 ├── Directory.z42     # Directory.Create, Enumerate, Delete, Copy
 ├── Path.z42          # Path.Join, GetExtension, GetFileName, GetDirectory
 ├── Environment.z42   # Environment.GetEnvironmentVariable, GetCommandLineArgs
@@ -375,6 +375,13 @@ wrapping the native `string` overload.
 `mkdir -p`，文件走 `File.Copy`，子目录在 `recursive=true` 时递归、否则跳过。
 **纯 z42** 组合现有 `Enumerate`/`Exists`/`File.Copy` 实现，不引入新 native
 extern —— 由 bash→z42 package 移植的 dSYM 树拷贝需求驱动（递归整棵 `.dSYM`）。
+
+`File.GetLastWriteTime(path) → Std.Time.DateTime` 返回文件最后修改时间（mtime）。
+native extern `__file_last_write_time_ms` 返回 unix epoch 毫秒（单位对齐
+`__time_now_ms`），z42 侧用 `DateTime.FromUnixMs` 包装（z42.io 已依赖 z42.time，
+无新依赖）。这是 **freshness / incremental build / cache** 检查的硬依赖 ——
+bash→z42 脚本移植的 P0 stdlib gap（此前 build-stdlib 用字母序绕过 mtime 是 hack）。
+文件不存在 / 无权限抛 `Std.Exception`；比较用 `DateTime.IsAfter` / `IsBefore`。
 
 ### `z42.collections` — 次级集合（非基础三件套）
 

@@ -158,6 +158,7 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__file_append_text", fs::builtin_file_append_text),
     ("__file_exists",      fs::builtin_file_exists),
     ("__file_delete",      fs::builtin_file_delete),
+    ("__file_last_write_time_ms", fs::builtin_file_last_write_time_ms),
 
     // ── Directory（add-std-io-directory，2026-05-13）──────────────────────────
     ("__dir_exists",              fs::builtin_dir_exists),
