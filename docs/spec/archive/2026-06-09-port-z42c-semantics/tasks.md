@@ -1,9 +1,9 @@
 # Tasks: port-z42c-semantics — z42c.semantics 类型检查层移植
 
-> 状态：🟡 进行中 | 创建：2026-06-08 | 子系统锁：z42c（顺序续作）
+> 状态：🟢 已完成 | 创建：2026-06-08 | 完成：2026-06-09 | 子系统锁：z42c（顺序续作）
 > **变更说明：** 把 C# `z42.Semantics` 的类型检查半（SymbolCollector / TypeChecker / Bound / Z42Type / Symbol）用 z42 重写。
-> **设计**：[design.md](design.md)（D1 集中 if-is / D2 非泛型 hashed map / D3 1A 起点，已裁决）。
-> codegen（Bound→IR）是另一半，单独 design（需先 map z42c.ir）。
+> **设计**：[design.md](design.md)（D1 集中 if-is / D2 非泛型 hashed map / D3 1A 起点，已裁决；2B 可行子集决策见 design.md "2B 实施决策"段）。
+> **范围 = 类型检查半（已完成 1A–2B）。** codegen（Bound→IR）是另一半，**单独 change `port-z42c-codegen`**（本 change 归档后开，需先 map z42c.ir）。
 
 ## increment 1A（最小类型检查：非泛型 class + int 字段 + 简单方法体）—— 拆 4 子增量
 ### 1A-1（Z42Type 语义类型 — ✅ 已完成）
@@ -86,10 +86,12 @@
 - [x] 验证：`xtask test compiler-z42` → **12 units 170 cases** 全绿（typecheck 56）
 - 注：TypeChecker.z42 抽出约束逻辑后回到 490 行（< 500 硬限）；约束逻辑落 ConstraintChecker（168）+ GenericConstraint（60）
 
-## 后续增量
-- [ ] **codegen(Bound→IR,semantics 另一半,需先 map z42.IR 出设计)** → z42.IR + byte-identical emit + pipeline
-- [ ] **syntax gap**（z42c.syntax 待补）：局部 var-decl 泛型类型 `Box<int> b=...` 的 `_isVarDeclStart` lookahead
-- [ ] 延后：闭包 L3 / interface+static-abstract / **2B 子集：interface·enum·new()·func-type 约束** / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法 / lambda / 插值串
+## 移交后续 change（本 change scope 外）
+- **codegen(Bound→IR)** → **`port-z42c-codegen`**（新 change，2026-06-09 开）：z42c.ir 数据模型从零镜像 IrModule.cs + FunctionEmitter/IrGen lowering。byte-identical .zbc emit（ZbcWriter）再另起独立 design。
+- **syntax gap**（z42c.syntax 待补）：局部 var-decl 泛型类型 `Box<int> b=...` 的 `_isVarDeclStart` lookahead → 顺带在 port-z42c-codegen 期或独立 syntax fix 处理。
+
+## 延后（本 change 识别，回填见对应 change/design）
+- 闭包 L3 / interface+static-abstract / **2B 子集：interface·enum·new()·func-type 约束** / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法 / lambda / 插值串
 
 ## 备注
 - SemanticsSkeleton.z42 暂留（pipeline 仍引用）。
