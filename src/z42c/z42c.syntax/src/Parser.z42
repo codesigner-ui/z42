@@ -2,9 +2,10 @@
 // 表达式：字面量/标识符/括号/一元 + 二元（优先级爬升，含位运算·??·is·as·复合赋值·三目·new）+ 后缀(. () [])。
 // 语句：block / if / while / for / foreach / do-while / switch / try-catch-finally
 //       / return / break / continue / throw / var-decl / expr-stmt。
-// 声明：namespace / using / class·struct·interface（修饰符 + 基类/接口列表 + field/method/ctor）/ enum（成员 + 可选值）
+// 声明：namespace / using / class·struct·interface（修饰符 + 基类/接口列表 + field/method/ctor/property）/ enum（成员 + 可选值）
 //       / record（位置式 + 块体）/ delegate / 顶层自由 func（命名空间级，MethodDecl.IsFree）。
-// 延后（incr 6b3+）：property `{get;set;}`/泛型形参 <T>+where/attribute [X]；lambda。
+// 成员 property：auto `{ get; set; }`（含访问器修饰 + 初值）；自定义 body / 表达式体 / init-only 延后。
+// 延后（incr 6b4+）：泛型形参 <T>+where/attribute [X]；lambda。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -647,11 +648,52 @@ public sealed class Parser {
         if (this._peek().Kind == TokenKind.LParen) {
             return this._parseMethodTail(mods, false, false, typeText, name);
         }
+        if (this._peek().Kind == TokenKind.LBrace) {
+            return this._parseProperty(mods, typeText, name);
+        }
         bool hasInit = false;
         Expr init = new NullLitExpr();
         if (this._peek().Kind == TokenKind.Eq) { this._advance(); init = this._parseExpr(0); hasInit = true; }
         this._expectSemi();
         return new FieldDecl(mods, typeText, name, hasInit, init);
+    }
+
+    // auto-property `{ [vis]? get; [ [vis]? set; ] }` [= init;]。get/set 为上下文标识符（非关键字）。
+    private Decl _parseProperty(string mods, string typeText, string name) {
+        this._advance();   // {
+        bool hasGet = false; string getMods = "";
+        bool hasSet = false; string setMods = "";
+        while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            string accMods = "";
+            while (this._isVisibilityModifier(this._peek().Kind)) {
+                if (accMods != "") { accMods = accMods + " "; }
+                accMods = accMods + this._peek().Text;
+                this._advance();
+            }
+            string acc = this._peek().Text;
+            if (this._peek().Kind == TokenKind.Identifier && (acc == "get" || acc == "set")) {
+                this._advance();
+                this._expectSemi();   // auto；自定义 body 延后
+                if (acc == "get") { hasGet = true; getMods = accMods; }
+                else { hasSet = true; setMods = accMods; }
+            } else {
+                this._diags.Error(DiagnosticCodes.ExpectedToken, "expected 'get' or 'set' accessor", this._peek().Span);
+                this._advance();
+            }
+        }
+        this._expect(TokenKind.RBrace, "}");
+        bool hasInit = false;
+        Expr init = new NullLitExpr();
+        if (this._peek().Kind == TokenKind.Eq) {
+            this._advance(); init = this._parseExpr(0); hasInit = true; this._expectSemi();
+        }
+        return new PropertyDecl(mods, typeText, name, hasGet, getMods, hasSet, setMods, hasInit, init);
+    }
+
+    private bool _isVisibilityModifier(int k) {
+        if (k == TokenKind.Public || k == TokenKind.Private) { return true; }
+        if (k == TokenKind.Protected || k == TokenKind.Internal) { return true; }
+        return false;
     }
 
     // 参数列表 `( T a, T b )`（消费两端括号）。method/ctor/func/delegate/record 位置参数共用。

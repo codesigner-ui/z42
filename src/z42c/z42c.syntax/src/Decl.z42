@@ -1,5 +1,5 @@
 // AST 声明节点（z42c.syntax）。CompilationUnit / using / class·struct·interface / enum / record / delegate
-//   / 顶层 func（MethodDecl.IsFree）/ field / method / param。
+//   / 顶层 func（MethodDecl.IsFree）/ field / method / property / param。
 // 受限写法：class 继承 + virtual Dump()。类型/修饰符捕获为字符串文本（增量；TypeExpr 后续）。
 namespace Z42.Syntax;
 
@@ -76,6 +76,39 @@ public sealed class MethodDecl : Decl {
         sig = sig + ")";
         if (this.HasBody) { sig = sig + " " + this.Body.Dump(); }
         return sig + ")";
+    }
+}
+
+// auto-property `T Name { get; [set;] }`（可带访问器修饰 + 初值）。自定义 body / 表达式体 / init-only 延后。
+// desugar（合成 backing field + get_X/set_X）留给后端；parser 仅捕获结构。
+public sealed class PropertyDecl : Decl {
+    public string Mods;
+    public string TypeText;
+    public string Name;
+    public bool   HasGet;
+    public string GetMods;   // 访问器修饰（如 "private"），"" 表示无
+    public bool   HasSet;
+    public string SetMods;
+    public bool   HasInit;
+    public Expr   Init;      // 仅 HasInit 时有效
+    public PropertyDecl(string mods, string typeText, string name,
+                        bool hasGet, string getMods, bool hasSet, string setMods,
+                        bool hasInit, Expr init) {
+        this.Mods = mods; this.TypeText = typeText; this.Name = name;
+        this.HasGet = hasGet; this.GetMods = getMods; this.HasSet = hasSet; this.SetMods = setMods;
+        this.HasInit = hasInit; this.Init = init;
+    }
+    public override string Dump() {
+        string m = (this.Mods == "") ? "" : (this.Mods + " ");
+        string s = "(prop " + m + this.TypeText + " " + this.Name;
+        if (this.HasGet) { s = s + " " + this._acc(this.GetMods, "get"); }
+        if (this.HasSet) { s = s + " " + this._acc(this.SetMods, "set"); }
+        if (this.HasInit) { s = s + " " + this.Init.Dump(); }
+        return s + ")";
+    }
+    private string _acc(string mods, string kw) {
+        if (mods == "") { return kw; }
+        return mods + " " + kw;
     }
 }
 

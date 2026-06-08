@@ -1,5 +1,5 @@
 // z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本（incr 4）
-//   + struct/interface/enum（incr 6b-1）+ record/delegate/顶层func（incr 6b-2）。
+//   + struct/interface/enum（incr 6b-1）+ record/delegate/顶层func（incr 6b-2）+ property（incr 6b-3）。
 namespace Z42cSyntaxDeclTests;
 
 using Std;
@@ -125,4 +125,22 @@ void test_record() {
                  parseUnit("public record Person(string Name) : Base { int Age() { return 0; } }"));
     // 块式（无位置参数）
     Assert.Equal("(unit (record Empty))", parseUnit("record Empty { }"));
+}
+
+[Test]
+void test_property() {
+    Assert.Equal("(unit (class C (prop public int Age get set)))",
+                 parseUnit("class C { public int Age { get; set; } }"));
+    Assert.Equal("(unit (class C (prop public string Name get)))",   // get-only
+                 parseUnit("class C { public string Name { get; } }"));
+    Assert.Equal("(unit (class C (prop public int X get set 0)))",   // 初值
+                 parseUnit("class C { public int X { get; set; } = 0; }"));
+    Assert.Equal("(unit (class C (prop public int Y get private set)))",  // 访问器修饰
+                 parseUnit("class C { public int Y { get; private set; } }"));
+}
+
+[Test]
+void test_property_in_interface() {
+    Assert.Equal("(unit (interface IShape (prop double Area get) (method void Draw ())))",
+                 parseUnit("interface IShape { double Area { get; } void Draw(); }"));
 }

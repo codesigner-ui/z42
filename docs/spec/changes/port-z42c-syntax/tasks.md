@@ -62,8 +62,11 @@
 - [x] 3 单测（顶层 func[head=func] / delegate[含 public] / record[位置式;/位置+基类+块体/纯块式]）→ tests/decl/
 - [x] 验证：`xtask test compiler-z42` → 5 units **71 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 16）
 
-## increment 6b-3（后续 — property）
-- [ ] auto-property `T Name { get; set; }` + 访问器修饰；interface 内属性签名
+## increment 6b-3（property — ✅ 已完成）
+- [x] AST：PropertyDecl（HasGet/GetMods/HasSet/SetMods + 可选 init）；Decl.z42
+- [x] 递归下降：`_parseProperty`（auto `{ [vis]? get; [vis]? set; }` + `= init;`；get/set 为上下文标识符；自定义 body/表达式体/init-only 延后）hook 进 `_parseMember`（type+name 后遇 `{`）+ `_isVisibilityModifier` 辅助
+- [x] 2 单测（class[get/set·get-only·init·访问器修饰] / interface 内属性签名）→ tests/decl/
+- [x] 验证：`xtask test compiler-z42` → 5 units **73 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 18）
 
 ## increment 6b-4（后续 — 泛型形参 + attribute）
 - [ ] 类型声明泛型形参 `<T>` + `where T : ...` 约束 + attribute `[X]`（顶层 + 成员 + 参数）
