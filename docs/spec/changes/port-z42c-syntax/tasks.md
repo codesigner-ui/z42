@@ -107,8 +107,15 @@
 - [x] 1 新单测 test_type_expr_forms（空格归一/嵌套 `>>`/三层 `>>>`/限定名/数组/nullable/泛型+数组）+ 现有 is/as/new/foreach 断言全绿
 - [x] 验证：`xtask test compiler-z42` → 5 units **87 cases** 全绿（core 11 / lexer 17 / parser 20 / stmt 15 / decl 24）
 
-### 6d-2（后续 — Decl 类型字段 + 形参结构化）
-- [ ] Param/Field/Property/Method.RetType/Delegate.RetType/Class·Enum·Record.Bases → TypeExpr；TypeParams → string[] Names
+### 6d-2（Decl 类型用法字段 → TypeExpr — ✅ 已完成）
+- [x] Param/FieldDecl/PropertyDecl/MethodDecl.RetType/DelegateDecl.RetType → TypeExpr；ClassDecl·RecordDecl.Bases → `TypeExpr[]`（`_parseBaseList`→TypeList holder）；EnumDecl.Base → TypeExpr（单）
+- [x] 辅助 `_parseBaseList` / `_emptyType`（ctor 占位 RetType）/ `DeclHelpers.DumpBaseList`（基列表渲染，复刻 `, ` 连接）
+- [x] Dump-兼容：现有 87 cases 全绿（含 test_nested_generic_type=`List<List<int>>` 字段经新 `_parseType`；test_generic_and_array_types 等）——纯重构无新测试（已有覆盖）
+- [x] 验证：`xtask test compiler-z42` → 5 units **87 cases** 全绿
+- 注：CatchClause.ExType + where 约束仍走 `_parseTypeText`（6d-3 收尾移除）；TypeParams 仍 string（6d-3 转 string[]）
+
+### 6d-3（后续 — TypeParams string[] + where 结构化 + cleanup）
+- [ ] TypeParams `<T>` → TypeParamList（string[] Names + Dump）；where → WhereClause/WhereConstraint（TypeExpr | new()/class/struct）；CatchClause.ExType → TypeExpr；移除 `_parseTypeText`/`_consumeAngles`
 
 ### 6d-3（后续 — where 约束结构化）
 - [ ] WhereClause/WhereConstraint（TypeExpr | new()/class/struct）于 Class/Delegate/Record/Method；移除残留 `_parseTypeText`/WhereText string

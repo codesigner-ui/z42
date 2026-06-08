@@ -560,16 +560,11 @@ public sealed class Parser {
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected type name", this._peek().Span); }
         string typeParams = this._parseTypeParams();
-        bool hasBase = false;
-        string baseText = "";
+        TypeExpr[] bases = new TypeExpr[0];
+        int bc = 0;
         if (this._peek().Kind == TokenKind.Colon) {
-            this._advance();
-            baseText = this._parseTypeText();
-            hasBase = true;
-            while (this._peek().Kind == TokenKind.Comma) {
-                this._advance();
-                baseText = baseText + ", " + this._parseTypeText();
-            }
+            TypeList bl = this._parseBaseList();
+            bases = bl.Items; bc = bl.Count;
         }
         string whereText = this._parseWhereClause();
         this._expect(TokenKind.LBrace, "{");
@@ -580,7 +575,7 @@ public sealed class Parser {
             members = this._growDecls(members, mc); members[mc] = mem; mc = mc + 1;
         }
         this._expect(TokenKind.RBrace, "}");
-        return new ClassDecl(kind, mods, name, typeParams, hasBase, baseText, whereText, members, mc);
+        return new ClassDecl(kind, mods, name, typeParams, bases, bc, whereText, members, mc);
     }
 
     // enum Color [: int] { Red, Green = 5, Blue }  —— 成员 name [= [-]int]；值仅捕获文本，自增/校验留给后端。
@@ -590,9 +585,9 @@ public sealed class Parser {
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected enum name", this._peek().Span); }
         bool hasBase = false;
-        string baseText = "";
+        TypeExpr baseType = this._emptyType();
         if (this._peek().Kind == TokenKind.Colon) {
-            this._advance(); baseText = this._parseTypeText(); hasBase = true;
+            this._advance(); baseType = this._parseType(); hasBase = true;
         }
         this._expect(TokenKind.LBrace, "{");
         EnumMember[] members = new EnumMember[8];
@@ -620,13 +615,13 @@ public sealed class Parser {
             if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
         }
         this._expect(TokenKind.RBrace, "}");
-        return new EnumDecl(mods, name, hasBase, baseText, members, mc);
+        return new EnumDecl(mods, name, hasBase, baseType, members, mc);
     }
 
     // delegate R Name<T>(params) where ...;
     private Decl _parseDelegate(string mods) {
         this._advance();   // delegate
-        string retType = this._parseTypeText();
+        TypeExpr retType = this._parseType();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected delegate name", this._peek().Span); }
@@ -639,7 +634,7 @@ public sealed class Parser {
 
     // 顶层自由函数：retType Name<T>(params) where ... { body }（命名空间级，无 this）。
     private Decl _parseTopLevelFunc(string mods) {
-        string retType = this._parseTypeText();
+        TypeExpr retType = this._parseType();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected function name", this._peek().Span); }
@@ -660,16 +655,11 @@ public sealed class Parser {
             ParamList pl = this._parseParamList();
             pos = pl.Items; pc = pl.Count;
         }
-        bool hasBase = false;
-        string baseText = "";
+        TypeExpr[] bases = new TypeExpr[0];
+        int bc = 0;
         if (this._peek().Kind == TokenKind.Colon) {
-            this._advance();
-            baseText = this._parseTypeText();
-            hasBase = true;
-            while (this._peek().Kind == TokenKind.Comma) {
-                this._advance();
-                baseText = baseText + ", " + this._parseTypeText();
-            }
+            TypeList bl = this._parseBaseList();
+            bases = bl.Items; bc = bl.Count;
         }
         string whereText = this._parseWhereClause();
         Decl[] members = new Decl[8];
@@ -683,7 +673,7 @@ public sealed class Parser {
         } else {
             this._expectSemi();
         }
-        return new RecordDecl(mods, name, typeParams, pos, pc, hasBase, baseText, whereText, members, mc);
+        return new RecordDecl(mods, name, typeParams, pos, pc, bases, bc, whereText, members, mc);
     }
 
     private Decl _parseMember(string className) {
@@ -700,29 +690,29 @@ public sealed class Parser {
             && this._peekAt(1).Kind == TokenKind.LParen) {
             string cname = this._peek().Text;
             this._advance();
-            return this._parseMethodTail(mods, false, true, "", cname, "");
+            return this._parseMethodTail(mods, false, true, this._emptyType(), cname, "");
         }
-        string typeText = this._parseTypeText();
+        TypeExpr type = this._parseType();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name", this._peek().Span); }
         // 泛型方法 `T Make<T>(...)`：成员名后的 `<` 必为类型形参（字段不会有 `<`）。
         string mTypeParams = this._parseTypeParams();
         if (this._peek().Kind == TokenKind.LParen) {
-            return this._parseMethodTail(mods, false, false, typeText, name, mTypeParams);
+            return this._parseMethodTail(mods, false, false, type, name, mTypeParams);
         }
         if (this._peek().Kind == TokenKind.LBrace) {
-            return this._parseProperty(mods, typeText, name);
+            return this._parseProperty(mods, type, name);
         }
         bool hasInit = false;
         Expr init = new NullLitExpr();
         if (this._peek().Kind == TokenKind.Eq) { this._advance(); init = this._parseExpr(0); hasInit = true; }
         this._expectSemi();
-        return new FieldDecl(mods, typeText, name, hasInit, init);
+        return new FieldDecl(mods, type, name, hasInit, init);
     }
 
     // auto-property `{ [vis]? get; [ [vis]? set; ] }` [= init;]。get/set 为上下文标识符（非关键字）。
-    private Decl _parseProperty(string mods, string typeText, string name) {
+    private Decl _parseProperty(string mods, TypeExpr type, string name) {
         this._advance();   // {
         bool hasGet = false; string getMods = "";
         bool hasSet = false; string setMods = "";
@@ -750,7 +740,7 @@ public sealed class Parser {
         if (this._peek().Kind == TokenKind.Eq) {
             this._advance(); init = this._parseExpr(0); hasInit = true; this._expectSemi();
         }
-        return new PropertyDecl(mods, typeText, name, hasGet, getMods, hasSet, setMods, hasInit, init);
+        return new PropertyDecl(mods, type, name, hasGet, getMods, hasSet, setMods, hasInit, init);
     }
 
     private bool _isVisibilityModifier(int k) {
@@ -766,7 +756,7 @@ public sealed class Parser {
         int pc = 0;
         if (this._peek().Kind != TokenKind.RParen) {
             while (true) {
-                string pt = this._parseTypeText();
+                TypeExpr pt = this._parseType();
                 string pn = this._peek().Text;
                 if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
                 else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected parameter name", this._peek().Span); }
@@ -783,8 +773,29 @@ public sealed class Parser {
         return new ParamList(ps, pc);
     }
 
+    // 基类/接口列表 `: A, B, C`（假定 peek==Colon）。
+    private TypeList _parseBaseList() {
+        this._advance();   // :
+        TypeExpr[] items = new TypeExpr[4];
+        int n = 0;
+        items[0] = this._parseType(); n = 1;
+        while (this._peek().Kind == TokenKind.Comma) {
+            this._advance();
+            if (n == items.Length) {
+                TypeExpr[] b = new TypeExpr[items.Length * 2];
+                int i = 0; while (i < n) { b[i] = items[i]; i = i + 1; }
+                items = b;
+            }
+            items[n] = this._parseType(); n = n + 1;
+        }
+        return new TypeList(items, n);
+    }
+
+    // ctor 占位返回类型（永不 Dump）。
+    private TypeExpr _emptyType() { return new NamedType("", new TypeExpr[0], 0); }
+
     // method / ctor / 顶层 func 尾部：参数列表 + 可选 where + body（`{}`）或无体（`;`）。
-    private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, string retType, string name, string typeParams) {
+    private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, TypeExpr retType, string name, string typeParams) {
         ParamList pl = this._parseParamList();
         string whereText = this._parseWhereClause();
         bool hasBody = false;

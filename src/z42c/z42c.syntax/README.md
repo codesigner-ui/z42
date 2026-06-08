@@ -12,14 +12,14 @@
 | `src/TypeExpr.z42` | 类型表达式 AST（TypeExpr + virtual Dump；NamedType/ArrayType/NullableType；Dump 复刻规范 type-text）|
 | `src/Ast.z42` | 表达式 AST（Expr + virtual Dump；字面量/标识符/一元/二元含位运算·??·is·as/成员/调用/索引/赋值·复合/三目/new；is·as·new 的类型为 TypeExpr）|
 | `src/Stmt.z42` | 语句 AST（Stmt + virtual Dump；expr/var-decl/return/if/while/block/break/continue/throw/foreach/for/do-while/switch/try-catch-finally）|
-| `src/Decl.z42` | 声明 AST（CompilationUnit/Using/Class·Struct·Interface[Kind 区分]/Enum+EnumMember/Record/Delegate/Field/Method[IsFree=顶层 func]/Property/Param/ParamList/Attr+AttributedDecl + Dump）|
+| `src/Decl.z42` | 声明 AST（CompilationUnit/Using/Class·Struct·Interface[Kind 区分]/Enum+EnumMember/Record/Delegate/Field/Method[IsFree=顶层 func]/Property/Param/ParamList/TypeList/Attr+AttributedDecl + Dump；类型用法位均为 TypeExpr）|
 | `src/Parser.z42` | Pratt 表达式（含后缀/赋值/三目/is·as/new）+ 递归下降语句（含 for/switch/try）+ 顶层声明（class·struct·interface/enum/record/delegate/顶层 func/field/method/ctor/property + 泛型形参 `<T>`/where + 前置 attribute `[X]`）|
 | `src/SyntaxSkeleton.z42` | **过渡占位**：semantics/pipeline/driver 仍引用；各自移植时移除 |
 
 ## 入口点
 `Z42.Syntax.Parser`（`new Parser(src,file)`）：`ParseExpression()` → `Expr` / `ParseStatement()` → `Stmt` / `ParseCompilationUnit()` → `CompilationUnit`（均 `.Dump()` 出 s-expression）；`Z42.Syntax.Lexer`：`Tokenize()` → `TokenCount()`/`TokenAt(i)`。
 测试：`tests/{lexer 17, parser 20, stmt 15, decl 24}`（共 76），经 `xtask test compiler-z42`。
-进行中（incr 6d）：TypeExpr AST 替代类型文本字符串——6d-1 已切 is/as/new/var-decl/foreach；6d-2 切声明位；6d-3 where 约束结构化。
+进行中（incr 6d）：TypeExpr AST 替代类型文本字符串——6d-1 已切 is/as/new/var-decl/foreach；6d-2 已切声明位（Param/Field/Property/RetType/Bases）；6d-3 待做 TypeParams string[] + where 约束结构化 + 移除残留 `_parseTypeText`。
 待移植（incr 6e+）：byte-identical 对账；lambda；Visitor（并入后端）；转义 `\0`/`\uXXXX` 解码。
 
 ## 依赖关系

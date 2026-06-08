@@ -4,10 +4,10 @@
 namespace Z42.Syntax;
 
 public sealed class Param {
-    public string TypeText;
-    public string Name;
-    public Param(string typeText, string name) { this.TypeText = typeText; this.Name = name; }
-    public string Dump() { return this.TypeText + " " + this.Name; }
+    public TypeExpr Type;
+    public string   Name;
+    public Param(TypeExpr type, string name) { this.Type = type; this.Name = name; }
+    public string Dump() { return this.Type.Dump() + " " + this.Name; }
 }
 
 // 解析期临时持有者：参数列表（Items + Count）。z42 无元组返回 → 用 holder。
@@ -15,6 +15,13 @@ public sealed class ParamList {
     public Param[] Items;
     public int     Count;
     public ParamList(Param[] items, int count) { this.Items = items; this.Count = count; }
+}
+
+// 解析期临时持有者：类型列表（基类/接口列表）。
+public sealed class TypeList {
+    public TypeExpr[] Items;
+    public int        Count;
+    public TypeList(TypeExpr[] items, int count) { this.Items = items; this.Count = count; }
 }
 
 // 单个 attribute：Name [( arg, ... )]。参数捕获为表达式（命名参数 `k=v` 即 AssignExpr）。
@@ -67,19 +74,19 @@ public sealed class UsingDecl : Decl {
 }
 
 public sealed class FieldDecl : Decl {
-    public string Mods;
-    public string TypeText;
-    public string Name;
-    public bool   HasInit;
-    public Expr   Init;
-    public FieldDecl(string mods, string typeText, string name, bool hasInit, Expr init) {
-        this.Mods = mods; this.TypeText = typeText; this.Name = name;
+    public string   Mods;
+    public TypeExpr Type;
+    public string   Name;
+    public bool     HasInit;
+    public Expr     Init;
+    public FieldDecl(string mods, TypeExpr type, string name, bool hasInit, Expr init) {
+        this.Mods = mods; this.Type = type; this.Name = name;
         this.HasInit = hasInit; this.Init = init;
     }
     public override string Dump() {
         string m = this._modPart();
-        if (this.HasInit) { return "(field " + m + this.TypeText + " " + this.Name + " " + this.Init.Dump() + ")"; }
-        return "(field " + m + this.TypeText + " " + this.Name + ")";
+        if (this.HasInit) { return "(field " + m + this.Type.Dump() + " " + this.Name + " " + this.Init.Dump() + ")"; }
+        return "(field " + m + this.Type.Dump() + " " + this.Name + ")";
     }
     private string _modPart() { if (this.Mods == "") { return ""; } return this.Mods + " "; }
 }
@@ -87,18 +94,18 @@ public sealed class FieldDecl : Decl {
 // 类成员方法 / ctor / 顶层自由函数（IsFree）共用。Dump head：ctor / func / method。
 // TypeParams（如 "<T>"，含尖括号，"" 表无）+ WhereText（如 "where T : new()"，"" 表无）。
 public sealed class MethodDecl : Decl {
-    public string  Mods;
-    public bool    IsFree;     // 顶层自由函数（命名空间级，无 this）
-    public bool    IsCtor;
-    public string  RetType;    // ctor 时为 ""
-    public string  Name;
-    public string  TypeParams;
-    public string  WhereText;
-    public Param[] Params;
-    public int     ParamCount;
-    public bool    HasBody;
-    public Stmt    Body;        // 仅 HasBody 时有效
-    public MethodDecl(string mods, bool isFree, bool isCtor, string retType, string name,
+    public string   Mods;
+    public bool     IsFree;     // 顶层自由函数（命名空间级，无 this）
+    public bool     IsCtor;
+    public TypeExpr RetType;    // ctor 时为占位 NamedType("")（不 Dump）
+    public string   Name;
+    public string   TypeParams;
+    public string   WhereText;
+    public Param[]  Params;
+    public int      ParamCount;
+    public bool     HasBody;
+    public Stmt     Body;        // 仅 HasBody 时有效
+    public MethodDecl(string mods, bool isFree, bool isCtor, TypeExpr retType, string name,
                       string typeParams, string whereText,
                       Param[] ps, int pc, bool hasBody, Stmt body) {
         this.Mods = mods; this.IsFree = isFree; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
@@ -109,7 +116,7 @@ public sealed class MethodDecl : Decl {
         string head = this.IsCtor ? "ctor" : (this.IsFree ? "func" : "method");
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
         string sig = "(" + head + " " + m;
-        if (!this.IsCtor) { sig = sig + this.RetType + " "; }
+        if (!this.IsCtor) { sig = sig + this.RetType.Dump() + " "; }
         sig = sig + this.Name + this.TypeParams + " (";
         int i = 0;
         while (i < this.ParamCount) {
@@ -127,25 +134,25 @@ public sealed class MethodDecl : Decl {
 // auto-property `T Name { get; [set;] }`（可带访问器修饰 + 初值）。自定义 body / 表达式体 / init-only 延后。
 // desugar（合成 backing field + get_X/set_X）留给后端；parser 仅捕获结构。
 public sealed class PropertyDecl : Decl {
-    public string Mods;
-    public string TypeText;
-    public string Name;
-    public bool   HasGet;
-    public string GetMods;   // 访问器修饰（如 "private"），"" 表示无
-    public bool   HasSet;
-    public string SetMods;
-    public bool   HasInit;
-    public Expr   Init;      // 仅 HasInit 时有效
-    public PropertyDecl(string mods, string typeText, string name,
+    public string   Mods;
+    public TypeExpr Type;
+    public string   Name;
+    public bool     HasGet;
+    public string   GetMods;   // 访问器修饰（如 "private"），"" 表示无
+    public bool     HasSet;
+    public string   SetMods;
+    public bool     HasInit;
+    public Expr     Init;      // 仅 HasInit 时有效
+    public PropertyDecl(string mods, TypeExpr type, string name,
                         bool hasGet, string getMods, bool hasSet, string setMods,
                         bool hasInit, Expr init) {
-        this.Mods = mods; this.TypeText = typeText; this.Name = name;
+        this.Mods = mods; this.Type = type; this.Name = name;
         this.HasGet = hasGet; this.GetMods = getMods; this.HasSet = hasSet; this.SetMods = setMods;
         this.HasInit = hasInit; this.Init = init;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(prop " + m + this.TypeText + " " + this.Name;
+        string s = "(prop " + m + this.Type.Dump() + " " + this.Name;
         if (this.HasGet) { s = s + " " + this._acc(this.GetMods, "get"); }
         if (this.HasSet) { s = s + " " + this._acc(this.SetMods, "set"); }
         if (this.HasInit) { s = s + " " + this.Init.Dump(); }
@@ -159,29 +166,40 @@ public sealed class PropertyDecl : Decl {
 
 // class / struct / interface 同构（Kind 区分；语义差异留给后端）。Dump head = Kind。
 public sealed class ClassDecl : Decl {
-    public string Kind;    // "class" / "struct" / "interface"
-    public string Mods;
-    public string Name;
-    public string TypeParams;   // 如 "<T>"（含尖括号），"" 表无
-    public bool   HasBase;
-    public string BaseText;
-    public string WhereText;    // 如 "where T : IComparable<T>"，"" 表无
-    public Decl[] Members;
-    public int    MemberCount;
+    public string     Kind;    // "class" / "struct" / "interface"
+    public string     Mods;
+    public string     Name;
+    public string     TypeParams;   // 如 "<T>"（含尖括号），"" 表无
+    public TypeExpr[] Bases;
+    public int        BaseCount;
+    public string     WhereText;    // 如 "where T : IComparable<T>"，"" 表无
+    public Decl[]     Members;
+    public int        MemberCount;
     public ClassDecl(string kind, string mods, string name, string typeParams,
-                     bool hasBase, string baseText, string whereText, Decl[] members, int mc) {
+                     TypeExpr[] bases, int baseCount, string whereText, Decl[] members, int mc) {
         this.Kind = kind; this.Mods = mods; this.Name = name; this.TypeParams = typeParams;
-        this.HasBase = hasBase; this.BaseText = baseText; this.WhereText = whereText;
+        this.Bases = bases; this.BaseCount = baseCount; this.WhereText = whereText;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
         string s = "(" + this.Kind + " " + m + this.Name + this.TypeParams;
-        if (this.HasBase) { s = s + " : " + this.BaseText; }
+        s = s + DeclHelpers.DumpBaseList(this.Bases, this.BaseCount);
         if (this.WhereText != "") { s = s + " " + this.WhereText; }
         int i = 0;
         while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
         return s + ")";
+    }
+}
+
+// 基类/接口列表渲染：`` 或 ` : A, B, C`（与旧 BaseText 逐字符一致）。
+public class DeclHelpers {
+    public static string DumpBaseList(TypeExpr[] bases, int count) {
+        if (count == 0) { return ""; }
+        string s = " : ";
+        int i = 0;
+        while (i < count) { if (i > 0) { s = s + ", "; } s = s + bases[i].Dump(); i = i + 1; }
+        return s;
     }
 }
 
@@ -202,17 +220,17 @@ public sealed class EnumDecl : Decl {
     public string       Mods;
     public string       Name;
     public bool         HasBase;     // 底层类型 `: int` 等
-    public string       BaseText;
+    public TypeExpr     Base;        // 仅 HasBase 时有效
     public EnumMember[] Members;
     public int          MemberCount;
-    public EnumDecl(string mods, string name, bool hasBase, string baseText, EnumMember[] members, int mc) {
-        this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.BaseText = baseText;
+    public EnumDecl(string mods, string name, bool hasBase, TypeExpr baseType, EnumMember[] members, int mc) {
+        this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.Base = baseType;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
         string s = "(enum " + m + this.Name;
-        if (this.HasBase) { s = s + " : " + this.BaseText; }
+        if (this.HasBase) { s = s + " : " + this.Base.Dump(); }
         int i = 0;
         while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
         return s + ")";
@@ -221,21 +239,21 @@ public sealed class EnumDecl : Decl {
 
 // delegate R Name<T>(params) where ...; —— 类型声明（无体）。
 public sealed class DelegateDecl : Decl {
-    public string  Mods;
-    public string  RetType;
-    public string  Name;
-    public string  TypeParams;
-    public string  WhereText;
-    public Param[] Params;
-    public int     ParamCount;
-    public DelegateDecl(string mods, string retType, string name, string typeParams,
+    public string   Mods;
+    public TypeExpr RetType;
+    public string   Name;
+    public string   TypeParams;
+    public string   WhereText;
+    public Param[]  Params;
+    public int      ParamCount;
+    public DelegateDecl(string mods, TypeExpr retType, string name, string typeParams,
                         Param[] ps, int pc, string whereText) {
         this.Mods = mods; this.RetType = retType; this.Name = name; this.TypeParams = typeParams;
         this.Params = ps; this.ParamCount = pc; this.WhereText = whereText;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(delegate " + m + this.RetType + " " + this.Name + this.TypeParams + " (";
+        string s = "(delegate " + m + this.RetType.Dump() + " " + this.Name + this.TypeParams + " (";
         int i = 0;
         while (i < this.ParamCount) {
             if (i > 0) { s = s + ", "; }
@@ -251,20 +269,20 @@ public sealed class DelegateDecl : Decl {
 // record：位置式 `record P(T a, ...)`（PosParams）+ 可选基类 + 可选块体成员。
 // 位置式 desugar（合成字段/ctor）留给后端；parser 仅捕获结构。
 public sealed class RecordDecl : Decl {
-    public string  Mods;
-    public string  Name;
-    public string  TypeParams;
-    public Param[] PosParams;
-    public int     PosCount;
-    public bool    HasBase;
-    public string  BaseText;
-    public string  WhereText;
-    public Decl[]  Members;
-    public int     MemberCount;
+    public string     Mods;
+    public string     Name;
+    public string     TypeParams;
+    public Param[]    PosParams;
+    public int        PosCount;
+    public TypeExpr[] Bases;
+    public int        BaseCount;
+    public string     WhereText;
+    public Decl[]     Members;
+    public int        MemberCount;
     public RecordDecl(string mods, string name, string typeParams, Param[] pos, int pc,
-                      bool hasBase, string baseText, string whereText, Decl[] members, int mc) {
+                      TypeExpr[] bases, int baseCount, string whereText, Decl[] members, int mc) {
         this.Mods = mods; this.Name = name; this.TypeParams = typeParams; this.PosParams = pos; this.PosCount = pc;
-        this.HasBase = hasBase; this.BaseText = baseText; this.WhereText = whereText;
+        this.Bases = bases; this.BaseCount = baseCount; this.WhereText = whereText;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
@@ -272,7 +290,7 @@ public sealed class RecordDecl : Decl {
         string s = "(record " + m + this.Name + this.TypeParams;
         int i = 0;
         while (i < this.PosCount) { s = s + " (pos " + this.PosParams[i].Dump() + ")"; i = i + 1; }
-        if (this.HasBase) { s = s + " : " + this.BaseText; }
+        s = s + DeclHelpers.DumpBaseList(this.Bases, this.BaseCount);
         if (this.WhereText != "") { s = s + " " + this.WhereText; }
         int j = 0;
         while (j < this.MemberCount) { s = s + " " + this.Members[j].Dump(); j = j + 1; }
