@@ -73,3 +73,16 @@ void test_parse_real_z42c_workspace_shape() {
     Assert.Equal("0.1.0", w.SharedVersion);
     Assert.Equal(0, w.WorkspaceDepCount);                     // 无 [workspace.dependencies]
 }
+
+[Test]
+void test_path_template_expand() {
+    var ctx = new TemplateContext("/ws", "/ws/mem", "z42c.syntax", "release", "/out/z42c.syntax");
+    // 镜像真实 z42c [workspace.build]：output_dir + cache_dir
+    Assert.Equal("../../artifacts/build/z42c/z42c.syntax/release",
+                 PathTemplate.Expand("../../artifacts/build/z42c/${member_name}/${profile}", ctx));
+    Assert.Equal("/out/z42c.syntax/cache", PathTemplate.Expand("${output_dir}/cache", ctx));
+    Assert.Equal("/ws/sub", PathTemplate.Expand("${workspace_dir}/sub", ctx));
+    Assert.Equal("a$b", PathTemplate.Expand("a$$b", ctx));                    // $$ → $
+    Assert.Equal("x${unknown}y", PathTemplate.Expand("x${unknown}y", ctx));   // 未知变量保留字面
+    Assert.Equal("plain/path", PathTemplate.Expand("plain/path", ctx));       // 无模板原样
+}

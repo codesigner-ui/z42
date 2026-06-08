@@ -19,8 +19,16 @@
 - [x] 验证：`xtask test compiler-z42` → **7 units 95 cases** 全绿
 - 注：FieldRef 标记继承（`version.workspace=true`）+ ResolvedManifest 合并延后（z42c 自身成员未用此特性；按需移植）
 
-## 后续增量（机械段，依赖 stdlib）
-- [ ] **3**：源文件 glob 发现（`Std.IO` glob）+ workspace 成员 glob 展开 + 路径模板展开（`${workspace_dir}`/`${member_name}`/`${profile}`）+ ResolvedManifest（合并 workspace 继承）
+## increment 3（路径模板展开 — ✅ 已完成）
+- [x] `PathTemplate.Expand(tpl, ctx)` + `TemplateContext`（${workspace_dir}/${member_dir}/${member_name}/${profile}/${output_dir}；`$$`→`$`；未闭合原样；未知变量保留字面）
+- [x] 1 新单测（镜像真实 z42c [workspace.build] output_dir·cache_dir + `$$` + 未知变量 + 无模板）
+- [x] 验证：`xtask test compiler-z42` → **7 units 96 cases** 全绿
+- 注：WS037/038/039 校验 + scalar/path 字段白名单区分延后
+
+> **project 机械段（incr 1-3：清单/workspace/路径模板）完成。** 后续 = 文件系统段（源 glob 发现 + ResolvedManifest 合并）+ byte-identical 硬段（zpkg 读写，须等 ir 移植）。
+
+## 后续增量（文件系统段，依赖 Std.IO Directory/Path.Glob）
+- [ ] **4**：源文件 glob 发现（include/exclude → 绝对路径）+ workspace 成员 glob 展开 + ResolvedManifest（member+workspace 合并 + CentralizedBuildLayout 套 PathTemplate 算 effective dirs）
 
 ## 后续增量（byte-identical 硬段，强依赖 z42c.ir 的 ZbcFile/IrModule —— 须先移植 ir/emit）
 - [ ] **4**：ZpkgReader（META/STRS/NSPC/EXPT/DEPS/SIGS/MODS/FILE/TSIG/IMPL 各段；zpkg v0.11 格式，逐字节）

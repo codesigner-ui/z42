@@ -8,6 +8,7 @@
 |------|------|
 | `src/ProjectModel.z42` | 清单模型：`ProjectManifest`（name/version/kind/entry/pack + sources + deps）/ `WorkspaceManifest`（members/exclude/default-members + 共享 version·license + build 路径模板 + workspace deps）/ `DepEntry` / `DepList` |
 | `src/ManifestLoader.z42` | `.z42.toml`→`ProjectManifest`（`ParseText`/`Load`）+ `z42.workspace.toml`→`WorkspaceManifest`（`ParseWorkspaceText`/`LoadWorkspace`）（用 `Std.Toml.TomlValue`）|
+| `src/PathTemplate.z42` | 路径模板展开：`PathTemplate.Expand(tpl, ctx)`（`${member_name}`/`${profile}`/`${output_dir}` 等 + `$$`→`$`）|
 | `src/ProjectSkeleton.z42` | **过渡占位**：semantics/pipeline 仍引用；各自移植时移除 |
 
 ## 入口点
