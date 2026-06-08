@@ -100,3 +100,11 @@ void test_assign_right_assoc() {
     Assert.Equal("(= a (= b c))", parse("a = b = c"));        // 右结合
     Assert.Equal("(= x (+ 1 2))", parse("x = 1 + 2"));        // = 最松
 }
+
+[Test]
+void test_ternary() {
+    Assert.Equal("(?: a b c)", parse("a ? b : c"));
+    Assert.Equal("(?: (> x 0) 1 2)", parse("x > 0 ? 1 : 2"));   // 条件含比较
+    Assert.Equal("(?: a b (?: c d e))", parse("a ? b : c ? d : e"));  // 右结合
+    Assert.Equal("(= x (?: a b c))", parse("x = a ? b : c"));   // = 比 ?: 更松
+}

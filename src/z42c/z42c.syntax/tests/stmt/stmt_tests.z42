@@ -53,3 +53,28 @@ void test_nested() {
     Assert.Equal("(if a (block (while b (expr (call c)))))",
                  parseStmt("if (a) { while (b) c(); }"));
 }
+
+[Test]
+void test_foreach() {
+    Assert.Equal("(foreach var x items (expr (call f x)))",
+                 parseStmt("foreach (var x in items) f(x);"));
+    Assert.Equal("(foreach int n (. obj nums) (block (expr (= sum (+ sum n)))))",
+                 parseStmt("foreach (int n in obj.nums) { sum = sum + n; }"));
+}
+
+[Test]
+void test_break_continue() {
+    Assert.Equal("(block (break) (continue))", parseStmt("{ break; continue; }"));
+    Assert.Equal("(while a (block (if b (break))))", parseStmt("while (a) { if (b) break; }"));
+}
+
+[Test]
+void test_throw() {
+    Assert.Equal("(throw err)", parseStmt("throw err;"));
+    Assert.Equal("(throw (call (. ex Make) msg))", parseStmt("throw ex.Make(msg);"));
+}
+
+[Test]
+void test_ternary_in_stmt() {
+    Assert.Equal("(return (?: (> a b) a b))", parseStmt("return a > b ? a : b;"));
+}

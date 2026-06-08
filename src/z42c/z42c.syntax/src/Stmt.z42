@@ -70,3 +70,32 @@ public sealed class BlockStmt : Stmt {
         return s + ")";
     }
 }
+
+public sealed class BreakStmt : Stmt {
+    public BreakStmt() {}
+    public override string Dump() { return "(break)"; }
+}
+
+public sealed class ContinueStmt : Stmt {
+    public ContinueStmt() {}
+    public override string Dump() { return "(continue)"; }
+}
+
+public sealed class ThrowStmt : Stmt {
+    public Expr E;
+    public ThrowStmt(Expr e) { this.E = e; }
+    public override string Dump() { return "(throw " + this.E.Dump() + ")"; }
+}
+
+public sealed class ForeachStmt : Stmt {
+    public string TypeText;
+    public string Name;
+    public Expr   Iter;
+    public Stmt   Body;
+    public ForeachStmt(string typeText, string name, Expr iter, Stmt body) {
+        this.TypeText = typeText; this.Name = name; this.Iter = iter; this.Body = body;
+    }
+    public override string Dump() {
+        return "(foreach " + this.TypeText + " " + this.Name + " " + this.Iter.Dump() + " " + this.Body.Dump() + ")";
+    }
+}

@@ -97,3 +97,13 @@ public sealed class CallExpr : Expr {
         return s + ")";
     }
 }
+
+public sealed class TernaryExpr : Expr {
+    public Expr Cond;
+    public Expr Then;
+    public Expr Else;
+    public TernaryExpr(Expr cond, Expr then, Expr els) { this.Cond = cond; this.Then = then; this.Else = els; }
+    public override string Dump() {
+        return "(?: " + this.Cond.Dump() + " " + this.Then.Dump() + " " + this.Else.Dump() + ")";
+    }
+}

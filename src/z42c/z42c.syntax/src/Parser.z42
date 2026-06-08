@@ -60,6 +60,15 @@ public sealed class Parser {
                 left = new IndexExpr(left, idx);
                 continue;
             }
+            // 三目 ?:（右结合，bp 20）
+            if (k == TokenKind.Question && minBp <= 20) {
+                this._advance();
+                Expr thenE = this._parseExpr(0);
+                this._expect(TokenKind.Colon, ":");
+                Expr elseE = this._parseExpr(20);
+                left = new TernaryExpr(left, thenE, elseE);
+                continue;
+            }
             // 赋值（右结合，bp 10）
             if (k == TokenKind.Eq && minBp <= 10) {
                 this._advance();
@@ -140,10 +149,28 @@ public sealed class Parser {
         if (k == TokenKind.Return)  { return this._parseReturn(); }
         if (k == TokenKind.If)      { return this._parseIf(); }
         if (k == TokenKind.While)   { return this._parseWhile(); }
+        if (k == TokenKind.Foreach) { return this._parseForeach(); }
+        if (k == TokenKind.Break)   { this._advance(); this._expectSemi(); return new BreakStmt(); }
+        if (k == TokenKind.Continue){ this._advance(); this._expectSemi(); return new ContinueStmt(); }
+        if (k == TokenKind.Throw)   { this._advance(); Expr te = this._parseExpr(0); this._expectSemi(); return new ThrowStmt(te); }
         if (this._isVarDeclStart()) { return this._parseVarDecl(); }
         Expr e = this._parseExpr(0);
         this._expectSemi();
         return new ExprStmt(e);
+    }
+
+    private Stmt _parseForeach() {
+        this._advance();   // foreach
+        this._expect(TokenKind.LParen, "(");
+        string t = this._parseTypeText();
+        string n = this._peek().Text;
+        if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected loop variable", this._peek().Span); }
+        this._expect(TokenKind.In, "in");
+        Expr iter = this._parseExpr(0);
+        this._expect(TokenKind.RParen, ")");
+        Stmt body = this.ParseStatement();
+        return new ForeachStmt(t, n, iter, body);
     }
 
     private Stmt _parseBlock() {
