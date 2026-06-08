@@ -14,11 +14,13 @@
 | `src/Stmt.z42` | 语句 AST（Stmt + virtual Dump；expr/var-decl/return/if/while/block/break/continue/throw/foreach/for/do-while/switch/try-catch-finally）|
 | `src/Decl.z42` | 声明 AST（CompilationUnit/Using/Class·Struct·Interface[Kind 区分]/Enum+EnumMember/Record/Delegate/Field/Method[IsFree=顶层 func]/Property/Param/ParamList/TypeList/Attr+AttributedDecl + Dump；类型用法位均为 TypeExpr）|
 | `src/Parser.z42` | Pratt 表达式（含后缀/赋值/三目/is·as/new）+ 递归下降语句（含 for/switch/try）+ 顶层声明（class·struct·interface/enum/record/delegate/顶层 func/field/method/ctor/property + 泛型形参 `<T>`/where + 前置 attribute `[X]`）|
-| `src/SyntaxSkeleton.z42` | **过渡占位**：semantics/pipeline/driver 仍引用；各自移植时移除 |
+| `src/DumpTool.z42` | 前端 dump 纯函数（`DumpTokens`/`DumpAst`：源码→token 流/AST s-expr）；供 z42c driver `--dump-*` 调用 + [Test] 验证 |
+| `src/SyntaxSkeleton.z42` | **过渡占位**：semantics/pipeline 仍引用；各自移植时移除（driver 已切真实依赖）|
 
 ## 入口点
 `Z42.Syntax.Parser`（`new Parser(src,file)`）：`ParseExpression()` → `Expr` / `ParseStatement()` → `Stmt` / `ParseCompilationUnit()` → `CompilationUnit`（均 `.Dump()` 出 s-expression）；`Z42.Syntax.Lexer`：`Tokenize()` → `TokenCount()`/`TokenAt(i)`。
-测试：`tests/{lexer 17, parser 20, stmt 15, decl 25}`（共 77），经 `xtask test compiler-z42`。
+测试：`tests/{lexer 17, parser 20, stmt 15, decl 25, dump 2}`（共 79），经 `xtask test compiler-z42`。
+**z42c driver 已接前端**：`z42c --dump-tokens|--dump-ast <file.z42>`（调用 `DumpTool`）——自举编译器前端作为真实 CLI 可跑（0.3.4 lex/parse 解锁）。
 **incr 6d 全部完成**：类型全部结构化（TypeExpr + TypeParamList + WhereClause；is/as/new/var-decl/foreach/声明位/catch/where 全切；`_parseTypeText`/`_consumeAngles` 已移除）。
 待移植（incr 6e+）：byte-identical 对账（最硬，强依赖 AST 形态）；lambda；Visitor（并入后端 semantics）；转义 `\0`/`\uXXXX` 解码。
 

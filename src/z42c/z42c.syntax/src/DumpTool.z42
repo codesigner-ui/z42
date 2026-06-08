@@ -1,0 +1,29 @@
+// 前端 dump 工具：源码 → token 流 / AST s-expression（z42c 自有格式）。
+// 供 driver `--dump-tokens` / `--dump-ast` 调用 + [Test] 直接验证（纯函数，无 IO）。
+// 注：当前为 z42c 自有 s-expr 格式，非 byte-identical 对 C# `--dump-*`（对齐留 6e）。
+namespace Z42.Syntax;
+
+public static class DumpTool {
+    // token 流：每个非 Eof token 一行 `'<text>'`，末行 `<eof>`。
+    public static string DumpTokens(string src) {
+        var lx = new Lexer(src, "<input>");
+        lx.Tokenize();
+        string s = "";
+        int i = 0;
+        int n = lx.TokenCount();
+        while (i < n) {
+            var t = lx.TokenAt(i);
+            if (t.Kind == TokenKind.Eof) { s = s + "<eof>"; }
+            else { s = s + "'" + t.Text + "'\n"; }
+            i = i + 1;
+        }
+        return s;
+    }
+
+    // AST：编译单元 s-expression。
+    public static string DumpAst(string src) {
+        var p = new Parser(src, "<input>");
+        var u = p.ParseCompilationUnit();
+        return u.Dump();
+    }
+}

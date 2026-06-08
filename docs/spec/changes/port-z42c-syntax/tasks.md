@@ -122,7 +122,18 @@
 - [x] 1 新单测 test_generic_where_constraints（多形参 + 多约束逗号[类型+new()] + 多 where 子句）+ 现有 generic/where/catch 断言全绿
 - [x] 验证：`xtask test compiler-z42` → 5 units **88 cases** 全绿（core 11 / lexer 17 / parser 20 / stmt 15 / decl 25）
 
-> **increment 6d 全部完成**（TypeExpr AST 全面替代类型文本字符串；类型/形参/约束/catch 全结构化）。下一步 6e（byte-identical，最硬，强依赖 AST 形态）。Visitor 并入后端 semantics。
+> **increment 6d 全部完成**（TypeExpr AST 全面替代类型文本字符串；类型/形参/约束/catch 全结构化）。
+
+## increment 6e-1（dump harness + driver lex/parse CLI — ✅ 已完成）
+> 6e byte-identical 的前置：先让前端作为真实 CLI 可跑（z42c 自有 s-expr 格式）；C# 格式对齐留 6e-2。
+- [x] `DumpTool.z42`（z42c.syntax）：`DumpTokens(src)`（token 流 `'<text>'`/行 + `<eof>`）/ `DumpAst(src)`（编译单元 Dump）—— 纯函数无 IO
+- [x] 新 tests/dump/ 单元（2 单测：dump-tokens / dump-ast）→ 自动发现
+- [x] **z42c.driver 接前端**：Main 读 argv（`Environment.GetCommandLineArgs`）+ `File.ReadAllText`，路由 `--dump-tokens`/`--dump-ast` → DumpTool；deps 从 pipeline/ir 切到 z42c.syntax+core
+- [x] 端到端 smoke：`Z42_LIBS=<flat> z42vm z42c.driver.zpkg -- --dump-ast sample.z42` 正确输出完整 AST（自举前端真实 CLI 跑通）
+- [x] 验证：`xtask test compiler-z42` → **6 units 90 cases** 全绿（+ dump 2；7/7 zpkg 含 driver 重新链接 z42c.syntax）
+
+## increment 6e-2（后续 — byte-identical 对账，最硬）
+- [ ] 调研 C# `--dump-tokens`/`--dump-ast` 精确格式 → 设计 z42c dump 格式对齐方案（架构性，先出设计）→ 逐字节对账 CI gate
 
 ### 6d-3（后续 — where 约束结构化）
 - [ ] WhereClause/WhereConstraint（TypeExpr | new()/class/struct）于 Class/Delegate/Record/Method；移除残留 `_parseTypeText`/WhereText string

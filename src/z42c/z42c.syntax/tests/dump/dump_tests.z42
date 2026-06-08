@@ -1,0 +1,20 @@
+// z42c.syntax DumpTool 单测（incr 6e-1）：源码 → token 流 / AST dump（纯函数）。
+namespace Z42cSyntaxDumpTests;
+
+using Std;
+using Std.Test;
+using Z42.Syntax;
+
+[Test]
+void test_dump_tokens() {
+    Assert.Equal("'a'\n'+'\n'1'\n<eof>", DumpTool.DumpTokens("a + 1"));
+    Assert.Equal("'int'\n'x'\n'='\n'1'\n';'\n<eof>", DumpTool.DumpTokens("int x = 1;"));
+}
+
+[Test]
+void test_dump_ast() {
+    Assert.Equal("(unit (class C (field private int x)))",
+                 DumpTool.DumpAst("class C { private int x; }"));
+    Assert.Equal("(unit (ns App) (func int Add (int a, int b) (block (return (+ a b)))))",
+                 DumpTool.DumpAst("namespace App; int Add(int a, int b) { return a + b; }"));
+}

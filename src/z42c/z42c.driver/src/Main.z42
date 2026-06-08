@@ -1,19 +1,36 @@
-// z42c driver — 自举编译器 CLI 入口（= z42c）。B0 骨架：无桥接 banner，
-// 不实现任何命令、绝不 fallback 到 C# z42c.dll。命令逐子版本解锁
-// （lex/parse/manifest-check 0.3.4；build 0.3.9）。
-//
-// 引用 pipeline + core + ir（全部直接依赖）验证 exe→lib 跨包链接：构建本 exe
-// 即证明整条依赖图 driver→pipeline→{core,syntax,semantics,ir,project} 跨包编译通过。
+// z42c driver — 自举编译器 CLI 入口（= z42c）。增量解锁命令；绝不 fallback 到 C# z42c.dll。
+// 已实现（incr 6e-1，lex/parse 前端）：
+//   z42c --dump-tokens <file.z42>   词法 token 流（z42c 自有格式）
+//   z42c --dump-ast    <file.z42>   AST s-expression
+// 未实现：manifest-check / build（后端落地后解锁）。dump 格式与 C# byte-identical 对齐留 6e。
 namespace Z42.Driver;
 
-using Z42.Core;
-using Z42.IR;
-using Z42.Pipeline;
+using Std;
+using Std.IO;
+using Z42.Syntax;
 
 void Main() {
-    var pipe = new PipelineSkeleton();
-    var core = new CoreSkeleton();
-    var ir = new IrSkeleton();
-    Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap skeleton; no commands implemented yet");
-    Console.WriteLine("  wired: " + pipe.Name() + " + " + core.Name() + " + " + ir.Name());
+    string[] argv = Environment.GetCommandLineArgs();
+    if (argv.Length < 2) {
+        _usage();
+        return;
+    }
+    string cmd  = argv[0];
+    string file = argv[1];
+    if (cmd != "--dump-tokens" && cmd != "--dump-ast") {
+        ConsoleError.WriteLine("z42c: unknown command '" + cmd + "'");
+        _usage();
+        Environment.Exit(2);
+        return;
+    }
+    string src = File.ReadAllText(file);
+    if (cmd == "--dump-tokens") { Console.WriteLine(DumpTool.DumpTokens(src)); }
+    else                        { Console.WriteLine(DumpTool.DumpAst(src)); }
+}
+
+void _usage() {
+    Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse front-end)");
+    Console.WriteLine("usage:");
+    Console.WriteLine("  z42c --dump-tokens <file.z42>   token stream");
+    Console.WriteLine("  z42c --dump-ast    <file.z42>   AST s-expression");
 }
