@@ -1,4 +1,6 @@
-// z42c.syntax 语句解析单测：var-decl / return / expr-stmt / block / if / while。
+// z42c.syntax 语句解析单测：var-decl / return / expr-stmt / block / if / while
+//   / foreach / break / continue / throw / ternary（incr 1-5）
+//   + for / do-while / switch / try-catch-finally（incr 6a）。
 namespace Z42cSyntaxStmtTests;
 
 using Std;
@@ -77,4 +79,41 @@ void test_throw() {
 [Test]
 void test_ternary_in_stmt() {
     Assert.Equal("(return (?: (> a b) a b))", parseStmt("return a > b ? a : b;"));
+}
+
+[Test]
+void test_for() {
+    Assert.Equal("(for (decl int i 0) (< i 10) (= i (+ i 1)) (expr (call f i)))",
+                 parseStmt("for (int i = 0; i < 10; i = i + 1) f(i);"));
+    Assert.Equal("(for _ _ _ (break))", parseStmt("for (;;) break;"));   // 三段全省
+    Assert.Equal("(for (expr (= i 0)) (< i n) (= i (+ i 1)) (block (expr (= sum (+ sum i)))))",
+                 parseStmt("for (i = 0; i < n; i = i + 1) { sum = sum + i; }"));   // init 为 expr-stmt
+}
+
+[Test]
+void test_do_while() {
+    Assert.Equal("(do (expr (call x)) (< i 10))", parseStmt("do x(); while (i < 10);"));
+    Assert.Equal("(do (block (expr (= i (+ i 1)))) (< i n))",
+                 parseStmt("do { i = i + 1; } while (i < n);"));
+}
+
+[Test]
+void test_switch() {
+    Assert.Equal("(switch x (case 1 (return a)) (case 2 (return b)) (default (return c)))",
+                 parseStmt("switch (x) { case 1: return a; case 2: return b; default: return c; }"));
+    // 空分支贯穿（case 1 无语句直落 case 2）
+    Assert.Equal("(switch x (case 1) (case 2 (expr (call f)) (break)))",
+                 parseStmt("switch (x) { case 1: case 2: f(); break; }"));
+}
+
+[Test]
+void test_try() {
+    Assert.Equal("(try (block (expr (call f))) (catch Exception e (block (expr (call g)))))",
+                 parseStmt("try { f(); } catch (Exception e) { g(); }"));
+    // 仅类型无变量 + finally
+    Assert.Equal("(try (block (expr (call a))) (catch Error _ (block (expr (call b)))) (finally (block (expr (call c)))))",
+                 parseStmt("try { a(); } catch (Error) { b(); } finally { c(); }"));
+    // 裸 catch（无类型无变量）
+    Assert.Equal("(try (block (expr (call a))) (catch _ _ (block (expr (call b)))))",
+                 parseStmt("try { a(); } catch { b(); }"));
 }

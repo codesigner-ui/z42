@@ -1,7 +1,9 @@
-// 解析器（Pratt 表达式 + 递归下降语句）。z42c.syntax 自举 increment #2/#3。
-// 表达式：字面量/标识符/括号/一元 + 二元（优先级爬升）+ 后缀(. () [])+ 赋值(=，右结合)。
-// 语句：block / if / while / return / var-decl（var|类型|自定义类型 标识符 = expr;）/ expr-stmt。
-// 延后：三目/??/位运算/is·as/复合赋值；for/foreach/switch/try；声明(class/func)。
+// 解析器（Pratt 表达式 + 递归下降语句）。z42c.syntax 自举 increment #2–#6a。
+// 表达式：字面量/标识符/括号/一元 + 二元（优先级爬升，含位运算·??·is·as·复合赋值·三目·new）+ 后缀(. () [])。
+// 语句：block / if / while / for / foreach / do-while / switch / try-catch-finally
+//       / return / break / continue / throw / var-decl / expr-stmt。
+// 声明：namespace / using / class（修饰符 + 基类 + field/method/ctor）。
+// 延后（incr 6b+）：struct/interface/enum/record/delegate/顶层 func/property/泛型形参/attribute；lambda。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -199,7 +201,11 @@ public sealed class Parser {
         if (k == TokenKind.Return)  { return this._parseReturn(); }
         if (k == TokenKind.If)      { return this._parseIf(); }
         if (k == TokenKind.While)   { return this._parseWhile(); }
+        if (k == TokenKind.For)     { return this._parseFor(); }
         if (k == TokenKind.Foreach) { return this._parseForeach(); }
+        if (k == TokenKind.Do)      { return this._parseDoWhile(); }
+        if (k == TokenKind.Switch)  { return this._parseSwitch(); }
+        if (k == TokenKind.Try)     { return this._parseTry(); }
         if (k == TokenKind.Break)   { this._advance(); this._expectSemi(); return new BreakStmt(); }
         if (k == TokenKind.Continue){ this._advance(); this._expectSemi(); return new ContinueStmt(); }
         if (k == TokenKind.Throw)   { this._advance(); Expr te = this._parseExpr(0); this._expectSemi(); return new ThrowStmt(te); }
@@ -221,6 +227,117 @@ public sealed class Parser {
         this._expect(TokenKind.RParen, ")");
         Stmt body = this.ParseStatement();
         return new ForeachStmt(t, n, iter, body);
+    }
+
+    // for (init; cond; incr) body —— 三段任意可省。init 走 ParseStatement（消费自身 ';'）。
+    private Stmt _parseFor() {
+        this._advance();   // for
+        this._expect(TokenKind.LParen, "(");
+        bool hasInit = false;
+        Stmt init = new ExprStmt(new NullLitExpr());
+        if (this._peek().Kind != TokenKind.Semicolon) { init = this.ParseStatement(); hasInit = true; }
+        else { this._advance(); }   // 空 init：吃掉 ';'
+        bool hasCond = false;
+        Expr cond = new NullLitExpr();
+        if (this._peek().Kind != TokenKind.Semicolon) { cond = this._parseExpr(0); hasCond = true; }
+        this._expectSemi();
+        bool hasIncr = false;
+        Expr incr = new NullLitExpr();
+        if (this._peek().Kind != TokenKind.RParen) { incr = this._parseExpr(0); hasIncr = true; }
+        this._expect(TokenKind.RParen, ")");
+        Stmt body = this.ParseStatement();
+        return new ForStmt(hasInit, init, hasCond, cond, hasIncr, incr, body);
+    }
+
+    // do body while (cond);
+    private Stmt _parseDoWhile() {
+        this._advance();   // do
+        Stmt body = this.ParseStatement();
+        this._expect(TokenKind.While, "while");
+        this._expect(TokenKind.LParen, "(");
+        Expr cond = this._parseExpr(0);
+        this._expect(TokenKind.RParen, ")");
+        this._expectSemi();
+        return new DoWhileStmt(body, cond);
+    }
+
+    // switch (subj) { case p: stmts...  default: stmts... }
+    private Stmt _parseSwitch() {
+        this._advance();   // switch
+        this._expect(TokenKind.LParen, "(");
+        Expr subject = this._parseExpr(0);
+        this._expect(TokenKind.RParen, ")");
+        this._expect(TokenKind.LBrace, "{");
+        SwitchCase[] cases = new SwitchCase[8];
+        int cc = 0;
+        while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            bool hasPattern = false;
+            Expr pattern = new NullLitExpr();
+            if (this._peek().Kind == TokenKind.Default) {
+                this._advance(); this._expect(TokenKind.Colon, ":");
+            } else {
+                this._expect(TokenKind.Case, "case");
+                pattern = this._parseExpr(0); hasPattern = true;
+                this._expect(TokenKind.Colon, ":");
+            }
+            Stmt[] body = new Stmt[4];
+            int bc = 0;
+            while (this._peek().Kind != TokenKind.Case && this._peek().Kind != TokenKind.Default
+                && this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+                if (bc == body.Length) {
+                    Stmt[] b = new Stmt[body.Length * 2];
+                    int i = 0; while (i < bc) { b[i] = body[i]; i = i + 1; }
+                    body = b;
+                }
+                body[bc] = this.ParseStatement(); bc = bc + 1;
+            }
+            if (cc == cases.Length) {
+                SwitchCase[] bigger = new SwitchCase[cases.Length * 2];
+                int i = 0; while (i < cc) { bigger[i] = cases[i]; i = i + 1; }
+                cases = bigger;
+            }
+            cases[cc] = new SwitchCase(hasPattern, pattern, body, bc); cc = cc + 1;
+        }
+        this._expect(TokenKind.RBrace, "}");
+        return new SwitchStmt(subject, cases, cc);
+    }
+
+    // try {} catch (Type v) {} catch {} finally {} —— 类型/变量名均可省。
+    private Stmt _parseTry() {
+        this._advance();   // try
+        Stmt tryBody = this._parseBlock();
+        CatchClause[] catches = new CatchClause[4];
+        int cc = 0;
+        while (this._peek().Kind == TokenKind.Catch) {
+            this._advance();   // catch
+            bool hasType = false;
+            string exType = "";
+            bool hasVar = false;
+            string varName = "";
+            if (this._peek().Kind == TokenKind.LParen) {
+                this._advance();
+                if (this._peek().Kind != TokenKind.RParen) {
+                    exType = this._parseTypeText(); hasType = true;
+                    if (this._peek().Kind == TokenKind.Identifier) {
+                        varName = this._peek().Text; hasVar = true; this._advance();
+                    }
+                }
+                this._expect(TokenKind.RParen, ")");
+            }
+            Stmt cbody = this._parseBlock();
+            if (cc == catches.Length) {
+                CatchClause[] bigger = new CatchClause[catches.Length * 2];
+                int i = 0; while (i < cc) { bigger[i] = catches[i]; i = i + 1; }
+                catches = bigger;
+            }
+            catches[cc] = new CatchClause(hasType, exType, hasVar, varName, cbody); cc = cc + 1;
+        }
+        bool hasFinally = false;
+        Stmt finallyBody = new BlockStmt(new Stmt[0], 0);
+        if (this._peek().Kind == TokenKind.Finally) {
+            this._advance(); finallyBody = this._parseBlock(); hasFinally = true;
+        }
+        return new TryCatchStmt(tryBody, catches, cc, hasFinally, finallyBody);
     }
 
     private Stmt _parseBlock() {

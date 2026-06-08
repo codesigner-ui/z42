@@ -42,12 +42,23 @@
 - [x] AST 新节点 IsExpr/AsExpr/ObjNewExpr；6 单测（bitwise/??/is·as/compound-assign/new）
 - [x] 验证：`xtask test compiler-z42` → 5 units 61 cases 全绿（core 11 + lexer 10 + parser 19 + stmt 11 + decl 10）
 
-## increment 6（后续）
-- [ ] 语句补全：C 式 `for(;;)` / `switch` / `try-catch-finally` / `do-while`
-- [ ] 顶层声明补全：struct / interface / enum / record / delegate / 顶层 func / property / 泛型形参 `<T>` + where / attribute `[X]`
-- [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本）
-- [ ] Lexer 补全：插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码
-- [ ] byte-identical：token + AST JSON 与 C# `--dump-tokens` / `--dump-ast` 逐项对账
+## increment 6a（语句补全 — ✅ 已完成）
+- [x] AST：ForStmt（三段可省 + bool 标志）/ DoWhileStmt / SwitchStmt + SwitchCase / TryCatchStmt + CatchClause（Stmt.z42，受限写法：typed array + count、bool 标志替 nullable）
+- [x] 递归下降：`_parseFor`（init 走 ParseStatement 消费 `;`；三段任意可省）/ `_parseDoWhile` / `_parseSwitch`（case/default + 空分支贯穿）/ `_parseTry`（catch 类型/变量可省 + 裸 catch + finally）+ dispatch
+- [x] 4 单测（for[含三段全省/init-as-expr] / do-while[单语句+block] / switch[多 case+default / 空分支贯穿] / try[type+var / type-only+finally / 裸 catch]）→ tests/stmt/
+- [x] 验证：`xtask test compiler-z42` → 5 units **65 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 10）
+
+## increment 6b（后续 — 顶层声明补全）
+- [ ] struct / interface / enum / record / delegate / 顶层 func / property / 泛型形参 `<T>` + where / attribute `[X]`
+
+## increment 6c（后续 — Lexer 补全）
+- [ ] 插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码
+
+## increment 6d（后续 — Visitor + TypeExpr）
+- [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本字符串）
+
+## increment 6e（后续 — byte-identical）
+- [ ] token + AST JSON 与 C# `--dump-tokens` / `--dump-ast` 逐项对账
 
 ## 备注
 - SyntaxSkeleton.z42 暂留（semantics/pipeline/driver 仍引用，各自移植时移除）。

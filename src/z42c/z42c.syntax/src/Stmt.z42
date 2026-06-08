@@ -1,5 +1,7 @@
 // AST 语句节点（z42c.syntax）。受限写法：class 继承 + virtual Dump()。
-// 无 nullable 字段：用 bool 标志（HasValue / HasElse）+ 占位（gated by 标志）。
+// 无 nullable 字段：用 bool 标志（HasValue / HasElse 等）+ 占位（gated by 标志）。
+// expr/var-decl/return/if/while/block/break/continue/throw/foreach（incr 1-5）
+//   + for/do-while/switch/try-catch-finally（incr 6a）。
 namespace Z42.Syntax;
 
 public class Stmt {
@@ -97,5 +99,109 @@ public sealed class ForeachStmt : Stmt {
     }
     public override string Dump() {
         return "(foreach " + this.TypeText + " " + this.Name + " " + this.Iter.Dump() + " " + this.Body.Dump() + ")";
+    }
+}
+
+// C 式 for：三段任意可省（gated by HasInit/HasCond/HasIncr，省略处 Dump 为 "_"）。
+public sealed class ForStmt : Stmt {
+    public bool HasInit;
+    public Stmt Init;     // 含自身 ';'（解析时由 ParseStatement 消费）
+    public bool HasCond;
+    public Expr Cond;
+    public bool HasIncr;
+    public Expr Incr;
+    public Stmt Body;
+    public ForStmt(bool hasInit, Stmt init, bool hasCond, Expr cond, bool hasIncr, Expr incr, Stmt body) {
+        this.HasInit = hasInit; this.Init = init;
+        this.HasCond = hasCond; this.Cond = cond;
+        this.HasIncr = hasIncr; this.Incr = incr;
+        this.Body = body;
+    }
+    public override string Dump() {
+        string i = "_"; if (this.HasInit) { i = this.Init.Dump(); }
+        string c = "_"; if (this.HasCond) { c = this.Cond.Dump(); }
+        string n = "_"; if (this.HasIncr) { n = this.Incr.Dump(); }
+        return "(for " + i + " " + c + " " + n + " " + this.Body.Dump() + ")";
+    }
+}
+
+public sealed class DoWhileStmt : Stmt {
+    public Stmt Body;
+    public Expr Cond;
+    public DoWhileStmt(Stmt body, Expr cond) { this.Body = body; this.Cond = cond; }
+    public override string Dump() {
+        return "(do " + this.Body.Dump() + " " + this.Cond.Dump() + ")";
+    }
+}
+
+// switch 的单个分支。非 Stmt（无独立 Dump 多态需求）：plain class + Dump()。
+// HasPattern=false ⇒ default 分支。Body 为该分支下的语句序列（typed array + count，受限写法）。
+public sealed class SwitchCase {
+    public bool   HasPattern;
+    public Expr   Pattern;   // 仅 HasPattern 时有效
+    public Stmt[] Body;
+    public int    BodyCount;
+    public SwitchCase(bool hasPattern, Expr pattern, Stmt[] body, int bodyCount) {
+        this.HasPattern = hasPattern; this.Pattern = pattern;
+        this.Body = body; this.BodyCount = bodyCount;
+    }
+    public string Dump() {
+        string s = "(default";
+        if (this.HasPattern) { s = "(case " + this.Pattern.Dump(); }
+        int i = 0;
+        while (i < this.BodyCount) { s = s + " " + this.Body[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+public sealed class SwitchStmt : Stmt {
+    public Expr         Subject;
+    public SwitchCase[] Cases;
+    public int          CaseCount;
+    public SwitchStmt(Expr subject, SwitchCase[] cases, int caseCount) {
+        this.Subject = subject; this.Cases = cases; this.CaseCount = caseCount;
+    }
+    public override string Dump() {
+        string s = "(switch " + this.Subject.Dump();
+        int i = 0;
+        while (i < this.CaseCount) { s = s + " " + this.Cases[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+// try 的单个 catch。类型/变量名均可省（裸 catch / catch(Type) / catch(Type v)）。
+public sealed class CatchClause {
+    public bool   HasType;
+    public string ExType;    // 仅 HasType 时有效
+    public bool   HasVar;
+    public string VarName;   // 仅 HasVar 时有效
+    public Stmt   Body;
+    public CatchClause(bool hasType, string exType, bool hasVar, string varName, Stmt body) {
+        this.HasType = hasType; this.ExType = exType;
+        this.HasVar = hasVar; this.VarName = varName; this.Body = body;
+    }
+    public string Dump() {
+        string t = "_"; if (this.HasType) { t = this.ExType; }
+        string v = "_"; if (this.HasVar) { v = this.VarName; }
+        return "(catch " + t + " " + v + " " + this.Body.Dump() + ")";
+    }
+}
+
+public sealed class TryCatchStmt : Stmt {
+    public Stmt          TryBody;
+    public CatchClause[] Catches;
+    public int           CatchCount;
+    public bool          HasFinally;
+    public Stmt          Finally;   // 仅 HasFinally 时有效
+    public TryCatchStmt(Stmt tryBody, CatchClause[] catches, int catchCount, bool hasFinally, Stmt finallyBody) {
+        this.TryBody = tryBody; this.Catches = catches; this.CatchCount = catchCount;
+        this.HasFinally = hasFinally; this.Finally = finallyBody;
+    }
+    public override string Dump() {
+        string s = "(try " + this.TryBody.Dump();
+        int i = 0;
+        while (i < this.CatchCount) { s = s + " " + this.Catches[i].Dump(); i = i + 1; }
+        if (this.HasFinally) { s = s + " (finally " + this.Finally.Dump() + ")"; }
+        return s + ")";
     }
 }
