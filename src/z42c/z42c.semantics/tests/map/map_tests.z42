@@ -1,0 +1,47 @@
+// z42c.semantics StrMap 单测（1A-2）：put/get/contains/keys/覆盖更新/重散列（object 值 + as 下行）。
+namespace Z42cSemanticsMapTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_strmap_basic() {
+    var m = new StrMap();
+    m.Put("int", new Z42PrimType("int"));
+    m.Put("Foo", new Z42ClassType("Foo", false, ""));
+    Assert.Equal(2, m.Count());
+    Assert.Equal(true,  m.ContainsKey("int"));
+    Assert.Equal(false, m.ContainsKey("bar"));
+    var t = m.Get("int") as Z42PrimType;          // object → 下行
+    Assert.Equal("int", t.Name());
+    var c = m.Get("Foo") as Z42ClassType;
+    Assert.Equal("Foo", c.Name());
+}
+
+[Test]
+void test_strmap_overwrite() {
+    var m = new StrMap();
+    m.Put("x", new Z42PrimType("int"));
+    m.Put("x", new Z42PrimType("long"));          // 覆盖
+    Assert.Equal(1, m.Count());                   // 覆盖不增计数
+    var t = m.Get("x") as Z42PrimType;
+    Assert.Equal("long", t.Name());
+}
+
+[Test]
+void test_strmap_resize_and_collision() {
+    var m = new StrMap();
+    int i = 0;
+    while (i < 100) {                             // 触发多次 2x 重散列 + 探测
+        m.Put("k" + i.ToString(), new Z42PrimType("t" + i.ToString()));
+        i = i + 1;
+    }
+    Assert.Equal(100, m.Count());
+    Assert.Equal(true,  m.ContainsKey("k0"));
+    Assert.Equal(true,  m.ContainsKey("k99"));
+    Assert.Equal(false, m.ContainsKey("k100"));
+    var t = m.Get("k50") as Z42PrimType;
+    Assert.Equal("t50", t.Name());
+    Assert.Equal(100, m.Keys().Length);
+}
