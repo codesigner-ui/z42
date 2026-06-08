@@ -144,6 +144,20 @@ public sealed class BoundMember : BoundExpr {
     }
 }
 
+// 数组索引（1D）：arr[i] → 元素类型。
+public sealed class BoundIndex : BoundExpr {
+    public BoundExpr Target;
+    public BoundExpr Index;
+    private Z42Type _type;
+    public BoundIndex(BoundExpr target, BoundExpr index, Z42Type type) {
+        this.Target = target; this.Index = index; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        return "(index " + this.Target.Dump() + " " + this.Index.Dump() + " :" + this._type.Name() + ")";
+    }
+}
+
 // 类型测试（1D）：x is T → bool。
 public sealed class BoundIsExpr : BoundExpr {
     public BoundExpr E;

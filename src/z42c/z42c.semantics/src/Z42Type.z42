@@ -73,6 +73,21 @@ public sealed class Z42FuncType : Z42Type {
     }
 }
 
+// 数组类型（1D）：T[]。不变（无协变）。
+public sealed class Z42ArrayType : Z42Type {
+    public Z42Type Elem;
+    public Z42ArrayType(Z42Type elem) { this.Elem = elem; }
+    public override string Name() { return this.Elem.Name() + "[]"; }
+    public override bool IsAssignableTo(Z42Type other) {
+        if (other is Z42ErrorType) { return true; }
+        if (other is Z42ArrayType) {
+            Z42ArrayType o = other as Z42ArrayType;
+            return this.Elem.Name() == o.Elem.Name();
+        }
+        return false;
+    }
+}
+
 public sealed class Z42VoidType : Z42Type {
     public override string Name() { return "void"; }
     public override bool IsAssignableTo(Z42Type other) {

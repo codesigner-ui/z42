@@ -224,6 +224,21 @@ public sealed class TypeChecker {
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
         }
+        if (e is IndexExpr) {
+            IndexExpr ix = e as IndexExpr;
+            BoundExpr target = this._bindExpr(ix.Target, env);
+            BoundExpr index = this._bindExpr(ix.Index, env);
+            Z42Type tt = target.Type();
+            if (tt is Z42ArrayType) {
+                Z42ArrayType at = tt as Z42ArrayType;
+                return new BoundIndex(target, index, at.Elem);
+            }
+            if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
+                return new BoundIndex(target, index, new Z42ErrorType());
+            }
+            this._diags.Error(DiagnosticCodes.TypeMismatch, "index on non-array `" + tt.Name() + "`", this._noSpan());
+            return new BoundIndex(target, index, new Z42ErrorType());
+        }
         if (e is CallExpr) {
             return this._bindCall(e as CallExpr, env);
         }

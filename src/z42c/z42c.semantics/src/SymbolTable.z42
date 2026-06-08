@@ -40,9 +40,17 @@ public sealed class SymbolTable {
             if (n == "void") { return new Z42VoidType(); }
             if (this._isPrim(n)) { return new Z42PrimType(n); }
             if (this.Classes.ContainsKey(n)) { return this.Classes.Get(n) as Z42ClassType; }
-            return new Z42UnknownType();   // imported / 未声明 / 数组元素 等 → 1A Unknown
+            return new Z42UnknownType();   // imported / 未声明 → Unknown
         }
-        return new Z42UnknownType();        // ArrayType / NullableType → 延后
+        if (te is ArrayType) {
+            ArrayType at = te as ArrayType;
+            return new Z42ArrayType(this.ResolveType(at.Elem));
+        }
+        if (te is NullableType) {
+            NullableType nt = te as NullableType;
+            return this.ResolveType(nt.Inner);   // 1D：nullable → inner（Option 类型延后）
+        }
+        return new Z42UnknownType();
     }
 
     private bool _isPrim(string n) {
