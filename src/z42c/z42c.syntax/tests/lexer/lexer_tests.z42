@@ -1,5 +1,5 @@
 // z42c.syntax Lexer 单测：标识符/关键字/字面量/符号/注释/位置（incr 1）
-//   + 数字格式 hex/bin/分隔/后缀/指数（incr 6c-1）。
+//   + 数字格式 hex/bin/分隔/后缀/指数（incr 6c-1）+ raw/插值串/转义解码（incr 6c-2）。
 namespace Z42cSyntaxLexerTests;
 
 using Std;
@@ -149,6 +149,39 @@ void test_float_exponent() {
     Assert.Equal("1.5e-3", lx.TokenAt(1).Text);
     Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(2).Kind);
     Assert.Equal("2E+8", lx.TokenAt(2).Text);
+}
+
+[Test]
+void test_raw_string() {
+    // 源 """hello"""（三引号）→ RawStringLiteral，raw lexeme 含三引号
+    var lx = new Lexer("\"\"\"hello\"\"\"", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.RawStringLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("\"\"\"hello\"\"\"", lx.TokenAt(0).Text);
+}
+
+[Test]
+void test_interpolated_string() {
+    // 源 $"hi {name}"
+    var lx = new Lexer("$\"hi {name}\"", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.InterpolatedStringLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("$\"hi {name}\"", lx.TokenAt(0).Text);
+    // 洞内嵌套字符串：$"{f("x")}" 整体单 token，洞内的 " 不终止外层
+    var lx2 = new Lexer("$\"{f(\"x\")}\"", "t.z42");
+    lx2.Tokenize();
+    Assert.Equal(TokenKind.InterpolatedStringLiteral, lx2.TokenAt(0).Kind);
+    Assert.Equal("$\"{f(\"x\")}\"", lx2.TokenAt(0).Text);
+    Assert.Equal(TokenKind.Eof, lx2.TokenAt(1).Kind);   // 之后即 Eof（无残余 token）
+}
+
+[Test]
+void test_decode_string() {
+    // raw lexeme（含引号）→ 解码值（剥引号 + 还原转义）
+    Assert.Equal("a\nb", Lexer.DecodeString("\"a\\nb\""));       // \n → 换行
+    Assert.Equal("c:\\x", Lexer.DecodeString("\"c:\\\\x\""));    // \\ → 反斜杠
+    Assert.Equal("say \"hi\"", Lexer.DecodeString("\"say \\\"hi\\\"\""));  // \" → 引号
+    Assert.Equal("plain", Lexer.DecodeString("\"plain\""));      // 无转义
 }
 
 [Test]

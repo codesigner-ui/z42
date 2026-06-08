@@ -4,8 +4,9 @@
 //
 // 覆盖：空白/换行/行注释(//)/块注释(/* */) 作 trivia 跳过；标识符+关键字（全表）；
 // 数字字面量（十进制/hex `0x`/bin `0b` + `_` 分隔 + 小数 + 指数 [eE][+-]? + 后缀 L/u/f/d/m，incr 6c-1）；
-// 字符串 "..."（含转义跳过，raw lexeme 保留引号）；字符 '...'；全套符号/运算符（最长匹配）；EOF。
-// 延后（incr 6c-2）：插值串 $""、raw 串 """、转义解码。
+// 字符串 "..."（含转义跳过，raw lexeme 保留引号）；字符 '...'；raw 串 """..."""；插值串 $"...{e}..."（单 token）；
+// 全套符号/运算符（最长匹配）；EOF。`DecodeString` 静态助手剥引号 + 还原常见转义（incr 6c-2）。
+// 延后：转义 \0 / \uXXXX / \xXX 解码（DecodeString 仅常见集）；插值洞的结构化解析（lexer 整体单 token）。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -111,6 +112,8 @@ public sealed class Lexer {
         char c = this._ch(this._pos);
         if (this._isAlpha(c))      { this._lexIdent(); }
         else if (this._isDigit(c)) { this._lexNumber(); }
+        else if (c == '$' && this._ch(this._pos + 1) == '"') { this._lexInterpolated(); }
+        else if (c == '"' && this._ch(this._pos + 1) == '"' && this._ch(this._pos + 2) == '"') { this._lexRawString(); }
         else if (c == '"')         { this._lexString(); }
         else if (c == '\'')        { this._lexChar(); }
         else                       { this._lexSymbol(); }
@@ -227,6 +230,97 @@ public sealed class Lexer {
         }
         if (this._pos < this._src.Length) { this._advance(); }   // closing '
         this._emit(TokenKind.CharLiteral, this._src.Substring(start, this._pos - start));
+    }
+
+    // raw 串 """..."""：不处理转义；扫描到下一个 `"""`。整体 raw lexeme 入 token。
+    private void _lexRawString() {
+        int start = this._pos;
+        this._advance(); this._advance(); this._advance();   // opening """
+        bool closed = false;
+        while (this._pos < this._src.Length) {
+            if (this._ch(this._pos) == '"' && this._ch(this._pos + 1) == '"' && this._ch(this._pos + 2) == '"') {
+                this._advance(); this._advance(); this._advance();
+                closed = true;
+                break;
+            }
+            this._advance();
+        }
+        if (!closed) {
+            this._diags.Error(DiagnosticCodes.UnterminatedString, "unterminated raw string literal", this._curSpan(start));
+        }
+        this._emit(TokenKind.RawStringLiteral, this._src.Substring(start, this._pos - start));
+    }
+
+    // 插值串 $"...{expr}...": 整体 lex 为单 token（raw lexeme）。
+    // 文本段处理转义跳过 + `{{`/`}}` 字面；`{...}` 洞按 brace 深度跟踪，洞内嵌套串单独跳过。
+    private void _lexInterpolated() {
+        int start = this._pos;
+        this._advance(); this._advance();   // opening $"
+        int depth = 0;
+        bool closed = false;
+        while (this._pos < this._src.Length) {
+            char c = this._ch(this._pos);
+            if (depth == 0) {
+                if (c == '\\') { this._advance(); if (this._pos < this._src.Length) { this._advance(); } continue; }
+                if (c == '"') { this._advance(); closed = true; break; }
+                if (c == '{') {
+                    if (this._ch(this._pos + 1) == '{') { this._advance(); this._advance(); continue; }   // {{ 字面
+                    depth = depth + 1; this._advance(); continue;
+                }
+                if (c == '}') {
+                    if (this._ch(this._pos + 1) == '}') { this._advance(); this._advance(); continue; }   // }} 字面
+                    this._advance(); continue;
+                }
+                this._advance();
+            } else {
+                if (c == '{') { depth = depth + 1; this._advance(); continue; }
+                if (c == '}') { depth = depth - 1; this._advance(); continue; }
+                if (c == '"') { this._skipNestedString(); continue; }   // 洞内嵌套字符串
+                this._advance();
+            }
+        }
+        if (!closed) {
+            this._diags.Error(DiagnosticCodes.UnterminatedString, "unterminated interpolated string literal", this._curSpan(start));
+        }
+        this._emit(TokenKind.InterpolatedStringLiteral, this._src.Substring(start, this._pos - start));
+    }
+
+    private void _skipNestedString() {
+        this._advance();   // opening "
+        while (this._pos < this._src.Length && this._ch(this._pos) != '"') {
+            if (this._ch(this._pos) == '\\') { this._advance(); }
+            if (this._pos < this._src.Length) { this._advance(); }
+        }
+        if (this._pos < this._src.Length) { this._advance(); }   // closing "
+    }
+
+    // 把字符串字面量的 raw lexeme（含两端引号）解码为实际值：剥引号 + 转义还原。
+    // 支持 \n \t \r \\ \" \'（常见集）；\0 / \uXXXX / \xXX 延后（见 deferred）。
+    public static string DecodeString(string raw) {
+        if (raw.Length < 2) { return raw; }
+        string inner = raw.Substring(1, raw.Length - 2);
+        string result = "";
+        int i = 0;
+        int runStart = 0;
+        while (i < inner.Length) {
+            if (inner.CharAt(i) == '\\' && i + 1 < inner.Length) {
+                result = result + inner.Substring(runStart, i - runStart);   // flush 字面段
+                char e = inner.CharAt(i + 1);
+                if (e == 'n')       { result = result + "\n"; }
+                else if (e == 't')  { result = result + "\t"; }
+                else if (e == 'r')  { result = result + "\r"; }
+                else if (e == '\\') { result = result + "\\"; }
+                else if (e == '"')  { result = result + "\""; }
+                else if (e == '\'') { result = result + "'"; }
+                else                { result = result + inner.Substring(i + 1, 1); }   // 未知转义：保留原字符
+                i = i + 2;
+                runStart = i;
+            } else {
+                i = i + 1;
+            }
+        }
+        result = result + inner.Substring(runStart, inner.Length - runStart);   // flush 末段
+        return result;
     }
 
     // ── 符号（最长匹配）─────────────────────────────────────────────────────

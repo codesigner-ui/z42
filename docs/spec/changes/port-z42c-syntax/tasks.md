@@ -88,8 +88,14 @@
 - [x] 4 单测（hex·bin / `_` 分隔 / 后缀 / 指数）→ tests/lexer/
 - [x] 验证：`xtask test compiler-z42` → 5 units **83 cases** 全绿（core 11 / lexer 14 / parser 19 / stmt 15 / decl 24）
 
-## increment 6c-2（后续 — Lexer 字符串补全）
-- [ ] 插值串 `$"..."` / raw 串 `"""..."""` / 转义解码（`\n \t \\ \" \uXXXX` 等 → 实际值）
+## increment 6c-2（Lexer 字符串补全 — ✅ 已完成）
+- [x] raw 串 `"""..."""`（`_lexRawString`，不处理转义，扫描到下一 `"""`）+ `_lexOne` dispatch（`$"`/`"""` 先于 `"`）
+- [x] 插值串 `$"...{e}..."`（`_lexInterpolated`，整体单 token；文本段转义跳过 + `{{`/`}}` 字面 + `{...}` brace 深度跟踪 + 洞内嵌套串 `_skipNestedString`）
+- [x] `DecodeString` 静态助手（剥引号 + 还原 `\n \t \r \\ \" \'`；`\0`/`\uXXXX`/`\xXX` 延后）
+- [x] 3 单测（raw 串 / 插值串[含洞内嵌套串] / 转义解码）→ tests/lexer/
+- [x] 验证：`xtask test compiler-z42` → 5 units **86 cases** 全绿（core 11 / lexer 17 / parser 19 / stmt 15 / decl 24）
+
+> **increment 6c 全部完成**（Lexer 补全：数字格式 + raw/插值串 + 转义解码）。下一步 6d（Visitor + TypeExpr，架构性）。
 
 ## increment 6d（后续 — Visitor + TypeExpr）
 - [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本字符串）
