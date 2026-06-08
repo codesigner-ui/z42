@@ -49,8 +49,17 @@ public sealed class SymbolTable {
             }
             if (n == "void") { return new Z42VoidType(); }
             if (this._isPrim(n)) { return new Z42PrimType(n); }
-            if (this.Classes.ContainsKey(n)) { return this.Classes.Get(n) as Z42ClassType; }
-            return new Z42UnknownType();   // imported / 未声明 / 泛型实例化 Box<int>（2A-2）→ Unknown
+            if (this.Classes.ContainsKey(n)) {
+                Z42ClassType def = this.Classes.Get(n) as Z42ClassType;
+                if (nt.ArgCount > 0) {       // 泛型实例化 Box<int>（2A-2）
+                    Z42Type[] targs = new Z42Type[nt.ArgCount];
+                    int a = 0;
+                    while (a < nt.ArgCount) { targs[a] = this.ResolveTypeP(nt.Args[a], paramNames, paramCount); a = a + 1; }
+                    return new Z42InstantiatedType(def, targs, nt.ArgCount);
+                }
+                return def;
+            }
+            return new Z42UnknownType();   // imported / 未声明 → Unknown
         }
         if (te is ArrayType) {
             ArrayType at = te as ArrayType;

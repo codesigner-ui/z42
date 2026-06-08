@@ -84,6 +84,32 @@ public sealed class Z42GenericParamType : Z42Type {
     }
 }
 
+// 泛型实例化（2A-2）：Box<int>。Def = 泛型类定义，TypeArgs = 实参。不变（同 def 同实参才可赋）。
+// 成员类型替换（T→int）延后（需 substitution pass）。
+public sealed class Z42InstantiatedType : Z42Type {
+    public Z42ClassType Def;
+    public Z42Type[]    TypeArgs;
+    public int          ArgCount;
+    public Z42InstantiatedType(Z42ClassType def, Z42Type[] typeArgs, int argCount) {
+        this.Def = def; this.TypeArgs = typeArgs; this.ArgCount = argCount;
+    }
+    public override string Name() {
+        string s = this.Def.Name() + "<";
+        int i = 0;
+        while (i < this.ArgCount) {
+            if (i > 0) { s = s + ","; }
+            s = s + this.TypeArgs[i].Name();
+            i = i + 1;
+        }
+        return s + ">";
+    }
+    public override bool IsAssignableTo(Z42Type other) {
+        if (other is Z42ErrorType) { return true; }
+        if (other is Z42InstantiatedType) { return this.Name() == other.Name(); }
+        return false;
+    }
+}
+
 // 数组类型（1D）：T[]。不变（无协变）。
 public sealed class Z42ArrayType : Z42Type {
     public Z42Type Elem;
