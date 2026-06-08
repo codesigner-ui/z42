@@ -1,0 +1,90 @@
+// add-directory-copy (2026-06-08)：Directory.Copy 递归目录拷贝本地测试。
+// 覆盖 recursive=true（嵌套子树全拷 + 内容一致）、recursive=false（只拷顶层
+// 文件、子目录不递归）、dst 自动创建（mkdir -p 语义）。
+// 隔离写盘到 /tmp/z42-dircopy-test-*（与 directory.z42 同款）。
+namespace Z42IoDirectoryCopyTests;
+
+using Std.Test;
+using Std.IO;
+
+// 已存在则清掉（防上次崩溃留残树污染断言）
+void _clean(string p) {
+    if (Directory.Exists(p)) { Directory.Delete(p, true); }
+}
+
+// 固定源树：top.txt + sub/mid.txt + sub/deep/leaf.txt
+void _makeSrc(string root) {
+    Directory.Create(root + "/sub/deep");
+    File.WriteAllText(root + "/top.txt",           "T");
+    File.WriteAllText(root + "/sub/mid.txt",       "M");
+    File.WriteAllText(root + "/sub/deep/leaf.txt", "L");
+}
+
+[Test]
+void test_copy_recursive_full_tree() {
+    string src = "/tmp/z42-dircopy-test-rec-src";
+    string dst = "/tmp/z42-dircopy-test-rec-dst";
+    _clean(src);
+    _clean(dst);
+    _makeSrc(src);
+
+    Directory.Copy(src, dst, true);
+
+    // 目标树深度优先全展开应与源结构一致（Enumerate/EnumerateRecursive 已 sort）
+    string[] items = Directory.EnumerateRecursive(dst);
+    Assert.Equal(5, items.Length);
+    Assert.Equal("sub",               items[0]);
+    Assert.Equal("sub/deep",          items[1]);
+    Assert.Equal("sub/deep/leaf.txt", items[2]);
+    Assert.Equal("sub/mid.txt",       items[3]);
+    Assert.Equal("top.txt",           items[4]);
+
+    // 文件内容一致
+    Assert.Equal("T", File.ReadAllText(dst + "/top.txt"));
+    Assert.Equal("M", File.ReadAllText(dst + "/sub/mid.txt"));
+    Assert.Equal("L", File.ReadAllText(dst + "/sub/deep/leaf.txt"));
+
+    _clean(src);
+    _clean(dst);
+}
+
+[Test]
+void test_copy_nonrecursive_top_files_only() {
+    string src = "/tmp/z42-dircopy-test-flat-src";
+    string dst = "/tmp/z42-dircopy-test-flat-dst";
+    _clean(src);
+    _clean(dst);
+    _makeSrc(src);
+
+    Directory.Copy(src, dst, false);
+
+    // recursive=false：只拷顶层文件 top.txt；子目录 sub 不递归（连建都不建）
+    string[] items = Directory.Enumerate(dst);
+    Assert.Equal(1, items.Length);
+    Assert.Equal("top.txt", items[0]);
+    Assert.True(File.Exists(dst + "/top.txt"));
+    Assert.False(Directory.Exists(dst + "/sub"));
+
+    _clean(src);
+    _clean(dst);
+}
+
+[Test]
+void test_copy_creates_missing_dst() {
+    // dst（含中间目录）不存在时 Copy 自动建（mkdir -p 语义）
+    string src     = "/tmp/z42-dircopy-test-mkdst-src";
+    string dstRoot = "/tmp/z42-dircopy-test-mkdst-dst";
+    string dst     = dstRoot + "/nested";
+    _clean(src);
+    _clean(dstRoot);
+    Directory.Create(src);
+    File.WriteAllText(src + "/only.txt", "X");
+
+    Assert.False(Directory.Exists(dst));
+    Directory.Copy(src, dst, true);
+    Assert.True(Directory.Exists(dst));
+    Assert.Equal("X", File.ReadAllText(dst + "/only.txt"));
+
+    _clean(src);
+    _clean(dstRoot);
+}

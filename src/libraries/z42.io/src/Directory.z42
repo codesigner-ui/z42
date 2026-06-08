@@ -38,4 +38,26 @@ public static class Directory {
     public static string CreateTempDir(string prefix) {
         return File.CreateTempDir(prefix);
     }
+
+    // add-directory-copy (2026-06-08): 递归目录拷贝。纯 z42 组合 Native primitive
+    // （`Enumerate` basename + `Exists` 分类 + `File.Copy`），不引入新 native extern。
+    // 解锁 bash→z42 package 移植的 dSYM 树拷贝（migrate-scripts-to-z42 标注的
+    // "唯一 stdlib gap"）。语义对标常见 `Directory.Copy` 辅助：
+    //   - dst 不存在则建（mkdir -p，沿用 `Create` 已存在不报错语义）
+    //   - src 下的文件 → `File.Copy` 进 dst
+    //   - src 下的子目录 → recursive=true 时递归拷贝，false 时跳过
+    // 顺序不保证（沿用 `Enumerate`）。dst 不应位于 src 内部（自指环 → 无限递归，
+    // 调用方责任，与 BCL `Directory` 一致）。
+    public static void Copy(string src, string dst, bool recursive) {
+        Directory.Create(dst);
+        foreach (var name in Directory.Enumerate(src)) {
+            string s = Path.Join(src, name);
+            string d = Path.Join(dst, name);
+            if (Directory.Exists(s)) {
+                if (recursive) { Directory.Copy(s, d, recursive); }
+            } else {
+                File.Copy(s, d);
+            }
+        }
+    }
 }

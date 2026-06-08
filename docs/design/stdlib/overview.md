@@ -357,7 +357,7 @@ src/libraries/z42.io/src/
 ├── Console.z42       # Console.Write, WriteLine, ReadLine
 ├── Stdio.z42         # IsTty + raw stdin/stdout helpers
 ├── File.z42          # File.ReadAllText, WriteAllText, Exists, Delete
-├── Directory.z42     # Directory.Create, Enumerate, Delete
+├── Directory.z42     # Directory.Create, Enumerate, Delete, Copy
 ├── Path.z42          # Path.Join, GetExtension, GetFileName, GetDirectory
 ├── Environment.z42   # Environment.GetEnvironmentVariable, GetCommandLineArgs
 ├── Process.z42       # Process.Start + ProcessHandle / ProcessResult
@@ -370,6 +370,11 @@ src/libraries/z42.io/src/
 
 `Console` provides typed overloads (int, bool, double, …) as pure z42 methods
 wrapping the native `string` overload.
+
+`Directory.Copy(src, dst, recursive)` 递归（或单层）拷贝目录树：`dst` 自动
+`mkdir -p`，文件走 `File.Copy`，子目录在 `recursive=true` 时递归、否则跳过。
+**纯 z42** 组合现有 `Enumerate`/`Exists`/`File.Copy` 实现，不引入新 native
+extern —— 由 bash→z42 package 移植的 dSYM 树拷贝需求驱动（递归整棵 `.dSYM`）。
 
 ### `z42.collections` — 次级集合（非基础三件套）
 
