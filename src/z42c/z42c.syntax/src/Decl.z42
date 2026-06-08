@@ -1,4 +1,4 @@
-// AST 声明节点（z42c.syntax）。CompilationUnit / using / class / field / method / param。
+// AST 声明节点（z42c.syntax）。CompilationUnit / using / class·struct·interface / enum / field / method / param。
 // 受限写法：class 继承 + virtual Dump()。类型/修饰符捕获为字符串文本（增量；TypeExpr 后续）。
 namespace Z42.Syntax;
 
@@ -69,20 +69,56 @@ public sealed class MethodDecl : Decl {
     }
 }
 
+// class / struct / interface 同构（Kind 区分；语义差异留给后端）。Dump head = Kind。
 public sealed class ClassDecl : Decl {
+    public string Kind;    // "class" / "struct" / "interface"
     public string Mods;
     public string Name;
     public bool   HasBase;
     public string BaseText;
     public Decl[] Members;
     public int    MemberCount;
-    public ClassDecl(string mods, string name, bool hasBase, string baseText, Decl[] members, int mc) {
+    public ClassDecl(string kind, string mods, string name, bool hasBase, string baseText, Decl[] members, int mc) {
+        this.Kind = kind; this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.BaseText = baseText;
+        this.Members = members; this.MemberCount = mc;
+    }
+    public override string Dump() {
+        string m = (this.Mods == "") ? "" : (this.Mods + " ");
+        string s = "(" + this.Kind + " " + m + this.Name;
+        if (this.HasBase) { s = s + " : " + this.BaseText; }
+        int i = 0;
+        while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+public sealed class EnumMember {
+    public string Name;
+    public bool   HasValue;
+    public string Value;   // int 字面量文本（可含前导 '-'）；仅 HasValue 时有效
+    public EnumMember(string name, bool hasValue, string value) {
+        this.Name = name; this.HasValue = hasValue; this.Value = value;
+    }
+    public string Dump() {
+        if (this.HasValue) { return "(" + this.Name + " " + this.Value + ")"; }
+        return this.Name;
+    }
+}
+
+public sealed class EnumDecl : Decl {
+    public string       Mods;
+    public string       Name;
+    public bool         HasBase;     // 底层类型 `: int` 等
+    public string       BaseText;
+    public EnumMember[] Members;
+    public int          MemberCount;
+    public EnumDecl(string mods, string name, bool hasBase, string baseText, EnumMember[] members, int mc) {
         this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.BaseText = baseText;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(class " + m + this.Name;
+        string s = "(enum " + m + this.Name;
         if (this.HasBase) { s = s + " : " + this.BaseText; }
         int i = 0;
         while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }

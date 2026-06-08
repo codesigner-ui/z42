@@ -48,8 +48,21 @@
 - [x] 4 单测（for[含三段全省/init-as-expr] / do-while[单语句+block] / switch[多 case+default / 空分支贯穿] / try[type+var / type-only+finally / 裸 catch]）→ tests/stmt/
 - [x] 验证：`xtask test compiler-z42` → 5 units **65 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 10）
 
-## increment 6b（后续 — 顶层声明补全）
-- [ ] struct / interface / enum / record / delegate / 顶层 func / property / 泛型形参 `<T>` + where / attribute `[X]`
+## increment 6b-1（struct / interface / enum — ✅ 已完成）
+- [x] ClassDecl 加 `Kind`（"class"/"struct"/"interface"，三者同构：`_parseClass` → `_parseTypeDecl(mods, kind)`，Dump head=Kind）
+- [x] AST：EnumDecl + EnumMember（值仅捕获文本，自增/校验留后端）；Decl.z42
+- [x] 递归下降：`_parseTypeDecl`（class/struct/interface 共用基类·接口列表 + 成员块）/ `_parseEnum`（底层类型 `: int` + 成员 `name [= [-]int]` + 尾随逗号）+ ParseCompilationUnit dispatch
+- [x] 3 单测（struct[含 ctor 消歧] / interface[方法签名+基接口] / enum[裸成员 / 底层类型+显式值+尾逗号]）→ tests/decl/
+- [x] 验证：`xtask test compiler-z42` → 5 units **68 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 13）
+
+## increment 6b-2（后续 — record / delegate / 顶层 func）
+- [ ] record（位置式 `record P(T a)` + 块式）/ delegate `delegate R Name(params);` / 顶层 func（class 外的自由函数）
+
+## increment 6b-3（后续 — property）
+- [ ] auto-property `T Name { get; set; }` + 访问器修饰；interface 内属性签名
+
+## increment 6b-4（后续 — 泛型形参 + attribute）
+- [ ] 类型声明泛型形参 `<T>` + `where T : ...` 约束 + attribute `[X]`（顶层 + 成员 + 参数）
 
 ## increment 6c（后续 — Lexer 补全）
 - [ ] 插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码

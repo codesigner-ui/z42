@@ -1,4 +1,5 @@
-// z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本。
+// z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本（incr 4）
+//   + struct/interface/enum（incr 6b-1）。
 namespace Z42cSyntaxDeclTests;
 
 using Std;
@@ -68,4 +69,31 @@ void test_nested_generic_type() {
 void test_full_class() {
     Assert.Equal("(unit (ns App) (using Std) (class public Counter (field private int n) (ctor public Counter (int start) (block (expr (= (. this n) start)))) (method public int Next () (block (expr (= n (+ n 1))) (return n)))))",
         parseUnit("namespace App; using Std; public class Counter { private int n; public Counter(int start) { this.n = start; } public int Next() { n = n + 1; return n; } }"));
+}
+
+[Test]
+void test_struct() {
+    // struct 复用 class 成员机制（含 ctor 消歧）
+    Assert.Equal("(unit (struct Point (field public int X) (field public int Y)))",
+                 parseUnit("struct Point { public int X; public int Y; }"));
+    Assert.Equal("(unit (struct public Pair (field public int A) (ctor public Pair (int a) (block (expr (= (. this A) a))))))",
+                 parseUnit("public struct Pair { public int A; public Pair(int a) { this.A = a; } }"));
+}
+
+[Test]
+void test_interface() {
+    // interface 体为方法签名（无体 → `;`）
+    Assert.Equal("(unit (interface IFoo (method int Bar ()) (method void Baz (int x))))",
+                 parseUnit("interface IFoo { int Bar(); void Baz(int x); }"));
+    Assert.Equal("(unit (interface public IShape : IDrawable (method double Area ())))",
+                 parseUnit("public interface IShape : IDrawable { double Area(); }"));
+}
+
+[Test]
+void test_enum() {
+    Assert.Equal("(unit (enum Color Red Green Blue))",
+                 parseUnit("enum Color { Red, Green, Blue }"));
+    // 底层类型 + 显式值（含未显式的裸成员） + 尾随逗号
+    Assert.Equal("(unit (enum public Flags : int (A 1) B (C 5)))",
+                 parseUnit("public enum Flags : int { A = 1, B, C = 5, }"));
 }
