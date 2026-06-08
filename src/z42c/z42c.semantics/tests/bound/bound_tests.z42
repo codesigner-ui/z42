@@ -8,7 +8,7 @@ using Z42.Semantics;
 [Test]
 void test_bound_dump() {
     var i = new Z42PrimType("int");
-    var lit = new BoundLitInt(5, i);
+    var lit = new BoundLitInt("5", i);
     Assert.Equal("(lit-int 5 :int)", lit.Dump());
     var id = new BoundIdent("x", i);
     Assert.Equal("(ident x :int)", id.Dump());
@@ -22,7 +22,7 @@ void test_bound_dump() {
 void test_bound_block_and_assign() {
     var i = new Z42PrimType("int");
     var stmts = new BoundStmt[1];
-    var asn = new BoundAssign(new BoundIdent("x", i), new BoundLitInt(3, i), i);
+    var asn = new BoundAssign(new BoundIdent("x", i), new BoundLitInt("3", i), i);
     stmts[0] = new BoundExprStmt(asn);
     var blk = new BoundBlock(stmts, 1);
     Assert.Equal("(block (expr (assign (ident x :int) (lit-int 3 :int) :int)))", blk.Dump());

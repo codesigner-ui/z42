@@ -1,0 +1,56 @@
+// z42c.semantics TypeChecker 单测（1A-4b）：源 → bound s-expr（含类型注解）+ 错误用例诊断计数。
+namespace Z42cSemanticsTypeCheckTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_bind_var_infer_and_return() {
+    // var 推断 + 标识符解析 + return 类型检查
+    string src = "class C { int Get() { var x = 5; return x; } }";
+    Assert.Equal("(block (decl x :int (lit-int 5 :int)) (return (ident x :int)))",
+                 SemanticDump.DumpBody(src, "C.Get"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_explicit_type_and_assign() {
+    string src = "class C { void M() { int n = 3; n = 7; } }";
+    Assert.Equal("(block (decl n :int (lit-int 3 :int)) (expr (assign (ident n :int) (lit-int 7 :int) :int)))",
+                 SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_field_in_scope() {
+    // 实例方法可见字段（this 上下文）
+    string src = "class Box { int value; int Get() { return value; } }";
+    Assert.Equal("(block (return (ident value :int)))", SemanticDump.DumpBody(src, "Box.Get"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_free_func_call() {
+    string src = "int Helper() { return 1; } int Main() { return Helper(); }";
+    Assert.Equal("(block (return (call Helper :int)))", SemanticDump.DumpBody(src, "Main"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_return_type_mismatch() {
+    string src = "class C { int Bad() { return \"hi\"; } }";   // string 不可赋给 int
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_undefined_ident() {
+    string src = "class C { int M() { return missing; } }";   // 未定义标识符（error 吸收，仅 1 条）
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_undefined_func() {
+    string src = "class C { int M() { return Nope(); } }";    // 未声明函数
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}

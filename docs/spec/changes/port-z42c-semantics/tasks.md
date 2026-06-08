@@ -29,10 +29,15 @@
 - [x] 验证：`xtask test compiler-z42` → **11 units 112 cases** 全绿
 - **🔴 调试发现 3 个 z42 约束**（写入 memory）：① 对刚 new 的 self-type 实例跨实例写字段 → E0402（用全字段构造器）；② 在自身方法内对 self-type 字段调自身方法（递归）→ E0402（用迭代+字段读）；③ `while(true)` 不满足 definite-return（用 loop-flag + 末尾 return）
 
-### 1A-4b（TypeChecker.Infer + SemanticModel + SemanticDump — 后续）
-- [ ] `TypeChecker.Infer`（集中 if-is `_bindExpr`/`_bindStmt`，绑定方法体 + 返回类型检查）；`SemanticModel`
-- [ ] `SemanticDump.Check(src)`（→ bound s-expr）+ driver `--dump-bound`
-- [ ] tests/typecheck/（bound s-expr 断言 + 类型断言 + 错误用例：type mismatch / undefined / missing return）
+### 1A-4b（TypeChecker.Infer + SemanticModel + SemanticDump — ✅ 已完成）
+- [x] `SemanticModel`（Symbols + Bodies StrMap，key="Class.Method"/func 名）
+- [x] `TypeChecker.Infer`（集中 if-is `_bindExpr`/`_bindStmt`；绑定类方法[this+字段入 scope]/顶层 func；var 推断 / 显式类型 init 可赋检查 / return 类型检查 / 标识符·函数解析）
+- [x] `SemanticDump.DumpBody(src,key)` / `ErrorCount(src)`（纯函数）
+- [x] tests/typecheck/（7 单测：var 推断/显式类型+赋值/字段入 scope/自由函数调用 + 错误：return mismatch/undefined ident/undefined func）
+- [x] 验证：`xtask test compiler-z42` → **12 units 119 cases** 全绿
+- 延后：driver `--dump-bound`（小，需加 semantics 依赖）；AST 节点暂不携 Span（诊断用占位）
+
+> **🎉 increment 1A 完成：z42c.semantics 端到端类型检查真实 z42 源跑通**（source → syntax parse → SymbolCollector + TypeChecker → Bound 树 + 诊断）。集中 if-is 调度（D1）验证可行。下一步 1B（运算 + 控制流）。
 
 ## 后续增量（设计 design.md 增量表）
 - [ ] 1B 运算+控制流 / 1C 调用+继承 / 1D cast·new·数组 / 1E 三目·插值·lambda / 2A·2B 泛型

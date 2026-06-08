@@ -1,0 +1,194 @@
+// 类型检查 Pass 1（port-z42c-semantics 1A-4b）。CompilationUnit + SymbolTable → SemanticModel。
+// 调度：集中式 if-is 链（D1，镜像 C# 集中 switch）。1A 范围：lit/ident/assign/free-call + decl/return/expr/block。
+// 检查：var-decl 初值可赋 / return 类型可赋 / 标识符已定义 / 函数已声明。其余表达式·语句 → 1B+。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.Core;
+
+public sealed class TypeChecker {
+    private DiagnosticBag _diags;
+    public TypeChecker(DiagnosticBag diags) { this._diags = diags; }
+
+    public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols) {
+        var model = new SemanticModel(symbols);
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if (c.Kind == "class" || c.Kind == "struct") { this._bindClass(model, symbols, c); }
+            } else if (d is MethodDecl) {
+                MethodDecl m = d as MethodDecl;
+                this._bindFreeFunc(model, symbols, m);
+            }
+            i = i + 1;
+        }
+        return model;
+    }
+
+    private Decl _unwrap(Decl d) {
+        if (d is AttributedDecl) { AttributedDecl ad = d as AttributedDecl; return ad.Inner; }
+        return d;
+    }
+
+    private void _bindClass(SemanticModel model, SymbolTable symbols, ClassDecl c) {
+        Z42ClassType ct = symbols.GetClass(c.Name);
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[j]);
+            if (mem is MethodDecl) {
+                MethodDecl md = mem as MethodDecl;
+                if (!md.IsCtor && md.HasBody) {
+                    MethodSymbol ms = ct.Methods.Get(md.Name) as MethodSymbol;
+                    var env = TypeEnv.Root(symbols).WithClass(ct.Name());
+                    if (!ms.IsStatic) {
+                        env.Define("this", ct);
+                        string[] fnames = ct.Fields.Keys();
+                        int k = 0;
+                        while (k < fnames.Length) {
+                            FieldSymbol fs = ct.Fields.Get(fnames[k]) as FieldSymbol;
+                            env.Define(fnames[k], fs.FieldType);
+                            k = k + 1;
+                        }
+                    }
+                    BoundStmt body = this._bindMethodBody(symbols, env, md);
+                    model.AddBody(c.Name + "." + md.Name, body);
+                }
+            }
+            j = j + 1;
+        }
+    }
+
+    private void _bindFreeFunc(SemanticModel model, SymbolTable symbols, MethodDecl md) {
+        if (md.HasBody) {
+            var env = TypeEnv.Root(symbols);
+            BoundStmt body = this._bindMethodBody(symbols, env, md);
+            model.AddBody(md.Name, body);
+        }
+    }
+
+    private BoundStmt _bindMethodBody(SymbolTable symbols, TypeEnv env, MethodDecl md) {
+        int p = 0;
+        while (p < md.ParamCount) {
+            env.Define(md.Params[p].Name, symbols.ResolveType(md.Params[p].Type));
+            p = p + 1;
+        }
+        Z42Type ret = symbols.ResolveType(md.RetType);
+        return this._bindStmt(md.Body, env, ret);
+    }
+
+    // ════ 语句（集中 if-is）═══════════════════════════════════════════════════
+    private BoundStmt _bindStmt(Stmt s, TypeEnv env, Z42Type ret) {
+        if (s is BlockStmt) {
+            BlockStmt b = s as BlockStmt;
+            TypeEnv scope = env.PushScope();
+            BoundStmt[] outs = new BoundStmt[b.Count];
+            int i = 0;
+            while (i < b.Count) { outs[i] = this._bindStmt(b.Stmts[i], scope, ret); i = i + 1; }
+            return new BoundBlock(outs, b.Count);
+        }
+        if (s is VarDeclStmt) {
+            VarDeclStmt v = s as VarDeclStmt;
+            BoundExpr init = this._bindExpr(v.Init, env);
+            Z42Type vt = this._varType(env, v, init);
+            env.Define(v.Name, vt);
+            return new BoundVarDeclStmt(v.Name, vt, init);
+        }
+        if (s is ReturnStmt) {
+            ReturnStmt r = s as ReturnStmt;
+            if (r.HasValue) {
+                BoundExpr val = this._bindExpr(r.Value, env);
+                if (!val.Type().IsAssignableTo(ret)) {
+                    this._diags.Error(DiagnosticCodes.TypeMismatch,
+                        "return type " + val.Type().Name() + " not assignable to " + ret.Name(), this._noSpan());
+                }
+                return new BoundReturn(true, val);
+            }
+            return new BoundReturn(false, new BoundLitNull(new Z42VoidType()));
+        }
+        if (s is ExprStmt) {
+            ExprStmt e = s as ExprStmt;
+            return new BoundExprStmt(this._bindExpr(e.E, env));
+        }
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", this._noSpan());
+        return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType()));
+    }
+
+    // `var x` → 推断 init 类型；显式类型 → 解析 + 检查 init 可赋。
+    private Z42Type _varType(TypeEnv env, VarDeclStmt v, BoundExpr init) {
+        if (v.Type is NamedType) {
+            NamedType nt = v.Type as NamedType;
+            if (nt.Name == "var") { return init.Type(); }
+        }
+        Z42Type vt = env.Symbols.ResolveType(v.Type);
+        if (!init.Type().IsAssignableTo(vt)) {
+            this._diags.Error(DiagnosticCodes.TypeMismatch,
+                "cannot assign " + init.Type().Name() + " to " + vt.Name(), this._noSpan());
+        }
+        return vt;
+    }
+
+    // ════ 表达式（集中 if-is）═════════════════════════════════════════════════
+    private BoundExpr _bindExpr(Expr e, TypeEnv env) {
+        if (e is IntLitExpr) {
+            IntLitExpr lit = e as IntLitExpr;
+            return new BoundLitInt(lit.Value, new Z42PrimType("int"));   // 1A: int（long 推断 1B）
+        }
+        if (e is StringLitExpr) {
+            StringLitExpr lit = e as StringLitExpr;
+            return new BoundLitStr(lit.Raw, new Z42PrimType("string"));
+        }
+        if (e is BoolLitExpr) {
+            BoolLitExpr lit = e as BoolLitExpr;
+            return new BoundLitBool(lit.Value, new Z42PrimType("bool"));
+        }
+        if (e is NullLitExpr) {
+            return new BoundLitNull(new Z42UnknownType());
+        }
+        if (e is IdentExpr) {
+            IdentExpr id = e as IdentExpr;
+            Z42Type t = env.LookupVar(id.Name);
+            if (t == null) {
+                this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined: " + id.Name, this._noSpan());
+                return new BoundError("undefined " + id.Name, new Z42ErrorType());
+            }
+            return new BoundIdent(id.Name, t);
+        }
+        if (e is AssignExpr) {
+            AssignExpr a = e as AssignExpr;
+            BoundExpr target = this._bindExpr(a.Target, env);
+            BoundExpr value = this._bindExpr(a.Value, env);
+            if (!value.Type().IsAssignableTo(target.Type())) {
+                this._diags.Error(DiagnosticCodes.TypeMismatch,
+                    "cannot assign " + value.Type().Name() + " to " + target.Type().Name(), this._noSpan());
+            }
+            return new BoundAssign(target, value, target.Type());
+        }
+        if (e is CallExpr) {
+            return this._bindCall(e as CallExpr, env);
+        }
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported expression (1A)", this._noSpan());
+        return new BoundError("unsupported expr", new Z42ErrorType());
+    }
+
+    private BoundExpr _bindCall(CallExpr call, TypeEnv env) {
+        BoundExpr[] args = new BoundExpr[call.ArgCount];
+        int i = 0;
+        while (i < call.ArgCount) { args[i] = this._bindExpr(call.Args[i], env); i = i + 1; }
+        if (call.Callee is IdentExpr) {
+            IdentExpr id = call.Callee as IdentExpr;
+            if (env.Symbols.HasFunc(id.Name)) {
+                MethodSymbol ms = env.Symbols.GetFunc(id.Name);
+                return new BoundCall(id.Name, args, call.ArgCount, ms.Signature.Ret);
+            }
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined function: " + id.Name, this._noSpan());
+            return new BoundCall(id.Name, args, call.ArgCount, new Z42ErrorType());
+        }
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported call (1A: member/虚分派见 1C)", this._noSpan());
+        return new BoundError("unsupported call", new Z42ErrorType());
+    }
+
+    // AST 节点 1A 暂不携 Span → 占位（span-bearing AST 是后续 syntax 增强）。
+    private Span _noSpan() { return new Span(0, 0, 1, 1, "<sem>"); }
+}

@@ -10,11 +10,11 @@ public class BoundExpr {
 }
 
 public sealed class BoundLitInt : BoundExpr {
-    public long Value;
+    public string Text;       // 原始字面量文本（数值解析留 codegen）
     private Z42Type _type;
-    public BoundLitInt(long value, Z42Type type) { this.Value = value; this._type = type; }
+    public BoundLitInt(string text, Z42Type type) { this.Text = text; this._type = type; }
     public override Z42Type Type() { return this._type; }
-    public override string  Dump() { return "(lit-int " + this.Value.ToString() + " :" + this._type.Name() + ")"; }
+    public override string  Dump() { return "(lit-int " + this.Text + " :" + this._type.Name() + ")"; }
 }
 
 public sealed class BoundLitStr : BoundExpr {

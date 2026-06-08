@@ -1,0 +1,29 @@
+// 语义 dump 工具（port-z42c-semantics 1A-4b）。源 → 类型检查 → bound s-expr / 诊断计数。
+// 供 driver `--dump-bound`（后续）+ [Test]。纯函数（内部建临时 DiagnosticBag）。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.Core;
+
+public static class SemanticDump {
+    // 指定 key（"Class.Method" / 顶层函数名）的方法体 bound s-expr。
+    public static string DumpBody(string src, string key) {
+        var p = new Parser(src, "<input>");
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().Collect(cu);
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Infer(cu, symbols);
+        if (model.HasBody(key)) { return model.GetBody(key).Dump(); }
+        return "(no-body " + key + ")";
+    }
+
+    // 类型检查诊断错误条数（错误用例断言）。
+    public static int ErrorCount(string src) {
+        var p = new Parser(src, "<input>");
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().Collect(cu);
+        var diags = new DiagnosticBag();
+        new TypeChecker(diags).Infer(cu, symbols);
+        return diags.ErrorCount();
+    }
+}
