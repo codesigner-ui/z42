@@ -63,9 +63,18 @@
 
 > **类型检查器现覆盖大部分 L1**：lit/ident/assign/decl/return/block/free·instance·static call/binary·unary/if·while·break·continue/member·继承/is·as·new/数组索引。
 
-## 后续增量（设计 design.md 增量表）
-- [ ] 1E 三目·??·插值串·lambda / 2A·2B 泛型 → **codegen(Bound→IR,另一半,需先 map z42c.ir)**
-- [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法(new T[n]) [syntax gap]
+## increment 1E（三目 + ??）+ driver --dump-bound —— ✅ 已完成
+- [x] BoundConditional(三目) + ?? via _bindBinary + _commonType；lambda/插值串延后
+- [x] `z42c --dump-bound` CLI（SemanticDump.DumpAll + driver 加 z42c.semantics 依赖）——经自举二进制类型检查真实源
+
+## increment 2A-1（泛型类）—— ✅ 已完成
+- [x] Z42GenericParamType + ResolveTypeP(型参感知) + SymbolCollector 用类 TypeParams + TypeEnv.ResolveType/WithClassGeneric
+- [x] 4 单测（Box<T>/Pair<K,V>/型参赋值/不同型参错误）→ **12 units 156 cases** 全绿
+
+## 后续增量
+- [ ] 2A-2 泛型方法自身型参（合并类+方法型参）+ 泛型实例化 `Box<int>`→Z42InstantiatedType / 2B where 约束求解
+- [ ] **codegen(Bound→IR,semantics 另一半,需先 map z42.IR 出设计)** → z42.IR + byte-identical emit + pipeline
+- [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法 / lambda / 插值串
 
 ## 备注
 - SemanticsSkeleton.z42 暂留（pipeline 仍引用）。
