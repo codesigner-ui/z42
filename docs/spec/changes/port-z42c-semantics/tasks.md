@@ -39,8 +39,18 @@
 
 > **🎉 increment 1A 完成：z42c.semantics 端到端类型检查真实 z42 源跑通**（source → syntax parse → SymbolCollector + TypeChecker → Bound 树 + 诊断）。集中 if-is 调度（D1）验证可行。下一步 1B（运算 + 控制流）。
 
+## increment 1B（二元/一元运算 + if/while/break/continue + 数值拓宽表）—— ✅ 已完成
+> z42 无 Func 委托/泛型字典 → C# `BinaryTypeTable`（Func + Dictionary）用 **int tag + if-else 串**忠实镜像（同 record→class、match→if-is 受限写法）。
+- [x] 1B-1 `BinaryTypeTable.z42`（NEW）：OperandKind/ResultKind（int tag 常量）+ TypeFacts（IsNumeric/IsIntegral/IsOrderable/IsBool/SatisfiesKind/ArithmeticResult，含 keyword+canonical 双拼写）+ BinaryRule（class 替代 record）+ BinaryTypeTable.Lookup/LookupUnary/ResultType
+- [x] 1B-2 `Bound.z42`：+ BoundLitFloat / BoundBinary `(bin op L R :t)` / BoundUnary `(unary op X :t)` + BoundIf `(if C T [E])` / BoundWhile `(while C B)` / BoundBreak `(break)` / BoundContinue `(continue)`
+- [x] 1B-3 `TypeChecker.z42`：_bindExpr 加 FloatLitExpr/BinaryExpr/UnaryExpr；_bindStmt 加 IfStmt/WhileStmt/BreakStmt/ContinueStmt；+ `_loopDepth` 字段（break/continue 越界检查）+ `_requireBool` + `_checkOperand`
+- [x] 1B-4 tests：bound_tests（运算/控制流节点 Dump，+2）+ typecheck_tests（算术/拓宽/比较→bool/逻辑/位运算/一元/if/while/break-continue + 错误：operator 类型不符/非 bool 条件/break 越界，+9）
+- [x] 1B-5 README + tasks 同步；`xtask test compiler-z42` = **12 units 130 cases** 全绿（bound 6 / typecheck 16）
+
+> **🎉 increment 1B 完成**：二元/一元运算（拓宽表）+ if/while/break/continue 端到端跑通。BinaryTypeTable 用 int tag + BinaryRule(class) 忠实镜像 C# 的 Func 委托表。下一步 1C（方法调用 + receiver + 继承查找）。
+
 ## 后续增量（设计 design.md 增量表）
-- [ ] 1B 运算+控制流 / 1C 调用+继承 / 1D cast·new·数组 / 1E 三目·插值·lambda / 2A·2B 泛型
+- [ ] 1C 调用+继承 / 1D cast·new·数组 / 1E 三目·插值·lambda / 2A·2B 泛型
 - [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import
 
 ## 备注

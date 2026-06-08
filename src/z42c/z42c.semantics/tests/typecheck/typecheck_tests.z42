@@ -54,3 +54,83 @@ void test_error_undefined_func() {
     string src = "class C { int M() { return Nope(); } }";    // 未声明函数
     Assert.Equal(1, SemanticDump.ErrorCount(src));
 }
+
+// ── 1B：运算 + 控制流端到端 ──────────────────────────────────────────────────────
+
+[Test]
+void test_arithmetic() {
+    string src = "class C { int Add(int a, int b) { return a + b; } }";
+    Assert.Equal("(block (return (bin + (ident a :int) (ident b :int) :int)))",
+                 SemanticDump.DumpBody(src, "C.Add"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_numeric_widening() {
+    // double / int → double（拓宽表）；double 可赋给 double 返回
+    string src = "class C { double Half(double d) { return d / 2; } }";
+    Assert.Equal("(block (return (bin / (ident d :double) (lit-int 2 :int) :double)))",
+                 SemanticDump.DumpBody(src, "C.Half"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_comparison_yields_bool() {
+    string src = "class C { bool Lt(int a, int b) { return a < b; } }";
+    Assert.Equal("(block (return (bin < (ident a :int) (ident b :int) :bool)))",
+                 SemanticDump.DumpBody(src, "C.Lt"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_logical_and_bitwise() {
+    string and = "class C { bool A(bool x, bool y) { return x && y; } }";
+    Assert.Equal("(block (return (bin && (ident x :bool) (ident y :bool) :bool)))",
+                 SemanticDump.DumpBody(and, "C.A"));
+    Assert.Equal(0, SemanticDump.ErrorCount(and));
+    string bits = "class C { int O(int a, int b) { return a | b; } }";
+    Assert.Equal("(block (return (bin | (ident a :int) (ident b :int) :int)))",
+                 SemanticDump.DumpBody(bits, "C.O"));
+    Assert.Equal(0, SemanticDump.ErrorCount(bits));
+}
+
+[Test]
+void test_unary() {
+    string neg = "class C { int N(int x) { return -x; } }";
+    Assert.Equal("(block (return (unary - (ident x :int) :int)))",
+                 SemanticDump.DumpBody(neg, "C.N"));
+    Assert.Equal(0, SemanticDump.ErrorCount(neg));
+    string not = "class C { bool F(bool b) { return !b; } }";
+    Assert.Equal("(block (return (unary ! (ident b :bool) :bool)))",
+                 SemanticDump.DumpBody(not, "C.F"));
+    Assert.Equal(0, SemanticDump.ErrorCount(not));
+}
+
+[Test]
+void test_if_while_break_continue() {
+    string src = "class C { void Run(int n) { while (n < 3) { if (n == 0) { break; } continue; } } }";
+    Assert.Equal(
+        "(block (while (bin < (ident n :int) (lit-int 3 :int) :bool) (block (if (bin == (ident n :int) (lit-int 0 :int) :bool) (block (break))) (continue))))",
+        SemanticDump.DumpBody(src, "C.Run"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_operator_type_mismatch() {
+    // string - int：`-` 要求 numeric 操作数，左 string 不符
+    string src = "class C { int Bad(string s) { return s - 1; } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_non_bool_condition() {
+    // if 条件须 bool，int 不符
+    string src = "class C { void M(int n) { if (n) { } } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_break_outside_loop() {
+    string src = "class C { void M() { break; } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}

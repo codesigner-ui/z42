@@ -17,6 +17,14 @@ public sealed class BoundLitInt : BoundExpr {
     public override string  Dump() { return "(lit-int " + this.Text + " :" + this._type.Name() + ")"; }
 }
 
+public sealed class BoundLitFloat : BoundExpr {
+    public string Text;       // 原始字面量文本（含可能的 f/d 后缀；数值解析留 codegen）
+    private Z42Type _type;
+    public BoundLitFloat(string text, Z42Type type) { this.Text = text; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(lit-float " + this.Text + " :" + this._type.Name() + ")"; }
+}
+
 public sealed class BoundLitStr : BoundExpr {
     public string Raw;        // 原始词素（含引号）
     private Z42Type _type;
@@ -82,6 +90,35 @@ public sealed class BoundCall : BoundExpr {
     }
 }
 
+// 二元运算（1B）。Op 留原始运算符文本（z42 无 enum；codegen 自行映射 opcode）。
+public sealed class BoundBinary : BoundExpr {
+    public string    Op;
+    public BoundExpr Left;
+    public BoundExpr Right;
+    private Z42Type _type;
+    public BoundBinary(string op, BoundExpr left, BoundExpr right, Z42Type type) {
+        this.Op = op; this.Left = left; this.Right = right; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        return "(bin " + this.Op + " " + this.Left.Dump() + " " + this.Right.Dump() + " :" + this._type.Name() + ")";
+    }
+}
+
+// 一元/前缀运算（1B）：! - + ~ ++ --。
+public sealed class BoundUnary : BoundExpr {
+    public string    Op;
+    public BoundExpr Operand;
+    private Z42Type _type;
+    public BoundUnary(string op, BoundExpr operand, Z42Type type) {
+        this.Op = op; this.Operand = operand; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        return "(unary " + this.Op + " " + this.Operand.Dump() + " :" + this._type.Name() + ")";
+    }
+}
+
 public sealed class BoundError : BoundExpr {
     public string Message;
     private Z42Type _type;
@@ -134,4 +171,42 @@ public sealed class BoundBlock : BoundStmt {
         while (i < this.Count) { s = s + " " + this.Stmts[i].Dump(); i = i + 1; }
         return s + ")";
     }
+}
+
+// ── 控制流（1B）─────────────────────────────────────────────────────────────────
+
+// 无 nullable 字段：用 HasElse 标志 + 占位 Else（gated by 标志，同 syntax IfStmt 约定）。
+public sealed class BoundIf : BoundStmt {
+    public BoundExpr Cond;
+    public BoundStmt Then;
+    public bool      HasElse;
+    public BoundStmt Else;     // 仅 HasElse
+    public BoundIf(BoundExpr cond, BoundStmt then, bool hasElse, BoundStmt els) {
+        this.Cond = cond; this.Then = then; this.HasElse = hasElse; this.Else = els;
+    }
+    public override string Dump() {
+        if (this.HasElse) {
+            return "(if " + this.Cond.Dump() + " " + this.Then.Dump() + " " + this.Else.Dump() + ")";
+        }
+        return "(if " + this.Cond.Dump() + " " + this.Then.Dump() + ")";
+    }
+}
+
+public sealed class BoundWhile : BoundStmt {
+    public BoundExpr Cond;
+    public BoundStmt Body;
+    public BoundWhile(BoundExpr cond, BoundStmt body) { this.Cond = cond; this.Body = body; }
+    public override string Dump() {
+        return "(while " + this.Cond.Dump() + " " + this.Body.Dump() + ")";
+    }
+}
+
+public sealed class BoundBreak : BoundStmt {
+    public BoundBreak() {}
+    public override string Dump() { return "(break)"; }
+}
+
+public sealed class BoundContinue : BoundStmt {
+    public BoundContinue() {}
+    public override string Dump() { return "(continue)"; }
 }

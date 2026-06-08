@@ -48,3 +48,39 @@ void test_typeenv_with_class() {
     Assert.Equal(true,  env.HasClass());
     Assert.Equal("Foo", env.CurrentClass());
 }
+
+// ── 1B：运算 + 控制流节点 Dump ──────────────────────────────────────────────────
+
+[Test]
+void test_bound_binary_unary_dump() {
+    var i = new Z42PrimType("int");
+    var b = new Z42PrimType("bool");
+    var bin = new BoundBinary("+", new BoundIdent("x", i), new BoundLitInt("1", i), i);
+    Assert.Equal("(bin + (ident x :int) (lit-int 1 :int) :int)", bin.Dump());
+    var un = new BoundUnary("-", new BoundIdent("x", i), i);
+    Assert.Equal("(unary - (ident x :int) :int)", un.Dump());
+    var not = new BoundUnary("!", new BoundLitBool(true, b), b);
+    Assert.Equal("(unary ! (lit-bool true :bool) :bool)", not.Dump());
+    var f = new BoundLitFloat("1.5", new Z42PrimType("double"));
+    Assert.Equal("(lit-float 1.5 :double)", f.Dump());
+}
+
+[Test]
+void test_bound_control_flow_dump() {
+    var b = new Z42PrimType("bool");
+    var noStmts = new BoundStmt[0];
+    var emptyBlk = new BoundBlock(noStmts, 0);
+    // if 无 else
+    var ifNoElse = new BoundIf(new BoundLitBool(true, b), emptyBlk, false, emptyBlk);
+    Assert.Equal("(if (lit-bool true :bool) (block))", ifNoElse.Dump());
+    // if + else
+    var ifElse = new BoundIf(new BoundLitBool(false, b), emptyBlk, true, emptyBlk);
+    Assert.Equal("(if (lit-bool false :bool) (block) (block))", ifElse.Dump());
+    // while + break/continue 在体内
+    var inner = new BoundStmt[2];
+    inner[0] = new BoundBreak();
+    inner[1] = new BoundContinue();
+    var body = new BoundBlock(inner, 2);
+    var wh = new BoundWhile(new BoundLitBool(true, b), body);
+    Assert.Equal("(while (lit-bool true :bool) (block (break) (continue)))", wh.Dump());
+}

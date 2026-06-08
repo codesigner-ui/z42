@@ -8,7 +8,8 @@ using Z42.Core;
 
 public sealed class TypeChecker {
     private DiagnosticBag _diags;
-    public TypeChecker(DiagnosticBag diags) { this._diags = diags; }
+    private int           _loopDepth;   // break/continue 越界检查（1B）
+    public TypeChecker(DiagnosticBag diags) { this._diags = diags; this._loopDepth = 0; }
 
     public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols) {
         var model = new SemanticModel(symbols);
@@ -111,6 +112,37 @@ public sealed class TypeChecker {
             ExprStmt e = s as ExprStmt;
             return new BoundExprStmt(this._bindExpr(e.E, env));
         }
+        if (s is IfStmt) {
+            IfStmt f = s as IfStmt;
+            BoundExpr cond = this._bindExpr(f.Cond, env);
+            this._requireBool(cond.Type(), "if");
+            BoundStmt then = this._bindStmt(f.Then, env, ret);
+            if (f.HasElse) {
+                return new BoundIf(cond, then, true, this._bindStmt(f.Else, env, ret));
+            }
+            return new BoundIf(cond, then, false, new BoundBlock(new BoundStmt[0], 0));
+        }
+        if (s is WhileStmt) {
+            WhileStmt w = s as WhileStmt;
+            BoundExpr cond = this._bindExpr(w.Cond, env);
+            this._requireBool(cond.Type(), "while");
+            this._loopDepth = this._loopDepth + 1;
+            BoundStmt body = this._bindStmt(w.Body, env, ret);
+            this._loopDepth = this._loopDepth - 1;
+            return new BoundWhile(cond, body);
+        }
+        if (s is BreakStmt) {
+            if (this._loopDepth == 0) {
+                this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", this._noSpan());
+            }
+            return new BoundBreak();
+        }
+        if (s is ContinueStmt) {
+            if (this._loopDepth == 0) {
+                this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`continue` outside of loop", this._noSpan());
+            }
+            return new BoundContinue();
+        }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", this._noSpan());
         return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType()));
     }
@@ -134,6 +166,10 @@ public sealed class TypeChecker {
         if (e is IntLitExpr) {
             IntLitExpr lit = e as IntLitExpr;
             return new BoundLitInt(lit.Value, new Z42PrimType("int"));   // 1A: int（long 推断 1B）
+        }
+        if (e is FloatLitExpr) {
+            FloatLitExpr lit = e as FloatLitExpr;
+            return new BoundLitFloat(lit.Value, this._floatLitType(lit.Value));
         }
         if (e is StringLitExpr) {
             StringLitExpr lit = e as StringLitExpr;
@@ -165,11 +201,84 @@ public sealed class TypeChecker {
             }
             return new BoundAssign(target, value, target.Type());
         }
+        if (e is BinaryExpr) {
+            return this._bindBinary(e as BinaryExpr, env);
+        }
+        if (e is UnaryExpr) {
+            return this._bindUnary(e as UnaryExpr, env);
+        }
         if (e is CallExpr) {
             return this._bindCall(e as CallExpr, env);
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported expression (1A)", this._noSpan());
         return new BoundError("unsupported expr", new Z42ErrorType());
+    }
+
+    // ════ 运算（集中 if-is + BinaryTypeTable，1B）═══════════════════════════════
+    private BoundExpr _bindBinary(BinaryExpr bin, TypeEnv env) {
+        BoundExpr left  = this._bindExpr(bin.Left, env);
+        BoundExpr right = this._bindExpr(bin.Right, env);
+        Z42Type lt = left.Type();
+        Z42Type rt = right.Type();
+        if ((lt is Z42ErrorType) || (rt is Z42ErrorType)) {
+            return new BoundBinary(bin.Op, left, right, new Z42ErrorType());
+        }
+        // 字符串拼接特例（任一侧 string）：先于查表，镜像 C# CheckBinary 前置。
+        if (bin.Op == "+") {
+            if (lt.Name() == "string" || rt.Name() == "string") {
+                return new BoundBinary(bin.Op, left, right, new Z42PrimType("string"));
+            }
+        }
+        BinaryRule rule = BinaryTypeTable.Lookup(bin.Op);
+        if (!rule.Known) {
+            return new BoundBinary(bin.Op, left, right, new Z42UnknownType());
+        }
+        this._checkOperand(rule.Left,  rule.Requirement, lt, bin.Op);
+        this._checkOperand(rule.Right, rule.Requirement, rt, bin.Op);
+        return new BoundBinary(bin.Op, left, right, BinaryTypeTable.ResultType(rule.Out, lt, rt));
+    }
+
+    private BoundExpr _bindUnary(UnaryExpr u, TypeEnv env) {
+        BoundExpr operand = this._bindExpr(u.Operand, env);
+        Z42Type ot = operand.Type();
+        if (ot is Z42ErrorType) {
+            return new BoundUnary(u.Op, operand, new Z42ErrorType());
+        }
+        BinaryRule rule = BinaryTypeTable.LookupUnary(u.Op);
+        if (!rule.Known) {
+            return new BoundUnary(u.Op, operand, ot);
+        }
+        this._checkOperand(rule.Left, rule.Requirement, ot, u.Op);
+        return new BoundUnary(u.Op, operand, BinaryTypeTable.ResultType(rule.Out, ot, ot));
+    }
+
+    // 操作数约束检查（None / unknown / error → 跳过，防级联）。镜像 C# CheckBinaryOperand。
+    private void _checkOperand(int kind, string req, Z42Type t, string op) {
+        if (kind == OperandKind.None) { return; }
+        if ((t is Z42UnknownType) || (t is Z42ErrorType)) { return; }
+        if (!TypeFacts.SatisfiesKind(kind, t)) {
+            this._diags.Error(DiagnosticCodes.TypeMismatch,
+                "operator `" + op + "` requires " + req + " operand, got `" + t.Name() + "`", this._noSpan());
+        }
+    }
+
+    // 条件必须 bool（if/while）。error/unknown 吸收。镜像 C# RequireBool。
+    private void _requireBool(Z42Type t, string context) {
+        if ((t is Z42ErrorType) || (t is Z42UnknownType)) { return; }
+        if (!TypeFacts.IsBool(t)) {
+            this._diags.Error(DiagnosticCodes.TypeMismatch,
+                "`" + context + "` condition must be `bool`, got `" + t.Name() + "`", this._noSpan());
+        }
+    }
+
+    // 浮点字面量类型：f/F 后缀 → float，否则 double（d/D/m/M 归 double）。
+    private Z42Type _floatLitType(string text) {
+        int n = text.Length;
+        if (n > 0) {
+            char last = text.CharAt(n - 1);
+            if (last == 'f' || last == 'F') { return new Z42PrimType("float"); }
+        }
+        return new Z42PrimType("double");
     }
 
     private BoundExpr _bindCall(CallExpr call, TypeEnv env) {

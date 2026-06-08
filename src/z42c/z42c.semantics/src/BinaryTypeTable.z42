@@ -1,0 +1,143 @@
+// 二元/一元运算类型规则表（port-z42c-semantics 1B-1）。镜像 C# BinaryTypeTable + Z42Type 数值谓词。
+// 受限写法：z42 无 Func 委托 / 无泛型 Dictionary 字段 →
+//   ① 操作数约束 / 结果计算用 **int tag**（OperandKind / ResultKind）替代 C# 的 Func<Z42Type,bool> / Func<...,Z42Type>；
+//   ② 规则查表用 **if-else 串**（BinaryTypeTable.Lookup）替代 Dictionary 字面量；
+//   ③ 规则记录用 **class BinaryRule** 替代 C# record BinaryTypeRule。
+// 「加一个运算符 = 加一行 if」的性质与 C# 表一致。
+namespace Z42.Semantics;
+
+// 操作数约束种类（int tag 替代 C# 的 Func<Z42Type,bool> 谓词）。
+public static class OperandKind {
+    public static int None      = 0;   // 无约束（==/!=/无规则）
+    public static int Numeric   = 1;   // 任意数值
+    public static int Integral  = 2;   // 整型（位运算/移位）
+    public static int Orderable = 3;   // 可全序（numeric | char）
+    public static int Bool      = 4;   // 布尔
+}
+
+// 结果类型种类（int tag 替代 C# 的 Output 委托）。
+public static class ResultKind {
+    public static int Bool    = 0;   // → bool（比较/逻辑/相等）
+    public static int Arith   = 1;   // → 数值拓宽结果
+    public static int Unknown = 2;   // → <unknown>（未知运算符兜底）
+    public static int Operand = 3;   // → 操作数类型透传（一元 - / + / ~ / ++ / --）
+}
+
+// 类型谓词（镜像 C# Z42Type.IsNumeric/IsIntegral/IsOrderable/IsBool/ArithmeticResult）。
+// ResolveType 不规范化拼写（byte 留 byte，不转 u8）→ 谓词同时接受 keyword + canonical 双拼写。
+public static class TypeFacts {
+    public static bool IsNumeric(Z42Type t) {
+        if (!(t is Z42PrimType)) { return false; }
+        return TypeFacts._isNumericName((t as Z42PrimType).Name());
+    }
+
+    public static bool IsIntegral(Z42Type t) {
+        if (!(t is Z42PrimType)) { return false; }
+        string n = (t as Z42PrimType).Name();
+        if (TypeFacts._isFloatName(n)) { return false; }
+        return TypeFacts._isNumericName(n);
+    }
+
+    public static bool IsOrderable(Z42Type t) {
+        if (TypeFacts.IsNumeric(t)) { return true; }
+        if (!(t is Z42PrimType)) { return false; }
+        return (t as Z42PrimType).Name() == "char";
+    }
+
+    public static bool IsBool(Z42Type t) {
+        if (!(t is Z42PrimType)) { return false; }
+        return (t as Z42PrimType).Name() == "bool";
+    }
+
+    // int tag → 谓词分派（_checkOperand 用）。None / 未知 → true（无约束）。
+    public static bool SatisfiesKind(int kind, Z42Type t) {
+        if (kind == OperandKind.Numeric)   { return TypeFacts.IsNumeric(t); }
+        if (kind == OperandKind.Integral)  { return TypeFacts.IsIntegral(t); }
+        if (kind == OperandKind.Orderable) { return TypeFacts.IsOrderable(t); }
+        if (kind == OperandKind.Bool)      { return TypeFacts.IsBool(t); }
+        return true;
+    }
+
+    // 二元算术「更宽」类型：double > float > long > int（双拼写）。镜像 C# ArithmeticResult。
+    public static Z42Type ArithmeticResult(Z42Type l, Z42Type r) {
+        string a = l.Name();
+        string b = r.Name();
+        if (TypeFacts._isDoubleName(a) || TypeFacts._isDoubleName(b)) { return new Z42PrimType("double"); }
+        if (TypeFacts._isFloatOnly(a)  || TypeFacts._isFloatOnly(b))  { return new Z42PrimType("float"); }
+        if (TypeFacts._isLongName(a)   || TypeFacts._isLongName(b))   { return new Z42PrimType("long"); }
+        return new Z42PrimType("int");
+    }
+
+    public static bool _isNumericName(string n) {
+        if (n == "int" || n == "long" || n == "float" || n == "double") { return true; }
+        if (n == "byte" || n == "sbyte" || n == "short" || n == "ushort") { return true; }
+        if (n == "uint" || n == "ulong") { return true; }
+        if (n == "i8" || n == "i16" || n == "i32" || n == "i64") { return true; }
+        if (n == "u8" || n == "u16" || n == "u32" || n == "u64") { return true; }
+        if (n == "f32" || n == "f64") { return true; }
+        return false;
+    }
+
+    public static bool _isFloatName(string n) {
+        return n == "float" || n == "double" || n == "f32" || n == "f64";
+    }
+    public static bool _isDoubleName(string n) { return n == "double" || n == "f64"; }
+    public static bool _isFloatOnly(string n)  { return n == "float" || n == "f32"; }
+    public static bool _isLongName(string n)   { return n == "long" || n == "i64"; }
+}
+
+// 一条运算规则（class 替代 C# record BinaryTypeRule/UnaryTypeRule；二元/一元复用，一元只用 Left+Out）。
+public sealed class BinaryRule {
+    public bool   Known;         // false → 无表项（结果 Unknown，不报约束错）
+    public int    Left;          // 左/一元操作数约束（OperandKind）
+    public int    Right;         // 右操作数约束（一元忽略，置 None）
+    public int    Out;           // 结果种类（ResultKind）
+    public string Requirement;   // 报错用约束词（"numeric"/"integral"/"bool"/...）
+    public BinaryRule(bool known, int left, int right, int outKind, string requirement) {
+        this.Known = known; this.Left = left; this.Right = right; this.Out = outKind; this.Requirement = requirement;
+    }
+}
+
+// 运算符 → 规则（镜像 C# BinaryTypeTable.Rules / UnaryTypeTable.Rules；if-else 串替代 Dictionary）。
+// is/as 用独立 AST 节点（IsExpr/AsExpr，1D），不经此表。
+public static class BinaryTypeTable {
+    public static BinaryRule Lookup(string op) {
+        // 算术：两侧 numeric → 拓宽
+        if (op == "+" || op == "-" || op == "*" || op == "/" || op == "%") {
+            return new BinaryRule(true, OperandKind.Numeric, OperandKind.Numeric, ResultKind.Arith, "numeric");
+        }
+        // 关系：左 orderable → bool
+        if (op == "<" || op == "<=" || op == ">" || op == ">=") {
+            return new BinaryRule(true, OperandKind.Orderable, OperandKind.None, ResultKind.Bool, "orderable (numeric or char)");
+        }
+        // 相等：无约束 → bool
+        if (op == "==" || op == "!=") {
+            return new BinaryRule(true, OperandKind.None, OperandKind.None, ResultKind.Bool, "");
+        }
+        // 逻辑：两侧 bool → bool
+        if (op == "&&" || op == "||") {
+            return new BinaryRule(true, OperandKind.Bool, OperandKind.Bool, ResultKind.Bool, "bool");
+        }
+        // 位运算/移位：两侧 integral → 拓宽
+        if (op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>") {
+            return new BinaryRule(true, OperandKind.Integral, OperandKind.Integral, ResultKind.Arith, "integral");
+        }
+        return new BinaryRule(false, OperandKind.None, OperandKind.None, ResultKind.Unknown, "");
+    }
+
+    public static BinaryRule LookupUnary(string op) {
+        if (op == "!")  { return new BinaryRule(true, OperandKind.Bool,     OperandKind.None, ResultKind.Bool,    "bool"); }
+        if (op == "-" || op == "+") { return new BinaryRule(true, OperandKind.Numeric, OperandKind.None, ResultKind.Operand, "numeric"); }
+        if (op == "~")  { return new BinaryRule(true, OperandKind.Integral, OperandKind.None, ResultKind.Operand, "integral"); }
+        if (op == "++" || op == "--") { return new BinaryRule(true, OperandKind.Numeric, OperandKind.None, ResultKind.Operand, "numeric"); }
+        return new BinaryRule(false, OperandKind.None, OperandKind.None, ResultKind.Operand, "");
+    }
+
+    // 结果种类 → 实际类型（一元透传时 l == 操作数类型）。
+    public static Z42Type ResultType(int outKind, Z42Type l, Z42Type r) {
+        if (outKind == ResultKind.Bool)    { return new Z42PrimType("bool"); }
+        if (outKind == ResultKind.Arith)   { return TypeFacts.ArithmeticResult(l, r); }
+        if (outKind == ResultKind.Operand) { return l; }
+        return new Z42UnknownType();
+    }
+}
