@@ -74,8 +74,13 @@
 - [x] 3 单测（泛型类[+基接口类型实参+where]·泛型 interface / 泛型方法[+where new()] / 泛型 delegate·record[+where class]）→ tests/decl/
 - [x] 验证：`xtask test compiler-z42` → 5 units **76 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 21）
 
-## increment 6b-5（后续 — attribute）
-- [ ] attribute `[X]` / `[X(args)]`（顶层声明 + 成员；捕获并附着到后续 decl）
+## increment 6b-5（attribute — ✅ 已完成）
+- [x] AST：Attr（Name + Expr 参数）+ AttrList holder + AttributedDecl 包裹（不污染各 decl 构造器）；Decl.z42
+- [x] 解析：`_parseAttributes`（连续 `[A][B]` 组 + 组内逗号 `[A, B]` + `(args)` 走 `_parseExpr`）hook 进 ParseCompilationUnit + `_parseMember`（拆 `_parseMemberBody`）
+- [x] 3 单测（成员 attribute[Test/位置参数] / 类型 attribute[单/多组/组内逗号] / 命名参数 `k=v`→AssignExpr）→ tests/decl/
+- [x] 验证：`xtask test compiler-z42` → 5 units **79 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 24）
+
+> **increment 6b 全部完成**（顶层声明补全：struct/interface/enum/record/delegate/顶层 func/property/泛型形参+where/attribute）。下一步 6c。
 
 ## increment 6c（后续 — Lexer 补全）
 - [ ] 插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码

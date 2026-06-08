@@ -6,7 +6,8 @@
 //       / record（位置式 + 块体）/ delegate / 顶层自由 func（命名空间级，MethodDecl.IsFree）。
 // 成员 property：auto `{ get; set; }`（含访问器修饰 + 初值）；自定义 body / 表达式体 / init-only 延后。
 // 泛型：类型声明 + 方法 + delegate + record 的形参 `<T>`（文本捕获）+ `where T : ...` 约束（new()/class/struct/类型）。
-// 延后（incr 6b5+）：attribute [X]；lambda。
+// attribute：前置 `[X]`/`[X(args)]`/`[A][B]`（顶层 + 成员）→ AttributedDecl 包裹；args 为表达式。
+// 延后（incr 6c+）：lambda；Lexer 补全；真实 Visitor + TypeExpr；byte-identical。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -442,30 +443,33 @@ public sealed class Parser {
                 decls = this._growDecls(decls, n); decls[n] = new UsingDecl(un); n = n + 1;
                 continue;
             }
+            AttrList attrs = this._parseAttributes();
             string mods = this._parseModifiers();
             int dk = this._peek().Kind;
+            Decl d = new UsingDecl("<error>");
+            bool ok = true;
             if (dk == TokenKind.Class || dk == TokenKind.Struct || dk == TokenKind.Interface) {
                 string kind = "class";
                 if (dk == TokenKind.Struct) { kind = "struct"; }
                 else if (dk == TokenKind.Interface) { kind = "interface"; }
-                Decl c = this._parseTypeDecl(mods, kind);
-                decls = this._growDecls(decls, n); decls[n] = c; n = n + 1;
+                d = this._parseTypeDecl(mods, kind);
             } else if (dk == TokenKind.Enum) {
-                Decl e = this._parseEnum(mods);
-                decls = this._growDecls(decls, n); decls[n] = e; n = n + 1;
+                d = this._parseEnum(mods);
             } else if (dk == TokenKind.Record) {
-                Decl r = this._parseRecord(mods);
-                decls = this._growDecls(decls, n); decls[n] = r; n = n + 1;
+                d = this._parseRecord(mods);
             } else if (dk == TokenKind.Delegate) {
-                Decl d = this._parseDelegate(mods);
-                decls = this._growDecls(decls, n); decls[n] = d; n = n + 1;
+                d = this._parseDelegate(mods);
             } else if (this._isTypeKeyword(dk) || dk == TokenKind.Identifier) {
                 // 顶层自由函数：Type Name(params) { body }
-                Decl f = this._parseTopLevelFunc(mods);
-                decls = this._growDecls(decls, n); decls[n] = f; n = n + 1;
+                d = this._parseTopLevelFunc(mods);
             } else {
                 this._diags.Error(DiagnosticCodes.UnexpectedToken, "expected declaration (class/struct/interface/enum/record/delegate/func)", this._peek().Span);
                 this._advance();
+                ok = false;
+            }
+            if (ok) {
+                if (attrs.Count > 0) { d = new AttributedDecl(attrs.Items, attrs.Count, d); }
+                decls = this._growDecls(decls, n); decls[n] = d; n = n + 1;
             }
         }
         return new CompilationUnit(hasNs, ns, decls, n);
@@ -487,6 +491,45 @@ public sealed class Parser {
             this._advance();
         }
         return s;
+    }
+
+    // 前置 attribute：连续的 `[ Name [(args)] [, Name2 ...] ]` 组（args 为表达式，命名参数即 AssignExpr）。
+    // 仅在声明/成员起始位置调用（此处 `[` 不会与索引/数组类型歧义）。
+    private AttrList _parseAttributes() {
+        Attr[] items = new Attr[4];
+        int n = 0;
+        while (this._peek().Kind == TokenKind.LBracket) {
+            this._advance();   // [
+            while (true) {
+                string name = this._parseQualifiedName();
+                Expr[] args = new Expr[4];
+                int ac = 0;
+                if (this._peek().Kind == TokenKind.LParen) {
+                    this._advance();
+                    if (this._peek().Kind != TokenKind.RParen) {
+                        while (true) {
+                            if (ac == args.Length) {
+                                Expr[] b = new Expr[args.Length * 2];
+                                int i = 0; while (i < ac) { b[i] = args[i]; i = i + 1; }
+                                args = b;
+                            }
+                            args[ac] = this._parseExpr(0); ac = ac + 1;
+                            if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+                        }
+                    }
+                    this._expect(TokenKind.RParen, ")");
+                }
+                if (n == items.Length) {
+                    Attr[] b = new Attr[items.Length * 2];
+                    int i = 0; while (i < n) { b[i] = items[i]; i = i + 1; }
+                    items = b;
+                }
+                items[n] = new Attr(name, args, ac); n = n + 1;
+                if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+            }
+            this._expect(TokenKind.RBracket, "]");
+        }
+        return new AttrList(items, n);
     }
 
     private string _parseModifiers() {
@@ -641,7 +684,14 @@ public sealed class Parser {
     }
 
     private Decl _parseMember(string className) {
+        AttrList attrs = this._parseAttributes();
         string mods = this._parseModifiers();
+        Decl d = this._parseMemberBody(mods, className);
+        if (attrs.Count > 0) { return new AttributedDecl(attrs.Items, attrs.Count, d); }
+        return d;
+    }
+
+    private Decl _parseMemberBody(string mods, string className) {
         // 构造器：标识符(==类名) 紧跟 '('
         if (this._peek().Kind == TokenKind.Identifier && this._peek().Text == className
             && this._peekAt(1).Kind == TokenKind.LParen) {

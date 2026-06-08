@@ -1,5 +1,5 @@
 // AST 声明节点（z42c.syntax）。CompilationUnit / using / class·struct·interface / enum / record / delegate
-//   / 顶层 func（MethodDecl.IsFree）/ field / method / property / param。
+//   / 顶层 func（MethodDecl.IsFree）/ field / method / property / param / attribute（AttributedDecl 包裹）。
 // 受限写法：class 继承 + virtual Dump()。类型/修饰符捕获为字符串文本（增量；TypeExpr 后续）。
 namespace Z42.Syntax;
 
@@ -17,8 +17,47 @@ public sealed class ParamList {
     public ParamList(Param[] items, int count) { this.Items = items; this.Count = count; }
 }
 
+// 单个 attribute：Name [( arg, ... )]。参数捕获为表达式（命名参数 `k=v` 即 AssignExpr）。
+public sealed class Attr {
+    public string Name;
+    public Expr[] Args;
+    public int    ArgCount;
+    public Attr(string name, Expr[] args, int argCount) {
+        this.Name = name; this.Args = args; this.ArgCount = argCount;
+    }
+    public string Dump() {
+        string s = "[" + this.Name;
+        int i = 0;
+        while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
+        return s + "]";
+    }
+}
+
+// 解析期临时持有者：前置 attribute 集合。
+public sealed class AttrList {
+    public Attr[] Items;
+    public int    Count;
+    public AttrList(Attr[] items, int count) { this.Items = items; this.Count = count; }
+}
+
 public class Decl {
     public virtual string Dump() { return "?decl"; }
+}
+
+// attribute 包裹：`[A][B] <decl>` → 把前置 attribute 附着到内层 decl，不污染各 decl 构造器。
+public sealed class AttributedDecl : Decl {
+    public Attr[] Attrs;
+    public int    AttrCount;
+    public Decl   Inner;
+    public AttributedDecl(Attr[] attrs, int attrCount, Decl inner) {
+        this.Attrs = attrs; this.AttrCount = attrCount; this.Inner = inner;
+    }
+    public override string Dump() {
+        string s = "(attr";
+        int i = 0;
+        while (i < this.AttrCount) { s = s + " " + this.Attrs[i].Dump(); i = i + 1; }
+        return s + " " + this.Inner.Dump() + ")";
+    }
 }
 
 public sealed class UsingDecl : Decl {

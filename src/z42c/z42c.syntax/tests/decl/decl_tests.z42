@@ -1,6 +1,6 @@
 // z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本（incr 4）
 //   + struct/interface/enum（incr 6b-1）+ record/delegate/顶层func（incr 6b-2）+ property（incr 6b-3）
-//   + 泛型形参<T>+where（incr 6b-4）。
+//   + 泛型形参<T>+where（incr 6b-4）+ attribute[X]（incr 6b-5）。
 namespace Z42cSyntaxDeclTests;
 
 using Std;
@@ -175,4 +175,32 @@ void test_generic_delegate_and_record() {
     // where 多段 + class 约束
     Assert.Equal("(unit (delegate void Cb<T> (T x) where T : class))",
                  parseUnit("delegate void Cb<T>(T x) where T : class;"));
+}
+
+[Test]
+void test_attribute_on_member() {
+    Assert.Equal("(unit (class C (attr [Test] (method void foo () (block)))))",
+                 parseUnit("class C { [Test] void foo() {} }"));
+    // 位置参数（表达式 Dump）
+    Assert.Equal("(unit (class C (attr [Timeout 600] (method void slow () (block)))))",
+                 parseUnit("class C { [Timeout(600)] void slow() {} }"));
+}
+
+[Test]
+void test_attribute_on_type() {
+    Assert.Equal("(unit (attr [Serializable] (class public C)))",
+                 parseUnit("[Serializable] public class C { }"));
+    // 多个 attribute（分组）
+    Assert.Equal("(unit (attr [A] [B] (class C)))",
+                 parseUnit("[A][B] class C {}"));
+    // 单组多 attribute（逗号分隔）
+    Assert.Equal("(unit (attr [A] [B] (class C)))",
+                 parseUnit("[A, B] class C {}"));
+}
+
+[Test]
+void test_attribute_named_args() {
+    // 命名参数 k=v → AssignExpr Dump
+    Assert.Equal("(unit (attr [Native (= lib \"m\")] (class C)))",
+                 parseUnit("[Native(lib=\"m\")] class C {}"));
 }
