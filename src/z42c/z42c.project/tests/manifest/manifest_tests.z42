@@ -1,0 +1,43 @@
+// z42c.project ManifestLoader 单测（incr port-z42c-project 1）：.z42.toml → ProjectManifest 模型。
+namespace Z42cProjectManifestTests;
+
+using Std;
+using Std.Test;
+using Z42.Project;
+
+[Test]
+void test_parse_project_section() {
+    string toml = "[project]\nname = \"myapp\"\nversion = \"0.2.0\"\nkind = \"exe\"\nentry = \"Main\"\npack = true\n";
+    var m = ManifestLoader.ParseText(toml);
+    Assert.Equal("myapp", m.Name);
+    Assert.Equal("0.2.0", m.Version);
+    Assert.Equal("exe", m.Kind);
+    Assert.Equal(true, m.HasEntry);
+    Assert.Equal("Main", m.Entry);
+    Assert.Equal(true, m.HasPack);
+    Assert.Equal(true, m.Pack);
+}
+
+[Test]
+void test_parse_sources_and_deps() {
+    string toml = "[project]\nname = \"lib1\"\nversion = \"1.0.0\"\nkind = \"lib\"\n\n[sources]\ninclude = [\"src/**/*.z42\"]\nexclude = [\"src/gen/**\"]\n\n[dependencies]\n\"z42.io\" = \"1.0\"\n";
+    var m = ManifestLoader.ParseText(toml);
+    Assert.Equal("lib1", m.Name);
+    Assert.Equal("lib", m.Kind);
+    Assert.Equal(false, m.HasEntry);              // 无 entry
+    Assert.Equal(1, m.IncludeCount);
+    Assert.Equal("src/**/*.z42", m.IncludeGlobs[0]);
+    Assert.Equal(1, m.ExcludeCount);
+    Assert.Equal("src/gen/**", m.ExcludeGlobs[0]);
+    Assert.Equal(1, m.DepCount);
+    Assert.Equal("z42.io@1.0", m.Deps[0].Dump());
+}
+
+[Test]
+void test_dep_table_form() {
+    // 依赖值为表 { version, path } —— 取 version
+    string toml = "[project]\nname = \"a\"\nversion = \"0.1.0\"\nkind = \"lib\"\n\n[dependencies]\nmylib = { version = \"2.0\", path = \"../shared\" }\n";
+    var m = ManifestLoader.ParseText(toml);
+    Assert.Equal(1, m.DepCount);
+    Assert.Equal("mylib@2.0", m.Deps[0].Dump());
+}

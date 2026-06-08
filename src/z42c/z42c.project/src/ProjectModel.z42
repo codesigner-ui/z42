@@ -1,0 +1,38 @@
+// z42c.project 清单模型（port-z42c-project increment 1）。镜像 C# z42.Project ProjectManifest 核心子集：
+// [project] name/version/kind/entry/pack + [sources] include/exclude + [dependencies]。
+// 受限写法：typed array + count；bool 标志替 nullable。
+// 延后（后续增量）：workspace 继承 / include 链 / policy / [[exe]] targets / profiles / tests·bench / 路径模板。
+namespace Z42.Project;
+
+public sealed class DepEntry {
+    public string Name;
+    public string Version;
+    public DepEntry(string name, string version) { this.Name = name; this.Version = version; }
+    public string Dump() { return this.Name + "@" + this.Version; }
+}
+
+public sealed class ProjectManifest {
+    public string     Name;
+    public string     Version;
+    public string     Kind;        // "exe" / "lib" / "multi"
+    public bool       HasEntry;
+    public string     Entry;       // 仅 HasEntry 时有效
+    public bool       HasPack;
+    public bool       Pack;        // 仅 HasPack 时有效
+    public string[]   IncludeGlobs;
+    public int        IncludeCount;
+    public string[]   ExcludeGlobs;
+    public int        ExcludeCount;
+    public DepEntry[] Deps;
+    public int        DepCount;
+    public ProjectManifest(string name, string version, string kind,
+                           bool hasEntry, string entry, bool hasPack, bool pack,
+                           string[] inc, int incCount, string[] exc, int excCount,
+                           DepEntry[] deps, int depCount) {
+        this.Name = name; this.Version = version; this.Kind = kind;
+        this.HasEntry = hasEntry; this.Entry = entry; this.HasPack = hasPack; this.Pack = pack;
+        this.IncludeGlobs = inc; this.IncludeCount = incCount;
+        this.ExcludeGlobs = exc; this.ExcludeCount = excCount;
+        this.Deps = deps; this.DepCount = depCount;
+    }
+}

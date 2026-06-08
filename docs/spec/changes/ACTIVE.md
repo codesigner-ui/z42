@@ -11,7 +11,7 @@
 | `compiler` | _（空闲）_ | — | scaffold-z42c-selfhost 已提交 127b7f11（gate 后台确认中），释放 compiler |
 | `runtime` | _（空闲）_ | — | 下列两个 runtime change 已暂停，不占锁 |
 | `stdlib` | _（待登记）_ | — | migrate-scripts-to-z42 可能占用，下次触碰时回填 |
-| `z42c` | port-z42c-core → port-z42c-syntax | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core 完成 → syntax(Lexer) 进行中 |
+| `z42c` | port-z42c-core → port-z42c-syntax → port-z42c-project | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core ✅ → syntax ✅（6a–6e-1；6e-2 byte-identical 待）→ project 进行中（manifest loader） |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test] |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）

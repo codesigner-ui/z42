@@ -1,0 +1,80 @@
+// .z42.toml 单清单加载器（port-z42c-project increment 1）。
+// 用 stdlib Std.Toml 解析（不再 hand-roll TOML —— 区别于 C# z42.Project 用 Tomlyn）。
+// workspace 继承 / include 链 / policy / 路径模板留后续增量。
+namespace Z42.Project;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+
+public static class ManifestLoader {
+    public static ProjectManifest Load(string tomlPath) {
+        return ManifestLoader.ParseText(File.ReadAllText(tomlPath));
+    }
+
+    public static ProjectManifest ParseText(string text) {
+        var root = TomlValue.Parse(text);
+
+        // [project]
+        string name = "";
+        string version = "";
+        string kind = "lib";
+        bool hasEntry = false;
+        string entry = "";
+        bool hasPack = false;
+        bool pack = false;
+        if (root.ContainsKey("project")) {
+            var p = root.Get("project");
+            if (p.ContainsKey("name"))    { name = p.Get("name").AsString(); }
+            if (p.ContainsKey("version")) { version = p.Get("version").AsString(); }
+            if (p.ContainsKey("kind"))    { kind = p.Get("kind").AsString(); }
+            if (p.ContainsKey("entry"))   { entry = p.Get("entry").AsString(); hasEntry = true; }
+            if (p.ContainsKey("pack"))    { pack = p.Get("pack").AsBool(); hasPack = true; }
+        }
+
+        // [sources]
+        string[] inc = new string[0];
+        int incCount = 0;
+        string[] exc = new string[0];
+        int excCount = 0;
+        if (root.ContainsKey("sources")) {
+            var s = root.Get("sources");
+            if (s.ContainsKey("include")) { inc = ManifestLoader._strArray(s.Get("include")); incCount = inc.Length; }
+            if (s.ContainsKey("exclude")) { exc = ManifestLoader._strArray(s.Get("exclude")); excCount = exc.Length; }
+        }
+
+        // [dependencies]（值可为字符串版本，或表 { version, path }）
+        DepEntry[] deps = new DepEntry[8];
+        int depCount = 0;
+        if (root.ContainsKey("dependencies")) {
+            var d = root.Get("dependencies");
+            string[] keys = d.Keys();
+            int i = 0;
+            while (i < keys.Length) {
+                string dn = keys[i];
+                var dv = d.Get(dn);
+                string ver = "";
+                if (dv.IsTable()) { if (dv.ContainsKey("version")) { ver = dv.Get("version").AsString(); } }
+                else { ver = dv.AsString(); }
+                if (depCount == deps.Length) {
+                    DepEntry[] b = new DepEntry[deps.Length * 2];
+                    int j = 0; while (j < depCount) { b[j] = deps[j]; j = j + 1; }
+                    deps = b;
+                }
+                deps[depCount] = new DepEntry(dn, ver); depCount = depCount + 1;
+                i = i + 1;
+            }
+        }
+
+        return new ProjectManifest(name, version, kind, hasEntry, entry, hasPack, pack,
+                                   inc, incCount, exc, excCount, deps, depCount);
+    }
+
+    private static string[] _strArray(TomlValue a) {
+        int n = a.Length();
+        string[] r = new string[n];
+        int i = 0;
+        while (i < n) { r[i] = a.At(i).AsString(); i = i + 1; }
+        return r;
+    }
+}
