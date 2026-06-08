@@ -224,6 +224,14 @@ public sealed class TypeChecker {
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
         }
+        if (e is TernaryExpr) {
+            TernaryExpr t = e as TernaryExpr;
+            BoundExpr cond = this._bindExpr(t.Cond, env);
+            this._requireBool(cond.Type(), "ternary");
+            BoundExpr thenE = this._bindExpr(t.Then, env);
+            BoundExpr elseE = this._bindExpr(t.Else, env);
+            return new BoundConditional(cond, thenE, elseE, this._commonType(thenE.Type(), elseE.Type(), env.Symbols));
+        }
         if (e is IndexExpr) {
             IndexExpr ix = e as IndexExpr;
             BoundExpr target = this._bindExpr(ix.Target, env);
@@ -254,6 +262,10 @@ public sealed class TypeChecker {
         Z42Type rt = right.Type();
         if ((lt is Z42ErrorType) || (rt is Z42ErrorType)) {
             return new BoundBinary(bin.Op, left, right, new Z42ErrorType());
+        }
+        // null 合并 a ?? b → 公共类型（不在拓宽表内）。
+        if (bin.Op == "??") {
+            return new BoundBinary("??", left, right, this._commonType(lt, rt, env.Symbols));
         }
         // 字符串拼接特例（任一侧 string）：先于查表，镜像 C# CheckBinary 前置。
         if (bin.Op == "+") {
@@ -415,6 +427,13 @@ public sealed class TypeChecker {
         this._diags.Error(DiagnosticCodes.TypeMismatch,
             "call on non-class `" + rt.Name() + "`", this._noSpan());
         return new BoundError("call on non-class", new Z42ErrorType());
+    }
+
+    // 两分支公共类型（三目 / ??）：互为可赋取较宽，否则取左（C# 报错；1E 简化）。
+    private Z42Type _commonType(Z42Type a, Z42Type b, SymbolTable symbols) {
+        if (this._isAssignable(a, b, symbols)) { return b; }
+        if (this._isAssignable(b, a, symbols)) { return a; }
+        return a;
     }
 
     // new T(args)（1D）：解析 T（须为已知类型）+ 绑定实参。ctor 重载解析留后续。

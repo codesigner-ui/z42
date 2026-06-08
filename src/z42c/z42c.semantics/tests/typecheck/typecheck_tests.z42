@@ -269,3 +269,35 @@ void test_index_on_non_array_error() {
     string src = "class C { int M(int x) { return x[0]; } }";
     Assert.Equal(1, SemanticDump.ErrorCount(src));   // int 不是数组
 }
+
+// ── 1E：三目 + ?? ──────────────────────────────────────────────────────────
+[Test]
+void test_ternary() {
+    string src = "class C { int Max(int a, int b) { return a > b ? a : b; } }";
+    Assert.Equal("(block (return (cond (bin > (ident a :int) (ident b :int) :bool) (ident a :int) (ident b :int) :int)))",
+                 SemanticDump.DumpBody(src, "C.Max"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_ternary_widen_branches() {
+    // 分支 int / double → double（公共类型取较宽）
+    string src = "class C { double Pick(bool f, int a, double b) { return f ? a : b; } }";
+    Assert.Equal("(block (return (cond (ident f :bool) (ident a :int) (ident b :double) :double)))",
+                 SemanticDump.DumpBody(src, "C.Pick"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_null_coalesce() {
+    string src = "class C { string Pick(string a, string b) { return a ?? b; } }";
+    Assert.Equal("(block (return (bin ?? (ident a :string) (ident b :string) :string)))",
+                 SemanticDump.DumpBody(src, "C.Pick"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_ternary_non_bool_cond_error() {
+    string src = "class C { int M(int x) { return x ? 1 : 2; } }";   // x 非 bool 条件
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
