@@ -82,8 +82,14 @@
 
 > **increment 6b 全部完成**（顶层声明补全：struct/interface/enum/record/delegate/顶层 func/property/泛型形参+where/attribute）。下一步 6c。
 
-## increment 6c（后续 — Lexer 补全）
-- [ ] 插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码
+## increment 6c-1（Lexer 数字格式 — ✅ 已完成）
+- [x] `_lexNumber` 重写：hex `0x`/`0X` + bin `0b`/`0B`（含 `_` 分隔）→ IntLiteral；十进制 + `_` 分隔 + 小数 + 指数 `[eE][+-]?digits`（指数即浮点）；后缀 L/l/u/U/f/F/d/D/m/M（f·d·m → 浮点）
+- [x] 辅助 `_consumeDigits` / `_isHexDigit` / `_consumeNumSuffix` / `_isNumSuffix` / `_emitNum`
+- [x] 4 单测（hex·bin / `_` 分隔 / 后缀 / 指数）→ tests/lexer/
+- [x] 验证：`xtask test compiler-z42` → 5 units **83 cases** 全绿（core 11 / lexer 14 / parser 19 / stmt 15 / decl 24）
+
+## increment 6c-2（后续 — Lexer 字符串补全）
+- [ ] 插值串 `$"..."` / raw 串 `"""..."""` / 转义解码（`\n \t \\ \" \uXXXX` 等 → 实际值）
 
 ## increment 6d（后续 — Visitor + TypeExpr）
 - [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本字符串）

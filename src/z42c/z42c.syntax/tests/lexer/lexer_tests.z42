@@ -1,4 +1,5 @@
-// z42c.syntax Lexer 单测：标识符/关键字/字面量/符号/注释/位置。
+// z42c.syntax Lexer 单测：标识符/关键字/字面量/符号/注释/位置（incr 1）
+//   + 数字格式 hex/bin/分隔/后缀/指数（incr 6c-1）。
 namespace Z42cSyntaxLexerTests;
 
 using Std;
@@ -100,6 +101,54 @@ void test_comments_skipped() {
     Assert.Equal(2, lx.TokenCount());   // x + Eof
     Assert.Equal(TokenKind.Identifier, lx.TokenAt(0).Kind);
     Assert.Equal("x", lx.TokenAt(0).Text);
+}
+
+[Test]
+void test_hex_bin_literals() {
+    var lx = new Lexer("0xFF 0b1010 0XaB", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("0xFF", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(1).Kind);
+    Assert.Equal("0b1010", lx.TokenAt(1).Text);
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(2).Kind);
+    Assert.Equal("0XaB", lx.TokenAt(2).Text);
+}
+
+[Test]
+void test_digit_separators() {
+    var lx = new Lexer("1_000_000 3.141_592", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("1_000_000", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(1).Kind);
+    Assert.Equal("3.141_592", lx.TokenAt(1).Text);
+}
+
+[Test]
+void test_numeric_suffixes() {
+    var lx = new Lexer("100L 3.14f 42u 2.5d", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("100L", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(1).Kind);   // f 后缀 → 浮点
+    Assert.Equal("3.14f", lx.TokenAt(1).Text);
+    Assert.Equal(TokenKind.IntLiteral, lx.TokenAt(2).Kind);
+    Assert.Equal("42u", lx.TokenAt(2).Text);
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(3).Kind);   // d 后缀 → 浮点
+    Assert.Equal("2.5d", lx.TokenAt(3).Text);
+}
+
+[Test]
+void test_float_exponent() {
+    var lx = new Lexer("1e10 1.5e-3 2E+8", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(0).Kind);   // 指数即浮点（无小数点）
+    Assert.Equal("1e10", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(1).Kind);
+    Assert.Equal("1.5e-3", lx.TokenAt(1).Text);
+    Assert.Equal(TokenKind.FloatLiteral, lx.TokenAt(2).Kind);
+    Assert.Equal("2E+8", lx.TokenAt(2).Text);
 }
 
 [Test]

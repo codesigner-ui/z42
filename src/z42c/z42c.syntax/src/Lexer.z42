@@ -3,9 +3,9 @@
 // byte-identical 目标针对 z42c 产物，不要求 lexer 内部结构与 C# 同，只要 token 流一致。
 //
 // 覆盖：空白/换行/行注释(//)/块注释(/* */) 作 trivia 跳过；标识符+关键字（全表）；
-// 整数/浮点字面量；字符串 "..."（含转义跳过，raw lexeme 保留引号）；字符 '...'；
-// 全套符号/运算符（最长匹配）；EOF。
-// 延后（后续 increment）：插值串 $""、raw 串 """、hex/bin/数字分隔符/后缀、转义解码。
+// 数字字面量（十进制/hex `0x`/bin `0b` + `_` 分隔 + 小数 + 指数 [eE][+-]? + 后缀 L/u/f/d/m，incr 6c-1）；
+// 字符串 "..."（含转义跳过，raw lexeme 保留引号）；字符 '...'；全套符号/运算符（最长匹配）；EOF。
+// 延后（incr 6c-2）：插值串 $""、raw 串 """、转义解码。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -126,15 +126,78 @@ public sealed class Lexer {
         else { this._emit(TokenKind.Identifier, text); }
     }
 
+    // 数字字面量：hex `0x..` / bin `0b..` / 十进制（含 `_` 分隔、小数、指数 [eE][+-]?）+ 后缀（L u f d m）。
     private void _lexNumber() {
         int start = this._pos;
-        while (this._pos < this._src.Length && this._isDigit(this._ch(this._pos))) { this._advance(); }
+        char c0 = this._ch(this._pos);
+        char c1 = this._ch(this._pos + 1);
+        if (c0 == '0' && (c1 == 'x' || c1 == 'X')) {
+            this._adv2();
+            while (this._pos < this._src.Length
+                && (this._isHexDigit(this._ch(this._pos)) || this._ch(this._pos) == '_')) { this._advance(); }
+            this._consumeNumSuffix();
+            this._emitNum(start, false);
+            return;
+        }
+        if (c0 == '0' && (c1 == 'b' || c1 == 'B')) {
+            this._adv2();
+            while (this._pos < this._src.Length
+                && (this._ch(this._pos) == '0' || this._ch(this._pos) == '1' || this._ch(this._pos) == '_')) { this._advance(); }
+            this._consumeNumSuffix();
+            this._emitNum(start, false);
+            return;
+        }
         bool isFloat = false;
+        this._consumeDigits();
+        // 小数部分（`.` 后须跟数字，否则是成员访问的 Dot）
         if (this._ch(this._pos) == '.' && this._isDigit(this._ch(this._pos + 1))) {
             isFloat = true;
-            this._advance();   // consume .
-            while (this._pos < this._src.Length && this._isDigit(this._ch(this._pos))) { this._advance(); }
+            this._advance();   // .
+            this._consumeDigits();
         }
+        // 指数 [eE] [+-]? digits（须有数字才算指数）
+        char e = this._ch(this._pos);
+        if (e == 'e' || e == 'E') {
+            int j = this._pos + 1;
+            if (this._ch(j) == '+' || this._ch(j) == '-') { j = j + 1; }
+            if (this._isDigit(this._ch(j))) {
+                isFloat = true;
+                this._advance();   // e/E
+                if (this._ch(this._pos) == '+' || this._ch(this._pos) == '-') { this._advance(); }
+                this._consumeDigits();
+            }
+        }
+        if (this._consumeNumSuffix()) { isFloat = true; }   // f/d/m 后缀 → 浮点
+        this._emitNum(start, isFloat);
+    }
+
+    private void _consumeDigits() {
+        while (this._pos < this._src.Length
+            && (this._isDigit(this._ch(this._pos)) || this._ch(this._pos) == '_')) { this._advance(); }
+    }
+
+    private bool _isHexDigit(char c) {
+        return this._isDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    }
+
+    // 数字后缀（L l u U f F d D m M）。返回是否含浮点型后缀（f/d/m）。
+    private bool _consumeNumSuffix() {
+        bool fl = false;
+        while (this._pos < this._src.Length && this._isNumSuffix(this._ch(this._pos))) {
+            char s = this._ch(this._pos);
+            if (s == 'f' || s == 'F' || s == 'd' || s == 'D' || s == 'm' || s == 'M') { fl = true; }
+            this._advance();
+        }
+        return fl;
+    }
+
+    private bool _isNumSuffix(char c) {
+        if (c == 'L' || c == 'l' || c == 'u' || c == 'U') { return true; }
+        if (c == 'f' || c == 'F' || c == 'd' || c == 'D' || c == 'm' || c == 'M') { return true; }
+        return false;
+    }
+
+    private void _emitNum(int start, bool isFloat) {
         string text = this._src.Substring(start, this._pos - start);
         if (isFloat) { this._emit(TokenKind.FloatLiteral, text); }
         else { this._emit(TokenKind.IntLiteral, text); }
