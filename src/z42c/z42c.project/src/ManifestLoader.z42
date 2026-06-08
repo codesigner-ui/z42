@@ -3,7 +3,6 @@
 // workspace 继承 / include 链 / policy / 路径模板留后续增量。
 namespace Z42.Project;
 
-using Std;
 using Std.IO;
 using Std.Toml;
 
@@ -43,11 +42,57 @@ public static class ManifestLoader {
             if (s.ContainsKey("exclude")) { exc = ManifestLoader._strArray(s.Get("exclude")); excCount = exc.Length; }
         }
 
-        // [dependencies]（值可为字符串版本，或表 { version, path }）
+        // [dependencies]
+        DepList dl = ManifestLoader._parseDeps(root, "dependencies");
+
+        return new ProjectManifest(name, version, kind, hasEntry, entry, hasPack, pack,
+                                   inc, incCount, exc, excCount, dl.Items, dl.Count);
+    }
+
+    // z42.workspace.toml → WorkspaceManifest（incr 2）。
+    public static WorkspaceManifest LoadWorkspace(string tomlPath) {
+        return ManifestLoader.ParseWorkspaceText(File.ReadAllText(tomlPath));
+    }
+
+    public static WorkspaceManifest ParseWorkspaceText(string text) {
+        var root = TomlValue.Parse(text);
+        string[] members = new string[0]; int membersCount = 0;
+        string[] exclude = new string[0]; int excludeCount = 0;
+        string[] defMembers = new string[0]; int defCount = 0;
+        bool hasVer = false; string ver = "";
+        bool hasLic = false; string lic = "";
+        bool hasOut = false; string outDir = "";
+        bool hasCache = false; string cacheDir = "";
+        DepEntry[] wdeps = new DepEntry[0]; int wdepCount = 0;
+        if (root.ContainsKey("workspace")) {
+            var w = root.Get("workspace");
+            if (w.ContainsKey("members"))         { members = ManifestLoader._strArray(w.Get("members")); membersCount = members.Length; }
+            if (w.ContainsKey("exclude"))         { exclude = ManifestLoader._strArray(w.Get("exclude")); excludeCount = exclude.Length; }
+            if (w.ContainsKey("default-members")) { defMembers = ManifestLoader._strArray(w.Get("default-members")); defCount = defMembers.Length; }
+            if (w.ContainsKey("project")) {
+                var wp = w.Get("project");
+                if (wp.ContainsKey("version")) { ver = wp.Get("version").AsString(); hasVer = true; }
+                if (wp.ContainsKey("license")) { lic = wp.Get("license").AsString(); hasLic = true; }
+            }
+            if (w.ContainsKey("build")) {
+                var wb = w.Get("build");
+                if (wb.ContainsKey("output_dir")) { outDir = wb.Get("output_dir").AsString(); hasOut = true; }
+                if (wb.ContainsKey("cache_dir"))  { cacheDir = wb.Get("cache_dir").AsString(); hasCache = true; }
+            }
+            DepList dl = ManifestLoader._parseDeps(w, "dependencies");
+            wdeps = dl.Items; wdepCount = dl.Count;
+        }
+        return new WorkspaceManifest(members, membersCount, exclude, excludeCount, defMembers, defCount,
+                                     hasVer, ver, hasLic, lic, hasOut, outDir, hasCache, cacheDir,
+                                     wdeps, wdepCount);
+    }
+
+    // [dependencies] / [workspace.dependencies] 通用解析（值可为字符串版本，或表 { version, path }）。
+    private static DepList _parseDeps(TomlValue parent, string key) {
         DepEntry[] deps = new DepEntry[8];
-        int depCount = 0;
-        if (root.ContainsKey("dependencies")) {
-            var d = root.Get("dependencies");
+        int n = 0;
+        if (parent.ContainsKey(key)) {
+            var d = parent.Get(key);
             string[] keys = d.Keys();
             int i = 0;
             while (i < keys.Length) {
@@ -56,18 +101,16 @@ public static class ManifestLoader {
                 string ver = "";
                 if (dv.IsTable()) { if (dv.ContainsKey("version")) { ver = dv.Get("version").AsString(); } }
                 else { ver = dv.AsString(); }
-                if (depCount == deps.Length) {
+                if (n == deps.Length) {
                     DepEntry[] b = new DepEntry[deps.Length * 2];
-                    int j = 0; while (j < depCount) { b[j] = deps[j]; j = j + 1; }
+                    int j = 0; while (j < n) { b[j] = deps[j]; j = j + 1; }
                     deps = b;
                 }
-                deps[depCount] = new DepEntry(dn, ver); depCount = depCount + 1;
+                deps[n] = new DepEntry(dn, ver); n = n + 1;
                 i = i + 1;
             }
         }
-
-        return new ProjectManifest(name, version, kind, hasEntry, entry, hasPack, pack,
-                                   inc, incCount, exc, excCount, deps, depCount);
+        return new DepList(deps, n);
     }
 
     private static string[] _strArray(TomlValue a) {

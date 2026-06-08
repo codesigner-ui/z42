@@ -12,9 +12,15 @@
 - [x] z42c.project 加 `z42.toml` 依赖；新 tests/manifest/ 单元（3 单测：project 段 / sources+deps / dep 表形态）
 - [x] 验证：`xtask test compiler-z42` → **7 units 93 cases** 全绿（7/7 zpkg；z42c.project.zpkg 11152 bytes）
 
+## increment 2（workspace 清单解析 — ✅ 已完成）
+- [x] `WorkspaceManifest` 模型（members/exclude/default-members + [workspace.project] 共享 version·license + [workspace.build] output_dir·cache_dir 路径模板原样 + [workspace.dependencies]）
+- [x] `ParseWorkspaceText`/`LoadWorkspace`（z42.toml 嵌套表 `[workspace.project]`/`[workspace.build]` 正确解析）；抽 `_parseDeps` 通用（项目 + workspace deps 共用）+ `DepList` holder
+- [x] 2 新单测（通用 workspace / 镜像真实 z42c workspace 形态[members=*/default-members/共享 version·license/build 模板]）
+- [x] 验证：`xtask test compiler-z42` → **7 units 95 cases** 全绿
+- 注：FieldRef 标记继承（`version.workspace=true`）+ ResolvedManifest 合并延后（z42c 自身成员未用此特性；按需移植）
+
 ## 后续增量（机械段，依赖 stdlib）
-- [ ] **2**：workspace 发现 + 成员展开（`z42.workspace.toml`）+ 继承（C1 shared fields）+ ResolvedManifest
-- [ ] **3**：源文件 glob 发现（`Std.IO` glob）+ include 链解析（IncludeResolver DFS）+ 路径模板（`${workspace_dir}` 等）
+- [ ] **3**：源文件 glob 发现（`Std.IO` glob）+ workspace 成员 glob 展开 + 路径模板展开（`${workspace_dir}`/`${member_name}`/`${profile}`）+ ResolvedManifest（合并 workspace 继承）
 
 ## 后续增量（byte-identical 硬段，强依赖 z42c.ir 的 ZbcFile/IrModule —— 须先移植 ir/emit）
 - [ ] **4**：ZpkgReader（META/STRS/NSPC/EXPT/DEPS/SIGS/MODS/FILE/TSIG/IMPL 各段；zpkg v0.11 格式，逐字节）

@@ -41,3 +41,35 @@ void test_dep_table_form() {
     Assert.Equal(1, m.DepCount);
     Assert.Equal("mylib@2.0", m.Deps[0].Dump());
 }
+
+[Test]
+void test_parse_workspace() {
+    string toml = "[workspace]\nmembers = [\"*\"]\nexclude = [\"scratch\"]\ndefault-members = [\"a\", \"b\"]\n\n[workspace.project]\nversion = \"0.1.0\"\nlicense = \"MIT\"\n\n[workspace.build]\noutput_dir = \"out/${member_name}\"\ncache_dir = \"${output_dir}/cache\"\n\n[workspace.dependencies]\n\"z42.io\" = \"1.0\"\n";
+    var w = ManifestLoader.ParseWorkspaceText(toml);
+    Assert.Equal(1, w.MembersCount);
+    Assert.Equal("*", w.MembersPatterns[0]);
+    Assert.Equal(1, w.ExcludeCount);
+    Assert.Equal(2, w.DefaultCount);
+    Assert.Equal("a", w.DefaultMembers[0]);
+    Assert.Equal("b", w.DefaultMembers[1]);
+    Assert.Equal(true, w.HasSharedVersion);
+    Assert.Equal("0.1.0", w.SharedVersion);
+    Assert.Equal(true, w.HasSharedLicense);
+    Assert.Equal("MIT", w.SharedLicense);
+    Assert.Equal("out/${member_name}", w.OutputDir);          // 路径模板原样保留
+    Assert.Equal("${output_dir}/cache", w.CacheDir);
+    Assert.Equal(1, w.WorkspaceDepCount);
+    Assert.Equal("z42.io@1.0", w.WorkspaceDeps[0].Dump());
+}
+
+[Test]
+void test_parse_real_z42c_workspace_shape() {
+    // 镜像 src/z42c/z42.workspace.toml 形态：members=["*"] + default-members 列表 + 共享 version/license
+    string toml = "[workspace]\nmembers = [\"*\"]\ndefault-members = [\"z42c.core\", \"z42c.ir\", \"z42c.syntax\"]\n\n[workspace.project]\nversion = \"0.1.0\"\nlicense = \"MIT\"\n\n[workspace.build]\noutput_dir = \"../../artifacts/build/z42c/${member_name}/${profile}\"\ncache_dir = \"${output_dir}/cache\"\n";
+    var w = ManifestLoader.ParseWorkspaceText(toml);
+    Assert.Equal(3, w.DefaultCount);
+    Assert.Equal("z42c.core", w.DefaultMembers[0]);
+    Assert.Equal("z42c.syntax", w.DefaultMembers[2]);
+    Assert.Equal("0.1.0", w.SharedVersion);
+    Assert.Equal(0, w.WorkspaceDepCount);                     // 无 [workspace.dependencies]
+}

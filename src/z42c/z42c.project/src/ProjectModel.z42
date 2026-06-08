@@ -11,6 +11,50 @@ public sealed class DepEntry {
     public string Dump() { return this.Name + "@" + this.Version; }
 }
 
+// 解析期临时持有者：依赖列表（项目 [dependencies] / [workspace.dependencies] 共用）。
+public sealed class DepList {
+    public DepEntry[] Items;
+    public int        Count;
+    public DepList(DepEntry[] items, int count) { this.Items = items; this.Count = count; }
+}
+
+// z42.workspace.toml 解析模型（incr port-z42c-project 2）。镜像 C# WorkspaceManifest 核心子集：
+// [workspace] members/exclude/default-members + [workspace.project] 共享 version/license
+// + [workspace.build] output_dir/cache_dir（路径模板原样保留，展开留增量 3）+ [workspace.dependencies]。
+// 延后：authors/description / policy / profiles / resolver / FieldRef 标记继承（z42c 自身未用）。
+public sealed class WorkspaceManifest {
+    public string[]   MembersPatterns;
+    public int        MembersCount;
+    public string[]   ExcludePatterns;
+    public int        ExcludeCount;
+    public string[]   DefaultMembers;
+    public int        DefaultCount;
+    public bool       HasSharedVersion;
+    public string     SharedVersion;
+    public bool       HasSharedLicense;
+    public string     SharedLicense;
+    public bool       HasOutputDir;
+    public string     OutputDir;      // 路径模板（${member_name} 等）原样
+    public bool       HasCacheDir;
+    public string     CacheDir;
+    public DepEntry[] WorkspaceDeps;
+    public int        WorkspaceDepCount;
+    public WorkspaceManifest(string[] members, int membersCount, string[] exclude, int excludeCount,
+                             string[] defMembers, int defCount,
+                             bool hasVer, string ver, bool hasLic, string lic,
+                             bool hasOut, string outDir, bool hasCache, string cacheDir,
+                             DepEntry[] wdeps, int wdepCount) {
+        this.MembersPatterns = members; this.MembersCount = membersCount;
+        this.ExcludePatterns = exclude; this.ExcludeCount = excludeCount;
+        this.DefaultMembers = defMembers; this.DefaultCount = defCount;
+        this.HasSharedVersion = hasVer; this.SharedVersion = ver;
+        this.HasSharedLicense = hasLic; this.SharedLicense = lic;
+        this.HasOutputDir = hasOut; this.OutputDir = outDir;
+        this.HasCacheDir = hasCache; this.CacheDir = cacheDir;
+        this.WorkspaceDeps = wdeps; this.WorkspaceDepCount = wdepCount;
+    }
+}
+
 public sealed class ProjectManifest {
     public string     Name;
     public string     Version;
