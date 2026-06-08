@@ -119,6 +119,20 @@ public sealed class BoundUnary : BoundExpr {
     }
 }
 
+// 成员字段访问（1C）：obj.field / this.field（含继承字段）。方法调用见 BoundCall。
+public sealed class BoundMember : BoundExpr {
+    public BoundExpr Target;
+    public string    MemberName;
+    private Z42Type _type;
+    public BoundMember(BoundExpr target, string memberName, Z42Type type) {
+        this.Target = target; this.MemberName = memberName; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        return "(member " + this.Target.Dump() + " " + this.MemberName + " :" + this._type.Name() + ")";
+    }
+}
+
 public sealed class BoundError : BoundExpr {
     public string Message;
     private Z42Type _type;

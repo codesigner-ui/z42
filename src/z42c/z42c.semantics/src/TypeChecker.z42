@@ -100,7 +100,7 @@ public sealed class TypeChecker {
             ReturnStmt r = s as ReturnStmt;
             if (r.HasValue) {
                 BoundExpr val = this._bindExpr(r.Value, env);
-                if (!val.Type().IsAssignableTo(ret)) {
+                if (!this._isAssignable(val.Type(), ret, env.Symbols)) {
                     this._diags.Error(DiagnosticCodes.TypeMismatch,
                         "return type " + val.Type().Name() + " not assignable to " + ret.Name(), this._noSpan());
                 }
@@ -154,7 +154,7 @@ public sealed class TypeChecker {
             if (nt.Name == "var") { return init.Type(); }
         }
         Z42Type vt = env.Symbols.ResolveType(v.Type);
-        if (!init.Type().IsAssignableTo(vt)) {
+        if (!this._isAssignable(init.Type(), vt, env.Symbols)) {
             this._diags.Error(DiagnosticCodes.TypeMismatch,
                 "cannot assign " + init.Type().Name() + " to " + vt.Name(), this._noSpan());
         }
@@ -195,7 +195,7 @@ public sealed class TypeChecker {
             AssignExpr a = e as AssignExpr;
             BoundExpr target = this._bindExpr(a.Target, env);
             BoundExpr value = this._bindExpr(a.Value, env);
-            if (!value.Type().IsAssignableTo(target.Type())) {
+            if (!this._isAssignable(value.Type(), target.Type(), env.Symbols)) {
                 this._diags.Error(DiagnosticCodes.TypeMismatch,
                     "cannot assign " + value.Type().Name() + " to " + target.Type().Name(), this._noSpan());
             }
@@ -206,6 +206,9 @@ public sealed class TypeChecker {
         }
         if (e is UnaryExpr) {
             return this._bindUnary(e as UnaryExpr, env);
+        }
+        if (e is MemberExpr) {
+            return this._bindMember(e as MemberExpr, env);
         }
         if (e is CallExpr) {
             return this._bindCall(e as CallExpr, env);
@@ -279,6 +282,50 @@ public sealed class TypeChecker {
             if (last == 'f' || last == 'F') { return new Z42PrimType("float"); }
         }
         return new Z42PrimType("double");
+    }
+
+    // ════ 成员字段访问（1C）═══════════════════════════════════════════════════
+    private BoundExpr _bindMember(MemberExpr m, TypeEnv env) {
+        BoundExpr target = this._bindExpr(m.Target, env);
+        Z42Type tt = target.Type();
+        if (tt is Z42ClassType) {
+            Z42ClassType ct = tt as Z42ClassType;
+            FieldSymbol fs = this._findField(env.Symbols, ct, m.Name);
+            if (fs != null) { return new BoundMember(target, m.Name, fs.FieldType); }
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol,
+                "no field `" + m.Name + "` on `" + ct.Name() + "`", this._noSpan());
+            return new BoundMember(target, m.Name, new Z42ErrorType());
+        }
+        if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
+            return new BoundMember(target, m.Name, new Z42ErrorType());
+        }
+        this._diags.Error(DiagnosticCodes.TypeMismatch,
+            "member access on non-class `" + tt.Name() + "`", this._noSpan());
+        return new BoundMember(target, m.Name, new Z42ErrorType());
+    }
+
+    // 字段查找：本类 → base 链（迭代）。
+    private FieldSymbol _findField(SymbolTable symbols, Z42ClassType ct, string name) {
+        Z42ClassType cur = ct;
+        bool more = true;
+        while (more) {
+            if (cur.Fields.ContainsKey(name)) { return cur.Fields.Get(name) as FieldSymbol; }
+            if (!cur.HasBase) { more = false; }
+            else {
+                Z42ClassType b = symbols.GetClass(cur.BaseName);
+                if (b == null) { more = false; } else { cur = b; }
+            }
+        }
+        return null;
+    }
+
+    // 赋值兼容（含类继承 subclass→base）。非 class 走 Z42Type.IsAssignableTo（拓宽/error/同名）。
+    private bool _isAssignable(Z42Type from, Z42Type to, SymbolTable symbols) {
+        if (from.IsAssignableTo(to)) { return true; }
+        if ((from is Z42ClassType) && (to is Z42ClassType)) {
+            return symbols.IsSubclassOf(from.Name(), to.Name());
+        }
+        return false;
     }
 
     private BoundExpr _bindCall(CallExpr call, TypeEnv env) {
