@@ -9,8 +9,8 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | _（空闲）_ | — | scaffold-z42c-selfhost 已提交 127b7f11（gate 后台确认中），释放 compiler |
-| `runtime` | add-reflection-mvp ‖ add-file-last-write-time | 2026-06-08 | 反射 MVP：corelib reflection builtins + TypeDesc 句柄化。**例外共存**（User 2026-06-09）：add-file-last-write-time 加 `corelib/fs.rs` 新 builtin（fs.rs 反射不碰）+ `corelib/mod.rs` 一行注册（落 fs 区 line~161，与反射的 line 32+200-208 区段分离，`git add -p` 可隔离）|
-| `stdlib` | add-reflection-mvp ‖ add-file-last-write-time | 2026-06-08 | 反射 MVP：z42.core 扩展 Type + Std.Reflection 类。**例外共存**：add-file-last-write-time 仅动 `z42.io/File.z42` + 1 test，与反射的 `z42.core`/`Std.Reflection` 零重叠。（add-directory-copy 2026-06-08 曾共存于 `z42.io/Directory.z42`，已归档释放）|
+| `runtime` | add-reflection-mvp | 2026-06-08 | 反射 MVP：corelib reflection builtins + TypeDesc 句柄化。（add-file-last-write-time 2026-06-09 曾例外共存：`corelib/fs.rs` 新 builtin + `mod.rs` fs 区一行，已提交 262a163e 归档释放）|
+| `stdlib` | add-reflection-mvp | 2026-06-08 | 反射 MVP：z42.core 扩展 Type + Std.Reflection 类。（add-file-last-write-time 2026-06-09 / add-directory-copy 2026-06-08 均曾例外共存于 `z42.io/`，已归档释放）|
 | `z42c` | …→ port-z42c-project → port-z42c-semantics | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 进行中（设计✅ + 1A-1 Z42Type✅） |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test] |
 
@@ -25,5 +25,4 @@
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | add-reflection-mvp | runtime + stdlib（2026-06-08 登记）|
-| add-file-last-write-time | runtime + stdlib（与 add-reflection-mvp 例外共存，文件/区段分离）|
 | plan-0.3.x-three-streams | docs（不上锁） |
