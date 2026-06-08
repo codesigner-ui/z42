@@ -55,9 +55,17 @@
 - [x] 11 单测（成员字段/继承字段/subclass 可赋/无关类不可赋/字段未找到 + this.m()/param.m()/Class.m() 静态/继承方法/无此方法）
 - [x] 验证：`xtask test compiler-z42` → **12 units 140 cases** 全绿（typecheck 26）
 
+## increment 1D（is/as/new + 数组）—— ✅ 已完成
+- [x] 1D-1：BoundIsExpr(x is T→bool)/BoundCast(x as T→T)/BoundNew(new T(args)→T，ctor 解析后续)；`_isAssignable` 改 error/unknown 任一侧吸收
+- [x] 1D-2：Z42ArrayType(T[] 不变)+BoundIndex(arr[i]→elem)；ResolveType 加 ArrayType/NullableType→inner
+- [x] 8 单测（is/as 向下转/new 无参·带参·未知类型 + 数组索引/同型赋值/非数组错误）
+- [x] 验证：`xtask test compiler-z42` → **12 units 148 cases** 全绿（typecheck 34）
+
+> **类型检查器现覆盖大部分 L1**：lit/ident/assign/decl/return/block/free·instance·static call/binary·unary/if·while·break·continue/member·继承/is·as·new/数组索引。
+
 ## 后续增量（设计 design.md 增量表）
-- [ ] 1D cast·new·数组（is/as→BoundCast/BoundIsExpr / new T(args)→BoundNew / IndexExpr+Z42ArrayType）/ 1E 三目·插值·lambda / 2A·2B 泛型
-- [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import
+- [ ] 1E 三目·??·插值串·lambda / 2A·2B 泛型 → **codegen(Bound→IR,另一半,需先 map z42c.ir)**
+- [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法(new T[n]) [syntax gap]
 
 ## 备注
 - SemanticsSkeleton.z42 暂留（pipeline 仍引用）。
