@@ -11,9 +11,10 @@
 - [x] tests/types/（3 单测：拓宽 / error 吸收 / class+void）
 - [x] 验证：`xtask test compiler-z42` → **8 units 99 cases** 全绿
 
-### 1A-2（非泛型 hashed map + Symbol 模型）
-- [ ] `StrMap.z42`（string → object，bucket hash；D2）；`ISymbol`/`MethodSymbol`/`FieldSymbol`（class 继承 + Kind tag）
-- [ ] Z42ClassType 回填 Fields/Methods（StrMap）+ Z42FuncType（签名）
+### 1A-2（非泛型 hashed map + Symbol 模型 — ✅ 已完成）
+- [x] 1A-2a `StrMap.z42`（string→object 开放寻址 hash，native GetHashCode，2x 重散列；100 条+下行往返测试）
+- [x] 1A-2b `Symbol.z42`（MethodSymbol/FieldSymbol 独立 sealed class——1A 无混合集合，ISymbol 基类延后）+ `Z42FuncType`（签名）+ Z42ClassType 加 Fields/Methods（StrMap）
+- [x] 验证：`xtask test compiler-z42` → **9 units 104 cases** 全绿（map 3 + types 5）
 
 ### 1A-3（SymbolCollector Pass 0）
 - [ ] `SymbolTable` + `SymbolCollector.Collect(cu)`（class[字段+方法签名] + func；两阶段 stub→fixup ContainingType）

@@ -1,0 +1,35 @@
+// 符号模型（port-z42c-semantics 1A-2b）。受限写法：独立 sealed class（暂无共享 ISymbol 基类——
+// 1A 字段/方法分属各自 StrMap，无混合集合需求；需要混合查找时再引入 ISymbol 基 + Kind tag）。
+// 存入 StrMap（object 值），调用方 `as` 下行到 MethodSymbol / FieldSymbol。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+
+public sealed class MethodSymbol {
+    public string      Name;
+    public string      Visibility;
+    public Z42FuncType Signature;
+    public bool        IsStatic;
+    public string      ContainingTypeName;   // 两阶段：收集时填类名（fixup 简化为名字回指）
+    public bool        HasDecl;
+    public MethodDecl  Decl;                  // syntax AST（绑定体时用；imported 时 null）
+    public MethodSymbol(string name, string visibility, Z42FuncType sig, bool isStatic,
+                        string containingTypeName, bool hasDecl, MethodDecl decl) {
+        this.Name = name; this.Visibility = visibility; this.Signature = sig; this.IsStatic = isStatic;
+        this.ContainingTypeName = containingTypeName; this.HasDecl = hasDecl; this.Decl = decl;
+    }
+    public string Dump() { return "(method " + this.Name + " " + this.Signature.Dump() + ")"; }
+}
+
+public sealed class FieldSymbol {
+    public string  Name;
+    public string  Visibility;
+    public Z42Type FieldType;
+    public bool    IsStatic;
+    public string  ContainingTypeName;
+    public FieldSymbol(string name, string visibility, Z42Type fieldType, bool isStatic, string containingTypeName) {
+        this.Name = name; this.Visibility = visibility; this.FieldType = fieldType;
+        this.IsStatic = isStatic; this.ContainingTypeName = containingTypeName;
+    }
+    public string Dump() { return "(field " + this.Name + " " + this.FieldType.Dump() + ")"; }
+}

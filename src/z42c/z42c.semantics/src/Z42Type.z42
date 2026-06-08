@@ -33,14 +33,43 @@ public sealed class Z42ClassType : Z42Type {
     private string _name;
     public bool   HasBase;
     public string BaseName;
+    public StrMap Fields;    // name → FieldSymbol（1A-3 收集时回填）
+    public StrMap Methods;   // name → MethodSymbol
     public Z42ClassType(string name, bool hasBase, string baseName) {
         this._name = name; this.HasBase = hasBase; this.BaseName = baseName;
+        this.Fields = new StrMap();
+        this.Methods = new StrMap();
     }
     public override string Name() { return this._name; }
     public override bool IsAssignableTo(Z42Type other) {
         if (other is Z42ErrorType) { return true; }
         // 同名（1A-1 不查继承链；subclass→base 赋值在 1C，需类表走 base 链）
         return (other is Z42ClassType) && this._name == other.Name();
+    }
+}
+
+// 函数签名类型（形参类型 + 返回类型）。1A：结构相等（同 Dump）。
+public sealed class Z42FuncType : Z42Type {
+    public Z42Type[] ParamTypes;
+    public int       ParamCount;
+    public Z42Type   Ret;
+    public Z42FuncType(Z42Type[] paramTypes, int paramCount, Z42Type ret) {
+        this.ParamTypes = paramTypes; this.ParamCount = paramCount; this.Ret = ret;
+    }
+    public override string Name() { return this.Dump(); }
+    public override string Dump() {
+        string s = "(";
+        int i = 0;
+        while (i < this.ParamCount) {
+            if (i > 0) { s = s + ","; }
+            s = s + this.ParamTypes[i].Dump();
+            i = i + 1;
+        }
+        return s + ")->" + this.Ret.Dump();
+    }
+    public override bool IsAssignableTo(Z42Type other) {
+        if (other is Z42ErrorType) { return true; }
+        return (other is Z42FuncType) && this.Dump() == other.Dump();
     }
 }
 
