@@ -9,15 +9,16 @@
 | `src/TokenKind.z42` | 147 个 token 类型常量（int；镜像 C# enum TokenKind）|
 | `src/Token.z42` | 词法 token（Kind / Text / Span）|
 | `src/Lexer.z42` | 手写词法器：trivia 跳过 + 标识符/关键字 + 数字 + 字符串/字符 + 全符号最长匹配 + EOF |
-| `src/Ast.z42` | 表达式 AST 节点（Expr 基类 + virtual Dump；字面量/标识符/一元/二元）|
-| `src/Parser.z42` | Pratt 表达式解析器（优先级爬升 + 括号 + 一元前缀）|
+| `src/Ast.z42` | 表达式 AST（Expr + virtual Dump；字面量/标识符/一元/二元/成员/调用/索引/赋值）|
+| `src/Stmt.z42` | 语句 AST（Stmt + virtual Dump；expr/var-decl/return/if/while/block）|
+| `src/Parser.z42` | Pratt 表达式（含后缀/赋值）+ 递归下降语句 |
 | `src/SyntaxSkeleton.z42` | **过渡占位**：semantics/pipeline/driver 仍引用；各自移植时移除 |
 
 ## 入口点
 - `Z42.Syntax.Lexer`：`new Lexer(src,file).Tokenize()` → `TokenCount()` / `TokenAt(i)`
-- `Z42.Syntax.Parser`：`new Parser(src,file).ParseExpression()` → `Expr`（`.Dump()` 出 s-expression）
-测试：`tests/lexer/`（10）+ `tests/parser/`（9），经 `xtask test compiler-z42`。
-待移植：语句/声明递归下降 + Visitor；postfix/赋值/三目；Lexer 补全（插值/raw 串、hex/bin、转义解码）。
+- `Z42.Syntax.Parser`：`new Parser(src,file).ParseExpression()` → `Expr` / `.ParseStatement()` → `Stmt`（`.Dump()` 出 s-expression）
+测试：`tests/lexer/`（10）+ `tests/parser/`（13）+ `tests/stmt/`（7），经 `xtask test compiler-z42`。
+待移植：顶层声明（class/func/...）递归下降 + Visitor；三目/位运算/lambda/for/switch/try；Lexer 补全（插值/raw 串、hex/bin、转义解码）。
 
 ## 依赖关系
 → z42c.core。stdlib 自动可用。

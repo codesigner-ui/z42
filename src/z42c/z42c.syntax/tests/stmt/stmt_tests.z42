@@ -1,0 +1,55 @@
+// z42c.syntax 语句解析单测：var-decl / return / expr-stmt / block / if / while。
+namespace Z42cSyntaxStmtTests;
+
+using Std;
+using Std.Test;
+using Z42.Syntax;
+
+string parseStmt(string src) {
+    var p = new Parser(src, "t.z42");
+    var s = p.ParseStatement();
+    return s.Dump();
+}
+
+[Test]
+void test_var_decl() {
+    Assert.Equal("(decl var x 1)", parseStmt("var x = 1;"));
+    Assert.Equal("(decl int y (+ 2 3))", parseStmt("int y = 2 + 3;"));
+    Assert.Equal("(decl Foo f bar)", parseStmt("Foo f = bar;"));   // 自定义类型
+}
+
+[Test]
+void test_return() {
+    Assert.Equal("(return)", parseStmt("return;"));
+    Assert.Equal("(return (+ x 1))", parseStmt("return x + 1;"));
+}
+
+[Test]
+void test_expr_stmt() {
+    Assert.Equal("(expr (call f 1))", parseStmt("f(1);"));
+    Assert.Equal("(expr (= x 5))", parseStmt("x = 5;"));
+    Assert.Equal("(expr (call (. obj method) a b))", parseStmt("obj.method(a, b);"));
+}
+
+[Test]
+void test_block() {
+    Assert.Equal("(block (decl var x 1) (return x))", parseStmt("{ var x = 1; return x; }"));
+    Assert.Equal("(block)", parseStmt("{ }"));
+}
+
+[Test]
+void test_if() {
+    Assert.Equal("(if a (return 1))", parseStmt("if (a) return 1;"));
+    Assert.Equal("(if a (expr (= x 1)) (expr (= x 2)))", parseStmt("if (a) x = 1; else x = 2;"));
+}
+
+[Test]
+void test_while() {
+    Assert.Equal("(while (< i 10) (expr (= i (+ i 1))))", parseStmt("while (i < 10) i = i + 1;"));
+}
+
+[Test]
+void test_nested() {
+    Assert.Equal("(if a (block (while b (expr (call c)))))",
+                 parseStmt("if (a) { while (b) c(); }"));
+}

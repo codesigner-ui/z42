@@ -17,9 +17,16 @@
 - [x] 9 单测（字面量/优先级/括号/左结合/逻辑优先级/比较+算术/一元/混合）→ tests/parser/
 - [x] 验证：`xtask test compiler-z42` → 3 units 30 cases（core 11 + lexer 10 + parser 9）全绿
 
-## increment 3（后续）
-- [ ] Parser 补全：postfix（`.` 成员 / `()` 调用 / `[]` 索引）/ 赋值 / 三目 / `??` / 位运算 / `is`·`as`
-- [ ] 语句（block/if/while/for/return/...）+ 声明（class/func/field/...）递归下降 + 抽象 Visitor
+## increment 3（postfix/赋值 + 语句 — ✅ 已完成）
+- [x] 后缀表达式：`.` 成员 / `()` 调用（变参）/ `[]` 索引（Pratt 循环最紧）+ 赋值 `=`（右结合，bp 10）
+- [x] AST 新节点：MemberExpr/IndexExpr/CallExpr/AssignExpr（Ast.z42）+ Stmt 层级（Stmt.z42：ExprStmt/VarDeclStmt/ReturnStmt/IfStmt/WhileStmt/BlockStmt）
+- [x] 语句递归下降：block `{}` / `if`-`else` / `while` / `return [e];` / var-decl（`var`|类型|自定义类型 标识符 = expr;）/ expr-stmt
+- [x] 13 + 7 单测（postfix/assign 4 例补 parser；语句 7 例新单元 tests/stmt/）
+- [x] 验证：`xtask test compiler-z42` → 4 units 41 cases 全绿（core 11 + lexer 10 + parser 13 + stmt 7）
+
+## increment 4（后续）
+- [ ] Parser 补全：三目 `?:` / `??` / 位运算 / `is`·`as` / `new` / lambda / 复合赋值 `+=` 等 / `for`·`foreach`·`switch`·`try`
+- [ ] 顶层声明（namespace/using/class/struct/interface/enum/func/field/property）递归下降 + 抽象 Visitor
 - [ ] Lexer 补全：插值串 `$"..."` / raw 串 `"""..."""` / hex·bin·分隔符·后缀 / 转义解码
 - [ ] byte-identical：token 流 + AST JSON 与 C# `--dump-tokens` / `--dump-ast` 逐项对账
 

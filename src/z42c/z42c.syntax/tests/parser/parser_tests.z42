@@ -74,3 +74,29 @@ void test_unary() {
 void test_mixed_complex() {
     Assert.Equal("(|| (== (+ 1 (* 2 3)) 7) done)", parse("1 + 2 * 3 == 7 || done"));
 }
+
+[Test]
+void test_member_access() {
+    Assert.Equal("(. a b)", parse("a.b"));
+    Assert.Equal("(. (. a b) c)", parse("a.b.c"));   // 左结合
+}
+
+[Test]
+void test_call() {
+    Assert.Equal("(call f)", parse("f()"));
+    Assert.Equal("(call f 1 2)", parse("f(1, 2)"));
+    Assert.Equal("(call (. a b) c)", parse("a.b(c)"));   // 调用作用于成员
+}
+
+[Test]
+void test_index() {
+    Assert.Equal("(index a 0)", parse("a[0]"));
+    Assert.Equal("(index (. a items) i)", parse("a.items[i]"));
+}
+
+[Test]
+void test_assign_right_assoc() {
+    Assert.Equal("(= x 1)", parse("x = 1"));
+    Assert.Equal("(= a (= b c))", parse("a = b = c"));        // 右结合
+    Assert.Equal("(= x (+ 1 2))", parse("x = 1 + 2"));        // = 最松
+}

@@ -1,7 +1,5 @@
-// AST 表达式节点（z42c.syntax，自举 increment：syntax #2 Parser/AST）。
-// 受限写法：class 继承层级 + virtual 方法（不用 record + match）。每个节点 override
-// Dump() 返回规范 s-expression 串，便于测试断言结构 + 优先级（如 "(+ 1 (* 2 3))"）。
-// 增量：本期仅表达式（字面量/标识符/一元/二元）；语句/声明 + 真实 Visitor 留后续。
+// AST 表达式节点（z42c.syntax）。受限写法：class 继承 + virtual Dump()（s-expression）。
+// 表达式：字面量/标识符/一元/二元/后缀（成员·调用·索引）/赋值。语句见 Stmt.z42。
 namespace Z42.Syntax;
 
 public class Expr {
@@ -21,7 +19,7 @@ public sealed class FloatLitExpr : Expr {
 }
 
 public sealed class StringLitExpr : Expr {
-    public string Raw;   // raw lexeme，含引号
+    public string Raw;
     public StringLitExpr(string raw) { this.Raw = raw; }
     public override string Dump() { return this.Raw; }
 }
@@ -59,5 +57,43 @@ public sealed class BinaryExpr : Expr {
     }
     public override string Dump() {
         return "(" + this.Op + " " + this.Left.Dump() + " " + this.Right.Dump() + ")";
+    }
+}
+
+// ── 后缀 / 赋值 ──────────────────────────────────────────────────────────────
+
+public sealed class MemberExpr : Expr {
+    public Expr   Target;
+    public string Name;
+    public MemberExpr(Expr target, string name) { this.Target = target; this.Name = name; }
+    public override string Dump() { return "(. " + this.Target.Dump() + " " + this.Name + ")"; }
+}
+
+public sealed class IndexExpr : Expr {
+    public Expr Target;
+    public Expr Index;
+    public IndexExpr(Expr target, Expr index) { this.Target = target; this.Index = index; }
+    public override string Dump() { return "(index " + this.Target.Dump() + " " + this.Index.Dump() + ")"; }
+}
+
+public sealed class AssignExpr : Expr {
+    public Expr Target;
+    public Expr Value;
+    public AssignExpr(Expr target, Expr value) { this.Target = target; this.Value = value; }
+    public override string Dump() { return "(= " + this.Target.Dump() + " " + this.Value.Dump() + ")"; }
+}
+
+public sealed class CallExpr : Expr {
+    public Expr   Callee;
+    public Expr[] Args;
+    public int    ArgCount;
+    public CallExpr(Expr callee, Expr[] args, int argCount) {
+        this.Callee = callee; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = "(call " + this.Callee.Dump();
+        int i = 0;
+        while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
+        return s + ")";
     }
 }

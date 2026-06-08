@@ -1,8 +1,7 @@
-// 表达式解析器（Pratt / 优先级爬升）。z42c.syntax 自举 increment #2。
-// 镜像 C# z42.Syntax 的 Pratt binding-power 表（compiler-csharp.md）：
-//   || 30 / && 40 / == != 50 / < <= > >= 60 / + - 70 / * / % 80 / 一元前缀 85。
-// 本期：表达式（字面量/标识符/括号/一元 - ! ~ + / 二元）。
-// 延后：赋值/三目/??/位运算/is·as/postfix(. () [])/语句/声明。
+// 解析器（Pratt 表达式 + 递归下降语句）。z42c.syntax 自举 increment #2/#3。
+// 表达式：字面量/标识符/括号/一元 + 二元（优先级爬升）+ 后缀(. () [])+ 赋值(=，右结合)。
+// 语句：block / if / while / return / var-decl（var|类型|自定义类型 标识符 = expr;）/ expr-stmt。
+// 延后：三目/??/位运算/is·as/复合赋值；for/foreach/switch/try；声明(class/func)。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -21,45 +20,97 @@ public sealed class Parser {
 
     public DiagnosticBag Diagnostics() { return this._diags; }
 
+    // ── token 游标 ──────────────────────────────────────────────────────────
+    private Token _peek()       { return this._peekAt(0); }
+    private Token _peekAt(int o) {
+        int i = this._pos + o;
+        int n = this._lx.TokenCount();
+        if (i >= n) { i = n - 1; }   // clamp 到 Eof
+        return this._lx.TokenAt(i);
+    }
+    private void _advance() { this._pos = this._pos + 1; }
+
+    private void _expect(int kind, string what) {
+        if (this._peek().Kind == kind) { this._advance(); }
+        else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected '" + what + "'", this._peek().Span); }
+    }
+    private void _expectSemi() { this._expect(TokenKind.Semicolon, ";"); }
+
+    // ════ 表达式 ════════════════════════════════════════════════════════════
     public Expr ParseExpression() { return this._parseExpr(0); }
 
-    private Token _peek() { return this._lx.TokenAt(this._pos); }
-    private void  _advance() { this._pos = this._pos + 1; }
-
-    // Pratt 主循环：先解析前缀，再按 binding power 吞并中缀。
     private Expr _parseExpr(int minBp) {
         Expr left = this._parsePrefix();
         while (true) {
-            int k  = this._peek().Kind;
+            int k = this._peek().Kind;
+            // 后缀（最紧）
+            if (k == TokenKind.Dot) {
+                this._advance();
+                string name = this._peek().Text;
+                if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+                else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name after '.'", this._peek().Span); }
+                left = new MemberExpr(left, name);
+                continue;
+            }
+            if (k == TokenKind.LParen) { this._advance(); left = this._parseCall(left); continue; }
+            if (k == TokenKind.LBracket) {
+                this._advance();
+                Expr idx = this._parseExpr(0);
+                this._expect(TokenKind.RBracket, "]");
+                left = new IndexExpr(left, idx);
+                continue;
+            }
+            // 赋值（右结合，bp 10）
+            if (k == TokenKind.Eq && minBp <= 10) {
+                this._advance();
+                Expr rhs = this._parseExpr(10);
+                left = new AssignExpr(left, rhs);
+                continue;
+            }
+            // 二元
             int bp = this._infixBp(k);
             if (bp == 0 || bp < minBp) { break; }
             string op = this._peek().Text;
             this._advance();
-            Expr right = this._parseExpr(bp + 1);   // 左结合：右侧用 bp+1
+            Expr right = this._parseExpr(bp + 1);
             left = new BinaryExpr(op, left, right);
         }
         return left;
     }
 
+    private Expr _parseCall(Expr callee) {
+        Expr[] args = new Expr[8];
+        int n = 0;
+        if (this._peek().Kind != TokenKind.RParen) {
+            while (true) {
+                if (n == args.Length) {
+                    Expr[] bigger = new Expr[args.Length * 2];
+                    int i = 0; while (i < n) { bigger[i] = args[i]; i = i + 1; }
+                    args = bigger;
+                }
+                args[n] = this._parseExpr(0); n = n + 1;
+                if (this._peek().Kind == TokenKind.Comma) { this._advance(); }
+                else { break; }
+            }
+        }
+        this._expect(TokenKind.RParen, ")");
+        return new CallExpr(callee, args, n);
+    }
+
     private Expr _parsePrefix() {
         Token t = this._peek();
         int k = t.Kind;
-
-        // 一元前缀
         if (k == TokenKind.Minus || k == TokenKind.Bang || k == TokenKind.Tilde || k == TokenKind.Plus) {
             this._advance();
             Expr operand = this._parseExpr(85);
             return new UnaryExpr(t.Text, operand);
         }
-        // 括号分组（无独立节点：直接返回内部表达式，分组体现在树结构）
         if (k == TokenKind.LParen) {
             this._advance();
             Expr inner = this._parseExpr(0);
-            if (this._peek().Kind == TokenKind.RParen) { this._advance(); }
-            else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected ')'", this._peek().Span); }
+            this._expect(TokenKind.RParen, ")");
             return inner;
         }
-        // 字面量 / 标识符
         if (k == TokenKind.IntLiteral)    { this._advance(); return new IntLitExpr(t.Text); }
         if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text); }
         if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text); }
@@ -67,14 +118,11 @@ public sealed class Parser {
         if (k == TokenKind.False)         { this._advance(); return new BoolLitExpr(false); }
         if (k == TokenKind.Null)          { this._advance(); return new NullLitExpr(); }
         if (k == TokenKind.Identifier)    { this._advance(); return new IdentExpr(t.Text); }
-
-        // 解析失败：报错并消费一个 token 防卡死
         this._diags.Error(DiagnosticCodes.UnexpectedToken, "unexpected token in expression", t.Span);
         this._advance();
         return new IdentExpr("<error>");
     }
 
-    // 中缀 binding power（0 = 非中缀运算符）。
     private int _infixBp(int k) {
         if (k == TokenKind.PipePipe) { return 30; }
         if (k == TokenKind.AmpAmp)   { return 40; }
@@ -83,5 +131,100 @@ public sealed class Parser {
         if (k == TokenKind.Plus || k == TokenKind.Minus)  { return 70; }
         if (k == TokenKind.Star || k == TokenKind.Slash || k == TokenKind.Percent) { return 80; }
         return 0;
+    }
+
+    // ════ 语句 ══════════════════════════════════════════════════════════════
+    public Stmt ParseStatement() {
+        int k = this._peek().Kind;
+        if (k == TokenKind.LBrace)  { return this._parseBlock(); }
+        if (k == TokenKind.Return)  { return this._parseReturn(); }
+        if (k == TokenKind.If)      { return this._parseIf(); }
+        if (k == TokenKind.While)   { return this._parseWhile(); }
+        if (this._isVarDeclStart()) { return this._parseVarDecl(); }
+        Expr e = this._parseExpr(0);
+        this._expectSemi();
+        return new ExprStmt(e);
+    }
+
+    private Stmt _parseBlock() {
+        this._advance();   // {
+        Stmt[] stmts = new Stmt[8];
+        int n = 0;
+        while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            if (n == stmts.Length) {
+                Stmt[] bigger = new Stmt[stmts.Length * 2];
+                int i = 0; while (i < n) { bigger[i] = stmts[i]; i = i + 1; }
+                stmts = bigger;
+            }
+            stmts[n] = this.ParseStatement(); n = n + 1;
+        }
+        this._expect(TokenKind.RBrace, "}");
+        return new BlockStmt(stmts, n);
+    }
+
+    private Stmt _parseReturn() {
+        this._advance();   // return
+        if (this._peek().Kind == TokenKind.Semicolon) {
+            this._advance();
+            return new ReturnStmt(false, new NullLitExpr());
+        }
+        Expr v = this._parseExpr(0);
+        this._expectSemi();
+        return new ReturnStmt(true, v);
+    }
+
+    private Stmt _parseIf() {
+        this._advance();   // if
+        this._expect(TokenKind.LParen, "(");
+        Expr cond = this._parseExpr(0);
+        this._expect(TokenKind.RParen, ")");
+        Stmt then = this.ParseStatement();
+        if (this._peek().Kind == TokenKind.Else) {
+            this._advance();
+            Stmt els = this.ParseStatement();
+            return new IfStmt(cond, then, true, els);
+        }
+        return new IfStmt(cond, then, false, then);
+    }
+
+    private Stmt _parseWhile() {
+        this._advance();   // while
+        this._expect(TokenKind.LParen, "(");
+        Expr cond = this._parseExpr(0);
+        this._expect(TokenKind.RParen, ")");
+        Stmt body = this.ParseStatement();
+        return new WhileStmt(cond, body);
+    }
+
+    // var x = e;  /  int x = e;  /  Foo x = e;
+    private bool _isVarDeclStart() {
+        int k = this._peek().Kind;
+        if (k == TokenKind.Var) { return true; }
+        if (this._isTypeKeyword(k)) { return true; }
+        if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Identifier) { return true; }
+        return false;
+    }
+
+    private Stmt _parseVarDecl() {
+        string typeText = this._peek().Text;
+        this._advance();
+        string name = this._peek().Text;
+        if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected variable name", this._peek().Span); }
+        this._expect(TokenKind.Eq, "=");
+        Expr init = this._parseExpr(0);
+        this._expectSemi();
+        return new VarDeclStmt(typeText, name, init);
+    }
+
+    private bool _isTypeKeyword(int k) {
+        if (k == TokenKind.String || k == TokenKind.Int || k == TokenKind.Long || k == TokenKind.Short) { return true; }
+        if (k == TokenKind.Double || k == TokenKind.Float || k == TokenKind.Byte || k == TokenKind.Bool) { return true; }
+        if (k == TokenKind.Char || k == TokenKind.Void || k == TokenKind.Object) { return true; }
+        if (k == TokenKind.Uint || k == TokenKind.Ulong || k == TokenKind.Ushort || k == TokenKind.Sbyte) { return true; }
+        if (k == TokenKind.I8 || k == TokenKind.I16 || k == TokenKind.I32 || k == TokenKind.I64) { return true; }
+        if (k == TokenKind.U8 || k == TokenKind.U16 || k == TokenKind.U32 || k == TokenKind.U64) { return true; }
+        if (k == TokenKind.F32 || k == TokenKind.F64) { return true; }
+        return false;
     }
 }

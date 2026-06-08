@@ -1,0 +1,72 @@
+// AST 语句节点（z42c.syntax）。受限写法：class 继承 + virtual Dump()。
+// 无 nullable 字段：用 bool 标志（HasValue / HasElse）+ 占位（gated by 标志）。
+namespace Z42.Syntax;
+
+public class Stmt {
+    public virtual string Dump() { return "?stmt"; }
+}
+
+public sealed class ExprStmt : Stmt {
+    public Expr E;
+    public ExprStmt(Expr e) { this.E = e; }
+    public override string Dump() { return "(expr " + this.E.Dump() + ")"; }
+}
+
+public sealed class VarDeclStmt : Stmt {
+    public string TypeText;
+    public string Name;
+    public Expr   Init;
+    public VarDeclStmt(string typeText, string name, Expr init) {
+        this.TypeText = typeText; this.Name = name; this.Init = init;
+    }
+    public override string Dump() {
+        return "(decl " + this.TypeText + " " + this.Name + " " + this.Init.Dump() + ")";
+    }
+}
+
+public sealed class ReturnStmt : Stmt {
+    public bool HasValue;
+    public Expr Value;   // 仅 HasValue 时有效
+    public ReturnStmt(bool hasValue, Expr value) { this.HasValue = hasValue; this.Value = value; }
+    public override string Dump() {
+        if (this.HasValue) { return "(return " + this.Value.Dump() + ")"; }
+        return "(return)";
+    }
+}
+
+public sealed class IfStmt : Stmt {
+    public Expr Cond;
+    public Stmt Then;
+    public bool HasElse;
+    public Stmt Else;    // 仅 HasElse 时有效
+    public IfStmt(Expr cond, Stmt then, bool hasElse, Stmt els) {
+        this.Cond = cond; this.Then = then; this.HasElse = hasElse; this.Else = els;
+    }
+    public override string Dump() {
+        if (this.HasElse) {
+            return "(if " + this.Cond.Dump() + " " + this.Then.Dump() + " " + this.Else.Dump() + ")";
+        }
+        return "(if " + this.Cond.Dump() + " " + this.Then.Dump() + ")";
+    }
+}
+
+public sealed class WhileStmt : Stmt {
+    public Expr Cond;
+    public Stmt Body;
+    public WhileStmt(Expr cond, Stmt body) { this.Cond = cond; this.Body = body; }
+    public override string Dump() {
+        return "(while " + this.Cond.Dump() + " " + this.Body.Dump() + ")";
+    }
+}
+
+public sealed class BlockStmt : Stmt {
+    public Stmt[] Stmts;
+    public int    Count;
+    public BlockStmt(Stmt[] stmts, int count) { this.Stmts = stmts; this.Count = count; }
+    public override string Dump() {
+        string s = "(block";
+        int i = 0;
+        while (i < this.Count) { s = s + " " + this.Stmts[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
