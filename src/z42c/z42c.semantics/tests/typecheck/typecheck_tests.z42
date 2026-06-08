@@ -331,3 +331,26 @@ void test_generic_param_mismatch_error() {
     string src = "class Pair<K, V> { K key; void Bad(V v) { this.key = v; } }";
     Assert.Equal(1, SemanticDump.ErrorCount(src));
 }
+
+// ── 2A-2a：泛型方法（自身型参）──────────────────────────────────────────────
+[Test]
+void test_generic_method() {
+    string src = "class C { U Identity<U>(U x) { return x; } }";
+    Assert.Equal("(block (return (ident x :U)))", SemanticDump.DumpBody(src, "C.Identity"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_generic_method_in_generic_class() {
+    // 类型参 T + 方法型参 U 同在 scope
+    string src = "class Box<T> { T val; U Conv<U>(U u) { return u; } }";
+    Assert.Equal("(block (return (ident u :U)))", SemanticDump.DumpBody(src, "Box.Conv"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_generic_free_func() {
+    string src = "T Echo<T>(T x) { return x; }";
+    Assert.Equal("(block (return (ident x :T)))", SemanticDump.DumpBody(src, "Echo"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

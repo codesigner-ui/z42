@@ -65,14 +65,26 @@ public sealed class SymbolCollector {
         }
     }
 
-    // tp/tpc = 活跃类型形参（类的；2A-1。方法自身形参 2A-2 合并）。
+    // tp/tpc = 类的活跃类型形参；与方法自身型参（md.TypeParams，2A-2）合并后解析签名。
     private MethodSymbol _methodSymbol(SymbolTable table, MethodDecl md, string containing, string[] tp, int tpc) {
+        int mtpc = md.TypeParams.Count;
+        string[] all = this._mergeParams(tp, tpc, md.TypeParams.Names, mtpc);
+        int allc = tpc + mtpc;
         Z42Type[] ps = new Z42Type[md.ParamCount];
         int k = 0;
-        while (k < md.ParamCount) { ps[k] = table.ResolveTypeP(md.Params[k].Type, tp, tpc); k = k + 1; }
-        Z42Type ret = table.ResolveTypeP(md.RetType, tp, tpc);
+        while (k < md.ParamCount) { ps[k] = table.ResolveTypeP(md.Params[k].Type, all, allc); k = k + 1; }
+        Z42Type ret = table.ResolveTypeP(md.RetType, all, allc);
         var sig = new Z42FuncType(ps, md.ParamCount, ret);
         return new MethodSymbol(md.Name, this._vis(md.Mods), sig, this._hasWord(md.Mods, "static"), containing, true, md);
+    }
+
+    private string[] _mergeParams(string[] a, int ac, string[] b, int bc) {
+        string[] r = new string[ac + bc];
+        int i = 0;
+        while (i < ac) { r[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < bc) { r[ac + j] = b[j]; j = j + 1; }
+        return r;
     }
 
     private string _vis(string mods) {

@@ -42,7 +42,10 @@ public sealed class TypeChecker {
                 MethodDecl md = mem as MethodDecl;
                 if (!md.IsCtor && md.HasBody) {
                     MethodSymbol ms = ct.Methods.Get(md.Name) as MethodSymbol;
-                    var env = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), c.TypeParams.Names, c.TypeParams.Count);
+                    // 活跃类型形参 = 类的 + 方法自身的（2A-2）。
+                    int mtpc = md.TypeParams.Count;
+                    string[] allParams = this._mergeParams(c.TypeParams.Names, c.TypeParams.Count, md.TypeParams.Names, mtpc);
+                    var env = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), allParams, c.TypeParams.Count + mtpc);
                     if (!ms.IsStatic) {
                         env.Define("this", ct);
                         string[] fnames = ct.Fields.Keys();
@@ -63,10 +66,20 @@ public sealed class TypeChecker {
 
     private void _bindFreeFunc(SemanticModel model, SymbolTable symbols, MethodDecl md) {
         if (md.HasBody) {
-            var env = TypeEnv.Root(symbols);
+            // 顶层泛型函数携自身型参（classFlag=false）。
+            var env = new TypeEnv(symbols, false, null, false, "", md.TypeParams.Names, md.TypeParams.Count);
             BoundStmt body = this._bindMethodBody(symbols, env, md);
             model.AddBody(md.Name, body);
         }
+    }
+
+    private string[] _mergeParams(string[] a, int ac, string[] b, int bc) {
+        string[] r = new string[ac + bc];
+        int i = 0;
+        while (i < ac) { r[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < bc) { r[ac + j] = b[j]; j = j + 1; }
+        return r;
     }
 
     private BoundStmt _bindMethodBody(SymbolTable symbols, TypeEnv env, MethodDecl md) {
