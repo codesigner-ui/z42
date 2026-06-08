@@ -1,14 +1,51 @@
 namespace Std;
 
-// Lightweight runtime type descriptor returned by Object.GetType().
-// Cannot be constructed from user code — the VM creates instances via __obj_get_type,
-// writing the __name and __fullName fields directly before returning the object.
+// Runtime type descriptor returned by `Object.GetType()`.
+//
+// Carries a native handle (`NativeData::TypeHandle`) to the real VM `TypeDesc`,
+// so the reflection methods below can enumerate members. Cannot be constructed
+// from user code — the VM creates instances via `__obj_get_type` and the
+// reflection builtins, writing `__name` / `__fullName` directly.
+//
+// Primitives / arrays (`int`, `T[]`, `string`) return a handle-less `Type`:
+// `Name` / `FullName` are populated, but member queries reflect empty.
+//
+// Mirrors C# `System.Type` (read-only subset; no `Invoke` / `MakeGenericType`
+// — those land with generic instantiation in 0.5.x).
 public sealed class Type {
-    // Unqualified class name, e.g. "Circle".
-    // Written directly by the __obj_get_type builtin (as field "__name").
+    // VM-written backing slots. Prefer the `Name` / `FullName` properties;
+    // these remain public for the low-level golden tests + `z42.test` that read
+    // them directly.
     public string __name;
+    public string __fullName;
+
+    // Unqualified class name, e.g. "Circle".
+    [Native("__type_name")]
+    public extern string Name { get; }
 
     // Fully-qualified name including namespace, e.g. "geometry.Circle".
-    // Written directly by the __obj_get_type builtin (as field "__fullName").
-    public string __fullName;
+    [Native("__type_full_name")]
+    public extern string FullName { get; }
+
+    // Base class type; `Std.Object` for classes with no explicit base; `null`
+    // for `Std.Object` itself and for handle-less Types (primitives/arrays).
+    [Native("__type_base")]
+    public extern Type BaseType { get; }
+
+    // Public instance fields (including inherited; base-first). Empty for
+    // primitives / arrays.
+    [Native("__type_fields")]
+    public extern Std.Reflection.FieldInfo[] GetFields();
+
+    // Methods (including inherited / virtual).
+    [Native("__type_methods")]
+    public extern Std.Reflection.MethodInfo[] GetMethods();
+
+    // Fields and methods together.
+    [Native("__type_members")]
+    public extern Std.Reflection.MemberInfo[] GetMembers();
+
+    // Generic type arguments of an instantiated generic (`Box<int>` -> [int]).
+    [Native("__type_generic_args")]
+    public extern Type[] GetGenericArguments();
 }

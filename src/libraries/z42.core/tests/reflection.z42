@@ -1,0 +1,112 @@
+// add-reflection-mvp (2026-06-08): read-only reflection over GetType().
+// Covers Type handle → GetFields/GetMethods/BaseType/GetGenericArguments and
+// the Std.Reflection.{FieldInfo,MethodInfo,ParameterInfo} member objects.
+namespace Z42CoreReflectionTests;
+
+using Std;
+using Std.Test;
+using Std.Reflection;
+
+class Base {
+    public int a;
+}
+
+class Derived : Base {
+    public int b;
+
+    public int Add(int x, int y) {
+        return x + y;
+    }
+
+    public static int Helper() {
+        return 42;
+    }
+}
+
+class Box<T> {
+    public T value;
+}
+
+[Test]
+void test_gettype_name_and_fullname() {
+    Derived d = new Derived();
+    Type t = d.GetType();
+    Assert.Equal("Derived", t.Name);
+    Assert.Equal("Z42CoreReflectionTests.Derived", t.FullName);
+}
+
+[Test]
+void test_getfields_includes_inherited() {
+    Derived d = new Derived();
+    FieldInfo[] fields = d.GetType().GetFields();
+    bool hasA = false;
+    bool hasB = false;
+    foreach (var f in fields) {
+        if (f.Name == "a") { hasA = true; }
+        if (f.Name == "b") { hasB = true; }
+    }
+    Assert.True(hasA);
+    Assert.True(hasB);
+}
+
+[Test]
+void test_field_type_is_type_object() {
+    Derived d = new Derived();
+    foreach (var f in d.GetType().GetFields()) {
+        if (f.Name == "a") {
+            Type ft = f.FieldType;
+            Assert.Equal("int", ft.Name);
+        }
+    }
+}
+
+[Test]
+void test_basetype() {
+    Derived d = new Derived();
+    Type t = d.GetType();
+    Type bt = t.BaseType;
+    Assert.Equal("Base", bt.Name);
+}
+
+[Test]
+void test_getmethods_add_signature() {
+    Derived d = new Derived();
+    bool hasAdd = false;
+    foreach (var m in d.GetType().GetMethods()) {
+        if (m.Name == "Add") {
+            hasAdd = true;
+            Type rt = m.ReturnType;
+            Assert.Equal("int", rt.Name);
+            Assert.Equal(2, m.GetParameters().Length);
+        }
+    }
+    Assert.True(hasAdd);
+}
+
+[Test]
+void test_method_is_static_flag() {
+    Derived d = new Derived();
+    foreach (var m in d.GetType().GetMethods()) {
+        if (m.Name == "Helper") { Assert.True(m.IsStatic); }
+        if (m.Name == "Add") { Assert.False(m.IsStatic); }
+    }
+}
+
+[Test]
+void test_getmembers_combines_fields_and_methods() {
+    Derived d = new Derived();
+    MemberInfo[] members = d.GetType().GetMembers();
+    // At least: fields a, b + methods Add, Helper (plus inherited Object methods).
+    Assert.True(members.Length >= 4);
+}
+
+[Test]
+void test_generic_arguments_best_effort() {
+    Box<int> box = new Box<int>();
+    Type[] args = box.GetType().GetGenericArguments();
+    // Monomorphized TypeDesc carries type_args; when present, the first is int.
+    // (Best-effort for MVP — see reflection.md.)
+    if (args.Length == 1) {
+        Assert.Equal("int", args[0].Name);
+    }
+}

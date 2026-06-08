@@ -1,0 +1,23 @@
+namespace Std.Reflection;
+
+// Reflected method. Populated by `Type.GetMethods()` (`__type_methods`).
+// Mirrors C# `System.Reflection.MethodInfo` (read-only subset; no Invoke —
+// that lands with generic instantiation in 0.5.x).
+public class MethodInfo : MemberInfo {
+    // Return type, e.g. typeof(int) / typeof(void). Written by the VM.
+    public Std.Type ReturnType;
+
+    // True for static methods (no implicit `this`).
+    public bool IsStatic;
+
+    // True for virtual / inherited (vtable) methods.
+    public bool IsVirtual;
+
+    // Backing parameter array written by the VM; exposed via GetParameters().
+    public ParameterInfo[] __parameters;
+
+    // The method's parameters, in declaration order.
+    public ParameterInfo[] GetParameters() {
+        return this.__parameters;
+    }
+}

@@ -129,8 +129,10 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-26 add-gc-softref 新增 GC/SoftHandle.z42，60 → 61；
         // 2026-05-27 add-string-split-options 新增 SplitOptions.z42，61 → 62）；
         // 2026-XX 新增 ByteLength 相关文件，62 → 63。
+        // 2026-06-08 add-reflection-mvp 新增 Reflection/{MemberInfo,FieldInfo,
+        //   MethodInfo,ParameterInfo}.z42，63 → 67。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/63");
+        err2.Should().Contain("cached: 0/67");
     }
 }

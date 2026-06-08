@@ -1,0 +1,9 @@
+namespace Std.Reflection;
+
+// Base of all reflected members (fields, methods). Read-only by convention —
+// instances are created and populated only by the VM reflection builtins
+// (`__type_fields` / `__type_methods`), never by user code.
+public class MemberInfo {
+    // Member name (unqualified). Written directly by the VM.
+    public string Name;
+}

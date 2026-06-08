@@ -1,0 +1,15 @@
+namespace Std.Reflection;
+
+// Reflected method parameter. Populated by `MethodInfo.GetParameters()`.
+// Mirrors C# `System.Reflection.ParameterInfo` (read-only subset).
+public class ParameterInfo {
+    // Parameter name. Falls back to "arg{n}" when debug symbols are absent
+    // (z42 only persists parameter names under debug info).
+    public string Name;
+
+    // The parameter's declared type, e.g. typeof(int).
+    public Std.Type ParameterType;
+
+    // Zero-based position in the parameter list.
+    public int Position;
+}

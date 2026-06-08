@@ -5,48 +5,26 @@ use std::sync::Arc;
 
 // ── Object protocol ───────────────────────────────────────────────────────────
 
-/// Returns a `Std.Type` object with `__name` and `__fullName` derived from
-/// the runtime class of the argument.
+/// Returns a `Std.Type` for the runtime class of the argument.
+///
+/// 2026-06-08 add-reflection-mvp: user objects now carry the real
+/// `Arc<TypeDesc>` in `NativeData::TypeHandle`, so the returned Type responds to
+/// `GetFields()` / `GetMethods()` / `BaseType` / `GetGenericArguments()`.
+/// Primitives / arrays / strings get a handle-less `Std.Type` (member queries
+/// reflect empty) — element-typed array reflection deferred (reflection.md).
 pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let class_name = match args.first() {
-        Some(Value::Object(rc)) => rc.type_desc().name.clone(),
-        // 2026-05-07 add-array-base-class: T[] 的 `GetType()` 返回 Std.Array
-        // Type 对象。v1 不带元素类型（简单 `__name == "Array"`）；元素类型
-        // 元数据留给 expand-type-metadata 后续 spec。
-        Some(Value::Array(_)) => crate::metadata::well_known_names::STD_ARRAY.to_string(),
-        Some(Value::Str(_))   => "Std.String".to_string(),
+    use crate::corelib::reflection::{make_type_from_name, make_type_object};
+    match args.first() {
+        Some(Value::Object(rc)) => Ok(make_type_object(ctx, rc.type_desc_arc().clone())),
+        Some(Value::Array(_)) => {
+            Ok(make_type_from_name(ctx, crate::metadata::well_known_names::STD_ARRAY))
+        }
+        Some(Value::Str(_)) => {
+            Ok(make_type_from_name(ctx, crate::metadata::well_known_names::STD_STRING))
+        }
         Some(Value::Null) => bail!("__obj_get_type: null reference"),
         _ => bail!("__obj_get_type: expected an object"),
-    };
-    let simple_name = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
-
-    // Build a minimal Type object with __name and __fullName slots.
-    let mut field_index = crate::metadata::NameIndex::new();
-    field_index.insert("__name".to_string(), 0usize);
-    field_index.insert("__fullName".to_string(), 1usize);
-    let fields = vec![
-        crate::metadata::FieldSlot { name: "__name".to_string().into(), type_tag: "str".to_string().into() },
-        crate::metadata::FieldSlot { name: "__fullName".to_string().into(), type_tag: "str".to_string().into() },
-    ];
-    let cold = Some(Box::new(crate::metadata::types::TypeDescCold {
-        own_fields: fields.clone().into(),
-        ..Default::default()
-    }));
-    let type_desc = Arc::new(TypeDesc {
-        name: crate::metadata::well_known_names::STD_TYPE.to_string(),
-        base_name: None,
-        fields,
-        field_index,
-        vtable: Vec::new(),
-        vtable_index: crate::metadata::NameIndex::new(),
-        cold,
-        id: crate::metadata::tokens::TypeId::UNRESOLVED,
-    });
-    Ok(ctx.heap().alloc_object(
-        type_desc,
-        vec![Value::Str(simple_name.into()), Value::Str(class_name.into())],
-        NativeData::None,
-    ))
+    }
 }
 
 /// Reference equality: true iff both arguments point to the same heap allocation,

@@ -1,0 +1,8 @@
+namespace Std.Reflection;
+
+// Reflected instance field. Populated by `Type.GetFields()` (`__type_fields`).
+// Mirrors C# `System.Reflection.FieldInfo` (read-only subset).
+public class FieldInfo : MemberInfo {
+    // The field's declared type, e.g. typeof(int). Written by the VM.
+    public Std.Type FieldType;
+}

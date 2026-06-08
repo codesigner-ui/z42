@@ -227,6 +227,12 @@ pub enum NativeData {
     /// 由 `__obj_make_weak` builtin 创建；`__obj_upgrade_weak` 升格回原对象。
     /// 用户视角是 `Std.WeakHandle` 类（无字段）。
     WeakRef(crate::gc::WeakRef),
+    /// 2026-06-08 add-reflection-mvp：`Std.Type` 对象携带的真实类型句柄。
+    /// 由 `__obj_get_type` 对 `Value::Object` 创建（存对象 `type_desc` 的
+    /// `Arc<TypeDesc>`）；反射 builtins（`__type_fields` / `__type_methods` /
+    /// `__type_base` / `__type_generic_args`）据此枚举成员。基础类型/数组的
+    /// synthetic Type 无此句柄（`NativeData::None`），成员查询退化为空。
+    TypeHandle(Arc<TypeDesc>),
     // 2026-04-26 script-first-stringbuilder: removed `StringBuilder(String)` —
     // `Std.Text.StringBuilder` is now a pure z42 script. Variant slot kept open
     // for future native-backed types (Stream / FileHandle / etc.).

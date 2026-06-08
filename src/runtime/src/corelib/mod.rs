@@ -31,6 +31,7 @@ pub mod string;
 pub mod math;
 pub mod fs;
 pub mod object;
+pub mod reflection;
 pub mod array;
 pub mod char;
 pub mod gc;
@@ -200,6 +201,14 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__make_closure", object::builtin_make_closure),
     ("__obj_make_weak", object::builtin_obj_make_weak),
     ("__obj_upgrade_weak", object::builtin_obj_upgrade_weak),
+    // ── Reflection (add-reflection-mvp, 2026-06-08) ─────────────────────────────
+    ("__type_name",          reflection::builtin_type_name),
+    ("__type_full_name",     reflection::builtin_type_full_name),
+    ("__type_fields",        reflection::builtin_type_fields),
+    ("__type_methods",       reflection::builtin_type_methods),
+    ("__type_base",          reflection::builtin_type_base),
+    ("__type_generic_args",  reflection::builtin_type_generic_args),
+    ("__type_members",       reflection::builtin_type_members),
 
     // ── Array protocol（add-array-base-class，2026-05-07）─────────────────────
     ("__array_clone", array::builtin_array_clone),
