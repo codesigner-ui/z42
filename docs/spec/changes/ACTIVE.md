@@ -10,7 +10,7 @@
 |--------|----------------|------|------|
 | `compiler` | _（空闲）_ | — | scaffold-z42c-selfhost 已提交 127b7f11（gate 后台确认中），释放 compiler |
 | `runtime` | add-reflection-mvp | 2026-06-08 | 反射 MVP：corelib reflection builtins + TypeDesc 句柄化（暂停的两个 runtime change 不占锁）|
-| `stdlib` | add-reflection-mvp ‖ add-directory-copy | 2026-06-08 | 反射 MVP：z42.core 扩展 Type + Std.Reflection 类（已核 migrate-scripts-to-z42 只动 scripts/）。**例外共存**（User 2026-06-08 裁决）：add-directory-copy 仅动 `z42.io/Directory.z42` + 1 test + 1 doc，与反射的 `z42.core`/`Std.Reflection` 文件零重叠 → 允许同时持有；任一方先归档即释放各自文件 |
+| `stdlib` | add-reflection-mvp | 2026-06-08 | 反射 MVP：z42.core 扩展 Type + Std.Reflection 类（已核 migrate-scripts-to-z42 只动 scripts/）。（add-directory-copy 2026-06-08 曾例外共存于 `z42.io/Directory.z42`，已归档释放）|
 | `z42c` | …→ port-z42c-project → port-z42c-semantics | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 进行中（设计✅ + 1A-1 Z42Type✅） |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test] |
 
@@ -25,5 +25,4 @@
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | add-reflection-mvp | runtime + stdlib（2026-06-08 登记）|
-| add-directory-copy | stdlib（仅 z42.io/Directory.z42；与 add-reflection-mvp 例外共存，文件零重叠）|
 | plan-0.3.x-three-streams | docs（不上锁） |
