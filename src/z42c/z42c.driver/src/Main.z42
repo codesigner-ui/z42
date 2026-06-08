@@ -1,13 +1,15 @@
 // z42c driver — 自举编译器 CLI 入口（= z42c）。增量解锁命令；绝不 fallback 到 C# z42c.dll。
-// 已实现（incr 6e-1，lex/parse 前端）：
+// 已实现：
 //   z42c --dump-tokens <file.z42>   词法 token 流（z42c 自有格式）
 //   z42c --dump-ast    <file.z42>   AST s-expression
+//   z42c --dump-bound  <file.z42>   类型检查后的 Bound 树（含类型注解 + 诊断数）
 // 未实现：manifest-check / build（后端落地后解锁）。dump 格式与 C# byte-identical 对齐留 6e。
 namespace Z42.Driver;
 
 using Std;
 using Std.IO;
 using Z42.Syntax;
+using Z42.Semantics;
 
 void Main() {
     string[] argv = Environment.GetCommandLineArgs();
@@ -17,20 +19,22 @@ void Main() {
     }
     string cmd  = argv[0];
     string file = argv[1];
-    if (cmd != "--dump-tokens" && cmd != "--dump-ast") {
+    if (cmd != "--dump-tokens" && cmd != "--dump-ast" && cmd != "--dump-bound") {
         ConsoleError.WriteLine("z42c: unknown command '" + cmd + "'");
         _usage();
         Environment.Exit(2);
         return;
     }
     string src = File.ReadAllText(file);
-    if (cmd == "--dump-tokens") { Console.WriteLine(DumpTool.DumpTokens(src)); }
-    else                        { Console.WriteLine(DumpTool.DumpAst(src)); }
+    if (cmd == "--dump-tokens")     { Console.WriteLine(DumpTool.DumpTokens(src)); }
+    else if (cmd == "--dump-ast")   { Console.WriteLine(DumpTool.DumpAst(src)); }
+    else                            { Console.WriteLine(SemanticDump.DumpAll(src)); }
 }
 
 void _usage() {
-    Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse front-end)");
+    Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse/typecheck front-end)");
     Console.WriteLine("usage:");
     Console.WriteLine("  z42c --dump-tokens <file.z42>   token stream");
     Console.WriteLine("  z42c --dump-ast    <file.z42>   AST s-expression");
+    Console.WriteLine("  z42c --dump-bound  <file.z42>   type-checked Bound tree");
 }

@@ -17,6 +17,29 @@ public static class SemanticDump {
         return "(no-body " + key + ")";
     }
 
+    // 全部方法体 bound s-expr（driver `--dump-bound`）：每行 `key: <bound>`，末附错误数。
+    public static string DumpAll(string src) {
+        var p = new Parser(src, "<input>");
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().Collect(cu);
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Infer(cu, symbols);
+        string[] keys = model.Bodies.Keys();
+        string s = "";
+        int i = 0;
+        while (i < keys.Length) {
+            if (i > 0) { s = s + "\n"; }
+            s = s + keys[i] + ": " + model.GetBody(keys[i]).Dump();
+            i = i + 1;
+        }
+        int ec = diags.ErrorCount();
+        if (ec > 0) {
+            if (s != "") { s = s + "\n"; }
+            s = s + "(" + ec.ToString() + " error(s))";
+        }
+        return s;
+    }
+
     // 类型检查诊断错误条数（错误用例断言）。
     public static int ErrorCount(string src) {
         var p = new Parser(src, "<input>");
