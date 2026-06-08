@@ -1,0 +1,50 @@
+// z42c.semantics Bound tree + TypeEnv 单测（1A-4a）。
+namespace Z42cSemanticsBoundTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_bound_dump() {
+    var i = new Z42PrimType("int");
+    var lit = new BoundLitInt(5, i);
+    Assert.Equal("(lit-int 5 :int)", lit.Dump());
+    var id = new BoundIdent("x", i);
+    Assert.Equal("(ident x :int)", id.Dump());
+    var decl = new BoundVarDeclStmt("y", i, lit);
+    Assert.Equal("(decl y :int (lit-int 5 :int))", decl.Dump());
+    var ret = new BoundReturn(true, id);
+    Assert.Equal("(return (ident x :int))", ret.Dump());
+}
+
+[Test]
+void test_bound_block_and_assign() {
+    var i = new Z42PrimType("int");
+    var stmts = new BoundStmt[1];
+    var asn = new BoundAssign(new BoundIdent("x", i), new BoundLitInt(3, i), i);
+    stmts[0] = new BoundExprStmt(asn);
+    var blk = new BoundBlock(stmts, 1);
+    Assert.Equal("(block (expr (assign (ident x :int) (lit-int 3 :int) :int)))", blk.Dump());
+}
+
+[Test]
+void test_typeenv_scope() {
+    var st = new SymbolTable();
+    var root = TypeEnv.Root(st);
+    root.Define("a", new Z42PrimType("int"));
+    var child = root.PushScope();
+    child.Define("b", new Z42PrimType("string"));
+    Assert.Equal("int",    child.LookupVar("a").Name());   // 父层可见
+    Assert.Equal("string", child.LookupVar("b").Name());   // 本层
+    var rb = root.LookupVar("b");
+    Assert.Equal(true, rb == null);                        // 子层定义不漏到父
+}
+
+[Test]
+void test_typeenv_with_class() {
+    var st = new SymbolTable();
+    var env = TypeEnv.Root(st).WithClass("Foo");
+    Assert.Equal(true,  env.HasClass());
+    Assert.Equal("Foo", env.CurrentClass());
+}

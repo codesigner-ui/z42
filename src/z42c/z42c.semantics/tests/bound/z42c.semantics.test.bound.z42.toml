@@ -1,0 +1,12 @@
+# z42c.semantics Bound tree + TypeEnv 单测（port-z42c-semantics 1A-4a）。
+[project]
+name    = "z42c.semantics.test.bound"
+version = "0.1.0"
+kind    = "lib"
+
+[sources]
+include = ["**/*.z42"]
+
+[dependencies]
+"z42c.semantics" = "0.1.0"
+"z42c.core"      = "0.1.0"

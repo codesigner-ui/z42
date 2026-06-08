@@ -1,0 +1,137 @@
+// Bound 树（port-z42c-semantics 1A-4a）。类型检查产物——每节点携解析后 Z42Type。
+// 受限写法：class 继承 + virtual。Dump 出 s-expr 含类型注解 `:typename`（[Test] 断言 + SemanticDump）。
+// 1A 最小集：lit-int/str/bool/null / ident / assign / call(free stub) / error
+//   + decl / return / expr-stmt / block。运算/成员/控制流见 1B+。
+namespace Z42.Semantics;
+
+public class BoundExpr {
+    public virtual Z42Type Type() { return new Z42UnknownType(); }
+    public virtual string  Dump() { return "?bexpr"; }
+}
+
+public sealed class BoundLitInt : BoundExpr {
+    public long Value;
+    private Z42Type _type;
+    public BoundLitInt(long value, Z42Type type) { this.Value = value; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(lit-int " + this.Value.ToString() + " :" + this._type.Name() + ")"; }
+}
+
+public sealed class BoundLitStr : BoundExpr {
+    public string Raw;        // 原始词素（含引号）
+    private Z42Type _type;
+    public BoundLitStr(string raw, Z42Type type) { this.Raw = raw; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(lit-str " + this.Raw + " :" + this._type.Name() + ")"; }
+}
+
+public sealed class BoundLitBool : BoundExpr {
+    public bool Value;
+    private Z42Type _type;
+    public BoundLitBool(bool value, Z42Type type) { this.Value = value; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        string v = "false"; if (this.Value) { v = "true"; }
+        return "(lit-bool " + v + " :" + this._type.Name() + ")";
+    }
+}
+
+public sealed class BoundLitNull : BoundExpr {
+    private Z42Type _type;
+    public BoundLitNull(Z42Type type) { this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(lit-null :" + this._type.Name() + ")"; }
+}
+
+public sealed class BoundIdent : BoundExpr {
+    public string Name;
+    private Z42Type _type;
+    public BoundIdent(string name, Z42Type type) { this.Name = name; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(ident " + this.Name + " :" + this._type.Name() + ")"; }
+}
+
+public sealed class BoundAssign : BoundExpr {
+    public BoundExpr Target;
+    public BoundExpr Value;
+    private Z42Type _type;
+    public BoundAssign(BoundExpr target, BoundExpr value, Z42Type type) {
+        this.Target = target; this.Value = value; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        return "(assign " + this.Target.Dump() + " " + this.Value.Dump() + " :" + this._type.Name() + ")";
+    }
+}
+
+// 顶层自由函数调用（1A stub：仅 callee 名 + 实参 + 返回类型；成员/虚分派见 1C）。
+public sealed class BoundCall : BoundExpr {
+    public string      CalleeName;
+    public BoundExpr[] Args;
+    public int         ArgCount;
+    private Z42Type _retType;
+    public BoundCall(string calleeName, BoundExpr[] args, int argCount, Z42Type retType) {
+        this.CalleeName = calleeName; this.Args = args; this.ArgCount = argCount; this._retType = retType;
+    }
+    public override Z42Type Type() { return this._retType; }
+    public override string  Dump() {
+        string s = "(call " + this.CalleeName;
+        int i = 0;
+        while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
+        return s + " :" + this._retType.Name() + ")";
+    }
+}
+
+public sealed class BoundError : BoundExpr {
+    public string Message;
+    private Z42Type _type;
+    public BoundError(string message, Z42Type type) { this.Message = message; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(error :" + this._type.Name() + ")"; }
+}
+
+// ── 语句 ──────────────────────────────────────────────────────────────────────
+
+public class BoundStmt {
+    public virtual string Dump() { return "?bstmt"; }
+}
+
+public sealed class BoundVarDeclStmt : BoundStmt {
+    public string    Name;
+    public Z42Type   VarType;
+    public BoundExpr Init;
+    public BoundVarDeclStmt(string name, Z42Type varType, BoundExpr init) {
+        this.Name = name; this.VarType = varType; this.Init = init;
+    }
+    public override string Dump() {
+        return "(decl " + this.Name + " :" + this.VarType.Name() + " " + this.Init.Dump() + ")";
+    }
+}
+
+public sealed class BoundReturn : BoundStmt {
+    public bool      HasValue;
+    public BoundExpr Value;     // 仅 HasValue
+    public BoundReturn(bool hasValue, BoundExpr value) { this.HasValue = hasValue; this.Value = value; }
+    public override string Dump() {
+        if (this.HasValue) { return "(return " + this.Value.Dump() + ")"; }
+        return "(return)";
+    }
+}
+
+public sealed class BoundExprStmt : BoundStmt {
+    public BoundExpr E;
+    public BoundExprStmt(BoundExpr e) { this.E = e; }
+    public override string Dump() { return "(expr " + this.E.Dump() + ")"; }
+}
+
+public sealed class BoundBlock : BoundStmt {
+    public BoundStmt[] Stmts;
+    public int         Count;
+    public BoundBlock(BoundStmt[] stmts, int count) { this.Stmts = stmts; this.Count = count; }
+    public override string Dump() {
+        string s = "(block";
+        int i = 0;
+        while (i < this.Count) { s = s + " " + this.Stmts[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}

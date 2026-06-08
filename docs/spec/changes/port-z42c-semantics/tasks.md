@@ -22,9 +22,15 @@
 - [x] tests/collect/（4 单测：类成员/方法签名+static/顶层 func/兄弟类字段类型解析）
 - [x] 验证：`xtask test compiler-z42` → **10 units 108 cases** 全绿（首个 syntax→semantics 跨包处理）
 
-### 1A-4（Bound tree + TypeChecker.Infer + SemanticModel + SemanticDump）
-- [ ] Bound 最小集（LitInt/Ident/Assign/Call-stub/Error + VarDecl/Return/ExprStmt/Block，virtual Type/Dump）
-- [ ] `TypeEnv`（scope 链 + TypeMap）；`TypeChecker.Infer`（集中 if-is `_bindExpr`/`_bindStmt`）；`SemanticModel`
+### 1A-4a（Bound tree + TypeEnv — ✅ 已完成）
+- [x] `Bound.z42`：BoundLitInt/Str/Bool/Null / Ident / Assign / Call(free stub) / Error + VarDecl/Return/ExprStmt/Block（virtual Type/Dump，s-expr 含 `:type` 注解）
+- [x] `TypeEnv.z42`：scope 链（Vars StrMap）+ Root 工厂 + PushScope/WithClass + 迭代 LookupVar
+- [x] tests/bound/（4 单测：bound dump / block+assign / scope 链 / WithClass）
+- [x] 验证：`xtask test compiler-z42` → **11 units 112 cases** 全绿
+- **🔴 调试发现 3 个 z42 约束**（写入 memory）：① 对刚 new 的 self-type 实例跨实例写字段 → E0402（用全字段构造器）；② 在自身方法内对 self-type 字段调自身方法（递归）→ E0402（用迭代+字段读）；③ `while(true)` 不满足 definite-return（用 loop-flag + 末尾 return）
+
+### 1A-4b（TypeChecker.Infer + SemanticModel + SemanticDump — 后续）
+- [ ] `TypeChecker.Infer`（集中 if-is `_bindExpr`/`_bindStmt`，绑定方法体 + 返回类型检查）；`SemanticModel`
 - [ ] `SemanticDump.Check(src)`（→ bound s-expr）+ driver `--dump-bound`
 - [ ] tests/typecheck/（bound s-expr 断言 + 类型断言 + 错误用例：type mismatch / undefined / missing return）
 

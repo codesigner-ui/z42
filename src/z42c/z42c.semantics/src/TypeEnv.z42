@@ -1,0 +1,54 @@
+// 类型环境（port-z42c-semantics 1A-4a）。词法嵌套 scope 链 + 全局符号表。
+// 受限写法：① public 字段（同 z42c.syntax AST 约定）；② 全字段经构造器（this.）设置——
+//   避免对刚 new 的同型实例做跨实例字段写（z42 此处报 E0402）；PushScope/WithClass 走构造器。
+// Vars: 本层 locals/params（string → Z42Type，StrMap）。LookupVar 走父链。
+namespace Z42.Semantics;
+
+public sealed class TypeEnv {
+    public bool        HasParent;
+    public TypeEnv     Parent;
+    public StrMap      Vars;
+    public SymbolTable Symbols;
+    public bool        ClassFlag;
+    public string      ClassName;
+
+    public TypeEnv(SymbolTable symbols, bool hasParent, TypeEnv parent, bool classFlag, string className) {
+        this.Symbols = symbols;
+        this.HasParent = hasParent;
+        this.Parent = parent;
+        this.Vars = new StrMap();
+        this.ClassFlag = classFlag;
+        this.ClassName = className;
+    }
+
+    public static TypeEnv Root(SymbolTable symbols) {
+        return new TypeEnv(symbols, false, null, false, "");
+    }
+
+    public TypeEnv PushScope() {
+        return new TypeEnv(this.Symbols, true, this, this.ClassFlag, this.ClassName);
+    }
+
+    public TypeEnv WithClass(string className) {
+        return new TypeEnv(this.Symbols, true, this, true, className);
+    }
+
+    public void Define(string name, Z42Type type) { this.Vars.Put(name, type); }
+
+    // 本层 → 父链查找；未找到返回 null。
+    // 迭代（非递归）：z42 无法在自身方法内对 self-type 字段调自身方法（编译中类型未就绪）→ 走字段读循环。
+    public Z42Type LookupVar(string name) {
+        TypeEnv e = this;
+        bool more = true;
+        while (more) {
+            if (e.Vars.ContainsKey(name)) { return e.Vars.Get(name) as Z42Type; }
+            if (e.HasParent) { e = e.Parent; }
+            else { more = false; }
+        }
+        return null;
+    }
+
+    public bool        HasClass()     { return this.ClassFlag; }
+    public string      CurrentClass() { return this.ClassName; }
+    public SymbolTable GetSymbols()   { return this.Symbols; }
+}
