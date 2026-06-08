@@ -93,12 +93,14 @@ relative-reference resolution. Handles `../`, absolute paths,
 network-relative `//host`, scheme-relative refs, fragments. Pure
 script.
 
-### uri-future-ipv6-parse
+### ~~uri-future-ipv6-parse~~ — **✅ 已落地 2026-06-09 (`add-uri-ipv6-host`)**
 
-- **来源**：`https://[::1]:8443/` host 部分拆为 8×16-bit 组件
-- **触发原因**：v0 host 当 opaque 字符串保留即可满足重组 / 比较
-- **触发条件**：z42.net socket API 需要 IPv6 字面量验证
-- **当前 workaround**：调用方自行调 `parseIpv6(uri.GetHost())`
+Shipped: 解析器现按 RFC 3986 §3.2.2 处理 `[::1]` bracket host（先消费到 `]` 再找端口
+冒号，内部 `:` 不再被误当端口分隔符 —— v0 实际**无法解析** IPv6 URL，host 在第一个内层
+`:` 处截断，是 latent bug）。host 保留括号供 `ToString` 重组；`Uri.IsIPv6Literal()` +
+`Uri.GetHostName()`（剥括号）桥接到 `Std.Net.IPAddress.Parse`（后者已解码 IPv6 full-form
++ `::` shorthand → 16-bit 组件，故 Uri 不重复实现拆解）。7 tests：带/不带端口/路径的 IPv6
+解析、ToString round-trip、IPv4/regname 不受影响、未闭合 `[` 抛 UriException。
 
 ### uri-future-iri-idn
 

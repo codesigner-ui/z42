@@ -1,0 +1,71 @@
+// add-uri-ipv6-host (2026-06-09): IPv6 literal host parsing (RFC 3986 §3.2.2
+// bracket form) — inner ':' separators no longer mistaken for the port
+// delimiter — plus GetHostName (bracket-stripped) / IsIPv6Literal accessors
+// bridging to Std.Net.IPAddress.Parse.
+namespace Z42UriIPv6HostTests;
+
+using Std;
+using Std.Test;
+using Std.Uri;
+
+[Test]
+void test_parse_ipv6_loopback_with_port() {
+    var u = Uri.Parse("http://[::1]:8443/path");
+    Assert.Equal("http", u.GetScheme());
+    Assert.Equal("[::1]", u.GetHost());      // brackets preserved
+    Assert.Equal(8443, u.GetPort());
+    Assert.Equal("/path", u.GetPath());
+    Assert.True(u.IsIPv6Literal());
+    Assert.Equal("::1", u.GetHostName());    // brackets stripped
+}
+
+[Test]
+void test_parse_ipv6_full_no_port() {
+    var u = Uri.Parse("https://[2001:db8::1]/");
+    Assert.Equal("[2001:db8::1]", u.GetHost());
+    Assert.False(u.HasPort());
+    Assert.Equal("/", u.GetPath());
+    Assert.True(u.IsIPv6Literal());
+    Assert.Equal("2001:db8::1", u.GetHostName());
+}
+
+[Test]
+void test_ipv6_no_port_no_path() {
+    var u = Uri.Parse("http://[::1]");
+    Assert.Equal("[::1]", u.GetHost());
+    Assert.False(u.HasPort());
+    Assert.Equal("::1", u.GetHostName());
+}
+
+[Test]
+void test_ipv6_round_trips_via_tostring() {
+    string src = "http://[::1]:8443/p?q=1";
+    Assert.Equal(src, Uri.Parse(src).ToString());
+}
+
+[Test]
+void test_ipv4_host_unaffected() {
+    var u = Uri.Parse("http://1.2.3.4:80/");
+    Assert.Equal("1.2.3.4", u.GetHost());
+    Assert.Equal(80, u.GetPort());
+    Assert.False(u.IsIPv6Literal());
+    Assert.Equal("1.2.3.4", u.GetHostName());   // unchanged for non-IPv6
+}
+
+[Test]
+void test_regname_host_unaffected() {
+    var u = Uri.Parse("https://example.com/x");
+    Assert.False(u.IsIPv6Literal());
+    Assert.Equal("example.com", u.GetHostName());
+}
+
+[Test]
+void test_unterminated_ipv6_bracket_throws() {
+    bool caught = false;
+    try {
+        Uri.Parse("http://[::1/path");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

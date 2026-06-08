@@ -10,7 +10,9 @@ using Std.Text;
 // 简化决策：
 // - URN / opaque URIs (mailto:, urn:) 只保留 scheme + path（不细分）
 // - 不做相对 URI 解析（resolve(base, ref)），future work
-// - 不做 IPv6 字面量解析（host 字符串保留 `[::1]` 形式不拆）
+// - IPv6 字面量 host 按 RFC 3986 §3.2.2 的 `[::1]` bracket 形式解析（内部 ':'
+//   不被误当端口分隔符）；host 保留括号供 ToString 重组。拆为 16-bit 组件交
+//   `Std.Net.IPAddress.Parse`，Uri 提供 `GetHostName()`（剥括号）/ `IsIPv6Literal()` 桥接。
 public class Uri {
     private string _scheme;        // "" 表示无（不应出现 — Parse 拒绝）
     private bool   _hasAuthority;  // true when URI had `//` after scheme
@@ -49,6 +51,31 @@ public class Uri {
     public bool HasPort()      { return this._port >= 0; }
     public bool HasQuery()     { return this._query.Length > 0; }
     public bool HasFragment()  { return this._fragment.Length > 0; }
+
+    // add-uri-ipv6-host (2026-06-09): IPv6 literal host bridge. `GetHost()`
+    // keeps the RFC 3986 §3.2.2 bracket form (`[::1]`) needed to round-trip
+    // via `ToString`; these expose the bracket-stripped form so a caller can
+    // feed it to `Std.Net.IPAddress.Parse` (which already decodes IPv6
+    // full-form + `::` shorthand) or DNS resolution. z42.uri stays free of a
+    // z42.net dependency — the IPAddress hand-off is the caller's.
+
+    /// True if the host is an IPv6 (or IPvFuture) literal in bracket form `[...]`.
+    public bool IsIPv6Literal() {
+        return this._host.Length >= 2
+            && this._host.StartsWith("[")
+            && this._host.EndsWith("]");
+    }
+
+    /// Host with IPv6 literal brackets stripped — the form suitable for
+    /// `Std.Net.IPAddress.Parse` / DNS. For a registered name or IPv4 host this
+    /// equals `GetHost()`; for `[::1]` it returns `::1`. (Mirrors the
+    /// bracket-stripping aspect of BCL `Uri.DnsSafeHost`.)
+    public string GetHostName() {
+        if (this.IsIPv6Literal()) {
+            return this._host.Substring(1, this._host.Length - 2);
+        }
+        return this._host;
+    }
 
     /// Effective port — returns the explicit `_port` if present, otherwise
     /// the IANA default for the scheme (`http` → 80, `https` → 443, etc.).
@@ -435,13 +462,28 @@ public sealed class UriParser {
                 this._pos = atIdx + 1;
             }
             int hostStart = this._pos;
-            // host extends to ':' or '/' or '?' or '#' or EOF
-            while (!this.Eof()) {
-                char c = this.Peek();
-                if (c == ':' || c == '/' || c == '?' || c == '#') { break; }
-                this.Advance();
+            // add-uri-ipv6-host (2026-06-09): IPv6 / IPvFuture literal hosts are
+            // bracketed (`[::1]`) so their inner ':' separators aren't confused
+            // with the port delimiter (RFC 3986 §3.2.2). Consume through ']'
+            // before the host-terminator scan; the `[...]` (brackets kept) is
+            // the host, and a following ':' is the port.
+            if (this.Peek() == '[') {
+                this.Advance(); // '['
+                while (!this.Eof() && this.Peek() != ']') { this.Advance(); }
+                if (this.Eof()) {
+                    throw new UriException("unterminated IPv6 literal '[' in authority");
+                }
+                this.Advance(); // ']'
+                host = this._src.Substring(hostStart, this._pos - hostStart);
+            } else {
+                // host extends to ':' or '/' or '?' or '#' or EOF
+                while (!this.Eof()) {
+                    char c = this.Peek();
+                    if (c == ':' || c == '/' || c == '?' || c == '#') { break; }
+                    this.Advance();
+                }
+                host = this._src.Substring(hostStart, this._pos - hostStart);
             }
-            host = this._src.Substring(hostStart, this._pos - hostStart);
             if (this.Peek() == ':') {
                 this.Advance();
                 int portStart = this._pos;
