@@ -219,12 +219,11 @@ round-trip, length-not-mod-8 rejection, padding=2 rejection,
 W-char (post-V) rejection, lowercase rejection, output-length-mod-8
 invariant.
 
-### UTF-16 / UTF-32 编解码
+### ~~UTF-16 / UTF-32 编解码~~ — **✅ 已落地 2026-05-27 (37b7191e)**
 
-- **来源**：本 spec v0 范围排除
-- **触发原因**：z42 string 内部 UTF-8 存储；UTF-16 仅 Windows API 边界需要
-- **前置依赖**：z42 Windows native interop spec
-- **触发条件**：Windows facade 实施 / 桌面 GUI 场景
+Shipped: `Std.Encoding.Utf16.GetBytesLE/GetBytesBE/GetStringLE/GetStringBE` +
+`Std.Encoding.Utf32.GetBytes/GetString`（LE/BE，代理对编/解码 + 校验，standalone
+surrogate / 截断 / 越界 codepoint 各错误路径）。源：`Utf16.z42` / `Utf32.z42`。
 
 ### Streaming API（Encoder / Decoder 状态机）
 

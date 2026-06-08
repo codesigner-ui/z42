@@ -134,14 +134,13 @@ mutexes / channels / compressors. Capability matrix per mode: Read
 `CanWrite` only (POSIX `O_APPEND` forces writes to EOF so seek would
 mislead callers).
 
-### `io-stream-future-textreader`
+### ~~`io-stream-future-textreader`~~ — **✅ landed 2026-05-28 (e80f0311)**
 
-- **来源**：add-z42-io-stream v0 scope cut
-- **触发原因**：text-line-oriented I/O (`ReadLine()`, write with
-  encoding) needs a layer on top of `Stream` that owns line-buffering
-  + encoding decode state. Significant scope — separate spec.
-- **触发条件**：first real use case for line-oriented streaming
-  (parsing large log files / processing stdin line-by-line).
+Shipped: `Std.IO.TextReader` / `TextWriter` abstract bases (line-buffering +
+encoding decode state on top of `Stream`); `ReadLineBase` / `ReadToEndBase` /
+`ReadBufferBase` 处理 LF / CRLF / lone-CR / blank lines / no-trailing-newline。
+源：`TextReader.z42` / `TextWriter.z42`。`StreamReader` / `StringReader` 等具体类
+建于其上（见各 ✅ landed 条目）。
 
 ### ~~`io-stream-future-bufferedstream`~~ — **✅ landed 2026-05-24**
 
