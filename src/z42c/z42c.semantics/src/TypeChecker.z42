@@ -42,7 +42,7 @@ public sealed class TypeChecker {
                 MethodDecl md = mem as MethodDecl;
                 if (!md.IsCtor && md.HasBody) {
                     MethodSymbol ms = ct.Methods.Get(md.Name) as MethodSymbol;
-                    var env = TypeEnv.Root(symbols).WithClass(ct.Name());
+                    var env = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), c.TypeParams.Names, c.TypeParams.Count);
                     if (!ms.IsStatic) {
                         env.Define("this", ct);
                         string[] fnames = ct.Fields.Keys();
@@ -72,10 +72,10 @@ public sealed class TypeChecker {
     private BoundStmt _bindMethodBody(SymbolTable symbols, TypeEnv env, MethodDecl md) {
         int p = 0;
         while (p < md.ParamCount) {
-            env.Define(md.Params[p].Name, symbols.ResolveType(md.Params[p].Type));
+            env.Define(md.Params[p].Name, env.ResolveType(md.Params[p].Type));
             p = p + 1;
         }
-        Z42Type ret = symbols.ResolveType(md.RetType);
+        Z42Type ret = env.ResolveType(md.RetType);
         return this._bindStmt(md.Body, env, ret);
     }
 
@@ -153,7 +153,7 @@ public sealed class TypeChecker {
             NamedType nt = v.Type as NamedType;
             if (nt.Name == "var") { return init.Type(); }
         }
-        Z42Type vt = env.Symbols.ResolveType(v.Type);
+        Z42Type vt = env.ResolveType(v.Type);
         if (!this._isAssignable(init.Type(), vt, env.Symbols)) {
             this._diags.Error(DiagnosticCodes.TypeMismatch,
                 "cannot assign " + init.Type().Name() + " to " + vt.Name(), this._noSpan());
@@ -213,13 +213,13 @@ public sealed class TypeChecker {
         if (e is IsExpr) {
             IsExpr ix = e as IsExpr;
             BoundExpr operand = this._bindExpr(ix.E, env);
-            Z42Type target = env.Symbols.ResolveType(ix.Type);
+            Z42Type target = env.ResolveType(ix.Type);
             return new BoundIsExpr(operand, target.Name());
         }
         if (e is AsExpr) {
             AsExpr ax = e as AsExpr;
             BoundExpr operand = this._bindExpr(ax.E, env);
-            return new BoundCast(operand, env.Symbols.ResolveType(ax.Type));
+            return new BoundCast(operand, env.ResolveType(ax.Type));
         }
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
@@ -441,7 +441,7 @@ public sealed class TypeChecker {
         BoundExpr[] args = new BoundExpr[n.ArgCount];
         int i = 0;
         while (i < n.ArgCount) { args[i] = this._bindExpr(n.Args[i], env); i = i + 1; }
-        Z42Type t = env.Symbols.ResolveType(n.Type);
+        Z42Type t = env.ResolveType(n.Type);
         if (t is Z42UnknownType) {
             this._diags.Error(DiagnosticCodes.UndefinedSymbol, "unknown type in `new`: " + n.Type.Dump(), this._noSpan());
         }

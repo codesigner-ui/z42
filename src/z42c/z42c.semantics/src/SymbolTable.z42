@@ -34,21 +34,31 @@ public sealed class SymbolTable {
     }
 
     public Z42Type ResolveType(TypeExpr te) {
+        return this.ResolveTypeP(te, new string[0], 0);
+    }
+
+    // 带活跃类型形参（泛型类/方法 scope）：名字命中 paramNames → Z42GenericParamType。
+    public Z42Type ResolveTypeP(TypeExpr te, string[] paramNames, int paramCount) {
         if (te is NamedType) {
             NamedType nt = te as NamedType;
             string n = nt.Name;
+            int i = 0;
+            while (i < paramCount) {
+                if (paramNames[i] == n) { return new Z42GenericParamType(n); }
+                i = i + 1;
+            }
             if (n == "void") { return new Z42VoidType(); }
             if (this._isPrim(n)) { return new Z42PrimType(n); }
             if (this.Classes.ContainsKey(n)) { return this.Classes.Get(n) as Z42ClassType; }
-            return new Z42UnknownType();   // imported / 未声明 → Unknown
+            return new Z42UnknownType();   // imported / 未声明 / 泛型实例化 Box<int>（2A-2）→ Unknown
         }
         if (te is ArrayType) {
             ArrayType at = te as ArrayType;
-            return new Z42ArrayType(this.ResolveType(at.Elem));
+            return new Z42ArrayType(this.ResolveTypeP(at.Elem, paramNames, paramCount));
         }
         if (te is NullableType) {
             NullableType nt = te as NullableType;
-            return this.ResolveType(nt.Inner);   // 1D：nullable → inner（Option 类型延后）
+            return this.ResolveTypeP(nt.Inner, paramNames, paramCount);   // nullable → inner（Option 延后）
         }
         return new Z42UnknownType();
     }

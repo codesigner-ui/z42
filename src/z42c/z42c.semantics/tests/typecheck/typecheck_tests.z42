@@ -301,3 +301,33 @@ void test_ternary_non_bool_cond_error() {
     string src = "class C { int M(int x) { return x ? 1 : 2; } }";   // x 非 bool 条件
     Assert.Equal(1, SemanticDump.ErrorCount(src));
 }
+
+// ── 2A-1：泛型类（类型形参 resolve）──────────────────────────────────────────
+[Test]
+void test_generic_class_field_return() {
+    string src = "class Box<T> { T value; T Get() { return this.value; } }";
+    Assert.Equal("(block (return (member (ident this :Box) value :T)))", SemanticDump.DumpBody(src, "Box.Get"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_generic_class_param_assign() {
+    string src = "class Box<T> { T val; void Set(T v) { this.val = v; } }";
+    Assert.Equal("(block (expr (assign (member (ident this :Box) val :T) (ident v :T) :T)))",
+                 SemanticDump.DumpBody(src, "Box.Set"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_generic_multi_param() {
+    string src = "class Pair<K, V> { K key; V val; K GetKey() { return this.key; } }";
+    Assert.Equal("(block (return (member (ident this :Pair) key :K)))", SemanticDump.DumpBody(src, "Pair.GetKey"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_generic_param_mismatch_error() {
+    // K 字段赋 V 值 → 不同型参不可赋
+    string src = "class Pair<K, V> { K key; void Bad(V v) { this.key = v; } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}

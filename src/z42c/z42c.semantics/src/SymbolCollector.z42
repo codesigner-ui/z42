@@ -32,7 +32,7 @@ public sealed class SymbolCollector {
                 if (c.Kind == "class" || c.Kind == "struct") { this._fillClass(table, c); }
             } else if (d is MethodDecl) {
                 MethodDecl m = d as MethodDecl;            // 顶层 func（IsFree）
-                table.Functions.Put(m.Name, this._methodSymbol(table, m, ""));
+                table.Functions.Put(m.Name, this._methodSymbol(table, m, "", new string[0], 0));
             }
             i = i + 1;
         }
@@ -46,28 +46,31 @@ public sealed class SymbolCollector {
 
     private void _fillClass(SymbolTable table, ClassDecl c) {
         Z42ClassType ct = table.Classes.Get(c.Name) as Z42ClassType;
+        string[] tp = c.TypeParams.Names;     // 类型形参（泛型类；非泛型 Count=0）
+        int tpc = c.TypeParams.Count;
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);
             if (mem is FieldDecl) {
                 FieldDecl fd = mem as FieldDecl;
-                Z42Type ft = table.ResolveType(fd.Type);
+                Z42Type ft = table.ResolveTypeP(fd.Type, tp, tpc);
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, this._hasWord(fd.Mods, "static"), c.Name));
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 if (!md.IsCtor) {                          // ctor 延后（1D new）
-                    ct.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name));
+                    ct.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, tp, tpc));
                 }
             }
             j = j + 1;
         }
     }
 
-    private MethodSymbol _methodSymbol(SymbolTable table, MethodDecl md, string containing) {
+    // tp/tpc = 活跃类型形参（类的；2A-1。方法自身形参 2A-2 合并）。
+    private MethodSymbol _methodSymbol(SymbolTable table, MethodDecl md, string containing, string[] tp, int tpc) {
         Z42Type[] ps = new Z42Type[md.ParamCount];
         int k = 0;
-        while (k < md.ParamCount) { ps[k] = table.ResolveType(md.Params[k].Type); k = k + 1; }
-        Z42Type ret = table.ResolveType(md.RetType);
+        while (k < md.ParamCount) { ps[k] = table.ResolveTypeP(md.Params[k].Type, tp, tpc); k = k + 1; }
+        Z42Type ret = table.ResolveTypeP(md.RetType, tp, tpc);
         var sig = new Z42FuncType(ps, md.ParamCount, ret);
         return new MethodSymbol(md.Name, this._vis(md.Mods), sig, this._hasWord(md.Mods, "static"), containing, true, md);
     }
