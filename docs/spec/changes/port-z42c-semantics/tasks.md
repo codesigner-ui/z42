@@ -71,9 +71,15 @@
 - [x] Z42GenericParamType + ResolveTypeP(型参感知) + SymbolCollector 用类 TypeParams + TypeEnv.ResolveType/WithClassGeneric
 - [x] 4 单测（Box<T>/Pair<K,V>/型参赋值/不同型参错误）→ **12 units 156 cases** 全绿
 
+## increment 2A-2（泛型方法 + 实例化）—— ✅ 已完成
+- [x] 2A-2a 泛型方法自身型参（_mergeParams 合并类+方法型参；free func 携自身型参）
+- [x] 2A-2b Z42InstantiatedType(Box<int> 不变性；ResolveTypeP 处理 NamedType.Args 递归)；成员替换延后
+- [x] 6 单测（泛型方法/泛型类内方法/free func + 实例化参数·返回·不变性·嵌套）→ **12 units 162 cases** 全绿
+
 ## 后续增量
-- [ ] 2A-2 泛型方法自身型参（合并类+方法型参）+ 泛型实例化 `Box<int>`→Z42InstantiatedType / 2B where 约束求解
+- [ ] 2B where 约束求解（Z42GenericParamType 携约束 + 调用点校验）
 - [ ] **codegen(Bound→IR,semantics 另一半,需先 map z42.IR 出设计)** → z42.IR + byte-identical emit + pipeline
+- [ ] **syntax gap**（z42c.syntax 待补）：局部 var-decl 泛型类型 `Box<int> b=...` 的 `_isVarDeclStart` lookahead
 - [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法 / lambda / 插值串
 
 ## 备注
