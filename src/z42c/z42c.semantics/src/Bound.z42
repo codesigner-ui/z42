@@ -144,6 +144,43 @@ public sealed class BoundMember : BoundExpr {
     }
 }
 
+// 类型测试（1D）：x is T → bool。
+public sealed class BoundIsExpr : BoundExpr {
+    public BoundExpr E;
+    public string    TypeName;
+    private Z42Type _type;
+    public BoundIsExpr(BoundExpr e, string typeName) { this.E = e; this.TypeName = typeName; this._type = new Z42PrimType("bool"); }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(is " + this.E.Dump() + " " + this.TypeName + " :bool)"; }
+}
+
+// 转换（1D）：x as T → T（结果类型 = 目标）。
+public sealed class BoundCast : BoundExpr {
+    public BoundExpr E;
+    private Z42Type _type;
+    public BoundCast(BoundExpr e, Z42Type type) { this.E = e; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(cast " + this.E.Dump() + " :" + this._type.Name() + ")"; }
+}
+
+// new T(args)（1D）：构造（ctor 签名检查留后续；结果类型 = T）。
+public sealed class BoundNew : BoundExpr {
+    public string      TypeName;
+    public BoundExpr[] Args;
+    public int         ArgCount;
+    private Z42Type _type;
+    public BoundNew(string typeName, BoundExpr[] args, int argCount, Z42Type type) {
+        this.TypeName = typeName; this.Args = args; this.ArgCount = argCount; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() {
+        string s = "(new " + this.TypeName;
+        int i = 0;
+        while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
+        return s + " :" + this._type.Name() + ")";
+    }
+}
+
 public sealed class BoundError : BoundExpr {
     public string Message;
     private Z42Type _type;

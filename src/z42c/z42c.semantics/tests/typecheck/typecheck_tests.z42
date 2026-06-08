@@ -211,3 +211,38 @@ void test_error_no_such_method() {
     string src = "class Box { } class C { int M(Box b) { return b.Nope(); } }";
     Assert.Equal(1, SemanticDump.ErrorCount(src));   // no method Nope on Box
 }
+
+// ── 1D-1：is / as / new ────────────────────────────────────────────────────
+[Test]
+void test_is_expr() {
+    string src = "class C { bool Check(object o) { return o is C; } }";
+    Assert.Equal("(block (return (is (ident o :object) C :bool)))", SemanticDump.DumpBody(src, "C.Check"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_as_cast() {
+    string src = "class Base { } class Derived : Base { } class C { Derived Down(Base b) { return b as Derived; } }";
+    Assert.Equal("(block (return (cast (ident b :Base) :Derived)))", SemanticDump.DumpBody(src, "C.Down"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_new_no_args() {
+    string src = "class Box { } class C { Box Make() { return new Box(); } }";
+    Assert.Equal("(block (return (new Box :Box)))", SemanticDump.DumpBody(src, "C.Make"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_new_with_args() {
+    string src = "class Point { } class C { Point Make() { return new Point(1, 2); } }";
+    Assert.Equal("(block (return (new Point (lit-int 1 :int) (lit-int 2 :int) :Point)))", SemanticDump.DumpBody(src, "C.Make"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_new_unknown_type_error() {
+    string src = "class C { object Make() { return new Nonexistent(); } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));   // 未知类型
+}

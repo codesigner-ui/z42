@@ -210,6 +210,20 @@ public sealed class TypeChecker {
         if (e is MemberExpr) {
             return this._bindMember(e as MemberExpr, env);
         }
+        if (e is IsExpr) {
+            IsExpr ix = e as IsExpr;
+            BoundExpr operand = this._bindExpr(ix.E, env);
+            Z42Type target = env.Symbols.ResolveType(ix.Type);
+            return new BoundIsExpr(operand, target.Name());
+        }
+        if (e is AsExpr) {
+            AsExpr ax = e as AsExpr;
+            BoundExpr operand = this._bindExpr(ax.E, env);
+            return new BoundCast(operand, env.Symbols.ResolveType(ax.Type));
+        }
+        if (e is ObjNewExpr) {
+            return this._bindNew(e as ObjNewExpr, env);
+        }
         if (e is CallExpr) {
             return this._bindCall(e as CallExpr, env);
         }
@@ -319,8 +333,10 @@ public sealed class TypeChecker {
         return null;
     }
 
-    // 赋值兼容（含类继承 subclass→base）。非 class 走 Z42Type.IsAssignableTo（拓宽/error/同名）。
+    // 赋值兼容（含类继承 subclass→base）。error/unknown 任一侧吸收（防级联）。非 class 走 Z42Type.IsAssignableTo。
     private bool _isAssignable(Z42Type from, Z42Type to, SymbolTable symbols) {
+        if ((from is Z42ErrorType) || (from is Z42UnknownType)) { return true; }
+        if ((to is Z42ErrorType) || (to is Z42UnknownType)) { return true; }
         if (from.IsAssignableTo(to)) { return true; }
         if ((from is Z42ClassType) && (to is Z42ClassType)) {
             return symbols.IsSubclassOf(from.Name(), to.Name());
@@ -384,6 +400,18 @@ public sealed class TypeChecker {
         this._diags.Error(DiagnosticCodes.TypeMismatch,
             "call on non-class `" + rt.Name() + "`", this._noSpan());
         return new BoundError("call on non-class", new Z42ErrorType());
+    }
+
+    // new T(args)（1D）：解析 T（须为已知类型）+ 绑定实参。ctor 重载解析留后续。
+    private BoundExpr _bindNew(ObjNewExpr n, TypeEnv env) {
+        BoundExpr[] args = new BoundExpr[n.ArgCount];
+        int i = 0;
+        while (i < n.ArgCount) { args[i] = this._bindExpr(n.Args[i], env); i = i + 1; }
+        Z42Type t = env.Symbols.ResolveType(n.Type);
+        if (t is Z42UnknownType) {
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol, "unknown type in `new`: " + n.Type.Dump(), this._noSpan());
+        }
+        return new BoundNew(t.Name(), args, n.ArgCount, t);
     }
 
     // 方法查找：本类 → base 链（迭代）。
