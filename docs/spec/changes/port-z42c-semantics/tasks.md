@@ -47,10 +47,16 @@
 - [x] 1B-4 tests：bound_tests（运算/控制流节点 Dump，+2）+ typecheck_tests（算术/拓宽/比较→bool/逻辑/位运算/一元/if/while/break-continue + 错误：operator 类型不符/非 bool 条件/break 越界，+9）
 - [x] 1B-5 README + tasks 同步；`xtask test compiler-z42` = **12 units 130 cases** 全绿（bound 6 / typecheck 16）
 
-> **🎉 increment 1B 完成**：二元/一元运算（拓宽表）+ if/while/break/continue 端到端跑通。BinaryTypeTable 用 int tag + BinaryRule(class) 忠实镜像 C# 的 Func 委托表。下一步 1C（方法调用 + receiver + 继承查找）。
+> **🎉 increment 1B 完成**：二元/一元运算（拓宽表）+ if/while/break/continue。
+
+## increment 1C（方法调用 + receiver + 继承）—— ✅ 已完成
+- [x] 1C-1：BoundMember(obj.field/this.field 含继承) + `SymbolTable.IsSubclassOf`(base 链迭代) + `_isAssignable`(subclass→base 可赋；wire 进 return/var-decl/assign 检查) + `_findField`
+- [x] 1C-2：BoundCall 扩展 Kind(free/instance/static)+Receiver + `_bindMemberCall`(裸类名→static / 否则 bind 值→instance) + `_findMethod`(base 链)
+- [x] 11 单测（成员字段/继承字段/subclass 可赋/无关类不可赋/字段未找到 + this.m()/param.m()/Class.m() 静态/继承方法/无此方法）
+- [x] 验证：`xtask test compiler-z42` → **12 units 140 cases** 全绿（typecheck 26）
 
 ## 后续增量（设计 design.md 增量表）
-- [ ] 1C 调用+继承 / 1D cast·new·数组 / 1E 三目·插值·lambda / 2A·2B 泛型
+- [ ] 1D cast·new·数组（is/as→BoundCast/BoundIsExpr / new T(args)→BoundNew / IndexExpr+Z42ArrayType）/ 1E 三目·插值·lambda / 2A·2B 泛型
 - [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import
 
 ## 备注
