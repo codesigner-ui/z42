@@ -3,6 +3,7 @@
 // 使切换后现有 Dump 断言全绿。
 // 形态：NamedType（Foo / Foo.Bar / List<int>）/ ArrayType（T[]）/ NullableType（T?）。
 // 不含 FuncType `(T)->R`（闭包类型位，沿用延后）。
+// 另含（incr 6d-3）：TypeParamList（形参声明 <T>）+ WhereClause/WhereConstraint（泛型约束）。
 namespace Z42.Syntax;
 
 public class TypeExpr {
@@ -43,4 +44,54 @@ public sealed class NullableType : TypeExpr {
     public TypeExpr Inner;
     public NullableType(TypeExpr inner) { this.Inner = inner; }
     public override string Dump() { return this.Inner.Dump() + "?"; }
+}
+
+// ── 类型形参声明 & 泛型约束（incr 6d-3）──────────────────────────────────────
+
+// 类型形参声明列表 <T> / <K, V>（仅名字；variance/约束分离）。Dump → "<K,V>" 或 ""。
+public sealed class TypeParamList {
+    public string[] Names;
+    public int      Count;
+    public TypeParamList(string[] names, int count) { this.Names = names; this.Count = count; }
+    public string Dump() {
+        if (this.Count == 0) { return ""; }
+        string s = "<";
+        int i = 0;
+        while (i < this.Count) { if (i > 0) { s = s + ","; } s = s + this.Names[i]; i = i + 1; }
+        return s + ">";
+    }
+}
+
+// where 约束项：类型（IsType）或特殊标记 new()/class/struct。
+public sealed class WhereConstraint {
+    public bool     IsType;
+    public TypeExpr Type;      // 仅 IsType
+    public string   Special;   // "new()" / "class" / "struct"（!IsType）
+    public WhereConstraint(bool isType, TypeExpr type, string special) {
+        this.IsType = isType; this.Type = type; this.Special = special;
+    }
+    public string Dump() { if (this.IsType) { return this.Type.Dump(); } return this.Special; }
+}
+
+// 单个 where 子句：where T : C1, C2。
+public sealed class WhereClause {
+    public string           TypeParam;
+    public WhereConstraint[] Constraints;
+    public int              Count;
+    public WhereClause(string typeParam, WhereConstraint[] constraints, int count) {
+        this.TypeParam = typeParam; this.Constraints = constraints; this.Count = count;
+    }
+    public string Dump() {
+        string s = "where " + this.TypeParam + " : ";
+        int i = 0;
+        while (i < this.Count) { if (i > 0) { s = s + ", "; } s = s + this.Constraints[i].Dump(); i = i + 1; }
+        return s;
+    }
+}
+
+// 解析期持有者：where 子句列表。
+public sealed class WhereList {
+    public WhereClause[] Items;
+    public int           Count;
+    public WhereList(WhereClause[] items, int count) { this.Items = items; this.Count = count; }
 }

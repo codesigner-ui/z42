@@ -114,8 +114,15 @@
 - [x] 验证：`xtask test compiler-z42` → 5 units **87 cases** 全绿
 - 注：CatchClause.ExType + where 约束仍走 `_parseTypeText`（6d-3 收尾移除）；TypeParams 仍 string（6d-3 转 string[]）
 
-### 6d-3（后续 — TypeParams string[] + where 结构化 + cleanup）
-- [ ] TypeParams `<T>` → TypeParamList（string[] Names + Dump）；where → WhereClause/WhereConstraint（TypeExpr | new()/class/struct）；CatchClause.ExType → TypeExpr；移除 `_parseTypeText`/`_consumeAngles`
+### 6d-3（TypeParams + where 结构化 + cleanup — ✅ 已完成）
+- [x] TypeParamList（string[] Names + Dump `<K,V>`）于 Class/Method/Delegate/Record；`_parseTypeParams` 重写（解析名字，非 _consumeAngles）+ `_emptyTypeParams`
+- [x] WhereClause/WhereConstraint（IsType?TypeExpr:Special[new()/class/struct]）+ WhereList holder；`_parseWhereClause`/`_parseConstraint` 重写；decl 存 `WhereClause[]`；`DeclHelpers.DumpWheres` 渲染
+- [x] CatchClause.ExType string → TypeExpr（`_parseTry` 用 `_parseType` + `_emptyType` 占位）
+- [x] **移除 `_parseTypeText` + `_consumeAngles`**（无残留 string 类型路径）
+- [x] 1 新单测 test_generic_where_constraints（多形参 + 多约束逗号[类型+new()] + 多 where 子句）+ 现有 generic/where/catch 断言全绿
+- [x] 验证：`xtask test compiler-z42` → 5 units **88 cases** 全绿（core 11 / lexer 17 / parser 20 / stmt 15 / decl 25）
+
+> **increment 6d 全部完成**（TypeExpr AST 全面替代类型文本字符串；类型/形参/约束/catch 全结构化）。下一步 6e（byte-identical，最硬，强依赖 AST 形态）。Visitor 并入后端 semantics。
 
 ### 6d-3（后续 — where 约束结构化）
 - [ ] WhereClause/WhereConstraint（TypeExpr | new()/class/struct）于 Class/Delegate/Record/Method；移除残留 `_parseTypeText`/WhereText string

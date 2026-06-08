@@ -171,17 +171,17 @@ public sealed class SwitchStmt : Stmt {
 
 // try 的单个 catch。类型/变量名均可省（裸 catch / catch(Type) / catch(Type v)）。
 public sealed class CatchClause {
-    public bool   HasType;
-    public string ExType;    // 仅 HasType 时有效
-    public bool   HasVar;
-    public string VarName;   // 仅 HasVar 时有效
-    public Stmt   Body;
-    public CatchClause(bool hasType, string exType, bool hasVar, string varName, Stmt body) {
+    public bool     HasType;
+    public TypeExpr ExType;   // 仅 HasType 时有效
+    public bool     HasVar;
+    public string   VarName;  // 仅 HasVar 时有效
+    public Stmt     Body;
+    public CatchClause(bool hasType, TypeExpr exType, bool hasVar, string varName, Stmt body) {
         this.HasType = hasType; this.ExType = exType;
         this.HasVar = hasVar; this.VarName = varName; this.Body = body;
     }
     public string Dump() {
-        string t = "_"; if (this.HasType) { t = this.ExType; }
+        string t = "_"; if (this.HasType) { t = this.ExType.Dump(); }
         string v = "_"; if (this.HasVar) { v = this.VarName; }
         return "(catch " + t + " " + v + " " + this.Body.Dump() + ")";
     }

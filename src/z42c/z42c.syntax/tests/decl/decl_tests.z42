@@ -178,6 +178,13 @@ void test_generic_delegate_and_record() {
 }
 
 [Test]
+void test_generic_where_constraints() {
+    // 多形参 + 多约束（逗号：类型 + new()）+ 多 where 子句（incr 6d-3 结构化）
+    Assert.Equal("(unit (class Foo<T,U> where T : IComparable<T>, new() where U : class))",
+                 parseUnit("class Foo<T, U> where T : IComparable<T>, new() where U : class { }"));
+}
+
+[Test]
 void test_attribute_on_member() {
     Assert.Equal("(unit (class C (attr [Test] (method void foo () (block)))))",
                  parseUnit("class C { [Test] void foo() {} }"));

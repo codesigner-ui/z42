@@ -94,22 +94,23 @@ public sealed class FieldDecl : Decl {
 // 类成员方法 / ctor / 顶层自由函数（IsFree）共用。Dump head：ctor / func / method。
 // TypeParams（如 "<T>"，含尖括号，"" 表无）+ WhereText（如 "where T : new()"，"" 表无）。
 public sealed class MethodDecl : Decl {
-    public string   Mods;
-    public bool     IsFree;     // 顶层自由函数（命名空间级，无 this）
-    public bool     IsCtor;
-    public TypeExpr RetType;    // ctor 时为占位 NamedType("")（不 Dump）
-    public string   Name;
-    public string   TypeParams;
-    public string   WhereText;
-    public Param[]  Params;
-    public int      ParamCount;
-    public bool     HasBody;
-    public Stmt     Body;        // 仅 HasBody 时有效
+    public string        Mods;
+    public bool          IsFree;     // 顶层自由函数（命名空间级，无 this）
+    public bool          IsCtor;
+    public TypeExpr      RetType;    // ctor 时为占位 NamedType("")（不 Dump）
+    public string        Name;
+    public TypeParamList TypeParams;
+    public WhereClause[] Wheres;
+    public int           WhereCount;
+    public Param[]       Params;
+    public int           ParamCount;
+    public bool          HasBody;
+    public Stmt          Body;        // 仅 HasBody 时有效
     public MethodDecl(string mods, bool isFree, bool isCtor, TypeExpr retType, string name,
-                      string typeParams, string whereText,
+                      TypeParamList typeParams, WhereClause[] wheres, int whereCount,
                       Param[] ps, int pc, bool hasBody, Stmt body) {
         this.Mods = mods; this.IsFree = isFree; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
-        this.TypeParams = typeParams; this.WhereText = whereText;
+        this.TypeParams = typeParams; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
     }
     public override string Dump() {
@@ -117,7 +118,7 @@ public sealed class MethodDecl : Decl {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
         string sig = "(" + head + " " + m;
         if (!this.IsCtor) { sig = sig + this.RetType.Dump() + " "; }
-        sig = sig + this.Name + this.TypeParams + " (";
+        sig = sig + this.Name + this.TypeParams.Dump() + " (";
         int i = 0;
         while (i < this.ParamCount) {
             if (i > 0) { sig = sig + ", "; }
@@ -125,7 +126,7 @@ public sealed class MethodDecl : Decl {
             i = i + 1;
         }
         sig = sig + ")";
-        if (this.WhereText != "") { sig = sig + " " + this.WhereText; }
+        sig = sig + DeclHelpers.DumpWheres(this.Wheres, this.WhereCount);
         if (this.HasBody) { sig = sig + " " + this.Body.Dump(); }
         return sig + ")";
     }
@@ -166,39 +167,49 @@ public sealed class PropertyDecl : Decl {
 
 // class / struct / interface 同构（Kind 区分；语义差异留给后端）。Dump head = Kind。
 public sealed class ClassDecl : Decl {
-    public string     Kind;    // "class" / "struct" / "interface"
-    public string     Mods;
-    public string     Name;
-    public string     TypeParams;   // 如 "<T>"（含尖括号），"" 表无
-    public TypeExpr[] Bases;
-    public int        BaseCount;
-    public string     WhereText;    // 如 "where T : IComparable<T>"，"" 表无
-    public Decl[]     Members;
-    public int        MemberCount;
-    public ClassDecl(string kind, string mods, string name, string typeParams,
-                     TypeExpr[] bases, int baseCount, string whereText, Decl[] members, int mc) {
+    public string        Kind;    // "class" / "struct" / "interface"
+    public string        Mods;
+    public string        Name;
+    public TypeParamList TypeParams;
+    public TypeExpr[]    Bases;
+    public int           BaseCount;
+    public WhereClause[] Wheres;
+    public int           WhereCount;
+    public Decl[]        Members;
+    public int           MemberCount;
+    public ClassDecl(string kind, string mods, string name, TypeParamList typeParams,
+                     TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc) {
         this.Kind = kind; this.Mods = mods; this.Name = name; this.TypeParams = typeParams;
-        this.Bases = bases; this.BaseCount = baseCount; this.WhereText = whereText;
+        this.Bases = bases; this.BaseCount = baseCount; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(" + this.Kind + " " + m + this.Name + this.TypeParams;
+        string s = "(" + this.Kind + " " + m + this.Name + this.TypeParams.Dump();
         s = s + DeclHelpers.DumpBaseList(this.Bases, this.BaseCount);
-        if (this.WhereText != "") { s = s + " " + this.WhereText; }
+        s = s + DeclHelpers.DumpWheres(this.Wheres, this.WhereCount);
         int i = 0;
         while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
         return s + ")";
     }
 }
 
-// 基类/接口列表渲染：`` 或 ` : A, B, C`（与旧 BaseText 逐字符一致）。
+// 声明 Dump 辅助：基类列表 + where 子句列表渲染（与旧字符串拼接逐字符一致）。
 public class DeclHelpers {
+    // `` 或 ` : A, B, C`
     public static string DumpBaseList(TypeExpr[] bases, int count) {
         if (count == 0) { return ""; }
         string s = " : ";
         int i = 0;
         while (i < count) { if (i > 0) { s = s + ", "; } s = s + bases[i].Dump(); i = i + 1; }
+        return s;
+    }
+    // `` 或 ` where T : C1, C2 where U : ...`（前导空格 + 各子句以空格连）
+    public static string DumpWheres(WhereClause[] wheres, int count) {
+        if (count == 0) { return ""; }
+        string s = "";
+        int i = 0;
+        while (i < count) { s = s + " " + wheres[i].Dump(); i = i + 1; }
         return s;
     }
 }
@@ -239,21 +250,22 @@ public sealed class EnumDecl : Decl {
 
 // delegate R Name<T>(params) where ...; —— 类型声明（无体）。
 public sealed class DelegateDecl : Decl {
-    public string   Mods;
-    public TypeExpr RetType;
-    public string   Name;
-    public string   TypeParams;
-    public string   WhereText;
-    public Param[]  Params;
-    public int      ParamCount;
-    public DelegateDecl(string mods, TypeExpr retType, string name, string typeParams,
-                        Param[] ps, int pc, string whereText) {
+    public string        Mods;
+    public TypeExpr      RetType;
+    public string        Name;
+    public TypeParamList TypeParams;
+    public WhereClause[] Wheres;
+    public int           WhereCount;
+    public Param[]       Params;
+    public int           ParamCount;
+    public DelegateDecl(string mods, TypeExpr retType, string name, TypeParamList typeParams,
+                        Param[] ps, int pc, WhereClause[] wheres, int whereCount) {
         this.Mods = mods; this.RetType = retType; this.Name = name; this.TypeParams = typeParams;
-        this.Params = ps; this.ParamCount = pc; this.WhereText = whereText;
+        this.Params = ps; this.ParamCount = pc; this.Wheres = wheres; this.WhereCount = whereCount;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(delegate " + m + this.RetType.Dump() + " " + this.Name + this.TypeParams + " (";
+        string s = "(delegate " + m + this.RetType.Dump() + " " + this.Name + this.TypeParams.Dump() + " (";
         int i = 0;
         while (i < this.ParamCount) {
             if (i > 0) { s = s + ", "; }
@@ -261,7 +273,7 @@ public sealed class DelegateDecl : Decl {
             i = i + 1;
         }
         s = s + ")";
-        if (this.WhereText != "") { s = s + " " + this.WhereText; }
+        s = s + DeclHelpers.DumpWheres(this.Wheres, this.WhereCount);
         return s + ")";
     }
 }
@@ -269,29 +281,30 @@ public sealed class DelegateDecl : Decl {
 // record：位置式 `record P(T a, ...)`（PosParams）+ 可选基类 + 可选块体成员。
 // 位置式 desugar（合成字段/ctor）留给后端；parser 仅捕获结构。
 public sealed class RecordDecl : Decl {
-    public string     Mods;
-    public string     Name;
-    public string     TypeParams;
-    public Param[]    PosParams;
-    public int        PosCount;
-    public TypeExpr[] Bases;
-    public int        BaseCount;
-    public string     WhereText;
-    public Decl[]     Members;
-    public int        MemberCount;
-    public RecordDecl(string mods, string name, string typeParams, Param[] pos, int pc,
-                      TypeExpr[] bases, int baseCount, string whereText, Decl[] members, int mc) {
+    public string        Mods;
+    public string        Name;
+    public TypeParamList TypeParams;
+    public Param[]       PosParams;
+    public int           PosCount;
+    public TypeExpr[]    Bases;
+    public int           BaseCount;
+    public WhereClause[] Wheres;
+    public int           WhereCount;
+    public Decl[]        Members;
+    public int           MemberCount;
+    public RecordDecl(string mods, string name, TypeParamList typeParams, Param[] pos, int pc,
+                      TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc) {
         this.Mods = mods; this.Name = name; this.TypeParams = typeParams; this.PosParams = pos; this.PosCount = pc;
-        this.Bases = bases; this.BaseCount = baseCount; this.WhereText = whereText;
+        this.Bases = bases; this.BaseCount = baseCount; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(record " + m + this.Name + this.TypeParams;
+        string s = "(record " + m + this.Name + this.TypeParams.Dump();
         int i = 0;
         while (i < this.PosCount) { s = s + " (pos " + this.PosParams[i].Dump() + ")"; i = i + 1; }
         s = s + DeclHelpers.DumpBaseList(this.Bases, this.BaseCount);
-        if (this.WhereText != "") { s = s + " " + this.WhereText; }
+        s = s + DeclHelpers.DumpWheres(this.Wheres, this.WhereCount);
         int j = 0;
         while (j < this.MemberCount) { s = s + " " + this.Members[j].Dump(); j = j + 1; }
         return s + ")";
