@@ -5,7 +5,8 @@
 // 声明：namespace / using / class·struct·interface（修饰符 + 基类/接口列表 + field/method/ctor/property）/ enum（成员 + 可选值）
 //       / record（位置式 + 块体）/ delegate / 顶层自由 func（命名空间级，MethodDecl.IsFree）。
 // 成员 property：auto `{ get; set; }`（含访问器修饰 + 初值）；自定义 body / 表达式体 / init-only 延后。
-// 延后（incr 6b4+）：泛型形参 <T>+where/attribute [X]；lambda。
+// 泛型：类型声明 + 方法 + delegate + record 的形参 `<T>`（文本捕获）+ `where T : ...` 约束（new()/class/struct/类型）。
+// 延后（incr 6b5+）：attribute [X]；lambda。
 namespace Z42.Syntax;
 
 using Z42.Core;
@@ -512,6 +513,7 @@ public sealed class Parser {
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected type name", this._peek().Span); }
+        string typeParams = this._parseTypeParams();
         bool hasBase = false;
         string baseText = "";
         if (this._peek().Kind == TokenKind.Colon) {
@@ -523,6 +525,7 @@ public sealed class Parser {
                 baseText = baseText + ", " + this._parseTypeText();
             }
         }
+        string whereText = this._parseWhereClause();
         this._expect(TokenKind.LBrace, "{");
         Decl[] members = new Decl[16];
         int mc = 0;
@@ -531,7 +534,7 @@ public sealed class Parser {
             members = this._growDecls(members, mc); members[mc] = mem; mc = mc + 1;
         }
         this._expect(TokenKind.RBrace, "}");
-        return new ClassDecl(kind, mods, name, hasBase, baseText, members, mc);
+        return new ClassDecl(kind, mods, name, typeParams, hasBase, baseText, whereText, members, mc);
     }
 
     // enum Color [: int] { Red, Green = 5, Blue }  —— 成员 name [= [-]int]；值仅捕获文本，自增/校验留给后端。
@@ -574,33 +577,37 @@ public sealed class Parser {
         return new EnumDecl(mods, name, hasBase, baseText, members, mc);
     }
 
-    // delegate R Name(params);
+    // delegate R Name<T>(params) where ...;
     private Decl _parseDelegate(string mods) {
         this._advance();   // delegate
         string retType = this._parseTypeText();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected delegate name", this._peek().Span); }
+        string typeParams = this._parseTypeParams();
         ParamList pl = this._parseParamList();
+        string whereText = this._parseWhereClause();
         this._expectSemi();
-        return new DelegateDecl(mods, retType, name, pl.Items, pl.Count);
+        return new DelegateDecl(mods, retType, name, typeParams, pl.Items, pl.Count, whereText);
     }
 
-    // 顶层自由函数：retType Name(params) { body }（命名空间级，无 this）。
+    // 顶层自由函数：retType Name<T>(params) where ... { body }（命名空间级，无 this）。
     private Decl _parseTopLevelFunc(string mods) {
         string retType = this._parseTypeText();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected function name", this._peek().Span); }
-        return this._parseMethodTail(mods, true, false, retType, name);
+        string typeParams = this._parseTypeParams();
+        return this._parseMethodTail(mods, true, false, retType, name, typeParams);
     }
 
-    // record Name [(pos params)] [: base] { members }  /  record Name(...) ;
+    // record Name<T> [(pos params)] [: base] [where ...] { members }  /  record Name(...) ;
     private Decl _parseRecord(string mods) {
         this._advance();   // record
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected record name", this._peek().Span); }
+        string typeParams = this._parseTypeParams();
         Param[] pos = new Param[0];
         int pc = 0;
         if (this._peek().Kind == TokenKind.LParen) {
@@ -618,6 +625,7 @@ public sealed class Parser {
                 baseText = baseText + ", " + this._parseTypeText();
             }
         }
+        string whereText = this._parseWhereClause();
         Decl[] members = new Decl[8];
         int mc = 0;
         if (this._peek().Kind == TokenKind.LBrace) {
@@ -629,7 +637,7 @@ public sealed class Parser {
         } else {
             this._expectSemi();
         }
-        return new RecordDecl(mods, name, pos, pc, hasBase, baseText, members, mc);
+        return new RecordDecl(mods, name, typeParams, pos, pc, hasBase, baseText, whereText, members, mc);
     }
 
     private Decl _parseMember(string className) {
@@ -639,14 +647,16 @@ public sealed class Parser {
             && this._peekAt(1).Kind == TokenKind.LParen) {
             string cname = this._peek().Text;
             this._advance();
-            return this._parseMethodTail(mods, false, true, "", cname);
+            return this._parseMethodTail(mods, false, true, "", cname, "");
         }
         string typeText = this._parseTypeText();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name", this._peek().Span); }
+        // 泛型方法 `T Make<T>(...)`：成员名后的 `<` 必为类型形参（字段不会有 `<`）。
+        string mTypeParams = this._parseTypeParams();
         if (this._peek().Kind == TokenKind.LParen) {
-            return this._parseMethodTail(mods, false, false, typeText, name);
+            return this._parseMethodTail(mods, false, false, typeText, name, mTypeParams);
         }
         if (this._peek().Kind == TokenKind.LBrace) {
             return this._parseProperty(mods, typeText, name);
@@ -720,14 +730,54 @@ public sealed class Parser {
         return new ParamList(ps, pc);
     }
 
-    // method / ctor / 顶层 func 尾部：参数列表 + body（`{}`）或无体（`;`）。
-    private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, string retType, string name) {
+    // method / ctor / 顶层 func 尾部：参数列表 + 可选 where + body（`{}`）或无体（`;`）。
+    private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, string retType, string name, string typeParams) {
         ParamList pl = this._parseParamList();
+        string whereText = this._parseWhereClause();
         bool hasBody = false;
         Stmt body = new BlockStmt(new Stmt[0], 0);
         if (this._peek().Kind == TokenKind.LBrace) { body = this._parseBlock(); hasBody = true; }
         else { this._expectSemi(); }
-        return new MethodDecl(mods, isFree, isCtor, retType, name, pl.Items, pl.Count, hasBody, body);
+        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, whereText, pl.Items, pl.Count, hasBody, body);
+    }
+
+    // 类型形参声明 `<T>` / `<K, V>`（复用 _consumeAngles 平衡消费；含尖括号）。无 → ""。
+    private string _parseTypeParams() {
+        if (this._peek().Kind == TokenKind.Lt) { return this._consumeAngles(); }
+        return "";
+    }
+
+    // where 子句：`where T : C1, C2 [where U : ...]`（可多段）。约束含类型 / new() / class / struct。
+    private string _parseWhereClause() {
+        string s = "";
+        while (this._peek().Kind == TokenKind.Where) {
+            this._advance();
+            string tp = this._peek().Text;
+            if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+            else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected type-param name after 'where'", this._peek().Span); }
+            this._expect(TokenKind.Colon, ":");
+            string cons = this._parseConstraint();
+            while (this._peek().Kind == TokenKind.Comma) {
+                this._advance();
+                cons = cons + ", " + this._parseConstraint();
+            }
+            if (s != "") { s = s + " "; }
+            s = s + "where " + tp + " : " + cons;
+        }
+        return s;
+    }
+
+    private string _parseConstraint() {
+        int k = this._peek().Kind;
+        if (k == TokenKind.New) {
+            this._advance();
+            this._expect(TokenKind.LParen, "(");
+            this._expect(TokenKind.RParen, ")");
+            return "new()";
+        }
+        if (k == TokenKind.Class)  { this._advance(); return "class"; }
+        if (k == TokenKind.Struct) { this._advance(); return "struct"; }
+        return this._parseTypeText();
     }
 
     // 类型文本：限定名 + 泛型 <...>（深度计数，含 >>）+ 数组 [] + nullable ?

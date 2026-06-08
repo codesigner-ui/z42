@@ -46,19 +46,24 @@ public sealed class FieldDecl : Decl {
 }
 
 // 类成员方法 / ctor / 顶层自由函数（IsFree）共用。Dump head：ctor / func / method。
+// TypeParams（如 "<T>"，含尖括号，"" 表无）+ WhereText（如 "where T : new()"，"" 表无）。
 public sealed class MethodDecl : Decl {
     public string  Mods;
     public bool    IsFree;     // 顶层自由函数（命名空间级，无 this）
     public bool    IsCtor;
     public string  RetType;    // ctor 时为 ""
     public string  Name;
+    public string  TypeParams;
+    public string  WhereText;
     public Param[] Params;
     public int     ParamCount;
     public bool    HasBody;
     public Stmt    Body;        // 仅 HasBody 时有效
     public MethodDecl(string mods, bool isFree, bool isCtor, string retType, string name,
+                      string typeParams, string whereText,
                       Param[] ps, int pc, bool hasBody, Stmt body) {
         this.Mods = mods; this.IsFree = isFree; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
+        this.TypeParams = typeParams; this.WhereText = whereText;
         this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
     }
     public override string Dump() {
@@ -66,7 +71,7 @@ public sealed class MethodDecl : Decl {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
         string sig = "(" + head + " " + m;
         if (!this.IsCtor) { sig = sig + this.RetType + " "; }
-        sig = sig + this.Name + " (";
+        sig = sig + this.Name + this.TypeParams + " (";
         int i = 0;
         while (i < this.ParamCount) {
             if (i > 0) { sig = sig + ", "; }
@@ -74,6 +79,7 @@ public sealed class MethodDecl : Decl {
             i = i + 1;
         }
         sig = sig + ")";
+        if (this.WhereText != "") { sig = sig + " " + this.WhereText; }
         if (this.HasBody) { sig = sig + " " + this.Body.Dump(); }
         return sig + ")";
     }
@@ -117,18 +123,23 @@ public sealed class ClassDecl : Decl {
     public string Kind;    // "class" / "struct" / "interface"
     public string Mods;
     public string Name;
+    public string TypeParams;   // 如 "<T>"（含尖括号），"" 表无
     public bool   HasBase;
     public string BaseText;
+    public string WhereText;    // 如 "where T : IComparable<T>"，"" 表无
     public Decl[] Members;
     public int    MemberCount;
-    public ClassDecl(string kind, string mods, string name, bool hasBase, string baseText, Decl[] members, int mc) {
-        this.Kind = kind; this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.BaseText = baseText;
+    public ClassDecl(string kind, string mods, string name, string typeParams,
+                     bool hasBase, string baseText, string whereText, Decl[] members, int mc) {
+        this.Kind = kind; this.Mods = mods; this.Name = name; this.TypeParams = typeParams;
+        this.HasBase = hasBase; this.BaseText = baseText; this.WhereText = whereText;
         this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(" + this.Kind + " " + m + this.Name;
+        string s = "(" + this.Kind + " " + m + this.Name + this.TypeParams;
         if (this.HasBase) { s = s + " : " + this.BaseText; }
+        if (this.WhereText != "") { s = s + " " + this.WhereText; }
         int i = 0;
         while (i < this.MemberCount) { s = s + " " + this.Members[i].Dump(); i = i + 1; }
         return s + ")";
@@ -169,27 +180,32 @@ public sealed class EnumDecl : Decl {
     }
 }
 
-// delegate R Name(params); —— 类型声明（无体）。泛型形参 <T>/where 留 6b-4。
+// delegate R Name<T>(params) where ...; —— 类型声明（无体）。
 public sealed class DelegateDecl : Decl {
     public string  Mods;
     public string  RetType;
     public string  Name;
+    public string  TypeParams;
+    public string  WhereText;
     public Param[] Params;
     public int     ParamCount;
-    public DelegateDecl(string mods, string retType, string name, Param[] ps, int pc) {
-        this.Mods = mods; this.RetType = retType; this.Name = name;
-        this.Params = ps; this.ParamCount = pc;
+    public DelegateDecl(string mods, string retType, string name, string typeParams,
+                        Param[] ps, int pc, string whereText) {
+        this.Mods = mods; this.RetType = retType; this.Name = name; this.TypeParams = typeParams;
+        this.Params = ps; this.ParamCount = pc; this.WhereText = whereText;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(delegate " + m + this.RetType + " " + this.Name + " (";
+        string s = "(delegate " + m + this.RetType + " " + this.Name + this.TypeParams + " (";
         int i = 0;
         while (i < this.ParamCount) {
             if (i > 0) { s = s + ", "; }
             s = s + this.Params[i].Dump();
             i = i + 1;
         }
-        return s + "))";
+        s = s + ")";
+        if (this.WhereText != "") { s = s + " " + this.WhereText; }
+        return s + ")";
     }
 }
 
@@ -198,23 +214,27 @@ public sealed class DelegateDecl : Decl {
 public sealed class RecordDecl : Decl {
     public string  Mods;
     public string  Name;
+    public string  TypeParams;
     public Param[] PosParams;
     public int     PosCount;
     public bool    HasBase;
     public string  BaseText;
+    public string  WhereText;
     public Decl[]  Members;
     public int     MemberCount;
-    public RecordDecl(string mods, string name, Param[] pos, int pc,
-                      bool hasBase, string baseText, Decl[] members, int mc) {
-        this.Mods = mods; this.Name = name; this.PosParams = pos; this.PosCount = pc;
-        this.HasBase = hasBase; this.BaseText = baseText; this.Members = members; this.MemberCount = mc;
+    public RecordDecl(string mods, string name, string typeParams, Param[] pos, int pc,
+                      bool hasBase, string baseText, string whereText, Decl[] members, int mc) {
+        this.Mods = mods; this.Name = name; this.TypeParams = typeParams; this.PosParams = pos; this.PosCount = pc;
+        this.HasBase = hasBase; this.BaseText = baseText; this.WhereText = whereText;
+        this.Members = members; this.MemberCount = mc;
     }
     public override string Dump() {
         string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(record " + m + this.Name;
+        string s = "(record " + m + this.Name + this.TypeParams;
         int i = 0;
         while (i < this.PosCount) { s = s + " (pos " + this.PosParams[i].Dump() + ")"; i = i + 1; }
         if (this.HasBase) { s = s + " : " + this.BaseText; }
+        if (this.WhereText != "") { s = s + " " + this.WhereText; }
         int j = 0;
         while (j < this.MemberCount) { s = s + " " + this.Members[j].Dump(); j = j + 1; }
         return s + ")";

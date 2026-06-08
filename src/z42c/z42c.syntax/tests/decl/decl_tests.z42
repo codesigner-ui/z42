@@ -1,5 +1,6 @@
 // z42c.syntax 顶层声明解析单测：namespace/using/class/field/method/ctor/类型文本（incr 4）
-//   + struct/interface/enum（incr 6b-1）+ record/delegate/顶层func（incr 6b-2）+ property（incr 6b-3）。
+//   + struct/interface/enum（incr 6b-1）+ record/delegate/顶层func（incr 6b-2）+ property（incr 6b-3）
+//   + 泛型形参<T>+where（incr 6b-4）。
 namespace Z42cSyntaxDeclTests;
 
 using Std;
@@ -143,4 +144,35 @@ void test_property() {
 void test_property_in_interface() {
     Assert.Equal("(unit (interface IShape (prop double Area get) (method void Draw ())))",
                  parseUnit("interface IShape { double Area { get; } void Draw(); }"));
+}
+
+[Test]
+void test_generic_type_decl() {
+    Assert.Equal("(unit (class Box<T> (field private T value)))",
+                 parseUnit("class Box<T> { private T value; }"));
+    // 泛型形参 + 基接口（带类型实参）+ where 约束（约束含泛型类型实参）
+    Assert.Equal("(unit (class Map<K,V> : IDict<K,V> where K : IComparable<K>))",
+                 parseUnit("class Map<K, V> : IDict<K, V> where K : IComparable<K> { }"));
+    Assert.Equal("(unit (interface IList<T> (method T Get (int i))))",
+                 parseUnit("interface IList<T> { T Get(int i); }"));
+}
+
+[Test]
+void test_generic_method() {
+    Assert.Equal("(unit (class C (method public T Make<T> (int n) (block (return null)))))",
+                 parseUnit("class C { public T Make<T>(int n) { return null; } }"));
+    // 泛型方法 + where new() 约束
+    Assert.Equal("(unit (class C (method void F<T> (T x) where T : new() (block))))",
+                 parseUnit("class C { void F<T>(T x) where T : new() { } }"));
+}
+
+[Test]
+void test_generic_delegate_and_record() {
+    Assert.Equal("(unit (delegate R Func<T,R> (T x)))",
+                 parseUnit("delegate R Func<T, R>(T x);"));
+    Assert.Equal("(unit (record Box<T> (pos T value)))",
+                 parseUnit("record Box<T>(T value);"));
+    // where 多段 + class 约束
+    Assert.Equal("(unit (delegate void Cb<T> (T x) where T : class))",
+                 parseUnit("delegate void Cb<T>(T x) where T : class;"));
 }

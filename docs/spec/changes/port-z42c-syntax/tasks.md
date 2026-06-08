@@ -68,8 +68,14 @@
 - [x] 2 单测（class[get/set·get-only·init·访问器修饰] / interface 内属性签名）→ tests/decl/
 - [x] 验证：`xtask test compiler-z42` → 5 units **73 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 18）
 
-## increment 6b-4（后续 — 泛型形参 + attribute）
-- [ ] 类型声明泛型形参 `<T>` + `where T : ...` 约束 + attribute `[X]`（顶层 + 成员 + 参数）
+## increment 6b-4（泛型形参 `<T>` + where — ✅ 已完成）
+- [x] ClassDecl/RecordDecl/DelegateDecl/MethodDecl 加 `TypeParams`（文本，含尖括号）+ `WhereText`
+- [x] 解析：`_parseTypeParams`（复用 `_consumeAngles`）/ `_parseWhereClause`（多段 `where T : C1, C2`）/ `_parseConstraint`（new()/class/struct/类型）；wire 进类型声明·record·delegate·方法（成员名后 `<` = 泛型方法）·顶层 func
+- [x] 3 单测（泛型类[+基接口类型实参+where]·泛型 interface / 泛型方法[+where new()] / 泛型 delegate·record[+where class]）→ tests/decl/
+- [x] 验证：`xtask test compiler-z42` → 5 units **76 cases** 全绿（core 11 / lexer 10 / parser 19 / stmt 15 / decl 21）
+
+## increment 6b-5（后续 — attribute）
+- [ ] attribute `[X]` / `[X(args)]`（顶层声明 + 成员；捕获并附着到后续 decl）
 
 ## increment 6c（后续 — Lexer 补全）
 - [ ] 插值串 / raw 串 / hex·bin·分隔符·后缀 / 转义解码
