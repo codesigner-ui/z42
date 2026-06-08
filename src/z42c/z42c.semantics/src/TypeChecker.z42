@@ -7,12 +7,18 @@ using Z42.Syntax;
 using Z42.Core;
 
 public sealed class TypeChecker {
-    private DiagnosticBag _diags;
-    private int           _loopDepth;   // break/continue 越界检查（1B）
-    public TypeChecker(DiagnosticBag diags) { this._diags = diags; this._loopDepth = 0; }
+    private DiagnosticBag     _diags;
+    private int               _loopDepth;    // break/continue 越界检查（1B）
+    private ConstraintChecker _constraints;  // 泛型 where 约束解析 + call-site 校验（2B）
+    public TypeChecker(DiagnosticBag diags) {
+        this._diags = diags;
+        this._loopDepth = 0;
+        this._constraints = new ConstraintChecker(diags);
+    }
 
     public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols) {
         var model = new SemanticModel(symbols);
+        this._constraints.Resolve(cu, symbols);   // Pass 0.5：泛型 where 约束解析（2B，镜像 C# ResolveAllWhereConstraints）
         int i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
@@ -457,6 +463,9 @@ public sealed class TypeChecker {
         Z42Type t = env.ResolveType(n.Type);
         if (t is Z42UnknownType) {
             this._diags.Error(DiagnosticCodes.UndefinedSymbol, "unknown type in `new`: " + n.Type.Dump(), this._noSpan());
+        }
+        if (t is Z42InstantiatedType) {   // 2B：泛型实例化 → 校验型参约束（委托 ConstraintChecker）
+            this._constraints.Check(env.GetSymbols(), t as Z42InstantiatedType);
         }
         return new BoundNew(t.Name(), args, n.ArgCount, t);
     }

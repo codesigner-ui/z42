@@ -76,11 +76,20 @@
 - [x] 2A-2b Z42InstantiatedType(Box<int> 不变性；ResolveTypeP 处理 NamedType.Args 递归)；成员替换延后
 - [x] 6 单测（泛型方法/泛型类内方法/free func + 实例化参数·返回·不变性·嵌套）→ **12 units 162 cases** 全绿
 
+## increment 2B（where 约束求解，可行子集）—— ✅ 已完成
+> User 裁决"可行子集"（2026-06-09）：C# 8 类约束中，z42c 当前类型模型只能干净检查 base-class/class/struct/型参引用 + 互斥；interface/enum/new()/func 延后（缺对应类型/信息）。决策表见 [design.md](design.md) "2B 实施决策"段。
+- [x] 2B-1 `GenericConstraint.z42`（NEW）：ConstraintBundle（单型参：HasBaseClass/RequiresClass/RequiresStruct/HasTypeParamRef）+ ConstraintSet（一类全型参 bundle，按声明序与 TypeArgs 索引对齐；IndexOf/AnyNonEmpty）
+- [x] 2B-2 `ConstraintChecker.z42`（NEW，从 TypeChecker 抽出隔离）：Resolve（Pass 0.5，where→ConstraintSet 登记进 SymbolTable.ClassConstraints；声明期诊断 E0401 未知型参 / E0402 class·struct 互斥）+ Check（call-site，`new Box<int>()` 逐 bundle 校验，违反 E0402）；可行子集外约束静默跳过不误报
+- [x] 2B-3 `SymbolTable.z42`：+ ClassConstraints StrMap + HasConstraints/GetConstraints
+- [x] 2B-4 `TypeChecker.z42`：Infer 起首 `_constraints.Resolve` + `_bindNew` 遇 Z42InstantiatedType `_constraints.Check`（+ ConstraintChecker 字段）
+- [x] 2B-5 8 单测（base-class ok/violation·dump / class ok·violation / struct ok·violation / 型参引用 ok·violation / class·struct 互斥 / 未知型参 / 无约束任意实参）
+- [x] 验证：`xtask test compiler-z42` → **12 units 170 cases** 全绿（typecheck 56）
+- 注：TypeChecker.z42 抽出约束逻辑后回到 490 行（< 500 硬限）；约束逻辑落 ConstraintChecker（168）+ GenericConstraint（60）
+
 ## 后续增量
-- [ ] 2B where 约束求解（Z42GenericParamType 携约束 + 调用点校验）
 - [ ] **codegen(Bound→IR,semantics 另一半,需先 map z42.IR 出设计)** → z42.IR + byte-identical emit + pipeline
 - [ ] **syntax gap**（z42c.syntax 待补）：局部 var-decl 泛型类型 `Box<int> b=...` 的 `_isVarDeclStart` lookahead
-- [ ] 延后：闭包 L3 / interface+static-abstract / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法 / lambda / 插值串
+- [ ] 延后：闭包 L3 / interface+static-abstract / **2B 子集：interface·enum·new()·func-type 约束** / operator 重载 / 命名参数 / 跨包 TSIG import / 数组创建语法 / lambda / 插值串
 
 ## 备注
 - SemanticsSkeleton.z42 暂留（pipeline 仍引用）。

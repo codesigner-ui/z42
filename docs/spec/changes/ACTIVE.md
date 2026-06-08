@@ -11,7 +11,7 @@
 | `compiler` | _（空闲）_ | — | scaffold-z42c-selfhost 已提交 127b7f11（gate 后台确认中），释放 compiler |
 | `runtime` | add-reflection-mvp | 2026-06-08 | 反射 MVP：corelib reflection builtins + TypeDesc 句柄化。（add-file-last-write-time 2026-06-09 曾例外共存：`corelib/fs.rs` 新 builtin + `mod.rs` fs 区一行，已提交 262a163e 归档释放）|
 | `stdlib` | add-reflection-mvp | 2026-06-08 | 反射 MVP：z42.core 扩展 Type + Std.Reflection 类。（compression-decoder-pull-mode 2026-06-09 / add-file-last-write-time / add-directory-copy 均曾例外共存于非 z42.core 的 stdlib 库，已归档释放）|
-| `z42c` | …→ port-z42c-project → port-z42c-semantics | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 进行中（设计✅ + 1A-1 Z42Type✅） |
+| `z42c` | …→ port-z42c-project → port-z42c-semantics | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 进行中（类型检查半 1A–2B✅：非泛型 L1 + 泛型类·方法·实例化·约束[可行子集]；下一步 codegen Bound→IR 单独 design） |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test] |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）

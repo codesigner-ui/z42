@@ -6,17 +6,21 @@ namespace Z42.Semantics;
 using Z42.Syntax;
 
 public sealed class SymbolTable {
-    public StrMap Classes;     // name → Z42ClassType
-    public StrMap Functions;   // name → MethodSymbol（顶层 func）
+    public StrMap Classes;          // name → Z42ClassType
+    public StrMap Functions;        // name → MethodSymbol（顶层 func）
+    public StrMap ClassConstraints; // name → ConstraintSet（2B；仅有 where 子句的泛型类登记）
     public SymbolTable() {
         this.Classes = new StrMap();
         this.Functions = new StrMap();
+        this.ClassConstraints = new StrMap();
     }
 
     public bool          HasClass(string name) { return this.Classes.ContainsKey(name); }
     public Z42ClassType  GetClass(string name) { return this.Classes.Get(name) as Z42ClassType; }
     public bool          HasFunc(string name)  { return this.Functions.ContainsKey(name); }
     public MethodSymbol  GetFunc(string name)  { return this.Functions.Get(name) as MethodSymbol; }
+    public bool          HasConstraints(string name) { return this.ClassConstraints.ContainsKey(name); }
+    public ConstraintSet GetConstraints(string name) { return this.ClassConstraints.Get(name) as ConstraintSet; }
 
     // sub 是否为 baseName 的子类（含自身）。走 base 链（迭代——self-type 字段不可递归调本类方法）。
     public bool IsSubclassOf(string sub, string baseName) {

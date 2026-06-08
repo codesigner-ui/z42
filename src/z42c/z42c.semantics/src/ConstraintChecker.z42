@@ -1,0 +1,168 @@
+// 泛型约束检查器（port-z42c-semantics 2B）。从 TypeChecker 抽出，隔离约束逻辑
+// （概念上镜像 C# 的 TypeChecker.Generics.cs partial；z42 无 partial → 独立委托类）。
+//
+// 两个职责：
+//   · Resolve（Pass 0.5，镜像 C# ResolveAllWhereConstraints）：逐泛型类 where 子句 → ConstraintSet
+//     登记进符号表；声明期诊断（未知型参 E0401 / class·struct 互斥 E0402）。
+//   · Check（call-site，镜像 C# ValidateGenericConstraints）：泛型实例化 new Box<int>() 逐
+//     (型参约束 bundle, 实参) 校验；违反报 E0402。
+//
+// 可行子集（z42c 当前类型模型）：base-class / class / struct / 型参引用 where U:T。
+// 延后（与既有延后一致）：interface / enum / new() / func-type 约束 —— 见 GenericConstraint.z42。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.Core;
+
+public sealed class ConstraintChecker {
+    private DiagnosticBag _diags;
+    public ConstraintChecker(DiagnosticBag diags) { this._diags = diags; }
+
+    // ════ Resolve（声明期 Pass 0.5）═══════════════════════════════════════════
+    public void Resolve(CompilationUnit cu, SymbolTable symbols) {
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if ((c.Kind == "class" || c.Kind == "struct") && c.TypeParams.Count > 0 && c.WhereCount > 0) {
+                    ConstraintSet cs = this._buildSet(symbols, c);
+                    if (cs.AnyNonEmpty()) { symbols.ClassConstraints.Put(c.Name, cs); }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    // 一个泛型类的 where 子句 → ConstraintSet（bundle 与型参声明序对齐）。
+    private ConstraintSet _buildSet(SymbolTable symbols, ClassDecl c) {
+        string[] pnames = c.TypeParams.Names;
+        int pc = c.TypeParams.Count;
+        ConstraintBundle[] bundles = new ConstraintBundle[pc];
+        int b = 0;
+        while (b < pc) { bundles[b] = new ConstraintBundle(); b = b + 1; }
+        var cs = new ConstraintSet(pnames, bundles, pc);
+        int w = 0;
+        while (w < c.WhereCount) {
+            WhereClause wc = c.Wheres[w];
+            int pi = cs.IndexOf(wc.TypeParam);
+            if (pi < 0) {
+                this._diags.Error(DiagnosticCodes.UndefinedSymbol,
+                    "where clause references unknown type parameter `" + wc.TypeParam + "` on `" + c.Name + "`",
+                    this._noSpan());
+            } else {
+                this._fillBundle(symbols, c, bundles[pi], wc, pnames, pc);
+            }
+            w = w + 1;
+        }
+        return cs;
+    }
+
+    // 把一条 where 子句的各约束项填进 bundle。可行子集外的约束（interface/enum/new()/func/泛型 base）静默延后。
+    private void _fillBundle(SymbolTable symbols, ClassDecl c, ConstraintBundle bundle, WhereClause wc,
+                             string[] pnames, int pc) {
+        int k = 0;
+        while (k < wc.Count) {
+            WhereConstraint con = wc.Constraints[k];
+            if (!con.IsType) {
+                if (con.Special == "class")  { bundle.RequiresClass = true; }
+                if (con.Special == "struct") { bundle.RequiresStruct = true; }
+                // new() → 延后（无 ctor 收集）
+            } else if (con.Type is NamedType) {
+                NamedType nt = con.Type as NamedType;
+                if (this._isParam(nt.Name, pnames, pc)) {
+                    bundle.HasTypeParamRef = true; bundle.TypeParamRef = nt.Name;
+                } else if (nt.ArgCount == 0 && symbols.HasClass(nt.Name)) {
+                    bundle.HasBaseClass = true; bundle.BaseClassName = nt.Name;
+                }
+                // 泛型 base / interface / enum / 未知 → 延后（不报 false positive）
+            }
+            k = k + 1;
+        }
+        if (bundle.RequiresClass && bundle.RequiresStruct) {
+            this._diags.Error(DiagnosticCodes.TypeMismatch,
+                "type parameter `" + wc.TypeParam + "` cannot be both `class` and `struct` on `" + c.Name + "`",
+                this._noSpan());
+        }
+    }
+
+    private bool _isParam(string n, string[] pnames, int pc) {
+        int i = 0;
+        while (i < pc) { if (pnames[i] == n) { return true; } i = i + 1; }
+        return false;
+    }
+
+    // ════ Check（call-site 校验）═══════════════════════════════════════════════
+    public void Check(SymbolTable symbols, Z42InstantiatedType inst) {
+        string cname = inst.Def.Name();
+        if (!symbols.HasConstraints(cname)) { return; }
+        ConstraintSet cs = symbols.GetConstraints(cname);
+        int n = inst.ArgCount;
+        if (n > cs.Count) { n = cs.Count; }
+        int i = 0;
+        while (i < n) {
+            ConstraintBundle b = cs.Bundles[i];
+            if (!b.IsEmpty()) { this._checkBundle(symbols, cs, inst, b, inst.TypeArgs[i], cname, i); }
+            i = i + 1;
+        }
+    }
+
+    private void _checkBundle(SymbolTable symbols, ConstraintSet cs, Z42InstantiatedType inst,
+                              ConstraintBundle b, Z42Type arg, string cname, int idx) {
+        string pn = cs.ParamNames[idx];
+        if (b.HasBaseClass && !this._satisfiesBase(symbols, arg, b.BaseClassName)) {
+            this._err(arg, pn, b.BaseClassName, cname);
+        }
+        if (b.RequiresClass && !this._isClassArg(arg)) {
+            this._err(arg, pn, "class", cname);
+        }
+        if (b.RequiresStruct && !this._isStructArg(arg)) {
+            this._err(arg, pn, "struct", cname);
+        }
+        if (b.HasTypeParamRef) {
+            int j = cs.IndexOf(b.TypeParamRef);
+            if (j >= 0 && j < inst.ArgCount && !this._satisfiesParamRef(symbols, arg, inst.TypeArgs[j])) {
+                this._err(arg, pn, b.TypeParamRef, cname);
+            }
+        }
+    }
+
+    private void _err(Z42Type arg, string param, string constraint, string cls) {
+        this._diags.Error(DiagnosticCodes.TypeMismatch,
+            "type argument `" + arg.Name() + "` for `" + param + "` does not satisfy constraint `" + constraint + "` on `" + cls + "`",
+            this._noSpan());
+    }
+
+    // arg 满足 base-class 约束：arg 是 baseName 或其子类（prim/array 不满足）。
+    private bool _satisfiesBase(SymbolTable symbols, Z42Type arg, string baseName) {
+        if (arg is Z42ClassType) { return symbols.IsSubclassOf(arg.Name(), baseName); }
+        if (arg is Z42InstantiatedType) { return symbols.IsSubclassOf((arg as Z42InstantiatedType).Def.Name(), baseName); }
+        return false;
+    }
+
+    // where U : T —— U 的实参须可赋给 T 的实参（同名 / 子类 / 数值拓宽）。
+    private bool _satisfiesParamRef(SymbolTable symbols, Z42Type arg, Z42Type other) {
+        if (arg.Name() == other.Name()) { return true; }
+        if (other is Z42ClassType) {
+            if (arg is Z42ClassType) { return symbols.IsSubclassOf(arg.Name(), other.Name()); }
+            if (arg is Z42InstantiatedType) { return symbols.IsSubclassOf((arg as Z42InstantiatedType).Def.Name(), other.Name()); }
+        }
+        return arg.IsAssignableTo(other);
+    }
+
+    private bool _isClassArg(Z42Type arg) {
+        return (arg is Z42ClassType) || (arg is Z42InstantiatedType);
+    }
+
+    private bool _isStructArg(Z42Type arg) {
+        return arg is Z42PrimType;   // z42c 把基本类型当值类型；class/instantiated 为引用
+    }
+
+    private Decl _unwrap(Decl d) {
+        if (d is AttributedDecl) { AttributedDecl ad = d as AttributedDecl; return ad.Inner; }
+        return d;
+    }
+
+    // AST 节点暂不携 Span → 占位（span-bearing AST 是后续 syntax 增强）。
+    private Span _noSpan() { return new Span(0, 0, 1, 1, "<sem>"); }
+}

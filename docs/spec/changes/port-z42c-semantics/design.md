@@ -143,11 +143,36 @@ class TypeEnv {
 
 ---
 
+## 2B 实施决策（2026-06-09，User 裁决"可行子集"）
+
+C# `TypeChecker.Generics.cs` 支持 8 类 where 约束（base-class / interface / `class` / `struct` / `new()` / `enum` / 型参 `where U:T` / func-type）。**z42c 当前类型模型撑不起完整移植**，故 2B 只做可行子集：
+
+| 约束 | z42c 2B | 理由 |
+|------|--------|------|
+| `where T : BaseClass` | ✅ | 走已有 `SymbolTable.IsSubclassOf` |
+| `where T : class` | ✅ | 检查实参为 Z42ClassType/InstantiatedType |
+| `where T : struct` | ✅ | 检查实参为 Z42PrimType（z42c 把基本类型当值类型） |
+| 型参 `where U : T` | ✅ | 实参可赋性（同名/子类/拓宽） |
+| class+struct 互斥 | ✅ | 声明期 E0402 |
+| `where T : IFoo`（interface） | ⏸ 延后 | z42c 无 `Z42InterfaceType`（interface 整体延后） |
+| `where T : enum` | ⏸ 延后 | 无 `Z42EnumType` |
+| `where T : new()` | ⏸ 延后 | SymbolCollector 当前跳过 ctor 收集，无法验证无参 ctor 存在 |
+| func-type 约束（E0422/E0423） | ⏸ 延后 | 闭包/委托延后 |
+
+**架构**（镜像 C#，z42 无 partial → 独立委托类）：
+- `GenericConstraint.z42`：`ConstraintBundle`（单型参约束）+ `ConstraintSet`（一类全型参，bundle 按声明序与 `Z42InstantiatedType.TypeArgs` 索引对齐）。
+- `ConstraintChecker.z42`：`Resolve`（Pass 0.5，镜像 `ResolveAllWhereConstraints`：where→ConstraintSet 登记进 `SymbolTable.ClassConstraints`；声明期诊断）+ `Check`（call-site，镜像 `ValidateGenericConstraints`：`new Box<int>()` 逐 (bundle, 实参) 校验）。
+- `TypeChecker`：`Infer` 起首调 `_constraints.Resolve`；`_bindNew` 遇 `Z42InstantiatedType` 调 `_constraints.Check`。
+- **不报 false positive**：可行子集外的约束类型（interface/enum/泛型 base/未知）在 Resolve 静默跳过，不误报。
+
+> 延后项随 z42c 后续补 `Z42InterfaceType`/`Z42EnumType`/ctor 收集/闭包时回填（无前向兼容包袱）。
+
 ## Deferred / 不在本设计内
 
 - **Codegen（Bound → IR / IrGen）**：z42c.semantics 的另一半，**单独 design**（依赖先 map z42c.ir 的 IrModule/IrFunction/IrBlock 模型）。
 - **byte-identical**：semantics 不产二进制（symbol/bound 不入产物）；byte-identical 诉求在 codegen/emit（.zbc）+ project（.zpkg）。
 - FlowAnalyzer 定值分析完整版 / ClosureEscapeAnalyzer（L3）/ 跨包 TSIG import / 反射元数据。
+- **2B 延后子集**：interface / enum / new() / func-type 约束（见上表，待对应类型/信息就绪回填）。
 
 ---
 

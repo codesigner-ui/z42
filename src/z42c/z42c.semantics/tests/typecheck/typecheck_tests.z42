@@ -376,3 +376,66 @@ void test_nested_instantiation() {
     Assert.Equal("(block (return (ident a :Box<Box<int>>)))", SemanticDump.DumpBody(src, "C.Pass"));
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── 2B：where 约束求解（可行子集：base-class / class / struct / 型参引用 + 互斥）──────────
+
+[Test]
+void test_constraint_base_class_ok() {
+    // where T : Animal，实参 Cat（Animal 子类）→ 满足
+    string src = "class Animal { } class Cat : Animal { } class Box<T> where T : Animal { } class C { void M() { var b = new Box<Cat>(); } }";
+    Assert.Equal("(block (decl b :Box<Cat> (new Box<Cat> :Box<Cat>)))", SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_constraint_base_class_violation() {
+    // where T : Animal，实参 int（非 class）→ 违反
+    string src = "class Animal { } class Box<T> where T : Animal { } class C { void M() { var b = new Box<int>(); } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_constraint_class() {
+    string ok = "class Foo { } class Box<T> where T : class { } class C { void M() { var b = new Box<Foo>(); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(ok));
+    string bad = "class Box<T> where T : class { } class C { void M() { var b = new Box<int>(); } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(bad));   // int 非引用类型
+}
+
+[Test]
+void test_constraint_struct() {
+    string ok = "class Box<T> where T : struct { } class C { void M() { var b = new Box<int>(); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(ok));
+    string bad = "class Foo { } class Box<T> where T : struct { } class C { void M() { var b = new Box<Foo>(); } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(bad));   // Foo 非值类型
+}
+
+[Test]
+void test_constraint_type_param_ref() {
+    // where V : K —— V 实参须可赋给 K 实参
+    string ok = "class Animal { } class Cat : Animal { } class Pair<K, V> where V : K { } class C { void M() { var p = new Pair<Animal, Cat>(); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(ok));    // V=Cat 可赋 K=Animal
+    string bad = "class Animal { } class Cat : Animal { } class Pair<K, V> where V : K { } class C { void M() { var p = new Pair<Cat, Animal>(); } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(bad));   // V=Animal 不可赋 K=Cat
+}
+
+[Test]
+void test_constraint_class_struct_conflict() {
+    // 声明期互斥：class + struct
+    string src = "class Box<T> where T : class, struct { }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_constraint_unknown_type_param() {
+    // where 引用未声明的型参 Q
+    string src = "class Box<T> where Q : class { }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_constraint_unconstrained_any_arg() {
+    // 无 where 的泛型类 → 任意实参均可（不触发约束校验）
+    string src = "class Box<T> { } class C { void M() { var b = new Box<int>(); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
