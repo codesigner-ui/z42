@@ -332,17 +332,73 @@ public sealed class TypeChecker {
         BoundExpr[] args = new BoundExpr[call.ArgCount];
         int i = 0;
         while (i < call.ArgCount) { args[i] = this._bindExpr(call.Args[i], env); i = i + 1; }
+        // 顶层自由函数：f(args)
         if (call.Callee is IdentExpr) {
             IdentExpr id = call.Callee as IdentExpr;
             if (env.Symbols.HasFunc(id.Name)) {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);
-                return new BoundCall(id.Name, args, call.ArgCount, ms.Signature.Ret);
+                return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, ms.Signature.Ret);
             }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined function: " + id.Name, this._noSpan());
-            return new BoundCall(id.Name, args, call.ArgCount, new Z42ErrorType());
+            return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, new Z42ErrorType());
         }
-        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported call (1A: member/虚分派见 1C)", this._noSpan());
+        // 成员调用：obj.m(args) / Class.m(args)
+        if (call.Callee is MemberExpr) {
+            return this._bindMemberCall(call.Callee as MemberExpr, args, call.ArgCount, env);
+        }
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported call form", this._noSpan());
         return new BoundError("unsupported call", new Z42ErrorType());
+    }
+
+    private BoundExpr _bindMemberCall(MemberExpr mem, BoundExpr[] args, int argCount, TypeEnv env) {
+        // 静态：target 是裸类名（非局部变量）→ Class.m(args)
+        if (mem.Target is IdentExpr) {
+            IdentExpr tid = mem.Target as IdentExpr;
+            if (env.LookupVar(tid.Name) == null && env.Symbols.HasClass(tid.Name)) {
+                Z42ClassType ct = env.Symbols.GetClass(tid.Name);
+                MethodSymbol ms = this._findMethod(env.Symbols, ct, mem.Name);
+                if (ms != null) {
+                    return new BoundCall("static", false, null, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret);
+                }
+                this._diags.Error(DiagnosticCodes.UndefinedSymbol,
+                    "no static method `" + mem.Name + "` on `" + ct.Name() + "`", this._noSpan());
+                return new BoundCall("static", false, null, tid.Name, mem.Name, args, argCount, new Z42ErrorType());
+            }
+        }
+        // 实例：bind target 为值
+        BoundExpr recv = this._bindExpr(mem.Target, env);
+        Z42Type rt = recv.Type();
+        if (rt is Z42ClassType) {
+            Z42ClassType ct = rt as Z42ClassType;
+            MethodSymbol ms = this._findMethod(env.Symbols, ct, mem.Name);
+            if (ms != null) {
+                return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret);
+            }
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol,
+                "no method `" + mem.Name + "` on `" + ct.Name() + "`", this._noSpan());
+            return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, new Z42ErrorType());
+        }
+        if ((rt is Z42ErrorType) || (rt is Z42UnknownType)) {
+            return new BoundCall("instance", true, recv, "<?>", mem.Name, args, argCount, new Z42ErrorType());
+        }
+        this._diags.Error(DiagnosticCodes.TypeMismatch,
+            "call on non-class `" + rt.Name() + "`", this._noSpan());
+        return new BoundError("call on non-class", new Z42ErrorType());
+    }
+
+    // 方法查找：本类 → base 链（迭代）。
+    private MethodSymbol _findMethod(SymbolTable symbols, Z42ClassType ct, string name) {
+        Z42ClassType cur = ct;
+        bool more = true;
+        while (more) {
+            if (cur.Methods.ContainsKey(name)) { return cur.Methods.Get(name) as MethodSymbol; }
+            if (!cur.HasBase) { more = false; }
+            else {
+                Z42ClassType b = symbols.GetClass(cur.BaseName);
+                if (b == null) { more = false; } else { cur = b; }
+            }
+        }
+        return null;
     }
 
     // AST 节点 1A 暂不携 Span → 占位（span-bearing AST 是后续 syntax 增强）。

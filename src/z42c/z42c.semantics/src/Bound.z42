@@ -73,17 +73,28 @@ public sealed class BoundAssign : BoundExpr {
 }
 
 // 顶层自由函数调用（1A stub：仅 callee 名 + 实参 + 返回类型；成员/虚分派见 1C）。
+// 调用：Kind = "free"（顶层函数）/ "instance"（obj.m）/ "static"（Class.m）。
 public sealed class BoundCall : BoundExpr {
-    public string      CalleeName;
+    public string      Kind;
+    public bool        HasReceiver;
+    public BoundExpr   Receiver;     // 仅 instance
+    public string      OwnerClass;   // instance/static 的类名（free 为 ""）
+    public string      MethodName;
     public BoundExpr[] Args;
     public int         ArgCount;
     private Z42Type _retType;
-    public BoundCall(string calleeName, BoundExpr[] args, int argCount, Z42Type retType) {
-        this.CalleeName = calleeName; this.Args = args; this.ArgCount = argCount; this._retType = retType;
+    public BoundCall(string kind, bool hasReceiver, BoundExpr receiver, string ownerClass,
+                     string methodName, BoundExpr[] args, int argCount, Z42Type retType) {
+        this.Kind = kind; this.HasReceiver = hasReceiver; this.Receiver = receiver;
+        this.OwnerClass = ownerClass; this.MethodName = methodName;
+        this.Args = args; this.ArgCount = argCount; this._retType = retType;
     }
     public override Z42Type Type() { return this._retType; }
     public override string  Dump() {
-        string s = "(call " + this.CalleeName;
+        string head = "(call " + this.MethodName;
+        if (this.Kind == "instance") { head = "(call-inst " + this.Receiver.Dump() + " " + this.MethodName; }
+        else if (this.Kind == "static") { head = "(call-static " + this.OwnerClass + " " + this.MethodName; }
+        string s = head;
         int i = 0;
         while (i < this.ArgCount) { s = s + " " + this.Args[i].Dump(); i = i + 1; }
         return s + " :" + this._retType.Name() + ")";

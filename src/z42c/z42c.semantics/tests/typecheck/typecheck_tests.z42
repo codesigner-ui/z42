@@ -171,3 +171,43 @@ void test_field_not_found_error() {
     string src = "class Box { int value; int M() { return this.missing; } }";
     Assert.Equal(1, SemanticDump.ErrorCount(src));   // no field missing
 }
+
+// ── 1C-2：实例 + 静态方法调用 ──────────────────────────────────────────────
+[Test]
+void test_instance_method_call() {
+    // this.Helper() 实例调用（同类方法，base 链查找）
+    string src = "class C { int Helper() { return 1; } int Use() { return this.Helper(); } }";
+    Assert.Equal("(block (return (call-inst (ident this :C) Helper :int)))",
+                 SemanticDump.DumpBody(src, "C.Use"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_instance_call_on_param() {
+    string src = "class Box { int Get() { return 7; } } class C { int Read(Box b) { return b.Get(); } }";
+    Assert.Equal("(block (return (call-inst (ident b :Box) Get :int)))",
+                 SemanticDump.DumpBody(src, "C.Read"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_static_method_call() {
+    // Math.Square(...) 静态调用（裸类名 target）
+    string src = "class Math { static int Square(int n) { return n; } } class C { int Use() { return Math.Square(4); } }";
+    Assert.Equal("(block (return (call-static Math Square (lit-int 4 :int) :int)))",
+                 SemanticDump.DumpBody(src, "C.Use"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_inherited_method_call() {
+    // 继承方法调用（this.BaseM() 在 Base 定义）
+    string src = "class Base { int BaseM() { return 0; } } class Derived : Base { int Use() { return this.BaseM(); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_no_such_method() {
+    string src = "class Box { } class C { int M(Box b) { return b.Nope(); } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));   // no method Nope on Box
+}
