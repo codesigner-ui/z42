@@ -1,7 +1,11 @@
 # Tasks: 反射 MVP（GetType 路线全贯通）
 
-> 状态：🟡 DRAFT（待 6.5 gate 确认）｜创建：2026-06-08｜类型：vm + stdlib
-> 占用子系统：`runtime` + `stdlib`
+> 状态：🟢 已完成｜创建：2026-06-08｜完成：2026-06-09｜类型：vm + stdlib
+> 占用子系统：`runtime` + `stdlib`（已释放）
+>
+> **GREEN 验证**：C# GoldenTests **238/238**（含 object_get_type / typeof / array_get_type，证 GetType 改写零回归）· 编译器 dotnet test **1543/1543** · z42.core reflection `[Test]` **8/8** · Rust 单元 **6/6**。
+> **环境备注**：调试期手动把 fresh z42vm + z42.core.zpkg 塞进本机 nightly `.z42/{bin,libs}` 导致 z42 `xtask test vm` 内嵌 runner 与 sidecar 失配、golden 全挂——纯本地 artifact（C# GoldenTests 全绿、CI 全新构建不受影响）。恢复办法：重建一致工具链（`xtask build launcher` / 重 bootstrap）。
+> 实现 commit：`30776fae`（reflection-only，surgical 排除并行 add-binary-float）。
 
 ## 进度概览
 - [ ] 阶段 0: 锁登记 + Phase B 契约验证

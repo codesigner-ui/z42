@@ -187,7 +187,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | §12 Hot Reload | 0.5.x（从 0.3.2 推后；GC v1 后真热更新落地）| 🟡 设计有 |
 | §13 Execution Mode Annotations | 0.1.x（注解）→ 0.5.x（运行时切换；从 0.3.x 推后）| 🟡 注解 ✅；运行时切换待 |
 | §14 Generics + Trait | 0.5.x | ✅ G1-G4 + L3-Impl 提前落地 |
-| §15 Reflection | **MVP 0.3.x（只读元数据 + typeof + Attribute）/ 完整 0.5.1–0.5.3（含 Method.Invoke）** | 📋 MVP 提前；L3-R 完整版仍在 0.5 |
+| §15 Reflection | **MVP 0.3.x（只读元数据 + typeof + Attribute）/ 完整 0.5.1–0.5.3（含 Method.Invoke）** | 🟡 C1 GetType 路线落地（[archive/2026-06-09-add-reflection-mvp](spec/archive/2026-06-09-add-reflection-mvp/)：Type + Std.Reflection.{Field,Method,Parameter}Info + GetType 句柄化）；C2 typeof→Type / C3 Attribute / L3-R Invoke 待 |
 | §16 Lambda + Closure | 0.6.0 | ✅ L2-C1 + L3-C2 核心提前落地 |
 | §17 Result + ADT + match | 0.7.x | 📋 |
 | §18 可裁剪 / Tree-shaking / 200KB 子集 | 0.9.x（嵌入 / 裁剪）+ 1.0-rc（AOT 静态链接）| 📋 |
