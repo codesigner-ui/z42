@@ -8,9 +8,9 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | make-typeof-return-type | 2026-06-09 | typeof→Type（C2）：仅改 `ExprParser.Atoms.cs::ParseTypeof` desugar，**不碰 TypeChecker/IrGen**（避开 port-z42c-codegen 活跃区）|
-| `runtime` | make-typeof-return-type | 2026-06-09 | typeof→Type：`__typeof` builtin（复用反射 make_type_from_name）|
-| `stdlib` | make-typeof-return-type | 2026-06-09 | typeof→Type：仅 z42.core/Type.z42 加 `__Of` 静态 extern |
+| `compiler` | —（空闲）| — | C2 make-typeof-return-type 已归档 2026-06-09（option A：TypeofExpr→BoundTypeof→FunctionEmitter codegen）→ 释放 |
+| `runtime` | —（空闲）| — | C2 已归档 2026-06-09（`__typeof` builtin 复用 make_type_from_name）→ 释放 |
+| `stdlib` | —（空闲）| — | C2 option A 实际未改 stdlib（无 Type.z42 改动）；归档释放 |
 | `z42c` | …→ port-z42c-codegen✅ → port-z42c-zbc-writer | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 类型检查半 1A–2B✅ → **port-z42c-codegen✅ Bound→IR 内存模型 CG-1A–2（已归档 2026-06-09，210 cases）** → **port-z42c-zbc-writer 进行中**（byte-identical .zbc：IrModule→bytes，镜像 ZbcWriter.cs + Tokens） |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test] |
 
@@ -27,4 +27,5 @@
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | ~~add-reflection-mvp~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（feat 30776fae）|
+| ~~make-typeof-return-type~~ | compiler + runtime —— ✅ 已归档 2026-06-09（C2，option A）|
 | plan-0.3.x-three-streams | docs（不上锁） |

@@ -41,6 +41,7 @@ public abstract class BoundExprRewriter : BoundExprVisitor<BoundExpr>
     protected override BoundExpr VisitLitNull(BoundLitNull n)       => n;
     protected override BoundExpr VisitLitChar(BoundLitChar c)       => c;
     protected override BoundExpr VisitDefault(BoundDefault d)       => d;
+    protected override BoundExpr VisitTypeof(BoundTypeof t)         => t;
     protected override BoundExpr VisitIdent(BoundIdent id)          => id;
     protected override BoundExpr VisitCapturedIdent(BoundCapturedIdent ci) => ci;
     protected override BoundExpr VisitError(BoundError err)         => err;

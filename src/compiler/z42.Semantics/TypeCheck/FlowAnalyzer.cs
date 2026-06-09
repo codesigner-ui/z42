@@ -490,6 +490,7 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
         protected override Unit VisitLitNull(BoundLitNull n)            => default;
         protected override Unit VisitLitChar(BoundLitChar c)            => default;
         protected override Unit VisitDefault(BoundDefault d)            => default;
+        protected override Unit VisitTypeof(BoundTypeof t)              => default;
         protected override Unit VisitCapturedIdent(BoundCapturedIdent ci) => default;
         protected override Unit VisitLambda(BoundLambda l)              => default;
         protected override Unit VisitModifiedArg(BoundModifiedArg m)    => default;  // handled inside VisitCall

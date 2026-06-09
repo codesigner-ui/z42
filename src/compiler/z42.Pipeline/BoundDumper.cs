@@ -296,6 +296,12 @@ public static class BoundDumper
             return default;
         }
 
+        protected override Unit VisitTypeof(BoundTypeof t)
+        {
+            _w.Line($"BoundTypeof target={FmtType(t.Target)} : {FmtType(t.Type)} {FmtSpan(t.Span)}");
+            return default;
+        }
+
         protected override Unit VisitInterpolatedStr(BoundInterpolatedStr i)
         {
             _w.Line($"BoundInterpolatedStr : {FmtType(i.Type)} {FmtSpan(i.Span)}");

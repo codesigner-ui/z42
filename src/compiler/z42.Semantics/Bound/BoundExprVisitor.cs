@@ -26,6 +26,7 @@ public abstract class BoundExprVisitor<TResult>
         BoundLitNull n          => VisitLitNull(n),
         BoundLitChar c          => VisitLitChar(c),
         BoundDefault d          => VisitDefault(d),
+        BoundTypeof t           => VisitTypeof(t),
         BoundInterpolatedStr i  => VisitInterpolatedStr(i),
         BoundIdent id           => VisitIdent(id),
         BoundCapturedIdent ci   => VisitCapturedIdent(ci),
@@ -60,6 +61,7 @@ public abstract class BoundExprVisitor<TResult>
     protected abstract TResult VisitLitNull(BoundLitNull n);
     protected abstract TResult VisitLitChar(BoundLitChar c);
     protected abstract TResult VisitDefault(BoundDefault d);
+    protected abstract TResult VisitTypeof(BoundTypeof t);
     protected abstract TResult VisitInterpolatedStr(BoundInterpolatedStr i);
     protected abstract TResult VisitIdent(BoundIdent id);
     protected abstract TResult VisitCapturedIdent(BoundCapturedIdent ci);
@@ -97,6 +99,7 @@ public abstract class BoundExprWalker : BoundExprVisitor<Unit>
     protected override Unit VisitLitNull(BoundLitNull n)      => default;
     protected override Unit VisitLitChar(BoundLitChar c)      => default;
     protected override Unit VisitDefault(BoundDefault d)      => default;
+    protected override Unit VisitTypeof(BoundTypeof t)        => default;
     protected override Unit VisitIdent(BoundIdent id)         => default;
     protected override Unit VisitCapturedIdent(BoundCapturedIdent ci) => default;
     protected override Unit VisitError(BoundError err)        => default;

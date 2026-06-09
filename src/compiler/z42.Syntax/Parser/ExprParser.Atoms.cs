@@ -81,14 +81,11 @@ internal static partial class ExprParser
         Expect(ref cursor, TokenKind.LParen);
         var ty = TypeParser.Parse(cursor).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
-        var typeName = ty switch
-        {
-            NamedType nt => nt.Name,
-            ArrayType at => at.Element is NamedType ne ? $"{ne.Name}[]" : "array",
-            VoidType     => "void",
-            _            => ty.ToString() ?? "unknown",
-        };
-        return Ok(new LitStrExpr(typeName, tok.Span), cursor);
+        // make-typeof-return-type (C2, 2026-06-09): preserve T as a TypeExpr;
+        // the TypeChecker resolves it to a fully-qualified type identity and
+        // binds `BoundTypeof`. (Previously desugared here to `LitStrExpr` of the
+        // written name → typeof returned a string.)
+        return Ok(new TypeofExpr(ty, tok.Span), cursor);
     }
 
     /// `default(T)` — preserve T as a TypeExpr so TypeChecker can resolve and

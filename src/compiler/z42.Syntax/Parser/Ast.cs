@@ -379,6 +379,14 @@ public sealed record LitCharExpr(char Value, Span Span)        : Expr(Span);
 /// (add-default-expression, 2026-05-06)
 public sealed record DefaultExpr(TypeExpr Target, Span Span)   : Expr(Span);
 
+/// `typeof(T)` — preserves T as a TypeExpr so the TypeChecker can resolve it to
+/// a fully-qualified type identity (the parser only sees the written, possibly
+/// unqualified name). Binds to `BoundTypeof`; FunctionEmitter lowers to a
+/// `__typeof(<qualified-name>)` builtin returning a `Std.Type`.
+/// (make-typeof-return-type / C2, 2026-06-09; replaces the old parse-time
+/// desugar to a bare `LitStrExpr`.)
+public sealed record TypeofExpr(TypeExpr Target, Span Span)    : Expr(Span);
+
 /// $"text {expr} text"
 public sealed record InterpolatedStrExpr(
     List<InterpolationPart> Parts, Span Span) : Expr(Span);

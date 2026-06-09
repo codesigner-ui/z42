@@ -439,6 +439,7 @@ internal static class ClosureEscapeAnalyzer
         protected override Unit VisitLitNull(BoundLitNull n)            => default;
         protected override Unit VisitLitChar(BoundLitChar c)            => default;
         protected override Unit VisitDefault(BoundDefault d)            => default;
+        protected override Unit VisitTypeof(BoundTypeof t)              => default;
         protected override Unit VisitModifiedArg(BoundModifiedArg m)    => default;
         protected override Unit VisitSwitchExpr(BoundSwitchExpr s)      => default;
         protected override Unit VisitError(BoundError err)              => default;

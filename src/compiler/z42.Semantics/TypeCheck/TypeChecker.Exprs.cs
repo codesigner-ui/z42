@@ -186,6 +186,20 @@ public sealed partial class TypeChecker
                 return new BoundDefault(t, de.Span);
             }
 
+            case TypeofExpr to:
+            {
+                // make-typeof-return-type (C2, 2026-06-09): resolve T to its
+                // type identity here (the parser only had the written, possibly
+                // unqualified name). FunctionEmitter emits T's fully-qualified
+                // name via QualifyClassName; the expression's type is Std.Type.
+                var target  = ResolveType(to.Target);
+                // `Std.Type` (FQN) falls through the resolver to a Z42PrimType
+                // fallback; the short `Type` resolves to the real class via the
+                // stdlib prelude auto-import (same as user-written `Type t = ...`).
+                var stdType = ResolveType(new NamedType("Type", to.Span));
+                return new BoundTypeof(target, stdType, to.Span);
+            }
+
             case NewExpr newExpr:
             {
                 CheckPositionalBeforeNamed(newExpr.Args);

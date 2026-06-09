@@ -44,6 +44,14 @@ public sealed record BoundLitChar(char Value, Span Span)
 public sealed record BoundDefault(Z42Type Target, Span Span, int? GenericParamIndex = null)
     : BoundExpr(Target, Span);
 
+/// `typeof(T)` after binding (make-typeof-return-type / C2, 2026-06-09).
+/// `Target` is the resolved reflected type (whose fully-qualified name
+/// FunctionEmitter emits via `QualifyClassName`); the expression's own `Type`
+/// is always `Std.Type`. FunctionEmitter lowers to a `__typeof(<qualified>)`
+/// builtin returning a `Std.Type` with a real runtime handle.
+public sealed record BoundTypeof(Z42Type Target, Z42Type Type, Span Span)
+    : BoundExpr(Type, Span);
+
 // ── Interpolated string ───────────────────────────────────────────────────────
 
 public sealed record BoundInterpolatedStr(

@@ -197,6 +197,7 @@ public sealed class BoundVisitorTests
         protected override Unit VisitLitNull(BoundLitNull n)            => Mark(n);
         protected override Unit VisitLitChar(BoundLitChar c)            => Mark(c);
         protected override Unit VisitDefault(BoundDefault d)            => Mark(d);
+        protected override Unit VisitTypeof(BoundTypeof t)              => Mark(t);
         protected override Unit VisitInterpolatedStr(BoundInterpolatedStr i) => Mark(i);
         protected override Unit VisitIdent(BoundIdent id)               => Mark(id);
         protected override Unit VisitCapturedIdent(BoundCapturedIdent ci) => Mark(ci);

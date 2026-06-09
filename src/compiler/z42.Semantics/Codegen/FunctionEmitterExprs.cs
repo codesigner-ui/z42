@@ -141,6 +141,30 @@ internal sealed partial class FunctionEmitter
             return dstRef;
         }
 
+        // make-typeof-return-type (C2, 2026-06-09): `typeof(T)` → emit T's
+        // fully-qualified name as a const string, then a `__typeof` builtin
+        // returning a `Std.Type` with a real runtime handle. The runtime
+        // resolves the name across the main-module + lazy-loaded zpkg type
+        // registries (so user-program classes resolve too). Primitives / arrays
+        // / unbound generic params degrade to a name-only Std.Type.
+        protected override TypedReg VisitTypeof(BoundTypeof tof)
+        {
+            string name = tof.Target switch
+            {
+                Z42PrimType pt         => pt.Name,
+                Z42ArrayType           => "Std.Array",
+                Z42InstantiatedType it => _e._ctx.QualifyClassName(it.Definition.Name),
+                Z42ClassType ct        => _e._ctx.QualifyClassName(ct.Name),
+                Z42GenericParamType gp => gp.Name,
+                _                      => tof.Target.ToString() ?? "Std.Object",
+            };
+            var nameReg = _e.Alloc(IrType.Str);
+            _e.Emit(new ConstStrInstr(nameReg, _e._ctx.Intern(name)));
+            var dst = _e.Alloc(IrType.Ref);
+            _e.Emit(new BuiltinInstr(dst, "__typeof", new List<TypedReg> { nameReg }));
+            return dst;
+        }
+
         protected override TypedReg VisitInterpolatedStr(BoundInterpolatedStr interp)
             => _e.EmitInterpolation(interp);
 

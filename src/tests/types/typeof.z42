@@ -1,10 +1,36 @@
 namespace Demo;
 
+using Std;
+
+// make-typeof-return-type (C2, 2026-06-09): typeof(T) now evaluates to a
+// Std.Type (was a string). For user classes it carries a real handle, so
+// member enumeration works and it agrees with obj.GetType().
+class Point {
+    public int X;
+    public int Y;
+}
+
 void Main() {
+    // Primitives: name-only Std.Type.
     var t1 = typeof(int);
     var t2 = typeof(string);
     var t3 = typeof(bool);
-    Assert.Equal("int", t1);
-    Assert.Equal("string", t2);
-    Assert.Equal("bool", t3);
+    Assert.Equal("int", t1.Name);
+    Assert.Equal("string", t2.Name);
+    Assert.Equal("bool", t3.Name);
+
+    // User class: typeof resolves to a real handle (members enumerable).
+    var tp = typeof(Point);
+    Assert.Equal("Point", tp.Name);
+    var fields = tp.GetFields();
+    Assert.Equal(2, fields.Length);
+
+    // Consistent with obj.GetType(). Explicit `Type` annotation (not `var`):
+    // `var x = obj.GetType()` infers from GetType's imported return type, which
+    // doesn't yet carry the property-bearing Type class (reflection Deferred);
+    // an explicit annotation resolves to it, same as the reflection [Test]s.
+    Point p = new Point();
+    Type viaGetType = p.GetType();
+    Assert.Equal(tp.Name, viaGetType.Name);
+    Assert.Equal(tp.FullName, viaGetType.FullName);
 }

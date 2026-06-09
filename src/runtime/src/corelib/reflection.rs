@@ -45,6 +45,15 @@ pub fn make_type_object(ctx: &VmContext, td: Arc<TypeDesc>) -> Value {
 /// `FieldType` / `ReturnType` / `ParameterType` and `GetType` on
 /// primitives/arrays.
 pub fn make_type_from_name(ctx: &VmContext, name: &str) -> Value {
+    // Main module's own types first: the user program's classes live in the
+    // main module's `type_registry`; the lazy loader below only covers
+    // zpkg / stdlib types. (make-typeof-return-type — lets `typeof(UserClass)`
+    // resolve to a real handle.)
+    if let Some(m) = ctx.module() {
+        if let Some(td) = m.type_registry.get(name) {
+            return make_type_object(ctx, td.clone());
+        }
+    }
     if let Some(td) = ctx.try_lookup_type(name) {
         return make_type_object(ctx, td);
     }
@@ -55,6 +64,19 @@ pub fn make_type_from_name(ctx: &VmContext, name: &str) -> Value {
     let canon = canonical_type_name(name);
     let simple = canon.rsplit('.').next().unwrap_or(&canon).to_string();
     build_type(ctx, &simple, &canon, NativeData::None)
+}
+
+/// `__typeof(name) -> Std.Type` — backs `typeof(T)` (make-typeof-return-type,
+/// C2). The compiler emits the reflected type's fully-qualified name; this
+/// resolves it to a `Std.Type` (real handle when the type is loaded —
+/// user-program classes via the main module, stdlib via the lazy loader —
+/// else a name-only synthetic Type for primitives / arrays / unbound generics).
+pub fn builtin_typeof(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    match args.first() {
+        Some(Value::Str(s)) => Ok(make_type_from_name(ctx, s)),
+        // Compiler always emits a string arg; be lenient otherwise.
+        _ => Ok(Value::Null),
+    }
 }
 
 /// Normalize a VM primitive type tag to its C#-style alias. User/class names
