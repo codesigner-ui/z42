@@ -1,0 +1,110 @@
+// 共享 codegen 状态 + 低层助手（port-z42c-codegen，CG-1E 前 refactor）。
+// z42 无 partial class（C# 把 FunctionEmitter 拆 17 文件不可移植）→ 抽公共状态到 EmitContext：
+// FunctionEmitter（函数入口/语句/控制流）与 ExprEmitter（表达式）共用同一个 ctx，
+// 各自文件控制在行数限内。受限写法：public 字段 + 集合 typed array+count。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.IR;
+
+public sealed class EmitContext {
+    public SymbolTable Symbols;
+    public IrGen       Gen;          // 字符串 intern
+    public StrMap      Locals;       // name → TypedReg（object 下行）
+    public StrMap      Fields;       // 实例方法自身字段名集合（裸 ident → field_get reg0）
+    public IrBlock[]   Blocks;   public int BlockCount;
+    public IrInstr[]   Cur;      public int CurCount;     // 当前块指令累积
+    public string      CurLabel; public bool Ended;       // 当前块已终结
+    public int         NextReg;  public int MaxReg;  public int LabelSeq;
+    public string[]    ContLabels; public string[] BreakLabels; public int LoopDepth;  // 循环标签栈
+
+    public EmitContext(SymbolTable symbols, IrGen gen) {
+        this.Symbols = symbols; this.Gen = gen;
+        this.Locals = new StrMap(); this.Fields = new StrMap();
+        this.Blocks = new IrBlock[4]; this.BlockCount = 0;
+        this.NextReg = 0; this.MaxReg = 0; this.LabelSeq = 0;
+        this.ContLabels = new string[4]; this.BreakLabels = new string[4]; this.LoopDepth = 0;
+    }
+
+    // 线性寄存器分配（不复用）。
+    public TypedReg Alloc(int tag) {
+        TypedReg r = new TypedReg(this.NextReg, tag);
+        this.NextReg = this.NextReg + 1;
+        if (this.NextReg > this.MaxReg) { this.MaxReg = this.NextReg; }
+        return r;
+    }
+
+    public void Emit(IrInstr ins) {
+        if (this.CurCount == this.Cur.Length) {
+            IrInstr[] bigger = new IrInstr[this.Cur.Length * 2];
+            int i = 0; while (i < this.CurCount) { bigger[i] = this.Cur[i]; i = i + 1; }
+            this.Cur = bigger;
+        }
+        this.Cur[this.CurCount] = ins;
+        this.CurCount = this.CurCount + 1;
+    }
+
+    public void StartBlock(string label) {
+        this.CurLabel = label; this.Cur = new IrInstr[8]; this.CurCount = 0; this.Ended = false;
+    }
+
+    public void EndBlock(IrTerminator term) {
+        if (this.Ended) { return; }
+        if (this.BlockCount == this.Blocks.Length) {
+            IrBlock[] bigger = new IrBlock[this.Blocks.Length * 2];
+            int i = 0; while (i < this.BlockCount) { bigger[i] = this.Blocks[i]; i = i + 1; }
+            this.Blocks = bigger;
+        }
+        this.Blocks[this.BlockCount] = new IrBlock(this.CurLabel, this.Cur, this.CurCount, term, true);
+        this.BlockCount = this.BlockCount + 1;
+        this.Ended = true;
+    }
+
+    public string Fresh(string hint) {
+        string r = hint + "_" + this.LabelSeq.ToString();
+        this.LabelSeq = this.LabelSeq + 1;
+        return r;
+    }
+
+    public void PushLoop(string contL, string breakL) {
+        if (this.LoopDepth == this.ContLabels.Length) {
+            string[] bc = new string[this.ContLabels.Length * 2];
+            string[] bb = new string[this.BreakLabels.Length * 2];
+            int i = 0;
+            while (i < this.LoopDepth) { bc[i] = this.ContLabels[i]; bb[i] = this.BreakLabels[i]; i = i + 1; }
+            this.ContLabels = bc; this.BreakLabels = bb;
+        }
+        this.ContLabels[this.LoopDepth] = contL;
+        this.BreakLabels[this.LoopDepth] = breakL;
+        this.LoopDepth = this.LoopDepth + 1;
+    }
+    public void   PopLoop()     { this.LoopDepth = this.LoopDepth - 1; }
+    public bool   InLoop()      { return this.LoopDepth > 0; }
+    public string CurBreak()    { return this.BreakLabels[this.LoopDepth - 1]; }
+    public string CurContinue() { return this.ContLabels[this.LoopDepth - 1]; }
+
+    // Z42Type → IrType 标签（z42c.ir 是无依赖叶子不能引用 Z42Type，故映射在 semantics 侧）。
+    public int ToIrType(Z42Type t) {
+        if (t is Z42VoidType) { return IrType.Void; }
+        if (t is Z42PrimType) { return this.PrimTag(t.Name()); }
+        return IrType.Ref;   // class / instantiated / array / func / generic-param → ref
+    }
+
+    // prim 名（含别名，ResolveType 不规范化）→ IrType 标签。镜像 C# TypeRegistry（int→i32, long→i64）。
+    public int PrimTag(string n) {
+        if (n == "int" || n == "i32" || n == "Int32") { return IrType.I32; }
+        if (n == "long" || n == "i64" || n == "Int64") { return IrType.I64; }
+        if (n == "i8" || n == "sbyte" || n == "SByte") { return IrType.I8; }
+        if (n == "i16" || n == "short" || n == "Int16") { return IrType.I16; }
+        if (n == "u8" || n == "byte" || n == "Byte") { return IrType.U8; }
+        if (n == "u16" || n == "ushort" || n == "UInt16") { return IrType.U16; }
+        if (n == "u32" || n == "uint" || n == "UInt32") { return IrType.U32; }
+        if (n == "u64" || n == "ulong" || n == "UInt64") { return IrType.U64; }
+        if (n == "float" || n == "f32" || n == "Single") { return IrType.F32; }
+        if (n == "double" || n == "f64" || n == "Double") { return IrType.F64; }
+        if (n == "bool" || n == "Boolean") { return IrType.Bool; }
+        if (n == "char" || n == "Char") { return IrType.Char; }
+        if (n == "string" || n == "String") { return IrType.Str; }
+        return IrType.Ref;   // object / 未知 → ref
+    }
+}

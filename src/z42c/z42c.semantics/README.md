@@ -19,7 +19,9 @@
 | `src/ConstraintChecker.z42` | 泛型 where 约束（2B）：Resolve（声明期 where→ConstraintSet）+ Check（call-site `new Box<int>()` 校验）。隔离自 TypeChecker（镜像 C# `TypeChecker.Generics.cs`） |
 | `src/SemanticModel.z42` | 类型检查产物：符号表 + 各方法/函数体 Bound 树（key="Class.Method"/func 名） |
 | `src/SemanticDump.z42` | 纯函数工具：源 → bound s-expr / 诊断计数（[Test] + driver `--dump-bound`） |
-| `src/FunctionEmitter.z42` | **codegen 半**（CG-1A–1D）：每函数 Bound → IR lowering。集中 if-is EmitExpr→TypedReg / EmitStmt；寄存器分配 + 基本块管理（StartBlock/EndBlock/FreshLabel + 循环标签栈）；if/while/break/continue → 多块 + Br/BrCond；方法调用（free/static→call、instance→vcall）+ 字段 get/set；new→obj_new / 数组索引读写 / is→is_instance / as→as_cast；Z42Type→IrType 映射（叶子 z42c.ir 不引用 Z42Type，映射在此）。⚠ 387 行逼近 500 硬限（z42 无 partial→需抽 helper） |
+| `src/EmitContext.z42` | **codegen 共享状态 + 低层助手**：寄存器分配 Alloc / Emit / 基本块 StartBlock·EndBlock / Fresh 标签 / 循环标签栈 PushLoop·PopLoop / Z42Type→IrType 映射（叶子 z42c.ir 不引用 Z42Type，映射在此）。FunctionEmitter 与 ExprEmitter 共用一个 ctx（z42 无 partial class，拆 helper 替代 C# 的 partial） |
+| `src/ExprEmitter.z42` | **表达式 lowering**（CG-1A–1D）：集中 if-is Emit(BoundExpr)→TypedReg。字面量 / ident·字段 / 二元算术 / 赋值（local·字段·索引）/ 成员 / 调用（call·vcall）/ new·obj_new / 数组索引 / is·as |
+| `src/FunctionEmitter.z42` | **codegen 函数入口 + 语句 + 控制流**：EmitFunction（建 ctx + 形参/this/字段绑定 → 出 IrFunction）+ 集中 if-is EmitStmt；if/while/break/continue → 多块 + Br/BrCond（委托 _ctx 块管理 + _expr 表达式） |
 | `src/IrGen.z42` | codegen 模块级驱动：遍历 cu + SemanticModel → 逐函数 FunctionEmitter + StringPool intern + IrClassDesc → IrModule |
 | `src/IrDump.z42` | 纯函数工具：源 → typecheck → IrGen → .zasm-like IR 文本（[Test] + driver `--dump-ir` 后续） |
 

@@ -1,0 +1,187 @@
+// 表达式 Bound → IR lowering（port-z42c-codegen，CG-1A–1D；CG-1E refactor 抽出）。
+// 集中 if-is 调度（D1）；无表达式临时栈——每子表达式 Alloc 寄存器 + 内联 Emit，返回该寄存器。
+// 共享状态经 EmitContext（FunctionEmitter 与本类共用同一 ctx）。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.IR;
+
+public sealed class ExprEmitter {
+    private EmitContext _ctx;
+    public ExprEmitter(EmitContext ctx) { this._ctx = ctx; }
+
+    public TypedReg Emit(BoundExpr e) {
+        if (e is BoundLitInt) {
+            BoundLitInt li = e as BoundLitInt;
+            int tag = this._ctx.ToIrType(li.Type());
+            TypedReg r = this._ctx.Alloc(tag);
+            if (tag == IrType.I64 || tag == IrType.U64) { this._ctx.Emit(new ConstI64Instr(r, li.Text)); }
+            else { this._ctx.Emit(new ConstI32Instr(r, li.Text)); }
+            return r;
+        }
+        if (e is BoundLitFloat) {
+            BoundLitFloat lf = e as BoundLitFloat;
+            TypedReg r = this._ctx.Alloc(this._ctx.ToIrType(lf.Type()));
+            this._ctx.Emit(new ConstF64Instr(r, lf.Text));
+            return r;
+        }
+        if (e is BoundLitBool) {
+            BoundLitBool lb = e as BoundLitBool;
+            TypedReg r = this._ctx.Alloc(IrType.Bool);
+            this._ctx.Emit(new ConstBoolInstr(r, lb.Value));
+            return r;
+        }
+        if (e is BoundLitStr) {
+            BoundLitStr ls = e as BoundLitStr;
+            int idx = this._ctx.Gen.Intern(ls.Raw);
+            TypedReg r = this._ctx.Alloc(IrType.Str);
+            this._ctx.Emit(new ConstStrInstr(r, idx));
+            return r;
+        }
+        if (e is BoundLitNull) {
+            TypedReg r = this._ctx.Alloc(IrType.Ref);
+            this._ctx.Emit(new ConstNullInstr(r));
+            return r;
+        }
+        if (e is BoundIdent) { return this._lookupIdent(e as BoundIdent); }
+        if (e is BoundBinary) { return this._emitBinary(e as BoundBinary); }
+        if (e is BoundAssign) { return this._emitAssign(e as BoundAssign); }
+        if (e is BoundMember) { return this._emitMember(e as BoundMember); }
+        if (e is BoundCall) { return this._emitCall(e as BoundCall); }
+        if (e is BoundNew) { return this._emitNew(e as BoundNew); }
+        if (e is BoundIndex) { return this._emitIndex(e as BoundIndex); }
+        if (e is BoundIsExpr) { return this._emitIs(e as BoundIsExpr); }
+        if (e is BoundCast) { return this._emitCast(e as BoundCast); }
+        // 其余节点（cond/unary/比较/逻辑）→ CG-1E：占位 const.null（保 dump 良构）
+        TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(e.Type()));
+        this._ctx.Emit(new ConstNullInstr(ph));
+        return ph;
+    }
+
+    // ident：local/param → 寄存器；裸自身字段 → field_get(reg0=this)；静态字段/未解析 → 占位。
+    private TypedReg _lookupIdent(BoundIdent id) {
+        if (this._ctx.Locals.ContainsKey(id.Name)) { return this._ctx.Locals.Get(id.Name) as TypedReg; }
+        if (this._ctx.Fields.ContainsKey(id.Name)) {
+            TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(id.Type()));
+            this._ctx.Emit(new FieldGetInstr(dst, new TypedReg(0, IrType.Ref), id.Name));
+            return dst;
+        }
+        TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(id.Type()));
+        this._ctx.Emit(new ConstNullInstr(ph));
+        return ph;
+    }
+
+    // 二元算术（CG-1A：+ − × ÷ %）。比较/逻辑/位/拼接 → CG-1E。
+    private TypedReg _emitBinary(BoundBinary b) {
+        TypedReg a = this.Emit(b.Left);
+        TypedReg c = this.Emit(b.Right);
+        TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(b.Type()));
+        string op = b.Op;
+        if (op == "-") { this._ctx.Emit(new SubInstr(d, a, c)); }
+        else if (op == "*") { this._ctx.Emit(new MulInstr(d, a, c)); }
+        else if (op == "/") { this._ctx.Emit(new DivInstr(d, a, c)); }
+        else if (op == "%") { this._ctx.Emit(new RemInstr(d, a, c)); }
+        else { this._ctx.Emit(new AddInstr(d, a, c)); }   // "+" 及（CG-1A 占位）其余
+        return d;
+    }
+
+    // 赋值：local（copy 回写）/ 裸字段（field_set reg0）/ obj.field（field_set obj）/ arr[i]（array_set）。
+    private TypedReg _emitAssign(BoundAssign a) {
+        TypedReg val = this.Emit(a.Value);
+        if (a.Target is BoundIdent) {
+            BoundIdent tid = a.Target as BoundIdent;
+            if (this._ctx.Locals.ContainsKey(tid.Name)) {
+                TypedReg existing = this._ctx.Locals.Get(tid.Name) as TypedReg;
+                if (existing.Id != val.Id) { this._ctx.Emit(new CopyInstr(existing, val)); }
+                return existing;
+            }
+            if (this._ctx.Fields.ContainsKey(tid.Name)) {
+                this._ctx.Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), tid.Name, val));
+                return val;
+            }
+            this._ctx.Locals.Put(tid.Name, val);
+            return val;
+        }
+        if (a.Target is BoundMember) {
+            BoundMember tm = a.Target as BoundMember;
+            TypedReg obj = this.Emit(tm.Target);
+            this._ctx.Emit(new FieldSetInstr(obj, tm.MemberName, val));
+            return val;
+        }
+        if (a.Target is BoundIndex) {
+            BoundIndex ti = a.Target as BoundIndex;
+            TypedReg arr = this.Emit(ti.Target);
+            TypedReg i = this.Emit(ti.Index);
+            this._ctx.Emit(new ArraySetInstr(arr, i, val));
+            return val;
+        }
+        return val;
+    }
+
+    // obj.field 读 → field_get。
+    private TypedReg _emitMember(BoundMember m) {
+        TypedReg obj = this.Emit(m.Target);
+        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(m.Type()));
+        this._ctx.Emit(new FieldGetInstr(dst, obj, m.MemberName));
+        return dst;
+    }
+
+    // 调用分派：free → call @f / static → call @Class.m / instance → vcall recv.m。
+    private TypedReg _emitCall(BoundCall c) {
+        if (c.Kind == "instance") {
+            TypedReg recv = this.Emit(c.Receiver);
+            TypedReg[] iargs = this._emitArgs(c);
+            TypedReg idst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+            this._ctx.Emit(new VCallInstr(idst, recv, c.MethodName, iargs, c.ArgCount));
+            return idst;
+        }
+        TypedReg[] args = this._emitArgs(c);
+        string func = c.MethodName;
+        if (c.Kind == "static") { func = c.OwnerClass + "." + c.MethodName; }
+        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+        this._ctx.Emit(new CallInstr(dst, func, args, c.ArgCount));
+        return dst;
+    }
+
+    private TypedReg[] _emitArgs(BoundCall c) {
+        TypedReg[] args = new TypedReg[c.ArgCount];
+        int i = 0;
+        while (i < c.ArgCount) { args[i] = this.Emit(c.Args[i]); i = i + 1; }
+        return args;
+    }
+
+    // new T(args) → obj_new（结果 ref）。ctor 解析延后。
+    private TypedReg _emitNew(BoundNew n) {
+        TypedReg[] args = new TypedReg[n.ArgCount];
+        int i = 0;
+        while (i < n.ArgCount) { args[i] = this.Emit(n.Args[i]); i = i + 1; }
+        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(n.Type()));
+        this._ctx.Emit(new ObjNewInstr(dst, n.TypeName, args, n.ArgCount));
+        return dst;
+    }
+
+    // arr[i] 读 → array_get（元素类型）。
+    private TypedReg _emitIndex(BoundIndex idx) {
+        TypedReg arr = this.Emit(idx.Target);
+        TypedReg i = this.Emit(idx.Index);
+        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(idx.Type()));
+        this._ctx.Emit(new ArrayGetInstr(dst, arr, i));
+        return dst;
+    }
+
+    // x is T → is_instance（bool）。
+    private TypedReg _emitIs(BoundIsExpr e) {
+        TypedReg obj = this.Emit(e.E);
+        TypedReg dst = this._ctx.Alloc(IrType.Bool);
+        this._ctx.Emit(new IsInstanceInstr(dst, obj, e.TypeName));
+        return dst;
+    }
+
+    // x as T → as_cast（结果 ref；目标类型名取自 Bound 类型）。
+    private TypedReg _emitCast(BoundCast c) {
+        TypedReg obj = this.Emit(c.E);
+        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+        this._ctx.Emit(new AsCastInstr(dst, obj, c.Type().Name()));
+        return dst;
+    }
+}
