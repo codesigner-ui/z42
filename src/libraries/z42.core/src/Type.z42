@@ -45,6 +45,13 @@ public sealed class Type {
     [Native("__type_members")]
     public extern Std.Reflection.MemberInfo[] GetMembers();
 
+    // Properties (auto-properties + extern getters), derived from the
+    // `get_<X>` / `set_<X>` accessor convention. Includes inherited. Empty for
+    // primitives / arrays. Accessor methods still appear in GetMethods() too
+    // (C# parity); this is the additive property view.
+    [Native("__type_properties")]
+    public extern Std.Reflection.PropertyInfo[] GetProperties();
+
     // Generic type arguments of an instantiated generic (`Box<int>` -> [int]).
     [Native("__type_generic_args")]
     public extern Type[] GetGenericArguments();

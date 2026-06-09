@@ -84,6 +84,39 @@ fn type_fields_empty_for_handle_with_no_fields() {
 }
 
 #[test]
+fn type_properties_empty_for_non_type_arg_and_no_accessors() {
+    // Lenient: non-Type arg → empty.
+    let c = ctx();
+    assert_eq!(
+        array_len(&builtin_type_properties(&c, &[Value::I64(7)]).unwrap()),
+        0
+    );
+    // Handle present but no methods → no get_/set_ → empty. Crucially no
+    // PropertyInfo alloc, so this works without z42.core loaded.
+    let t = type_obj(&c, bare_td("Demo.Empty"));
+    assert_eq!(array_len(&builtin_type_properties(&c, &[t]).unwrap()), 0);
+}
+
+#[test]
+fn type_properties_ignores_non_accessor_methods() {
+    // A method that isn't `get_` / `set_` must not become a property (and the
+    // empty result needs no PropertyInfo class).
+    let c = ctx();
+    let td = Arc::new(TypeDesc {
+        name: "Demo.WithMethod".to_string(),
+        base_name: None,
+        fields: Vec::new(),
+        field_index: NameIndex::new(),
+        vtable: vec![("Foo".to_string(), "Demo.WithMethod.Foo".to_string())],
+        vtable_index: NameIndex::new(),
+        cold: None,
+        id: TypeId::UNRESOLVED,
+    });
+    let t = type_obj(&c, td);
+    assert_eq!(array_len(&builtin_type_properties(&c, &[t]).unwrap()), 0);
+}
+
+#[test]
 fn member_builtins_are_lenient_with_handle_but_no_core() {
     // With a handle but z42.core absent, methods/base/generics must not error
     // (they degrade — base resolves to a null Std.Type, etc.).

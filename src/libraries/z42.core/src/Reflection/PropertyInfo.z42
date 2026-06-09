@@ -1,0 +1,23 @@
+namespace Std.Reflection;
+
+// Reflected property. Populated by `Type.GetProperties()` (`__type_properties`).
+// Mirrors C# `System.Reflection.PropertyInfo` (read-only subset; no GetValue /
+// SetValue — those need Invoke, which lands with generic instantiation in 0.5.x).
+//
+// Derived purely at runtime from the `get_<X>` / `set_<X>` accessor-method
+// convention (auto-properties desugar to a field + get_/set_ methods): a getter
+// makes the property readable, a setter writable; getter + setter for the same
+// name merge into one PropertyInfo. No persisted property metadata and no
+// wire-format change — the accessor names live in the type's method table and
+// the property type comes from the accessor signature.
+public class PropertyInfo : MemberInfo {
+    // Property type — the getter's return type, or the setter's value-parameter
+    // type for write-only properties. Written by the VM.
+    public Std.Type PropertyType;
+
+    // True if the property has a getter (`get_<Name>`).
+    public bool CanRead;
+
+    // True if the property has a setter (`set_<Name>`).
+    public bool CanWrite;
+}

@@ -132,8 +132,9 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-06-08 add-reflection-mvp 新增 Reflection/{MemberInfo,FieldInfo,
         //   MethodInfo,ParameterInfo}.z42，63 → 67。
         // 2026-06-09 add-attribute-reflection 新增 Attribute.z42，67 → 68。
+        // 2026-06-09 add-reflection-properties 新增 Reflection/PropertyInfo.z42，68 → 69。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/68");
+        err2.Should().Contain("cached: 0/69");
     }
 }

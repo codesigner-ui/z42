@@ -1,0 +1,46 @@
+// add-reflection-properties (2026-06-09): Type.GetProperties() derives
+// PropertyInfo from the get_/set_ accessor convention (auto-properties desugar
+// to field + get_/set_ methods). Read-only — no GetValue/SetValue (those need
+// Invoke, 0.5.x). Getter+setter for one name merge into a single PropertyInfo.
+using Std.Reflection;
+
+class Account {
+    public int Balance { get; set; }    // read-write → get_Balance + set_Balance
+    public string Owner { get; }        // read-only  → get_Owner only
+}
+
+class Savings : Account {
+    public int Rate { get; set; }
+}
+
+void Main() {
+    Type t = typeof(Account);
+    PropertyInfo[] props = t.GetProperties();
+    Assert.Equal(2, props.Length);
+
+    bool sawBalance = false;
+    bool sawOwner = false;
+    foreach (var p in props) {
+        if (p.Name == "Balance") {
+            sawBalance = true;
+            Assert.True(p.CanRead);
+            Assert.True(p.CanWrite);
+            Type pt = p.PropertyType;      // local receiver (chained-getter footgun)
+            Assert.Equal("int", pt.Name);
+        }
+        if (p.Name == "Owner") {
+            sawOwner = true;
+            Assert.True(p.CanRead);
+            Assert.False(p.CanWrite);
+            Type pt = p.PropertyType;
+            Assert.Equal("string", pt.Name);
+        }
+    }
+    Assert.True(sawBalance);
+    Assert.True(sawOwner);
+
+    // Inherited: Savings = own Rate + inherited Balance + Owner = 3.
+    Type st = typeof(Savings);
+    PropertyInfo[] sprops = st.GetProperties();
+    Assert.Equal(3, sprops.Length);
+}

@@ -27,6 +27,17 @@ class Box<T> {
     public T value;
 }
 
+// add-reflection-properties: GetProperties() derives PropertyInfo from the
+// get_/set_ accessor convention.
+class PropHolder {
+    public int Size { get; set; }   // read-write → get_Size + set_Size
+    public string Tag { get; }      // read-only  → get_Tag only
+}
+
+class PropChild : PropHolder {
+    public bool Active { get; set; }
+}
+
 [Test]
 void test_gettype_name_and_fullname() {
     Derived d = new Derived();
@@ -109,4 +120,60 @@ void test_generic_arguments_best_effort() {
     if (args.Length == 1) {
         Assert.Equal("int", args[0].Name);
     }
+}
+
+[Test]
+void test_getproperties_readwrite() {
+    Type t = typeof(PropHolder);
+    PropertyInfo[] props = t.GetProperties();
+    bool found = false;
+    foreach (var p in props) {
+        if (p.Name == "Size") {
+            found = true;
+            Assert.True(p.CanRead);
+            Assert.True(p.CanWrite);
+            Type pt = p.PropertyType;   // local receiver (chained-getter footgun)
+            Assert.Equal("int", pt.Name);
+        }
+    }
+    Assert.True(found);
+}
+
+[Test]
+void test_getproperties_readonly() {
+    Type t = typeof(PropHolder);
+    PropertyInfo[] props = t.GetProperties();
+    bool found = false;
+    foreach (var p in props) {
+        if (p.Name == "Tag") {
+            found = true;
+            Assert.True(p.CanRead);
+            Assert.False(p.CanWrite);
+            Type pt = p.PropertyType;
+            Assert.Equal("string", pt.Name);
+        }
+    }
+    Assert.True(found);
+}
+
+[Test]
+void test_getproperties_includes_inherited() {
+    Type t = typeof(PropChild);
+    PropertyInfo[] props = t.GetProperties();
+    bool hasInheritedSize = false;
+    bool hasOwnActive = false;
+    foreach (var p in props) {
+        if (p.Name == "Size") { hasInheritedSize = true; }
+        if (p.Name == "Active") { hasOwnActive = true; }
+    }
+    Assert.True(hasInheritedSize);
+    Assert.True(hasOwnActive);
+}
+
+[Test]
+void test_getproperties_empty_for_no_props() {
+    // Base declares only a field (no get_/set_) → no properties.
+    Type t = typeof(Base);
+    PropertyInfo[] props = t.GetProperties();
+    Assert.Equal(0, props.Length);
 }
