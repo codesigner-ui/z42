@@ -42,11 +42,31 @@ int _buildCompilerZ42() {
     return br.ExitCode;
 }
 
+// 防 zpkg 版本 skew 假失败（2026-06-10）：z42c 测试单元先被 C# driver 编成 zpkg，
+// 再交 z42-test-runner 的 *in-process VM*（链 libz42）运行。三者写/读的 zpkg 格式版本
+// 必须一致。完整 `xtask test` 在跑前重建 stdlib+runtime+test-runner+driver，但
+// `test compiler-z42` 原本只检查 runner 存在、从不重建 —— 一旦某并行变更 bump 了 zpkg
+// 格式（如 add-attribute-reflection-methods 把 minor 撞到 0.13），停在旧版的 test-runner
+// 会在加载期把每个 unit 全判 "cannot read zpkg metadata"（空输出＝假失败）。
+// 故此处显式重建 runtime(z42vm+libz42) + test-runner + driver。cached 时近 no-op，
+// 仅当真有源码改动才付构建代价 —— 正是需要它的时刻。
+int _ensureZ42cTooling() {
+    Console.WriteLine("  ensuring tooling fresh (z42vm + z42-test-runner + driver; release)");
+    int c = _buildRuntime();   // z42vm + libz42（in-process VM 的实现）
+    if (c != 0) { return c; }
+    c = _exec(_cargoRelease().Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
+    if (c != 0) { return c; }
+    return _exec(new Process("dotnet").Arg("build").Arg(Path.Join(_root(), _driverProj()))
+        .Arg("-c").Arg("Release").Arg("--nologo").Arg("-v").Arg("quiet"));   // 满足 _buildCompilerZ42 的 --no-build
+}
+
 // smoke: build + assert each z42c.<sub>.zpkg product exists & is non-empty.
 // member list derives from the workspace manifest's default-members (single
 // source of truth; cf. _stdlibList). member name == [project].name == zpkg
 // basename, so the product path is build/z42c/<name>/release/dist/<name>.zpkg.
 int _testCompilerZ42() {
+    int tc = _ensureZ42cTooling();   // 重建 runtime+runner+driver，防版本 skew 假失败
+    if (tc != 0) { return tc; }
     int bc = _buildCompilerZ42();
     if (bc != 0) { return bc; }
 
