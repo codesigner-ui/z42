@@ -8,10 +8,10 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | _（空闲）_ | — | scaffold-z42c-selfhost 已提交 127b7f11（gate 后台确认中），释放 compiler |
-| `runtime` | _（空闲）_ | — | add-reflection-mvp 已归档释放（feat 30776fae，archive/2026-06-09-add-reflection-mvp）|
-| `stdlib` | _（空闲）_ | — | reflection / add-ipaddress-tryparse 等均已归档释放；近期 stdlib 改动全部提交在 main（工作树干净）|
-| `z42c` | …→ port-z42c-semantics✅ → port-z42c-codegen | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ **semantics 类型检查半 1A–2B✅（已归档 2026-06-09）** → **port-z42c-codegen 进行中**（Bound→IR：z42c.ir 模型从零镜像 IrModule.cs + FunctionEmitter/IrGen lowering） |
+| `compiler` | make-typeof-return-type | 2026-06-09 | typeof→Type（C2）：仅改 `ExprParser.Atoms.cs::ParseTypeof` desugar，**不碰 TypeChecker/IrGen**（避开 port-z42c-codegen 活跃区）|
+| `runtime` | make-typeof-return-type | 2026-06-09 | typeof→Type：`__typeof` builtin（复用反射 make_type_from_name）|
+| `stdlib` | make-typeof-return-type | 2026-06-09 | typeof→Type：仅 z42.core/Type.z42 加 `__Of` 静态 extern |
+| `z42c` | …→ port-z42c-codegen✅ → port-z42c-zbc-writer | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 类型检查半 1A–2B✅ → **port-z42c-codegen✅ Bound→IR 内存模型 CG-1A–2（已归档 2026-06-09，210 cases）** → **port-z42c-zbc-writer 进行中**（byte-identical .zbc：IrModule→bytes，镜像 ZbcWriter.cs + Tokens） |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test] |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -20,7 +20,8 @@
 |--------|---------------------|
 | scaffold-z42c-selfhost | z42c + compiler（已提交 127b7f11；gate 确认中，归档待绿）|
 | port-z42c-core | z42c + toolchain |
-| port-z42c-codegen | z42c（2026-06-09 开；semantics 归档释放 z42c 锁后占用）|
+| ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|
+| port-z42c-zbc-writer | z42c（2026-06-09 开；codegen 归档释放 z42c 锁后占用）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|

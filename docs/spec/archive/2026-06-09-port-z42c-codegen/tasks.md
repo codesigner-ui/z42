@@ -1,9 +1,10 @@
 # Tasks: port-z42c-codegen — Bound → IR lowering
 
-> 状态：🟡 进行中 | 创建：2026-06-09 | 子系统锁：z42c（顺序续作，semantics 归档后占用）
-> **变更说明：** z42c.ir 从零镜像 C# IR 内存模型 + z42c.semantics 加 Codegen（FunctionEmitter/IrGen）把 Bound 树降级为 IR。
-> **设计**：[design.md](design.md)（D1 集中 if-is / D2 class-per-instruction / D3 CG-1A 起点 / D4 .zasm-like dump，待 User 审批）。
-> byte-identical .zbc（ZbcWriter）是后续独立 change。
+> 状态：🟢 已完成 | 创建：2026-06-09 | 完成：2026-06-09 | 子系统锁：z42c（顺序续作）
+> **变更说明：** z42c.ir 从零镜像 C# IR 内存模型 + z42c.semantics 加 Codegen（FunctionEmitter/IrGen/ExprEmitter/EmitContext）把 Bound 树降级为 IR。
+> **设计**：[design.md](design.md)（D1 集中 if-is / D2 class-per-instruction / D3 CG-1A 起点 / D4 .zasm-like dump / D5 TypeRegistry 映射）。
+> **范围 = Bound→IR 内存模型 + 文本 dump（CG-1A–2 全完成）。** byte-identical .zbc（ZbcWriter + TokenAllocator）是后续独立 change。
+> **核心实现增量全完成**：codegen 覆盖全部非泛型 L1 表达式·语句 + 泛型实例化。13 units 210 cases 全绿（codegen 40）。
 
 ## 进度概览
 - [x] CG-1A 最小 lowering（IR 模型骨架 + 字面量/局部/二元算术/return → 单块）✅
