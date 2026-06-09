@@ -139,7 +139,12 @@ public sealed record IrFunction(
     /// `TypedReg.Type` values; on the initial codegen path (compiler
     /// IrFunction → ZbcWriter), this is left null so the writer falls
     /// back to walking `Blocks` + collecting types from `TypedReg`s.
-    byte[]? RegTypes = null);
+    byte[]? RegTypes = null,
+    /// C3b add-attribute-reflection-methods: user attributes applied to this
+    /// method / top-level function. Same shape as <see cref="IrClassDesc.Attributes"/>
+    /// — each points at a synthesized factory the runtime calls for
+    /// `MethodInfo.GetCustomAttributes()`.
+    List<IrAttributeRef>? Attributes = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
 public sealed record IrLocalVarEntry(string Name, int RegId);

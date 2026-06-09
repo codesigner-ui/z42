@@ -208,6 +208,10 @@ public static partial class ZpkgReader
                 byte ifaceCount = r.ReadByte();
                 for (int k = 0; k < ifaceCount; k++) r.ReadUInt32();
             }
+            // C3b add-attribute-reflection-methods (zbc 1.11): skip per-function
+            // attr refs (u16 count + (type, factory) u32 pairs) to stay aligned.
+            ushort attrCount = r.ReadUInt16();
+            for (int a = 0; a < attrCount; a++) { r.ReadUInt32(); r.ReadUInt32(); }
             result.Add((name, paramCount, retType, execMode, isStatic));
         }
         return result;

@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 10;  // 2026-06-09 add-attribute-reflection (C3): TYPE section adds per-class user-attribute refs (u16 count + (type-name str idx, factory-func str idx) pairs) after the type-param block. Pre-1.10 not readable.
+    public const ushort VersionMinor = 11;  // 2026-06-09 add-attribute-reflection-methods (C3b): SIGS section adds per-function user-attribute refs (u16 count + (type-name str idx, factory-func str idx) pairs) after the type-param block — same shape as TYPE-section class attrs (zbc 1.10). Pre-1.11 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -252,6 +252,7 @@ public static partial class ZbcWriter
                 if (cls.TypeParamConstraints != null)
                     foreach (var b in cls.TypeParamConstraints)
                         InternConstraintBundle(pool, b);
+                InternAttributeRefs(pool, cls.Attributes);  // C3a
             }
 
             // 1.3 split-debug-symbols: SIGS pads with "?" for unknown param types.
@@ -287,6 +288,7 @@ public static partial class ZbcWriter
                 if (fn.TypeParamConstraints != null)
                     foreach (var b in fn.TypeParamConstraints)
                         InternConstraintBundle(pool, b);
+                InternAttributeRefs(pool, fn.Attributes);  // C3b
             }
         }
         else
@@ -443,12 +445,33 @@ public static partial class ZbcWriter
                         ? fn.TypeParamConstraints[i] : null;
                     WriteConstraintBundle(w, pool, b);
                 }
+            // C3b add-attribute-reflection-methods (zbc 1.11): per-function user
+            // attribute refs — (type-name str idx, factory-func str idx) pairs.
+            // Count always written (0 when none) for a uniform per-function layout.
+            var attrCount = (ushort)(fn.Attributes?.Count ?? 0);
+            w.Write(attrCount);
+            if (fn.Attributes != null)
+                foreach (var a in fn.Attributes)
+                {
+                    w.Write((uint)pool.Idx(a.TypeName));
+                    w.Write((uint)pool.Idx(a.FactoryFunc));
+                }
         }
 
         return ms.ToArray();
     }
 
     // ── Constraint bundle codec (L3-G3a) ──────────────────────────────────────
+
+    /// C3 add-attribute-reflection: intern the (type-name, factory-func) strings
+    /// of each attribute ref so they land in the pool before TYPE / SIGS encoding.
+    /// Null-safe. (Most are already interned as a class/function name, but a
+    /// cross-zpkg attribute type may not be — intern explicitly to be safe.)
+    internal static void InternAttributeRefs(StringPool pool, List<IrAttributeRef>? attrs)
+    {
+        if (attrs is null) return;
+        foreach (var a in attrs) { pool.Intern(a.TypeName); pool.Intern(a.FactoryFunc); }
+    }
 
     /// Interns all strings referenced by a constraint bundle so they land in the pool
     /// before SIGS / TYPE encoding. Null-safe.

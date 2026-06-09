@@ -225,11 +225,48 @@ pub fn builtin_type_fields(ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// calls on the same Type yield the same instances. Empty array for a
 /// handle-less Type or a type with no attributes.
 pub fn builtin_type_custom_attributes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let td = match type_handle(args) {
-        Some(t) => t,
+    match type_handle(args) {
+        Some(td) => call_attribute_factories(ctx, td.custom_attributes()),
+        None => Ok(ctx.heap().alloc_array(Vec::new())),
+    }
+}
+
+/// `__method_custom_attributes(qualified) -> Std.Attribute[]` — live attribute
+/// instances for the method with the given qualified function name. C3b: the
+/// z42 `MethodInfo` passes its hidden `__qualified` name; the builtin resolves
+/// the backing `Function` (main module first, then lazy loader) and calls each
+/// of its attribute factories. Same factory-call mechanism as the class path.
+pub fn builtin_method_custom_attributes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    // Args are [receiver MethodInfo, qualified: Str]; pick the string argument.
+    let qualified = match args.iter().find_map(|v| match v {
+        Value::Str(s) => Some(s.to_string()),
+        _ => None,
+    }) {
+        Some(q) => q,
         None => return Ok(ctx.heap().alloc_array(Vec::new())),
     };
-    let attrs = td.custom_attributes();
+    let attrs: Vec<crate::metadata::bytecode::AttributeRef> = ctx
+        .module()
+        .and_then(|m| {
+            m.func_index
+                .get(qualified.as_str())
+                .and_then(|&i| m.functions.get(i))
+                .map(|f| f.custom_attributes().to_vec())
+        })
+        .or_else(|| ctx.try_lookup_function(&qualified).map(|f| f.custom_attributes().to_vec()))
+        .unwrap_or_default();
+    call_attribute_factories(ctx, &attrs)
+}
+
+/// Build live attribute instances by invoking each synthesized factory function
+/// (`() => new T(args)`) via `run_returning`. Shared by the class
+/// (`__type_custom_attributes`) and method (`__method_custom_attributes`) paths.
+/// Cross-zpkg factories resolve via the lazy loader. Re-entering the interpreter
+/// here is safe — `exec_function` keeps per-call state in a stack-local `Frame`.
+fn call_attribute_factories(
+    ctx: &VmContext,
+    attrs: &[crate::metadata::bytecode::AttributeRef],
+) -> Result<Value> {
     if attrs.is_empty() {
         return Ok(ctx.heap().alloc_array(Vec::new()));
     }
@@ -239,9 +276,6 @@ pub fn builtin_type_custom_attributes(ctx: &VmContext, args: &[Value]) -> Result
     };
     let mut out = Vec::with_capacity(attrs.len());
     for a in attrs {
-        // Resolve the synthesized factory (a top-level function in the defining
-        // module) and call it for a fresh instance. Cross-zpkg factories resolve
-        // via the lazy loader.
         let instance = if let Some(&idx) = module.func_index.get(a.factory_func.as_str()) {
             crate::interp::run_returning(ctx, &module, &module.functions[idx], &[])?
         } else if let Some(func) = ctx.try_lookup_function(&a.factory_func) {
@@ -322,6 +356,9 @@ fn build_method_info(
             ("IsStatic", Value::Bool(is_static)),
             ("IsVirtual", Value::Bool(is_virtual)),
             ("__parameters", params_arr),
+            // C3b: qualified func name so MethodInfo.GetCustomAttributes() can
+            // resolve the backing Function's attribute factories.
+            ("__qualified", Value::Str(qualified.to_string().into())),
         ],
     )
 }

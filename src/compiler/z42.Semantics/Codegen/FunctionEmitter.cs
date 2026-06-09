@@ -218,7 +218,8 @@ internal sealed partial class FunctionEmitter
             MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: method.TypeParams,
             TypeParamConstraints: constraints,
-            ParamModifiers: paramMods);
+            ParamModifiers: paramMods,
+            Attributes: BuildAttributeRefs(method.Attributes));
     }
 
     /// Spec impl-ref-out-in-runtime: convert `Param.Modifier` enum values to
@@ -302,7 +303,23 @@ internal sealed partial class FunctionEmitter
             MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: fn.TypeParams,
             TypeParamConstraints: constraints,
-            ParamModifiers: paramMods);
+            ParamModifiers: paramMods,
+            Attributes: BuildAttributeRefs(fn.Attributes));
     }
 
+    /// C3b add-attribute-reflection-methods: map a declaration's user attributes
+    /// to IR refs — (attribute type qualified name, synthesized factory func
+    /// qualified name). Mirrors <see cref="IrGen.EmitClassDesc"/>'s class path.
+    /// Returns null when there are no attributes carrying a factory.
+    private List<IrAttributeRef>? BuildAttributeRefs(List<AttributeApp>? attrs)
+    {
+        if (attrs is null || attrs.Count == 0) return null;
+        var refs = attrs
+            .Where(a => a.FactoryFunc is not null)
+            .Select(a => new IrAttributeRef(
+                _ctx.QualifyClassName(a.Name),
+                _ctx.QualifyName(a.FactoryFunc!)))
+            .ToList();
+        return refs.Count == 0 ? null : refs;
+    }
 }

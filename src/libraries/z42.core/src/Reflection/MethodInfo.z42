@@ -1,5 +1,7 @@
 namespace Std.Reflection;
 
+using Std;
+
 // Reflected method. Populated by `Type.GetMethods()` (`__type_methods`).
 // Mirrors C# `System.Reflection.MethodInfo` (read-only subset; no Invoke —
 // that lands with generic instantiation in 0.5.x).
@@ -19,5 +21,33 @@ public class MethodInfo : MemberInfo {
     // The method's parameters, in declaration order.
     public ParameterInfo[] GetParameters() {
         return this.__parameters;
+    }
+
+    // ── Custom attributes (C3b add-attribute-reflection-methods) ────────────
+
+    // Qualified function name (VM-written), used to resolve this method's
+    // attribute factories.
+    public string __qualified;
+
+    // Cached attribute instances (see Type.GetCustomAttributes for rationale).
+    public Std.Attribute[] __attrCache;
+
+    [Native("__method_custom_attributes")]
+    public extern Std.Attribute[] __customAttributes(string qualified);
+
+    // User attributes applied to this method, as live instances. Cached.
+    public Std.Attribute[] GetCustomAttributes() {
+        if (this.__attrCache != null) {
+            return this.__attrCache;
+        }
+        this.__attrCache = this.__customAttributes(this.__qualified);
+        return this.__attrCache;
+    }
+
+    // The single attribute of the given type, or null if absent. Delegates to
+    // Std.Type.FindByType — the FullName comparison must live in Type.z42 where
+    // the property resolves (within-package cross-file property-resolution gap).
+    public Std.Attribute GetAttribute(Std.Type attributeType) {
+        return Type.FindByType(this.GetCustomAttributes(), attributeType);
     }
 }

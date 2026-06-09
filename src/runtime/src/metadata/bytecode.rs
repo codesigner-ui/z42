@@ -253,6 +253,11 @@ pub struct FunctionCold {
     /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
     #[serde(default)]
     pub type_param_constraints: Box<[ConstraintBundle]>,
+    /// C3b add-attribute-reflection-methods: user attributes applied to this
+    /// method / top-level function (from the zbc SIGS section). Each points at a
+    /// synthesized factory the runtime calls for `MethodInfo.GetCustomAttributes()`.
+    #[serde(default)]
+    pub custom_attributes: Box<[AttributeRef]>,
 }
 
 /// A single function.
@@ -322,6 +327,8 @@ impl Function {
     #[inline] pub fn local_vars(&self)              -> &[LocalVar]         { self.cold_slice(|c| &c.local_vars) }
     #[inline] pub fn type_params(&self)             -> &[String]           { self.cold_slice(|c| &c.type_params) }
     #[inline] pub fn type_param_constraints(&self)  -> &[ConstraintBundle] { self.cold_slice(|c| &c.type_param_constraints) }
+    /// C3b add-attribute-reflection-methods: user attributes applied to this function.
+    #[inline] pub fn custom_attributes(&self)       -> &[AttributeRef]     { self.cold_slice(|c| &c.custom_attributes) }
 
     /// Lazy-init the cold side-table for mutation. Used by sidecar debug-
     /// symbol overlay in `metadata::loader`.

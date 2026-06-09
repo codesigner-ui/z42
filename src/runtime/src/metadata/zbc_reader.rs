@@ -37,7 +37,9 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // 2026-06-09 add-attribute-reflection (C3): bumped to 1.10 — TYPE section adds
 // per-class user-attribute refs (u16 count + (type-name, factory-func) str-idx
 // pairs) after the type-param block. See read_type_section below.
-pub const ZBC_VERSION_MINOR: u16 = 10;
+// 2026-06-09 add-attribute-reflection-methods (C3b): bumped to 1.11 — SIGS
+// section adds the same per-function attr refs after the type-param block.
+pub const ZBC_VERSION_MINOR: u16 = 11;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -58,7 +60,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // 2026-06-09 add-attribute-reflection (C3): bumped to 0.12 to mirror ZpkgWriter,
 // coupled with inner zbc 1.10 (per-class attribute refs). Outer zpkg layout
 // unchanged; bump tracks the inner zbc format change per the coupling rule.
-pub const ZPKG_VERSION_MINOR: u16 = 12;
+// 2026-06-09 add-attribute-reflection-methods (C3b): bumped to 0.13, coupled
+// with inner zbc 1.11 (per-function attr refs).
+pub const ZPKG_VERSION_MINOR: u16 = 13;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -390,6 +394,8 @@ struct FuncSig {
     param_types: Vec<String>,
     type_params: Vec<String>,
     type_param_constraints: Vec<ConstraintBundle>,
+    /// C3b add-attribute-reflection-methods: user attributes on this function.
+    custom_attributes: Vec<crate::metadata::bytecode::AttributeRef>,
 }
 
 fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<FuncSig>> {
@@ -420,6 +426,17 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
             type_params.push(c.pool_str(pool, tp_idx)?.to_owned());
             type_param_constraints.push(read_constraint_bundle(&mut c, pool)?);
         }
+        // C3b add-attribute-reflection-methods (zbc 1.11): per-function attr refs.
+        let attr_count = if has_is_static { c.read_u16()? as usize } else { 0 };
+        let mut custom_attributes = Vec::with_capacity(attr_count);
+        for _ in 0..attr_count {
+            let type_idx = c.read_u32()?;
+            let factory_idx = c.read_u32()?;
+            custom_attributes.push(crate::metadata::bytecode::AttributeRef {
+                type_name: c.pool_str(pool, type_idx)?.to_owned(),
+                factory_func: c.pool_str(pool, factory_idx)?.to_owned(),
+            });
+        }
         sigs.push(FuncSig {
             name: c.pool_str(pool, name_idx)?.to_owned(),
             param_count,
@@ -429,6 +446,7 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
             param_types,
             type_params,
             type_param_constraints,
+            custom_attributes,
         });
     }
     Ok(sigs)
@@ -1139,6 +1157,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             local_vars:             dbug.local_vars.into_boxed_slice(),
             type_params:            sig.map(|s| s.type_params.clone()).unwrap_or_default().into_boxed_slice(),
             type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default().into_boxed_slice(),
+            custom_attributes:      sig.map(|s| s.custom_attributes.clone()).unwrap_or_default().into_boxed_slice(),
         };
         let cold = if cold_inner.param_types.is_empty()
             && cold_inner.exception_table.is_empty()
@@ -1146,6 +1165,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             && cold_inner.local_vars.is_empty()
             && cold_inner.type_params.is_empty()
             && cold_inner.type_param_constraints.is_empty()
+            && cold_inner.custom_attributes.is_empty()
         {
             None
         } else {
@@ -1490,6 +1510,7 @@ fn read_mods_section(
                 local_vars:             dbug.local_vars.into_boxed_slice(),
                 type_params:            sig.map(|s| s.type_params.clone()).unwrap_or_default().into_boxed_slice(),
                 type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default().into_boxed_slice(),
+                custom_attributes:      sig.map(|s| s.custom_attributes.clone()).unwrap_or_default().into_boxed_slice(),
             };
             let cold = if cold_inner.param_types.is_empty()
                 && cold_inner.exception_table.is_empty()
@@ -1497,6 +1518,7 @@ fn read_mods_section(
                 && cold_inner.local_vars.is_empty()
                 && cold_inner.type_params.is_empty()
                 && cold_inner.type_param_constraints.is_empty()
+                && cold_inner.custom_attributes.is_empty()
             {
                 None
             } else {

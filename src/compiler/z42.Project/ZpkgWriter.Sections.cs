@@ -221,6 +221,16 @@ public static partial class ZpkgWriter
                             ? fn.TypeParamConstraints[i] : null;
                         ZbcWriter.WriteConstraintBundle(w, pool, b);
                     }
+                // C3b add-attribute-reflection-methods (zbc 1.11): per-function
+                // attr refs. Mirror ZbcWriter.BuildSigsSection — writers lock-step.
+                var attrCount = (ushort)(fn.Attributes?.Count ?? 0);
+                w.Write(attrCount);
+                if (fn.Attributes != null)
+                    foreach (var a in fn.Attributes)
+                    {
+                        w.Write((uint)pool.Idx(a.TypeName));
+                        w.Write((uint)pool.Idx(a.FactoryFunc));
+                    }
             }
 
         return ms.ToArray();

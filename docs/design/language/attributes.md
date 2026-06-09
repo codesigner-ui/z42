@@ -1,6 +1,6 @@
 # 自定义 Attribute 与反射
 
-> 状态：class-level 已落地（C3a，2026-06-09）；method-level 跟随 C3b。
+> 状态：class-level（C3a）+ method-level（C3b）均已落地（2026-06-09）。
 > 相关：[reflection.md](reflection.md)（GetType / typeof / 反射对象）。
 
 z42 的 attribute 是**用户自定义的元数据注解**，应用到声明上，运行期经反射读回**活实例**。设计取自 C#，但修正了 C# 的几处长期缺陷（见下「对 C# 的改进」）。
@@ -53,7 +53,26 @@ void Demo() {
 | `Type.GetCustomAttributes() : Attribute[]` | 该类型的全部 attribute 活实例（缓存）|
 | `Type.GetAttribute(Type) : Attribute?` | 指定类型的单个 attribute，无则 null |
 
-> **method-level**（`[Doc] void M()` → `MethodInfo.GetCustomAttributes()`）跟随 **C3b**（见 Deferred）。
+### method-level（C3b）
+
+方法（含顶层函数）上的 attribute 同样可反射，经 `MethodInfo`：
+
+```z42
+class Service {
+    [Doc("lists users")] [Route("/users")]
+    public void List() { }
+}
+
+Type t = typeof(Service);
+foreach (MethodInfo m in t.GetMethods()) {
+    if (m.Name == "List") {
+        Attribute[] attrs = m.GetCustomAttributes();        // [ Doc, Route ]
+        Doc d = (Doc) m.GetAttribute(typeof(Doc));          // d.Text == "lists users"
+    }
+}
+```
+
+机制完全镜像 class-level：编译期合成工厂（key `mth$<Class>$<Method>`）；元数据载体改为 **SIGS section**（per-function，vs class 的 TYPE section）；运行期 `__method_custom_attributes(qualified)` 按方法限定名解析 `Function.custom_attributes` → 调工厂 + 缓存。`MethodInfo` 携带隐藏 `__qualified` 供 builtin 解析。
 
 ## 对 C# 的改进（z42 取舍）
 
@@ -94,10 +113,14 @@ native `__type_custom_attributes(type)` 对每条 ref 用 `run_returning` 调工
 
 ## Deferred / Future Work
 
-### attribute-future-method-level（C3b）
-- **来源**：add-attribute-reflection 增量划分（class-first）。
-- **触发原因**：method-level attribute（`[Doc] void M()` → `MethodInfo.GetCustomAttributes()`）需平行的元数据路径（function sigs section 而非 TYPE section）+ 运行期 + MethodInfo API。class-level 先独立落地。
-- **触发条件**：作为独立 change C3b 实施。
+### ~~attribute-future-method-level（C3b）~~ — 已落地
+- **状态**：method-level（`MethodInfo.GetCustomAttributes()` / `GetAttribute`）已落地 2026-06-09（add-attribute-reflection-methods，SIGS section per-function attr refs，zbc 1.11）。见上文「method-level（C3b）」。
+
+### attribute-future-crossfile-property-resolution（编译器 bug，C3b 发现）
+- **来源**：add-attribute-reflection-methods 实施。
+- **现象**：z42.core **同包内跨文件**访问 extern `{ get; }` 属性，访问点被误解析为**字段**（field_index miss → null），而非属性 getter 调用。即 `MethodInfo.z42`（Std.Reflection）里 `someType.FullName`（`Type.FullName` 定义在 Type.z42）→ 读不存在的字段 "FullName" → null。跨**包**（主模块 import z42.core）经 TSIG 正常；同包跨文件失配。
+- **当前 workaround**：把属性比较逻辑放到属性定义所在文件——`Type.FindByType(...)` 静态方法定义在 Type.z42（`FullName` 可见处），`Type.GetAttribute` + `MethodInfo.GetAttribute` 都委托它（MethodInfo 加 `using Std` 后以 `Type.FindByType` 非限定调用）。
+- **触发条件**：修编译器同包跨文件符号收集，使属性（非仅字段）对其他文件可见。属于反射/stdlib 之外的编译器根因，记此备查。
 
 ### attribute-future-dedicated-diagnostics
 - **来源**：add-attribute-reflection（C3a）。

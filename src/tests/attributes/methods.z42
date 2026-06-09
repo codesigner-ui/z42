@@ -1,0 +1,69 @@
+namespace Demo;
+
+using Std;
+using Std.Reflection;
+
+// add-attribute-reflection-methods (C3b): user attributes applied to methods,
+// reflected via MethodInfo.GetCustomAttributes() — live cached instances, same
+// mechanism as class-level (C3a).
+
+class Doc : Attribute {
+    public string Text;
+    public Doc(string text) { this.Text = text; }
+}
+
+class Route : Attribute {
+    public string Path;
+    public Route(string path) { this.Path = path; }
+}
+
+class Service {
+    [Doc("lists everything")]
+    [Route("/list")]
+    public void List() { }
+
+    [Doc("no-op")]
+    public void Noop() { }
+
+    public void Plain() { }
+}
+
+MethodInfo findMethod(MethodInfo[] methods, string name) {
+    int i = 0;
+    while (i < methods.Length) {
+        MethodInfo m = methods[i];
+        if (m.Name == name) {
+            return m;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+void Main() {
+    Type t = typeof(Service);
+    MethodInfo[] methods = t.GetMethods();
+
+    // List() has two attributes, in application order.
+    MethodInfo listM = findMethod(methods, "List");
+    Attribute[] attrs = listM.GetCustomAttributes();
+    Assert.Equal(2, attrs.Length);
+
+    Doc d = (Doc) listM.GetAttribute(typeof(Doc));
+    Assert.Equal("lists everything", d.Text);
+    Route r = (Route) listM.GetAttribute(typeof(Route));
+    Assert.Equal("/list", r.Path);
+
+    // Noop() has one.
+    MethodInfo noopM = findMethod(methods, "Noop");
+    Assert.Equal(1, noopM.GetCustomAttributes().Length);
+
+    // Plain() has none; GetAttribute returns null.
+    MethodInfo plainM = findMethod(methods, "Plain");
+    Assert.Equal(0, plainM.GetCustomAttributes().Length);
+    Assert.Null(plainM.GetAttribute(typeof(Doc)));
+
+    // Cached: repeated calls return the same instances.
+    Attribute[] again = listM.GetCustomAttributes();
+    Assert.True(attrs[0] == again[0]);
+}

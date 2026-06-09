@@ -108,7 +108,8 @@ public static partial class ZbcReader
                 ParamTypes: sig?.ParamTypes,
                 LineTable: lineTable, LocalVarTable: localVars,
                 TypeParams: typeParams, TypeParamConstraints: typeParamConstraints,
-                RegTypes: regTypes));
+                RegTypes: regTypes,
+                Attributes: sig?.Attributes));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -457,7 +458,8 @@ public static partial class ZbcReader
     private record SigEntry(
         string Name, ushort ParamCount, string RetType, string ExecMode, bool IsStatic,
         List<string>? ParamTypes,
-        List<string>? TypeParams, List<IrConstraintBundle>? TypeParamConstraints);
+        List<string>? TypeParams, List<IrConstraintBundle>? TypeParamConstraints,
+        List<IrAttributeRef>? Attributes = null);  // C3b
 
     private static List<SigEntry> ReadSigsSection(byte[] data, string[] pool)
     {
@@ -499,9 +501,18 @@ public static partial class ZbcReader
                     typeParamConstraints.Add(ReadConstraintBundle(r, pool));
                 }
             }
+            // C3b add-attribute-reflection-methods (zbc 1.11): per-function attr refs.
+            ushort attrCount = (ms.Position < ms.Length) ? r.ReadUInt16() : (ushort)0;
+            List<IrAttributeRef>? attributes = attrCount > 0 ? new(attrCount) : null;
+            for (int a = 0; a < attrCount; a++)
+            {
+                string typeName    = P(pool, r.ReadUInt32());
+                string factoryFunc = P(pool, r.ReadUInt32());
+                attributes!.Add(new IrAttributeRef(typeName, factoryFunc));
+            }
             result.Add(new SigEntry(name, paramCount, retType, execMode, isStatic,
                 paramTypes,
-                typeParams, typeParamConstraints));
+                typeParams, typeParamConstraints, attributes));
         }
         return result;
     }
