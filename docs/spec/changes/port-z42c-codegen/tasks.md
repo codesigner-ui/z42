@@ -43,7 +43,15 @@
 
 ## CG-1C–CG-2（后续增量，详见 design.md 增量表）
 - [x] CG-1E-2 逻辑短路 &&/‖ + 三目 + ??（块化）✅
-- [ ] CG-2 泛型
+- [x] CG-2 泛型 ✅
+
+## CG-2：泛型（obj_new type-args + 泛型方法签名解析）—— ✅ 已完成
+- [x] ObjNewInstr 加 TypeArgs（`new Box<int>()` → class "Box" + type-args ["int"]，dump `obj_new Box<int>()`；VM 写 ScriptObject.type_args）
+- [x] ExprEmitter `_emitNew`：Z42InstantiatedType → 拆 Def.Name() + TypeArgs[i].Name()；非泛型 className=TypeName，空 args
+- [x] FunctionEmitter EmitFunction 加 classTp 参 + `_mergeTp`（类+方法型参）→ 用 **ResolveTypeP** 解析签名（修 T-typed ret/param 原 resolve 成 `<unknown>` → 现 `-> T`）；IrGen 类方法传 c.TypeParams.Names
+- [x] 4 单测（new_generic / new_generic_multi / generic_method_return T / generic_method_param T）
+- [x] 验证：`xtask test compiler-z42` → **13 units 210 cases** 全绿（codegen 40）
+- 注：**default_of 延后**（z42c 无 BoundDefault，`default(T)` typechecker 不产节点，不可达）；泛型方法调用经 vcall（VM 用 receiver.type_args 解析），无需 codegen 特化；成员 T→ref（ToIrType 已处理）
 
 ## CG-1E-2：块化表达式（短路 && ‖ / 三目 ?: / ??）—— ✅ 已完成
 - [x] ExprEmitter：`_emitBinary` 顶部拦截 &&/‖/??（短路 → 操作数条件求值，不能预先 Emit 两侧）+ Emit 加 BoundConditional 分派

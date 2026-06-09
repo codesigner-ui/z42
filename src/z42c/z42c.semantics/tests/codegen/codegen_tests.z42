@@ -286,3 +286,36 @@ void test_null_coalesce() {
     Assert.Equal("fn @F(2) -> string {\nentry:\n  %3 = const.null\n  %4 = eq str %0, %3\n  br.cond %4, coalesce_rhs_0, coalesce_lhs_1\ncoalesce_rhs_0:\n  %2 = copy %1\n  br coalesce_end_2\ncoalesce_lhs_1:\n  %2 = copy %0\n  br coalesce_end_2\ncoalesce_end_2:\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
+
+// ── CG-2：泛型（obj_new 携 resolved type-args + 泛型方法签名类型解析）─────────────────
+
+[Test]
+void test_new_generic() {
+    // new Box<int>() → obj_new Box<int>（class "Box" + type-args ["int"]）
+    string src = "class Box<T> { } class C { Box<int> Make() { return new Box<int>(); } }";
+    Assert.Equal("fn @C.Make(1) -> Box<int> {\nentry:\n  %1 = obj_new Box<int>()\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "C.Make"));
+}
+
+[Test]
+void test_new_generic_multi() {
+    string src = "class Pair<K, V> { } class C { Pair<int, string> Make() { return new Pair<int, string>(); } }";
+    Assert.Equal("fn @C.Make(1) -> Pair<int,string> {\nentry:\n  %1 = obj_new Pair<int,string>()\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "C.Make"));
+}
+
+[Test]
+void test_generic_method_return() {
+    // 泛型类方法返回 T：签名 -> T（ResolveTypeP 带类型参 scope），体 field_get（T → ref）
+    string src = "class Box<T> { T v; T Get() { return this.v; } }";
+    Assert.Equal("fn @Box.Get(1) -> T {\nentry:\n  %1 = field_get %0.v\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "Box.Get"));
+}
+
+[Test]
+void test_generic_method_param() {
+    // T 形参 + T 返回 → 签名两处皆 T；T 形参寄存器为 ref
+    string src = "class Box<T> { T Echo(T x) { return x; } }";
+    Assert.Equal("fn @Box.Echo(2) -> T {\nentry:\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "Box.Echo"));
+}

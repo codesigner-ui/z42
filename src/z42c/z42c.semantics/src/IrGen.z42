@@ -58,7 +58,8 @@ public sealed class IrGen {
                                 if (model.HasBody(key)) {
                                     bool isStatic = this._hasWord(md.Mods, "static");
                                     var fe = new FunctionEmitter(model.Symbols, this);
-                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isStatic, owner);
+                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isStatic, owner,
+                                                                     c.TypeParams.Names, c.TypeParams.Count);
                                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                                 }
                             }
@@ -70,7 +71,8 @@ public sealed class IrGen {
                 MethodDecl md = d as MethodDecl;
                 if (md.HasBody && model.HasBody(md.Name)) {
                     var fe = new FunctionEmitter(model.Symbols, this);
-                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), true, null);  // 自由函数无 this/字段
+                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), true, null,
+                                                     new string[0], 0);  // 自由函数无 this/字段/类型参
                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                 }
             }

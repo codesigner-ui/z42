@@ -271,13 +271,24 @@ public sealed class ExprEmitter {
         return args;
     }
 
-    // new T(args) → obj_new（结果 ref）。ctor 解析延后。
+    // new T(args) / new Box<int>(args) → obj_new（结果 ref）。泛型实例化携 resolved type-args。ctor 解析延后。
     private TypedReg _emitNew(BoundNew n) {
         TypedReg[] args = new TypedReg[n.ArgCount];
         int i = 0;
         while (i < n.ArgCount) { args[i] = this.Emit(n.Args[i]); i = i + 1; }
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(n.Type()));
-        this._ctx.Emit(new ObjNewInstr(dst, n.TypeName, args, n.ArgCount));
+        string className = n.TypeName;
+        string[] targs = new string[0];
+        int tcount = 0;
+        if (n.Type() is Z42InstantiatedType) {           // Box<int> → class "Box" + args ["int"]
+            Z42InstantiatedType inst = n.Type() as Z42InstantiatedType;
+            className = inst.Def.Name();
+            targs = new string[inst.ArgCount];
+            int k = 0;
+            while (k < inst.ArgCount) { targs[k] = inst.TypeArgs[k].Name(); k = k + 1; }
+            tcount = inst.ArgCount;
+        }
+        this._ctx.Emit(new ObjNewInstr(dst, className, targs, tcount, args, n.ArgCount));
         return dst;
     }
 

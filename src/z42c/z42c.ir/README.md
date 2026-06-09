@@ -23,4 +23,4 @@
 class（非 record）+ virtual Dump 替 record 层次；static class + int 常量替 enum（IrType）；typed array + count 替泛型集合字段。**定义顺序叶子优先**（容器引用叶子的 Dump，bootstrap 单遍按文件序解析，后定义的具体类型方法不可见）。
 
 ## 增量进度
-CG-1A 最小指令集 ✅ / CG-1B 控制流（Br/BrCond）✅ / CG-1C 调用·字段 ✅ / CG-1D new·数组·is·as ✅ / CG-1E 运算符（比较/位/一元/字符串拼接）✅。后续：CG-1E-2 逻辑短路·三目·??（块化）/ CG-2 泛型。byte-identical .zbc（ZbcWriter）独立 change。
+CG-1A 最小指令集 ✅ / CG-1B 控制流 ✅ / CG-1C 调用·字段 ✅ / CG-1D new·数组·is·as ✅ / CG-1E 运算符 + 块化短路·三目·?? ✅ / CG-2 泛型（obj_new type-args + 方法签名 ResolveTypeP）✅。**Bound→IR 内存模型 codegen 覆盖全部非泛型 L1 + 泛型实例化**。下一步：byte-identical .zbc（ZbcWriter）独立 change（依赖本模型）。

@@ -16,9 +16,13 @@ public sealed class FunctionEmitter {
 
     // 入口：方法/自由函数 + 其 Bound 体 → IrFunction。isStatic = 无 this（free func / static method）。
     // owner = 实例方法所属类（null 表自由/静态无实例字段）；用于裸 ident 字段识别。
-    public IrFunction EmitFunction(string name, MethodDecl md, BoundStmt body, bool isStatic, Z42ClassType owner) {
+    // classTp = 类的活跃型参名（泛型类，CG-2）；与方法自身型参合并后 ResolveTypeP 解析签名（T-typed ret/param → "T"）。
+    public IrFunction EmitFunction(string name, MethodDecl md, BoundStmt body, bool isStatic,
+                                   Z42ClassType owner, string[] classTp, int classTpCount) {
         this._ctx = new EmitContext(this._symbols, this._gen);
         this._expr = new ExprEmitter(this._ctx);
+        string[] tp = this._mergeTp(classTp, classTpCount, md.TypeParams.Names, md.TypeParams.Count);
+        int tpc = classTpCount + md.TypeParams.Count;
         int paramOffset = 0;
         if (!isStatic) { paramOffset = 1; this._ctx.Locals.Put("this", new TypedReg(0, IrType.Ref)); }
         if (owner != null && !isStatic) {   // 仅实例方法 reg0=this，裸字段 → field_get(reg0)
@@ -28,7 +32,7 @@ public sealed class FunctionEmitter {
         }
         int p = 0;
         while (p < md.ParamCount) {
-            Z42Type pt = this._symbols.ResolveType(md.Params[p].Type);
+            Z42Type pt = this._symbols.ResolveTypeP(md.Params[p].Type, tp, tpc);
             this._ctx.Locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, this._ctx.ToIrType(pt)));
             p = p + 1;
         }
@@ -37,9 +41,18 @@ public sealed class FunctionEmitter {
         this._ctx.StartBlock("entry");
         this._emitStmt(body);
         if (!this._ctx.Ended) { this._ctx.EndBlock(new RetTerm(false, null)); }   // 隐式 ret
-        string retName = this._symbols.ResolveType(md.RetType).Name();
+        string retName = this._symbols.ResolveTypeP(md.RetType, tp, tpc).Name();
         return new IrFunction(name, md.ParamCount + paramOffset, retName, isStatic,
                               this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg);
+    }
+
+    private string[] _mergeTp(string[] a, int ac, string[] b, int bc) {
+        string[] r = new string[ac + bc];
+        int i = 0;
+        while (i < ac) { r[i] = a[i]; i = i + 1; }
+        int j = 0;
+        while (j < bc) { r[ac + j] = b[j]; j = j + 1; }
+        return r;
     }
 
     // ════ 语句（集中 if-is）═══════════════════════════════════════════════════════
