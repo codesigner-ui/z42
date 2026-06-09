@@ -147,10 +147,14 @@ i64-max hex, file-mode octal, underscores in each base, underscores
 in float mantissa, in arrays, validation rejection (leading /
 trailing / double underscore in each base), plain decimal preserved.
 
-### toml-future-key-order-preservation
-- **来源**：dev workflow（git diff 友好）
-- **触发原因**：v0 用 `Dictionary` 风 parallel arrays，不保留插入顺序
-- **触发条件**：用户反馈 round-trip 改变文件结构
+### ~~toml-future-key-order-preservation~~ — **✅ 已落地 2026-06-09 (`add-toml-key-order`)**
+
+Shipped: `Stringify` 现按 **insertion order**（= parsed tree 的 parse 顺序）emit key，
+round-trip 不再重排 → git-diff 友好。实现仅一处：`TomlWriter.OrderedKeys` 不再
+字母序 insertion-sort，直接返回 `TomlValue.Keys()`。**底层数据结构本就保留插入顺序**
+（parallel arrays `_tableKeys`/`_tableValues`，`Set` 追加新键 / 原地更新已有键），
+确定性也成立 —— 此前只是 writer 主动 sort 把它丢弃了（条目原"不保留插入顺序"的前提
+已过时）。2 tests：非字母序插入序保留 + parse→Stringify round-trip 保序。
 
 ### toml-future-comment-preservation
 - **来源**：需要 Tomlyn-style "DOM with trivia"

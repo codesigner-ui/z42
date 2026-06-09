@@ -43,8 +43,9 @@ public class TomlValue {
     }
 
     /// Serialise a TOML value tree to canonical TOML text. `root` must be a
-    /// table (throws TomlException otherwise). Output is in key-sorted
-    /// order; comments and original key ordering are not preserved.
+    /// table (throws TomlException otherwise). Keys emit in **insertion order**
+    /// (= parse order for a parsed tree) so a round-trip is git-diff-friendly
+    /// (add-toml-key-order, 2026-06-09); comments are not preserved.
     public static string Stringify(TomlValue root) {
         if (!root.IsTable()) {
             throw new TomlException("Stringify root must be a table, got " + root.KindName());

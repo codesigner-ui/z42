@@ -26,7 +26,7 @@ public sealed class TomlWriter {
     /// Write keys whose value is NOT a table or AoT (those go under section headers).
     /// `path` = FQ section path prefix (empty for root).
     private void WriteTableBody(TomlValue table, string path) {
-        string[] keys = this.SortedKeys(table);
+        string[] keys = this.OrderedKeys(table);
 
         // 1) Non-table / non-aot leaves at this level.
         int i = 0;
@@ -80,21 +80,13 @@ public sealed class TomlWriter {
         return true;
     }
 
-    private string[] SortedKeys(TomlValue table) {
-        string[] ks = table.Keys();
-        // Simple insertion sort — table sizes are small.
-        int i = 1;
-        while (i < ks.Length) {
-            string cur = ks[i];
-            int j = i - 1;
-            while (j >= 0 && ks[j].CompareTo(cur) > 0) {
-                ks[j + 1] = ks[j];
-                j = j - 1;
-            }
-            ks[j + 1] = cur;
-            i = i + 1;
-        }
-        return ks;
+    // add-toml-key-order (2026-06-09): preserve insertion order (= parse order
+    // for parsed TOML) so round-trip Stringify is git-diff-friendly, instead of
+    // re-sorting keys alphabetically. `TomlValue.Keys()` already returns keys in
+    // insertion order (parallel-array backed: `Set` appends new keys at the
+    // tail, updates existing in place), so the output is deterministic.
+    private string[] OrderedKeys(TomlValue table) {
+        return table.Keys();
     }
 
     private string FormatKey(string k) {
@@ -150,7 +142,7 @@ public sealed class TomlWriter {
     private string FormatInlineTable(TomlValue tbl) {
         StringBuilder sb = new StringBuilder();
         sb.Append("{ ");
-        string[] keys = this.SortedKeys(tbl);
+        string[] keys = this.OrderedKeys(tbl);
         int i = 0;
         while (i < keys.Length) {
             if (i > 0) { sb.Append(", "); }

@@ -57,6 +57,37 @@ void test_stringify_rejects_non_table_root() {
 }
 
 [Test]
+void test_stringify_preserves_insertion_order() {
+    // add-toml-key-order (2026-06-09): keys emit in insertion order, NOT
+    // alphabetical — an alphabetical sort would have reordered these.
+    var t = TomlValue.OfTable();
+    t.Set("zebra", TomlValue.OfLong(1));
+    t.Set("apple", TomlValue.OfLong(2));
+    t.Set("mango", TomlValue.OfLong(3));
+    string s = TomlValue.Stringify(t);
+    int zi = s.IndexOf("zebra");
+    int ai = s.IndexOf("apple");
+    int mi = s.IndexOf("mango");
+    Assert.True(zi >= 0);
+    Assert.True(ai >= 0);
+    Assert.True(mi >= 0);
+    Assert.True(zi < ai);   // insertion order, not alphabetical (apple<mango<zebra)
+    Assert.True(ai < mi);
+}
+
+[Test]
+void test_round_trip_preserves_key_order() {
+    // Parsed key order survives a Stringify round-trip (git-diff-friendly).
+    string src = "gamma = 1\nalpha = 2\nbeta = 3";
+    string s = TomlValue.Stringify(TomlValue.Parse(src));
+    int gi = s.IndexOf("gamma");
+    int ai = s.IndexOf("alpha");
+    int bi = s.IndexOf("beta");
+    Assert.True(gi < ai);
+    Assert.True(ai < bi);
+}
+
+[Test]
 void test_double_preserves_decimal() {
     var t = TomlValue.OfTable();
     t.Set("pi", TomlValue.OfDouble(3.0));  // whole-valued double
