@@ -116,11 +116,12 @@ native `__type_custom_attributes(type)` 对每条 ref 用 `run_returning` 调工
 ### ~~attribute-future-method-level（C3b）~~ — 已落地
 - **状态**：method-level（`MethodInfo.GetCustomAttributes()` / `GetAttribute`）已落地 2026-06-09（add-attribute-reflection-methods，SIGS section per-function attr refs，zbc 1.11）。见上文「method-level（C3b）」。
 
-### attribute-future-crossfile-property-resolution（编译器 bug，C3b 发现）
-- **来源**：add-attribute-reflection-methods 实施。
-- **现象**：z42.core **同包内跨文件**访问 extern `{ get; }` 属性，访问点被误解析为**字段**（field_index miss → null），而非属性 getter 调用。即 `MethodInfo.z42`（Std.Reflection）里 `someType.FullName`（`Type.FullName` 定义在 Type.z42）→ 读不存在的字段 "FullName" → null。跨**包**（主模块 import z42.core）经 TSIG 正常；同包跨文件失配。
-- **当前 workaround**：把属性比较逻辑放到属性定义所在文件——`Type.FindByType(...)` 静态方法定义在 Type.z42（`FullName` 可见处），`Type.GetAttribute` + `MethodInfo.GetAttribute` 都委托它（MethodInfo 加 `using Std` 后以 `Type.FindByType` 非限定调用）。
-- **触发条件**：修编译器同包跨文件符号收集，使属性（非仅字段）对其他文件可见。属于反射/stdlib 之外的编译器根因，记此备查。
+### attribute-future-fqn-class-resolution（编译器 bug，C2/C3b 共因，根因已确认）
+- **来源**：make-typeof-return-type（C2）+ add-attribute-reflection-methods（C3b）。
+- **根因（已确认）**：`SymbolTable.ResolveType` 的 `Classes` 字典按**短名**（`Type`）键控，**限定名**（`Std.Type`）查不到 → 落到 `new Z42PrimType("Std.Type")` fallback（[SymbolTable.cs](../../../src/compiler/z42.Semantics/TypeCheck/SymbolTable.cs) NamedType 分支）。于是 `Std.Type at = ...; at.FullName` 里 at 被当作基础类型，成员访问命中 [TypeChecker.Exprs.Members.cs](../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.Members.cs) **第 174 行的静默 fallback** `BoundMember(target, m.Member, Unknown)` —— 不报错、emit 字段读 → 运行期 field_index miss → null。属性 getter 永不派发。
+- **为何只在 MethodInfo 触发**：`Type.z42`（namespace Std）+ 主模块用**短名** `Type`（解析到真类，getter 正常）；`MethodInfo.z42`（namespace Std.Reflection）须写**限定名** `Std.Type` → 触发 fallback。C2 typeof 当时也踩同坑（用短名 `Type` 绕过）。
+- **当前 workaround**：FullName 比较逻辑放进 `Type.z42` 的静态 `Type.FindByType(...)`（短名解析正常处），两处 GetAttribute 委托它（MethodInfo 加 `using Std` 后非限定调用）。
+- **根因修复（建议独立 change）**：(1) `ResolveType` 限定名→类的解析（namespace-aware，使 `Std.Type` 解析到 Type 类）；(2) Members.cs:174 对「基础类型上的未知成员」至少报错而非静默 emit 字段读（掩盖 bug 的元凶）。属核心 `ResolveType` 改动 + 触及自举 port 区，需独立 spec + 全量回归。
 
 ### attribute-future-dedicated-diagnostics
 - **来源**：add-attribute-reflection（C3a）。
