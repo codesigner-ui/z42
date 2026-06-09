@@ -85,6 +85,7 @@ impl Module {
             type_params:            c.type_params.clone(),
             type_args:              c.type_args.clone(),
             type_param_constraints: c.type_param_constraints.clone(),
+            custom_attributes:      c.custom_attributes.clone(),
         }));
         let rebuilt = Arc::new(TypeDesc {
             name: td.name.clone(),
@@ -121,6 +122,20 @@ pub struct ClassDesc {
     /// `type_params` by index. Absent entries in old zbc deserialise as empty box.
     #[serde(default)]
     pub type_param_constraints: Box<[ConstraintBundle]>,
+    /// C3 add-attribute-reflection: user attributes applied to this class.
+    /// Each points at a synthesized factory function the runtime calls (lazily,
+    /// cached) to build the attribute instance for `Type.GetCustomAttributes()`.
+    #[serde(default)]
+    pub attributes: Box<[AttributeRef]>,
+}
+
+/// C3 add-attribute-reflection: one applied attribute — the attribute class's
+/// qualified name plus the qualified name of the compiler-synthesized
+/// `() => new T(args)` factory function (resolved against the func index).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttributeRef {
+    pub type_name: String,
+    pub factory_func: String,
 }
 
 /// Resolved constraint bundle for one generic type parameter. (L3-G3a, L3-G2.5 bare-tp)

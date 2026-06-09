@@ -209,6 +209,51 @@ pub fn builtin_type_fields(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(ctx.heap().alloc_array(out))
 }
 
+// ── Attribute reflection (C3 add-attribute-reflection) ──────────────────────
+
+/// `__type_custom_attributes(typeObj) -> Std.Attribute[]` — live attribute
+/// instances for this type's user attributes, in application order.
+///
+/// Each attribute is built by invoking its compiler-synthesized factory
+/// `() => new T(args)` (a normal z42 function) via `run_returning`. Attribute
+/// construction is thus fully statically known (known class, known constructor,
+/// constant args baked into the factory body) — no runtime `Activator`/`Invoke`
+/// and no generic instantiation. Re-entering the interpreter here is safe:
+/// `exec_function` keeps all per-call state in a stack-local `Frame`.
+///
+/// z42-level `Type.GetCustomAttributes()` caches the returned array, so repeated
+/// calls on the same Type yield the same instances. Empty array for a
+/// handle-less Type or a type with no attributes.
+pub fn builtin_type_custom_attributes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let td = match type_handle(args) {
+        Some(t) => t,
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    let attrs = td.custom_attributes();
+    if attrs.is_empty() {
+        return Ok(ctx.heap().alloc_array(Vec::new()));
+    }
+    let module = match ctx.module() {
+        Some(m) => m.clone(),
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    let mut out = Vec::with_capacity(attrs.len());
+    for a in attrs {
+        // Resolve the synthesized factory (a top-level function in the defining
+        // module) and call it for a fresh instance. Cross-zpkg factories resolve
+        // via the lazy loader.
+        let instance = if let Some(&idx) = module.func_index.get(a.factory_func.as_str()) {
+            crate::interp::run_returning(ctx, &module, &module.functions[idx], &[])?
+        } else if let Some(func) = ctx.try_lookup_function(&a.factory_func) {
+            crate::interp::run_returning(ctx, &module, func.as_ref(), &[])?
+        } else {
+            None
+        };
+        out.push(instance.unwrap_or(Value::Null));
+    }
+    Ok(ctx.heap().alloc_array(out))
+}
+
 // ── Method reflection ───────────────────────────────────────────────────────
 
 /// `__type_methods(typeObj) -> MethodInfo[]` — vtable (virtual/inherited) plus

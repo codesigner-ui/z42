@@ -34,7 +34,10 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // `timeout_ms: i32` after each TestEntry's TestCase array. 0 = no
 // override (runner default applies); positive = per-test wallclock
 // cap in ms. Strict-pin policy: pre-1.9 zbc no longer readable.
-pub const ZBC_VERSION_MINOR: u16 = 9;
+// 2026-06-09 add-attribute-reflection (C3): bumped to 1.10 — TYPE section adds
+// per-class user-attribute refs (u16 count + (type-name, factory-func) str-idx
+// pairs) after the type-param block. See read_type_section below.
+pub const ZBC_VERSION_MINOR: u16 = 10;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -52,7 +55,10 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // `loader::load_zpkg_bytes` aggregates entries with cumulative function +
 // string-pool offsets so the public LoadedArtifact.test_index resolves
 // against the merged module's index space.
-pub const ZPKG_VERSION_MINOR: u16 = 11;
+// 2026-06-09 add-attribute-reflection (C3): bumped to 0.12 to mirror ZpkgWriter,
+// coupled with inner zbc 1.10 (per-class attribute refs). Outer zpkg layout
+// unchanged; bump tracks the inner zbc format change per the coupling rule.
+pub const ZPKG_VERSION_MINOR: u16 = 12;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -303,12 +309,24 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             type_params.push(c.pool_str(pool, tp_idx)?.to_owned());
             type_param_constraints.push(read_constraint_bundle(&mut c, pool)?);
         }
+        // C3 add-attribute-reflection (zbc 1.10): per-class user attribute refs.
+        let attr_count = c.read_u16()? as usize;
+        let mut attributes = Vec::with_capacity(attr_count);
+        for _ in 0..attr_count {
+            let type_idx = c.read_u32()?;
+            let factory_idx = c.read_u32()?;
+            attributes.push(crate::metadata::bytecode::AttributeRef {
+                type_name: c.pool_str(pool, type_idx)?.to_owned(),
+                factory_func: c.pool_str(pool, factory_idx)?.to_owned(),
+            });
+        }
         classes.push(ClassDesc {
             name,
             base_class,
             fields: fields.into_boxed_slice(),
             type_params: type_params.into_boxed_slice(),
             type_param_constraints: type_param_constraints.into_boxed_slice(),
+            attributes: attributes.into_boxed_slice(),
         });
     }
     Ok(classes)

@@ -34,11 +34,22 @@ public sealed partial class IrGen
             ? ((IEmitterContext)this).QualifyClassName(cls.BaseClass)
             : (cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name))
                 ? null : "Std.Object";
+        // C3 add-attribute-reflection: carry user attributes (each backed by a
+        // synthesized factory func) so the runtime can build them for reflection.
+        var attrs = cls.Attributes
+            ?.Where(a => a.FactoryFunc is not null)
+            .Select(a => new IrAttributeRef(
+                ((IEmitterContext)this).QualifyClassName(a.Name),
+                QualifyName(a.FactoryFunc!)))
+            .ToList();
+        if (attrs is { Count: 0 }) attrs = null;
+
         return new(QualifyName(shortName), baseClass,
             cls.Fields.Where(f => !f.IsStatic)
                 .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList(),
             cls.TypeParams?.ToList(),
-            BuildConstraintList(shortName, cls.TypeParams, _semanticModel?.ClassConstraints));
+            BuildConstraintList(shortName, cls.TypeParams, _semanticModel?.ClassConstraints),
+            attrs);
     }
 
     /// (L3-G3a) Build a parallel list of IrConstraintBundle aligned with `typeParams`.

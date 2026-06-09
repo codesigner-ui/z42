@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 9;   // 2026-05-30 add-test-timeout-attribute: TIDX TestEntry adds `timeout_ms: i32` slot after expected_throw_type. 0 = no override (runner default). Pre-1.9 not readable.
+    public const ushort VersionMinor = 10;  // 2026-06-09 add-attribute-reflection (C3): TYPE section adds per-class user-attribute refs (u16 count + (type-name str idx, factory-func str idx) pairs) after the type-param block. Pre-1.10 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -384,6 +384,17 @@ public static partial class ZbcWriter
                     var b = cls.TypeParamConstraints != null && i < cls.TypeParamConstraints.Count
                         ? cls.TypeParamConstraints[i] : null;
                     WriteConstraintBundle(w, pool, b);
+                }
+            // C3 add-attribute-reflection (zbc 1.10): per-class user attribute
+            // refs — (type-name str idx, factory-func str idx) pairs. Count is
+            // always written (0 when none) for a uniform per-class layout.
+            var attrCount = (ushort)(cls.Attributes?.Count ?? 0);
+            w.Write(attrCount);
+            if (cls.Attributes != null)
+                foreach (var a in cls.Attributes)
+                {
+                    w.Write((uint)pool.Idx(a.TypeName));
+                    w.Write((uint)pool.Idx(a.FactoryFunc));
                 }
         }
 

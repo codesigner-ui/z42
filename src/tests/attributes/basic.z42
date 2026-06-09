@@ -1,0 +1,68 @@
+namespace Demo;
+
+using Std;
+
+// add-attribute-reflection (C3): user-defined attribute classes applied to a
+// class, read back via reflection as live, cached instances. Improvements over
+// C#: no `Attribute`-suffix magic ([Route], not [RouteAttribute]); a single
+// constructor init path (named args + default values); cached instances.
+
+class Route : Attribute {
+    public string Path;
+    public string Method;
+    public Route(string path, string method = "GET") {
+        this.Path = path;
+        this.Method = method;
+    }
+}
+
+class Doc : Attribute {
+    public string Text;
+    public Doc(string text) {
+        this.Text = text;
+    }
+}
+
+[Route("/users", method: "POST")]
+[Doc("user controller")]
+class UsersController {
+    public int Id;
+}
+
+[Route("/health")]
+class HealthCheck {
+}
+
+void Main() {
+    Type t = typeof(UsersController);
+
+    // All attributes — live instances, in application order.
+    Attribute[] attrs = t.GetCustomAttributes();
+    Assert.Equal(2, attrs.Length);
+
+    // Typed lookup + field access via downcast.
+    Attribute ra = t.GetAttribute(typeof(Route));
+    Assert.NotNull(ra);
+    Route r = (Route) ra;
+    Assert.Equal("/users", r.Path);
+    Assert.Equal("POST", r.Method);
+
+    Attribute da = t.GetAttribute(typeof(Doc));
+    Assert.NotNull(da);
+    Doc d = (Doc) da;
+    Assert.Equal("user controller", d.Text);
+
+    // Default constructor parameter (single init path): method defaults to GET.
+    Type ht = typeof(HealthCheck);
+    Route hr = (Route) ht.GetAttribute(typeof(Route));
+    Assert.Equal("/health", hr.Path);
+    Assert.Equal("GET", hr.Method);
+
+    // Absent attribute → null.
+    Assert.Null(ht.GetAttribute(typeof(Doc)));
+
+    // Cached: repeated calls on the same Type return the same instances.
+    Attribute[] attrs2 = t.GetCustomAttributes();
+    Assert.True(attrs[0] == attrs2[0]);
+    Assert.True(attrs[1] == attrs2[1]);
+}

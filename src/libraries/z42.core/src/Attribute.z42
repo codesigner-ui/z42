@@ -1,0 +1,25 @@
+namespace Std;
+
+// Base class for all user-defined attributes (spec: add-attribute-reflection, C3).
+//
+// A user attribute is an ordinary class deriving from `Attribute`:
+//
+//     class Route : Attribute {
+//         public string Path;
+//         public Route(string path) { this.Path = path; }
+//     }
+//
+// applied by its real class name (no `Attribute`-suffix convention):
+//
+//     [Route("/users")] class UsersController { }
+//
+// and read back via reflection — `Type.GetCustomAttributes()` /
+// `MethodInfo.GetCustomAttributes()` return live instances (the same cached
+// instance on repeated calls). The compiler synthesizes a parameterless factory
+// per application, so no runtime `Activator`/`Invoke` is involved.
+//
+// Mirrors C# `System.Attribute`, minus the warts: no suffix magic, a single
+// constructor init path, cached immutable instances. See
+// docs/design/language/attributes.md.
+public class Attribute {
+}

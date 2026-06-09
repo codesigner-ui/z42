@@ -303,6 +303,13 @@ public sealed class GoldenTests
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
+        // Mirror PipelineCore's pre-typecheck AST passes so golden compiles
+        // match the real pipeline (benchmark desugar; C3 attribute factory
+        // synthesis — without this, attribute applications carry no factory and
+        // reflect as empty).
+        cu = Z42.Semantics.Codegen.BenchmarkDesugar.Run(cu);
+        cu = Z42.Semantics.Codegen.AttributeFactorySynthesizer.Run(cu);
+
         // strict-using-resolution (2026-04-28): activate prelude packages
         // (z42.core) + packages providing namespaces in cu.Usings. Types from
         // non-activated packages are not visible. Mirrors PackageCompiler /

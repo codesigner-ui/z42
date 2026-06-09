@@ -220,7 +220,8 @@ internal static partial class TopLevelParser
     // ── Class / struct / record ───────────────────────────────────────────────
 
     private static ClassDecl ParseClassDecl(ref TokenCursor cursor, LanguageFeatures feat,
-        DiagnosticBag? diags = null, NativeAttribute? classNative = null)
+        DiagnosticBag? diags = null, NativeAttribute? classNative = null,
+        List<AttributeApp>? userAttrs = null)  // C3 add-attribute-reflection
     {
         // Spec C9 — class-level [Native(lib=, type=)] becomes the per-class
         // default that methods inside this class can stitch against.
@@ -277,7 +278,8 @@ internal static partial class TopLevelParser
                 cursor = cursor.Advance();
                 return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
                     null, [], fields, methods, start, typeParams, Where: null,
-                    ClassNativeDefaults: classDefaults);
+                    ClassNativeDefaults: classDefaults,
+                    Attributes: userAttrs);
             }
         }
 
@@ -310,6 +312,7 @@ internal static partial class TopLevelParser
         ExpectKind(ref cursor, TokenKind.LBrace);
         NativeAttribute?     pendingNative    = null;
         List<TestAttribute>? pendingTestAttrs = null;  // R1: per-method z42.test.* attrs
+        List<AttributeApp>?  pendingUserAttrs = null;  // C3: per-method user attributes
         var nestedDelegates = new List<DelegateDecl>(); // 2026-05-02 add-delegate-type
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
@@ -317,9 +320,10 @@ internal static partial class TopLevelParser
             {
                 if (cursor.Current.Kind == TokenKind.LBracket)
                 {
-                    var (parsedNative, parsedTest) = TryParseAttribute(ref cursor);
+                    var (parsedNative, parsedTest, parsedUser) = TryParseAttribute(ref cursor, feat, diags);
                     if (parsedNative != null) pendingNative = parsedNative;
                     if (parsedTest   != null) (pendingTestAttrs ??= new()).Add(parsedTest);
+                    if (parsedUser   != null) (pendingUserAttrs ??= new()).Add(parsedUser);
                     continue;
                 }
                 // 2026-05-02 add-delegate-type: 嵌套 delegate (class body 内)
@@ -327,6 +331,7 @@ internal static partial class TopLevelParser
                 {
                     pendingNative = null;
                     pendingTestAttrs = null;
+                    pendingUserAttrs = null;
                     nestedDelegates.Add(ParseDelegateDecl(ref cursor, feat, Visibility.Public));
                     continue;
                 }
@@ -336,6 +341,7 @@ internal static partial class TopLevelParser
                 {
                     pendingNative = null;
                     pendingTestAttrs = null;
+                    pendingUserAttrs = null;
                     foreach (var m in ParseIndexerDecl(ref cursor, feat, diags))
                         methods.Add(m);
                     continue;
@@ -344,6 +350,7 @@ internal static partial class TopLevelParser
                 {
                     pendingNative = null;
                     pendingTestAttrs = null;
+                    pendingUserAttrs = null;
                     var fSpan = cursor.Current.Span;
                     var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
                     var (fStatic, _, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
@@ -392,15 +399,17 @@ internal static partial class TopLevelParser
                 }
                 else
                 {
-                    methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags, pendingTestAttrs));
+                    methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags, pendingTestAttrs, pendingUserAttrs));
                     pendingNative    = null;
                     pendingTestAttrs = null;
+                    pendingUserAttrs = null;
                 }
             }
             catch (ParseException ex) when (diags != null)
             {
                 diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
                 pendingNative = null;
+                pendingUserAttrs = null;
                 if (!cursor.IsEnd) cursor = cursor.Advance();
                 while (!cursor.IsEnd && cursor.Current.Kind != TokenKind.RBrace
                                      && cursor.Current.Kind != TokenKind.Semicolon)
@@ -412,7 +421,8 @@ internal static partial class TopLevelParser
         return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
             baseClass, ifaces, fields, methods, start, typeParams, classWhereClause,
             ClassNativeDefaults: classDefaults,
-            NestedDelegates: nestedDelegates.Count == 0 ? null : nestedDelegates);
+            NestedDelegates: nestedDelegates.Count == 0 ? null : nestedDelegates,
+            Attributes: userAttrs);
     }
 
     // ── Extern impl block ─────────────────────────────────────────────────────

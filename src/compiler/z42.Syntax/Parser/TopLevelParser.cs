@@ -69,6 +69,7 @@ internal static partial class TopLevelParser
 
         NativeAttribute?      pendingNative    = null;
         List<TestAttribute>?  pendingTestAttrs = null;  // R1: accumulated z42.test.* attrs
+        List<AttributeApp>?   pendingUserAttrs = null;  // C3: accumulated user attributes
         while (!cursor.IsEnd)
         {
             try
@@ -80,9 +81,10 @@ internal static partial class TopLevelParser
                         DiagnosticCodes.FeatureDisabled);
                 if (cursor.Current.Kind == TokenKind.LBracket)
                 {
-                    var (parsedNative, parsedTest) = TryParseAttribute(ref cursor);
+                    var (parsedNative, parsedTest, parsedUser) = TryParseAttribute(ref cursor, feat, diags);
                     if (parsedNative != null) pendingNative = parsedNative;
                     if (parsedTest   != null) (pendingTestAttrs ??= new()).Add(parsedTest);
+                    if (parsedUser   != null) (pendingUserAttrs ??= new()).Add(parsedUser);
                     continue;
                 }
                 if (cursor.Current.Kind == TokenKind.Namespace)
@@ -104,30 +106,34 @@ internal static partial class TopLevelParser
                     nativeImports.Add(ParseNativeTypeImport(ref cursor));
                     continue;
                 }
-                if (IsEnumDecl(cursor))          { pendingNative = null; pendingTestAttrs = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
-                if (IsInterfaceDecl(cursor))      { pendingNative = null; pendingTestAttrs = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
-                if (IsDelegateDecl(cursor))       { pendingNative = null; pendingTestAttrs = null; delegates.Add(ParseDelegateDecl(ref cursor, feat)); continue; }
+                if (IsEnumDecl(cursor))          { pendingNative = null; pendingTestAttrs = null; pendingUserAttrs = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
+                if (IsInterfaceDecl(cursor))      { pendingNative = null; pendingTestAttrs = null; pendingUserAttrs = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
+                if (IsDelegateDecl(cursor))       { pendingNative = null; pendingTestAttrs = null; pendingUserAttrs = null; delegates.Add(ParseDelegateDecl(ref cursor, feat)); continue; }
                 if (IsClassOrStructDecl(cursor))  {
                     // Spec C9: thread the class-level [Native(lib=, type=)]
                     // attribute (if present) into ClassDecl so its methods
                     // can stitch defaults at codegen time.
                     var classNative = pendingNative;
+                    var classUserAttrs = pendingUserAttrs;  // C3: user attributes on the class
                     pendingNative    = null;
                     pendingTestAttrs = null;  // class-level test attrs not supported (R4 will diagnose)
-                    classes.Add(ParseClassDecl(ref cursor, feat, diags, classNative));
+                    pendingUserAttrs = null;
+                    classes.Add(ParseClassDecl(ref cursor, feat, diags, classNative, classUserAttrs));
                     continue;
                 }
                 if (cursor.Current.Kind == TokenKind.Impl)
-                                                  { pendingNative = null; pendingTestAttrs = null; impls.Add(ParseImplDecl(ref cursor, feat, diags)); continue; }
-                functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags, pendingTestAttrs));
+                                                  { pendingNative = null; pendingTestAttrs = null; pendingUserAttrs = null; impls.Add(ParseImplDecl(ref cursor, feat, diags)); continue; }
+                functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags, pendingTestAttrs, pendingUserAttrs));
                 pendingNative    = null;
                 pendingTestAttrs = null;
+                pendingUserAttrs = null;
             }
             catch (ParseException ex) when (diags != null)
             {
                 diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
                 pendingNative    = null;
                 pendingTestAttrs = null;
+                pendingUserAttrs = null;
                 cursor = SkipToNextDeclaration(cursor);
             }
         }
@@ -194,7 +200,8 @@ internal static partial class TopLevelParser
     internal static FunctionDecl ParseFunctionDecl(
         ref TokenCursor cursor, LanguageFeatures feat, Visibility defaultVis,
         NativeAttribute? nativeAttr = null, DiagnosticBag? diags = null,
-        List<TestAttribute>? testAttrs = null)
+        List<TestAttribute>? testAttrs = null,
+        List<AttributeApp>? userAttrs = null)  // C3 add-attribute-reflection
     {
         var nativeIntrinsic = nativeAttr?.Intrinsic;
         var tier1Binding    = nativeAttr?.Tier1;
@@ -309,7 +316,8 @@ internal static partial class TopLevelParser
             BaseCtorArgs: baseCtorArgs, ThisCtorArgs: thisCtorArgs,
             TypeParams: funcTypeParams, Where: whereClause,
             Tier1Binding: tier1Binding,
-            TestAttributes: testAttrs);
+            TestAttributes: testAttrs,
+            Attributes: userAttrs);
     }
 
     /// Build FunctionModifiers flags from individual booleans parsed from source.

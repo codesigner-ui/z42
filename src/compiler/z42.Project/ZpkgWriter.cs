@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 11;  // 2026-06-06 aggregate-zpkg-tidx: per-module MODS record gains length-prefixed `tidx_len + tidx_data` after REGT. ZbcWriter.BuildTidxSection bytes reused; reader-side aggregation accumulates method_id by cumulative function offset and string indices by cumulative pool offset. Inner zbc unchanged (1.9 stays). Pre-0.11 not readable.
+    public const ushort VersionMinor = 12;  // 2026-06-09 add-attribute-reflection (C3): coupled with inner zbc 1.10 (TYPE section per-class user-attribute refs). Outer zpkg layout unchanged; bump tracks the inner zbc format change. Pre-0.12 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

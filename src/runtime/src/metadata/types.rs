@@ -163,6 +163,11 @@ pub struct TypeDescCold {
     /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
     /// Empty for non-generic classes; inner bundle may be empty for unconstrained params.
     pub type_param_constraints: Box<[super::bytecode::ConstraintBundle]>,
+    /// C3 add-attribute-reflection: user attributes applied to this class
+    /// (carried from the zbc TYPE section). Each is (attribute-type qualified
+    /// name, factory-func qualified name). `__type_custom_attributes` calls each
+    /// factory once and caches the resulting instances on the Type object.
+    pub custom_attributes: Box<[super::bytecode::AttributeRef]>,
 }
 
 impl TypeDesc {
@@ -179,6 +184,8 @@ impl TypeDesc {
     #[inline] pub fn type_params(&self)            -> &[String]                                 { self.cold_slice(|c| &c.type_params) }
     #[inline] pub fn type_args(&self)              -> &[String]                                 { self.cold_slice(|c| &c.type_args) }
     #[inline] pub fn type_param_constraints(&self) -> &[super::bytecode::ConstraintBundle]      { self.cold_slice(|c| &c.type_param_constraints) }
+    /// C3 add-attribute-reflection: user attributes applied to this class.
+    #[inline] pub fn custom_attributes(&self)      -> &[super::bytecode::AttributeRef]          { self.cold_slice(|c| &c.custom_attributes) }
 
     /// Lazy-init the cold side-table for mutation.
     #[inline]

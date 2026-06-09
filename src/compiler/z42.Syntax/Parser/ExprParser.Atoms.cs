@@ -321,7 +321,7 @@ internal static partial class ExprParser
     /// add-named-arguments). Each argument may also carry a `ref`/`out`/`in`
     /// modifier (wrapped as `ModifiedArg` inside Argument.Value). Used by
     /// CallExpr and NewExpr (`new T(args)`); not for array element lists.
-    private static List<Argument> ParseCallArgumentList(
+    internal static List<Argument> ParseCallArgumentList(
         ref TokenCursor cursor, TokenKind stop, LanguageFeatures feat,
         DiagnosticBag? diags = null)
     {

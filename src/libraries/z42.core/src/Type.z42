@@ -48,4 +48,43 @@ public sealed class Type {
     // Generic type arguments of an instantiated generic (`Box<int>` -> [int]).
     [Native("__type_generic_args")]
     public extern Type[] GetGenericArguments();
+
+    // ── Custom attributes (C3 add-attribute-reflection) ─────────────────────
+
+    // Lazily-built cache of this type's attribute instances. Null until the
+    // first GetCustomAttributes() call; thereafter the same array (and thus the
+    // same instances) is returned — C# allocates fresh on every call, z42 does
+    // not (improvement #3 + immutable instances #4).
+    public Attribute[] __attrCache;
+
+    // VM-built live attribute instances (one per applied attribute, in
+    // application order). The VM invokes each compiler-synthesized factory.
+    [Native("__type_custom_attributes")]
+    public extern Attribute[] __customAttributes();
+
+    // User attributes applied to this type, as live instances. Cached: the
+    // first call materializes them, repeated calls return the same instances.
+    public Attribute[] GetCustomAttributes() {
+        if (this.__attrCache != null) {
+            return this.__attrCache;
+        }
+        this.__attrCache = this.__customAttributes();
+        return this.__attrCache;
+    }
+
+    // The single attribute of the given type, or null if absent. Compares by
+    // the instance's runtime type (FullName), so subclass attributes match too.
+    public Attribute GetAttribute(Type attributeType) {
+        Attribute[] all = this.GetCustomAttributes();
+        int i = 0;
+        while (i < all.Length) {
+            Attribute a = all[i];
+            Type at = a.GetType();
+            if (at.FullName == attributeType.FullName) {
+                return a;
+            }
+            i = i + 1;
+        }
+        return null;
+    }
 }

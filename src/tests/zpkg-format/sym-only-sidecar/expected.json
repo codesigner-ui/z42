@@ -1,7 +1,7 @@
 {
   "header": {
     "major": 0,
-    "minor": 11,
+    "minor": 12,
     "flags": [
       "Packed",
       "SymOnly"

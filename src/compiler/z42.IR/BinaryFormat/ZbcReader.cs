@@ -406,7 +406,16 @@ public static partial class ZbcReader
                 typeParams!.Add(P(pool, r.ReadUInt32()));
                 typeParamConstraints!.Add(ReadConstraintBundle(r, pool));
             }
-            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints));
+            // C3 add-attribute-reflection (zbc 1.10): per-class user attribute refs.
+            ushort attrCount = r.ReadUInt16();
+            List<IrAttributeRef>? attributes = attrCount > 0 ? new(attrCount) : null;
+            for (int a = 0; a < attrCount; a++)
+            {
+                string typeName    = P(pool, r.ReadUInt32());
+                string factoryFunc = P(pool, r.ReadUInt32());
+                attributes!.Add(new IrAttributeRef(typeName, factoryFunc));
+            }
+            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes));
         }
         return classes;
     }

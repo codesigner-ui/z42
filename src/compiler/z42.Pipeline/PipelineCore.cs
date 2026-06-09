@@ -95,6 +95,10 @@ public static class PipelineCore
         // helper before TypeCheck, so the validator/checker only ever see
         // the supported zero-arg form.
         cu = Z42.Semantics.Codegen.BenchmarkDesugar.Run(cu);
+        // C3 add-attribute-reflection: lower `[Foo(args)]` applications into
+        // factory functions before TypeCheck so the factories are checked +
+        // assigned func indices like any other function.
+        cu = Z42.Semantics.Codegen.AttributeFactorySynthesizer.Run(cu);
         var sem   = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
         if (diags.HasErrors) return (null, diags);
         Z42.Semantics.TestAttributeValidator.Validate(cu, sem, diags);
@@ -116,6 +120,9 @@ public static class PipelineCore
         // Bencher-arg benchmarks to the zero-arg wrapper + `$impl` form
         // before any downstream stage observes the CompilationUnit.
         cu = Z42.Semantics.Codegen.BenchmarkDesugar.Run(cu);
+        // C3 add-attribute-reflection: lower attribute applications to factory
+        // functions before TypeCheck (see CheckOnly for rationale).
+        cu = Z42.Semantics.Codegen.AttributeFactorySynthesizer.Run(cu);
         var sem = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);

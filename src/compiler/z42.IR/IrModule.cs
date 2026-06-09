@@ -48,9 +48,19 @@ public sealed record IrClassDesc(
     string? BaseClass,
     List<IrFieldDesc> Fields,
     List<string>? TypeParams = null,
-    List<IrConstraintBundle>? TypeParamConstraints = null);
+    List<IrConstraintBundle>? TypeParamConstraints = null,
+    /// C3 add-attribute-reflection: user attributes applied to this class.
+    /// Each ref points at a compiler-synthesized factory function (qualified
+    /// name) that constructs the attribute instance; the runtime calls it
+    /// lazily for `Type.GetCustomAttributes()` and caches the result.
+    List<IrAttributeRef>? Attributes = null);
 
 public sealed record IrFieldDesc(string Name, string Type);
+
+/// C3 add-attribute-reflection: one applied attribute, recorded as the
+/// attribute class's qualified name + the qualified name of the synthesized
+/// `() => new T(args)` factory function.
+public sealed record IrAttributeRef(string TypeName, string FactoryFunc);
 
 /// Resolved constraint bundle for one generic type parameter.
 /// Mirrors `GenericConstraintBundle` from the semantic layer but uses plain strings

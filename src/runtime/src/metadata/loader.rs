@@ -660,11 +660,14 @@ pub fn build_type_registry(module: &mut Module) {
             type_params:            desc.type_params.clone(),
             type_args:              vec![].into(),
             type_param_constraints: desc.type_param_constraints.clone(),
+            // C3 add-attribute-reflection: carry the class's user attributes.
+            custom_attributes:      desc.attributes.clone(),
         };
         let cold = if cold_inner.own_fields.is_empty()
             && cold_inner.own_methods.is_empty()
             && cold_inner.type_params.is_empty()
             && cold_inner.type_param_constraints.is_empty()
+            && cold_inner.custom_attributes.is_empty()
         {
             None
         } else {

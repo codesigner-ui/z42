@@ -136,7 +136,8 @@ public sealed record ClassDecl(
     List<string>? TypeParams = null,
     WhereClause? Where = null,   // L3-G2 generic constraints
     Tier1NativeBinding? ClassNativeDefaults = null,  // spec C9 — class-level [Native(lib=, type=)] shorthand
-    List<DelegateDecl>? NestedDelegates = null);     // 2026-05-02 add-delegate-type
+    List<DelegateDecl>? NestedDelegates = null,      // 2026-05-02 add-delegate-type
+    List<AttributeApp>? Attributes = null);          // C3 add-attribute-reflection — user attributes on the class
 
 // ── Delegate declaration (2026-05-02 add-delegate-type) ──────────────────────
 
@@ -206,7 +207,8 @@ public sealed record FunctionDecl(
     List<string>? TypeParams = null,  // generic type parameters: <T>, <K,V>
     WhereClause? Where = null,        // L3-G2 generic constraints
     Tier1NativeBinding? Tier1Binding = null,  // spec C6 — Tier 1 dispatch binding
-    List<TestAttribute>? TestAttributes = null)  // spec R1 — z42.test.* attributes (collected, validated in R4)
+    List<TestAttribute>? TestAttributes = null,  // spec R1 — z42.test.* attributes (collected, validated in R4)
+    List<AttributeApp>? Attributes = null)  // C3 add-attribute-reflection — user attributes on the method
 {
     // Convenience accessors — keep read sites concise
     public bool IsStatic   => Modifiers.HasFlag(FunctionModifiers.Static);
@@ -268,6 +270,29 @@ public sealed record TestAttribute(
     /// far. Null when the attribute has no parens or empty parens.</summary>
     IReadOnlyDictionary<string, AttributeArg>? NamedArgs,
     Span Span);
+
+// ── User-defined attribute application (spec: add-attribute-reflection, C3) ──────
+
+/// One `[Name(args)]` application of a *user-defined* attribute on a class or
+/// method declaration. Distinct from <see cref="TestAttribute"/> (closed
+/// `z42.test.*` set) and <see cref="Tier1NativeBinding"/> (`[Native]`): any
+/// bracketed name that is not a known test/native attribute is collected here.
+///
+/// <paramref name="Name"/> is the attribute class name as written (resolved to
+/// a class deriving <c>Std.Attribute</c> in <c>AttributeBinder</c>).
+/// <paramref name="Args"/> reuses the call-site <see cref="Argument"/> shape
+/// (positional + `name: value` named), so the binder can drive the attribute
+/// constructor through the existing named-arg + default-value resolution. Each
+/// argument value must be a compile-time constant (validated in the binder).
+public sealed record AttributeApp(
+    string Name,
+    List<Argument> Args,
+    Span Span,
+    /// <summary>Qualified name of the compiler-synthesized factory function
+    /// `() => new Name(args)` for this application. Null after parsing; filled
+    /// by <c>AttributeFactorySynthesizer</c> (before TypeCheck) and read by
+    /// <c>ExportedTypeExtractor</c> when emitting attribute metadata.</summary>
+    string? FactoryFunc = null);
 
 // ── Type expressions ──────────────────────────────────────────────────────────
 

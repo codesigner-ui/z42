@@ -231,10 +231,15 @@ internal static partial class TopLevelParser
     };
 
     /// Parses any bracketed attribute `[...]` and dispatches by name. Returns
-    /// a discriminated result (exactly one of Native / Test populated, or both
-    /// null when the attribute is unrecognised and skipped). Always advances
-    /// the cursor past the closing `]`.
-    internal static (NativeAttribute? Native, TestAttribute? Test) TryParseAttribute(ref TokenCursor cursor)
+    /// a discriminated result: exactly one of Native / Test / User populated
+    /// (or all null when the attribute is not a leading identifier and is
+    /// skipped). Always advances the cursor past the closing `]`.
+    ///
+    /// C3 (add-attribute-reflection): any bracketed identifier that is not a
+    /// known `z42.test.*` name or `[Native(...)]` is parsed as a user-defined
+    /// attribute application (`AttributeApp`) — previously skipped silently.
+    internal static (NativeAttribute? Native, TestAttribute? Test, AttributeApp? User) TryParseAttribute(
+        ref TokenCursor cursor, LanguageFeatures feat, DiagnosticBag? diags = null)
     {
         ExpectKind(ref cursor, TokenKind.LBracket);
         var attrSpan = cursor.Current.Span;
@@ -243,33 +248,49 @@ internal static partial class TopLevelParser
         if (cursor.Current.Kind != TokenKind.Identifier)
         {
             SkipBalancedToRBracket(ref cursor);
-            return (null, null);
+            return (null, null, null);
         }
 
         string name = cursor.Current.Text;
 
-        // Dispatch: known z42.test attributes vs Native vs unknown.
+        // Dispatch: known z42.test attributes vs Native vs user-defined.
         if (TestAttributeNames.Contains(name))
         {
             var test = ParseTestAttributeBody(ref cursor, name, attrSpan);
-            return (null, test);
+            return (null, test, null);
         }
         if (name == "Native" && cursor.Peek(1).Kind == TokenKind.LParen)
         {
             var native = ParseNativeAttributeBody(ref cursor);
-            return (native, null);
+            return (native, null, null);
         }
 
-        // Unknown attribute — skip silently (existing behavior, preserves
-        // forward compatibility with future attributes).
-        SkipBalancedToRBracket(ref cursor);
-        return (null, null);
+        // User-defined attribute: `[Name]` or `[Name(args)]`. Resolution to a
+        // class deriving Std.Attribute + constant-arg checking is in
+        // AttributeBinder (TypeCheck); the parser only shapes the AST.
+        var user = ParseUserAttributeBody(ref cursor, name, attrSpan, feat, diags);
+        return (null, null, user);
     }
 
-    /// Back-compat shim: returns Native part only. Used by call sites that
-    /// pre-date R1; new sites use TryParseAttribute directly.
-    private static NativeAttribute? TryParseNativeAttribute(ref TokenCursor cursor)
-        => TryParseAttribute(ref cursor).Native;
+    /// Parses the body of a user-defined attribute. Cursor enters at the
+    /// attribute-name identifier; exits past the closing `]`. Args reuse the
+    /// call-site argument list (positional + `name: value`), so the binder can
+    /// drive the attribute constructor through the standard named-arg path.
+    private static AttributeApp ParseUserAttributeBody(
+        ref TokenCursor cursor, string name, Span attrSpan,
+        LanguageFeatures feat, DiagnosticBag? diags)
+    {
+        cursor = cursor.Advance(); // consume <name>
+        var args = new List<Argument>();
+        if (cursor.Current.Kind == TokenKind.LParen)
+        {
+            cursor = cursor.Advance(); // consume `(`
+            args = ExprParser.ParseCallArgumentList(ref cursor, TokenKind.RParen, feat, diags);
+            ExpectKind(ref cursor, TokenKind.RParen);
+        }
+        ExpectKind(ref cursor, TokenKind.RBracket);
+        return new AttributeApp(name, args, attrSpan);
+    }
 
     /// Spec R1 — parses the body of a `[Test]` / `[Benchmark]` / `[Skip(...)]`
     /// / etc. attribute. Cursor enters at the attribute name identifier;
