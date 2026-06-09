@@ -1,7 +1,5 @@
 namespace Std.Reflection;
 
-using Std;
-
 // Reflected method. Populated by `Type.GetMethods()` (`__type_methods`).
 // Mirrors C# `System.Reflection.MethodInfo` (read-only subset; no Invoke —
 // that lands with generic instantiation in 0.5.x).
@@ -44,10 +42,19 @@ public class MethodInfo : MemberInfo {
         return this.__attrCache;
     }
 
-    // The single attribute of the given type, or null if absent. Delegates to
-    // Std.Type.FindByType — the FullName comparison must live in Type.z42 where
-    // the property resolves (within-package cross-file property-resolution gap).
+    // The single attribute of the given type, or null if absent. Compares by
+    // the instance's runtime type (FullName), so subclass attributes match too.
     public Std.Attribute GetAttribute(Std.Type attributeType) {
-        return Type.FindByType(this.GetCustomAttributes(), attributeType);
+        Std.Attribute[] all = this.GetCustomAttributes();
+        int i = 0;
+        while (i < all.Length) {
+            Std.Attribute a = all[i];
+            Std.Type at = a.GetType();
+            if (at.FullName == attributeType.FullName) {
+                return a;
+            }
+            i = i + 1;
+        }
+        return null;
     }
 }

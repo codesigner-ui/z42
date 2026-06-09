@@ -75,16 +75,7 @@ public sealed class Type {
     // The single attribute of the given type, or null if absent. Compares by
     // the instance's runtime type (FullName), so subclass attributes match too.
     public Attribute GetAttribute(Type attributeType) {
-        return FindByType(this.GetCustomAttributes(), attributeType);
-    }
-
-    // Shared attribute-by-type lookup. Defined here — in the same file as the
-    // `FullName` property — so other z42.core files (e.g. MethodInfo) can reuse
-    // it. Within z42.core, a property declared in another file is mis-resolved
-    // as a (missing) field at the access site, so the comparison must live where
-    // `Type.FullName` resolves correctly. See Deferred
-    // `attribute-future-crossfile-property-resolution` in attributes.md.
-    public static Attribute FindByType(Attribute[] all, Type attributeType) {
+        Attribute[] all = this.GetCustomAttributes();
         int i = 0;
         while (i < all.Length) {
             Attribute a = all[i];

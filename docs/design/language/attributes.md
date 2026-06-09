@@ -116,12 +116,11 @@ native `__type_custom_attributes(type)` 对每条 ref 用 `run_returning` 调工
 ### ~~attribute-future-method-level（C3b）~~ — 已落地
 - **状态**：method-level（`MethodInfo.GetCustomAttributes()` / `GetAttribute`）已落地 2026-06-09（add-attribute-reflection-methods，SIGS section per-function attr refs，zbc 1.11）。见上文「method-level（C3b）」。
 
-### attribute-future-fqn-class-resolution（编译器 bug，C2/C3b 共因，根因已确认）
-- **来源**：make-typeof-return-type（C2）+ add-attribute-reflection-methods（C3b）。
-- **根因（已确认）**：`SymbolTable.ResolveType` 的 `Classes` 字典按**短名**（`Type`）键控，**限定名**（`Std.Type`）查不到 → 落到 `new Z42PrimType("Std.Type")` fallback（[SymbolTable.cs](../../../src/compiler/z42.Semantics/TypeCheck/SymbolTable.cs) NamedType 分支）。于是 `Std.Type at = ...; at.FullName` 里 at 被当作基础类型，成员访问命中 [TypeChecker.Exprs.Members.cs](../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.Members.cs) **第 174 行的静默 fallback** `BoundMember(target, m.Member, Unknown)` —— 不报错、emit 字段读 → 运行期 field_index miss → null。属性 getter 永不派发。
-- **为何只在 MethodInfo 触发**：`Type.z42`（namespace Std）+ 主模块用**短名** `Type`（解析到真类，getter 正常）；`MethodInfo.z42`（namespace Std.Reflection）须写**限定名** `Std.Type` → 触发 fallback。C2 typeof 当时也踩同坑（用短名 `Type` 绕过）。
-- **当前 workaround**：FullName 比较逻辑放进 `Type.z42` 的静态 `Type.FindByType(...)`（短名解析正常处），两处 GetAttribute 委托它（MethodInfo 加 `using Std` 后非限定调用）。
-- **根因修复（建议独立 change）**：(1) `ResolveType` 限定名→类的解析（namespace-aware，使 `Std.Type` 解析到 Type 类）；(2) Members.cs:174 对「基础类型上的未知成员」至少报错而非静默 emit 字段读（掩盖 bug 的元凶）。属核心 `ResolveType` 改动 + 触及自举 port 区，需独立 spec + 全量回归。
+### ~~attribute-future-fqn-class-resolution（编译器 bug，C2/C3b 共因）~~ — 已修
+- **状态**：已修 2026-06-09（[archive/2026-06-09-fix-fqn-class-resolution](../../spec/archive/2026-06-09-fix-fqn-class-resolution/)）。
+- **根因**：限定名 `Std.Type` 被解析为 `MemberType`，走 `SymbolTable.ResolveMemberType` —— 该函数原只查嵌套 delegate，未识别命名空间限定的类 → 返 `Z42Type.Unknown`；其上成员访问命中 [TypeChecker.Exprs.Members.cs](../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.Members.cs):174 的**静默 fallback** `BoundMember(Unknown)` → 运行期 null 字段读，属性 getter 永不派发。C2 typeof + C3b MethodInfo 共因（都曾用短名/委托绕过）。
+- **修复**：`ResolveMemberType` 先把 dotted-path 拍平 + `ResolveQualifiedType`（namespace-aware：短名是已知类 **且** `ImportedClassNamespaces` 记录的命名空间 == FQN 前缀才解析；零回归）。C3b 的 `Type.FindByType` workaround + `MethodInfo` 的 `using Std` 已移除，恢复自然 inline `Std.Type at = ...; at.FullName`。验证：GoldenTests 1545/1545。
+- **残留小项（follow-up）**：Members.cs:174 对「未解析类型上的成员访问」仍静默返 Unknown（掩盖 bug 的元凶之一）；本次未改（未解析 FQN 现为 `Z42Type.Unknown`，在该处报错有 error-recovery 级联风险）。可作独立小 fix 评估。
 
 ### attribute-future-dedicated-diagnostics
 - **来源**：add-attribute-reflection（C3a）。

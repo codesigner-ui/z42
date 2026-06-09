@@ -296,10 +296,39 @@ public sealed class SymbolTable
                                (EnumTypes.Contains(nt.Name)                  ? new Z42EnumType(nt.Name)
                                : Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : Interfaces.TryGetValue(nt.Name, out var it) ? it
-                               : new Z42PrimType(nt.Name)),
+                               // fix-fqn-class-resolution: a qualified name like
+                               // `Std.Type` misses the short-name-keyed `Classes`
+                               // dict; resolve it namespace-aware before falling
+                               // back to a Z42PrimType (the old silent bug).
+                               : ResolveQualifiedType(nt.Name)               ?? new Z42PrimType(nt.Name)),
         },
         _ => Z42Type.Unknown
     };
+
+    /// fix-fqn-class-resolution (2026-06-09): resolve a fully-qualified type name
+    /// `&lt;ns&gt;.&lt;Short&gt;` (e.g. `Std.Type`, `Std.Reflection.MethodInfo`) to its
+    /// class / interface. The `Classes` / `Interfaces` dictionaries are keyed by
+    /// SHORT name, so a qualified reference otherwise misses and falls through to
+    /// a bogus `Z42PrimType` (which then makes member access silently null —
+    /// the C2 / C3b bug). This is **namespace-aware**: it only resolves when the
+    /// short name is a known type AND its recorded namespace equals the FQN
+    /// prefix, so short-name resolution + the prim fallback for genuinely-unknown
+    /// names are unchanged (zero regression). Returns null when no namespace-
+    /// matching class/interface exists.
+    private Z42Type? ResolveQualifiedType(string fqn)
+    {
+        int dot = fqn.LastIndexOf('.');
+        if (dot <= 0 || dot >= fqn.Length - 1) return null;
+        string ns        = fqn[..dot];
+        string shortName = fqn[(dot + 1)..];
+        if (Classes.TryGetValue(shortName, out var ct)
+            && ImportedClassNamespaces.TryGetValue(shortName, out var cns) && cns == ns)
+            return ct;
+        if (Interfaces.TryGetValue(shortName, out var it)
+            && ImportedClassNamespaces.TryGetValue(shortName, out var ins) && ins == ns)
+            return it;
+        return null;
+    }
 
     /// 2026-05-04 D-6: dotted-path nested type lookup.
     /// 把 MemberType 链拍平成 "Owner.NestedName" qualified key，查 Delegates map。
@@ -309,18 +338,38 @@ public sealed class SymbolTable
     /// 不支持的情况给清晰错误，上层 TypeChecker 接到 Z42Type.Unknown 后报 E0401。
     private Z42Type ResolveMemberType(MemberType mt)
     {
+        // fix-fqn-class-resolution: a dotted type path is most often a
+        // namespace-qualified class/interface (`Std.Type`,
+        // `Std.Reflection.MethodInfo`). Flatten the whole chain and resolve it
+        // namespace-aware BEFORE the nested-delegate path — otherwise such names
+        // fall through to Z42Type.Unknown, and member access on them silently
+        // emits a null field read (the C2 / C3b bug).
+        if (FlattenMemberType(mt) is { } flat && ResolveQualifiedType(flat) is { } qt)
+            return qt;
+
         // 提取左侧 class 名称：Left 必须最终 resolve 到一个 class（可链式嵌套）。
         // 当前嵌套深度仅 1 层（class 内的 delegate），所以 Left 只期望是 NamedType。
-        if (mt.Left is not NamedType leftNt)
+        if (mt.Left is NamedType leftNt)
         {
-            // 深嵌套 (e.g. A.B.C) 或非简单类型 — 留给后续 deferred spec。
-            return Z42Type.Unknown;
+            var qualifiedKey = $"{leftNt.Name}.{mt.Right}";
+            if (Delegates.TryGetValue(qualifiedKey, out var di) && di.TypeParams.Count == 0)
+                return di.Signature;
         }
-        var qualifiedKey = $"{leftNt.Name}.{mt.Right}";
-        if (Delegates.TryGetValue(qualifiedKey, out var di) && di.TypeParams.Count == 0)
-            return di.Signature;
-        // 泛型 nested delegate 暂不支持，给清晰可识别的 Unknown 让上层报 E0401。
+        // 未识别的 dotted-path（深嵌套 / 泛型 nested delegate）— 返回 Unknown 让上层报 E0401。
         return Z42Type.Unknown;
+    }
+
+    /// Flatten a `MemberType` dotted path (`A.B.C`) into the qualified string
+    /// `"A.B.C"`. Returns null if the chain's root isn't a plain `NamedType`.
+    private static string? FlattenMemberType(MemberType mt)
+    {
+        var parts = new List<string>();
+        TypeExpr cur = mt;
+        while (cur is MemberType m) { parts.Add(m.Right); cur = m.Left; }
+        if (cur is not NamedType root) return null;
+        parts.Add(root.Name);
+        parts.Reverse();
+        return string.Join(".", parts);
     }
 
     private Z42GenericParamType MakeTypeParam(string name)
