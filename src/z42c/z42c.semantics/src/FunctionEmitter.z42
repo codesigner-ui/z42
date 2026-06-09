@@ -165,7 +165,11 @@ public sealed class FunctionEmitter {
         if (e is BoundAssign) { return this._emitAssign(e as BoundAssign); }
         if (e is BoundMember) { return this._emitMember(e as BoundMember); }
         if (e is BoundCall) { return this._emitCall(e as BoundCall); }
-        // 其余节点（new/cast/index/cond/unary）→ CG-1D+：占位 const.null（保 dump 良构）
+        if (e is BoundNew) { return this._emitNew(e as BoundNew); }
+        if (e is BoundIndex) { return this._emitIndex(e as BoundIndex); }
+        if (e is BoundIsExpr) { return this._emitIs(e as BoundIsExpr); }
+        if (e is BoundCast) { return this._emitCast(e as BoundCast); }
+        // 其余节点（cond/unary/比较/逻辑）→ CG-1E：占位 const.null（保 dump 良构）
         TypedReg ph = this._alloc(this._toIrType(e.Type()));
         this._emit(new ConstNullInstr(ph));
         return ph;
@@ -216,6 +220,41 @@ public sealed class FunctionEmitter {
         return args;
     }
 
+    // new T(args) → obj_new（结果 ref）。ctor 解析延后。
+    private TypedReg _emitNew(BoundNew n) {
+        TypedReg[] args = new TypedReg[n.ArgCount];
+        int i = 0;
+        while (i < n.ArgCount) { args[i] = this._emitExpr(n.Args[i]); i = i + 1; }
+        TypedReg dst = this._alloc(this._toIrType(n.Type()));
+        this._emit(new ObjNewInstr(dst, n.TypeName, args, n.ArgCount));
+        return dst;
+    }
+
+    // arr[i] 读 → array_get（元素类型）。
+    private TypedReg _emitIndex(BoundIndex idx) {
+        TypedReg arr = this._emitExpr(idx.Target);
+        TypedReg i = this._emitExpr(idx.Index);
+        TypedReg dst = this._alloc(this._toIrType(idx.Type()));
+        this._emit(new ArrayGetInstr(dst, arr, i));
+        return dst;
+    }
+
+    // x is T → is_instance（bool）。
+    private TypedReg _emitIs(BoundIsExpr e) {
+        TypedReg obj = this._emitExpr(e.E);
+        TypedReg dst = this._alloc(IrType.Bool);
+        this._emit(new IsInstanceInstr(dst, obj, e.TypeName));
+        return dst;
+    }
+
+    // x as T → as_cast（结果 ref；目标类型名取自 Bound 类型）。
+    private TypedReg _emitCast(BoundCast c) {
+        TypedReg obj = this._emitExpr(c.E);
+        TypedReg dst = this._alloc(this._toIrType(c.Type()));
+        this._emit(new AsCastInstr(dst, obj, c.Type().Name()));
+        return dst;
+    }
+
     // 二元运算（CG-1A：算术 + − × ÷ %）。比较/逻辑/位/字符串拼接 → CG-1E。
     private TypedReg _emitBinary(BoundBinary b) {
         TypedReg a = this._emitExpr(b.Left);
@@ -253,7 +292,14 @@ public sealed class FunctionEmitter {
             this._emit(new FieldSetInstr(obj, tm.MemberName, val));
             return val;
         }
-        return val;   // 索引赋值 → CG-1D
+        if (a.Target is BoundIndex) {
+            BoundIndex ti = a.Target as BoundIndex;
+            TypedReg arr = this._emitExpr(ti.Target);
+            TypedReg i = this._emitExpr(ti.Index);
+            this._emit(new ArraySetInstr(arr, i, val));
+            return val;
+        }
+        return val;
     }
 
     // ════ 寄存器 / 块 / 类型 助手 ═══════════════════════════════════════════════════

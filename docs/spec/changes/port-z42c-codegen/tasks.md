@@ -42,7 +42,14 @@
 - 注：条件用 bool 局部/参数（比较运算符 Eq/Lt 等 → CG-1E）；break/continue 后死代码指令无害（块已捕获 _curCount，超出不 dump）
 
 ## CG-1C–CG-2（后续增量，详见 design.md 增量表）
-- [ ] CG-1D new/cast/is/数组；CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
+- [ ] CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
+
+## CG-1D：new / 数组索引 / is / as —— ✅ 已完成
+- [x] IrInstr 加 ObjNewInstr（`obj_new C(args)`，ctor 解析延后）/ ArrayGetInstr（`array_get a[i]`）/ ArraySetInstr（`array_set a[i], v`）/ IsInstanceInstr（`is_instance o, T`）/ AsCastInstr（`as_cast o, T`）
+- [x] FunctionEmitter：`_emitNew` / `_emitIndex`（读）/ `_emitIs` / `_emitCast` + `_emitAssign` 加 BoundIndex target→array_set
+- [x] 6 单测（new / new+args / array-get / array-set / is_instance / as_cast）
+- [x] 验证：`xtask test compiler-z42` → **13 units 196 cases** 全绿（codegen 26）
+- 注：数组**创建**语法（`new T[n]`）+ `arr.Length` 延后（syntax 无数组创建 / typechecker 不支持 array 成员访问，Z42ArrayType ≠ Z42ClassType）；ctor 重载解析延后（BoundNew 无 ctor 信息）
 
 ## CG-1C：方法调用 + 字段 get/set + this —— ✅ 已完成
 - [x] IrInstr 加 CallInstr（`call @f(args)`）/ VCallInstr（`vcall obj.m(args)`）/ FieldGetInstr（`field_get obj.f`）/ FieldSetInstr（`field_set obj.f, val`）

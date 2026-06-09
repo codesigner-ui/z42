@@ -174,3 +174,59 @@ public sealed class FieldSetInstr : IrInstr {
     }
     public override string Dump() { return "field_set " + this.Obj.Dump() + "." + this.Field + ", " + this.Val.Dump(); }
 }
+
+// ── 对象 / 数组 / 类型测试（CG-1D）────────────────────────────────────────────────
+// new ClassName(args)。ctor 名（重载解析）延后——z42c BoundNew 暂无 ctor 信息。
+public sealed class ObjNewInstr : IrInstr {
+    public TypedReg   Dst;
+    public string     ClassName;
+    public TypedReg[] Args;
+    public int        ArgCount;
+    public ObjNewInstr(TypedReg dst, string className, TypedReg[] args, int argCount) {
+        this.Dst = dst; this.ClassName = className; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = this.Dst.Dump() + " = obj_new " + this.ClassName + "(";
+        int i = 0;
+        while (i < this.ArgCount) { if (i > 0) { s = s + ", "; } s = s + this.Args[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+public sealed class ArrayGetInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg Arr;
+    public TypedReg Idx;
+    public ArrayGetInstr(TypedReg dst, TypedReg arr, TypedReg idx) { this.Dst = dst; this.Arr = arr; this.Idx = idx; }
+    public override string Dump() { return this.Dst.Dump() + " = array_get " + this.Arr.Dump() + "[" + this.Idx.Dump() + "]"; }
+}
+
+public sealed class ArraySetInstr : IrInstr {
+    public TypedReg Arr;
+    public TypedReg Idx;
+    public TypedReg Val;
+    public ArraySetInstr(TypedReg arr, TypedReg idx, TypedReg val) { this.Arr = arr; this.Idx = idx; this.Val = val; }
+    public override string Dump() { return "array_set " + this.Arr.Dump() + "[" + this.Idx.Dump() + "], " + this.Val.Dump(); }
+}
+
+// x is T → bool。
+public sealed class IsInstanceInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg Obj;
+    public string   ClassName;
+    public IsInstanceInstr(TypedReg dst, TypedReg obj, string className) {
+        this.Dst = dst; this.Obj = obj; this.ClassName = className;
+    }
+    public override string Dump() { return this.Dst.Dump() + " = is_instance " + this.Obj.Dump() + ", " + this.ClassName; }
+}
+
+// x as T → T（不匹配返回 null）。
+public sealed class AsCastInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg Obj;
+    public string   ClassName;
+    public AsCastInstr(TypedReg dst, TypedReg obj, string className) {
+        this.Dst = dst; this.Obj = obj; this.ClassName = className;
+    }
+    public override string Dump() { return this.Dst.Dump() + " = as_cast " + this.Obj.Dump() + ", " + this.ClassName; }
+}
