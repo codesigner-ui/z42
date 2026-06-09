@@ -10,6 +10,38 @@ fn i64(n: i64) -> Value { Value::I64(n) }
 /// Build a fresh VmContext for each test (heap is fully isolated, fast to construct).
 fn ctx() -> std::pin::Pin<Box<VmContext>> { VmContext::new() }
 
+/// A VmContext with a minimal `Std.Type` class seeded (fields `__name` @0,
+/// `__fullName` @1). `__obj_get_type` → `make_type_object` → `build_type`
+/// requires `Std.Type` to be loaded (in production it comes from z42.core);
+/// without it `build_type` returns `Value::Null`. Seed it so these unit tests
+/// exercise the real `Std.Type`-producing path. (make-typeof-return-type C2 /
+/// add-attribute-reflection C3 made this path z42.core-dependent.)
+fn ctx_with_std_type() -> std::pin::Pin<Box<VmContext>> {
+    use crate::metadata::{name_index::NameIndex, tokens::TypeId, FieldSlot};
+    let c = VmContext::new();
+    c.install_lazy_loader(None, 0);
+    let mut fi = NameIndex::new();
+    fi.insert("__name".to_string(), 0);
+    fi.insert("__fullName".to_string(), 1);
+    let td = Arc::new(TypeDesc {
+        name: "Std.Type".to_string(),
+        id: TypeId::UNRESOLVED,
+        base_name: None,
+        fields: vec![
+            FieldSlot { name: "__name".to_string().into(),     type_tag: "str".to_string().into() },
+            FieldSlot { name: "__fullName".to_string().into(), type_tag: "str".to_string().into() },
+        ],
+        field_index: fi,
+        vtable: Vec::new(),
+        vtable_index: NameIndex::new(),
+        cold: None,
+    });
+    let mut types = std::collections::HashMap::new();
+    types.insert("Std.Type".to_string(), td);
+    c.seed_lazy_loader_types(&types);
+    c
+}
+
 /// Allocate a minimal Object with the given class name through the heap interface.
 fn obj(ctx: &VmContext, class_name: &str) -> Value {
     let type_desc = Arc::new(TypeDesc {
@@ -132,7 +164,7 @@ fn println_via_dispatch_table() {
 
 #[test]
 fn obj_get_type_returns_type_object() {
-    let c = ctx();
+    let c = ctx_with_std_type();
     let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "Foo")]).unwrap();
     match result {
         Value::Object(rc) => assert_eq!(rc.type_desc().name, "Std.Type"),
@@ -142,7 +174,7 @@ fn obj_get_type_returns_type_object() {
 
 #[test]
 fn obj_get_type_simple_name_no_namespace() {
-    let c = ctx();
+    let c = ctx_with_std_type();
     let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "Foo")]).unwrap();
     let Value::Object(rc) = result else { panic!("expected Object") };
     let borrow = rc.borrow();
@@ -152,7 +184,7 @@ fn obj_get_type_simple_name_no_namespace() {
 
 #[test]
 fn obj_get_type_namespaced_class_splits_name() {
-    let c = ctx();
+    let c = ctx_with_std_type();
     let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "geometry.Circle")]).unwrap();
     let Value::Object(rc) = result else { panic!("expected Object") };
     let borrow = rc.borrow();

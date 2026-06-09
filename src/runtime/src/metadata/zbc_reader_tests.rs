@@ -116,13 +116,13 @@ fn zbc_version_constants_pinned() {
     // Sanity: writer's claimed version matches what the reader pins.
     // If this fails, the constants drifted out of sync with C# ZbcWriter.
     assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
-    assert_eq!(ZBC_VERSION_MINOR, 9, "zbc minor at 1.9 (add-test-timeout-attribute — TIDX v=3 TestEntry carries per-test timeout_ms i32 after expected_throw_type)");
+    assert_eq!(ZBC_VERSION_MINOR, 11, "zbc minor at 1.11 (add-attribute-reflection C3: 1.10 TYPE-section per-class attr refs + 1.11 SIGS-section per-function attr refs)");
 }
 
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 11, "zpkg minor at 0.11 (aggregate-zpkg-tidx, 2026-06-06: per-module MODS slots gained `tidx_len u32 + tidx_data` trailing fields after REGT; inner zbc unchanged at 1.9 — TIDX wire format is the same v=3, only its zpkg embedding is new)");
+    assert_eq!(ZPKG_VERSION_MINOR, 13, "zpkg minor at 0.13 (add-attribute-reflection C3: inner zbc → 1.11 + ZpkgWriter global SIGS attr refs in sync)");
 }
 
 #[test]
