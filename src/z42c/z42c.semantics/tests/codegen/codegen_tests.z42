@@ -63,3 +63,45 @@ void test_module_dump() {
     Assert.Equal("module \"z42c\"\n\nfn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
                  IrDump.DumpModule(src));
 }
+
+// ── CG-1B：控制流 if/while/break/continue → 多基本块 ──────────────────────────────
+
+[Test]
+void test_if_then_return() {
+    // if 无 else：cond 块 br.cond → then / 汇合 end（end 可达，承接后续 return）
+    string src = "int F(bool c) { if (c) { return 1; } return 2; }";
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  br.cond %0, then_0, end_1\nthen_0:\n  %1 = const.i32 1\n  ret %1\nend_1:\n  %2 = const.i32 2\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_if_else_merge() {
+    // if/else 两分支写 x，汇合 end 块读 x
+    string src = "int F(bool c) { int x = 0; if (c) { x = 1; } else { x = 2; } return x; }";
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br.cond %0, then_0, else_1\nthen_0:\n  %2 = const.i32 1\n  %1 = copy %2\n  br end_2\nelse_1:\n  %3 = const.i32 2\n  %1 = copy %3\n  br end_2\nend_2:\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_while_break() {
+    // while：entry→cond，cond br.cond→body/end；break→end
+    string src = "void F(bool c) { while (c) { break; } }";
+    Assert.Equal("fn @F(1) -> void {\nentry:\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  br while_end_2\nwhile_end_2:\n  ret\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_while_continue() {
+    // continue→cond（回边）
+    string src = "void F(bool c) { while (c) { continue; } }";
+    Assert.Equal("fn @F(1) -> void {\nentry:\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  br while_cond_0\nwhile_end_2:\n  ret\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_while_body_assign() {
+    // body 非空，末尾回边 br cond
+    string src = "int F(bool c) { int x = 0; while (c) { x = 1; } return x; }";
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  %2 = const.i32 1\n  %1 = copy %2\n  br while_cond_0\nwhile_end_2:\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "F"));
+}

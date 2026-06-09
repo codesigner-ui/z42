@@ -23,4 +23,4 @@
 class（非 record）+ virtual Dump 替 record 层次；static class + int 常量替 enum（IrType）；typed array + count 替泛型集合字段。**定义顺序叶子优先**（容器引用叶子的 Dump，bootstrap 单遍按文件序解析，后定义的具体类型方法不可见）。
 
 ## 增量进度
-CG-1A IR 内存模型 + 最小指令集（const/copy/算术 + ret）。后续：CG-1B 控制流（Br/BrCond）/ CG-1C 调用·字段 / CG-1D new·数组 / CG-1E 比较·逻辑·拼接。byte-identical .zbc（ZbcWriter）独立 change。
+CG-1A IR 内存模型 + 最小指令集（const/copy/算术 + ret）✅ / CG-1B 控制流（Br/BrCond 终结符 + 多基本块）✅。后续：CG-1C 调用·字段 / CG-1D new·数组 / CG-1E 比较·逻辑·拼接。byte-identical .zbc（ZbcWriter）独立 change。

@@ -7,7 +7,7 @@
 
 ## 进度概览
 - [x] CG-1A 最小 lowering（IR 模型骨架 + 字面量/局部/二元算术/return → 单块）✅
-- [ ] CG-1B 控制流（if/while/break/continue → 多基本块）
+- [x] CG-1B 控制流（if/while/break/continue → 多基本块）✅
 - [ ] CG-1C 调用 + 字段 + 继承分派
 - [ ] CG-1D new / cast / is / 数组
 - [ ] CG-1E 比较 / 一元 / 逻辑短路 / 字符串拼接 / 三目 / ??
@@ -34,8 +34,15 @@
 > **🎉 CG-1A 完成：z42c 端到端 Bound → IR 跑通**（source → parse → typecheck → IrGen → .zasm-like IR 文本）。
 > **踩坑**：① `fn` 是 z42 保留字（TokenKind.Fn）→ 变量名避开；② 同文件方法体引用「后定义的具体类型」的方法 → E0402，需**叶子优先排序**（区别于引用先定义的基类如 Bound 的 BoundStmt[]）；③ z42 `int`→IR `i32`（非 i64）。
 
-## CG-1B–CG-2（后续增量，详见 design.md 增量表）
-- [ ] CG-1B 控制流；CG-1C 调用+字段；CG-1D new/cast/is/数组；CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
+## CG-1B：控制流（if/while/break/continue → 多基本块）—— ✅ 已完成
+- [x] FunctionEmitter `_emitIf`（cond→br.cond→then/else，汇合 end 块；HasElse 分支）+ `_emitWhile`（entry→cond，cond br.cond→body/end，body 回边 br cond）
+- [x] break/continue → `BrTerm` 到 `_breakLabels`/`_contLabels` 栈顶（`_pushLoop`/`_popLoop` + `_loopDepth`）+ `_fresh(hint)` 顺序标签
+- [x] 5 单测（if-then+return / if-else 汇合 / while-break / while-continue / while-body 回边）
+- [x] 验证：`xtask test compiler-z42` → **13 units 183 cases** 全绿（codegen 13）
+- 注：条件用 bool 局部/参数（比较运算符 Eq/Lt 等 → CG-1E）；break/continue 后死代码指令无害（块已捕获 _curCount，超出不 dump）
+
+## CG-1C–CG-2（后续增量，详见 design.md 增量表）
+- [ ] CG-1C 调用+字段；CG-1D new/cast/is/数组；CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
 
 ## 延后（design.md Deferred）
 - 闭包·lambda / 异常 try-catch / native interop / static_init / 插值 / foreach 迭代器 / 调试元数据（LineTable）

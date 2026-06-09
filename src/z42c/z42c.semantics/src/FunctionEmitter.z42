@@ -21,6 +21,9 @@ public sealed class FunctionEmitter {
     private int         _nextReg;
     private int         _maxReg;
     private int         _labelSeq;
+    private string[]    _contLabels;   // 循环 continue 目标栈（CG-1B）
+    private string[]    _breakLabels;  // 循环 break 目标栈
+    private int         _loopDepth;
 
     public FunctionEmitter(SymbolTable symbols, IrGen gen) {
         this._symbols = symbols; this._gen = gen;
@@ -31,6 +34,7 @@ public sealed class FunctionEmitter {
         this._locals = new StrMap();
         this._blocks = new IrBlock[4]; this._blockCount = 0;
         this._labelSeq = 0;
+        this._contLabels = new string[4]; this._breakLabels = new string[4]; this._loopDepth = 0;
         int paramOffset = 0;
         if (!isStatic) { paramOffset = 1; this._locals.Put("this", new TypedReg(0, IrType.Ref)); }
         int p = 0;
@@ -66,8 +70,52 @@ public sealed class FunctionEmitter {
         } else if (s is BoundExprStmt) {
             BoundExprStmt e = s as BoundExprStmt;
             this._emitExpr(e.E);                         // 结果弃
+        } else if (s is BoundIf) {
+            this._emitIf(s as BoundIf);
+        } else if (s is BoundWhile) {
+            this._emitWhile(s as BoundWhile);
+        } else if (s is BoundBreak) {
+            if (this._loopDepth > 0) { this._endBlock(new BrTerm(this._breakLabels[this._loopDepth - 1])); }
+        } else if (s is BoundContinue) {
+            if (this._loopDepth > 0) { this._endBlock(new BrTerm(this._contLabels[this._loopDepth - 1])); }
         }
-        // if/while/break/continue → CG-1B（未处理：占位忽略，不崩）
+    }
+
+    // if/else → 基本块（cond 块 br.cond → then/else，汇合 end 块）。
+    private void _emitIf(BoundIf i) {
+        TypedReg cond = this._emitExpr(i.Cond);
+        string thenL = this._fresh("then");
+        string elseL = "";
+        string endL = "";
+        if (i.HasElse) { elseL = this._fresh("else"); endL = this._fresh("end"); }
+        else { endL = this._fresh("end"); elseL = endL; }
+        this._endBlock(new BrCondTerm(cond, thenL, elseL));
+        this._startBlock(thenL);
+        this._emitStmt(i.Then);
+        if (!this._ended) { this._endBlock(new BrTerm(endL)); }
+        if (i.HasElse) {
+            this._startBlock(elseL);
+            this._emitStmt(i.Else);
+            if (!this._ended) { this._endBlock(new BrTerm(endL)); }
+        }
+        this._startBlock(endL);
+    }
+
+    // while → cond/body/end 三块。continue→cond，break→end。
+    private void _emitWhile(BoundWhile w) {
+        string condL = this._fresh("while_cond");
+        string bodyL = this._fresh("while_body");
+        string endL = this._fresh("while_end");
+        this._endBlock(new BrTerm(condL));
+        this._startBlock(condL);
+        TypedReg cond = this._emitExpr(w.Cond);
+        this._endBlock(new BrCondTerm(cond, bodyL, endL));
+        this._pushLoop(condL, endL);
+        this._startBlock(bodyL);
+        this._emitStmt(w.Body);
+        if (!this._ended) { this._endBlock(new BrTerm(condL)); }
+        this._popLoop();
+        this._startBlock(endL);
     }
 
     // ════ 表达式（集中 if-is，返回 TypedReg）═══════════════════════════════════════
@@ -168,6 +216,27 @@ public sealed class FunctionEmitter {
         this._cur[this._curCount] = ins;
         this._curCount = this._curCount + 1;
     }
+
+    private string _fresh(string hint) {
+        string r = hint + "_" + this._labelSeq.ToString();
+        this._labelSeq = this._labelSeq + 1;
+        return r;
+    }
+
+    private void _pushLoop(string contL, string breakL) {
+        if (this._loopDepth == this._contLabels.Length) {
+            string[] bc = new string[this._contLabels.Length * 2];
+            string[] bb = new string[this._breakLabels.Length * 2];
+            int i = 0;
+            while (i < this._loopDepth) { bc[i] = this._contLabels[i]; bb[i] = this._breakLabels[i]; i = i + 1; }
+            this._contLabels = bc; this._breakLabels = bb;
+        }
+        this._contLabels[this._loopDepth] = contL;
+        this._breakLabels[this._loopDepth] = breakL;
+        this._loopDepth = this._loopDepth + 1;
+    }
+
+    private void _popLoop() { this._loopDepth = this._loopDepth - 1; }
 
     private void _startBlock(string label) {
         this._curLabel = label;
