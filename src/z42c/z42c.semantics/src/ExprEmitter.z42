@@ -45,6 +45,7 @@ public sealed class ExprEmitter {
         }
         if (e is BoundIdent) { return this._lookupIdent(e as BoundIdent); }
         if (e is BoundBinary) { return this._emitBinary(e as BoundBinary); }
+        if (e is BoundUnary) { return this._emitUnary(e as BoundUnary); }
         if (e is BoundAssign) { return this._emitAssign(e as BoundAssign); }
         if (e is BoundMember) { return this._emitMember(e as BoundMember); }
         if (e is BoundCall) { return this._emitCall(e as BoundCall); }
@@ -71,18 +72,55 @@ public sealed class ExprEmitter {
         return ph;
     }
 
-    // 二元算术（CG-1A：+ − × ÷ %）。比较/逻辑/位/拼接 → CG-1E。
+    // 二元运算：算术 + − × ÷ % / 比较 ==·!=·<·<=·>·>= / 位 &·|·^·<<·>> / 字符串拼接 + / 逻辑短路 → CG-1E-2。
     private TypedReg _emitBinary(BoundBinary b) {
         TypedReg a = this.Emit(b.Left);
         TypedReg c = this.Emit(b.Right);
-        TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(b.Type()));
         string op = b.Op;
+        if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
+            return this._emitCompare(op, a, c);   // → bool
+        }
+        TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(b.Type()));
         if (op == "-") { this._ctx.Emit(new SubInstr(d, a, c)); }
         else if (op == "*") { this._ctx.Emit(new MulInstr(d, a, c)); }
         else if (op == "/") { this._ctx.Emit(new DivInstr(d, a, c)); }
         else if (op == "%") { this._ctx.Emit(new RemInstr(d, a, c)); }
-        else { this._ctx.Emit(new AddInstr(d, a, c)); }   // "+" 及（CG-1A 占位）其余
+        else if (op == "&") { this._ctx.Emit(new BitAndInstr(d, a, c)); }
+        else if (op == "|") { this._ctx.Emit(new BitOrInstr(d, a, c)); }
+        else if (op == "^") { this._ctx.Emit(new BitXorInstr(d, a, c)); }
+        else if (op == "<<") { this._ctx.Emit(new ShlInstr(d, a, c)); }
+        else if (op == ">>") { this._ctx.Emit(new ShrInstr(d, a, c)); }
+        else if (op == "+") {
+            if (d.Type == IrType.Str) { this._ctx.Emit(new StrConcatInstr(d, a, c)); }
+            else { this._ctx.Emit(new AddInstr(d, a, c)); }
+        }
+        else { this._ctx.Emit(new AddInstr(d, a, c)); }   // && / || / ?? → CG-1E-2（占位）
         return d;
+    }
+
+    // 比较 → bool（操作数类型透传到指令文本）。
+    private TypedReg _emitCompare(string op, TypedReg a, TypedReg c) {
+        TypedReg d = this._ctx.Alloc(IrType.Bool);
+        if (op == "==") { this._ctx.Emit(new EqInstr(d, a, c)); }
+        else if (op == "!=") { this._ctx.Emit(new NeInstr(d, a, c)); }
+        else if (op == "<") { this._ctx.Emit(new LtInstr(d, a, c)); }
+        else if (op == "<=") { this._ctx.Emit(new LeInstr(d, a, c)); }
+        else if (op == ">") { this._ctx.Emit(new GtInstr(d, a, c)); }
+        else { this._ctx.Emit(new GeInstr(d, a, c)); }
+        return d;
+    }
+
+    // 一元：! → not（bool）/ - → neg / ~ → bit_not / + → 透传。++ -- 后续。
+    private TypedReg _emitUnary(BoundUnary u) {
+        TypedReg x = this.Emit(u.Operand);
+        string op = u.Op;
+        if (op == "!") { TypedReg d = this._ctx.Alloc(IrType.Bool); this._ctx.Emit(new NotInstr(d, x)); return d; }
+        if (op == "-") { TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(u.Type())); this._ctx.Emit(new NegInstr(d, x)); return d; }
+        if (op == "~") { TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(u.Type())); this._ctx.Emit(new BitNotInstr(d, x)); return d; }
+        if (op == "+") { return x; }
+        TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));   // ++ / -- → CG 后续
+        this._ctx.Emit(new CopyInstr(ph, x));
+        return ph;
     }
 
     // 赋值：local（copy 回写）/ 裸字段（field_set reg0）/ obj.field（field_set obj）/ arr[i]（array_set）。

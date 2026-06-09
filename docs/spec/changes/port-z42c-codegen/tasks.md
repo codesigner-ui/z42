@@ -42,7 +42,17 @@
 - 注：条件用 bool 局部/参数（比较运算符 Eq/Lt 等 → CG-1E）；break/continue 后死代码指令无害（块已捕获 _curCount，超出不 dump）
 
 ## CG-1C–CG-2（后续增量，详见 design.md 增量表）
-- [ ] CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
+- [ ] CG-1E-2 逻辑短路 &&/‖ + 三目 + ??（块化）；CG-2 泛型
+
+## refactor：FunctionEmitter 拆 EmitContext + ExprEmitter —— ✅ 已完成
+- [x] z42 无 partial class → 抽 `EmitContext`（共享状态 + Alloc/Emit/块管理/标签栈/ToIrType）+ `ExprEmitter`（表达式 lowering）；FunctionEmitter 留函数入口/语句/控制流。零 IR 变化，196 cases 不变。独立 commit。
+
+## CG-1E（运算符）：比较 / 位 / 一元 / 字符串拼接 —— ✅ 已完成
+- [x] IrInstr 加 Eq/Ne/Lt/Le/Gt/Ge（→bool，操作数类型透传）+ BitAnd/BitOr/BitXor/Shl/Shr + Not/Neg/BitNot + StrConcat（15 条）
+- [x] ExprEmitter：`_emitBinary` 扩比较/位/拼接（`+` 在 string 类型→str_concat 否则 add）+ `_emitCompare` + `_emitUnary`（!→not / -→neg / ~→bit_not / +→透传）+ BoundUnary 分派
+- [x] 6 单测（comparison lt / bitwise_and / unary_neg / unary_not / string_concat / **loop_with_comparison** 真实循环 `while(i<n){i=i+1}`）
+- [x] 验证：`xtask test compiler-z42` → **13 units 202 cases** 全绿（codegen 32）
+- 注：逻辑短路 &&/‖、三目 `?:`、`??` 需块化（中途分块 + 结果寄存器经 copy 汇合）→ CG-1E-2；++/-- 延后
 
 ## CG-1D：new / 数组索引 / is / as —— ✅ 已完成
 - [x] IrInstr 加 ObjNewInstr（`obj_new C(args)`，ctor 解析延后）/ ArrayGetInstr（`array_get a[i]`）/ ArraySetInstr（`array_set a[i], v`）/ IsInstanceInstr（`is_instance o, T`）/ AsCastInstr（`as_cast o, T`）
