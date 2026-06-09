@@ -1,0 +1,85 @@
+// .zbc 格式常量 + 类型名→标签映射（port-z42c-zbc-writer ZW-1A-2）。镜像 C# Opcodes.cs。
+// 受限写法：static class + int 常量（替 enum，同 DiagnosticCodes 模式）。
+namespace Z42.IR.BinaryFormat;
+
+// 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin）。
+public static class ZbcVersion {
+    public static int Major = 1;
+    public static int Minor = 11;   // 2026-06-09 add-attribute-reflection-methods C3b：SIGS/TYPE 每函数/类 attr-ref（u16 count）
+}
+
+// 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
+public static class Op {
+    public static int ConstI    = 0x00;
+    public static int ConstF    = 0x01;
+    public static int ConstBool = 0x02;
+    public static int ConstStr  = 0x03;
+    public static int ConstNull = 0x04;
+    public static int Copy      = 0x05;
+    public static int Add = 0x10; public static int Sub = 0x11; public static int Mul = 0x12;
+    public static int Div = 0x13; public static int Rem = 0x14;
+    public static int Br     = 0x40;
+    public static int BrCond = 0x41;
+    public static int Ret    = 0x42;   // void 返回
+    public static int RetVal = 0x43;   // 带值返回
+}
+
+// 指令头 type_tag 字节（IrType int 标签 → zbc tag）。
+public static class Tag {
+    public static int Unknown = 0x00;   // 兼 void
+    public static int Bool = 0x01;
+    public static int I8 = 0x02; public static int I16 = 0x03; public static int I32 = 0x04; public static int I64 = 0x05;
+    public static int U8 = 0x06; public static int U16 = 0x07; public static int U32 = 0x08; public static int U64 = 0x09;
+    public static int F32 = 0x0A; public static int F64 = 0x0B;
+    public static int Char = 0x0C; public static int Str = 0x0D;
+    public static int Object = 0x20; public static int Array = 0x21;
+
+    // 类型名 → tag（镜像 C# TypeTags.FromString；canonical + keyword 双拼写）。
+    public static int FromName(string t) {
+        if (t == "void") { return Tag.Unknown; }
+        if (t == "bool") { return Tag.Bool; }
+        if (t == "i8") { return Tag.I8; }
+        if (t == "i16" || t == "short") { return Tag.I16; }
+        if (t == "i32" || t == "int") { return Tag.I32; }
+        if (t == "i64" || t == "long") { return Tag.I64; }
+        if (t == "u8" || t == "byte") { return Tag.U8; }
+        if (t == "u16" || t == "ushort") { return Tag.U16; }
+        if (t == "u32" || t == "uint") { return Tag.U32; }
+        if (t == "u64" || t == "ulong") { return Tag.U64; }
+        if (t == "f32" || t == "float") { return Tag.F32; }
+        if (t == "f64" || t == "double") { return Tag.F64; }
+        if (t == "char") { return Tag.Char; }
+        if (t == "str" || t == "string") { return Tag.Str; }
+        return Tag.Object;
+    }
+
+    // IrType int 标签 → zbc tag（镜像 C# TypeTagFromIrType）。
+    // ⚠ z42c IrType 序与 zbc tag 序不同（IrType.I32=3 vs tag I32=4；IrType.Bool=11 vs tag Bool=1）→ 显式映射。
+    public static int FromIrType(int t) {
+        if (t == IrType.Unknown) { return Tag.Unknown; }
+        if (t == IrType.Bool) { return Tag.Bool; }
+        if (t == IrType.I8)  { return Tag.I8; }
+        if (t == IrType.I16) { return Tag.I16; }
+        if (t == IrType.I32) { return Tag.I32; }
+        if (t == IrType.I64) { return Tag.I64; }
+        if (t == IrType.U8)  { return Tag.U8; }
+        if (t == IrType.U16) { return Tag.U16; }
+        if (t == IrType.U32) { return Tag.U32; }
+        if (t == IrType.U64) { return Tag.U64; }
+        if (t == IrType.F32) { return Tag.F32; }
+        if (t == IrType.F64) { return Tag.F64; }
+        if (t == IrType.Char) { return Tag.Char; }
+        if (t == IrType.Str)  { return Tag.Str; }
+        if (t == IrType.Ref)  { return Tag.Object; }
+        return Tag.Unknown;   // Void / 其余
+    }
+}
+
+// ExecMode 字节（"Interp"=0 / "Jit"=1 / "Aot"=2）。
+public static class ExecMode {
+    public static int FromName(string m) {
+        if (m == "Jit") { return 1; }
+        if (m == "Aot") { return 2; }
+        return 0;
+    }
+}

@@ -19,18 +19,23 @@
 - [x] `IrGen`：模块名 = 根命名空间（`cu.HasNamespace ? cu.Namespace : "main"`，对齐 C# `cu.Namespace ?? "main"`）+ free-func 传 `isInstance=false, isStaticMethod=false`
 - [x] 验证：`xtask test compiler-z42` 全绿（codegen 40 例，含 module-name 改为 "main"）
 
-### 字节基础设施
-- [ ] 1A-1 `BinaryFormat/ByteWriter.z42`（可增长 byte[]+len；WriteU8/U16/U32/I64/Bytes/Str(u16+UTF8)/Patch32/ToArray；LE 位运算拆字节）
-- [ ] 1A-2 `BinaryFormat/Opcodes.z42`（opcode int 常量全表 + TypeTags + SectionTags ASCII）
-- [ ] 1A-3 `BinaryFormat/ZbcStringPool.z42`（list+index map，Intern→idx 插入序）
-### 写入器
-- [ ] 1A-4 `BinaryFormat/ZbcInstr.z42`（集中 if-is WriteInstr：ConstI32/ConstBool/ConstStr/Copy/Add..Rem + WriteTerminator：Ret/RetVal/Br/BrCond[块索引]）
-- [ ] 1A-5 `BinaryFormat/ZbcWriter.z42`（Write(module)：建 STRS 池 + BuildNspc/Strs/Sigs/Func section + header + directory 组装；Patch32 回填 offset）
+### 字节基础设施（✅ 已完成）
+- [x] 1A-1 `BinaryFormat/ByteWriter.z42`（可增长 int[]（每槽 0..255，规避 byte 型）+ LE WriteU8/U16/U32/I64/AsciiBytes/Str(u16+UTF8)/Patch32/AppendWriter/ToHex）
+- [x] 1A-2 `BinaryFormat/ZbcFormat.z42`（ZbcVersion 1.11 + Op/Tag/ExecMode 常量 + Tag.FromName/FromIrType[**⚠ z42c IrType 序≠zbc tag 序，显式映射**]）
+- [x] 1A-3 `BinaryFormat/ZbcStringPool.z42`（string[] + count，Intern→idx 插入序，0-based）
+### 写入器（✅ 已完成）
+- [x] 1A-4 `BinaryFormat/ZbcInstr.z42`（集中 if-is WriteInstr：ConstI32/I64/Bool/Null/Copy/Add..Rem + WriteTerm：Ret/RetVal/Br/BrCond[块索引]）
+- [x] 1A-5 `BinaryFormat/ZbcWriter.z42`（Write(irm)：intern 预扫 + 全 8-section NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT + header+directory 组装；SIGS 含 zbc 1.11 attrCount）
 ### 验证 + 文档
-- [ ] 1A-6 截 C# z42c 对 trivial 源（`int F(){return 5;}` 等）`.zbc` golden hex（`dotnet` 跑 C# 编译器 + hex dump）
-- [ ] 1A-7 `tests/zbc/zbc_tests.z42`（+toml）：header / trivial 函数 / 算术 / directory / 字符串池 golden-hex 断言
-- [ ] 1A-8 README（z42c.ir 加 BinaryFormat/ 段）
-- [ ] 1A-9 验证：`xtask test compiler-z42` 全绿（新增 zbc 单元）
+- [x] 1A-7 `tests/zbc/zbc_tests.z42`（+toml）：`empty`（void Main(){}）→ **byte-identical 对 src/tests/zbc-format/empty/source.zbc（247 字节，zbc 1.11）逐字节** ✅
+- [x] 1A-8 README（z42c.ir 加 BinaryFormat/ 段）+ IrDump.DumpZbcHex（semantics，端到端 source→IrGen→ZbcWriter→hex）
+- [x] 1A-9 验证：`xtask test compiler-z42` = **14 units 全绿**（新增 zbc 单元，empty byte-identical）
+
+> **🎉 ZW-1A `empty` byte-identical 完成**：z42c 自举 ZbcWriter 对 `void Main(){}` 输出全 247 字节逐字节复刻 C# ZbcWriter（header/directory/8 section/intern 序/ret 终结符）。验证了整套字节基础设施 + 8-section 结构 + 字符串池插入序。
+
+> **🔴 实施发现（2026-06-10）—— byte-identical 越过 `empty` 被 DBUG 阻塞**：C# z42c 对**任何有语句体的函数**（如 `int F(){return 5;}`）emit **DBUG section**（源码行表 LineTable，flags.HasDebug=1 → 9 section / 306 字节）。z42c AST **不携 source span**（codegen 期延后项），故无法复刻 DBUG → const/算术函数无法 byte-identical。`empty` 恰因无语句 → 无 DBUG → 匹配。**ZbcInstr 的 const/算术编码已实现（镜像 C#，编译通过），但其 byte-identical 验证须等 span→LineTable→DBUG 链**（跨 syntax/semantics/ir 的前置）。下一步选项见备注。
+
+- [ ] 1A-6 截 C# golden（const/算术）—— **阻塞于 DBUG**：待 span+LineTable+DBUG 或改走端到端执行验证
 
 ## ZW-1B–1E（后续增量，详见 design.md 增量表）
 - [ ] ZW-1B 控制流+运算 opcode；ZW-1C 调用+token+字段；ZW-1D 对象+TYPE；ZW-1E REGT+端到端+float

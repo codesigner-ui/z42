@@ -1,0 +1,248 @@
+// IrModule → byte-identical .zbc（port-z42c-zbc-writer ZW-1A-5）。镜像 C# ZbcWriter.cs（full 模式）。
+// ZW-1A：trivial 函数（无类/无调用/无 debug）→ 恒 8 section NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT。
+// byte-identical 铁律：section 顺序 + 编码原语 + 字符串池插入序每处与 C# 完全一致（对 golden fixture 逐字节）。
+// 延后（ZW-1B+）：控制流/比较/位/一元 opcode；调用 + TokenAllocator + 真 IMPT 扫描；TYPE 类描述；
+//   ConstStr strRemap；可选 DBUG/TIDX/FRCS；f64/char 字面量（BitConverter）。
+namespace Z42.IR.BinaryFormat;
+
+using Z42.IR;
+using Std;
+
+public static class ZbcWriter {
+    // 顶层：IrModule → 完整 .zbc 字节缓冲。
+    public static ByteWriter Write(IrModule irm) {
+        var pool = new ZbcStringPool();
+        ZbcWriter._internPool(irm, pool);
+
+        var nspc = ZbcWriter._buildNspc(irm.Name);
+        var strs = ZbcWriter._buildStrs(pool);
+        var type = ZbcWriter._buildType(irm, pool);
+        var sigs = ZbcWriter._buildSigs(irm, pool);
+        var impt = ZbcWriter._buildImpt(irm, pool);
+        var expt = ZbcWriter._buildExpt(irm, pool);
+        var func = ZbcWriter._buildFunc(irm, pool);
+        var regt = ZbcWriter._buildRegt(irm);
+
+        string[]     tags   = new string[8];
+        ByteWriter[] datas  = new ByteWriter[8];
+        tags[0] = "NSPC"; datas[0] = nspc;
+        tags[1] = "STRS"; datas[1] = strs;
+        tags[2] = "TYPE"; datas[2] = type;
+        tags[3] = "SIGS"; datas[3] = sigs;
+        tags[4] = "IMPT"; datas[4] = impt;
+        tags[5] = "EXPT"; datas[5] = expt;
+        tags[6] = "FUNC"; datas[6] = func;
+        tags[7] = "REGT"; datas[7] = regt;
+        return ZbcWriter._assemble(tags, datas, 8);
+    }
+
+    // golden-hex 断言便捷封装。
+    public static string WriteHex(IrModule irm) { return ZbcWriter.Write(irm).ToHex(); }
+
+    // ── 字符串池预扫（顺序即 STRS 字节序，须 1:1 复刻 C# InternPoolStrings full 模式）──────────
+    private static void _internPool(IrModule irm, ZbcStringPool pool) {
+        pool.Intern(irm.Name);
+        // const.str 池（z42c StringPool 1-based，[0]="" 占位 → 从 1 起）。
+        int s = 1;
+        while (s < irm.StringCount) { pool.Intern(irm.StringPool[s]); s = s + 1; }
+        // 类（名/基类/字段名+类型）。z42c IrClassDesc 无 typeparam/attr 字段 → 不 intern。
+        int c = 0;
+        while (c < irm.ClassCount) {
+            IrClassDesc cd = irm.Classes[c];
+            pool.Intern(cd.Name);
+            if (cd.HasBase) { pool.Intern(cd.BaseName); }
+            int f = 0;
+            while (f < cd.FieldCount) { pool.Intern(cd.Fields[f].Name); pool.Intern(cd.Fields[f].Type); f = f + 1; }
+            c = c + 1;
+        }
+        pool.Intern("?");   // SIGS 缺省 param 类型占位
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            IrFunction fdef = irm.Functions[fi];
+            pool.Intern(fdef.Name);
+            pool.Intern(fdef.RetType);
+            int p = 0;
+            while (p < fdef.ParamTypeCount) { pool.Intern(fdef.ParamTypes[p]); p = p + 1; }
+            int b = 0;
+            while (b < fdef.BlockCount) { pool.Intern(fdef.Blocks[b].Label); b = b + 1; }
+            // 指令引用串（Call.Func/Field 等）→ ZW-1C；trivial const/算术无。
+            fi = fi + 1;
+        }
+    }
+
+    // ── NSPC ────────────────────────────────────────────────────────────────────
+    private static ByteWriter _buildNspc(string name) {
+        var w = new ByteWriter();
+        w.WriteStr(name);
+        return w;
+    }
+
+    // ── STRS：count + (offset u32, len u32)×count + 拼接 UTF-8 data ────────────────
+    private static ByteWriter _buildStrs(ZbcStringPool pool) {
+        var w = new ByteWriter();
+        int n = pool.Count();
+        w.WriteU32(n);
+        int offset = 0;
+        int i = 0;
+        while (i < n) {
+            int len = pool.At(i).ByteLength;
+            w.WriteU32(offset);
+            w.WriteU32(len);
+            offset = offset + len;
+            i = i + 1;
+        }
+        i = 0;
+        while (i < n) { w.WriteAsciiBytes(pool.At(i)); i = i + 1; }
+        return w;
+    }
+
+    // ── TYPE：count + 每类描述（ZW-1A trivial 无类 → count 0）─────────────────────────
+    private static ByteWriter _buildType(IrModule irm, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(irm.ClassCount);
+        int c = 0;
+        while (c < irm.ClassCount) {
+            IrClassDesc cd = irm.Classes[c];
+            w.WriteU32(pool.Idx(cd.Name));
+            if (cd.HasBase) { w.WriteU32(pool.Idx(cd.BaseName)); } else { w.WriteU32(-1); }   // -1 = uint.MaxValue
+            w.WriteU16(cd.FieldCount);
+            int f = 0;
+            while (f < cd.FieldCount) {
+                w.WriteU32(pool.Idx(cd.Fields[f].Name));
+                w.WriteU8(Tag.FromName(cd.Fields[f].Type));
+                w.WriteU32(pool.Idx(cd.Fields[f].Type));
+                f = f + 1;
+            }
+            w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）
+            w.WriteU16(0);    // attrCount（zbc 1.10）
+            c = c + 1;
+        }
+        return w;
+    }
+
+    // ── SIGS：count + 每函数签名（zbc 1.11 含 attrCount）─────────────────────────────
+    private static ByteWriter _buildSigs(IrModule irm, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(irm.FuncCount);
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            IrFunction f = irm.Functions[fi];
+            w.WriteU32(pool.Idx(f.Name));
+            w.WriteU16(f.ParamCount);
+            w.WriteU8(Tag.FromName(f.RetType));
+            w.WriteU32(pool.Idx(f.RetType));
+            w.WriteU8(ExecMode.FromName(f.ExecMode));
+            if (f.IsStatic) { w.WriteU8(1); } else { w.WriteU8(0); }
+            int p = 0;
+            while (p < f.ParamCount) {
+                string pt = "?";
+                if (p < f.ParamTypeCount) { pt = f.ParamTypes[p]; }
+                w.WriteU32(pool.Idx(pt));
+                p = p + 1;
+            }
+            w.WriteU8(0);    // tpCount（z42c IrFunction 无 typeparam → ZW-2 补）
+            w.WriteU16(0);   // attrCount（zbc 1.11）
+            fi = fi + 1;
+        }
+        return w;
+    }
+
+    // ── IMPT：导入名（Ordinal sort）。ZW-1A trivial 无调用 → count 0（真扫描 ZW-1C）─────────
+    private static ByteWriter _buildImpt(IrModule irm, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(0);
+        return w;
+    }
+
+    // ── EXPT：导出函数（默认全部）+ kind u8=0 ─────────────────────────────────────────
+    private static ByteWriter _buildExpt(IrModule irm, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(irm.FuncCount);
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            w.WriteU32(pool.Idx(irm.Functions[fi].Name));
+            w.WriteU8(0);
+            fi = fi + 1;
+        }
+        return w;
+    }
+
+    // ── FUNC：count + 每函数体（regCount/blockCount/instrLen/excCount + blockOffsets + instrBytes）─
+    private static ByteWriter _buildFunc(IrModule irm, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(irm.FuncCount);
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            IrFunction f = irm.Functions[fi];
+            // 块 label 序（终结符目标 → 索引）。
+            string[] labels = new string[f.BlockCount];
+            int li = 0;
+            while (li < f.BlockCount) { labels[li] = f.Blocks[li].Label; li = li + 1; }
+            // 指令字节 + 块偏移。
+            var instrs = new ByteWriter();
+            int[] blockOffsets = new int[f.BlockCount];
+            int b = 0;
+            while (b < f.BlockCount) {
+                blockOffsets[b] = instrs.Len();
+                IrBlock blk = f.Blocks[b];
+                int ii = 0;
+                while (ii < blk.InstrCount) { ZbcInstr.WriteInstr(instrs, blk.Instrs[ii], pool); ii = ii + 1; }
+                if (blk.HasTerm) { ZbcInstr.WriteTerm(instrs, blk.Term, labels, f.BlockCount); }
+                b = b + 1;
+            }
+            int regCount = f.MaxReg;
+            if (f.ParamCount > regCount) { regCount = f.ParamCount; }
+            w.WriteU16(regCount);
+            w.WriteU16(f.BlockCount);
+            w.WriteU32(instrs.Len());
+            w.WriteU16(0);   // excCount（z42c IR 无异常表 → ZW-1B+）
+            int bo = 0;
+            while (bo < f.BlockCount) { w.WriteU32(blockOffsets[bo]); bo = bo + 1; }
+            w.AppendWriter(instrs);
+            fi = fi + 1;
+        }
+        return w;
+    }
+
+    // ── REGT：count + 每函数 (regCount u32 + regTypes u8×)。RegTypes = enrich 的 IrType 标签。──
+    private static ByteWriter _buildRegt(IrModule irm) {
+        var w = new ByteWriter();
+        w.WriteU32(irm.FuncCount);
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            IrFunction f = irm.Functions[fi];
+            w.WriteU32(f.RegTypeCount);
+            int r = 0;
+            while (r < f.RegTypeCount) { w.WriteU8(f.RegTypes[r]); r = r + 1; }
+            fi = fi + 1;
+        }
+        return w;
+    }
+
+    // ── 组装：header(16) + directory(secCount×12) + section data；offset 绝对回填 ──────────
+    private static ByteWriter _assemble(string[] tags, ByteWriter[] datas, int secCount) {
+        var w = new ByteWriter();
+        // header
+        w.WriteAsciiBytes("ZBC");
+        w.WriteU8(0);
+        w.WriteU16(ZbcVersion.Major);
+        w.WriteU16(ZbcVersion.Minor);
+        w.WriteU16(0);          // flags（full 模式 = 0）
+        w.WriteU16(secCount);
+        w.WriteU32(0);          // reserved
+        // directory：offset 从 header+dir 之后起，逐段累加 size。
+        int offset = 16 + secCount * 12;
+        int i = 0;
+        while (i < secCount) {
+            w.WriteAsciiBytes(tags[i]);
+            w.WriteU32(offset);
+            w.WriteU32(datas[i].Len());
+            offset = offset + datas[i].Len();
+            i = i + 1;
+        }
+        // section data
+        i = 0;
+        while (i < secCount) { w.AppendWriter(datas[i]); i = i + 1; }
+        return w;
+    }
+}

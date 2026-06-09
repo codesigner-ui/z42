@@ -11,6 +11,11 @@
 | `src/IrModule.z42` | 容器（叶子优先序）：IrFieldDesc / IrClassDesc / IrBlock / IrFunction / IrModule。集合 = typed array + count；StringPool（1-based）。Dump 出 .zasm-like 文本 |
 | `src/IrInstr.z42` | IrInstr 基类 + virtual Dump() + 子类（class-per-instruction）：Const* + Copy + Add/Sub/Mul/Div/Rem + Call/VCall/FieldGet/FieldSet（CG-1C）+ ObjNew/ArrayGet/ArraySet/IsInstance/AsCast（CG-1D）+ Eq..Ge/BitAnd..Shr/Not/Neg/BitNot/StrConcat（CG-1E）。30+ 条，逼近 500 行将按类别拆 |
 | `src/IrTerminator.z42` | IrTerminator 基类 + RetTerm/BrTerm/BrCondTerm/ThrowTerm（终结基本块） |
+| `src/BinaryFormat/ByteWriter.z42` | byte-identical `.zbc` 字节缓冲（int[] 0..255 + LE WriteU8/U16/U32/I64/Str/Patch32/ToHex） |
+| `src/BinaryFormat/ZbcFormat.z42` | .zbc 格式常量（ZbcVersion 1.11 / Op / Tag / ExecMode）+ Tag.FromName/FromIrType（**IrType 序≠zbc tag 序，显式映射**） |
+| `src/BinaryFormat/ZbcStringPool.z42` | .zbc 字符串池（插入序 intern + idx 查找，0-based；STRS 字节序 = intern 序） |
+| `src/BinaryFormat/ZbcInstr.z42` | 指令/终结符字节编码（集中 if-is，镜像 C# WriteInstr/WriteTerminator）；ZW-1A 子集 const/copy/算术 + ret/retval/br/brcond |
+| `src/BinaryFormat/ZbcWriter.z42` | `IrModule → .zbc 字节`（byte-identical vs C# ZbcWriter）：intern 预扫 + 全 8-section（NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT）+ header/directory 组装。ZW-1A：trivial 函数（`empty` 逐字节对账通过） |
 | `src/IrSkeleton.z42` | B0 占位（暂留：SemanticsSkeleton/ProjectSkeleton/PipelineSkeleton 仍引用；随其移除时清理） |
 
 ## 入口点
@@ -23,4 +28,4 @@
 class（非 record）+ virtual Dump 替 record 层次；static class + int 常量替 enum（IrType）；typed array + count 替泛型集合字段。**定义顺序叶子优先**（容器引用叶子的 Dump，bootstrap 单遍按文件序解析，后定义的具体类型方法不可见）。
 
 ## 增量进度
-CG-1A 最小指令集 ✅ / CG-1B 控制流 ✅ / CG-1C 调用·字段 ✅ / CG-1D new·数组·is·as ✅ / CG-1E 运算符 + 块化短路·三目·?? ✅ / CG-2 泛型（obj_new type-args + 方法签名 ResolveTypeP）✅。**Bound→IR 内存模型 codegen 覆盖全部非泛型 L1 + 泛型实例化**。下一步：byte-identical .zbc（ZbcWriter）独立 change（依赖本模型）。
+CG-1A 最小指令集 ✅ / CG-1B 控制流 ✅ / CG-1C 调用·字段 ✅ / CG-1D new·数组·is·as ✅ / CG-1E 运算符 + 块化短路·三目·?? ✅ / CG-2 泛型 ✅。**Bound→IR 内存模型 codegen 覆盖全部非泛型 L1 + 泛型实例化**。byte-identical `.zbc`（`BinaryFormat/`，change `port-z42c-zbc-writer`）：**ZW-1A `empty`（void Main(){}）逐字节对账 C# 通过** ✅。🔴 越过 `empty` 的 byte-identical 阻塞于 DBUG section（C# 对有语句体函数 emit 源码行表，z42c AST 无 span）—— 待 span→LineTable→DBUG 链。

@@ -1,0 +1,92 @@
+// 指令 + 终结符字节编码（port-z42c-zbc-writer ZW-1A-4）。镜像 C# ZbcWriter.Instructions.cs。
+// 调度：集中 if-is（D2，沿用 codegen）。指令头恒 = op u8 + type_tag u8 + dst u16（0xFFFF=无 dst）。
+// ZW-1A 子集：const(i32/i64/bool/null) / copy / 算术(add..rem) + 终结符(ret/retval/br/brcond)。
+// 其余 opcode（比较/位/一元/调用/字段/对象/数组/is·as）随 ZW-1B..1D 增量补。
+namespace Z42.IR.BinaryFormat;
+
+using Z42.IR;
+using Std;
+
+public static class ZbcInstr {
+    public static int NoReg = 0xFFFF;
+
+    // 一条指令 → 字节（strRemap：z42c 1-based 池 idx → 最终池 idx；ZW-1A 无 ConstStr 暂未用）。
+    public static void WriteInstr(ByteWriter w, IrInstr ins, ZbcStringPool pool) {
+        if (ins is ConstI32Instr) {
+            ConstI32Instr i = ins as ConstI32Instr;
+            w.WriteU8(Op.ConstI); w.WriteU8(Tag.I32); w.WriteU16(i.Dst.Id);
+            w.WriteU32(Convert.ToInt32(i.Text));
+            return;
+        }
+        if (ins is ConstI64Instr) {
+            ConstI64Instr i = ins as ConstI64Instr;
+            w.WriteU8(Op.ConstI); w.WriteU8(Tag.I64); w.WriteU16(i.Dst.Id);
+            w.WriteI64(Convert.ToInt64(i.Text));
+            return;
+        }
+        if (ins is ConstBoolInstr) {
+            ConstBoolInstr i = ins as ConstBoolInstr;
+            w.WriteU8(Op.ConstBool); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            if (i.Value) { w.WriteU8(1); } else { w.WriteU8(0); }
+            return;
+        }
+        if (ins is ConstNullInstr) {
+            ConstNullInstr i = ins as ConstNullInstr;
+            w.WriteU8(Op.ConstNull); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            return;
+        }
+        if (ins is CopyInstr) {
+            CopyInstr i = ins as CopyInstr;
+            w.WriteU8(Op.Copy); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU16(i.Src.Id);
+            return;
+        }
+        if (ins is AddInstr) { AddInstr i = ins as AddInstr; ZbcInstr._bin(w, Op.Add, i.Dst, i.A, i.B); return; }
+        if (ins is SubInstr) { SubInstr i = ins as SubInstr; ZbcInstr._bin(w, Op.Sub, i.Dst, i.A, i.B); return; }
+        if (ins is MulInstr) { MulInstr i = ins as MulInstr; ZbcInstr._bin(w, Op.Mul, i.Dst, i.A, i.B); return; }
+        if (ins is DivInstr) { DivInstr i = ins as DivInstr; ZbcInstr._bin(w, Op.Div, i.Dst, i.A, i.B); return; }
+        if (ins is RemInstr) { RemInstr i = ins as RemInstr; ZbcInstr._bin(w, Op.Rem, i.Dst, i.A, i.B); return; }
+        // 未覆盖 opcode：ZW-1A 之外（ZW-1B+ 补）。trivial 函数不应到达。
+    }
+
+    // 终结符 → 字节。labels/blockCount：本函数块 label 序（Br/BrCond 目标 → 块索引 u16）。
+    public static void WriteTerm(ByteWriter w, IrTerminator t, string[] labels, int blockCount) {
+        if (t is RetTerm) {
+            RetTerm r = t as RetTerm;
+            if (r.HasReg) {
+                w.WriteU8(Op.RetVal); w.WriteU8(Tag.FromIrType(r.Reg.Type)); w.WriteU16(r.Reg.Id);
+            } else {
+                w.WriteU8(Op.Ret); w.WriteU8(Tag.Unknown); w.WriteU16(ZbcInstr.NoReg);
+            }
+            return;
+        }
+        if (t is BrTerm) {
+            BrTerm b = t as BrTerm;
+            w.WriteU8(Op.Br); w.WriteU8(Tag.Unknown); w.WriteU16(ZbcInstr.NoReg);
+            w.WriteU16(ZbcInstr._idx(b.Label, labels, blockCount));
+            return;
+        }
+        if (t is BrCondTerm) {
+            BrCondTerm b = t as BrCondTerm;
+            w.WriteU8(Op.BrCond); w.WriteU8(Tag.FromIrType(b.Cond.Type)); w.WriteU16(b.Cond.Id);
+            w.WriteU16(ZbcInstr._idx(b.TrueLabel, labels, blockCount));
+            w.WriteU16(ZbcInstr._idx(b.FalseLabel, labels, blockCount));
+            return;
+        }
+        // ThrowTerm → ZW-1B+
+    }
+
+    private static void _bin(ByteWriter w, int op, TypedReg dst, TypedReg a, TypedReg b) {
+        w.WriteU8(op); w.WriteU8(Tag.FromIrType(dst.Type)); w.WriteU16(dst.Id);
+        w.WriteU16(a.Id); w.WriteU16(b.Id);
+    }
+
+    private static int _idx(string label, string[] labels, int blockCount) {
+        int i = 0;
+        while (i < blockCount) {
+            if (labels[i] == label) { return i; }
+            i = i + 1;
+        }
+        return 0;
+    }
+}

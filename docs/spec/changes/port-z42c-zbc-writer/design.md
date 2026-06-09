@@ -17,7 +17,7 @@
 ```
 [0-3]   magic 'Z''B''C''\0'  = 5A 42 43 00
 [4-5]   version_major u16 LE = 1
-[6-7]   version_minor u16 LE = 9（随 C# bump 同步）
+[6-7]   version_minor u16 LE = 11（随 C# bump 同步；2026-06-09 add-attribute-reflection-methods C3b 把 9→11：1.10 TYPE 每类 attr-ref + 1.11 SIGS 每函数 attr-ref）
 [8-9]   flags u16 LE（bit0 Stripped / bit1 HasDebug / bit2 SymOnly；full 模式 = 0）
 [10-11] section_count u16 LE
 [12-15] reserved u32 = 0
@@ -126,7 +126,7 @@ token 单遍分配（写指令前），确定性来自插入序。
 | `ParamTypes`（SIGS 每形参 1 类型名 str_idx）| 无字段 → EmitFunction 已解析，存进 IrFunction |
 | `RegTypes`（REGT section 每寄存器 IrType 字节）| 无字段 → EmitContext.Alloc 记 reg→tag 表，存进 IrFunction |
 
-**③ SIGS 精确布局**（每函数）：name_idx u32 + ParamCount u16 + RetType_tag u8 + RetType_str_idx u32 + ExecMode u8 + IsStatic u8 + [ParamCount × param_type_str_idx u32] + tpCount u8 + [type param + 约束]。
+**③ SIGS 精确布局**（每函数）：name_idx u32 + ParamCount u16 + RetType_tag u8 + RetType_str_idx u32 + ExecMode u8 + IsStatic u8 + [ParamCount × param_type_str_idx u32] + tpCount u8 + [type param + 约束] + **attrCount u16（zbc 1.11；0 时仍写）+ [attr × (type_name_idx u32 + factory_func_idx u32)]**。TYPE 每类同构（attrCount 在 tpCount/约束块之后，zbc 1.10）。**⚠ 实测漂移修正（2026-06-10）**：fixture 已 regen 到 zbc 1.11（`empty` = **247 字节**，非旧 1.9 的 245；SIGS 每函数因 attrCount u16 增 2 字节，其后各 section offset +2）。下方 245 字节解码是历史 1.9 快照，加 attrCount=0 后 = 1.11 实况。
 **④ FUNC 精确布局**（每函数，LineTable 已移 DBUG）：regCount u16 + blockCount u16 + instrBytesLen u32 + excCount u16 + [blockOffsets u32×blockCount] + [异常表] + instrBytes。
 **⑤ STRS intern 序**（`empty` = `main/?/Main/void/entry`）：C# `InternPoolStrings` 预扫（module.Name → const.str 池 → 类 → 函数名/ret/param[缺省"?"] → block label …）+ 各 BuildXxxSection `pool.Idx` 取已 intern 的 idx。须 1:1 复刻。
 

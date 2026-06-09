@@ -1,0 +1,89 @@
+// 可增长字节缓冲（port-z42c-zbc-writer ZW-1A-1）。镜像 C# BinaryWriter 的 LE 定宽写入。
+// 受限写法：内部用 int[]（每槽 0..255）规避 z42 byte 型不确定性；ToHex 出小写 hex 供 golden 断言。
+// LE 拆字节用位运算。ASCII 字符串字节直写（标识符皆 ASCII；非 ASCII UTF-8 延后 ZW-1E）。
+namespace Z42.IR.BinaryFormat;
+
+using Std;
+
+public sealed class ByteWriter {
+    private int[] _buf;
+    private int   _len;
+    public ByteWriter() { this._buf = new int[64]; this._len = 0; }
+
+    public int Len() { return this._len; }
+
+    private void _ensure(int extra) {
+        while (this._len + extra > this._buf.Length) {
+            int[] bigger = new int[this._buf.Length * 2];
+            int i = 0;
+            while (i < this._len) { bigger[i] = this._buf[i]; i = i + 1; }
+            this._buf = bigger;
+        }
+    }
+
+    public void WriteU8(int v) {
+        this._ensure(1);
+        this._buf[this._len] = v & 0xFF;
+        this._len = this._len + 1;
+    }
+
+    public void WriteU16(int v) {
+        this.WriteU8(v & 0xFF);
+        this.WriteU8((v >> 8) & 0xFF);
+    }
+
+    public void WriteU32(int v) {
+        this.WriteU8(v & 0xFF);
+        this.WriteU8((v >> 8) & 0xFF);
+        this.WriteU8((v >> 16) & 0xFF);
+        this.WriteU8((v >> 24) & 0xFF);
+    }
+
+    public void WriteI64(long v) {
+        int i = 0;
+        while (i < 8) {
+            this.WriteU8((int)((v >> (i * 8)) & 0xFFL));
+            i = i + 1;
+        }
+    }
+
+    // ASCII 串原始字节（无长度前缀；用于 STRS data / section tag）。
+    public void WriteAsciiBytes(string s) {
+        int n = s.Length;
+        int i = 0;
+        while (i < n) { this.WriteU8((int)s.CharAt(i)); i = i + 1; }
+    }
+
+    // 内联串（NSPC）：u16 字节长 + UTF-8 字节。ASCII → ByteLength == Length。
+    public void WriteStr(string s) {
+        this.WriteU16(s.ByteLength);
+        this.WriteAsciiBytes(s);
+    }
+
+    // 回填 4 字节 LE（directory offset patch）。
+    public void Patch32(int pos, int v) {
+        this._buf[pos]     = v & 0xFF;
+        this._buf[pos + 1] = (v >> 8) & 0xFF;
+        this._buf[pos + 2] = (v >> 16) & 0xFF;
+        this._buf[pos + 3] = (v >> 24) & 0xFF;
+    }
+
+    // 追加另一缓冲全部字节。
+    public void AppendWriter(ByteWriter other) {
+        int i = 0;
+        while (i < other._len) { this.WriteU8(other._buf[i]); i = i + 1; }
+    }
+
+    // 小写 hex（golden-hex 断言；规避 byte[] 比较）。
+    public string ToHex() {
+        string digits = "0123456789abcdef";
+        string s = "";
+        int i = 0;
+        while (i < this._len) {
+            int b = this._buf[i];
+            s = s + digits.Substring((b >> 4) & 0xF, 1) + digits.Substring(b & 0xF, 1);
+            i = i + 1;
+        }
+        return s;
+    }
+}

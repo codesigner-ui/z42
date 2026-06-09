@@ -1,0 +1,17 @@
+// z42c byte-identical .zbc writer 单测（port-z42c-zbc-writer ZW-1A）。
+// golden = src/tests/zbc-format/empty/source.zbc（C# z42c 对 `void Main(){}` 产出，zbc 1.11，247 字节）的小写 hex。
+// 验证 z42c 自举 ZbcWriter 逐字节复刻 C# ZbcWriter（header/directory/全 8 section/intern 序/ret 终结符）。
+namespace Z42cSemanticsZbcTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_zbc_empty_byte_identical() {
+    // void Main(){} → 8 section 最小完整文件（NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT）。
+    // 池序 main/?/Main/void/entry；SIGS 含 zbc 1.11 attrCount=0；FUNC entry 块仅 ret(42 00 ffff)。
+    string src = "void Main() { }";
+    string golden = "5a42430001000b0000000800000000004e535043700000000600000053545253760000003e00000054595045b40000000400000053494753b800000014000000494d5054cc0000000400000045585054d00000000900000046554e43d90000001600000052454754ef0000000800000004006d61696e0500000000000000040000000400000001000000050000000400000009000000040000000d000000050000006d61696e3f4d61696e766f6964656e747279000000000100000002000000000000030000000000000000000000000100000002000000000100000000000100040000000000000000004200ffff0100000000000000";
+    Assert.Equal(golden, IrDump.DumpZbcHex(src));
+}
