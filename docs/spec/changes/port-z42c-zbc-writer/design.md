@@ -144,8 +144,12 @@ TYPE(180): count u32=0（无类）
 SIGS(184, 18B): count u32=1；fn[0]Main: name_idx u32=2("Main") + ParamCount u16=0 + RetTag u8=00(void)
                + RetIdx u32=3("void") + ExecMode u8=00(Interp) + IsStatic u8=00 + tpCount u8=0
 IMPT(202): count u32=0
-EXPT/FUNC/REGT: 待读 C# BuildExpt/BuildFunc/BuildRegt 精确化（FUNC=regCount u16+blockCount u16+instrLen u32+excCount u16+blockOffsets+instrBytes）
+EXPT(206, 9B): count u32=1 + 每 export(name_idx u32=2"Main" + kind u8=0)。导出 = entry/public 函数
+FUNC(215, 22B): count u32=1；Main: regCount u16=0 + blockCount u16=1 + instrBytesLen u32=4 + excCount u16=0
+              + blockOffsets[1] u32=0 + instrBytes=「ret」= 42 00 FF FF（Ret op + Unknown tag + NoReg 0xFFFF）
+REGT(237, 8B): func count u32=1；Main: regCount u32=0（无寄存器）
 ```
+**全 245 字节逐一对上 ✓**（已静态核验）。终结符编码：`Ret`=op `0x42`+tag `00`+dst `FF FF`；`RetVal`=`0x43`+tag+reg；`Br`=`0x40`+`00`+`FFFF`+target_blk u16；`BrCond`=`0x41`+condtag+condreg+true_blk+false_blk。NoReg=`0xFFFF`。指令头恒 = op u8 + type_tag u8 + dst u16。EXPT kind: 0=func。REGT 每函数 = regCount u32 + regTypes 字节（fast-path 直写 fn.RegTypes；regCount=max(MaxReg,ParamCount)）。
 
 **🔴 关键 byte-identity 发现（已验证）**：
 - **自由函数 IsStatic = 0**（SIGS 字节确证）！free func 有"无 this"（paramOffset=0）**但 IsStatic 标志=false**。须区分两个概念：**hasThis**（驱动 reg0=this / paramOffset；instance=true，static method/free func=false）vs **IsStatic 标志**（SIGS 字节；仅 static class method=true，**free func=false**）。z42c 现 codegen 把 free func 传 `isStatic=true` 把两者混了 → IsStatic 字节会写成 1，**对不上 C# 的 0**。enrich 修正：IrFunction.IsStatic = isStaticMethod（free func 为 false），paramOffset 另由 hasThis 驱动。
