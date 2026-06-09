@@ -104,9 +104,18 @@ public static class AttributeFactorySynthesizer
         return result;
     }
 
-    /// <summary>`public Foo &lt;factoryName&gt;() { return new Foo(args); }`.
-    /// Spans point at the attribute application so constructor/type errors are
-    /// anchored there.</summary>
+    /// <summary>`public Attribute &lt;factoryName&gt;() { return new Foo(args); }`.
+    ///
+    /// The return type is the <c>Attribute</c> base, not the concrete attribute
+    /// class — so the ordinary type checker enforces the attribute contract for
+    /// free, anchored at the attribute application's span:
+    ///   * a class that does not derive <c>Std.Attribute</c> fails the return
+    ///     upcast (the "X is not an attribute" check);
+    ///   * a non-constant argument fails as an unknown identifier in this
+    ///     parameterless factory's scope (the "constant args only" check);
+    ///   * an unmatched constructor fails normal overload resolution.
+    /// `Attribute` resolves through the stdlib prelude (like user-written
+    /// `Attribute a = ...`).</summary>
     private static FunctionDecl SynthesizeFactory(AttributeApp a, string factoryName)
     {
         var s = a.Span;
@@ -115,7 +124,7 @@ public static class AttributeFactorySynthesizer
         return new FunctionDecl(
             Name:            factoryName,
             Params:          new List<Param>(),
-            ReturnType:      new NamedType(a.Name, s),
+            ReturnType:      new NamedType("Attribute", s),
             Body:            body,
             Visibility:      Visibility.Public,
             Modifiers:       FunctionModifiers.None,
