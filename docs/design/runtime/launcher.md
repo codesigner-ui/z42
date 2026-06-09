@@ -130,6 +130,68 @@ app 可在 **`<app>.runtimeconfig.json`** sidecar(.NET 同款,独立于 zpkg,可
 
 > 独立 sidecar 的好处:版本无关的 launcher 读它**不需解析带版本的 zpkg 格式**;可手改、可被工具生成。这也是 P2(下载即用)的前置——"声明需要的版本 → 没装自动拉"(自动拉 = P2)。
 
+## apphost：每-app 原生可执行文件（add-apphost, 2026-06-09）
+
+类比 .NET apphost：`z42c build` 产出的 Exe-zpkg 不必再靠 `z42 app.zpkg` 跑，而是**生成一个以 app 命名、直接就是 app 的原生可执行文件** `./myapp`——双击/直接调用，自己定位 VM + stdlib 运行时并起 app。
+
+### 用法
+
+```bash
+z42c build app.z42.toml            # → app.zpkg（如常）
+z42 apphost build app.zpkg         # → ./app（原生 stub，与 app.zpkg 同目录）
+./app arg1 arg2                    # 直接运行；参数 + 退出码透传
+```
+
+### 机制：内嵌占位符 patch（.NET 同款）
+
+native apphost stub（`src/toolchain/launcher/src/apphost.rs`，与 trampoline 同 crate、共享 `lib.rs`）内嵌一段固定占位区：32 字节 MAGIC sentinel + 992 字节 payload（共 1024）。`z42 apphost build`（z42 写，`core/apphost.z42`）：
+
+1. 在 stub 模板文件里按 MAGIC 定位占位区；
+2. 把 payload 覆写为 app 的 **zpkg 相对路径（basename）** + NUL；
+3. 写出到 app 同目录、置可执行位；
+4. **macOS：ad-hoc 重签名**（见下）。
+
+产出 exe 放在 app.zpkg 同目录、内嵌 basename → 运行时解析 `<exe_dir>/<app>.zpkg`，**与 exe 文件名无关 ⇒ 改名安全**。运行时 stub 读占位符（未 patch 则报错退出），定位运行时，`exec z42vm launcher.zpkg -- <app.zpkg> -- <argv>`——**复用 launcher 核心的裸 apphost 形式**（版本/`runtimeconfig.json` 解析全在 z42，符合"z42 优先"铁律）。
+
+### 运行时解析：framework-dependent，本地优先
+
+apphost **不捆绑** VM/libs（framework-dependent）；按下列顺序定位 launcher 运行时（`z42vm` + `launcher.zpkg` + `libs`）：
+
+```
+1. $Z42_HOME/launcher                         显式配置覆写，最高优先
+2. 本地：从 exe 目录起逐级上行，<d>/.z42/launcher 或 <d>/.z42（portable 式）
+3. 系统：$HOME/.z42/launcher
+4. 都无 → 报错列已查路径，非零退出
+```
+
+**本地优先于系统**：项目带 `.z42` 时即便系统装了 z42 也用本地的（类比 venv / `node_modules/.bin` 的"项目钉死运行时"）。`$Z42_HOME` 永远能覆写。
+
+### macOS 代码签名（必须）
+
+macOS（尤其 Apple Silicon）强制代码签名：**patch 二进制字节会使 stub 签名失效，内核拒绝运行**（表现为 hang）。故 patcher 在 macOS patch 后 ad-hoc 重签名 `codesign -s - -f <out>`（.NET apphost 同款）。先 patch payload、再签名（codesign 只改签名 blob，不动 `__DATA` 的占位符）。Linux 无签名；Windows 跑无签名 exe 无碍（PE checksum/Authenticode = Deferred）。
+
+### 分发：模板随包/安装
+
+native apphost 模板按 host 编译，随 desktop 包分发：
+- `z42 xtask.zpkg build package` → `<pkg>/bin/apphost`（patcher 便携模式从 `dirname(Z42_PORTABLE_VM)/apphost` 取）。
+- `install.sh` → `$Z42_HOME/launcher/apphost`（installed 模式从此处取）。
+- `z42 xtask.zpkg test dist` 有 apphost smoke（build → `apphost build` → 跑产出 exe → 断言）。
+
+### z42.toml 配置（schema 已定，消费延后）
+
+项目用布尔字段声明是否产 apphost（与 `pack` 同级的输出形态开关）：
+
+```toml
+[project]            # 单 exe
+kind = "exe"; entry = "App.Main"
+apphost = true       # 产 ./app（原生 stub）+ app.zpkg；默认 false（opt-in）
+
+[[exe]]              # 多目标，逐个决定；[[exe]].apphost > [project].apphost
+name = "myapp"; entry = "App.Main"; apphost = true
+```
+
+**默认 `false`（opt-in）**——模板随包 ship 后可翻为 `kind="exe"` 默认 true（对齐 .NET `<UseAppHost>`）。**P1 不读此字段**：`z42c build` 按 `apphost=true` 自动调 patcher = Deferred `apphost-future-build-flag`（碰 compiler/z42c）；当前用手动 `z42 apphost build`。schema 进 `docs/design/compiler/project.md` 随该项一起落地。
+
 ## Deferred / Future Work
 
 ### launcher-future-install: 下载 / install / uninstall / self-update（P2）

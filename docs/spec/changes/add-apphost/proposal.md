@@ -24,17 +24,19 @@
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
 | `src/toolchain/launcher/src/lib.rs` | NEW | 共享 host-resolve：`Runtime` 结构、`z42_home`、运行时探测、`exec_core`；trampoline 与 apphost 复用 |
-| `src/toolchain/launcher/src/bin/apphost.rs` | NEW | apphost 原生 stub：读内嵌占位符 → 本地优先解析 → exec；含占位符 magic + `#[used]` static |
+| `src/toolchain/launcher/src/apphost.rs` | NEW | apphost 原生 stub：读内嵌占位符 → 本地优先解析 → exec；含占位符 magic + `#[used]` static |
 | `src/toolchain/launcher/src/main.rs` | MODIFY | trampoline 改调 `lib.rs`，去掉内联 `resolve_runtime` 重复 |
-| `src/toolchain/launcher/Cargo.toml` | MODIFY | 加 `[lib]` + apphost `[[bin]]`（`src/bin/apphost.rs`） |
-| `src/toolchain/launcher/core/apphost.z42` | NEW | `z42 apphost build` 命令：定位模板 + patch 占位符 + 写出 + chmod |
-| `src/toolchain/launcher/core/launcher.z42` | MODIFY | 命令分发加 `apphost` 分支（launcher.z42 已 498 行，逻辑落新文件 apphost.z42） |
-| `src/toolchain/launcher/core/z42.launcher.z42.toml` | MODIFY | 把 `apphost.z42` 纳入项目编译（多文件 zpkg） |
-| `src/toolchain/launcher/core/tests/apphost_patch_test.z42` | NEW | patcher `[Test]`：patch 后字节校验 + 未配置模板报错 |
+| `src/toolchain/launcher/Cargo.toml` | MODIFY | 加 `[lib]` + apphost `[[bin]]`（`src/apphost.rs`） |
+| `src/toolchain/launcher/core/apphost.z42` | NEW | `z42 apphost build` 命令：定位模板 + `PatchBytes`（纯函数）+ 写出 + chmod + **macOS ad-hoc 重签名（Decision 7）** |
+| `src/toolchain/launcher/core/launcher.z42` | MODIFY | 命令分发加 `apphost` 分支 + help（逻辑落新文件 apphost.z42） |
+| `src/toolchain/launcher/core/z42.launcher.z42.toml` | MODIFY | 加 `z42.encoding` 依赖（`*.z42` glob 已自动纳入 apphost.z42） |
 | `src/toolchain/launcher/README.md` | MODIFY | 文档新 lib / apphost bin / `apphost build` 命令 |
-| `docs/design/runtime/launcher.md` | MODIFY | 新增 "apphost" 段：机制 + 本地优先解析规则 + Deferred |
-| `docs/spec/changes/ACTIVE.md` | MODIFY | 登记 `add-apphost` 排队（docs，不上锁） |
-| `docs/roadmap.md` | MODIFY | Deferred Backlog Index 加 self-contained / single-file / `--apphost` flag 索引行 |
+| `scripts/xtask_package.z42` | MODIFY | 把 `apphost` bin 铺进 `<pkg>/bin/`（Decision 8，folded-in）|
+| `scripts/install.sh` | MODIFY | 把 `apphost` 装到 `$Z42_HOME/launcher/apphost`（Decision 8）|
+| `scripts/xtask_test_dist.z42` | MODIFY | apphost smoke：build app → `apphost build` → 跑产出 exe → 断言（取代原 core/tests [Test]，因 launcher core 无 test-runner 接线）|
+| `docs/design/runtime/launcher.md` | MODIFY | 新增 "apphost" 段：机制 + 本地优先解析规则 + 签名 + Deferred |
+| `docs/spec/changes/ACTIVE.md` | MODIFY | 登记 `add-apphost`（docs，不上锁） |
+| `docs/roadmap.md` | MODIFY | Deferred Backlog Index 加 self-contained / single-file / build-flag / windows-checksum / cross-sign 索引行 |
 
 **只读引用**（理解上下文必须读，不修改）：
 
@@ -48,8 +50,9 @@
 - **self-contained 模式**：VM + libs 随 app 本地化（`--self-contained`）。P1 只做 framework-dependent（不内置运行时）。→ design Deferred `apphost-future-self-contained`
 - **single-file 自包含**：apphost 链接 `libz42_vm` + 内嵌 zpkg/libs，走 embedding C ABI 内存加载。依赖 C ABI 成熟，且碰 `runtime` 锁。→ design Deferred `apphost-future-single-file`
 - **`z42c build --apphost` 便捷 flag**：build 完自动调 patcher。碰 `compiler` / `z42c` 锁，单独 change。→ design Deferred `apphost-future-build-flag`
-- **发布包内置 per-RID apphost 模板**：`z42 xtask.zpkg build package` 把 apphost 模板（native，按 RID）铺进包，让 `z42 apphost build` 在已装环境可用。碰 xtask 打包，P2 单独 change。→ design Deferred `apphost-future-package-template`
+- ~~发布包内置 apphost 模板~~：**已折进 P1**（User 裁决 2026-06-09，Decision 8）——`build package` 铺 `bin/apphost`、`install.sh` 装、dist smoke 覆盖。
 - **cwd 上行搜索 / 富搜索路径配置**：P1 本地搜索只从 exe 目录上行；cwd 上行与可配置搜索路径延后。
+- **Windows PE 校验和 / Authenticode、跨平台交叉签名**：P1 macOS 用 host `codesign`；Windows 无签名 exe 直接跑。→ design Deferred `apphost-future-windows-checksum` / `apphost-future-cross-sign`
 
 ## Open Questions
 

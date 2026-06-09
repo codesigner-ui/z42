@@ -37,6 +37,7 @@ void Main() {
     if (cmd == "run")     { _cmdRun(rest);     return; }
     if (cmd == "install")   { _cmdInstall(rest);   return; }
     if (cmd == "uninstall") { _cmdUninstall(rest); return; }
+    if (cmd == "apphost")   { Apphost.Build(rest); return; }
     // Bare apphost form: `z42 app.zpkg [-- args]`
     if (cmd.EndsWith(".zpkg") || cmd.EndsWith(".zbc")) { _cmdRun(argv); return; }
 
@@ -460,6 +461,7 @@ void _help() {
     Console.WriteLine("  which [--runtime V] [app]            print the resolved z42vm path");
     Console.WriteLine("  install <version|nightly>            download a runtime from GitHub Releases");
     Console.WriteLine("  uninstall <version>                  remove an installed runtime");
+    Console.WriteLine("  apphost build <app.zpkg> [--out N]   make a native apphost exe for an app");
     Console.WriteLine("  info                                 show Z42_HOME / default / counts");
 }
 

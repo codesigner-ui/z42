@@ -17,6 +17,7 @@ include = ["*.z42"]
 "z42.net"         = "0.1.0"   # HttpClient — download release assets
 "z42.compression" = "0.1.0"   # Gzip + Tar — unpack .tar.gz
 "z42.crypto"      = "0.1.0"   # Sha256 — verify against SHA256SUMS
+"z42.encoding"    = "0.1.0"   # Utf8.GetBytes — patch apphost placeholder
 
 [build]
 # reorg-artifacts-layout (2026-06-04): emit launcher.zpkg into the shared

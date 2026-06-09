@@ -1,0 +1,159 @@
+// z42 apphost build (add-apphost, 2026-06-09).
+//
+// Produce a per-app native apphost executable: copy the native apphost stub
+// template (../src/bin/apphost.rs, shipped next to z42vm) and patch its
+// embedded target placeholder with the app's zpkg basename. The produced exe
+// is placed in the app's own directory, so it resolves `<exe_dir>/<app>.zpkg`
+// at runtime (rename-safe — the embedded path does not depend on the exe name).
+//
+// The placeholder is a 32-byte MAGIC sentinel (matching apphost.rs) followed
+// by a 992-byte payload; total 1024. We locate MAGIC by content, then
+// overwrite the payload with the NUL-terminated basename. See
+// docs/design/runtime/launcher.md ("apphost").
+
+namespace Z42Launcher;
+
+using Std;
+using Std.IO;
+using Std.Encoding;
+
+public static class Apphost {
+    // z42 apphost build <app.zpkg> [--out <name>]
+    public static void Build(string[] rest) {
+        if (rest.Length == 0 || rest[0] != "build") {
+            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <name>]");
+            Environment.Exit(2);
+            return;
+        }
+
+        string app = "";
+        string outName = "";
+        int i = 1;
+        while (i < rest.Length) {
+            if (rest[i] == "--out" && i + 1 < rest.Length) { outName = rest[i + 1]; i = i + 2; continue; }
+            if (app.Length == 0) { app = rest[i]; }
+            i = i + 1;
+        }
+        if (app.Length == 0) {
+            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <name>]");
+            Environment.Exit(2);
+            return;
+        }
+        if (!File.Exists(app)) {
+            ConsoleError.WriteLine("z42 apphost: app not found: " + app);
+            Environment.Exit(1);
+            return;
+        }
+
+        string tmpl = _templatePath();
+        if (tmpl.Length == 0 || !File.Exists(tmpl)) {
+            ConsoleError.WriteLine("z42 apphost: stub template not found (set Z42_APPHOST_TEMPLATE, or use a packaged z42).");
+            Environment.Exit(1);
+            return;
+        }
+
+        // The exe lands in the app's directory and embeds just the basename →
+        // resolves <exe_dir>/<app>.zpkg, independent of the exe's own name.
+        string appName = Path.GetFileName(app);
+        string appDir = Path.GetDirectoryName(app);
+        string exeName = (outName.Length > 0) ? outName : Path.GetFileNameWithoutExtension(app);
+        string outPath = (appDir.Length > 0) ? Path.Join(appDir, exeName) : exeName;
+
+        byte[] template = File.ReadAllBytes(tmpl);
+        byte[] patched = PatchBytes(template, appName);
+        if (patched.Length == 0) {     // empty = failure sentinel (a real patch is never empty)
+            ConsoleError.WriteLine("z42 apphost: cannot patch template (placeholder MAGIC missing, or app name > 991 bytes).");
+            Environment.Exit(1);
+            return;
+        }
+        File.WriteAllBytes(outPath, patched);
+        File.MakeExecutable(outPath);
+
+        // macOS (esp. Apple Silicon) enforces code signatures: patching the
+        // stub's bytes invalidates its signature → the kernel refuses to run
+        // it. Re-sign ad-hoc, exactly as .NET's apphost does. (Linux has no
+        // signing; Windows runs unsigned exes, so no re-sign needed there.)
+        if (Platform.OS() == "macos") {
+            ProcessResult cs = new Process("codesign")
+                .Arg("-s").Arg("-").Arg("-f").Arg(outPath)
+                .Stderr(Stdio.Inherit())
+                .Run();
+            if (cs.ExitCode != 0) {
+                ConsoleError.WriteLine("z42 apphost: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + "); the apphost will not run on macOS.");
+                Environment.Exit(1);
+                return;
+            }
+        }
+
+        Console.WriteLine("apphost → " + outPath + "  (runs " + appName + ")");
+    }
+
+    // Pure placeholder patch: copy `template`, find the 32-byte MAGIC, and
+    // overwrite the 992-byte payload with `appName` + NUL (zero-filled tail).
+    // Returns an empty array if MAGIC is absent / truncated, or `appName`
+    // doesn't fit. Kept pure (no I/O, no Exit) so it is unit-testable.
+    public static byte[] PatchBytes(byte[] template, string appName) {
+        byte[] magic = Utf8.GetBytes("z42-apphost-target-v1-MAGIC-0001");
+        int at = _indexOf(template, magic);
+        if (at < 0) { return new byte[0]; }
+
+        int payloadStart = at + magic.Length;
+        int payloadLen = 1024 - magic.Length;          // 992
+        if (payloadStart + payloadLen > template.Length) { return new byte[0]; }
+        byte[] nameBytes = Utf8.GetBytes(appName);
+        if (nameBytes.Length + 1 > payloadLen) { return new byte[0]; }   // +1 for NUL
+
+        byte[] outBytes = new byte[template.Length];
+        int c = 0;
+        while (c < template.Length) { outBytes[c] = template[c]; c = c + 1; }
+        // Overwrite the whole payload: name bytes, then NUL + zero fill.
+        int k = 0;
+        while (k < payloadLen) {
+            if (k < nameBytes.Length) { outBytes[payloadStart + k] = nameBytes[k]; }
+            else { outBytes[payloadStart + k] = (byte)0; }
+            k = k + 1;
+        }
+        return outBytes;
+    }
+
+    // Locate the native apphost stub template: explicit override, else next to
+    // the portable z42vm, else $Z42_HOME/launcher (installed, alongside z42vm).
+    private static string _templatePath() {
+        string name = Platform.IsWindows() ? "apphost.exe" : "apphost";
+
+        string ovr = Environment.GetEnvironmentVariable("Z42_APPHOST_TEMPLATE") ?? "";
+        if (ovr.Length > 0) { return ovr; }
+
+        string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+        if (portableVm.Length > 0) {
+            string dir = Path.GetDirectoryName(portableVm);
+            if (dir.Length > 0) { return Path.Join(dir, name); }
+        }
+
+        string home = Environment.GetEnvironmentVariable("Z42_HOME") ?? "";
+        if (home.Length == 0) {
+            string h = Environment.GetEnvironmentVariable("HOME") ?? "";
+            if (h.Length > 0) { home = Path.Join(h, ".z42"); }
+        }
+        if (home.Length > 0) { return Path.Join(Path.Join(home, "launcher"), name); }
+        return "";
+    }
+
+    // First index of `needle` in `hay`, or -1.
+    private static int _indexOf(byte[] hay, byte[] needle) {
+        if (needle.Length == 0 || needle.Length > hay.Length) { return -1; }
+        int limit = hay.Length - needle.Length;
+        int i = 0;
+        while (i <= limit) {
+            int j = 0;
+            bool match = true;
+            while (j < needle.Length) {
+                if (hay[i + j] != needle[j]) { match = false; break; }
+                j = j + 1;
+            }
+            if (match) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+}

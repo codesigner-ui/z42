@@ -336,6 +336,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | launcher 下载/install/self-update (P2) | `z42 install/uninstall/self update` + 每平台×版本发布点 + 校验（P1 用 `z42 link` 本地注册） | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | launcher app 版本声明格式 | zpkg `META.toolchain_version` vs `runtimeconfig.json` sidecar 未定；分发(P2)时才需 | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | z42c 裸脚本→Exe-zpkg | 原 launcher phase 0.5；现以 mini-project(`kind="exe"` toml) workaround，ROI 低 | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
+| apphost self-contained | `--self-contained`：VM+libs 随 app 本地化（P1 仅 framework-dependent）| [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
+| apphost single-file | 链 `libz42_vm` + 内嵌 zpkg/libs，经 embedding C ABI 内存加载；依赖 C ABI + 碰 runtime | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
+| apphost `z42c build --apphost` | build 读 z42.toml `apphost=true` 自动调 patcher；碰 compiler/z42c（现手动 `z42 apphost build`）| [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
+| apphost Windows checksum/Authenticode + 跨平台交叉签名 | Windows PE checksum / 在 Linux 上签 macOS apphost（需内建 Mach-O 签名器；P1 用 host codesign）| [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
+| apphost cwd 上行 / 富搜索配置 | P1 本地搜索仅 exe 目录上行 | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | stdlib 剩余缺失包 | **async** 仍延后（依赖 L3 async/await 语法）；~~fs~~ ✅ / ~~os~~ ✅（合入 z42.io）/ ~~threading~~ ✅ 2026-05-20 / ~~net~~ ✅ K1-K4 2026-05-24~05-25 / ~~crypto~~ ✅ SHA-1/256+HMAC 2026-05-24~05-25。详 `docs/design/stdlib/roadmap.md` | [stdlib/roadmap.md](design/stdlib/roadmap.md) |
 | split-debug-symbols 退化 trace ip+build_id | line==0 时帧追加 `+0x<ip> [build:<8hex>]`；需 VmFrame 追踪 PC | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | `z42c symbolicate` 离线工具 | 把 `.zsym` 应用到 crash trace 还原 file:line:col | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |

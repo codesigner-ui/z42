@@ -166,6 +166,12 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     _makeExe(Path.Join(pkgDir, "z42"));
     Console.WriteLine("      ✓ z42 (trampoline, package root)");
+    // apphost stub template (add-apphost): `z42 apphost build` copies + patches
+    // this per app. Ships in bin/ next to z42vm (the patcher finds it there).
+    _copyIfExists(Path.Join(cargoOut, "apphost"), Path.Join(pkgDir, "bin/apphost"));
+    _copyIfExists(Path.Join(cargoOut, "apphost.exe"), Path.Join(pkgDir, "bin/apphost.exe"));
+    _makeExe(Path.Join(pkgDir, "bin/apphost"));
+    Console.WriteLine("      ✓ apphost (stub template, bin/)");
     string libs = _libsDir(root);
     c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
         .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")

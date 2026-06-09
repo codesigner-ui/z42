@@ -7,9 +7,21 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+# Shared host-resolve/exec logic for both bins (add-apphost).
+[lib]
+name = "z42_launcher"
+path = "src/lib.rs"
+
 [[bin]]
 name = "z42"
 path = "src/main.rs"
+
+# Per-app apphost stub template (add-apphost). `z42 apphost build` copies this
+# binary and patches its embedded target placeholder with the app's zpkg path.
+# NB: lives at src/apphost.rs (NOT src/bin/) — `.gitignore` ignores `bin/`.
+[[bin]]
+name = "apphost"
+path = "src/apphost.rs"
 
 [profile.release]
 opt-level = "z"

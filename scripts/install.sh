@@ -41,6 +41,10 @@ cp -f "$PKG/bin/$vm_name" "$Z42_HOME/launcher/$vm_name"
 cp -f "$PKG/launcher.zpkg" "$Z42_HOME/launcher/launcher.zpkg"
 rm -rf "$Z42_HOME/launcher/libs"
 cp -R "$PKG/libs" "$Z42_HOME/launcher/libs"
+# apphost stub template (add-apphost): so installed-mode `z42 apphost build`
+# finds it at $Z42_HOME/launcher/apphost (alongside z42vm).
+apphost_name="apphost"; [ -f "$PKG/bin/apphost.exe" ] && apphost_name="apphost.exe"
+[ -f "$PKG/bin/$apphost_name" ] && { cp -f "$PKG/bin/$apphost_name" "$Z42_HOME/launcher/$apphost_name"; chmod +x "$Z42_HOME/launcher/$apphost_name" 2>/dev/null || true; }
 
 # 3. register this version as the default app runtime (link → launcher/,
 #    so z42vm/libs aren't copied twice).

@@ -8,7 +8,7 @@ z42 apphost build app.zpkg  →  ./app  (+ 旁边的 app.zpkg)        (本变更
 
 运行 ./app arg1 arg2:
 ┌─────────────────────────────────────────────────────────────────┐
-│ apphost stub (Rust, src/bin/apphost.rs)                          │
+│ apphost stub (Rust, src/apphost.rs)                          │
 │  1. current_exe() → exe_dir                                       │
 │  2. 读内嵌占位符 static → app 相对路径 "app.zpkg"                  │
 │     → resolve <exe_dir>/app.zpkg                                  │
@@ -136,6 +136,25 @@ entry   = "Helper.Main"
 - **谁读这个字段**：`z42c build`（编译器 driver）。即"build 时按 `apphost=true` 自动调 patcher"= Deferred **`apphost-future-build-flag`**（碰 `compiler`/`z42c` 锁）。**本变更（P1）不读 z42.toml**——P1 只提供手动 `z42 apphost build app.zpkg`。字段 schema 现在定死（避免日后改名），消费延后。
 - 故 **P1 不动 `docs/design/compiler/project.md`**（不文档化尚未被读取的字段）；schema 落地 + parser 支持随 `apphost-future-build-flag` 一起进 `project.md`。
 
+### Decision 7：macOS 代码签名 —— patch 后必须 ad-hoc 重签名 🔴（实施期发现）
+
+**问题**：实施 e2e 时发现，patch 二进制字节后**产出的 apphost 在 macOS（尤其 Apple Silicon）跑不起来**——内核报 `invalid signature (code or signature have been modified)`，表现为 hang/被杀。原因：macOS arm64 强制代码签名，修改字节使 stub 的（ad-hoc）签名失效。
+
+**决定**：patcher 在 macOS 上 patch + 写出 + `MakeExecutable` 后，**ad-hoc 重签名**：`codesign -s - -f <out>`（经 `Std.IO.Process`）。这正是 .NET apphost 的同款解法（其 `HostWriter` 在 macOS re-sign）。
+- **平台分支**：仅 `Platform.OS() == "macos"` 执行。Linux 无签名机制（no-op）；Windows 跑无签名 PE 没问题（Authenticode 校验和失效不阻止运行，见 Deferred）。
+- **顺序**：先 patch payload，再签名——codesign 只改 LINKEDIT 的签名 blob，不动 `__DATA` 里的占位符，故 patch 存活。
+- **依赖**：`codesign`（macOS 基础系统自带，`/usr/bin/codesign`）。跨平台交叉签名（在 Linux 上签 macOS apphost）= Deferred（需内建 Mach-O 签名器，P1 host-target 用 codesign 足够）。
+- **失败处理**：codesign 非零退出 → 报错 + 退出 1（不产出跑不了的 apphost）。
+
+> 实测：未签名的 patched apphost → 内核拒绝运行（hang）；`codesign -s - -f` 后 → 正常跑、转发参数 + 退出码。
+
+### Decision 8：发布打包内置 apphost 模板（P1 folded-in，User 裁决 2026-06-09）
+
+原 proposal 把"发布包内置 per-RID apphost 模板"列为 Deferred；实施期 User 裁决**折进 P1**（让 apphost 开箱可用且进 GREEN dist gate）：
+- `z42 xtask.zpkg build package`：launcher crate 现产 `z42` + `apphost` 两个 bin，把 `apphost` 铺进 `<pkg>/bin/apphost`（patcher 便携模式从 `dirname(Z42_PORTABLE_VM)/apphost` 取）。
+- `install.sh`：把 `apphost` 装到 `$Z42_HOME/launcher/apphost`（installed 模式 patcher 从此处取）。
+- `z42 xtask.zpkg test dist`：新增 apphost smoke（build app.zpkg → `apphost build` → 跑产出 exe → 断言 `APPHOST_OK`）。
+
 ## Implementation Notes
 
 - **lib.rs 抽取**：`Runtime { vm, core, libs, portable }`、`z42_home()`、`probe_runtime(dir) -> Option<Runtime>`（判一个目录是否含完整运行时，installed/portable 两式）、`exec_core(rt, core_args) -> !`。trampoline = `installed → portable`；apphost = `Z42_HOME → 本地上行 → $HOME/.z42`，两者拼 `probe_runtime` 即可。
@@ -155,9 +174,9 @@ entry   = "Helper.Main"
 - **Rust 单元测试**（inline `#[cfg(test)]`，launcher crate）：
   - 占位符：未 patch（payload 全 0）→ `parse_target()` = None；patch 后 → 得正确路径；MAGIC 完整。
   - 解析顺序：临时目录搭 `$Z42_HOME` / 本地 `.z42` / `$HOME/.z42` 三态，断言 `Z42_HOME > 本地 > 系统`；本地命中遮蔽系统；都无 → None。
-- **z42 [Test]**（`core/tests/apphost_patch_test.z42`）：`apphost build` patch 一个样例 zpkg → 读回字节断言 payload 被覆写 + NUL 终止；未配置模板（payload 全 0）跑 → 报"apphost not configured"。
-- **e2e 烟测**：patch 样例 app → `./app foo` 跑 → 断言 app 见到 `[foo]` + 退出码透传。挂到 launcher 的 dist smoke（与现有 portable `z42 which` smoke 同处；具体 stage 文件实施时确认，沿用 `z42 xtask.zpkg test dist`）。
-- GREEN：`z42 xtask.zpkg test`（含 cross-zpkg / lib）；发行相关追加 `test dist`。
+- **dist smoke**（`scripts/xtask_test_dist.z42` 的 `_apphostSmoke`，随 `z42 xtask.zpkg test dist`）：用打包的 z42c build 一个 `app.zpkg`（print `APPHOST_OK`）→ `z42 apphost build` → 跑产出 exe（Z42_HOME→包符号链接）→ 断言输出含 `APPHOST_OK`。覆盖 patch + macOS 重签名 + 本地优先解析 + 起 app 全链路。
+  - 取代原计划的 `core/tests/apphost_patch_test.z42`（launcher core 无 z42-test-runner 接线，[Test] 不进 gate）。
+- GREEN：`z42 xtask.zpkg test`；发行/apphost 相关追加 `z42 xtask.zpkg test dist`（需先 `build package release`）。
 
 ## Deferred / Future Work
 
@@ -184,12 +203,22 @@ entry   = "Helper.Main"
 - **前置依赖**：本变更的 `z42 apphost build` 命令落地；随此项把 `apphost` 字段进 `docs/design/compiler/project.md` schema + z42c project 解析 + driver 调 patcher（外加 CLI `--apphost` 覆写）
 - **当前 workaround**：`z42c build app` 后手动 `z42 apphost build app.zpkg`（z42.toml 的 `apphost` 字段 P1 暂不被读取）
 
-### apphost-future-package-template: 发布包内置 per-RID apphost 模板
+### ~~apphost-future-package-template~~: 发布包内置 apphost 模板 —— ✅ folded into P1（Decision 8）
 
-- **来源**：本 proposal Out of Scope
-- **触发原因**：`z42 apphost build` 需能在已装环境取到 native apphost 模板（按 RID）；P1 只在 dev（cargo 产物）可用
-- **前置依赖**：`z42 xtask.zpkg build package` 把 apphost 模板铺进包 + `manifest.toml`；碰 xtask 打包
-- **当前 workaround**：dev 期从 cargo 产物路径取模板
+不再延后：`build package` 铺 `bin/apphost`、`install.sh` 装 `launcher/apphost`、dist smoke 覆盖。
+（per-RID 交叉打包仍随 `apphost-future-cross-sign` 一起处理。）
+
+### apphost-future-windows-checksum: Windows PE 校验和 / Authenticode
+
+- **来源**：Decision 7
+- **触发原因**：patch 使 PE checksum / Authenticode 签名失效；Windows 跑**无签名** exe 没问题，故 P1 不处理。若日后分发签名的 Windows apphost，需重算 PE checksum（+ 可选重签名）
+- **当前 workaround**：Windows apphost 不签名即可运行
+
+### apphost-future-cross-sign: 跨平台交叉签名 apphost
+
+- **来源**：Decision 7
+- **触发原因**：P1 用 host 的 `codesign` 签 macOS apphost（只能在 macOS 上签 macOS）。跨平台（Linux CI 产 macOS apphost）需内建 Mach-O ad-hoc 签名器
+- **当前 workaround**：在目标 host 上 `z42 apphost build`
 
 ### apphost-future-cwd-search: cwd 上行 / 富搜索路径配置
 
