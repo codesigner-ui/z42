@@ -1,0 +1,94 @@
+// IR 容器（port-z42c-codegen CG-1A）。镜像 C# z42.IR/IrModule.cs 的内存模型。
+// 受限写法：class（非 record）；集合 = typed array + int count（类字段不能带泛型）。
+// Dump 出 .zasm-like 文本（镜像 ir.md），供 [Test] 断言（非 byte-identical .zbc）。
+// CG-1A 起步字段；ExceptionTable/LineTable/TypeParams 等延后（byte-identical 才需）。
+//
+// ⚠ 定义顺序 = 叶子优先（IrBlock → IrFunction → IrModule）：bootstrap 编译器单遍按文件序解析，
+//   方法体引用「同文件中后定义的具体类型」的方法会 E0402（区别于引用先定义的基类，如 Bound.z42
+//   的 BoundStmt[]）。容器引用叶子的 Dump，故叶子必须先定义。
+namespace Z42.IR;
+
+public sealed class IrFieldDesc {
+    public string Name;
+    public string Type;   // 类型名文本（Z42Type.Name）
+    public IrFieldDesc(string name, string type) { this.Name = name; this.Type = type; }
+}
+
+// 类/结构描述：名 + 基类 + 字段（slot 序）。
+public sealed class IrClassDesc {
+    public string        Name;
+    public bool          HasBase;
+    public string        BaseName;
+    public IrFieldDesc[] Fields;
+    public int           FieldCount;
+    public IrClassDesc(string name, bool hasBase, string baseName, IrFieldDesc[] fields, int fieldCount) {
+        this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
+        this.Fields = fields; this.FieldCount = fieldCount;
+    }
+}
+
+// 基本块：label + 直线指令 + 终结符（显式，无 fall-through）。
+// Instrs/Term 是其他文件的基类（IrInstr/IrTerminator，含 virtual Dump）→ 跨文件引用基类 OK。
+public sealed class IrBlock {
+    public string        Label;
+    public IrInstr[]     Instrs;
+    public int           InstrCount;
+    public IrTerminator  Term;
+    public bool          HasTerm;
+    public IrBlock(string label, IrInstr[] instrs, int instrCount, IrTerminator term, bool hasTerm) {
+        this.Label = label; this.Instrs = instrs; this.InstrCount = instrCount;
+        this.Term = term; this.HasTerm = hasTerm;
+    }
+    public string Dump() {
+        string s = this.Label + ":";
+        int i = 0;
+        while (i < this.InstrCount) { s = s + "\n  " + this.Instrs[i].Dump(); i = i + 1; }
+        if (this.HasTerm) { s = s + "\n  " + this.Term.Dump(); }
+        return s;
+    }
+}
+
+// 函数 IR：名 + 形参数（含 this）+ 返回类型名 + 基本块。MaxReg = 寄存器总数（预分配提示）。
+public sealed class IrFunction {
+    public string    Name;
+    public int       ParamCount;
+    public string    RetType;
+    public bool      IsStatic;
+    public IrBlock[] Blocks;
+    public int       BlockCount;
+    public int       MaxReg;
+    public IrFunction(string name, int paramCount, string retType, bool isStatic,
+                      IrBlock[] blocks, int blockCount, int maxReg) {
+        this.Name = name; this.ParamCount = paramCount; this.RetType = retType; this.IsStatic = isStatic;
+        this.Blocks = blocks; this.BlockCount = blockCount; this.MaxReg = maxReg;
+    }
+    public string Dump() {
+        string s = "fn @" + this.Name + "(" + this.ParamCount.ToString() + ") -> " + this.RetType + " {";
+        int i = 0;
+        while (i < this.BlockCount) { s = s + "\n" + this.Blocks[i].Dump(); i = i + 1; }
+        return s + "\n}";
+    }
+}
+
+// 顶层模块：函数 + 类描述 + 字符串池（1-based，0=无）。
+public sealed class IrModule {
+    public string         Name;
+    public string[]       StringPool;   // 1-based：StringPool[0] 占位 ""
+    public int            StringCount;  // 含占位
+    public IrClassDesc[]  Classes;
+    public int            ClassCount;
+    public IrFunction[]   Functions;
+    public int            FuncCount;
+    public IrModule(string name, string[] pool, int strCount,
+                    IrClassDesc[] classes, int classCount, IrFunction[] funcs, int funcCount) {
+        this.Name = name; this.StringPool = pool; this.StringCount = strCount;
+        this.Classes = classes; this.ClassCount = classCount;
+        this.Functions = funcs; this.FuncCount = funcCount;
+    }
+    public string Dump() {
+        string s = "module \"" + this.Name + "\"";
+        int i = 0;
+        while (i < this.FuncCount) { s = s + "\n\n" + this.Functions[i].Dump(); i = i + 1; }
+        return s;
+    }
+}

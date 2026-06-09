@@ -32,11 +32,9 @@ SSA IR（IrModule → IrFunction → IrBlock → IrInstr）。
 | `src/z42c/z42c.ir/src/IrModule.z42` | NEW | IrModule / IrClassDesc / IrFieldDesc / IrFunction / IrBlock（容器，含 StringPool） |
 | `src/z42c/z42c.ir/src/IrInstr.z42` | NEW | IrInstr 基类 + virtual Op()/Dump() + 子类（按增量加：Const*/Copy/Add..Rem/比较/逻辑位运算/Call/VCall/FieldGet·Set/ObjNew/ArrayGet·Set/Cast/IsInstance/…） |
 | `src/z42c/z42c.ir/src/IrTerminator.z42` | NEW | IrTerminator 基类 + RetTerm/BrTerm/BrCondTerm/ThrowTerm |
-| `src/z42c/z42c.ir/src/IrSkeleton.z42` | DELETE | 占位移除（真实模型就位后；先确认 pipeline 不再引用 namespace 占位） |
-| `src/z42c/z42c.semantics/src/Codegen/IrGen.z42` | NEW | 模块级：StringPool intern + IrClassDesc 收集 + 驱动逐函数 emit → IrModule |
-| `src/z42c/z42c.semantics/src/Codegen/FunctionEmitter.z42` | NEW | 每函数：nextReg/locals/blocks 状态 + EmitExpr(集中 if-is)→TypedReg + EmitStmt + 块管理 |
+| `src/z42c/z42c.semantics/src/IrGen.z42` | NEW | 模块级：StringPool intern + IrClassDesc 收集 + 驱动逐函数 emit → IrModule（平铺，同现有 z42c.semantics 布局）|
+| `src/z42c/z42c.semantics/src/FunctionEmitter.z42` | NEW | 每函数：nextReg/locals/blocks 状态 + EmitExpr(集中 if-is)→TypedReg + EmitStmt + 块管理 |
 | `src/z42c/z42c.semantics/src/IrDump.z42` | NEW | 纯函数：源 → IR 文本（[Test] + driver `--dump-ir` 后续） |
-| `src/z42c/z42c.semantics/z42c.semantics.z42.toml` | MODIFY | 加 z42c.ir 依赖 |
 | `src/z42c/z42c.semantics/tests/codegen/codegen_tests.z42` | NEW | codegen [Test] 单元（IR 文本断言） |
 | `src/z42c/z42c.semantics/tests/codegen/z42c.semantics.test.codegen.z42.toml` | NEW | 测试单元 manifest |
 | `src/z42c/z42c.ir/README.md` | MODIFY | 核心文件表 + 模型说明（去骨架） |
@@ -58,6 +56,8 @@ SSA IR（IrModule → IrFunction → IrBlock → IrInstr）。
 - z42c.pipeline 的 build 命令串联（codegen 就绪后另起）。
 - z42c.project 文件系统段 / zpkg 读写（独立 backlog）。
 
-## Open Questions
+## Open Questions（实施开工核查结论）
 
-- [ ] IrSkeleton 删除前确认 z42c.pipeline / 其他包是否仍引用 `Z42.IR` namespace 占位（实施时核查；若引用，保留空 namespace 文件或迁移引用）。
+- [x] **IrSkeleton 保留**（不删）：3 个 skeleton 文件（SemanticsSkeleton/ProjectSkeleton/PipelineSkeleton）仍 `new IrSkeleton()`；删除会破坏跨包文件。新 IR 模型同样声明 `namespace Z42.IR` 使 namespace 存活，IrSkeleton 共存无害 → 待那些 skeleton 整体移除时清理。Scope 已去 DELETE 行。
+- [x] **z42c.semantics 已依赖 z42c.ir**（toml 既有）→ 无需改 toml。
+- [x] **codegen 文件平铺** src/（同现有布局），非 Codegen/ 子目录；增长后再 refactor 引子目录。

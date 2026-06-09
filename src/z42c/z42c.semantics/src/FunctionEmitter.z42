@@ -1,0 +1,215 @@
+// 每函数 Bound → IR lowering（port-z42c-codegen CG-1A）。镜像 C# z42.Semantics/Codegen/FunctionEmitter。
+// 集中 if-is 调度（D1，同 TypeChecker._bindExpr/_bindStmt）；递归树遍历，无表达式临时栈——
+// 每子表达式 Alloc 一个寄存器 + 内联 Emit 指令，返回该寄存器。
+// CG-1A：字面量 / 局部·参数 ident / 二元算术 / var-decl·赋值·return·block。
+// 字段访问 / 调用 / 控制流 / new 等留 CG-1B+（未处理节点走占位，不崩 dump）。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.IR;
+
+public sealed class FunctionEmitter {
+    private SymbolTable _symbols;
+    private IrGen       _gen;          // 模块级（字符串 intern）
+    private StrMap      _locals;       // name → TypedReg（object 下行）
+    private IrBlock[]   _blocks;
+    private int         _blockCount;
+    private IrInstr[]   _cur;          // 当前块指令累积
+    private int         _curCount;
+    private string      _curLabel;
+    private bool        _ended;        // 当前块是否已终结
+    private int         _nextReg;
+    private int         _maxReg;
+    private int         _labelSeq;
+
+    public FunctionEmitter(SymbolTable symbols, IrGen gen) {
+        this._symbols = symbols; this._gen = gen;
+    }
+
+    // 入口：方法/自由函数 + 其 Bound 体 → IrFunction。isStatic = 无 this（free func / static method）。
+    public IrFunction EmitFunction(string name, MethodDecl md, BoundStmt body, bool isStatic) {
+        this._locals = new StrMap();
+        this._blocks = new IrBlock[4]; this._blockCount = 0;
+        this._labelSeq = 0;
+        int paramOffset = 0;
+        if (!isStatic) { paramOffset = 1; this._locals.Put("this", new TypedReg(0, IrType.Ref)); }
+        int p = 0;
+        while (p < md.ParamCount) {
+            Z42Type pt = this._symbols.ResolveType(md.Params[p].Type);
+            this._locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, this._toIrType(pt)));
+            p = p + 1;
+        }
+        this._nextReg = md.ParamCount + paramOffset;
+        this._maxReg = this._nextReg;
+        this._startBlock("entry");
+        this._emitStmt(body);
+        if (!this._ended) { this._endBlock(new RetTerm(false, null)); }   // 隐式 ret
+        string retName = this._symbols.ResolveType(md.RetType).Name();
+        return new IrFunction(name, md.ParamCount + paramOffset, retName, isStatic,
+                              this._blocks, this._blockCount, this._maxReg);
+    }
+
+    // ════ 语句（集中 if-is）═══════════════════════════════════════════════════════
+    private void _emitStmt(BoundStmt s) {
+        if (s is BoundBlock) {
+            BoundBlock b = s as BoundBlock;
+            int i = 0;
+            while (i < b.Count) { this._emitStmt(b.Stmts[i]); i = i + 1; }
+        } else if (s is BoundVarDeclStmt) {
+            BoundVarDeclStmt v = s as BoundVarDeclStmt;
+            TypedReg r = this._emitExpr(v.Init);
+            this._locals.Put(v.Name, r);                 // var 绑定到 init 结果寄存器
+        } else if (s is BoundReturn) {
+            BoundReturn ret = s as BoundReturn;
+            if (ret.HasValue) { TypedReg r = this._emitExpr(ret.Value); this._endBlock(new RetTerm(true, r)); }
+            else { this._endBlock(new RetTerm(false, null)); }
+        } else if (s is BoundExprStmt) {
+            BoundExprStmt e = s as BoundExprStmt;
+            this._emitExpr(e.E);                         // 结果弃
+        }
+        // if/while/break/continue → CG-1B（未处理：占位忽略，不崩）
+    }
+
+    // ════ 表达式（集中 if-is，返回 TypedReg）═══════════════════════════════════════
+    private TypedReg _emitExpr(BoundExpr e) {
+        if (e is BoundLitInt) {
+            BoundLitInt li = e as BoundLitInt;
+            int tag = this._toIrType(li.Type());
+            TypedReg r = this._alloc(tag);
+            if (tag == IrType.I64 || tag == IrType.U64) { this._emit(new ConstI64Instr(r, li.Text)); }
+            else { this._emit(new ConstI32Instr(r, li.Text)); }
+            return r;
+        }
+        if (e is BoundLitFloat) {
+            BoundLitFloat lf = e as BoundLitFloat;
+            TypedReg r = this._alloc(this._toIrType(lf.Type()));
+            this._emit(new ConstF64Instr(r, lf.Text));
+            return r;
+        }
+        if (e is BoundLitBool) {
+            BoundLitBool lb = e as BoundLitBool;
+            TypedReg r = this._alloc(IrType.Bool);
+            this._emit(new ConstBoolInstr(r, lb.Value));
+            return r;
+        }
+        if (e is BoundLitStr) {
+            BoundLitStr ls = e as BoundLitStr;
+            int idx = this._gen.Intern(ls.Raw);
+            TypedReg r = this._alloc(IrType.Str);
+            this._emit(new ConstStrInstr(r, idx));
+            return r;
+        }
+        if (e is BoundLitNull) {
+            TypedReg r = this._alloc(IrType.Ref);
+            this._emit(new ConstNullInstr(r));
+            return r;
+        }
+        if (e is BoundIdent) { return this._lookupIdent(e as BoundIdent); }
+        if (e is BoundBinary) { return this._emitBinary(e as BoundBinary); }
+        if (e is BoundAssign) { return this._emitAssign(e as BoundAssign); }
+        // 其余节点（call/member/new/cast/index/cond/unary）→ CG-1B+：占位 const.null（保 dump 良构）
+        TypedReg ph = this._alloc(this._toIrType(e.Type()));
+        this._emit(new ConstNullInstr(ph));
+        return ph;
+    }
+
+    // ident：local/param 命中 → 直接寄存器；字段/静态 → CG-1C（CG-1A 占位）。
+    private TypedReg _lookupIdent(BoundIdent id) {
+        if (this._locals.ContainsKey(id.Name)) { return this._locals.Get(id.Name) as TypedReg; }
+        TypedReg ph = this._alloc(this._toIrType(id.Type()));
+        this._emit(new ConstNullInstr(ph));   // 字段读 → CG-1C
+        return ph;
+    }
+
+    // 二元运算（CG-1A：算术 + − × ÷ %）。比较/逻辑/位/字符串拼接 → CG-1E。
+    private TypedReg _emitBinary(BoundBinary b) {
+        TypedReg a = this._emitExpr(b.Left);
+        TypedReg c = this._emitExpr(b.Right);
+        TypedReg d = this._alloc(this._toIrType(b.Type()));
+        string op = b.Op;
+        if (op == "-") { this._emit(new SubInstr(d, a, c)); }
+        else if (op == "*") { this._emit(new MulInstr(d, a, c)); }
+        else if (op == "/") { this._emit(new DivInstr(d, a, c)); }
+        else if (op == "%") { this._emit(new RemInstr(d, a, c)); }
+        else { this._emit(new AddInstr(d, a, c)); }   // "+" 及（CG-1A 占位）其余
+        return d;
+    }
+
+    // 赋值（CG-1A：target = local ident）。字段/索引 target → CG-1C/1D。
+    private TypedReg _emitAssign(BoundAssign a) {
+        TypedReg val = this._emitExpr(a.Value);
+        if (a.Target is BoundIdent) {
+            BoundIdent tid = a.Target as BoundIdent;
+            if (this._locals.ContainsKey(tid.Name)) {
+                TypedReg existing = this._locals.Get(tid.Name) as TypedReg;
+                if (existing.Id != val.Id) { this._emit(new CopyInstr(existing, val)); }
+                return existing;
+            }
+            this._locals.Put(tid.Name, val);
+            return val;
+        }
+        return val;   // 字段/索引赋值 → 后续增量
+    }
+
+    // ════ 寄存器 / 块 / 类型 助手 ═══════════════════════════════════════════════════
+    private TypedReg _alloc(int tag) {
+        TypedReg r = new TypedReg(this._nextReg, tag);
+        this._nextReg = this._nextReg + 1;
+        if (this._nextReg > this._maxReg) { this._maxReg = this._nextReg; }
+        return r;
+    }
+
+    private void _emit(IrInstr ins) {
+        if (this._curCount == this._cur.Length) {
+            IrInstr[] bigger = new IrInstr[this._cur.Length * 2];
+            int i = 0; while (i < this._curCount) { bigger[i] = this._cur[i]; i = i + 1; }
+            this._cur = bigger;
+        }
+        this._cur[this._curCount] = ins;
+        this._curCount = this._curCount + 1;
+    }
+
+    private void _startBlock(string label) {
+        this._curLabel = label;
+        this._cur = new IrInstr[8];
+        this._curCount = 0;
+        this._ended = false;
+    }
+
+    private void _endBlock(IrTerminator term) {
+        if (this._ended) { return; }
+        if (this._blockCount == this._blocks.Length) {
+            IrBlock[] bigger = new IrBlock[this._blocks.Length * 2];
+            int i = 0; while (i < this._blockCount) { bigger[i] = this._blocks[i]; i = i + 1; }
+            this._blocks = bigger;
+        }
+        this._blocks[this._blockCount] = new IrBlock(this._curLabel, this._cur, this._curCount, term, true);
+        this._blockCount = this._blockCount + 1;
+        this._ended = true;
+    }
+
+    // Z42Type → IrType 标签（在 semantics 侧——z42c.ir 不能引用 Z42Type）。
+    private int _toIrType(Z42Type t) {
+        if (t is Z42VoidType) { return IrType.Void; }
+        if (t is Z42PrimType) { return this._primTag(t.Name()); }
+        return IrType.Ref;   // class / instantiated / array / func / generic-param → ref
+    }
+
+    // prim 名（含别名，ResolveType 不规范化）→ IrType 标签。镜像 C# TypeRegistry。
+    private int _primTag(string n) {
+        if (n == "int" || n == "i32" || n == "Int32") { return IrType.I32; }
+        if (n == "long" || n == "i64" || n == "Int64") { return IrType.I64; }
+        if (n == "i8" || n == "sbyte" || n == "SByte") { return IrType.I8; }
+        if (n == "i16" || n == "short" || n == "Int16") { return IrType.I16; }
+        if (n == "u8" || n == "byte" || n == "Byte") { return IrType.U8; }
+        if (n == "u16" || n == "ushort" || n == "UInt16") { return IrType.U16; }
+        if (n == "u32" || n == "uint" || n == "UInt32") { return IrType.U32; }
+        if (n == "u64" || n == "ulong" || n == "UInt64") { return IrType.U64; }
+        if (n == "float" || n == "f32" || n == "Single") { return IrType.F32; }
+        if (n == "double" || n == "f64" || n == "Double") { return IrType.F64; }
+        if (n == "bool" || n == "Boolean") { return IrType.Bool; }
+        if (n == "char" || n == "Char") { return IrType.Char; }
+        if (n == "string" || n == "String") { return IrType.Str; }
+        return IrType.Ref;   // object / 未知 → ref
+    }
+}

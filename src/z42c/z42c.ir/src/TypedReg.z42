@@ -1,0 +1,10 @@
+// 带类型标签的虚拟寄存器（port-z42c-codegen CG-1A）。镜像 C# `readonly record struct TypedReg(int Id, IrType Type)`。
+// 受限写法：用 class（z42 struct 值语义此处不必需；寄存器只读传递）。Type 是 IrType int 标签。
+namespace Z42.IR;
+
+public sealed class TypedReg {
+    public int Id;
+    public int Type;   // IrType 标签
+    public TypedReg(int id, int type) { this.Id = id; this.Type = type; }
+    public string Dump() { return "%" + this.Id.ToString(); }
+}

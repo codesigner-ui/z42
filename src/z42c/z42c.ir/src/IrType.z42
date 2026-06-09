@@ -1,0 +1,45 @@
+// IR 基本类型标签（port-z42c-codegen CG-1A）。镜像 C# `enum IrType : byte`。
+// 受限写法：z42 无 enum → static class + int 常量（同 BinaryTypeTable.OperandKind 模式）。
+// 所有堆对象（class / 实例化泛型 / 数组）在 IR 层塌缩为 Ref（镜像 C# Z42ClassType/ArrayType → Ref）。
+// 注：Z42Type → IrType 的映射不在此（z42c.ir 是无依赖叶子，不能引用 z42c.semantics 的 Z42Type）——
+//     映射助手在 FunctionEmitter（semantics 侧）。本文件只持标签常量 + 名字。
+namespace Z42.IR;
+
+public static class IrType {
+    public static int Unknown = 0;
+    public static int I8  = 1;
+    public static int I16 = 2;
+    public static int I32 = 3;
+    public static int I64 = 4;
+    public static int U8  = 5;
+    public static int U16 = 6;
+    public static int U32 = 7;
+    public static int U64 = 8;
+    public static int F32 = 9;
+    public static int F64 = 10;
+    public static int Bool = 11;
+    public static int Char = 12;
+    public static int Str  = 13;
+    public static int Ref  = 14;   // 任意堆对象（class 实例 / 数组 / null）
+    public static int Void = 15;
+
+    // 标签 → IR 文本名（dump 用，镜像 ir.md 类型列）。
+    public static string Name(int tag) {
+        if (tag == 1)  { return "i8"; }
+        if (tag == 2)  { return "i16"; }
+        if (tag == 3)  { return "i32"; }
+        if (tag == 4)  { return "i64"; }
+        if (tag == 5)  { return "u8"; }
+        if (tag == 6)  { return "u16"; }
+        if (tag == 7)  { return "u32"; }
+        if (tag == 8)  { return "u64"; }
+        if (tag == 9)  { return "f32"; }
+        if (tag == 10) { return "f64"; }
+        if (tag == 11) { return "bool"; }
+        if (tag == 12) { return "char"; }
+        if (tag == 13) { return "str"; }
+        if (tag == 14) { return "ref"; }
+        if (tag == 15) { return "void"; }
+        return "?";
+    }
+}

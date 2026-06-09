@@ -1,0 +1,119 @@
+// IR 指令（port-z42c-codegen CG-1A）。镜像 C# z42.IR/IrModule.cs 的 IrInstr record 层次。
+// 受限写法：class 继承 + virtual Dump()（同 Bound.z42 模式；z42 无 record/abstract）。
+// class-per-instruction（User 裁决 D2）：每条指令一个 class，按增量逐条加。
+// 注：opcode 整数（Op()）留 ZbcWriter 增量时加（CG-1A 无 .zbc emit，dump 直接用指令名，
+//     避免现在 committed 错误 opcode 号）。
+// CG-1A 集：Const{I64,F64,Bool,Str,Null} + Copy + Add/Sub/Mul/Div/Rem。
+// Dump 形如 ir.md：`%2 = add i64 %0, %1` / `%3 = const.i64 5`。
+namespace Z42.IR;
+
+public class IrInstr {
+    public virtual string Dump() { return "?instr"; }
+}
+
+// ── 常量 ────────────────────────────────────────────────────────────────────────
+// 数值字面量存原始文本（解析/规范化留 byte-identical ZbcWriter；CG-1A 文本 dump 够用）。
+// 整数分 i32/i64 两条（镜像 C# ConstI32Instr/ConstI64Instr，值宽不同）：int 及更小 → i32，long/u64 → i64。
+public sealed class ConstI32Instr : IrInstr {
+    public TypedReg Dst;
+    public string   Text;
+    public ConstI32Instr(TypedReg dst, string text) { this.Dst = dst; this.Text = text; }
+    public override string Dump() { return this.Dst.Dump() + " = const.i32 " + this.Text; }
+}
+
+public sealed class ConstI64Instr : IrInstr {
+    public TypedReg Dst;
+    public string   Text;
+    public ConstI64Instr(TypedReg dst, string text) { this.Dst = dst; this.Text = text; }
+    public override string Dump() { return this.Dst.Dump() + " = const.i64 " + this.Text; }
+}
+
+public sealed class ConstF64Instr : IrInstr {
+    public TypedReg Dst;
+    public string   Text;
+    public ConstF64Instr(TypedReg dst, string text) { this.Dst = dst; this.Text = text; }
+    public override string Dump() { return this.Dst.Dump() + " = const.f64 " + this.Text; }
+}
+
+public sealed class ConstBoolInstr : IrInstr {
+    public TypedReg Dst;
+    public bool     Value;
+    public ConstBoolInstr(TypedReg dst, bool value) { this.Dst = dst; this.Value = value; }
+    public override string Dump() {
+        string v = "false"; if (this.Value) { v = "true"; }
+        return this.Dst.Dump() + " = const.bool " + v;
+    }
+}
+
+public sealed class ConstStrInstr : IrInstr {
+    public TypedReg Dst;
+    public int      Idx;     // StringPool 索引（1-based）
+    public ConstStrInstr(TypedReg dst, int idx) { this.Dst = dst; this.Idx = idx; }
+    public override string Dump() { return this.Dst.Dump() + " = const.str #" + this.Idx.ToString(); }
+}
+
+public sealed class ConstNullInstr : IrInstr {
+    public TypedReg Dst;
+    public ConstNullInstr(TypedReg dst) { this.Dst = dst; }
+    public override string Dump() { return this.Dst.Dump() + " = const.null"; }
+}
+
+// ── 数据移动 ──────────────────────────────────────────────────────────────────────
+public sealed class CopyInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg Src;
+    public CopyInstr(TypedReg dst, TypedReg src) { this.Dst = dst; this.Src = src; }
+    public override string Dump() { return this.Dst.Dump() + " = copy " + this.Src.Dump(); }
+}
+
+// ── 算术（二元，三操作数）──────────────────────────────────────────────────────────
+// 类型名取 Dst 的标签（镜像 ir.md `add i64 %a, %b`）。
+public sealed class AddInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg A;
+    public TypedReg B;
+    public AddInstr(TypedReg dst, TypedReg a, TypedReg b) { this.Dst = dst; this.A = a; this.B = b; }
+    public override string Dump() {
+        return this.Dst.Dump() + " = add " + IrType.Name(this.Dst.Type) + " " + this.A.Dump() + ", " + this.B.Dump();
+    }
+}
+
+public sealed class SubInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg A;
+    public TypedReg B;
+    public SubInstr(TypedReg dst, TypedReg a, TypedReg b) { this.Dst = dst; this.A = a; this.B = b; }
+    public override string Dump() {
+        return this.Dst.Dump() + " = sub " + IrType.Name(this.Dst.Type) + " " + this.A.Dump() + ", " + this.B.Dump();
+    }
+}
+
+public sealed class MulInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg A;
+    public TypedReg B;
+    public MulInstr(TypedReg dst, TypedReg a, TypedReg b) { this.Dst = dst; this.A = a; this.B = b; }
+    public override string Dump() {
+        return this.Dst.Dump() + " = mul " + IrType.Name(this.Dst.Type) + " " + this.A.Dump() + ", " + this.B.Dump();
+    }
+}
+
+public sealed class DivInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg A;
+    public TypedReg B;
+    public DivInstr(TypedReg dst, TypedReg a, TypedReg b) { this.Dst = dst; this.A = a; this.B = b; }
+    public override string Dump() {
+        return this.Dst.Dump() + " = div " + IrType.Name(this.Dst.Type) + " " + this.A.Dump() + ", " + this.B.Dump();
+    }
+}
+
+public sealed class RemInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg A;
+    public TypedReg B;
+    public RemInstr(TypedReg dst, TypedReg a, TypedReg b) { this.Dst = dst; this.A = a; this.B = b; }
+    public override string Dump() {
+        return this.Dst.Dump() + " = rem " + IrType.Name(this.Dst.Type) + " " + this.A.Dump() + ", " + this.B.Dump();
+    }
+}

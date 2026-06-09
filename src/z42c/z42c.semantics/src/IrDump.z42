@@ -1,0 +1,34 @@
+// IR dump 工具（port-z42c-codegen CG-1A）。源 → typecheck → codegen → .zasm-like IR 文本。
+// 供 [Test] 断言 + driver `--dump-ir`（后续）。纯函数（内部建临时 DiagnosticBag）。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.Core;
+using Z42.IR;
+
+public static class IrDump {
+    // 指定函数（key="Class.Method" / 顶层函数名）的 IR 文本。
+    public static string DumpFunc(string src, string funcKey) {
+        IrModule m = IrDump._build(src);
+        int i = 0;
+        while (i < m.FuncCount) {
+            if (m.Functions[i].Name == funcKey) { return m.Functions[i].Dump(); }
+            i = i + 1;
+        }
+        return "(no-func " + funcKey + ")";
+    }
+
+    // 整模块 IR 文本（所有函数）。
+    public static string DumpModule(string src) {
+        return IrDump._build(src).Dump();
+    }
+
+    private static IrModule _build(string src) {
+        var p = new Parser(src, "<input>");
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().Collect(cu);
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Infer(cu, symbols);
+        return new IrGen().Generate(cu, model);
+    }
+}

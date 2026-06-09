@@ -1,0 +1,46 @@
+// IR 基本块终结符（port-z42c-codegen CG-1A）。镜像 C# IrTerminator record。
+// 受限写法：class 继承 + virtual Dump()。每块恰一个终结符（显式控制流）。
+// CG-1A 用 RetTerm；BrTerm/BrCondTerm 在 CG-1B 控制流启用；ThrowTerm 占位（异常增量）。
+namespace Z42.IR;
+
+public class IrTerminator {
+    public virtual string Dump() { return "?term"; }
+}
+
+// 返回：有值 `ret %r` / 无值 `ret`。
+public sealed class RetTerm : IrTerminator {
+    public bool     HasReg;
+    public TypedReg Reg;     // 仅 HasReg
+    public RetTerm(bool hasReg, TypedReg reg) { this.HasReg = hasReg; this.Reg = reg; }
+    public override string Dump() {
+        if (this.HasReg) { return "ret " + this.Reg.Dump(); }
+        return "ret";
+    }
+}
+
+// 无条件跳转。
+public sealed class BrTerm : IrTerminator {
+    public string Label;
+    public BrTerm(string label) { this.Label = label; }
+    public override string Dump() { return "br " + this.Label; }
+}
+
+// 条件跳转：cond 真 → TrueLabel，否则 FalseLabel。
+public sealed class BrCondTerm : IrTerminator {
+    public TypedReg Cond;
+    public string   TrueLabel;
+    public string   FalseLabel;
+    public BrCondTerm(TypedReg cond, string trueLabel, string falseLabel) {
+        this.Cond = cond; this.TrueLabel = trueLabel; this.FalseLabel = falseLabel;
+    }
+    public override string Dump() {
+        return "br.cond " + this.Cond.Dump() + ", " + this.TrueLabel + ", " + this.FalseLabel;
+    }
+}
+
+// 抛出（异常增量启用；占位）。
+public sealed class ThrowTerm : IrTerminator {
+    public TypedReg Reg;
+    public ThrowTerm(TypedReg reg) { this.Reg = reg; }
+    public override string Dump() { return "throw " + this.Reg.Dump(); }
+}

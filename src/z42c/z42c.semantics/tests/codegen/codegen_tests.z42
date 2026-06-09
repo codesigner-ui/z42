@@ -1,0 +1,65 @@
+// z42c.semantics codegen 单测（port-z42c-codegen CG-1A）：源 → typecheck → IrGen → .zasm-like IR 文本断言。
+namespace Z42cSemanticsCodegenTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_return_int_literal() {
+    string src = "int F() { return 5; }";
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_binary_add_instance_method() {
+    // 实例方法：this=%0，a=%1，b=%2；ParamCount 含 this = 3
+    string src = "class C { int Add(int a, int b) { return a + b; } }";
+    Assert.Equal("fn @C.Add(3) -> int {\nentry:\n  %3 = add i32 %1, %2\n  ret %3\n}",
+                 IrDump.DumpFunc(src, "C.Add"));
+}
+
+[Test]
+void test_var_decl_and_assign() {
+    // var x = 1; x = x + 2; return x; —— 赋值回写 copy 进 x 的寄存器（SSA-lite）
+    string src = "int F() { var x = 1; x = x + 2; return x; }";
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i32 1\n  %1 = const.i32 2\n  %2 = add i32 %0, %1\n  %0 = copy %2\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_double_literal() {
+    string src = "double F() { return 1.5; }";
+    Assert.Equal("fn @F(0) -> double {\nentry:\n  %0 = const.f64 1.5\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_bool_literal() {
+    string src = "bool F() { return true; }";
+    Assert.Equal("fn @F(0) -> bool {\nentry:\n  %0 = const.bool true\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_string_literal() {
+    // 字符串入池（1-based）；const.str 引用池索引
+    string src = "string F() { return \"hi\"; }";
+    Assert.Equal("fn @F(0) -> string {\nentry:\n  %0 = const.str #1\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_void_implicit_ret() {
+    // void 方法无显式 return → entry 块以隐式 ret 终结
+    string src = "void F() { }";
+    Assert.Equal("fn @F(0) -> void {\nentry:\n  ret\n}", IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_module_dump() {
+    string src = "int F() { return 5; }";
+    Assert.Equal("module \"z42c\"\n\nfn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
+                 IrDump.DumpModule(src));
+}

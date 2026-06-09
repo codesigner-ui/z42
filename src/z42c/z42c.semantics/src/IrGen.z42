@@ -1,0 +1,149 @@
+// 模块级 codegen 驱动（port-z42c-codegen CG-1A）。镜像 C# z42.Semantics/Codegen/IrGen。
+// 遍历 CompilationUnit + SemanticModel：逐类方法 / 顶层 func → FunctionEmitter → IrFunction，
+// 汇总 IrClassDesc + StringPool → IrModule。
+// 函数 key：类方法 = "Class.Method"，顶层 func = 函数名（对齐 SemanticModel.Bodies）。
+namespace Z42.Semantics;
+
+using Z42.Syntax;
+using Z42.IR;
+
+public sealed class IrGen {
+    private string[]    _pool;       // 字符串池（1-based；[0]=""占位）
+    private int         _poolCount;
+    private SymbolTable _symbols;
+
+    public IrGen() {
+        this._pool = new string[8];
+        this._pool[0] = "";
+        this._poolCount = 1;
+    }
+
+    // 字符串字面量 intern → 1-based 池索引（去重）。
+    public int Intern(string s) {
+        int i = 1;
+        while (i < this._poolCount) {
+            if (this._pool[i] == s) { return i; }
+            i = i + 1;
+        }
+        if (this._poolCount == this._pool.Length) {
+            string[] bigger = new string[this._pool.Length * 2];
+            int k = 0; while (k < this._poolCount) { bigger[k] = this._pool[k]; k = k + 1; }
+            this._pool = bigger;
+        }
+        int idx = this._poolCount;
+        this._pool[idx] = s;
+        this._poolCount = this._poolCount + 1;
+        return idx;
+    }
+
+    public IrModule Generate(CompilationUnit cu, SemanticModel model) {
+        this._symbols = model.Symbols;
+        IrFunction[] funcs = new IrFunction[8];   int fc = 0;
+        IrClassDesc[] classes = new IrClassDesc[8]; int cc = 0;
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if (c.Kind == "class" || c.Kind == "struct") {
+                    classes = this._pushClass(classes, cc, this._classDesc(c)); cc = cc + 1;
+                    int j = 0;
+                    while (j < c.MemberCount) {
+                        Decl mem = this._unwrap(c.Members[j]);
+                        if (mem is MethodDecl) {
+                            MethodDecl md = mem as MethodDecl;
+                            if (!md.IsCtor && md.HasBody) {
+                                string key = c.Name + "." + md.Name;
+                                if (model.HasBody(key)) {
+                                    bool isStatic = this._hasWord(md.Mods, "static");
+                                    var fe = new FunctionEmitter(model.Symbols, this);
+                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isStatic);
+                                    funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
+                                }
+                            }
+                        }
+                        j = j + 1;
+                    }
+                }
+            } else if (d is MethodDecl) {
+                MethodDecl md = d as MethodDecl;
+                if (md.HasBody && model.HasBody(md.Name)) {
+                    var fe = new FunctionEmitter(model.Symbols, this);
+                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), true);  // 自由函数无 this
+                    funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return new IrModule("z42c", this._pool, this._poolCount, classes, cc, funcs, fc);
+    }
+
+    // 类 → IrClassDesc（名 + 基类 + 字段 slot 序）。CG-1A 描述就绪，字段访问 codegen 在 CG-1C 用。
+    private IrClassDesc _classDesc(ClassDecl c) {
+        bool hasBase = c.BaseCount > 0;
+        string baseName = "";
+        if (hasBase) { baseName = c.Bases[0].Dump(); }
+        IrFieldDesc[] fields = new IrFieldDesc[4];
+        int fcount = 0;
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[j]);
+            if (mem is FieldDecl) {
+                FieldDecl fd = mem as FieldDecl;
+                string tn = this._symbols.ResolveType(fd.Type).Name();
+                if (fcount == fields.Length) {
+                    IrFieldDesc[] bigger = new IrFieldDesc[fields.Length * 2];
+                    int k = 0; while (k < fcount) { bigger[k] = fields[k]; k = k + 1; }
+                    fields = bigger;
+                }
+                fields[fcount] = new IrFieldDesc(fd.Name, tn);
+                fcount = fcount + 1;
+            }
+            j = j + 1;
+        }
+        return new IrClassDesc(c.Name, hasBase, baseName, fields, fcount);
+    }
+
+    private IrFunction[] _pushFunc(IrFunction[] arr, int count, IrFunction irf) {
+        if (count == arr.Length) {
+            IrFunction[] bigger = new IrFunction[arr.Length * 2];
+            int k = 0; while (k < count) { bigger[k] = arr[k]; k = k + 1; }
+            arr = bigger;
+        }
+        arr[count] = irf;
+        return arr;
+    }
+
+    private IrClassDesc[] _pushClass(IrClassDesc[] arr, int count, IrClassDesc cd) {
+        if (count == arr.Length) {
+            IrClassDesc[] bigger = new IrClassDesc[arr.Length * 2];
+            int k = 0; while (k < count) { bigger[k] = arr[k]; k = k + 1; }
+            arr = bigger;
+        }
+        arr[count] = cd;
+        return arr;
+    }
+
+    private Decl _unwrap(Decl d) {
+        if (d is AttributedDecl) { AttributedDecl ad = d as AttributedDecl; return ad.Inner; }
+        return d;
+    }
+
+    // mods 空格分隔逐 token 比较（同 SymbolCollector）。
+    private bool _hasWord(string s, string word) {
+        int n = s.Length;
+        int start = 0;
+        int i = 0;
+        while (i <= n) {
+            if (i == n || s.CharAt(i) == ' ') {
+                if (i > start) {
+                    string tok = s.Substring(start, i - start);
+                    if (tok == word) { return true; }
+                }
+                start = i + 1;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+}

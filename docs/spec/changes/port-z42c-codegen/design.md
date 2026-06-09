@@ -257,4 +257,4 @@ IrGen.Generate(cu, semanticModel) → IrModule
 - **D2（IR 指令表示）= class-per-instruction + 虚 Dump**（User 2026-06-09 裁决）。
 - **D3（增量起点）= CG-1A 最小集**（非泛型函数 + 字面量 + 局部 + 二元算术 + var-decl/赋值/return → 单 entry 块 + IrDump）。
 - **D4（IR dump 格式）= .zasm-like 多行文本**（镜像 ir.md，可读断言；非 byte-identical）。
-- **D5（int→IrType 映射）= z42 `int` 映射 I64**（z42 int 64 位；实施时逐一核对 ir.md 类型映射表，prim 名双拼写沿用 ResolveType 不规范化的处理）。
+- **D5（int→IrType 映射）= 镜像 C# TypeRegistry**（实施核对结论）：`int→I32` / `long→I64` / `float→F32` / `double→F64` / `i8(sbyte)→I8` / `i16(short)→I16` / `u8(byte)→U8` / `u16/u32/u64` / `bool→Bool` / `char→Char` / `string→Str` / `object·数组·class→Ref` / `void→Void`。prim 名含别名双拼写（ResolveType 不规范化）。**映射在 FunctionEmitter（semantics 侧）**——z42c.ir 是无依赖叶子，不能引用 Z42Type。整数常量分 `ConstI32Instr`/`ConstI64Instr` 两条（镜像 C#，值宽不同）。

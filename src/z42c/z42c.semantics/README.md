@@ -19,6 +19,9 @@
 | `src/ConstraintChecker.z42` | 泛型 where 约束（2B）：Resolve（声明期 where→ConstraintSet）+ Check（call-site `new Box<int>()` 校验）。隔离自 TypeChecker（镜像 C# `TypeChecker.Generics.cs`） |
 | `src/SemanticModel.z42` | 类型检查产物：符号表 + 各方法/函数体 Bound 树（key="Class.Method"/func 名） |
 | `src/SemanticDump.z42` | 纯函数工具：源 → bound s-expr / 诊断计数（[Test] + driver `--dump-bound`） |
+| `src/FunctionEmitter.z42` | **codegen 半**（CG-1A）：每函数 Bound → IR lowering。集中 if-is EmitExpr→TypedReg / EmitStmt；寄存器分配 + 块管理；Z42Type→IrType 映射（叶子 z42c.ir 不引用 Z42Type，映射在此） |
+| `src/IrGen.z42` | codegen 模块级驱动：遍历 cu + SemanticModel → 逐函数 FunctionEmitter + StringPool intern + IrClassDesc → IrModule |
+| `src/IrDump.z42` | 纯函数工具：源 → typecheck → IrGen → .zasm-like IR 文本（[Test] + driver `--dump-ir` 后续） |
 
 ## 入口点
 `new TypeChecker(diags).Infer(cu, symbols)` → `SemanticModel`（先 `new SymbolCollector().Collect(cu)` 出 `SymbolTable`）。便捷封装见 `SemanticDump.DumpBody(src, key)` / `ErrorCount(src)`。
