@@ -111,6 +111,47 @@ token 单遍分配（写指令前），确定性来自插入序。
 - ZbcReader（.zbc→IrModule）；可选 section DBUG/TIDX/BLID/FRCS；native interop/闭包/异常 opcode；stripped+.zsym sidecar；xtask 全量逐字节对账 gate（self-hosting.md 退出标准，最终接入）。
 - f64 字节重解释依赖 stdlib `BitConverter`（ZW-1E 前确认/补）。
 
+## 🔴 实施发现（2026-06-09，开工解码 golden fixture）—— scope 扩张，User 已裁决"全 8-section"
+
+解码 ground-truth golden `src/tests/zbc-format/{empty,strp-func-minimal}/source.zbc`（C# driver `dotnet z42c.dll <src> --emit zbc -o <out>` 可重生）后两点修正：
+
+**① 恒 8 section**（非"省略 TYPE/IMPT/EXPT"）：full 模式无条件写 `NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT`（空内容也在）。`empty`（`void Main(){}`）= 8 section / 245 字节。DBUG 仅 HasDebug flag 时（`empty` 无）。
+
+**② 前置依赖：IrModule 须先 enrich**。port-z42c-codegen 刻意延后的 4 样恰是 .zbc 必需（都可合成）：
+
+| .zbc 需要 | z42c IrModule 现状 → 补法 |
+|---|---|
+| 模块名 `"main"`（NSPC/SIGS）| 硬编码 `"z42c"` → IrGen 取根命名空间（无则文件/Main 推导，对齐 C#）|
+| `ExecMode`（SIGS 每函数 1 字节，默认 "Interp"）| 无字段 → IrFunction 加 ExecMode，默认 "Interp" |
+| `ParamTypes`（SIGS 每形参 1 类型名 str_idx）| 无字段 → EmitFunction 已解析，存进 IrFunction |
+| `RegTypes`（REGT section 每寄存器 IrType 字节）| 无字段 → EmitContext.Alloc 记 reg→tag 表，存进 IrFunction |
+
+**③ SIGS 精确布局**（每函数）：name_idx u32 + ParamCount u16 + RetType_tag u8 + RetType_str_idx u32 + ExecMode u8 + IsStatic u8 + [ParamCount × param_type_str_idx u32] + tpCount u8 + [type param + 约束]。
+**④ FUNC 精确布局**（每函数，LineTable 已移 DBUG）：regCount u16 + blockCount u16 + instrBytesLen u32 + excCount u16 + [blockOffsets u32×blockCount] + [异常表] + instrBytes。
+**⑤ STRS intern 序**（`empty` = `main/?/Main/void/entry`）：C# `InternPoolStrings` 预扫（module.Name → const.str 池 → 类 → 函数名/ret/param[缺省"?"] → block label …）+ 各 BuildXxxSection `pool.Idx` 取已 intern 的 idx。须 1:1 复刻。
+
+**修正后 ZW-1A = IrModule enrich + 全 8-section writer + 精确 intern 序**，对 `empty`/`strp-func-minimal` golden 逐字节。验证用现成 fixtures（完美 oracle），随 zbc 版本 bump regen。
+
+### `empty`（`void Main(){}`）逐字节解码（静态读 source.zbc，245 字节）
+
+确认的精确布局（已核对字节）：
+```
+Header(0-15):  5A 42 43 00 | major=01 00 | minor=09 00 | flags=00 00 | secCount=08 00 | reserved=00000000
+Directory(16-111, 8×12): tag(4)+offset(u32)+size(u32)，序 NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT
+NSPC(112): len u16=4 + "main"
+STRS(118): count u32=5 + 5×(off u32+len u32) + data。**池序 = main / ? / Main / void / entry**
+TYPE(180): count u32=0（无类）
+SIGS(184, 18B): count u32=1；fn[0]Main: name_idx u32=2("Main") + ParamCount u16=0 + RetTag u8=00(void)
+               + RetIdx u32=3("void") + ExecMode u8=00(Interp) + IsStatic u8=00 + tpCount u8=0
+IMPT(202): count u32=0
+EXPT/FUNC/REGT: 待读 C# BuildExpt/BuildFunc/BuildRegt 精确化（FUNC=regCount u16+blockCount u16+instrLen u32+excCount u16+blockOffsets+instrBytes）
+```
+
+**🔴 关键 byte-identity 发现（已验证）**：
+- **自由函数 IsStatic = 0**（SIGS 字节确证）！free func 有"无 this"（paramOffset=0）**但 IsStatic 标志=false**。须区分两个概念：**hasThis**（驱动 reg0=this / paramOffset；instance=true，static method/free func=false）vs **IsStatic 标志**（SIGS 字节；仅 static class method=true，**free func=false**）。z42c 现 codegen 把 free func 传 `isStatic=true` 把两者混了 → IsStatic 字节会写成 1，**对不上 C# 的 0**。enrich 修正：IrFunction.IsStatic = isStaticMethod（free func 为 false），paramOffset 另由 hasThis 驱动。
+- ExecMode Interp = `0x00`；void TypeTag = `0x00`；name_idx/retIdx 是 **0-based** 池索引；ExecMode/IsStatic/tpCount 各 1 字节紧跟 RetIdx。
+- 字符串池 0-based、插入序（InternPoolStrings 预扫：module.Name → const.str 池 → 类 → 函数[name/ret/param 缺省"?"] → block label）。`empty` 的 "?" 在 "Main" 前 = ParamTypes 的缺省占位 intern 时机。
+
 ## 决策点（待 User 审批）
 
 - **D1 ByteWriter**（可增长 byte[] + LE 位运算助手）。

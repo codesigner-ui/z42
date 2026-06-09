@@ -34,7 +34,11 @@ z42c.driver 可产出真正能跑的 zpkg。
 | `src/z42c/z42c.ir/src/BinaryFormat/TokenAllocator.z42` | NEW | 函数/类名 → intra-module index / import token（FromModule + ResolveMethod/ResolveType）|
 | `src/z42c/z42c.ir/src/BinaryFormat/ZbcWriter.z42` | NEW | 主写入：Write(module)→bytes；header+directory+section 组装 |
 | `src/z42c/z42c.ir/src/BinaryFormat/ZbcInstr.z42` | NEW | 指令/终结符编码（集中 if-is：每 IrInstr → opcode+type_tag+dst+operands）|
-| `src/z42c/z42c.ir/tests/zbc/zbc_tests.z42` | NEW | golden-hex 单测（trivial 函数 → 字节断言）|
+| `src/z42c/z42c.ir/src/IrModule.z42` | MODIFY | **IrModule enrich**（实施发现）：IrFunction 加 ExecMode/ParamTypes/RegTypes 字段 |
+| `src/z42c/z42c.semantics/src/EmitContext.z42` | MODIFY | Alloc 记 reg→IrType 表（RegTypes 源）|
+| `src/z42c/z42c.semantics/src/FunctionEmitter.z42` | MODIFY | EmitFunction 填 ExecMode/ParamTypes/RegTypes |
+| `src/z42c/z42c.semantics/src/IrGen.z42` | MODIFY | 模块名取根命名空间（对齐 C#，非硬编码 "z42c"）|
+| `src/z42c/z42c.ir/tests/zbc/zbc_tests.z42` | NEW | golden-hex 单测（对 empty/strp-func-minimal fixtures 逐字节）|
 | `src/z42c/z42c.ir/tests/zbc/z42c.ir.test.zbc.z42.toml` | NEW | 测试单元 manifest |
 | `src/z42c/z42c.ir/README.md` | MODIFY | 加 BinaryFormat/ 段 |
 | `docs/design/compiler/self-hosting.md` | MODIFY | 进度：zbc-writer 子段（归档时）|
