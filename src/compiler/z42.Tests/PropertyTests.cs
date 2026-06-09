@@ -66,6 +66,27 @@ public sealed class PropertyTests
         catch { return false; }                   // unstructured = crash
     }
 
+    // ── Regression: malformed numeric literals must surface a structured
+    //    ParseException, not an unstructured crash. `Parser_NeverCrashes_Random`
+    //    fuzz-found `8F` (shrunk from `a(){8F`) → `long.Parse("8F")` threw an
+    //    unhandled FormatException; Int64-overflow literals threw OverflowException.
+    //    Both now caught in ExprParser.ParseIntLit/ParseFloatLit → E0103.
+    [Theory]
+    [InlineData("a(){8F")]                                          // exact shrunk counterexample
+    [InlineData("class C { void f() { var x = 8F; } }")]            // malformed int literal in expr
+    [InlineData("class C { void f() { var x = 99999999999999999999; } }")]  // Int64 overflow
+    public void Parser_MalformedNumericLiteral_NoUnstructuredCrash(string source)
+    {
+        var tokens = new Lexer(source).Tokenize();
+        var ex = Record.Exception(() =>
+            new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit());
+        // The parser may recover (collect diagnostics, no throw) or throw a
+        // structured ParseException — but NEVER an unstructured exception
+        // (FormatException/OverflowException). Before the ParseIntLit/ParseFloatLit
+        // guards, `8F`/overflow escaped as FormatException/OverflowException.
+        if (ex != null) ex.Should().BeOfType<ParseException>();
+    }
+
     // ── Deterministic round-trip tests ───────────────────────────────────────
 
     [Theory]

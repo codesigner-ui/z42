@@ -22,12 +22,23 @@ internal static partial class ExprParser
     {
         var text = tok.Text.Replace("_", "").TrimEnd('L', 'l', 'u', 'U');
         long value;
-        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            value = Convert.ToInt64(text[2..], 16);
-        else if (text.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
-            value = Convert.ToInt64(text[2..], 2);
-        else
-            value = long.Parse(text);
+        try
+        {
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                value = Convert.ToInt64(text[2..], 16);
+            else if (text.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+                value = Convert.ToInt64(text[2..], 2);
+            else
+                value = long.Parse(text);
+        }
+        catch (Exception e) when (e is FormatException or OverflowException or ArgumentException)
+        {
+            // The lexer can hand us a lenient/malformed numeric token (e.g. "8F")
+            // or one that overflows Int64 — surface a structured ParseException
+            // rather than letting an unstructured exception crash the parser.
+            throw new ParseException(
+                $"invalid integer literal `{tok.Text}`", tok.Span, DiagnosticCodes.InvalidNumericLit);
+        }
         return Ok(new LitIntExpr(value, tok.Span), cursor);
     }
 
@@ -37,7 +48,13 @@ internal static partial class ExprParser
         var raw     = tok.Text.Replace("_", "");
         bool isFloat = raw.EndsWith('f') || raw.EndsWith('F');
         var  text    = raw.TrimEnd('f', 'F', 'd', 'D', 'm', 'M');
-        var  val     = double.Parse(text, CultureInfo.InvariantCulture);
+        double val;
+        try { val = double.Parse(text, CultureInfo.InvariantCulture); }
+        catch (Exception e) when (e is FormatException or OverflowException or ArgumentException)
+        {
+            throw new ParseException(
+                $"invalid numeric literal `{tok.Text}`", tok.Span, DiagnosticCodes.InvalidNumericLit);
+        }
         return Ok(new LitFloatExpr(val, isFloat, tok.Span), cursor);
     }
 
