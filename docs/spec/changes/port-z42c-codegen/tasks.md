@@ -42,7 +42,15 @@
 - 注：条件用 bool 局部/参数（比较运算符 Eq/Lt 等 → CG-1E）；break/continue 后死代码指令无害（块已捕获 _curCount，超出不 dump）
 
 ## CG-1C–CG-2（后续增量，详见 design.md 增量表）
-- [ ] CG-1E-2 逻辑短路 &&/‖ + 三目 + ??（块化）；CG-2 泛型
+- [x] CG-1E-2 逻辑短路 &&/‖ + 三目 + ??（块化）✅
+- [ ] CG-2 泛型
+
+## CG-1E-2：块化表达式（短路 && ‖ / 三目 ?: / ??）—— ✅ 已完成
+- [x] ExprEmitter：`_emitBinary` 顶部拦截 &&/‖/??（短路 → 操作数条件求值，不能预先 Emit 两侧）+ Emit 加 BoundConditional 分派
+- [x] `_emitConditional`（三目，结果寄存器两分支 copy 汇合）/ `_emitLogicalAnd`（a 假→const.bool false）/ `_emitLogicalOr`（a 真→const.bool true）/ `_emitNullCoalesce`（const.null + eq + 分支）—— 复用 BrCond/Br/Copy/Const/Eq，无新 IR 指令
+- [x] 4 单测（ternary / logical_and / logical_or / null_coalesce）
+- [x] 验证：`xtask test compiler-z42` → **13 units 206 cases** 全绿（codegen 36）
+- 注：ExprEmitter 308 行略超 300 软限（< 500 硬限）；CG-2 时若逼近 500 抽块化表达式 helper。++/-- 仍延后
 
 ## refactor：FunctionEmitter 拆 EmitContext + ExprEmitter —— ✅ 已完成
 - [x] z42 无 partial class → 抽 `EmitContext`（共享状态 + Alloc/Emit/块管理/标签栈/ToIrType）+ `ExprEmitter`（表达式 lowering）；FunctionEmitter 留函数入口/语句/控制流。零 IR 变化，196 cases 不变。独立 commit。

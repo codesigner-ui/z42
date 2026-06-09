@@ -252,3 +252,37 @@ void test_loop_with_comparison() {
     Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br while_cond_0\nwhile_cond_0:\n  %2 = lt i32 %1, %0\n  br.cond %2, while_body_1, while_end_2\nwhile_body_1:\n  %3 = const.i32 1\n  %4 = add i32 %1, %3\n  %1 = copy %4\n  br while_cond_0\nwhile_end_2:\n  ret %1\n}",
                  IrDump.DumpFunc(src, "F"));
 }
+
+// ── CG-1E-2：块化表达式（短路 && || / 三目 ?: / ??）──────────────────────────────
+
+[Test]
+void test_ternary() {
+    // c ? a : b → 结果寄存器两分支各 copy
+    string src = "int F(bool c, int a, int b) { return c ? a : b; }";
+    Assert.Equal("fn @F(3) -> int {\nentry:\n  br.cond %0, cond_then_0, cond_else_1\ncond_then_0:\n  %3 = copy %1\n  br cond_end_2\ncond_else_1:\n  %3 = copy %2\n  br cond_end_2\ncond_end_2:\n  ret %3\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_logical_and() {
+    // a && b：a 假 → false（不求 b）
+    string src = "bool F(bool a, bool b) { return a && b; }";
+    Assert.Equal("fn @F(2) -> bool {\nentry:\n  br.cond %0, and_rhs_0, and_false_1\nand_rhs_0:\n  %2 = copy %1\n  br and_end_2\nand_false_1:\n  %2 = const.bool false\n  br and_end_2\nand_end_2:\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_logical_or() {
+    // a || b：a 真 → true（不求 b）
+    string src = "bool F(bool a, bool b) { return a || b; }";
+    Assert.Equal("fn @F(2) -> bool {\nentry:\n  br.cond %0, or_true_0, or_rhs_1\nor_true_0:\n  %2 = const.bool true\n  br or_end_2\nor_rhs_1:\n  %2 = copy %1\n  br or_end_2\nor_end_2:\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
+
+[Test]
+void test_null_coalesce() {
+    // a ?? b：a==null → b，否则 a
+    string src = "string F(string a, string b) { return a ?? b; }";
+    Assert.Equal("fn @F(2) -> string {\nentry:\n  %3 = const.null\n  %4 = eq str %0, %3\n  br.cond %4, coalesce_rhs_0, coalesce_lhs_1\ncoalesce_rhs_0:\n  %2 = copy %1\n  br coalesce_end_2\ncoalesce_lhs_1:\n  %2 = copy %0\n  br coalesce_end_2\ncoalesce_end_2:\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "F"));
+}

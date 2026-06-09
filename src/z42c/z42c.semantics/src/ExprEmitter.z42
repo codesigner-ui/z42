@@ -53,7 +53,8 @@ public sealed class ExprEmitter {
         if (e is BoundIndex) { return this._emitIndex(e as BoundIndex); }
         if (e is BoundIsExpr) { return this._emitIs(e as BoundIsExpr); }
         if (e is BoundCast) { return this._emitCast(e as BoundCast); }
-        // 其余节点（cond/unary/比较/逻辑）→ CG-1E：占位 const.null（保 dump 良构）
+        if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
+        // 其余节点 → 后续增量：占位 const.null（保 dump 良构）
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(e.Type()));
         this._ctx.Emit(new ConstNullInstr(ph));
         return ph;
@@ -72,8 +73,13 @@ public sealed class ExprEmitter {
         return ph;
     }
 
-    // 二元运算：算术 + − × ÷ % / 比较 ==·!=·<·<=·>·>= / 位 &·|·^·<<·>> / 字符串拼接 + / 逻辑短路 → CG-1E-2。
+    // 二元运算：逻辑短路 &&·‖·?? 先拦截（操作数条件求值，不能预先 Emit 两侧）；
+    // 否则算术 + − × ÷ % / 比较 / 位 / 字符串拼接。
     private TypedReg _emitBinary(BoundBinary b) {
+        string sop = b.Op;
+        if (sop == "&&") { return this._emitLogicalAnd(b); }
+        if (sop == "||") { return this._emitLogicalOr(b); }
+        if (sop == "??") { return this._emitNullCoalesce(b); }
         TypedReg a = this.Emit(b.Left);
         TypedReg c = this.Emit(b.Right);
         string op = b.Op;
@@ -121,6 +127,83 @@ public sealed class ExprEmitter {
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));   // ++ / -- → CG 后续
         this._ctx.Emit(new CopyInstr(ph, x));
         return ph;
+    }
+
+    // ════ 块化表达式（CG-1E-2）：中途分块 + 结果寄存器经 copy/const 汇合 ════════════════
+    // 三目 cond ? then : else → 结果寄存器在两分支各赋值。
+    private TypedReg _emitConditional(BoundConditional c) {
+        TypedReg cond = this.Emit(c.Cond);
+        TypedReg result = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+        string thenL = this._ctx.Fresh("cond_then");
+        string elseL = this._ctx.Fresh("cond_else");
+        string endL = this._ctx.Fresh("cond_end");
+        this._ctx.EndBlock(new BrCondTerm(cond, thenL, elseL));
+        this._ctx.StartBlock(thenL);
+        this._ctx.Emit(new CopyInstr(result, this.Emit(c.Then)));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(elseL);
+        this._ctx.Emit(new CopyInstr(result, this.Emit(c.Else)));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(endL);
+        return result;
+    }
+
+    // a && b：a 假 → false（不求 b）；a 真 → b。
+    private TypedReg _emitLogicalAnd(BoundBinary b) {
+        TypedReg a = this.Emit(b.Left);
+        TypedReg result = this._ctx.Alloc(IrType.Bool);
+        string rhsL = this._ctx.Fresh("and_rhs");
+        string falseL = this._ctx.Fresh("and_false");
+        string endL = this._ctx.Fresh("and_end");
+        this._ctx.EndBlock(new BrCondTerm(a, rhsL, falseL));
+        this._ctx.StartBlock(rhsL);
+        this._ctx.Emit(new CopyInstr(result, this.Emit(b.Right)));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(falseL);
+        this._ctx.Emit(new ConstBoolInstr(result, false));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(endL);
+        return result;
+    }
+
+    // a || b：a 真 → true（不求 b）；a 假 → b。
+    private TypedReg _emitLogicalOr(BoundBinary b) {
+        TypedReg a = this.Emit(b.Left);
+        TypedReg result = this._ctx.Alloc(IrType.Bool);
+        string trueL = this._ctx.Fresh("or_true");
+        string rhsL = this._ctx.Fresh("or_rhs");
+        string endL = this._ctx.Fresh("or_end");
+        this._ctx.EndBlock(new BrCondTerm(a, trueL, rhsL));
+        this._ctx.StartBlock(trueL);
+        this._ctx.Emit(new ConstBoolInstr(result, true));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(rhsL);
+        this._ctx.Emit(new CopyInstr(result, this.Emit(b.Right)));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(endL);
+        return result;
+    }
+
+    // a ?? b：a 非 null → a；a == null → b。
+    private TypedReg _emitNullCoalesce(BoundBinary b) {
+        TypedReg a = this.Emit(b.Left);
+        TypedReg result = this._ctx.Alloc(this._ctx.ToIrType(b.Type()));
+        TypedReg nullReg = this._ctx.Alloc(IrType.Ref);
+        this._ctx.Emit(new ConstNullInstr(nullReg));
+        TypedReg isNull = this._ctx.Alloc(IrType.Bool);
+        this._ctx.Emit(new EqInstr(isNull, a, nullReg));
+        string rhsL = this._ctx.Fresh("coalesce_rhs");
+        string lhsL = this._ctx.Fresh("coalesce_lhs");
+        string endL = this._ctx.Fresh("coalesce_end");
+        this._ctx.EndBlock(new BrCondTerm(isNull, rhsL, lhsL));
+        this._ctx.StartBlock(rhsL);
+        this._ctx.Emit(new CopyInstr(result, this.Emit(b.Right)));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(lhsL);
+        this._ctx.Emit(new CopyInstr(result, a));
+        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.StartBlock(endL);
+        return result;
     }
 
     // 赋值：local（copy 回写）/ 裸字段（field_set reg0）/ obj.field（field_set obj）/ arr[i]（array_set）。
