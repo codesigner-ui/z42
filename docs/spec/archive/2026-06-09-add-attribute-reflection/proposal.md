@@ -1,7 +1,12 @@
 # Proposal: 用户自定义 Attribute + 反射（C3）
 
-> 状态：📋 DRAFT（待 6.5 gate 确认）｜创建：2026-06-09｜类型：lang（语法 + typecheck + zbc 格式 + vm + stdlib）
+> 状态：🟢 已实施（class-level，C3a）｜创建：2026-06-09｜类型：lang（语法 + typecheck + zbc 格式 + vm + stdlib）
 > 占用子系统：`compiler` + `runtime` + `stdlib`（[ACTIVE.md](../ACTIVE.md)）
+>
+> **实施记录 / 增量划分（2026-06-09，User 裁决 class-first）**：
+> - **C3a（本 change，已落地 + 归档）**：class-level——`[Foo(args)]` 标注 class → `Type.GetCustomAttributes()` / `GetAttribute(Type)` 返活实例。commit `56d9cefb`（管线 + zbc 格式 + runtime + stdlib + golden，GoldenTests 1544/1544）+ `1377bfdb`（契约用工厂返回类型 `Attribute` 强制，免独立 validator）。
+> - **C3b（跟随 change `add-attribute-reflection-methods`）**：method-level——`[Doc] void M()` → `MethodInfo.GetCustomAttributes()`（平行的 function-sigs 元数据路径）。
+> - **契约强制方式变更**：原计划独立 AttributeBinder（E0920/E0922），实施改为**工厂返回类型 = `Attribute` 基类** → 普通 typecheck 顺带强制（非 attribute 类→上转型失败；非常量参数→工厂作用域未知标识符）。专用 E09xx 诊断 + negative 测试 harness 推后（attributes.md Deferred）。
 
 ## Why
 

@@ -1,8 +1,10 @@
-# Tasks: 用户自定义 Attribute + 反射（C3）
+# Tasks: 用户自定义 Attribute + 反射（C3a，class-level）
 
-> 状态：🟡 DRAFT（待 6.5 gate 确认）｜创建：2026-06-09｜类型：lang + zbc 格式 + vm + stdlib
-> 占用子系统：`compiler` + `runtime` + `stdlib`（ACTIVE.md 已登记）
-> 协调：改 .zbc/.zpkg 格式，port-z42c-zbc-writer 落地后 re-port（User 裁决 proceed）
+> 状态：🟢 已完成（class-level）｜创建：2026-06-09｜类型：lang + zbc 格式 + vm + stdlib
+> 占用子系统：`compiler` + `runtime` + `stdlib`（归档时释放）
+> 协调：改 .zbc/.zpkg 格式（1.10 / 0.12），port-z42c-zbc-writer 落地后 re-port（User 裁决 proceed）
+> 增量：class-level 本 change（commit 56d9cefb + 1377bfdb）；method-level → C3b（add-attribute-reflection-methods）
+> 契约强制：工厂返回类型 `Attribute` → typecheck 顺带强制（非独立 validator）；专用诊断 + negative 测试推后
 
 ## 进度概览
 - [ ] 阶段 1: stdlib 基类 + 解析 + AST
