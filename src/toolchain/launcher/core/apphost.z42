@@ -1,14 +1,19 @@
-// z42 apphost build (add-apphost, 2026-06-09).
+// z42 apphost build (add-apphost, 2026-06-09; --out path + relative embed,
+// 2026-06-10).
 //
 // Produce a per-app native apphost executable: copy the native apphost stub
-// template (../src/bin/apphost.rs, shipped next to z42vm) and patch its
-// embedded target placeholder with the app's zpkg basename. The produced exe
-// is placed in the app's own directory, so it resolves `<exe_dir>/<app>.zpkg`
-// at runtime (rename-safe — the embedded path does not depend on the exe name).
+// template (../src/apphost.rs, shipped next to z42vm) and patch its embedded
+// target placeholder with the app's zpkg path. Two modes:
+//   - default:     exe beside the zpkg, embed the basename (rename-safe).
+//   - --out <path>: exe written anywhere; embed the zpkg path RELATIVE to the
+//                   exe's dir → e.g. `apphost build artifacts/xtask/xtask.zpkg
+//                   --out xtask` makes ./xtask (at the repo root) run xtask
+//                   directly. The embed is resolved at runtime against the
+//                   exe's own dir (current_exe), so it's relocatable.
 //
 // The placeholder is a 32-byte MAGIC sentinel (matching apphost.rs) followed
 // by a 992-byte payload; total 1024. We locate MAGIC by content, then
-// overwrite the payload with the NUL-terminated basename. See
+// overwrite the payload with the NUL-terminated path. See
 // docs/design/runtime/launcher.md ("apphost").
 
 namespace Z42Launcher;
@@ -18,10 +23,10 @@ using Std.IO;
 using Std.Encoding;
 
 public static class Apphost {
-    // z42 apphost build <app.zpkg> [--out <name>]
+    // z42 apphost build <app.zpkg> [--out <path>]
     public static void Build(string[] rest) {
         if (rest.Length == 0 || rest[0] != "build") {
-            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <name>]");
+            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <path>]");
             Environment.Exit(2);
             return;
         }
@@ -35,7 +40,7 @@ public static class Apphost {
             i = i + 1;
         }
         if (app.Length == 0) {
-            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <name>]");
+            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <path>]");
             Environment.Exit(2);
             return;
         }
@@ -52,15 +57,28 @@ public static class Apphost {
             return;
         }
 
-        // The exe lands in the app's directory and embeds just the basename →
-        // resolves <exe_dir>/<app>.zpkg, independent of the exe's own name.
+        // Where the exe goes + what zpkg path it embeds (resolved at runtime
+        // against the exe's OWN dir, so it stays relocatable):
+        //   --out <path>: exe written to <path> (anywhere); embed = the zpkg's
+        //                 path RELATIVE to <path>'s dir → ./xtask at the repo
+        //                 root can point at artifacts/xtask/xtask.zpkg.
+        //   (default):    exe beside the zpkg, embed just the basename
+        //                 (rename-safe, co-located).
         string appName = Path.GetFileName(app);
-        string appDir = Path.GetDirectoryName(app);
-        string exeName = (outName.Length > 0) ? outName : Path.GetFileNameWithoutExtension(app);
-        string outPath = (appDir.Length > 0) ? Path.Join(appDir, exeName) : exeName;
+        string outPath;
+        string embed;
+        if (outName.Length > 0) {
+            outPath = outName;
+            embed = _relPath(Path.GetDirectoryName(outPath), app);
+        } else {
+            string appDir = Path.GetDirectoryName(app);
+            string exeName = Path.GetFileNameWithoutExtension(app);
+            outPath = (appDir.Length > 0) ? Path.Join(appDir, exeName) : exeName;
+            embed = appName;
+        }
 
         byte[] template = File.ReadAllBytes(tmpl);
-        byte[] patched = PatchBytes(template, appName);
+        byte[] patched = PatchBytes(template, embed);
         if (patched.Length == 0) {     // empty = failure sentinel (a real patch is never empty)
             ConsoleError.WriteLine("z42 apphost: cannot patch template (placeholder MAGIC missing, or app name > 991 bytes).");
             Environment.Exit(1);
@@ -85,7 +103,53 @@ public static class Apphost {
             }
         }
 
-        Console.WriteLine("apphost → " + outPath + "  (runs " + appName + ")");
+        Console.WriteLine("apphost → " + outPath + "  (runs " + embed + ")");
+    }
+
+    // Relative path from directory `fromDir` to `toPath`, both resolved against
+    // the current working directory. Embeds the app's zpkg path relative to the
+    // produced exe's dir so `<exe_dir>/<embed>` finds it (relocatable). Assumes
+    // reasonably clean inputs (no embedded `..`); the build invocation passes
+    // clean paths (e.g. `artifacts/xtask/xtask.zpkg` + `--out xtask`).
+    private static string _relPath(string fromDir, string toPath) {
+        string cwd = Environment.GetCurrentDirectory();
+        string fromAbs = (fromDir.Length == 0) ? cwd : (Path.IsRooted(fromDir) ? fromDir : Path.Join(cwd, fromDir));
+        string toAbs = Path.IsRooted(toPath) ? toPath : Path.Join(cwd, toPath);
+        string[] f = _splitSlash(fromAbs);
+        string[] t = _splitSlash(toAbs);
+        int common = 0;
+        while (common < f.Length && common < t.Length && f[common] == t[common]) { common = common + 1; }
+        string rel = "";
+        int up = f.Length - common;
+        int k = 0;
+        while (k < up) { rel = rel + "../"; k = k + 1; }
+        int j = common;
+        while (j < t.Length) {
+            rel = rel + t[j];
+            if (j + 1 < t.Length) { rel = rel + "/"; }
+            j = j + 1;
+        }
+        return rel;
+    }
+
+    // Split a path into non-empty '/'-separated segments.
+    private static string[] _splitSlash(string s) {
+        string[] buf = new string[s.Length + 1];
+        int n = 0;
+        int start = 0;
+        int i = 0;
+        while (i <= s.Length) {
+            bool sep = (i < s.Length) && (s.Substring(i, 1) == "/");
+            if (i == s.Length || sep) {
+                if (i > start) { buf[n] = s.Substring(start, i - start); n = n + 1; }
+                start = i + 1;
+            }
+            i = i + 1;
+        }
+        string[] tight = new string[n];
+        int j = 0;
+        while (j < n) { tight[j] = buf[j]; j = j + 1; }
+        return tight;
     }
 
     // Pure placeholder patch: copy `template`, find the 32-byte MAGIC, and

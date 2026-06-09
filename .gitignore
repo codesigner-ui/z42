@@ -60,3 +60,7 @@ bench/baselines/*.json
 # dotnet test runner output
 TestResults/
 .z42/
+
+# Generated dev-CLI apphost at the repo root (scripts/build-xtask.sh).
+# Native, platform-specific — regenerate, don't commit.
+/xtask
