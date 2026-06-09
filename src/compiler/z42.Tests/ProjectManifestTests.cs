@@ -262,6 +262,42 @@ public sealed class ProjectManifestTests : IDisposable
             w.Message.Contains("out_dir") && w.Message.Contains("dist_dir"));
     }
 
+    [Fact]
+    public void Apphost_KnownSection_NoWarning()
+    {
+        // apphost-out-path (2026-06-10): [apphost] + publish_dir are a known
+        // section/key (consumed by the `z42 apphost build <toml>` patcher, not
+        // z42c) → no WS008.
+        var result = LoadWithWarnings("xtask.z42.toml", """
+            [project]
+            name = "xtask"
+            kind = "exe"
+            entry = "Xtask.Main"
+
+            [apphost]
+            publish_dir = ".."
+            """);
+        result.Warnings.Should().NotContain(w => w.Message.Contains("apphost"));
+        result.Warnings.Should().NotContain(w => w.Message.Contains("publish_dir"));
+    }
+
+    [Fact]
+    public void Apphost_StrayKey_TriggersWS008()
+    {
+        var result = LoadWithWarnings("xtask.z42.toml", """
+            [project]
+            name = "xtask"
+            kind = "exe"
+            entry = "Xtask.Main"
+
+            [apphost]
+            publish_dir = ".."
+            bogus_key = 1
+            """);
+        result.Warnings.Should().Contain(w =>
+            w.Message.Contains("bogus_key") && w.Message.Contains("apphost"));
+    }
+
     // ── unknown fields ignored ────────────────────────────────────────────────
 
     [Fact]

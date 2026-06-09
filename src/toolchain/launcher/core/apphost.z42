@@ -1,15 +1,25 @@
 // z42 apphost build (add-apphost, 2026-06-09; --out path + relative embed,
-// 2026-06-10).
+// 2026-06-10; [apphost] toml mode, 2026-06-10).
 //
 // Produce a per-app native apphost executable: copy the native apphost stub
 // template (../src/apphost.rs, shipped next to z42vm) and patch its embedded
-// target placeholder with the app's zpkg path. Two modes:
-//   - default:     exe beside the zpkg, embed the basename (rename-safe).
-//   - --out <path>: exe written anywhere; embed the zpkg path RELATIVE to the
-//                   exe's dir → e.g. `apphost build artifacts/xtask/xtask.zpkg
-//                   --out xtask` makes ./xtask (at the repo root) run xtask
-//                   directly. The embed is resolved at runtime against the
-//                   exe's own dir (current_exe), so it's relocatable.
+// target placeholder with the app's zpkg path. Three input modes:
+//   - default <app.zpkg>:        exe beside the zpkg, embed the basename
+//                                (rename-safe, co-located).
+//   - <app.zpkg> --out <path>:   exe written anywhere; embed the zpkg path
+//                                RELATIVE to the exe's dir.
+//   - <project.z42.toml>:        read [apphost].publish_dir + derive the built
+//                                zpkg from [build]/[project]; emit the exe at
+//                                publish_dir/<name>. e.g. `apphost build
+//                                scripts/xtask.z42.toml` → ./xtask at the repo
+//                                root running artifacts/xtask/xtask.zpkg. This
+//                                is how `./xtask` is produced (no wrapper
+//                                script): the toml is the single source of
+//                                truth. z42c does NOT consume [apphost] — this
+//                                patcher does.
+//
+// The embed is always resolved at runtime against the exe's OWN dir
+// (current_exe), so an exe + its zpkg can be relocated together.
 //
 // The placeholder is a 32-byte MAGIC sentinel (matching apphost.rs) followed
 // by a 992-byte payload; total 1024. We locate MAGIC by content, then
@@ -21,32 +31,29 @@ namespace Z42Launcher;
 using Std;
 using Std.IO;
 using Std.Encoding;
+using Std.Toml;
 
 public static class Apphost {
     // z42 apphost build <app.zpkg> [--out <path>]
+    //   or: z42 apphost build <project.z42.toml>   (reads [apphost])
     public static void Build(string[] rest) {
         if (rest.Length == 0 || rest[0] != "build") {
-            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <path>]");
+            ConsoleError.WriteLine(_usage());
             Environment.Exit(2);
             return;
         }
 
-        string app = "";
+        string arg = "";
         string outName = "";
         int i = 1;
         while (i < rest.Length) {
             if (rest[i] == "--out" && i + 1 < rest.Length) { outName = rest[i + 1]; i = i + 2; continue; }
-            if (app.Length == 0) { app = rest[i]; }
+            if (arg.Length == 0) { arg = rest[i]; }
             i = i + 1;
         }
-        if (app.Length == 0) {
-            ConsoleError.WriteLine("usage: z42 apphost build <app.zpkg> [--out <path>]");
+        if (arg.Length == 0) {
+            ConsoleError.WriteLine(_usage());
             Environment.Exit(2);
-            return;
-        }
-        if (!File.Exists(app)) {
-            ConsoleError.WriteLine("z42 apphost: app not found: " + app);
-            Environment.Exit(1);
             return;
         }
 
@@ -57,26 +64,83 @@ public static class Apphost {
             return;
         }
 
-        // Where the exe goes + what zpkg path it embeds (resolved at runtime
-        // against the exe's OWN dir, so it stays relocatable):
-        //   --out <path>: exe written to <path> (anywhere); embed = the zpkg's
-        //                 path RELATIVE to <path>'s dir → ./xtask at the repo
-        //                 root can point at artifacts/xtask/xtask.zpkg.
-        //   (default):    exe beside the zpkg, embed just the basename
-        //                 (rename-safe, co-located).
-        string appName = Path.GetFileName(app);
+        // Resolve (app zpkg, exe out path, embed string) per input mode.
+        string app;
         string outPath;
         string embed;
-        if (outName.Length > 0) {
+        if (arg.EndsWith(".toml")) {
+            if (!File.Exists(arg)) {
+                ConsoleError.WriteLine("z42 apphost: manifest not found: " + arg);
+                Environment.Exit(1);
+                return;
+            }
+            TomlValue toml = TomlValue.Parse(File.ReadAllText(arg));
+            string projDir = Path.GetDirectoryName(arg);
+            if (!toml.ContainsKey("apphost")) {
+                ConsoleError.WriteLine("z42 apphost: " + arg + " has no [apphost] section (need [apphost].publish_dir).");
+                Environment.Exit(1);
+                return;
+            }
+            string publishDir = _tomlStr(toml, "apphost", "publish_dir", "");
+            if (publishDir.Length == 0) {
+                ConsoleError.WriteLine("z42 apphost: [apphost].publish_dir missing in " + arg + ".");
+                Environment.Exit(1);
+                return;
+            }
+            string name = _tomlStr(toml, "project", "name", "");
+            if (name.Length == 0) {
+                ConsoleError.WriteLine("z42 apphost: [project].name missing in " + arg + ".");
+                Environment.Exit(1);
+                return;
+            }
+            // Built zpkg lives at the dist dir. dist_dir may template
+            // ${output_dir}; absent → z42c default <output_dir>/dist (or ./dist).
+            string outDir = _tomlStr(toml, "build", "output_dir", "");
+            string distDir = _tomlStr(toml, "build", "dist_dir", "");
+            string distRel;
+            if (distDir.Length > 0) { distRel = distDir.Replace("${output_dir}", outDir); }
+            else if (outDir.Length > 0) { distRel = Path.Join(outDir, "dist"); }
+            else { distRel = "dist"; }
+            app = Path.Join(_joinProj(projDir, distRel), name + ".zpkg");
+            if (!File.Exists(app)) {
+                ConsoleError.WriteLine("z42 apphost: built zpkg not found: " + app + "  (build it first: z42c build " + arg + ")");
+                Environment.Exit(1);
+                return;
+            }
+            outPath = Path.Join(_joinProj(projDir, publishDir), name);
+            embed = _relPath(Path.GetDirectoryName(outPath), app);
+        } else if (outName.Length > 0) {
+            app = arg;
+            if (!File.Exists(app)) {
+                ConsoleError.WriteLine("z42 apphost: app not found: " + app);
+                Environment.Exit(1);
+                return;
+            }
             outPath = outName;
             embed = _relPath(Path.GetDirectoryName(outPath), app);
         } else {
+            app = arg;
+            if (!File.Exists(app)) {
+                ConsoleError.WriteLine("z42 apphost: app not found: " + app);
+                Environment.Exit(1);
+                return;
+            }
             string appDir = Path.GetDirectoryName(app);
             string exeName = Path.GetFileNameWithoutExtension(app);
             outPath = (appDir.Length > 0) ? Path.Join(appDir, exeName) : exeName;
-            embed = appName;
+            embed = Path.GetFileName(app);
         }
 
+        _emit(tmpl, outPath, embed);
+    }
+
+    private static string _usage() {
+        return "usage: z42 apphost build <app.zpkg> [--out <path>]\n"
+             + "   or: z42 apphost build <project.z42.toml>   (reads [apphost].publish_dir)";
+    }
+
+    // Patch the template → write the exe → set +x → (macOS) ad-hoc re-sign.
+    private static void _emit(string tmpl, string outPath, string embed) {
         byte[] template = File.ReadAllBytes(tmpl);
         byte[] patched = PatchBytes(template, embed);
         if (patched.Length == 0) {     // empty = failure sentinel (a real patch is never empty)
@@ -106,11 +170,23 @@ public static class Apphost {
         Console.WriteLine("apphost → " + outPath + "  (runs " + embed + ")");
     }
 
+    // Read root.<section>.<key> as a string, or `dflt` if absent/non-table.
+    private static string _tomlStr(TomlValue root, string section, string key, string dflt) {
+        if (!root.ContainsKey(section)) { return dflt; }
+        TomlValue s = root.Get(section);
+        if (!s.IsTable() || !s.ContainsKey(key)) { return dflt; }
+        return s.Get(key).AsString();
+    }
+
+    // Join a project-dir-relative path against the project dir (or return it
+    // as-is when the project dir is the CWD).
+    private static string _joinProj(string projDir, string rel) {
+        return (projDir.Length == 0) ? rel : Path.Join(projDir, rel);
+    }
+
     // Relative path from directory `fromDir` to `toPath`, both resolved against
     // the current working directory. Embeds the app's zpkg path relative to the
-    // produced exe's dir so `<exe_dir>/<embed>` finds it (relocatable). Assumes
-    // reasonably clean inputs (no embedded `..`); the build invocation passes
-    // clean paths (e.g. `artifacts/xtask/xtask.zpkg` + `--out xtask`).
+    // produced exe's dir so `<exe_dir>/<embed>` finds it (relocatable).
     private static string _relPath(string fromDir, string toPath) {
         string cwd = Environment.GetCurrentDirectory();
         string fromAbs = (fromDir.Length == 0) ? cwd : (Path.IsRooted(fromDir) ? fromDir : Path.Join(cwd, fromDir));
@@ -132,7 +208,10 @@ public static class Apphost {
         return rel;
     }
 
-    // Split a path into non-empty '/'-separated segments.
+    // Split a path into normalized '/'-separated segments: drop "." and
+    // collapse ".." against the preceding segment (so `a/b/../c` → `a/c`).
+    // Normalization makes _relPath robust to the embedded ".." that toml-mode
+    // paths carry (e.g. `scripts/../artifacts`).
     private static string[] _splitSlash(string s) {
         string[] buf = new string[s.Length + 1];
         int n = 0;
@@ -141,7 +220,17 @@ public static class Apphost {
         while (i <= s.Length) {
             bool sep = (i < s.Length) && (s.Substring(i, 1) == "/");
             if (i == s.Length || sep) {
-                if (i > start) { buf[n] = s.Substring(start, i - start); n = n + 1; }
+                if (i > start) {
+                    string seg = s.Substring(start, i - start);
+                    if (seg == ".") {
+                        // current dir — skip
+                    } else if (seg == "..") {
+                        if (n > 0 && buf[n - 1] != "..") { n = n - 1; }
+                        else { buf[n] = seg; n = n + 1; }
+                    } else {
+                        buf[n] = seg; n = n + 1;
+                    }
+                }
                 start = i + 1;
             }
             i = i + 1;

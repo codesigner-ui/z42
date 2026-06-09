@@ -98,6 +98,10 @@ public sealed class ProjectManifest
             ScanDepsForTestOnlyLeaks(deps, tomlPath, warnings);
         ScanForRedundantStdlibDeps(project.Name, deps, tests, bench, tomlPath, warnings);
         ScanTopLevelKeys(model, tomlPath, warnings);
+        // apphost-out-path (2026-06-10): scan [apphost] keys (consumed by the
+        // z42 patcher, not z42c) so a stray key still surfaces as WS008.
+        if (model.TryGetValue("apphost", out var apphostRaw) && apphostRaw is TomlTable apphostTbl)
+            ScanUnknownKeys(apphostTbl, KnownApphostKeys, "apphost", tomlPath, warnings);
 
         var manifest = new ProjectManifest
         {
@@ -128,6 +132,15 @@ public sealed class ProjectManifest
         // add-tests-bench-manifest-config (2026-06-06):
         // [tests] / [bench] tables + [[test]] / [[bench]] arrays
         "tests", "bench", "test", "benchmark",
+        // apphost-out-path (2026-06-10): [apphost] declares native-apphost
+        // publish. z42c does NOT consume it (the `z42 apphost build <toml>`
+        // patcher reads it); registered here only so the section + its keys
+        // don't trip WS008 unknown-key.
+        "apphost",
+    };
+    static readonly HashSet<string> KnownApphostKeys = new(StringComparer.Ordinal)
+    {
+        "publish_dir",
     };
     static readonly HashSet<string> KnownProjectKeys = new(StringComparer.Ordinal)
     {

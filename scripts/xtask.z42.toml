@@ -32,3 +32,11 @@ cache_dir  = "${output_dir}/.cache"
 [profile.release]
 mode     = "interp"
 optimize = 2
+
+# apphost-out-path (2026-06-10): `z42 apphost build scripts/xtask.z42.toml`
+# reads this and emits a native `./xtask` apphost that runs the built
+# xtask.zpkg directly. publish_dir is project-dir-relative (like output_dir);
+# ".." = the repo root (this toml lives in scripts/). z42c does NOT consume
+# this section — it's read by the apphost patcher only.
+[apphost]
+publish_dir = ".."
