@@ -1,6 +1,6 @@
 # Tasks: apphost —— 每-app 原生可执行文件
 
-> 状态：🟢 实施完成（待 commit）| 创建：2026-06-09 | toolchain 锁：User 授权与 port-z42c-core 并行
+> 状态：🟢 已完成并归档（feat a3720a16，2026-06-09）| 创建：2026-06-09 | toolchain 锁：User 授权与 port-z42c-core 并行，归档已释放
 
 ## 进度概览
 - [x] 阶段 0–1: 探索 + 叉路决策 + proposal/design/spec 起草（gate 已过：D3 本地规则 = exe 上行 + 本地优先；D6 z42.toml apphost 布尔）
@@ -36,7 +36,7 @@
 - [x] 4.4 `docs/roadmap.md` Deferred Backlog Index
 - [x] 4.5 GREEN：12 Rust 单测 + launcher core/xtask 编译 + dist apphost smoke + launcher smoke 全过
 - [x] 4.6 spec scenarios 覆盖确认
-- [ ] 4.7 commit/push（归档移到 archive/ 待 User 确认整体完成后）
+- [x] 4.7 commit/push（feat a3720a16）+ 归档 archive/2026-06-09-add-apphost/ + 释放 toolchain 并行占用
 
 ## 备注
 - **pre-existing 失败（非本变更）**：`z42 xtask.zpkg test dist` 的 `secp256k1` golden FAIL —— 该用例是**多文件**（source.z42 + vectors.z42 共享 namespace），dist runner 只单文件编译 source.z42 → 缺 vectors.z42 符号。**与 apphost 无关**（本变更 0 改 crypto/dist-enumeration），属 dist-harness 多文件局限，单独 issue 跟踪。
