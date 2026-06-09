@@ -120,7 +120,7 @@ native `__type_custom_attributes(type)` 对每条 ref 用 `run_returning` 调工
 - **状态**：已修 2026-06-09（[archive/2026-06-09-fix-fqn-class-resolution](../../spec/archive/2026-06-09-fix-fqn-class-resolution/)）。
 - **根因**：限定名 `Std.Type` 被解析为 `MemberType`，走 `SymbolTable.ResolveMemberType` —— 该函数原只查嵌套 delegate，未识别命名空间限定的类 → 返 `Z42Type.Unknown`；其上成员访问命中 [TypeChecker.Exprs.Members.cs](../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.Members.cs):174 的**静默 fallback** `BoundMember(Unknown)` → 运行期 null 字段读，属性 getter 永不派发。C2 typeof + C3b MethodInfo 共因（都曾用短名/委托绕过）。
 - **修复**：`ResolveMemberType` 先把 dotted-path 拍平 + `ResolveQualifiedType`（namespace-aware：短名是已知类 **且** `ImportedClassNamespaces` 记录的命名空间 == FQN 前缀才解析；零回归）。C3b 的 `Type.FindByType` workaround + `MethodInfo` 的 `using Std` 已移除，恢复自然 inline `Std.Type at = ...; at.FullName`。验证：GoldenTests 1545/1545。
-- **残留小项（follow-up）**：Members.cs:174 对「未解析类型上的成员访问」仍静默返 Unknown（掩盖 bug 的元凶之一）；本次未改（未解析 FQN 现为 `Z42Type.Unknown`，在该处报错有 error-recovery 级联风险）。可作独立小 fix 评估。
+- **残留项（follow-up，2026-06-09 实测复核）**：Members.cs:174 对未匹配任何解析路径的成员访问静默返 `BoundMember(Unknown)`。**实测确认：这不是"小 fix"。** 该静默路径是 typechecker 的**"不静态建模、交 VM 运行期解析"逃生通道**，被 enum 成员（`Direction.North`）、类名静态成员（`Counter.count`）、异常内建属性（`e.Message`）、字符串 `.ByteLength`、链式反射（`GetType().__fullName`）等**合法写法**依赖。把它收紧为报错(即便只对非 Unknown/Error 接收者、保留 poison cascade 抑制)会把 **26 个合法 golden 程序**（横跨 enums / statics / exceptions / strings / reflection）变成编译错误。真正修复需 typechecker 完整静态建模上述每类成员——多子系统工程，**非局部改动，保持延后**；不要尝试一行收紧。
 
 ### attribute-future-dedicated-diagnostics
 - **来源**：add-attribute-reflection（C3a）。
