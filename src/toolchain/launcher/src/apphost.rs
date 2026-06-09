@@ -3,21 +3,24 @@
 //! `z42 apphost build <app.zpkg>` copies this binary and patches the embedded
 //! target placeholder (located in the file by [`MAGIC`]) with the app's zpkg
 //! path *relative to the produced exe*. At runtime the stub reads that path,
-//! resolves a launcher runtime (framework-dependent, local-first), and execs
-//! the launcher core's bare-apphost form:
+//! resolves a z42vm + libs (framework-dependent, local-first), and runs the
+//! app's zpkg **directly**:
 //!
 //! ```text
-//! z42vm launcher.zpkg -- <app.zpkg> -- <user argv>
+//! z42vm <app.zpkg> -- <user argv>          (Z42_LIBS set)
 //! ```
 //!
-//! reusing all version / runtimeconfig.json logic written in z42. The stub
-//! itself is the only unavoidable native part — "find/give the VM".
+//! No `launcher.zpkg`, no muxer, single VM — a deployed app needs only the
+//! apphost exe + its zpkg + a resolvable runtime (z42vm+libs). The stub is the
+//! only unavoidable native part: "find the VM + run the app". (The `z42` muxer
+//! / launcher.zpkg still exist in the SDK for `z42 run/list/install/apphost
+//! build`; the apphost just doesn't route through them.)
 
 use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-use z42_launcher::{exec_core, resolve_apphost_runtime};
+use z42_launcher::{exec_app, resolve_app_runtime};
 
 /// 32-byte sentinel the patcher greps for in the on-disk binary. Followed by a
 /// 992-byte payload holding the NUL-terminated app zpkg path (relative to the
@@ -82,11 +85,11 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("."));
     let app_zpkg = exe_dir.join(&target);
 
-    let rt = match resolve_apphost_runtime(&exe_dir) {
+    let rt = match resolve_app_runtime(&exe_dir) {
         Some(rt) => rt,
         None => {
             eprintln!(
-                "apphost: 未找到 z42 运行时。已查 $Z42_HOME、{}（上行各级 .z42）、$HOME/.z42。\n\
+                "apphost: 未找到 z42 运行时(z42vm)。已查 $Z42_HOME、{}（上行各级 .z42）、$HOME/.z42。\n\
                  请安装 z42 或设置 Z42_HOME。",
                 exe_dir.display()
             );
@@ -94,15 +97,9 @@ fn main() {
         }
     };
 
-    // Bare apphost form: launcher core argv = [app.zpkg, "--", <user args>].
+    // Run the app's zpkg directly: z42vm <app.zpkg> -- <user argv> (Z42_LIBS set).
     let user_args: Vec<String> = env::args().skip(1).collect();
-    let mut core_args: Vec<String> = Vec::with_capacity(user_args.len() + 2);
-    core_args.push(app_zpkg.to_string_lossy().into_owned());
-    if !user_args.is_empty() {
-        core_args.push("--".to_string());
-        core_args.extend(user_args);
-    }
-    exec_core(&rt, &core_args);
+    exec_app(&rt, &app_zpkg, &user_args);
 }
 
 #[cfg(test)]
