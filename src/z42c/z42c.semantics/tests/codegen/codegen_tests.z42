@@ -59,8 +59,9 @@ void test_void_implicit_ret() {
 
 [Test]
 void test_module_dump() {
+    // 模块名 = 根命名空间（无 → "main"，对齐 C# `cu.Namespace ?? "main"`）
     string src = "int F() { return 5; }";
-    Assert.Equal("module \"z42c\"\n\nfn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
+    Assert.Equal("module \"main\"\n\nfn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
                  IrDump.DumpModule(src));
 }
 

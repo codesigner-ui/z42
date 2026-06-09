@@ -56,10 +56,11 @@ public sealed class IrGen {
                             if (!md.IsCtor && md.HasBody) {
                                 string key = c.Name + "." + md.Name;
                                 if (model.HasBody(key)) {
-                                    bool isStatic = this._hasWord(md.Mods, "static");
+                                    bool isStaticMethod = this._hasWord(md.Mods, "static");
+                                    bool isInstance = !isStaticMethod;   // 实例方法有 this；静态方法无
                                     var fe = new FunctionEmitter(model.Symbols, this);
-                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isStatic, owner,
-                                                                     c.TypeParams.Names, c.TypeParams.Count);
+                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isInstance, isStaticMethod,
+                                                                     owner, c.TypeParams.Names, c.TypeParams.Count);
                                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                                 }
                             }
@@ -71,14 +72,17 @@ public sealed class IrGen {
                 MethodDecl md = d as MethodDecl;
                 if (md.HasBody && model.HasBody(md.Name)) {
                     var fe = new FunctionEmitter(model.Symbols, this);
-                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), true, null,
-                                                     new string[0], 0);  // 自由函数无 this/字段/类型参
+                    // 自由函数：无 this（isInstance=false）且 IsStatic 标志=false（与 C# 一致）
+                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), false, false,
+                                                     null, new string[0], 0);
                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                 }
             }
             i = i + 1;
         }
-        return new IrModule("z42c", this._pool, this._poolCount, classes, cc, funcs, fc);
+        string modName = "main";   // 模块名 = 根命名空间（对齐 C# `cu.Namespace ?? "main"`）
+        if (cu.HasNamespace) { modName = cu.Namespace; }
+        return new IrModule(modName, this._pool, this._poolCount, classes, cc, funcs, fc);
     }
 
     // 类 → IrClassDesc（名 + 基类 + 字段 slot 序）。CG-1A 描述就绪，字段访问 codegen 在 CG-1C 用。

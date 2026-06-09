@@ -17,6 +17,7 @@ public sealed class EmitContext {
     public string      CurLabel; public bool Ended;       // 当前块已终结
     public int         NextReg;  public int MaxReg;  public int LabelSeq;
     public string[]    ContLabels; public string[] BreakLabels; public int LoopDepth;  // 循环标签栈
+    public int[]       RegTags;   public int RegTagCount;   // reg id → IrType 标签（REGT，byte-identical）
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
         this.Symbols = symbols; this.Gen = gen;
@@ -24,14 +25,27 @@ public sealed class EmitContext {
         this.Blocks = new IrBlock[4]; this.BlockCount = 0;
         this.NextReg = 0; this.MaxReg = 0; this.LabelSeq = 0;
         this.ContLabels = new string[4]; this.BreakLabels = new string[4]; this.LoopDepth = 0;
+        this.RegTags = new int[8]; this.RegTagCount = 0;
     }
 
-    // 线性寄存器分配（不复用）。
+    // 线性寄存器分配（不复用）。记 reg→tag（REGT）。
     public TypedReg Alloc(int tag) {
         TypedReg r = new TypedReg(this.NextReg, tag);
+        this.RecordReg(this.NextReg, tag);
         this.NextReg = this.NextReg + 1;
         if (this.NextReg > this.MaxReg) { this.MaxReg = this.NextReg; }
         return r;
+    }
+
+    // 记 reg id 的类型标签（params/this 直接构造 TypedReg 时也须记，使 RegTags 全覆盖 0..MaxReg）。
+    public void RecordReg(int id, int tag) {
+        while (id >= this.RegTags.Length) {
+            int[] bigger = new int[this.RegTags.Length * 2];
+            int i = 0; while (i < this.RegTagCount) { bigger[i] = this.RegTags[i]; i = i + 1; }
+            this.RegTags = bigger;
+        }
+        this.RegTags[id] = tag;
+        if (id + 1 > this.RegTagCount) { this.RegTagCount = id + 1; }
     }
 
     public void Emit(IrInstr ins) {

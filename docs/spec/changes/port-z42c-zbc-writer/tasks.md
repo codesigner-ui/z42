@@ -12,6 +12,13 @@
 - [ ] ZW-1E REGT + 端到端 z42vm 执行 + f64/char（BitConverter）
 
 ## ZW-1A：最小 byte-identical（trivial 函数）
+### ZW-1A-0 前置：IrModule enrich（design §②，✅ 已完成）
+- [x] `IrFunction` 加 `ExecMode`（默认 "Interp"）/ `ParamTypes`（SIGS 每形参类型名）/ `RegTypes`（REGT 每寄存器 IrType 标签）
+- [x] `EmitContext.Alloc` + `RecordReg` 记 reg→tag（params/this 直构 TypedReg 也记，覆盖 0..MaxReg）
+- [x] `FunctionEmitter`：拆 `isInstance`（有 this，驱动 reg0/paramOffset）vs `isStaticMethod`（SIGS IsStatic 字节；**自由函数 false**，对齐 C# byte-identity 发现）
+- [x] `IrGen`：模块名 = 根命名空间（`cu.HasNamespace ? cu.Namespace : "main"`，对齐 C# `cu.Namespace ?? "main"`）+ free-func 传 `isInstance=false, isStaticMethod=false`
+- [x] 验证：`xtask test compiler-z42` 全绿（codegen 40 例，含 module-name 改为 "main"）
+
 ### 字节基础设施
 - [ ] 1A-1 `BinaryFormat/ByteWriter.z42`（可增长 byte[]+len；WriteU8/U16/U32/I64/Bytes/Str(u16+UTF8)/Patch32/ToArray；LE 位运算拆字节）
 - [ ] 1A-2 `BinaryFormat/Opcodes.z42`（opcode int 常量全表 + TypeTags + SectionTags ASCII）
