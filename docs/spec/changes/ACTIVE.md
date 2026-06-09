@@ -28,4 +28,5 @@
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | ~~add-reflection-mvp~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（feat 30776fae）|
 | ~~make-typeof-return-type~~ | compiler + runtime —— ✅ 已归档 2026-06-09（C2，option A）|
+| add-apphost | toolchain（**排队**：spec 已就绪，等 `port-z42c-core` 归档释放 toolchain 锁后占用开工；docs 阶段不上锁）|
 | plan-0.3.x-three-streams | docs（不上锁） |
