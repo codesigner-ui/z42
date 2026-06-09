@@ -46,7 +46,26 @@ public static class ZbcInstr {
         if (ins is MulInstr) { MulInstr i = ins as MulInstr; ZbcInstr._bin(w, Op.Mul, i.Dst, i.A, i.B); return; }
         if (ins is DivInstr) { DivInstr i = ins as DivInstr; ZbcInstr._bin(w, Op.Div, i.Dst, i.A, i.B); return; }
         if (ins is RemInstr) { RemInstr i = ins as RemInstr; ZbcInstr._bin(w, Op.Rem, i.Dst, i.A, i.B); return; }
-        // 未覆盖 opcode：ZW-1A 之外（ZW-1B+ 补）。trivial 函数不应到达。
+        // 比较（ZW-1B）：tag 取 Dst（恒 bool），镜像 C# WriteBin。
+        if (ins is EqInstr) { EqInstr i = ins as EqInstr; ZbcInstr._bin(w, Op.Eq, i.Dst, i.A, i.B); return; }
+        if (ins is NeInstr) { NeInstr i = ins as NeInstr; ZbcInstr._bin(w, Op.Ne, i.Dst, i.A, i.B); return; }
+        if (ins is LtInstr) { LtInstr i = ins as LtInstr; ZbcInstr._bin(w, Op.Lt, i.Dst, i.A, i.B); return; }
+        if (ins is LeInstr) { LeInstr i = ins as LeInstr; ZbcInstr._bin(w, Op.Le, i.Dst, i.A, i.B); return; }
+        if (ins is GtInstr) { GtInstr i = ins as GtInstr; ZbcInstr._bin(w, Op.Gt, i.Dst, i.A, i.B); return; }
+        if (ins is GeInstr) { GeInstr i = ins as GeInstr; ZbcInstr._bin(w, Op.Ge, i.Dst, i.A, i.B); return; }
+        // 位运算（ZW-1B）。
+        if (ins is BitAndInstr) { BitAndInstr i = ins as BitAndInstr; ZbcInstr._bin(w, Op.BitAnd, i.Dst, i.A, i.B); return; }
+        if (ins is BitOrInstr)  { BitOrInstr i = ins as BitOrInstr;   ZbcInstr._bin(w, Op.BitOr,  i.Dst, i.A, i.B); return; }
+        if (ins is BitXorInstr) { BitXorInstr i = ins as BitXorInstr; ZbcInstr._bin(w, Op.BitXor, i.Dst, i.A, i.B); return; }
+        if (ins is ShlInstr) { ShlInstr i = ins as ShlInstr; ZbcInstr._bin(w, Op.Shl, i.Dst, i.A, i.B); return; }
+        if (ins is ShrInstr) { ShrInstr i = ins as ShrInstr; ZbcInstr._bin(w, Op.Shr, i.Dst, i.A, i.B); return; }
+        if (ins is StrConcatInstr) { StrConcatInstr i = ins as StrConcatInstr; ZbcInstr._bin(w, Op.StrConcat, i.Dst, i.A, i.B); return; }
+        // 一元（ZW-1B）：op + dst-tag + dst + src，镜像 C# WriteUn。
+        if (ins is NegInstr) { NegInstr i = ins as NegInstr; ZbcInstr._un(w, Op.Neg, i.Dst, i.Src); return; }
+        if (ins is NotInstr) { NotInstr i = ins as NotInstr; ZbcInstr._un(w, Op.Not, i.Dst, i.Src); return; }
+        if (ins is BitNotInstr) { BitNotInstr i = ins as BitNotInstr; ZbcInstr._un(w, Op.BitNot, i.Dst, i.Src); return; }
+        // 未覆盖 opcode（call/field/obj/array/is·as/const-str·f64·char → ZW-1C/1D/1E）：
+        // 静默跳过会产出语义错流（e2e div-zero oracle 可截获）；e2e 源须避开未覆盖指令。
     }
 
     // 终结符 → 字节。labels/blockCount：本函数块 label 序（Br/BrCond 目标 → 块索引 u16）。
@@ -73,12 +92,21 @@ public static class ZbcInstr {
             w.WriteU16(ZbcInstr._idx(b.FalseLabel, labels, blockCount));
             return;
         }
-        // ThrowTerm → ZW-1B+
+        if (t is ThrowTerm) {
+            ThrowTerm th = t as ThrowTerm;
+            w.WriteU8(Op.Throw); w.WriteU8(Tag.FromIrType(th.Reg.Type)); w.WriteU16(th.Reg.Id);
+            return;
+        }
     }
 
     private static void _bin(ByteWriter w, int op, TypedReg dst, TypedReg a, TypedReg b) {
         w.WriteU8(op); w.WriteU8(Tag.FromIrType(dst.Type)); w.WriteU16(dst.Id);
         w.WriteU16(a.Id); w.WriteU16(b.Id);
+    }
+
+    private static void _un(ByteWriter w, int op, TypedReg dst, TypedReg src) {
+        w.WriteU8(op); w.WriteU8(Tag.FromIrType(dst.Type)); w.WriteU16(dst.Id);
+        w.WriteU16(src.Id);
     }
 
     private static int _idx(string label, string[] labels, int blockCount) {

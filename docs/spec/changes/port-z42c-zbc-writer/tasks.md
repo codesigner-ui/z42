@@ -37,15 +37,17 @@
 
 - [ ] 1A-6 截 C# golden（const/算术）—— **阻塞于 DBUG**：待 span+LineTable+DBUG 或改走端到端执行验证
 
-## ZW-1B：运算 opcode + driver --emit-zbc + z42vm 端到端（🟡 code-complete，验证被并行 1.12 bump 阻塞）
+## ZW-1B：运算 opcode + driver --emit-zbc + z42vm 端到端 —— ✅ 已完成
 > User 裁决（2026-06-10）：byte-identical 越过 `empty` 被 DBUG 阻塞 → 先走 **Option B 端到端执行验证**（z42c .zbc 在 z42vm 上真实执行，functional 非 byte-identical），DBUG/span 链后啃。
 - [x] 1B-1 `ZbcFormat.z42` + `ZbcInstr.z42`：比较 Eq..Ge(0x30-35) / 位 BitAnd..Shr(0x19-1E) / 一元 Neg·Not·BitNot / StrConcat(0x85) / Throw 终结符(0x44)——镜像 C# WriteBin/WriteUn
 - [x] 1B-2 `ByteWriter.ToBytes()`（int[]→byte[]，File.WriteAllBytes 写盘）+ `IrDump.ZbcBytes(src)`（纯函数）
 - [x] 1B-3 driver `--emit-zbc <file.z42> <out.zbc>`（z42c 自举编译器产 .zbc 文件的首个 CLI 命令）
 - [x] 1B-4 xtask `_testCompilerZ42E2e`：自检程序（mul/add/le/eq/while/if/div 全 ZW-1A/1B opcode）→ z42c.driver --emit-zbc → z42vm 执行；**div-by-zero oracle**（算错→ok=0→trap 非零退出；负向用例验 oracle 本身有效）
 - [x] 1B-5 zbc_tests +3（Eq/BitAnd/Neg/Throw spec-derived hex + 自检程序 header 完整性）
-- [ ] 1B-6 验证 + commit：**🔴 阻塞**——并行 change `add-reflection-type-flags` 正在 bump zbc 1.11→1.12 / zpkg 0.13→0.14（未提交 WIP）；driver 被 gate 重建后已是 0.14 strict-pin，读不了盘上 0.13 stdlib（`using Std` E0602），无一致工具链可跑 gate。**等其落地 regen stdlib 后**：ZbcFormat.Minor 11→12 + empty golden hex 重截（version 字节 0b00→0c00；empty 无类不受 TYPE flags 字节影响）→ 跑绿 → commit
-- 协调：version-bumping.md 已加第 5 步（zbc bump 须同步 z42c ZbcFormat.z42 + zbc golden 重截），防再次 skew
+- [x] 1B-6 验证（User 裁决直接推进，2026-06-10）：本地把全工具链重建到并行 WIP 的 0.14（driver/z42vm/test-runner/stdlib 21 库[z42.cli 是并行 WIP 自身编译错，z42c 不依赖]）+ 同步 z42c 到 **zbc 1.12**（ZbcFormat.Minor=12 / _buildType 补 class-shape flags 字节 / empty golden 重截 0b00→0c00）→ `xtask test compiler-z42` = **14 units 全绿 + e2e 通过**：`selfcheck.zbc computed correctly, clean exit` + `divzero.zbc trapped as expected`
+- 协调：version-bumping.md 已加第 5 步（zbc bump 须同步 z42c ZbcFormat.z42 + zbc golden 重截），防再次 skew；regen 后的 src/tests/zbc-format/ fixtures 留给 add-reflection-type-flags 提交（其 checklist 步骤 4）
+
+> **🎉 ZW-1B 完成 = 自举里程碑：z42c 第一次产出能在 z42vm 上正确执行的 `.zbc`**（`z42c --emit-zbc` → 多基本块 while/if + mul/add/le/eq/copy/div 全部算对）。功能性验证收口；byte-identical 全覆盖等 DBUG/span 链（ZW-1C+）。
 
 ## ZW-1C–1E（后续增量，详见 design.md 增量表）
 - [ ] ZW-1C 调用+token+字段；ZW-1D 对象+TYPE；ZW-1E REGT 完备+float；DBUG/span 链（解锁全面 byte-identical）

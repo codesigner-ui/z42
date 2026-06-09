@@ -2,10 +2,10 @@
 // 受限写法：static class + int 常量（替 enum，同 DiagnosticCodes 模式）。
 namespace Z42.IR.BinaryFormat;
 
-// 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin）。
+// 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 11;   // 2026-06-09 add-attribute-reflection-methods C3b：SIGS/TYPE 每函数/类 attr-ref（u16 count）
+    public static int Minor = 12;   // 2026-06-10 add-reflection-type-flags：TYPE 每类记录尾加 class-shape flags 字节（bit0 abstract/bit1 sealed/bit2 struct/bit3 record）
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
@@ -18,10 +18,17 @@ public static class Op {
     public static int Copy      = 0x05;
     public static int Add = 0x10; public static int Sub = 0x11; public static int Mul = 0x12;
     public static int Div = 0x13; public static int Rem = 0x14;
+    public static int Neg = 0x15; public static int Not = 0x18;
+    public static int BitAnd = 0x19; public static int BitOr = 0x1A; public static int BitXor = 0x1B;
+    public static int BitNot = 0x1C; public static int Shl = 0x1D; public static int Shr = 0x1E;
+    public static int Eq = 0x30; public static int Ne = 0x31; public static int Lt = 0x32;
+    public static int Le = 0x33; public static int Gt = 0x34; public static int Ge = 0x35;
     public static int Br     = 0x40;
     public static int BrCond = 0x41;
     public static int Ret    = 0x42;   // void 返回
     public static int RetVal = 0x43;   // 带值返回
+    public static int Throw  = 0x44;
+    public static int StrConcat = 0x85;
 }
 
 // 指令头 type_tag 字节（IrType int 标签 → zbc tag）。

@@ -29,6 +29,11 @@ public static class IrDump {
         return ZbcWriter.WriteHex(IrDump._build(src));
     }
 
+    // 整模块 → .zbc 字节（driver --emit-zbc 写盘；纯函数，IO 在 driver）。
+    public static byte[] ZbcBytes(string src) {
+        return ZbcWriter.Write(IrDump._build(src)).ToBytes();
+    }
+
     private static IrModule _build(string src) {
         var p = new Parser(src, "<input>");
         var cu = p.ParseCompilationUnit();

@@ -1,8 +1,9 @@
 // z42c driver — 自举编译器 CLI 入口（= z42c）。增量解锁命令；绝不 fallback 到 C# z42c.dll。
 // 已实现：
-//   z42c --dump-tokens <file.z42>   词法 token 流（z42c 自有格式）
-//   z42c --dump-ast    <file.z42>   AST s-expression
-//   z42c --dump-bound  <file.z42>   类型检查后的 Bound 树（含类型注解 + 诊断数）
+//   z42c --dump-tokens <file.z42>          词法 token 流（z42c 自有格式）
+//   z42c --dump-ast    <file.z42>          AST s-expression
+//   z42c --dump-bound  <file.z42>          类型检查后的 Bound 树（含类型注解 + 诊断数）
+//   z42c --emit-zbc    <file.z42> <out>    编译到 .zbc（ZW-1A/1B opcode 子集；无 DBUG）
 // 未实现：manifest-check / build（后端落地后解锁）。dump 格式与 C# byte-identical 对齐留 6e。
 namespace Z42.Driver;
 
@@ -19,6 +20,15 @@ void Main() {
     }
     string cmd  = argv[0];
     string file = argv[1];
+    if (cmd == "--emit-zbc") {
+        if (argv.Length < 3) {
+            ConsoleError.WriteLine("z42c: --emit-zbc requires <file.z42> <out.zbc>");
+            Environment.Exit(2);
+            return;
+        }
+        File.WriteAllBytes(argv[2], IrDump.ZbcBytes(File.ReadAllText(file)));
+        return;
+    }
     if (cmd != "--dump-tokens" && cmd != "--dump-ast" && cmd != "--dump-bound") {
         ConsoleError.WriteLine("z42c: unknown command '" + cmd + "'");
         _usage();
@@ -34,7 +44,8 @@ void Main() {
 void _usage() {
     Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse/typecheck front-end)");
     Console.WriteLine("usage:");
-    Console.WriteLine("  z42c --dump-tokens <file.z42>   token stream");
-    Console.WriteLine("  z42c --dump-ast    <file.z42>   AST s-expression");
-    Console.WriteLine("  z42c --dump-bound  <file.z42>   type-checked Bound tree");
+    Console.WriteLine("  z42c --dump-tokens <file.z42>          token stream");
+    Console.WriteLine("  z42c --dump-ast    <file.z42>          AST s-expression");
+    Console.WriteLine("  z42c --dump-bound  <file.z42>          type-checked Bound tree");
+    Console.WriteLine("  z42c --emit-zbc    <file.z42> <out>    compile to .zbc (subset)");
 }

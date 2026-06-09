@@ -74,6 +74,14 @@ public sealed class ByteWriter {
         while (i < other._len) { this.WriteU8(other._buf[i]); i = i + 1; }
     }
 
+    // byte[]（File.WriteAllBytes 写盘；driver --emit-zbc）。
+    public byte[] ToBytes() {
+        byte[] r = new byte[this._len];
+        int i = 0;
+        while (i < this._len) { r[i] = (byte)this._buf[i]; i = i + 1; }
+        return r;
+    }
+
     // 小写 hex（golden-hex 断言；规避 byte[] 比较）。
     public string ToHex() {
         string digits = "0123456789abcdef";

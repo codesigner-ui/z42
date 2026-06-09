@@ -6,12 +6,50 @@ namespace Z42cSemanticsZbcTests;
 using Std;
 using Std.Test;
 using Z42.Semantics;
+using Z42.IR;
+using Z42.IR.BinaryFormat;
 
 [Test]
 void test_zbc_empty_byte_identical() {
     // void Main(){} → 8 section 最小完整文件（NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT）。
-    // 池序 main/?/Main/void/entry；SIGS 含 zbc 1.11 attrCount=0；FUNC entry 块仅 ret(42 00 ffff)。
+    // 池序 main/?/Main/void/entry；SIGS 含 zbc 1.11 attrCount=0（1.12 TYPE flags 字节仅含类时出现，empty 无类）；FUNC entry 块仅 ret(42 00 ffff)。
     string src = "void Main() { }";
-    string golden = "5a42430001000b0000000800000000004e535043700000000600000053545253760000003e00000054595045b40000000400000053494753b800000014000000494d5054cc0000000400000045585054d00000000900000046554e43d90000001600000052454754ef0000000800000004006d61696e0500000000000000040000000400000001000000050000000400000009000000040000000d000000050000006d61696e3f4d61696e766f6964656e747279000000000100000002000000000000030000000000000000000000000100000002000000000100000000000100040000000000000000004200ffff0100000000000000";
+    string golden = "5a42430001000c0000000800000000004e535043700000000600000053545253760000003e00000054595045b40000000400000053494753b800000014000000494d5054cc0000000400000045585054d00000000900000046554e43d90000001600000052454754ef0000000800000004006d61696e0500000000000000040000000400000001000000050000000400000009000000040000000d000000050000006d61696e3f4d61696e766f6964656e747279000000000100000002000000000000030000000000000000000000000100000002000000000100000000000100040000000000000000004200ffff0100000000000000";
     Assert.Equal(golden, IrDump.DumpZbcHex(src));
+}
+
+// ── ZW-1B：指令编码单测（spec-derived hex；DBUG 阻塞使 C# golden 不可用，端到端正确性由 xtask e2e 验证）──
+
+[Test]
+void test_zbc_instr_compare_and_binary() {
+    var pool = new ZbcStringPool();
+    // eq %2(bool), %0, %1 → op 0x30 + dst-tag bool(01) + dst 0200 + a 0000 + b 0100
+    var w1 = new ByteWriter();
+    ZbcInstr.WriteInstr(w1, new EqInstr(new TypedReg(2, IrType.Bool), new TypedReg(0, IrType.I32), new TypedReg(1, IrType.I32)), pool);
+    Assert.Equal("3001020000000100", w1.ToHex());
+    // bit_and %2(i32), %0, %1 → op 0x19 + tag i32(04)
+    var w2 = new ByteWriter();
+    ZbcInstr.WriteInstr(w2, new BitAndInstr(new TypedReg(2, IrType.I32), new TypedReg(0, IrType.I32), new TypedReg(1, IrType.I32)), pool);
+    Assert.Equal("1904020000000100", w2.ToHex());
+}
+
+[Test]
+void test_zbc_instr_unary_and_throw() {
+    var pool = new ZbcStringPool();
+    // neg %1(i32), %0 → op 0x15 + tag 04 + dst 0100 + src 0000
+    var w1 = new ByteWriter();
+    ZbcInstr.WriteInstr(w1, new NegInstr(new TypedReg(1, IrType.I32), new TypedReg(0, IrType.I32)), pool);
+    Assert.Equal("150401000000", w1.ToHex());
+    // throw %3(ref) → op 0x44 + tag object(20) + reg 0300
+    var w2 = new ByteWriter();
+    ZbcInstr.WriteTerm(w2, new ThrowTerm(new TypedReg(3, IrType.Ref)), new string[0], 0);
+    Assert.Equal("44200300", w2.ToHex());
+}
+
+[Test]
+void test_zbc_selfcheck_program_header() {
+    // e2e 自检程序（mul/add/le/eq/while/if/div）写出不应损坏：header = magic+1.12+flags0
+    string src = "int Main() { int x = 6 * 7; int ok = 0; if (x == 42) { ok = 1; } return 100 / ok; }";
+    string hex = IrDump.DumpZbcHex(src);
+    Assert.Equal("5a42430001000c000000", hex.Substring(0, 20));
 }

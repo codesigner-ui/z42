@@ -115,6 +115,7 @@ public static class ZbcWriter {
             }
             w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）
             w.WriteU16(0);    // attrCount（zbc 1.10）
+            w.WriteU8(0);     // class-shape flags（zbc 1.12：bit0 abstract/bit1 sealed/bit2 struct/bit3 record；z42c IrClassDesc 暂无标志 → 0）
             c = c + 1;
         }
         return w;

@@ -183,5 +183,51 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
         return 1;
     }
     Console.WriteLine("✅ z42c [Test]: all " + totalUnits.ToString() + " unit(s) passed");
+    return _testCompilerZ42E2e(root, vm, flat);
+}
+
+// e2e（port-z42c-zbc-writer ZW-1B）：z42c 自举编译器产 .zbc → z42vm 真实执行。
+// 自检程序用 div-by-zero oracle：算术/比较/分支全对 → ok=1 → 100/1 干净退出 0；
+// 任一字节编码错 → ok=0 → DivideByZeroException → 非零退出。负向用例验证 oracle 本身有效
+//（防"VM 不管对错都退 0"的假绿）。功能性验证（非 byte-identical——DBUG 阻塞见 zbc-writer tasks）。
+int _testCompilerZ42E2e(string root, string vm, string flat) {
+    Console.WriteLine("");
+    Console.WriteLine("── z42c e2e: self-compiled .zbc runs on z42vm ──");
+    string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
+    string e2eDir = Path.Join(root, "artifacts/build/z42c/e2e");
+    Directory.Create(e2eDir);
+
+    // 正向：自检程序（const/mul/add/le/eq/copy/div + while 回边 + if 嵌套 = ZW-1A/1B 全 opcode）
+    string okSrc = Path.Join(e2eDir, "selfcheck.z42");
+    File.WriteAllText(okSrc, "int Main() {\n"
+        + "    int x = 6 * 7;\n"
+        + "    int sum = 0;\n"
+        + "    int i = 1;\n"
+        + "    while (i <= 5) { sum = sum + i; i = i + 1; }\n"
+        + "    int ok = 0;\n"
+        + "    if (x == 42) { if (sum == 15) { ok = 1; } }\n"
+        + "    return 100 / ok;\n"
+        + "}\n");
+    string okZbc = Path.Join(e2eDir, "selfcheck.zbc");
+    int rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(okSrc).Arg(okZbc)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed (" + rc.ToString() + ")"); return 1; }
+    rc = new Process(vm).Arg(okZbc).Arg("Main")
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ self-check zbc trapped on z42vm (exit " + rc.ToString() + ") — miscomputation"); return 1; }
+    Console.WriteLine("  ✓ selfcheck.zbc: computed correctly, clean exit");
+
+    // 负向（oracle 有效性）：必然 div-zero 的程序必须非零退出
+    string badSrc = Path.Join(e2eDir, "divzero.z42");
+    File.WriteAllText(badSrc, "int Main() { int z = 0; return 1 / z; }\n");
+    string badZbc = Path.Join(e2eDir, "divzero.zbc");
+    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(badSrc).Arg(badZbc)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed on divzero (" + rc.ToString() + ")"); return 1; }
+    rc = new Process(vm).Arg(badZbc).Arg("Main")
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (rc == 0) { Console.WriteLine("  ✗ divzero.zbc exited 0 — oracle invalid (VM should trap)"); return 1; }
+    Console.WriteLine("  ✓ divzero.zbc: trapped as expected (oracle valid)");
+    Console.WriteLine("✅ z42c e2e: self-compiled .zbc executes on z42vm");
     return 0;
 }

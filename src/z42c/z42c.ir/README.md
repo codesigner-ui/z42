@@ -28,4 +28,4 @@
 class（非 record）+ virtual Dump 替 record 层次；static class + int 常量替 enum（IrType）；typed array + count 替泛型集合字段。**定义顺序叶子优先**（容器引用叶子的 Dump，bootstrap 单遍按文件序解析，后定义的具体类型方法不可见）。
 
 ## 增量进度
-CG-1A 最小指令集 ✅ / CG-1B 控制流 ✅ / CG-1C 调用·字段 ✅ / CG-1D new·数组·is·as ✅ / CG-1E 运算符 + 块化短路·三目·?? ✅ / CG-2 泛型 ✅。**Bound→IR 内存模型 codegen 覆盖全部非泛型 L1 + 泛型实例化**。byte-identical `.zbc`（`BinaryFormat/`，change `port-z42c-zbc-writer`）：**ZW-1A `empty`（void Main(){}）逐字节对账 C# 通过** ✅。🔴 越过 `empty` 的 byte-identical 阻塞于 DBUG section（C# 对有语句体函数 emit 源码行表，z42c AST 无 span）—— 待 span→LineTable→DBUG 链。
+CG-1A 最小指令集 ✅ / CG-1B 控制流 ✅ / CG-1C 调用·字段 ✅ / CG-1D new·数组·is·as ✅ / CG-1E 运算符 + 块化短路·三目·?? ✅ / CG-2 泛型 ✅。**Bound→IR 内存模型 codegen 覆盖全部非泛型 L1 + 泛型实例化**。byte-identical `.zbc`（`BinaryFormat/`，change `port-z42c-zbc-writer`）：**ZW-1A `empty` 逐字节对账 ✅（zbc 1.12）/ ZW-1B 运算 opcode + driver `--emit-zbc` + z42vm 端到端执行 ✅**（自检程序经自举字节正确运行——自举里程碑）。🔴 全面 byte-identical 阻塞于 DBUG section（C# 对有语句体函数 emit 源码行表，z42c AST 无 span）—— 待 span→LineTable→DBUG 链（ZW-1C+）。
