@@ -27,6 +27,7 @@ fn simple_class(name: &str) -> ClassDesc {
         fields: Box::new([]),
         type_params: Box::new([]),
         type_param_constraints: Box::new([]),
+        attributes: Box::new([]),
     }
 }
 

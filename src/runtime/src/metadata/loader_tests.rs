@@ -247,6 +247,7 @@ fn type_registry_vec_invariant_after_build() {
                 fields: Box::new([]),
                 type_params: Box::new([]),
                 type_param_constraints: Box::new([]),
+                attributes: Box::new([]),
             },
             ClassDesc {
                 name: "Demo.Bbb".to_owned(),
@@ -254,6 +255,7 @@ fn type_registry_vec_invariant_after_build() {
                 fields: Box::new([]),
                 type_params: Box::new([]),
                 type_param_constraints: Box::new([]),
+                attributes: Box::new([]),
             },
         ],
         functions: vec![],
@@ -395,6 +397,7 @@ fn module_with_one_class(
             }).collect(),
             type_params: Box::new([]),
             type_param_constraints: Box::new([]),
+            attributes: Box::new([]),
         }],
         functions: vec![],
         type_registry: std::collections::HashMap::new(),

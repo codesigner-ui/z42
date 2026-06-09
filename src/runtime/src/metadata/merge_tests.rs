@@ -113,6 +113,7 @@ fn merge_deduplicates_classes_by_name() {
         fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string() }].into_boxed_slice(),
         type_params: Box::new([]),
         type_param_constraints: Box::new([]),
+        attributes: Box::new([]),
     };
     let cls_dup = ClassDesc {
         name: "Std.Object".to_string(),
@@ -120,6 +121,7 @@ fn merge_deduplicates_classes_by_name() {
         fields: Box::new([]),
         type_params: Box::new([]),
         type_param_constraints: Box::new([]),
+        attributes: Box::new([]),
     };
     let m0 = make_module_with("A", &["a"], 0, vec![cls], vec![]);
     let m1 = make_module_with("B", &["b"], 0, vec![cls_dup], vec![]);
