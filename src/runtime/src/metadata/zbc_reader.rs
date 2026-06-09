@@ -39,7 +39,9 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // pairs) after the type-param block. See read_type_section below.
 // 2026-06-09 add-attribute-reflection-methods (C3b): bumped to 1.11 — SIGS
 // section adds the same per-function attr refs after the type-param block.
-pub const ZBC_VERSION_MINOR: u16 = 11;
+// 2026-06-10 add-reflection-type-flags: bumped to 1.12 — TYPE section appends
+// a class-shape flags byte (abstract/sealed/struct/record) per class record.
+pub const ZBC_VERSION_MINOR: u16 = 12;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -62,7 +64,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // unchanged; bump tracks the inner zbc format change per the coupling rule.
 // 2026-06-09 add-attribute-reflection-methods (C3b): bumped to 0.13, coupled
 // with inner zbc 1.11 (per-function attr refs).
-pub const ZPKG_VERSION_MINOR: u16 = 13;
+// 2026-06-10 add-reflection-type-flags: bumped to 0.14, coupled with inner
+// zbc 1.12 (TYPE section class-shape flags byte).
+pub const ZPKG_VERSION_MINOR: u16 = 14;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -324,6 +328,8 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
                 factory_func: c.pool_str(pool, factory_idx)?.to_owned(),
             });
         }
+        // add-reflection-type-flags (zbc 1.12): class-shape flags byte.
+        let class_flags = c.read_u8()?;
         classes.push(ClassDesc {
             name,
             base_class,
@@ -331,6 +337,7 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             type_params: type_params.into_boxed_slice(),
             type_param_constraints: type_param_constraints.into_boxed_slice(),
             attributes: attributes.into_boxed_slice(),
+            class_flags,
         });
     }
     Ok(classes)

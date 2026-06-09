@@ -207,6 +207,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.11 | 2026-06-06 | [add-tests-bench-manifest-config](../../spec/changes/add-tests-bench-manifest-config/) | aggregate-zpkg-tidx：packed module 的 MODS record 在 `RegtData` 之后追加 `u32 tidx_len + bytes tidx_data`（复用 `ZbcWriter.BuildTidxSection` 字节）。reader 侧聚合：`method_id` 按 cumulative function offset、string 索引按 cumulative pool offset 累加。inner zbc 不变（1.9）|
 | 0.12 | 2026-06-09 | [add-attribute-reflection](../../spec/changes/add-attribute-reflection/) | inner zbc 1.10（TYPE section 每 class 追加用户 attribute 引用 `attr_count: u16` + (type-name, factory-func) str-idx 对）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则（C3）|
 | 0.13 | 2026-06-09 | [add-attribute-reflection-methods](../../spec/changes/add-attribute-reflection-methods/) | inner zbc 1.11（SIGS section 每 function 追加同形 attr refs）。zpkg outer 的 **global SIGS** section（`ZpkgWriter.BuildSigsSection`，独立于 inner-zbc SIGS）同步加 per-function attr refs。纯 minor bump 跟随 zbc 强耦合规则（C3b）|
+| 0.14 | 2026-06-10 | [add-reflection-type-flags](../../spec/changes/add-reflection-type-flags/) | inner zbc 1.12（TYPE section 每 class 追加 `flags: u8` 类修饰符字节）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 

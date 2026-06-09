@@ -91,6 +91,7 @@ impl Module {
             name: td.name.clone(),
             id: new_id,
             base_name: td.base_name.clone(),
+            class_flags: td.class_flags,
             fields: td.fields.clone(),
             field_index: td.field_index.clone(),
             vtable: td.vtable.clone(),
@@ -109,6 +110,14 @@ impl Module {
 /// fields stored as `Box<[T]>` (16 B) instead of `Vec<T>` (24 B) — saves
 /// 8 B/field/ClassDesc. TypeDesc still owns growable `Vec`s because the
 /// cross-zpkg fixup pass rebuilds them.
+/// add-reflection-type-flags (zbc 1.12): bit layout for the TYPE-section class
+/// flags byte (`ClassDesc::class_flags` / `TypeDesc::class_flags`). Must match
+/// ZbcWriter.BuildTypeSection (1=abstract, 2=sealed, 4=struct, 8=record).
+pub const CLASS_FLAG_ABSTRACT: u8 = 1 << 0;
+pub const CLASS_FLAG_SEALED: u8 = 1 << 1;
+pub const CLASS_FLAG_STRUCT: u8 = 1 << 2;
+pub const CLASS_FLAG_RECORD: u8 = 1 << 3;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClassDesc {
     pub name: String,
@@ -127,6 +136,11 @@ pub struct ClassDesc {
     /// cached) to build the attribute instance for `Type.GetCustomAttributes()`.
     #[serde(default)]
     pub attributes: Box<[AttributeRef]>,
+    /// add-reflection-type-flags (zbc 1.12): class-shape flags (see
+    /// CLASS_FLAG_* above). Threaded into `TypeDesc::class_flags` for
+    /// `Type.IsAbstract` / `Type.IsSealed` reflection.
+    #[serde(default)]
+    pub class_flags: u8,
 }
 
 /// C3 add-attribute-reflection: one applied attribute — the attribute class's

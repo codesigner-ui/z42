@@ -52,6 +52,7 @@ use crate::gc::GcRef;
 
 fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
     Arc::new(TypeDesc {
+        class_flags: 0,
         name: name.to_string(),
         base_name: None,
         fields: Vec::new(),

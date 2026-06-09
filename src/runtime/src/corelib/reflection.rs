@@ -557,6 +557,34 @@ pub fn builtin_type_members(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(ctx.heap().alloc_array(out))
 }
 
+// ── Type flags (add-reflection-type-flags, zbc 1.12) ────────────────────────
+
+/// `__type_is_abstract(typeObj) -> bool` — true if the class was declared
+/// `abstract`. False for handle-less Types (primitives / arrays).
+pub fn builtin_type_is_abstract(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    Ok(Value::Bool(class_flag_set(
+        args,
+        crate::metadata::bytecode::CLASS_FLAG_ABSTRACT,
+    )))
+}
+
+/// `__type_is_sealed(typeObj) -> bool` — true if the class was declared
+/// `sealed`. False for handle-less Types.
+pub fn builtin_type_is_sealed(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    Ok(Value::Bool(class_flag_set(
+        args,
+        crate::metadata::bytecode::CLASS_FLAG_SEALED,
+    )))
+}
+
+/// Is the given class-flag bit set on the reflected Type's `TypeDesc`?
+/// Handle-less Types (primitive / array, `NativeData::None`) → false (lenient).
+fn class_flag_set(args: &[Value], bit: u8) -> bool {
+    type_handle(args)
+        .map(|td| td.class_flags & bit != 0)
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 #[path = "reflection_tests.rs"]
 mod reflection_tests;

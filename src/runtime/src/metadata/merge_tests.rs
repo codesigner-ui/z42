@@ -108,6 +108,7 @@ fn merge_deduplicates_classes_by_name() {
     use crate::metadata::{ClassDesc, FieldDesc};
 
     let cls = ClassDesc {
+        class_flags: 0,
         name: "Std.Object".to_string(),
         base_class: None,
         fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string() }].into_boxed_slice(),
@@ -116,6 +117,7 @@ fn merge_deduplicates_classes_by_name() {
         attributes: Box::new([]),
     };
     let cls_dup = ClassDesc {
+        class_flags: 0,
         name: "Std.Object".to_string(),
         base_class: None,
         fields: Box::new([]),

@@ -680,6 +680,8 @@ pub fn build_type_registry(module: &mut Module) {
             field_index,
             vtable,
             vtable_index,
+            // add-reflection-type-flags (zbc 1.12): carry the class-shape flags.
+            class_flags: desc.class_flags,
             cold,
             id: type_id,
         });

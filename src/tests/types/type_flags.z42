@@ -1,0 +1,41 @@
+// add-reflection-type-flags (2026-06-10): Type.IsAbstract / IsSealed reflect
+// class modifiers, persisted in the zbc TYPE-section flags byte (zbc 1.12).
+abstract class Shape {
+    public int x;
+}
+
+sealed class Token {
+    public int id;
+}
+
+class Plain {
+    public int v;
+}
+
+class Derived : Shape {   // concrete subclass of an abstract base
+    public int y;
+}
+
+void Main() {
+    Type ts = typeof(Shape);
+    Assert.True(ts.IsAbstract);
+    Assert.False(ts.IsSealed);
+
+    Type tk = typeof(Token);
+    Assert.False(tk.IsAbstract);
+    Assert.True(tk.IsSealed);
+
+    Type tp = typeof(Plain);
+    Assert.False(tp.IsAbstract);
+    Assert.False(tp.IsSealed);
+
+    // Modifiers do not propagate through inheritance.
+    Type td = typeof(Derived);
+    Assert.False(td.IsAbstract);
+    Assert.False(td.IsSealed);
+
+    // Handle-less (primitive) Type → false, never errors.
+    Type ti = typeof(int);
+    Assert.False(ti.IsAbstract);
+    Assert.False(ti.IsSealed);
+}

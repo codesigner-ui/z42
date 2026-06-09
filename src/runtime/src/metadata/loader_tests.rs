@@ -242,6 +242,7 @@ fn type_registry_vec_invariant_after_build() {
         string_pool: vec![],
         classes: vec![
             ClassDesc {
+                class_flags: 0,
                 name: "Demo.Aaa".to_owned(),
                 base_class: None,
                 fields: Box::new([]),
@@ -250,6 +251,7 @@ fn type_registry_vec_invariant_after_build() {
                 attributes: Box::new([]),
             },
             ClassDesc {
+                class_flags: 0,
                 name: "Demo.Bbb".to_owned(),
                 base_class: Some("Demo.Aaa".to_owned()),
                 fields: Box::new([]),
@@ -328,6 +330,7 @@ fn register_lazy_type_appends_with_next_id() {
 
     // Lazy type carrying a foreign id (simulating cross-zpkg arrival).
     let foreign = std::sync::Arc::new(TypeDesc {
+        class_flags: 0,
         name: "Lazy.Foreign".to_owned(),
         id: crate::metadata::tokens::TypeId(42),
         base_name: None,
@@ -349,6 +352,7 @@ fn register_lazy_type_appends_with_next_id() {
 
     // Re-registering the same name returns the existing id (idempotent).
     let dup = std::sync::Arc::new(TypeDesc {
+        class_flags: 0,
         name: "Lazy.Foreign".to_owned(),
         id: crate::metadata::tokens::TypeId(99),
         base_name: None, fields: vec![], field_index: crate::metadata::NameIndex::new(),
@@ -390,6 +394,7 @@ fn module_with_one_class(
         name: name.to_owned(),
         string_pool: vec![],
         classes: vec![ClassDesc {
+            class_flags: 0,
             name: name.to_owned(),
             base_class: base.map(str::to_owned),
             fields: fields.into_iter().map(|(n, t)| FieldDesc {

@@ -118,6 +118,11 @@ pub struct TypeDesc {
     /// `method_name → vtable slot index` — linear scan (review.md C5 P1,
     /// 2026-06-01). Same rationale as `field_index`.
     pub vtable_index: super::name_index::NameIndex,
+    /// add-reflection-type-flags (zbc 1.12): class-shape flags byte
+    /// (`bytecode::CLASS_FLAG_*` — abstract/sealed/struct/record). Reflection
+    /// only; backs `Type.IsAbstract` / `Type.IsSealed`. A single byte kept hot
+    /// (fits existing padding) rather than in the cold box.
+    pub class_flags: u8,
     /// review.md E2.P1 Step 1 (2026-05-27): five rarely-accessed fields
     /// (own_fields / own_methods / type_params / type_args /
     /// type_param_constraints) live behind an `Option<Box<TypeDescCold>>`.

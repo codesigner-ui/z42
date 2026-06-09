@@ -49,7 +49,10 @@ public sealed partial class IrGen
                 .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList(),
             cls.TypeParams?.ToList(),
             BuildConstraintList(shortName, cls.TypeParams, _semanticModel?.ClassConstraints),
-            attrs);
+            attrs,
+            // add-reflection-type-flags (zbc 1.12): class-shape modifiers.
+            IsAbstract: cls.IsAbstract, IsSealed: cls.IsSealed,
+            IsStruct: cls.IsStruct, IsRecord: cls.IsRecord);
     }
 
     /// (L3-G3a) Build a parallel list of IrConstraintBundle aligned with `typeParams`.

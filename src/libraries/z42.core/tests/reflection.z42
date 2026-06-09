@@ -38,6 +38,15 @@ class PropChild : PropHolder {
     public bool Active { get; set; }
 }
 
+// add-reflection-type-flags: Type.IsAbstract / IsSealed reflect class modifiers.
+abstract class AbstractThing {
+    public int n;
+}
+
+sealed class SealedThing {
+    public int n;
+}
+
 [Test]
 void test_gettype_name_and_fullname() {
     Derived d = new Derived();
@@ -176,4 +185,20 @@ void test_getproperties_empty_for_no_props() {
     Type t = typeof(Base);
     PropertyInfo[] props = t.GetProperties();
     Assert.Equal(0, props.Length);
+}
+
+[Test]
+void test_type_is_abstract() {
+    Type ta = typeof(AbstractThing);
+    Assert.True(ta.IsAbstract);
+    Assert.False(ta.IsSealed);
+    Type tp = typeof(Base);    // plain class
+    Assert.False(tp.IsAbstract);
+}
+
+[Test]
+void test_type_is_sealed() {
+    Type ts = typeof(SealedThing);
+    Assert.True(ts.IsSealed);
+    Assert.False(ts.IsAbstract);
 }

@@ -53,7 +53,16 @@ public sealed record IrClassDesc(
     /// Each ref points at a compiler-synthesized factory function (qualified
     /// name) that constructs the attribute instance; the runtime calls it
     /// lazily for `Type.GetCustomAttributes()` and caches the result.
-    List<IrAttributeRef>? Attributes = null);
+    List<IrAttributeRef>? Attributes = null,
+    /// add-reflection-type-flags (zbc 1.12): class-shape modifiers, serialized
+    /// as a flags byte in the TYPE section (bit0 abstract / bit1 sealed /
+    /// bit2 struct / bit3 record). IsAbstract / IsSealed back Type.IsAbstract /
+    /// Type.IsSealed; struct / record are captured in the wire now so future
+    /// IsValueType / IsRecord need no further format bump.
+    bool IsAbstract = false,
+    bool IsSealed = false,
+    bool IsStruct = false,
+    bool IsRecord = false);
 
 public sealed record IrFieldDesc(string Name, string Type);
 

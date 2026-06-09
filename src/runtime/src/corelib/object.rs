@@ -156,6 +156,7 @@ fn weak_handle_type_desc() -> Arc<TypeDesc> {
     CACHE.get_or_init(|| Arc::new(TypeDesc {
         name: "Std.WeakHandle".to_string(),
         base_name: None,
+        class_flags: 0,
         fields: Vec::new(),
         field_index: crate::metadata::NameIndex::new(),
         vtable: Vec::new(),

@@ -13,9 +13,14 @@ fn ctx() -> std::pin::Pin<Box<VmContext>> {
 }
 
 fn bare_td(name: &str) -> Arc<TypeDesc> {
+    td_with_flags(name, 0)
+}
+
+fn td_with_flags(name: &str, class_flags: u8) -> Arc<TypeDesc> {
     Arc::new(TypeDesc {
         name: name.to_string(),
         base_name: None,
+        class_flags,
         fields: Vec::new(),
         field_index: NameIndex::new(),
         vtable: Vec::new(),
@@ -105,6 +110,7 @@ fn type_properties_ignores_non_accessor_methods() {
     let td = Arc::new(TypeDesc {
         name: "Demo.WithMethod".to_string(),
         base_name: None,
+        class_flags: 0,
         fields: Vec::new(),
         field_index: NameIndex::new(),
         vtable: vec![("Foo".to_string(), "Demo.WithMethod.Foo".to_string())],
@@ -114,6 +120,32 @@ fn type_properties_ignores_non_accessor_methods() {
     });
     let t = type_obj(&c, td);
     assert_eq!(array_len(&builtin_type_properties(&c, &[t]).unwrap()), 0);
+}
+
+#[test]
+fn type_flags_decode_abstract_and_sealed() {
+    use crate::metadata::bytecode::{CLASS_FLAG_ABSTRACT, CLASS_FLAG_SEALED};
+    let c = ctx();
+    // Abstract-only class.
+    let ta = type_obj(&c, td_with_flags("Demo.Shape", CLASS_FLAG_ABSTRACT));
+    assert_eq!(builtin_type_is_abstract(&c, &[ta.clone()]).unwrap(), Value::Bool(true));
+    assert_eq!(builtin_type_is_sealed(&c, &[ta]).unwrap(), Value::Bool(false));
+    // Sealed-only class.
+    let ts = type_obj(&c, td_with_flags("Demo.Token", CLASS_FLAG_SEALED));
+    assert_eq!(builtin_type_is_abstract(&c, &[ts.clone()]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_sealed(&c, &[ts]).unwrap(), Value::Bool(true));
+    // Plain class (flags = 0).
+    let tp = type_obj(&c, bare_td("Demo.Plain"));
+    assert_eq!(builtin_type_is_abstract(&c, &[tp.clone()]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_sealed(&c, &[tp]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn type_flags_false_for_handle_less() {
+    // Non-Type arg / no handle → false, never bail (lenient).
+    let c = ctx();
+    assert_eq!(builtin_type_is_abstract(&c, &[Value::I64(7)]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_sealed(&c, &[]).unwrap(), Value::Bool(false));
 }
 
 #[test]

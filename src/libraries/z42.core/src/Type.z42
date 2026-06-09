@@ -32,6 +32,15 @@ public sealed class Type {
     [Native("__type_base")]
     public extern Type BaseType { get; }
 
+    // True if the type was declared `abstract`. False for non-abstract classes
+    // and handle-less Types (primitives / arrays). (add-reflection-type-flags)
+    [Native("__type_is_abstract")]
+    public extern bool IsAbstract { get; }
+
+    // True if the type was declared `sealed`. False otherwise / handle-less.
+    [Native("__type_is_sealed")]
+    public extern bool IsSealed { get; }
+
     // Public instance fields (including inherited; base-first). Empty for
     // primitives / arrays.
     [Native("__type_fields")]

@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 11;  // 2026-06-09 add-attribute-reflection-methods (C3b): SIGS section adds per-function user-attribute refs (u16 count + (type-name str idx, factory-func str idx) pairs) after the type-param block — same shape as TYPE-section class attrs (zbc 1.10). Pre-1.11 not readable.
+    public const ushort VersionMinor = 12;  // 2026-06-10 add-reflection-type-flags: TYPE section appends a class-shape flags byte (bit0 abstract / bit1 sealed / bit2 struct / bit3 record) at the end of each class record. Backs Type.IsAbstract / Type.IsSealed. Pre-1.12 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -398,6 +398,12 @@ public static partial class ZbcWriter
                     w.Write((uint)pool.Idx(a.TypeName));
                     w.Write((uint)pool.Idx(a.FactoryFunc));
                 }
+            // add-reflection-type-flags (zbc 1.12): class-shape flags byte at
+            // the end of each class record — bit0 abstract / bit1 sealed /
+            // bit2 struct / bit3 record. Loads into TypeDesc.class_flags.
+            byte flags = (byte)((cls.IsAbstract ? 1 : 0) | (cls.IsSealed ? 2 : 0)
+                              | (cls.IsStruct ? 4 : 0) | (cls.IsRecord ? 8 : 0));
+            w.Write(flags);
         }
 
         return ms.ToArray();

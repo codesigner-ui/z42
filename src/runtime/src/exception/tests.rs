@@ -101,6 +101,7 @@ mod make_stdlib_exception_tests {
         }
         let own_fields_box: Box<[FieldSlot]> = fields.clone().into();
         Arc::new(TypeDesc {
+            class_flags: 0,
             name:                   name.into(),
             id:                     TypeId::UNRESOLVED,
             base_name:              base.map(str::to_owned),

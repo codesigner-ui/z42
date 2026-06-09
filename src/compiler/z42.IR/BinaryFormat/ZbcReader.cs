@@ -416,7 +416,11 @@ public static partial class ZbcReader
                 string factoryFunc = P(pool, r.ReadUInt32());
                 attributes!.Add(new IrAttributeRef(typeName, factoryFunc));
             }
-            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes));
+            // add-reflection-type-flags (zbc 1.12): class-shape flags byte.
+            byte flags = r.ReadByte();
+            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes,
+                IsAbstract: (flags & 1) != 0, IsSealed: (flags & 2) != 0,
+                IsStruct: (flags & 4) != 0, IsRecord: (flags & 8) != 0));
         }
         return classes;
     }
