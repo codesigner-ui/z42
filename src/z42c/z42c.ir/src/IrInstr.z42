@@ -117,3 +117,60 @@ public sealed class RemInstr : IrInstr {
         return this.Dst.Dump() + " = rem " + IrType.Name(this.Dst.Type) + " " + this.A.Dump() + ", " + this.B.Dump();
     }
 }
+
+// ── 调用（CG-1C）──────────────────────────────────────────────────────────────────
+// 直接调用（自由函数 / 静态方法，按限定名）。void 结果 dst 未读（镜像 C#，恒带 dst）。
+public sealed class CallInstr : IrInstr {
+    public TypedReg   Dst;
+    public string     Func;
+    public TypedReg[] Args;
+    public int        ArgCount;
+    public CallInstr(TypedReg dst, string func, TypedReg[] args, int argCount) {
+        this.Dst = dst; this.Func = func; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = this.Dst.Dump() + " = call @" + this.Func + "(";
+        int i = 0;
+        while (i < this.ArgCount) { if (i > 0) { s = s + ", "; } s = s + this.Args[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+// 虚分派（实例方法，经 receiver 的 vtable）。
+public sealed class VCallInstr : IrInstr {
+    public TypedReg   Dst;
+    public TypedReg   Obj;
+    public string     Method;
+    public TypedReg[] Args;
+    public int        ArgCount;
+    public VCallInstr(TypedReg dst, TypedReg obj, string method, TypedReg[] args, int argCount) {
+        this.Dst = dst; this.Obj = obj; this.Method = method; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = this.Dst.Dump() + " = vcall " + this.Obj.Dump() + "." + this.Method + "(";
+        int i = 0;
+        while (i < this.ArgCount) { if (i > 0) { s = s + ", "; } s = s + this.Args[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
+// ── 字段访问（CG-1C）──────────────────────────────────────────────────────────────
+public sealed class FieldGetInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg Obj;
+    public string   Field;
+    public FieldGetInstr(TypedReg dst, TypedReg obj, string field) {
+        this.Dst = dst; this.Obj = obj; this.Field = field;
+    }
+    public override string Dump() { return this.Dst.Dump() + " = field_get " + this.Obj.Dump() + "." + this.Field; }
+}
+
+public sealed class FieldSetInstr : IrInstr {
+    public TypedReg Obj;
+    public string   Field;
+    public TypedReg Val;
+    public FieldSetInstr(TypedReg obj, string field, TypedReg val) {
+        this.Obj = obj; this.Field = field; this.Val = val;
+    }
+    public override string Dump() { return "field_set " + this.Obj.Dump() + "." + this.Field + ", " + this.Val.Dump(); }
+}

@@ -47,6 +47,7 @@ public sealed class IrGen {
                 ClassDecl c = d as ClassDecl;
                 if (c.Kind == "class" || c.Kind == "struct") {
                     classes = this._pushClass(classes, cc, this._classDesc(c)); cc = cc + 1;
+                    Z42ClassType owner = model.Symbols.GetClass(c.Name);
                     int j = 0;
                     while (j < c.MemberCount) {
                         Decl mem = this._unwrap(c.Members[j]);
@@ -57,7 +58,7 @@ public sealed class IrGen {
                                 if (model.HasBody(key)) {
                                     bool isStatic = this._hasWord(md.Mods, "static");
                                     var fe = new FunctionEmitter(model.Symbols, this);
-                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isStatic);
+                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isStatic, owner);
                                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                                 }
                             }
@@ -69,7 +70,7 @@ public sealed class IrGen {
                 MethodDecl md = d as MethodDecl;
                 if (md.HasBody && model.HasBody(md.Name)) {
                     var fe = new FunctionEmitter(model.Symbols, this);
-                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), true);  // 自由函数无 this
+                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), true, null);  // 自由函数无 this/字段
                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                 }
             }

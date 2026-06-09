@@ -42,7 +42,15 @@
 - 注：条件用 bool 局部/参数（比较运算符 Eq/Lt 等 → CG-1E）；break/continue 后死代码指令无害（块已捕获 _curCount，超出不 dump）
 
 ## CG-1C–CG-2（后续增量，详见 design.md 增量表）
-- [ ] CG-1C 调用+字段；CG-1D new/cast/is/数组；CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
+- [ ] CG-1D new/cast/is/数组；CG-1E 比较/一元/逻辑/拼接/三目；CG-2 泛型
+
+## CG-1C：方法调用 + 字段 get/set + this —— ✅ 已完成
+- [x] IrInstr 加 CallInstr（`call @f(args)`）/ VCallInstr（`vcall obj.m(args)`）/ FieldGetInstr（`field_get obj.f`）/ FieldSetInstr（`field_set obj.f, val`）
+- [x] FunctionEmitter：EmitFunction 加 owner 参数 + `_fields`（实例方法自身字段名集合，仅 `!isStatic` 填）；`_lookupIdent` 裸字段→field_get(reg0)；`_emitMember`（obj.field 读）；`_emitCall`（free→call / static→call @Class.m / instance→vcall recv.m，receiver 先于 args emit）；`_emitAssign` 加裸字段/obj.field→field_set
+- [x] IrGen：类方法传 owner=Z42ClassType，自由函数传 null
+- [x] 7 单测（field-read this/bare / field-write / free-call / free-call+args / instance-call vcall / static-call）
+- [x] 验证：`xtask test compiler-z42` → **13 units 190 cases** 全绿（codegen 20）
+- 注：静态字段 StaticGet/Set 延后（typechecker 静态字段路径未定型）；void 调用恒带 dst（镜像 C#，未读）；继承方法经 vtable 名分派（VM 解析 slot），无需 codegen 特化
 
 ## 延后（design.md Deferred）
 - 闭包·lambda / 异常 try-catch / native interop / static_init / 插值 / foreach 迭代器 / 调试元数据（LineTable）

@@ -105,3 +105,59 @@ void test_while_body_assign() {
     Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  %2 = const.i32 1\n  %1 = copy %2\n  br while_cond_0\nwhile_end_2:\n  ret %1\n}",
                  IrDump.DumpFunc(src, "F"));
 }
+
+// ── CG-1C：方法调用 + 字段 get/set + this + 继承分派 ──────────────────────────────
+
+[Test]
+void test_field_read_this() {
+    // this.v → field_get on reg0
+    string src = "class C { int v; int Get() { return this.v; } }";
+    Assert.Equal("fn @C.Get(1) -> int {\nentry:\n  %1 = field_get %0.v\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "C.Get"));
+}
+
+[Test]
+void test_field_read_bare() {
+    // 裸字段 ident（typechecker 把自身字段入 scope）→ 同 field_get on reg0
+    string src = "class C { int v; int Get() { return v; } }";
+    Assert.Equal("fn @C.Get(1) -> int {\nentry:\n  %1 = field_get %0.v\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "C.Get"));
+}
+
+[Test]
+void test_field_write() {
+    // 裸字段赋值 → field_set on reg0
+    string src = "class C { int v; void Set(int x) { v = x; } }";
+    Assert.Equal("fn @C.Set(2) -> void {\nentry:\n  field_set %0.v, %1\n  ret\n}",
+                 IrDump.DumpFunc(src, "C.Set"));
+}
+
+[Test]
+void test_free_call() {
+    string src = "int Helper() { return 7; } int Main() { return Helper(); }";
+    Assert.Equal("fn @Main(0) -> int {\nentry:\n  %0 = call @Helper()\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "Main"));
+}
+
+[Test]
+void test_free_call_args() {
+    string src = "int Add(int a, int b) { return a + b; } int Main() { return Add(1, 2); }";
+    Assert.Equal("fn @Main(0) -> int {\nentry:\n  %0 = const.i32 1\n  %1 = const.i32 2\n  %2 = call @Add(%0, %1)\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "Main"));
+}
+
+[Test]
+void test_instance_call() {
+    // this.Compute() → vcall（虚分派）
+    string src = "class C { int Compute() { return 1; } int Get() { return this.Compute(); } }";
+    Assert.Equal("fn @C.Get(1) -> int {\nentry:\n  %1 = vcall %0.Compute()\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "C.Get"));
+}
+
+[Test]
+void test_static_call() {
+    // C.Make() 静态 → 直接 call @C.Make
+    string src = "class C { static int Make() { return 5; } int Use() { return C.Make(); } }";
+    Assert.Equal("fn @C.Use(1) -> int {\nentry:\n  %1 = call @C.Make()\n  ret %1\n}",
+                 IrDump.DumpFunc(src, "C.Use"));
+}
