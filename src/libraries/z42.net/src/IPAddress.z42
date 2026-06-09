@@ -10,11 +10,11 @@ using Std;
 //   * IPv4-in-IPv6 dotted (RFC 4291 §2.5.5): "::ffff:192.0.2.1" (v4-mapped),
 //     "::192.0.2.1" (v4-compatible), "64:ff9b::1.2.3.4" (NAT64)
 //     — add-ipaddress-v4mapped, 2026-06-09
+//   * `TryParse(string) → IPAddress?` non-throwing variant (null on malformed)
+//     — add-ipaddress-tryparse, 2026-06-09
 //
 // Not in scope for v0 (deferred to follow-up):
 //   * IPv6 zone identifier suffix ("fe80::1%en0")
-//   * `Try*` non-throwing variants — caller can `try { Parse }
-//     catch (FormatException) {}` (matches BCL `IPAddress.Parse` shape)
 public sealed class IPAddress {
     /// AddressFamily-style constant — 4 for IPv4, 6 for IPv6. (No enum
     /// yet — z42 enums are L1 named ints which would collide with
@@ -83,6 +83,19 @@ public sealed class IPAddress {
             return IPAddress._parseIPv6(s);
         }
         throw new FormatException("IPAddress.Parse: no '.' or ':' in '" + s + "'");
+    }
+
+    /// add-ipaddress-tryparse (2026-06-09): non-throwing parse. Returns the
+    /// parsed address, or `null` if `s` is not a valid IPv4 / IPv6 literal —
+    /// for untrusted input (config / user / network) where malformed values are
+    /// expected and an exception per reject is undesirable. Same grammar as
+    /// `Parse`.
+    public static IPAddress? TryParse(string s) {
+        try {
+            return IPAddress.Parse(s);
+        } catch (FormatException e) {
+            return null;
+        }
     }
 
     // ── Inspect ────────────────────────────────────────────────────────
