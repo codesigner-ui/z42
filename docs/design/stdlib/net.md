@@ -179,16 +179,15 @@ Equals / error paths (missing port / empty brackets / non-digit port
 
 Out of scope (separate Deferred IDs below):
 
-### `net-future-ipaddress-v4mapped` — `::ffff:192.0.2.1`
+### ~~`net-future-ipaddress-v4mapped`~~ — **✅ 已落地 2026-06-09 (`add-ipaddress-v4mapped`)**
 
-- **来源**：`add-z42-net-ipaddress` v0
-- **触发原因**：IPv4-in-IPv6 dotted form (`::ffff:a.b.c.d`) is the
-  canonical way RFC 4291 §2.5.5.2 maps v4 into v6; current
-  `IPAddress.Parse` rejects mixed `.` + `:` strings.
-- **触发条件**：dual-stack code that round-trips IPv4 through an
-  IPv6-only socket API surfaces this.
-- **当前 workaround**：build the 16 bytes by hand + use the
-  `IPAddress(int family, byte[] bytes)` constructor.
+Shipped: `IPAddress.Parse` 现接受 IPv4-in-IPv6 dotted form（RFC 4291 §2.5.5）——
+`::ffff:192.0.2.1`（v4-mapped）、`::192.0.2.1`（v4-compatible）、`2001:db8::1.2.3.4`
+（带 IPv6 前缀 / NAT64）。实现：`_parseIPv6` 检测到 `.` 时把 `…:a.b.c.d` 尾部（最后
+一个 `:` 之后的 dotted-quad，占低 32 bit）改写成两个 hex group `…:HHHH:HHHH`，再走
+原有 `::` elision + group 拼装逻辑（零改动）。dotted-quad 用抽出的 `_parseV4Bytes`
+复用 IPv4 octet 校验（>255 / 不足 4 段均抛 FormatException）。7 tests。`ToString`
+仍 emit 规范 hex 形式（round-trip via Parse 相等）。
 
 ### `net-future-ipaddress-zoneid` — `fe80::1%eth0`
 

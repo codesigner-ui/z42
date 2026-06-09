@@ -7,9 +7,11 @@ using Std;
 //   * IPv4 dotted-quad: "1.2.3.4"
 //   * IPv6 full-form:   "2001:0db8:0000:0000:0000:0000:0000:0001"
 //   * IPv6 `::` shorthand for one zero-run: "::1", "::", "2001:db8::1"
+//   * IPv4-in-IPv6 dotted (RFC 4291 §2.5.5): "::ffff:192.0.2.1" (v4-mapped),
+//     "::192.0.2.1" (v4-compatible), "64:ff9b::1.2.3.4" (NAT64)
+//     — add-ipaddress-v4mapped, 2026-06-09
 //
 // Not in scope for v0 (deferred to follow-up):
-//   * IPv4-in-IPv6 dotted (e.g. "::ffff:192.0.2.1")
 //   * IPv6 zone identifier suffix ("fe80::1%en0")
 //   * `Try*` non-throwing variants — caller can `try { Parse }
 //     catch (FormatException) {}` (matches BCL `IPAddress.Parse` shape)
@@ -161,6 +163,12 @@ public sealed class IPAddress {
     // ── Internal: IPv4 parse ───────────────────────────────────────────
 
     static IPAddress _parseIPv4(string s) {
+        return new IPAddress(4, IPAddress._parseV4Bytes(s));
+    }
+
+    /// Parse a dotted-quad into 4 network-order bytes (shared by `_parseIPv4`
+    /// and the IPv4-in-IPv6 embedded tail in `_rewriteEmbeddedV4`).
+    static byte[] _parseV4Bytes(string s) {
         byte[] bytes = new byte[4];
         int octet = 0;
         int value = 0;
@@ -194,7 +202,7 @@ public sealed class IPAddress {
             throw new FormatException("IPv4: need 4 octets in '" + s + "'");
         }
         bytes[3] = (byte)value;
-        return new IPAddress(4, bytes);
+        return bytes;
     }
 
     // ── Internal: IPv6 parse ───────────────────────────────────────────
@@ -202,6 +210,14 @@ public sealed class IPAddress {
     /// IPv6 parse — handles `::` shorthand (at most one). Each group is
     /// 1-4 hex digits. Total 8 groups when expanded; `::` fills the gap.
     static IPAddress _parseIPv6(string s) {
+        // add-ipaddress-v4mapped (2026-06-09): a trailing dotted-quad
+        // (RFC 4291 §2.5.5 — `::ffff:a.b.c.d` v4-mapped, `::a.b.c.d` v4-compatible,
+        // `64:ff9b::a.b.c.d` NAT64) occupies the last 32 bits. Rewrite the
+        // `…:a.b.c.d` tail to two hex groups `…:HHHH:HHHH` so the `::` elision +
+        // group assembly below stay unchanged.
+        if (IPAddress._containsChar(s, '.')) {
+            s = IPAddress._rewriteEmbeddedV4(s);
+        }
         // Split into pre / post halves around `::` if present.
         int dcPos = IPAddress._findDoubleColon(s);
         string preStr;
@@ -249,6 +265,36 @@ public sealed class IPAddress {
             i = i + 1;
         }
         return new IPAddress(6, bytes);
+    }
+
+    // add-ipaddress-v4mapped (2026-06-09): rewrite a `…:a.b.c.d` IPv6 string to
+    // pure-hex `…:HHHH:HHHH`. The dotted-quad after the last ':' is the low 32
+    // bits; it's validated by reusing the IPv4 parser, then its 4 bytes become
+    // two hex groups. Callers guard with `_containsChar(s, '.')`.
+    static string _rewriteEmbeddedV4(string s) {
+        int lastColon = -1;
+        int i = 0;
+        while (i < s.Length) {
+            if (s.CharAt(i) == ':') { lastColon = i; }
+            i = i + 1;
+        }
+        if (lastColon < 0) {
+            throw new FormatException("IPv6: embedded IPv4 in '" + s + "' needs a preceding ':'");
+        }
+        string prefix = IPAddress._slice(s, 0, lastColon + 1);   // includes trailing ':'
+        string v4     = IPAddress._slice(s, lastColon + 1, s.Length);
+        byte[] b = IPAddress._parseV4Bytes(v4);                  // validates dotted-quad
+        return prefix
+            + IPAddress._hex2((int)b[0]) + IPAddress._hex2((int)b[1])
+            + ":"
+            + IPAddress._hex2((int)b[2]) + IPAddress._hex2((int)b[3]);
+    }
+
+    /// Format a byte (0-255) as two lower-case hex digits.
+    static string _hex2(int b) {
+        string hex = "0123456789abcdef";
+        return IPAddress._charStr(hex.CharAt((b >> 4) & 0xF))
+             + IPAddress._charStr(hex.CharAt(b & 0xF));
     }
 
     static int _findDoubleColon(string s) {

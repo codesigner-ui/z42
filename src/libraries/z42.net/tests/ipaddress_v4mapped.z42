@@ -1,0 +1,77 @@
+// add-ipaddress-v4mapped (2026-06-09): IPv4-in-IPv6 dotted form parsing
+// (RFC 4291 §2.5.5) — `::ffff:a.b.c.d` v4-mapped, `::a.b.c.d` v4-compatible,
+// `2001:db8::a.b.c.d` with an IPv6 prefix. The dotted tail occupies the low 32
+// bits; previously `IPAddress.Parse` rejected mixed `.`+`:` strings.
+namespace Z42NetIPAddressV4MappedTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+void _assertBytes(IPAddress a, byte[] expected) {
+    byte[] b = a.GetAddressBytes();
+    Assert.Equal(expected.Length, b.Length);
+    int i = 0;
+    while (i < expected.Length) {
+        Assert.Equal((int)expected[i], (int)b[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_v4mapped_ffff() {
+    // ::ffff:192.0.2.1 → bytes 0..9 = 0, 10-11 = 0xFFFF, 12-15 = 192.0.2.1
+    IPAddress a = IPAddress.Parse("::ffff:192.0.2.1");
+    Assert.True(a.IsIPv6());
+    _assertBytes(a, new byte[] {
+        (byte)0,(byte)0,(byte)0,(byte)0,(byte)0,(byte)0,(byte)0,(byte)0,
+        (byte)0,(byte)0,(byte)0xFF,(byte)0xFF,(byte)192,(byte)0,(byte)2,(byte)1 });
+}
+
+[Test]
+void test_v4mapped_equals_hex_form() {
+    // The dotted form parses identically to its pure-hex equivalent.
+    IPAddress dotted = IPAddress.Parse("::ffff:192.0.2.1");
+    IPAddress hex    = IPAddress.Parse("::ffff:c000:201");
+    Assert.True(dotted.Equals(hex));
+}
+
+[Test]
+void test_v4compatible() {
+    // ::192.0.2.1 (deprecated v4-compatible) → 0..11 = 0, 12-15 = v4
+    IPAddress a = IPAddress.Parse("::192.0.2.1");
+    _assertBytes(a, new byte[] {
+        (byte)0,(byte)0,(byte)0,(byte)0,(byte)0,(byte)0,(byte)0,(byte)0,
+        (byte)0,(byte)0,(byte)0,(byte)0,(byte)192,(byte)0,(byte)2,(byte)1 });
+}
+
+[Test]
+void test_v4_with_ipv6_prefix() {
+    // 2001:db8::1.2.3.4 → 2001:db8 prefix + zero-run + 1.2.3.4 tail
+    IPAddress a = IPAddress.Parse("2001:db8::1.2.3.4");
+    _assertBytes(a, new byte[] {
+        (byte)0x20,(byte)0x01,(byte)0x0d,(byte)0xb8,(byte)0,(byte)0,(byte)0,(byte)0,
+        (byte)0,(byte)0,(byte)0,(byte)0,(byte)1,(byte)2,(byte)3,(byte)4 });
+}
+
+[Test]
+void test_v4mapped_round_trips_via_tostring() {
+    // ToString emits the canonical hex form; re-parsing yields an equal address.
+    IPAddress a = IPAddress.Parse("::ffff:192.0.2.1");
+    IPAddress b = IPAddress.Parse(a.ToString());
+    Assert.True(a.Equals(b));
+}
+
+[Test]
+void test_v4mapped_invalid_octet_throws() {
+    bool caught = false;
+    try { IPAddress.Parse("::ffff:192.0.2.999"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_v4mapped_too_few_octets_throws() {
+    bool caught = false;
+    try { IPAddress.Parse("::ffff:1.2.3"); } catch (FormatException e) { caught = true; }
+    Assert.True(caught);
+}
