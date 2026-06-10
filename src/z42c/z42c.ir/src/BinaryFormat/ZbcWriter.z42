@@ -119,6 +119,7 @@ public static class ZbcWriter {
                 w.WriteU32(pool.Idx(cd.Fields[f].Name));
                 w.WriteU8(Tag.FromName(cd.Fields[f].Type));
                 w.WriteU32(pool.Idx(cd.Fields[f].Type));
+                w.WriteU16(0);   // per-field attrCount（zbc 1.14；z42c IrFieldDesc 无 attr → 0）
                 f = f + 1;
             }
             w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）

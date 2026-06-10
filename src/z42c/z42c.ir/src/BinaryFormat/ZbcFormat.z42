@@ -5,7 +5,7 @@ namespace Z42.IR.BinaryFormat;
 // 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 13;   // 2026-06-10 add-reflection-static-fields：TYPE 每类 flags 字节后加 static-fields 块（u16 count + 每字段 name/tag/type）
+    public static int Minor = 14;   // 2026-06-10 add-field-attribute-reflection：TYPE 每字段记录（instance+static 块）type_str 后加 per-field attr-ref 块（u16 count + 对偶）
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。

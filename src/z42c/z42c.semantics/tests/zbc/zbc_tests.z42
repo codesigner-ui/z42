@@ -1,5 +1,5 @@
 // z42c byte-identical .zbc writer 单测（port-z42c-zbc-writer ZW-1A..1D）。
-// golden = src/tests/zbc-format/empty/source.zbc（C# z42c 对 `void Main(){}` 产出，zbc 1.13，247 字节）的小写 hex。
+// golden = src/tests/zbc-format/empty/source.zbc（C# z42c 对 `void Main(){}` 产出，zbc 1.14，247 字节）的小写 hex。
 // 验证 z42c 自举 ZbcWriter 逐字节复刻 C# ZbcWriter（header/directory/全 8 section/intern 序/ret 终结符）。
 // 指令级编码 = spec-derived hex（DBUG 阻塞使 C# 全文件 golden 限于 empty；端到端正确性由 xtask e2e 验证）。
 namespace Z42cSemanticsZbcTests;
@@ -20,7 +20,7 @@ void test_zbc_empty_byte_identical() {
     // void Main(){} → 8 section 最小完整文件（NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT）。
     // 池序 main/?/Main/void/entry；SIGS 含 zbc 1.11 attrCount=0（1.12 TYPE flags 字节仅含类时出现，empty 无类）；FUNC entry 块仅 ret(42 00 ffff)。
     string src = "void Main() { }";
-    string golden = "5a42430001000d0000000800000000004e535043700000000600000053545253760000003e00000054595045b40000000400000053494753b800000014000000494d5054cc0000000400000045585054d00000000900000046554e43d90000001600000052454754ef0000000800000004006d61696e0500000000000000040000000400000001000000050000000400000009000000040000000d000000050000006d61696e3f4d61696e766f6964656e747279000000000100000002000000000000030000000000000000000000000100000002000000000100000000000100040000000000000000004200ffff0100000000000000";
+    string golden = "5a42430001000e0000000800000000004e535043700000000600000053545253760000003e00000054595045b40000000400000053494753b800000014000000494d5054cc0000000400000045585054d00000000900000046554e43d90000001600000052454754ef0000000800000004006d61696e0500000000000000040000000400000001000000050000000400000009000000040000000d000000050000006d61696e3f4d61696e766f6964656e747279000000000100000002000000000000030000000000000000000000000100000002000000000100000000000100040000000000000000004200ffff0100000000000000";
     Assert.Equal(golden, IrDump.DumpZbcHex(src));
 }
 
@@ -115,8 +115,8 @@ void test_zbc_const_f64_encoding() {
 
 [Test]
 void test_zbc_selfcheck_program_header() {
-    // e2e 自检程序（mul/add/le/eq/while/if/div）写出不应损坏：header = magic+1.13+flags0
+    // e2e 自检程序（mul/add/le/eq/while/if/div）写出不应损坏：header = magic+1.14+flags0
     string src = "int Main() { int x = 6 * 7; int ok = 0; if (x == 42) { ok = 1; } return 100 / ok; }";
     string hex = IrDump.DumpZbcHex(src);
-    Assert.Equal("5a42430001000d000000", hex.Substring(0, 20));
+    Assert.Equal("5a42430001000e000000", hex.Substring(0, 20));
 }
