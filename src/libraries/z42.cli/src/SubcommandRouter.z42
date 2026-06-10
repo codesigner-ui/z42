@@ -41,6 +41,12 @@ public sealed class SubcommandRouter {
     string[] _names;
     string[] _descs;
     ArgParser[] _parsers;
+    // add-cli-nested-subcommands (2026-06-10): a slot is either a leaf
+    // (`_parsers[i]`, `_isRouter[i]==false`) or a nested router
+    // (`_childRouters[i]`, `_isRouter[i]==true`). Parallel arrays mirror the
+    // existing `_optionRequired`-style storage pattern in this library.
+    SubcommandRouter[] _childRouters;
+    bool[] _isRouter;
     int _count;
     int _capacity;
 
@@ -51,10 +57,13 @@ public sealed class SubcommandRouter {
         this._names   = new string[4];
         this._descs   = new string[4];
         this._parsers = new ArgParser[4];
+        this._childRouters = new SubcommandRouter[4];
+        this._isRouter     = new bool[4];
         this._count = 0;
     }
 
-    /// Register a subcommand. Re-registering the same name overwrites.
+    /// Register a leaf subcommand (its args parsed by `parser`).
+    /// Re-registering the same name overwrites.
     public void Add(string name, string description, ArgParser parser) {
         // Check existing — overwrite if present.
         int i = 0;
@@ -62,6 +71,8 @@ public sealed class SubcommandRouter {
             if (this._names[i] == name) {
                 this._descs[i] = description;
                 this._parsers[i] = parser;
+                this._childRouters[i] = null;
+                this._isRouter[i] = false;
                 return;
             }
             i = i + 1;
@@ -70,6 +81,33 @@ public sealed class SubcommandRouter {
         this._names[this._count]   = name;
         this._descs[this._count]   = description;
         this._parsers[this._count] = parser;
+        this._childRouters[this._count] = null;
+        this._isRouter[this._count] = false;
+        this._count = this._count + 1;
+    }
+
+    /// Register a NESTED subcommand router (`prog build package …`).
+    /// `child` handles the tokens after this name. Re-registering the same
+    /// name overwrites (leaf → router or router → router).
+    /// add-cli-nested-subcommands (2026-06-10).
+    public void AddRouter(string name, string description, SubcommandRouter child) {
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == name) {
+                this._descs[i] = description;
+                this._childRouters[i] = child;
+                this._parsers[i] = null;
+                this._isRouter[i] = true;
+                return;
+            }
+            i = i + 1;
+        }
+        if (this._count == this._capacity) this._grow();
+        this._names[this._count]        = name;
+        this._descs[this._count]        = description;
+        this._childRouters[this._count] = child;
+        this._parsers[this._count]      = null;
+        this._isRouter[this._count]     = true;
         this._count = this._count + 1;
     }
 
@@ -96,6 +134,51 @@ public sealed class SubcommandRouter {
             i = i + 1;
         }
         return null;
+    }
+
+    /// Recursively route `argv` through the (possibly nested) command tree.
+    /// Returns a `CommandResolution` in exactly one of three states:
+    ///   - IsMatch():   a leaf command resolved (no help requested) — Result()
+    ///                  holds its ParseResult, Path() the matched chain.
+    ///   - IsHelp():    `-h`/`--help` (or no token at a router level, or a leaf
+    ///                  ArgParser's ShowHelp()) — HelpText() holds that level's
+    ///                  help, Path() the chain walked so far.
+    ///   - IsUnknown(): an unrecognised token at some router level —
+    ///                  ErrorMessage() + that level's HelpText().
+    /// Leaf `ArgParser.Parse` option-level errors (unknown flag / missing value
+    /// / missing positional) propagate as `CliException`; Resolve only routes
+    /// and splits help vs unknown-subcommand. add-cli-nested-subcommands.
+    public CommandResolution Resolve(string[] argv) {
+        if (argv.Length == 0) { return CommandResolution.Help(this.HelpText()); }
+        string first = argv[0];
+        if (first == "-h" || first == "--help") {
+            return CommandResolution.Help(this.HelpText());
+        }
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == first) {
+                int n = argv.Length - 1;
+                string[] rest = new string[n];
+                int j = 0;
+                while (j < n) { rest[j] = argv[j + 1]; j = j + 1; }
+                if (this._isRouter[i]) {
+                    SubcommandRouter child = this._childRouters[i];
+                    CommandResolution childRes = child.Resolve(rest);
+                    return childRes.Prepend(this._names[i]);
+                }
+                ParseResult pr = this._parsers[i].Parse(rest);
+                CommandResolution leaf;
+                if (pr.ShowHelp()) {
+                    leaf = CommandResolution.Help(this._parsers[i].HelpText());
+                } else {
+                    leaf = CommandResolution.Match(pr);
+                }
+                return leaf.Prepend(this._names[i]);
+            }
+            i = i + 1;
+        }
+        string msg = this._programName + ": unknown command '" + first + "'";
+        return CommandResolution.Unknown(msg, this.HelpText());
     }
 
     /// Render top-level help: program description + subcommand list.
@@ -141,16 +224,22 @@ public sealed class SubcommandRouter {
         string[] nn = new string[newCap];
         string[] nd = new string[newCap];
         ArgParser[] np = new ArgParser[newCap];
+        SubcommandRouter[] nc = new SubcommandRouter[newCap];
+        bool[] nr = new bool[newCap];
         int i = 0;
         while (i < this._count) {
             nn[i] = this._names[i];
             nd[i] = this._descs[i];
             np[i] = this._parsers[i];
+            nc[i] = this._childRouters[i];
+            nr[i] = this._isRouter[i];
             i = i + 1;
         }
         this._names = nn;
         this._descs = nd;
         this._parsers = np;
+        this._childRouters = nc;
+        this._isRouter = nr;
         this._capacity = newCap;
     }
 }

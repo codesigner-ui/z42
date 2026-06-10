@@ -39,7 +39,7 @@ class CliException : Exception     // in Std namespace
 
 | Decision | 选项 | 决定 | 理由 |
 |----------|------|------|------|
-| 1. Subcommand | 支持 / 不支持 | 不支持 | v0 简单；大多脚本无；留 follow-up |
+| 1. Subcommand | 单层 / 嵌套 / 无 | **嵌套已落地** | `SubcommandRouter` 单层（2026-05-27）+ 嵌套 router 树 `AddRouter`/`Resolve`（2026-06-10）|
 | 2. Short + long | 都支持 / 只 long | 都支持 | UNIX 惯例；shortName 可空字符串 |
 | 3. Value 形式 | `--name v` `--name=v` `-nv` | 前两种 | `-nv` 易歧义 |
 | 4. 类型转换 | string + bool only / int / float | string + bool only | 通用；caller 自行 Parse |
@@ -75,6 +75,35 @@ dispatch on top of `ArgParser`. Top-level `--help` lists commands;
 unknown subcommand surfaces a Levenshtein "did you mean ..."
 suggestion.
 - **当前 workaround**：调用方手动 `if argv[0] == "build"` 分支再 new sub-parser
+
+### ~~cli-future-nested-subcommand~~ — ✅ 已落地 2026-06-10 (add-cli-nested-subcommands)
+
+多层命令树（`prog build package …`），消费端 xtask（`build package`）/
+launcher 不再手撸多层 `if-else`。在单层 `SubcommandRouter` 之上加：
+
+- `AddRouter(name, desc, child)` — 注册嵌套子 router（与叶子 `Add(name, desc, ArgParser)` 并存；parallel array `_childRouters`/`_isRouter`）。
+- `Resolve(argv) → CommandResolution` — 递归下钻整棵树，回溯 `Prepend` 拼 `Path()`；三态正交：
+  - `IsMatch()`：命中叶子且非 help → `Result()` 叶子 `ParseResult`，`Path()` 命中链。
+  - `IsHelp()`：任一层 `-h`/`--help`、router 层无 token、或叶子 `ShowHelp()` → `HelpText()` 为**该层**帮助（router 列子命令；叶子走 `ArgParser.HelpText()`）。**这是 `xtask build package -h` 不再误触发打包的修复点**。
+  - `IsUnknown()`：任一 router 层遇未知 token → `ErrorMessage()` + 该层 `HelpText()`。
+- `CommandResolution`（`src/CommandResolution.z42`）：三态结果类，静态工厂 `Match`/`Help`/`Unknown` 保证互斥。
+
+**设计要点**：
+- 叶子 `ArgParser.Parse` 的 option 级错误（未知 flag / 缺 value / 缺 positional）以 `CliException` **向上透传**，`Resolve` 不吞——它只做路由 + help/unknown-subcommand 分流。
+- 递归用**回溯前插**（子节点公有 `Resolve` + `Prepend`），规避同类型跨实例私有访问；命令树 2~3 层、path 极短，重建数组开销可忽略。
+- 单层 `Match`/`SubcommandMatch` **保留不变**，作单层场景 sugar（回归 `cli_subcommand.z42` 全绿）。
+
+消费端范式：
+```z42
+CommandResolution res = root.Resolve(argv);
+if (res.IsHelp())    { Console.WriteLine(res.HelpText()); Environment.Exit(0); }
+if (res.IsUnknown()) { ConsoleError.WriteLine(res.ErrorMessage());
+                       Console.WriteLine(res.HelpText()); Environment.Exit(2); }
+string[] path = res.Path();   // e.g. ["build", "package"]
+ParseResult r = res.Result();
+```
+
+测试：`tests/cli_nested_subcommand.z42`（14 [Test]）覆盖 2/3 层命中、各层 help、各层 unknown、三态互斥、叶子 CliException 透传、单层 Match 回归。
 
 ### ~~cli-future-required-option~~ — **✅ 已落地 2026-05-26 (add-cli-required-option)**
 

@@ -1,0 +1,226 @@
+// add-cli-nested-subcommands (2026-06-10): nested SubcommandRouter + Resolve
+// coverage. Mirrors the xtask command tree shape (`xtask build package …`).
+namespace Z42CliNestedSubcommandTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+// Build an xtask-like tree:
+//   xtask
+//   ├── audit                 (leaf)
+//   └── build                 (router)
+//       ├── runtime           (leaf, flag --release)
+//       └── package           (leaf, option --rid)
+static SubcommandRouter _xtask() {
+    var audit = new ArgParser("xtask audit", "scan + insert usings");
+
+    var runtime = new ArgParser("xtask build runtime", "cargo build z42vm");
+    runtime.AddFlag("release", "r", "release profile");
+
+    var package = new ArgParser("xtask build package", "assemble SDK package");
+    package.AddOption("rid", "", "target RID", "");
+
+    var build = new SubcommandRouter("xtask build", "build components");
+    build.Add("runtime", "cargo build z42vm", runtime);
+    build.Add("package", "assemble SDK package", package);
+
+    var root = new SubcommandRouter("xtask", "z42 repo dev CLI");
+    root.Add("audit", "scan + insert usings", audit);
+    root.AddRouter("build", "build components", build);
+    return root;
+}
+
+// A 3-level tree reachable from the root: prog → a → b → c (leaf, flag --flag).
+// The root's own name is the program name, not a matched token — so the
+// argv to resolve a 3-level path is ["a","b","c", …], not ["prog","a","b","c"].
+static SubcommandRouter _threeLevel() {
+    var c = new ArgParser("prog a b c", "leaf c");
+    c.AddFlag("flag", "f", "a flag");
+    var b = new SubcommandRouter("prog a b", "level b");
+    b.Add("c", "leaf c", c);
+    var a = new SubcommandRouter("prog a", "level a");
+    a.AddRouter("b", "level b", b);
+    var root = new SubcommandRouter("prog", "root");
+    root.AddRouter("a", "level a", a);
+    return root;
+}
+
+// ── nested match ────────────────────────────────────────────────────────────
+
+[Test]
+void test_nested_match_two_levels() {
+    string[] argv = new string[4];
+    argv[0] = "build"; argv[1] = "package"; argv[2] = "--rid"; argv[3] = "linux-x64";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsMatch());
+    Assert.False(res.IsHelp());
+    Assert.False(res.IsUnknown());
+    string[] path = res.Path();
+    Assert.Equal(2, path.Length);
+    Assert.Equal("build", path[0]);
+    Assert.Equal("package", path[1]);
+    Assert.Equal("linux-x64", res.Result().GetOption("rid"));
+}
+
+[Test]
+void test_single_level_leaf_match() {
+    string[] argv = new string[1];
+    argv[0] = "audit";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsMatch());
+    Assert.Equal(1, res.Path().Length);
+    Assert.Equal("audit", res.Path()[0]);
+}
+
+[Test]
+void test_three_level_match() {
+    string[] argv = new string[4];
+    argv[0] = "a"; argv[1] = "b"; argv[2] = "c"; argv[3] = "--flag";
+    CommandResolution res = _threeLevel().Resolve(argv);
+    Assert.True(res.IsMatch());
+    string[] path = res.Path();
+    Assert.Equal(3, path.Length);
+    Assert.Equal("a", path[0]);
+    Assert.Equal("b", path[1]);
+    Assert.Equal("c", path[2]);
+    Assert.True(res.Result().GetFlag("flag"));
+}
+
+[Test]
+void test_nested_leaf_sees_only_remainder() {
+    // The `package` leaf parser sees only argv after "build package" — the
+    // --rid resolves against the remainder, not the subcommand tokens.
+    string[] argv = new string[3];
+    argv[0] = "build"; argv[1] = "runtime"; argv[2] = "-r";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsMatch());
+    Assert.True(res.Result().GetFlag("release"));
+}
+
+// ── per-level help ──────────────────────────────────────────────────────────
+
+[Test]
+void test_top_help_dashh() {
+    string[] argv = new string[1];
+    argv[0] = "-h";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsHelp());
+    Assert.True(res.HelpText().Contains("audit"));
+    Assert.True(res.HelpText().Contains("build"));
+}
+
+[Test]
+void test_top_help_empty_argv() {
+    CommandResolution res = _xtask().Resolve(new string[0]);
+    Assert.True(res.IsHelp());
+    Assert.True(res.HelpText().Contains("build"));
+}
+
+[Test]
+void test_mid_level_help() {
+    string[] argv = new string[2];
+    argv[0] = "build"; argv[1] = "-h";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsHelp());
+    Assert.Equal(1, res.Path().Length);
+    Assert.Equal("build", res.Path()[0]);
+    // build router's help lists its own subcommands.
+    Assert.True(res.HelpText().Contains("package"));
+    Assert.True(res.HelpText().Contains("runtime"));
+}
+
+[Test]
+void test_leaf_level_help() {
+    // The core fix: `build package -h` resolves to help, NOT into packaging.
+    string[] argv = new string[3];
+    argv[0] = "build"; argv[1] = "package"; argv[2] = "-h";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsHelp());
+    Assert.False(res.IsMatch());
+    string[] path = res.Path();
+    Assert.Equal(2, path.Length);
+    Assert.Equal("build", path[0]);
+    Assert.Equal("package", path[1]);
+    // leaf ArgParser help mentions the --rid option.
+    Assert.True(res.HelpText().Contains("rid"));
+}
+
+[Test]
+void test_router_with_no_token_is_help() {
+    string[] argv = new string[1];
+    argv[0] = "build";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsHelp());
+    Assert.True(res.HelpText().Contains("package"));
+}
+
+// ── per-level unknown ───────────────────────────────────────────────────────
+
+[Test]
+void test_top_unknown_command() {
+    string[] argv = new string[1];
+    argv[0] = "bogus";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsUnknown());
+    Assert.True(res.ErrorMessage().Contains("bogus"));
+    Assert.True(res.HelpText().Contains("build"));
+}
+
+[Test]
+void test_mid_level_unknown_subcommand() {
+    string[] argv = new string[2];
+    argv[0] = "build"; argv[1] = "bogus";
+    CommandResolution res = _xtask().Resolve(argv);
+    Assert.True(res.IsUnknown());
+    Assert.Equal(1, res.Path().Length);
+    Assert.Equal("build", res.Path()[0]);
+    Assert.True(res.ErrorMessage().Contains("bogus"));
+    // unknown at the build level surfaces the build router's help.
+    Assert.True(res.HelpText().Contains("package"));
+}
+
+// ── three-state mutual exclusion ────────────────────────────────────────────
+
+[Test]
+void test_three_state_mutual_exclusion_match() {
+    string[] argv = new string[1];
+    argv[0] = "audit";
+    CommandResolution res = _xtask().Resolve(argv);
+    int trues = 0;
+    if (res.IsMatch())   { trues = trues + 1; }
+    if (res.IsHelp())    { trues = trues + 1; }
+    if (res.IsUnknown()) { trues = trues + 1; }
+    Assert.Equal(1, trues);
+}
+
+// ── leaf option-level CliException propagates (not swallowed) ────────────────
+
+[Test]
+void test_leaf_cliexception_propagates() {
+    // An unknown flag at the leaf is an ArgParser concern — Resolve must let
+    // the CliException propagate, not turn it into IsUnknown.
+    string[] argv = new string[3];
+    argv[0] = "build"; argv[1] = "package"; argv[2] = "--no-such-flag";
+    bool caught = false;
+    try { _xtask().Resolve(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+// ── single-level Match regression (unchanged behaviour) ─────────────────────
+
+[Test]
+void test_legacy_match_still_works_on_leaf_router() {
+    // A router that uses only Add + the old Match API keeps working.
+    var commit = new ArgParser("git commit", "record changes");
+    commit.AddOption("message", "m", "commit message", "");
+    var r = new SubcommandRouter("git", "tracker");
+    r.Add("commit", "record changes", commit);
+    string[] argv = new string[3];
+    argv[0] = "commit"; argv[1] = "--message"; argv[2] = "hi";
+    SubcommandMatch m = r.Match(argv);
+    Assert.NotNull(m);
+    Assert.Equal("commit", m.Name());
+    Assert.Equal("hi", m.Result().GetOption("message"));
+}

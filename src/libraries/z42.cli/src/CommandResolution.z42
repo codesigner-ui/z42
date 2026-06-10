@@ -1,0 +1,83 @@
+namespace Std.Cli;
+
+using Std;
+
+// add-cli-nested-subcommands (2026-06-10): outcome of
+// `SubcommandRouter.Resolve` over a (possibly nested) command tree.
+// Split out of SubcommandRouter.z42 to keep that file under the 300-line
+// soft limit. See SubcommandRouter.Resolve for the routing algorithm.
+
+/// Outcome of `SubcommandRouter.Resolve`. Exactly one of IsMatch / IsHelp /
+/// IsUnknown is true.
+///
+/// Consumer pattern:
+///
+///   CommandResolution res = root.Resolve(argv);
+///   if (res.IsHelp())    { Console.WriteLine(res.HelpText()); Environment.Exit(0); }
+///   if (res.IsUnknown()) { ConsoleError.WriteLine(res.ErrorMessage());
+///                          Console.WriteLine(res.HelpText()); Environment.Exit(2); }
+///   // IsMatch:
+///   string[] path = res.Path();      // e.g. ["build", "package"]
+///   ParseResult r = res.Result();
+public sealed class CommandResolution {
+    // 0 = match, 1 = help, 2 = unknown.
+    int _kind;
+    string[]    _path;
+    ParseResult _result;
+    string      _helpText;
+    string      _errorMessage;
+
+    public CommandResolution(int kind, string[] path, ParseResult result,
+                             string helpText, string errorMessage) {
+        this._kind         = kind;
+        this._path         = path;
+        this._result       = result;
+        this._helpText     = helpText;
+        this._errorMessage = errorMessage;
+    }
+
+    /// A leaf command resolved without a help request.
+    public static CommandResolution Match(ParseResult result) {
+        return new CommandResolution(0, new string[0], result, "", "");
+    }
+
+    /// Help requested at some level — `helpText` is that level's help.
+    public static CommandResolution Help(string helpText) {
+        return new CommandResolution(1, new string[0], null, helpText, "");
+    }
+
+    /// Unrecognised token at some router level.
+    public static CommandResolution Unknown(string errorMessage, string helpText) {
+        return new CommandResolution(2, new string[0], null, helpText, errorMessage);
+    }
+
+    public bool IsMatch()   { return this._kind == 0; }
+    public bool IsHelp()    { return this._kind == 1; }
+    public bool IsUnknown() { return this._kind == 2; }
+
+    /// The matched subcommand chain so far (e.g. `["build", "package"]`).
+    public string[] Path() { return this._path; }
+
+    /// Leaf parse result — valid only when IsMatch().
+    public ParseResult Result() { return this._result; }
+
+    /// Help text for the relevant level — valid when IsHelp() / IsUnknown().
+    public string HelpText() { return this._helpText; }
+
+    /// Error message — valid only when IsUnknown().
+    public string ErrorMessage() { return this._errorMessage; }
+
+    /// Prepend an ancestor subcommand name to the path as the recursion
+    /// unwinds. Mutates + returns `this` for chaining. Internal to Resolve.
+    public CommandResolution Prepend(string name) {
+        string[] np = new string[this._path.Length + 1];
+        np[0] = name;
+        int i = 0;
+        while (i < this._path.Length) {
+            np[i + 1] = this._path[i];
+            i = i + 1;
+        }
+        this._path = np;
+        return this;
+    }
+}

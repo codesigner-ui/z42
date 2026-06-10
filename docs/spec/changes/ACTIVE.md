@@ -10,7 +10,7 @@
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | add-reflection-type-flags 已归档 2026-06-10 → 释放（TYPE section flags 字节 + zbc 1.12 / zpkg 0.14）|
 | `runtime` | —（空闲）| — | add-reflection-type-flags 已归档 2026-06-10 → 释放（`class_flags` + `__type_is_abstract`/`__type_is_sealed`）|
-| `stdlib` | —（空闲）| — | add-reflection-type-flags 已归档 2026-06-10 → 释放（`Type.IsAbstract`/`IsSealed`）→ **add-cli-nested-subcommands 可取用** |
+| `stdlib` | —（空闲）| — | add-cli-nested-subcommands 已归档 2026-06-10 → 释放（`Std.Cli` 嵌套 `AddRouter`/`Resolve`/`CommandResolution`；269 文件/22 lib 全绿）|
 | `z42c` | …→ port-z42c-codegen✅ → port-z42c-zbc-writer | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 类型检查半 1A–2B✅ → **port-z42c-codegen✅ Bound→IR 内存模型 CG-1A–2（已归档 2026-06-09，210 cases）** → **port-z42c-zbc-writer 进行中**（byte-identical .zbc：IrModule→bytes，镜像 ZbcWriter.cs + Tokens）<br>⚠️ **协调（2026-06-09，User 裁决，格式已变更）**：C3 attribute 反射已落地并 bump **.zbc → 1.11**（1.10 TYPE-section per-class attr refs + 1.11 SIGS-section per-function attr refs）+ **.zpkg → 0.13**（含 ZpkgWriter global SIGS 同步）→ 本 port 需**按 1.11 新格式重新镜像 ZbcWriter.cs**（接受 re-port，byte-identical gate 在 re-port 完成前暂红）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-type-flags 再 bump **.zbc → 1.12 / .zpkg → 0.14**（TYPE section 每类追加 `flags:u8`）→ port **直接对齐 1.12**（趁 mid-re-port，同周期不多一轮）。 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner 跑 z42c [Test]。（add-apphost + fix-dist-runner-test-dirs 两个并行占用已于 2026-06-09 归档释放。）|
 
@@ -35,5 +35,5 @@
 | ~~fix-fqn-class-resolution~~ | compiler + stdlib —— ✅ 已归档 2026-06-09（ResolveMemberType namespace-aware FQN→类；移除 C3b FindByType workaround；GoldenTests 1545/1545）|
 | ~~add-reflection-properties~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（`Type.GetProperties()` + `PropertyInfo`，纯 runtime 派生自 get_/set_，无 zbc 格式 bump；GoldenTests 1549/1549）|
 | ~~add-reflection-type-flags~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（`Type.IsAbstract`/`IsSealed`；zbc 1.12 / zpkg 0.14，TYPE section flags 字节；cargo 795/0 + GoldenTests 1552/1552）|
-| add-cli-nested-subcommands | stdlib（2026-06-10 规范定稿；**排队**等 add-reflection-type-flags 释放 stdlib 锁）；`Std.Cli.SubcommandRouter` 嵌套 + `Resolve`/`CommandResolution`。是 ② xtask/launcher 迁移（合流 migrate-scripts-to-z42）的前置依赖 |
+| ~~add-cli-nested-subcommands~~ | stdlib —— ✅ 已归档 2026-06-10（`Std.Cli` 嵌套 `AddRouter`/`Resolve`/`CommandResolution`；14 新 [Test]；GREEN 269 文件/22 lib）。② xtask/launcher 迁移（合流 migrate-scripts-to-z42）解锁可开 |
 | plan-0.3.x-three-streams | docs（不上锁） |
