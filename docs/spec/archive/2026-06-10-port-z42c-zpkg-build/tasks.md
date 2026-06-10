@@ -1,7 +1,6 @@
 # Tasks: port-z42c-zpkg-build — `z42c build` → byte-identical packed `.zpkg`
 
-> 状态：⚪ DRAFT 待审批 | 创建：2026-06-10 | 子系统锁：z42c（source-spans 归档后接力）
-> **未经 User 批准不动代码（Spec-First gate）。**
+> 状态：🟢 已完成（User 裁决 A：TSIG/IMPL 留 follow-up port-z42c-tsig）| 创建+归档：2026-06-10 | 子系统锁：z42c（移交 port-z42c-tsig）
 
 ## 进度概览
 - [x] BP-0 IrGen namespace 限定（类/函数 key/ObjNew 引用 FQ；无 ns 零变化——zbc golden 守护）

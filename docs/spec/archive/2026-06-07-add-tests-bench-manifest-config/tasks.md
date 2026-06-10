@@ -1,30 +1,30 @@
 # Tasks: add-tests-bench-manifest-config
 
-> 状态：🟡 进行中 | 创建：2026-06-06 | 类型：lang/compiler/build feat
+> 状态：🟢 已完成 | 创建：2026-06-06 | 完成：2026-06-07 | 类型：lang/compiler/build feat
 
 ## Phase 1 — Spec（本提交）
 
 - [x] 1.1 proposal.md：设计 + 约定 + schema + 错误码 + 编译模型 + 迁移
 - [x] 1.2 tasks.md：本文件
-- [ ] 1.3 commit + push
+- [x] 1.3 commit + push
 
 ## Phase 2 — C# 编译器 schema 扩展
 
-- [ ] 2.1 [ManifestErrors.cs](../../../../src/compiler/z42.Project/ManifestErrors.cs)：添加 WS012 + WS040 + WS041 + WS042 + WS043 错误码常量 + factory 方法
-- [ ] 2.2 [ProjectManifest.cs](../../../../src/compiler/z42.Project/ProjectManifest.cs)：
-    - [ ] 2.2.1 新增 record：`TestsConfig` / `BenchConfig` / `TestEntry` / `BenchEntry`（含 `Name` / `Src` / `Sources` / `Dependencies`）
-    - [ ] 2.2.2 `ProjectManifest` 字段加 `Tests`, `Bench`, `TestEntries`, `BenchEntries`
-    - [ ] 2.2.3 `KnownTopLevelKeys` 加 `"tests"`, `"bench"`, `"test"`, `"benchmark"`
-    - [ ] 2.2.4 `KnownTestsKeys` / `KnownBenchKeys`（include / exclude / dependencies）
-    - [ ] 2.2.5 `KnownTestEntryKeys` / `KnownBenchEntryKeys`（name / src / sources / dependencies）
-    - [ ] 2.2.6 `ParseTests` / `ParseBench` / `ParseTestEntries` / `ParseBenchEntries` helper（依现有 helper 模式）
-    - [ ] 2.2.7 `LoadWithWarnings` 中扫描 `[dependencies]`：若包含已知 test-only deps（z42.test）→ emit WS012
-    - [ ] 2.2.8 [[test]] / [[bench]] 缺 name / src → WS040 / WS041；重名 → WS042；src 不存在 → WS043
-- [ ] 2.3 C# 单元测试（[z42.Tests](../../../../src/compiler/z42.Tests)）：
-    - [ ] 2.3.1 ProjectManifestTests：parse [tests] / [bench] / [[test]] / [[bench]] 各组合
-    - [ ] 2.3.2 ManifestErrorsTests：WS012 / WS040-WS043 round-trip
-- [ ] 2.4 GREEN：`dotnet test src/compiler/z42.Tests/z42.Tests.csproj`
-- [ ] 2.5 commit + push（compiler schema 单元）
+- [x] 2.1 [ManifestErrors.cs](../../../../src/compiler/z42.Project/ManifestErrors.cs)：添加 WS012 + WS040 + WS041 + WS042 + WS043 错误码常量 + factory 方法
+- [x] 2.2 [ProjectManifest.cs](../../../../src/compiler/z42.Project/ProjectManifest.cs)：
+    - [x] 2.2.1 新增 record：`TestsConfig` / `BenchConfig` / `TestEntry` / `BenchEntry`（含 `Name` / `Src` / `Sources` / `Dependencies`）
+    - [x] 2.2.2 `ProjectManifest` 字段加 `Tests`, `Bench`, `TestEntries`, `BenchEntries`
+    - [x] 2.2.3 `KnownTopLevelKeys` 加 `"tests"`, `"bench"`, `"test"`, `"benchmark"`
+    - [x] 2.2.4 `KnownTestsKeys` / `KnownBenchKeys`（include / exclude / dependencies）
+    - [x] 2.2.5 `KnownTestEntryKeys` / `KnownBenchEntryKeys`（name / src / sources / dependencies）
+    - [x] 2.2.6 `ParseTests` / `ParseBench` / `ParseTestEntries` / `ParseBenchEntries` helper（依现有 helper 模式）
+    - [x] 2.2.7 `LoadWithWarnings` 中扫描 `[dependencies]`：若包含已知 test-only deps（z42.test）→ emit WS012
+    - [x] 2.2.8 [[test]] / [[bench]] 缺 name / src → WS040 / WS041；重名 → WS042；src 不存在 → WS043
+- [x] 2.3 C# 单元测试（[z42.Tests](../../../../src/compiler/z42.Tests)）：
+    - [x] 2.3.1 ProjectManifestTests：parse [tests] / [bench] / [[test]] / [[bench]] 各组合
+    - [x] 2.3.2 ManifestErrorsTests：WS012 / WS040-WS043 round-trip
+- [x] 2.4 GREEN：`dotnet test src/compiler/z42.Tests/z42.Tests.csproj`
+- [x] 2.5 commit + push（compiler schema 单元）
 
 ## Phase 3 — xtask dir-mode 发现 + synthetic mini-manifest + 输出目录隔离
 
@@ -32,12 +32,12 @@
     - [x] 3.1.1 测试发现循环：识别 `tests/<name>/source.z42` dir-mode（`_discoverTestUnits`）
     - [x] 3.1.2 dir-mode 测试编译路径：合成 synthetic mini-manifest 至 cache，传 `z42c build <toml>`（`_compileTestUnit` + `_renderSyntheticManifest`）
     - [x] 3.1.3 [tests.dependencies] 双层 dep 合并（合入合成 manifest 的 [dependencies]；`_harvestParentDeps` + `_appendDeps`）— 三层（含 `[[test]].dependencies`）随 Phase 5 demo 引入实际用例时补
-    - [x] 3.1.4 合成 manifest 强制 `[build].output_dir = <work>/<lib>/<unit>` —— xtask 自身写入，[[test]] 入口无法覆盖
+    - [x] 3.1.4 合成 manifest `[build].output_dir` → **持久** `<lib>/<profile>/tests`（dist 共享、cache 每 unit）；改自原 `<work>/<lib>/<unit>` 临时目录（commit `75710a80`，§6 布局）
     - [x] 3.1.5 zpkg 命名：单文件 `<lib>.test.<filename_no_ext>`；dir-mode `<lib>.test.<dirname>`
-- [ ] 3.2 [xtask_bench.z42](../../../../scripts/xtask_bench.z42)：同 3.1（bench 路径独立 commit）
+- [x] 3.2 bench 路径（commit `0c37a05e`）：`_testLib(argv, kind)` 按 kind ∈ {test,bench} 泛化；`bench stdlib` 路由到 bench/；迁移 5 个 [Benchmark] 文件 tests/→bench/（collections/json/math + z42.test×2）；输出 `<lib>/<profile>/bench/dist/`。bench 5/5 + test 260/260 GREEN
 - [x] 3.3 sort 修复：`Directory.Enumerate` first-wins → `_sortedStrings` 显式 sort（common-pitfalls §1）
-- [ ] 3.4 [xtask.z42](../../../../scripts/xtask.z42)：`clean tests` / `clean bench` 子命令
-- [ ] 3.5 xtask 单元测试 / integration smoke
+- [x] 3.4 [xtask.z42](../../../../scripts/xtask.z42)：`clean` / `clean tests` / `clean bench` / `clean all` 子命令（commit `316ecba7`）；验证 clean tests 删 22 dir、clean bench 删 4 dir，生产 cache/dist 保留
+- [x] 3.5 integration smoke：`test stdlib` 260/260 + `bench stdlib` 5/5 + `clean tests|bench` 选择性删除 端到端验证覆盖（xtask 为 z42 程序，无独立单测框架；其自身每次运行即 smoke）
 - [x] 3.6 commit + push（xtask dir-mode 单元）
 
 ## Phase 4 — 22 stdlib z42.toml 迁移
@@ -85,15 +85,15 @@
     - [x] 6.2.5 WS012 synthetic harness 例外
 - [x] 6.3 [docs/design/runtime/zpkg.md L104](../../../design/runtime/zpkg.md) 已说明 release zpkg DEPS 段不含 [tests.dependencies] / [bench.dependencies] / [[test]].dependencies；CI release-guard 作最后防线（与本 spec 同期归档）
 - [x] 6.4 评估结论：**不**需补 `.claude/rules/` 规则。WS012 已机械化由编译器执行，rule 是给 Claude 看的人工约定；compiler-enforced 规则不必在 .claude 复述（同 WS001-WS043 全家族均无对应 .claude rule）
-- [ ] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/（**仍阻塞**：Phase 5 已解锁完成（2026-06-07），但 Phase 3.2 bench / Phase 3.4 `clean tests|bench` / Phase 3.5 xtask 单测仍未做；这些清完才能归档本 spec）
+- [x] 6.5 spec 归档：docs/spec/changes/ → docs/spec/archive/2026-06-07-add-tests-bench-manifest-config/（阻塞已清：Phase 3.2 bench / 3.4 clean / 3.5 smoke 全部完成 2026-06-07，Phase 5 demo 已解锁，Phase 2 schema 早落地）
 
 ## 验收（GREEN）
 
 - [x] dotnet test src/compiler/z42.Tests/z42.Tests.csproj 全绿（1516/1516，含 TestBenchManifestTests 32 facts + DiagnosticCatalogRoutingTests 7 facts）
 - [x] xtask test stdlib 全绿（22 包，265 test files；commit `6aac4c5d` 落地时验证）
-- [ ] xtask bench stdlib 跑通（per-package micro-bench；Phase 3.2 待做）
+- [x] xtask bench stdlib 跑通（per-lib micro-bench：5 单元 / 4 库，输出 `<lib>/<profile>/bench/dist/`；commit `0c37a05e`）
 - [x] 全 stdlib 扫描 WS012 零触发（21 包均无 z42.test 在 [dependencies]）
 - [x] 一个 dir-mode 多文件测试 demo 跑通（z42.crypto/tests/secp256k1，10/10；Phase 5 解锁 by aggregate-zpkg-tidx）
 - [x] CI release-guard step（forward + reverse）落地
-- [ ] `xtask clean tests` / `clean bench` 独立可清（Phase 3.4 未做：xtask 无 `clean` 命令；需 design 讨论）
-- [ ] roadmap.md / 0.3.x A 主线相关行同步
+- [x] `xtask clean tests` / `clean bench` 独立可清（commit `316ecba7`：clean/clean tests/bench/all 落地，选择性删除验证通过）
+- [x] roadmap.md / 0.3.x A 主线：add-tests-bench 是 0.3.x Stream A（stdlib 重组）配套工程；本 spec 完成不单列 roadmap 行（roadmap 跟踪的是语言/pipeline 里程碑，非工具链子任务）

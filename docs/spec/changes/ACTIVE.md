@@ -8,10 +8,10 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | fix-chained-property-dispatch 调查后放弃（2026-06-10）：根因精确（2-part：Object stub GetType 返 Unknown + ResolveTypeName FQN→PrimType），但 3 次实现尝试逐层揭深坑（FQN→key 短/FQN 双键→MergeImported 在 CollectClasses 前的时序→correctly-timed 直接 fixup 仍不生效）。与 attr-factory-return-type-resolution 同族「过深」。完整发现入 reflection.md Deferred；workaround（链式先赋值局部变量）已在 |
+| `compiler` | **fix-chained-property-dispatch（2026-06-10 重启）** | 2026-06-10 | 从文档化的 4th-layer handoff 重启：先插桩定位 `_classes` 里 Std.Type 真实 key + Object stub 是否 clobber 导入的真 Object，再修 P1（stub GetType 升级为真 Std.Type）+ P2（ResolveTypeName FQN→短名重查）。仅触 SymbolCollector* + ImportedSymbolLoader.TypeResolver。|
 | `runtime` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`__type_is_value_type` / `__type_is_record`，无格式变更）|
 | `stdlib` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`Type.IsValueType` / `Type.IsRecord`）|
-| `z42c` | **port-z42c-zpkg-build（DRAFT 待审）** | 2026-06-10 | 自举主线（前序全归档：core→syntax→project 机械段→semantics→codegen→zbc-writer→source-spans✅）。本 change：`z42c build <toml>` 端到端产 **byte-identical packed .zpkg**（BP-0 IrGen ns 限定 / BP-R 段构建器共享化 / project 源发现 / ZpkgBuilder+Writer / driver build / packed-minimal golden + e2e build byte-compare）。design DRAFT 待 User 审批，未批不动代码 |
+| `z42c` | **port-z42c-tsig（DRAFT 待审）** | 2026-06-10 | zpkg-build 已归档（z42c build 端到端 + 直跑 e2e；META/NSPC/EXPT/DEPS 已 byte-EQUAL）。本 change：TSIG/IMPL 段 + ExportedTypeExtractor → zpkg **全文件 byte-identical**（裁决 A 的 follow-up）。DRAFT 待 User 审批 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -23,7 +23,8 @@
 | ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|
 | ~~port-z42c-zbc-writer~~ | z42c —— ✅ 已归档 2026-06-10（功能完整 .zbc writer + empty 逐字节 + e2e 四向；DBUG/span 移交 add-z42c-source-spans）|
 | ~~add-z42c-source-spans~~ | z42c —— ✅ 已归档 2026-06-10（span→DBUG + byte-compare 3/3；7942ab7d）|
-| port-z42c-zpkg-build | z42c（2026-06-10 开；source-spans 归档释放后接力；DRAFT 待审）|
+| ~~port-z42c-zpkg-build~~ | z42c —— ✅ 已归档 2026-06-10（z42c build 端到端+直跑；e1ff3503）|
+| port-z42c-tsig | z42c（2026-06-10 开；zpkg-build 归档接力；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|

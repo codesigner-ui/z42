@@ -18,13 +18,14 @@
 
 ### Requirement: byte-identical 对 C#
 
-#### Scenario: packed-minimal 同源逐字节
+#### Scenario: packed-minimal 同源逐字节（部分达成——TSIG 边界，User 裁决 2026-06-10 选项 A）
 - **WHEN** z42c 构建与 `src/tests/zpkg-format/packed-minimal` 同构的工程（namespaced 单类 + Main）
-- **THEN** `.zpkg` 输出与 C# 产物**逐字节一致**（META/STRS/NSPC/EXPT/DEPS/SIGS/MODS 七段全对）
+- **THEN（已达成）** META/NSPC/EXPT/DEPS 四段与真 C# CLI **逐字节相等**；SIGS/MODS 同尺寸（差异全部源于 TSIG/IMPL 串入池的索引移位）
+- **THEN（移交 port-z42c-tsig）** 全文件逐字节一致（真 CLI 恒发 TSIG/IMPL——fixture 是无此段的测试合成路径，勘察误判）
 
-#### Scenario: e2e build byte-compare
+#### Scenario: e2e build byte-compare（移交 port-z42c-tsig）
 - **WHEN** xtask e2e 把同一临时工程分别交 z42c 与 C# `build`
-- **THEN** 两个 `.zpkg` 逐字节 diff 为空
+- **THEN** 两个 `.zpkg` 逐字节 diff 为空（本 change 落地的 e2e 步为：z42c build 产物 z42vm 直跑）
 
 ### Requirement: namespace 限定（BP-0）
 
