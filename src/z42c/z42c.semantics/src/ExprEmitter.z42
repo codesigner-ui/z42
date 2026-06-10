@@ -33,7 +33,9 @@ public sealed class ExprEmitter {
         }
         if (e is BoundLitStr) {
             BoundLitStr ls = e as BoundLitStr;
-            int idx = this._ctx.Gen.Intern(ls.Raw);
+            // 入池须是解码值（剥引号+转义还原），非 raw lexeme——否则引号泄进 STRS：
+            // 同池字面量比较碰巧相等，但 concat/输出全错（zbc e2e 抓出，2026-06-10）。
+            int idx = this._ctx.Gen.Intern(Lexer.DecodeString(ls.Raw));
             TypedReg r = this._ctx.Alloc(IrType.Str);
             this._ctx.Emit(new ConstStrInstr(r, idx));
             return r;
