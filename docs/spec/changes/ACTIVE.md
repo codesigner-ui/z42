@@ -8,7 +8,7 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（字段 attr + zbc 1.14 / zpkg 0.16）|
+| `compiler` | —（空闲）| — | fix-qualified-base-upcast 调查后放弃（2026-06-10）：根因非 FQN-upcast 而是合成 attribute factory 返回类型回落 PrimType 的 name-resolution 缺陷，过深，留 reflection.md Deferred `attr-factory-return-type-resolution`，workaround（unqualified 基名）已在 |
 | `runtime` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`field_attributes` + `__field_custom_attributes`）|
 | `stdlib` | —（空闲）| — | add-cli-optional-positional 已归档 2026-06-10 → 释放（`ArgParser.AddOptionalPositional`，z42.cli 10 文件/11 [Test] 绿）|
 | `z42c` | —（空闲）| — | 自举移植主线全归档：core✅→syntax✅→project 机械段✅→semantics✅→codegen✅→zbc-writer✅→**add-z42c-source-spans✅ 已归档 2026-06-10**（span→DBUG 链 + per-construct byte-identical：3 真实程序 z42c vs C# 逐字节含 DBUG，commit 7942ab7d）。下一步候选：pipeline/build 命令（端到端 zpkg）/ char 字面量前端 / project 文件系统段 |
