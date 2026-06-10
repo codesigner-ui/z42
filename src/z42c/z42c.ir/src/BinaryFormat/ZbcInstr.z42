@@ -93,9 +93,20 @@ public static class ZbcInstr {
         ZbcInstr._writeCore(w, ins);
     }
 
-    // z42c 无 ctor 解析（BoundNew.CtorName 延后）→ 合成 FQ ctor 名 "Class.Class"（镜像 C# ctor-less：
-    // CtorName=className → fqCtor="{cls}.{cls}"；VM 查无此函数即跳过 ctor = 默认无参语义）。
-    public static string CtorName(string className) { return className + "." + className; }
+    // z42c 无 ctor 解析（BoundNew.CtorName 延后）→ 合成 FQ ctor 名 "{fqCls}.{短类名}"（镜像 C# ctor-less：
+    // CtorName=短类名 → fqCtor="{qualCls}.{短}"，如 "Demo.Greeter.Greeter"；VM 查无此函数即跳过 ctor）。
+    public static string CtorName(string className) {
+        int cut = 0 - 1;
+        int i = className.Length - 1;
+        bool more = i >= 0;
+        while (more) {
+            if (className.CharAt(i) == '.') { cut = i; more = false; }
+            else { i = i - 1; more = i >= 0; }
+        }
+        string shortName = className;
+        if (cut >= 0) { shortName = className.Substring(cut + 1, className.Length - cut - 1); }
+        return className + "." + shortName;
+    }
 
     // 浮点字面量文本 → Convert.ToDouble 可解析形（剥后缀 f/F/d/D/m/M + 去 `_` 分隔符）。
     private static string _cleanFloat(string text) {

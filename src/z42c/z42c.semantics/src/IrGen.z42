@@ -36,8 +36,17 @@ public sealed class IrGen {
         return idx;
     }
 
+    public string Ns;   // 根命名空间（BP-0 名字限定；""=无）
+
+    private string _q(string name) {
+        if (this.Ns == "") { return name; }
+        return this.Ns + "." + name;
+    }
+
     public IrModule Generate(CompilationUnit cu, SemanticModel model) {
         this._symbols = model.Symbols;
+        this.Ns = "";
+        if (cu.HasNamespace) { this.Ns = cu.Namespace; }
         IrFunction[] funcs = new IrFunction[8];   int fc = 0;
         IrClassDesc[] classes = new IrClassDesc[8]; int cc = 0;
         // 两遍（byte-identical：module.Functions 序 = 类方法（声明序）→ 自由函数（声明序），SIGS 字节实证）。
@@ -55,12 +64,13 @@ public sealed class IrGen {
                         if (mem is MethodDecl) {
                             MethodDecl md = mem as MethodDecl;
                             if (!md.IsCtor && md.HasBody) {
-                                string key = c.Name + "." + md.Name;
+                                string key = c.Name + "." + md.Name;       // SemanticModel 键（短）
+                                string irName = this._q(c.Name) + "." + md.Name;   // IR/包内名（FQ，fixture 实证）
                                 if (model.HasBody(key)) {
                                     bool isStaticMethod = this._hasWord(md.Mods, "static");
                                     bool isInstance = !isStaticMethod;   // 实例方法有 this；静态方法无
                                     var fe = new FunctionEmitter(model.Symbols, this);
-                                    IrFunction irf = fe.EmitFunction(key, md, model.GetBody(key), isInstance, isStaticMethod,
+                                    IrFunction irf = fe.EmitFunction(irName, md, model.GetBody(key), isInstance, isStaticMethod,
                                                                      owner, c.TypeParams.Names, c.TypeParams.Count);
                                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                                 }
@@ -80,7 +90,7 @@ public sealed class IrGen {
                 if (md.HasBody && model.HasBody(md.Name)) {
                     var fe = new FunctionEmitter(model.Symbols, this);
                     // 自由函数：无 this（isInstance=false）且 IsStatic 标志=false（与 C# 一致）
-                    IrFunction irf = fe.EmitFunction(md.Name, md, model.GetBody(md.Name), false, false,
+                    IrFunction irf = fe.EmitFunction(this._q(md.Name), md, model.GetBody(md.Name), false, false,
                                                      null, new string[0], 0);
                     funcs = this._pushFunc(funcs, fc, irf); fc = fc + 1;
                 }
@@ -92,11 +102,23 @@ public sealed class IrGen {
         return new IrModule(modName, this._pool, this._poolCount, classes, cc, funcs, fc);
     }
 
+    private bool _hasDot(string name) {
+        int i = 0;
+        while (i < name.Length) {
+            if (name.CharAt(i) == '.') { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
     // 类 → IrClassDesc（名 + 基类 + 字段 slot 序）。CG-1A 描述就绪，字段访问 codegen 在 CG-1C 用。
     private IrClassDesc _classDesc(ClassDecl c) {
         bool hasBase = true;   // 镜像 C#：无显式基类 → "Std.Object"（universal base，TYPE base idx 非 0xFFFFFFFF）
         string baseName = "Std.Object";
-        if (c.BaseCount > 0) { baseName = c.Bases[0].Dump(); }
+        if (c.BaseCount > 0) {
+            baseName = c.Bases[0].Dump();
+            if (!this._hasDot(baseName)) { baseName = this._q(baseName); }   // 本地基类 → FQ
+        }
         IrFieldDesc[] fields = new IrFieldDesc[4];
         int fcount = 0;
         int j = 0;
@@ -115,7 +137,7 @@ public sealed class IrGen {
             }
             j = j + 1;
         }
-        return new IrClassDesc(c.Name, hasBase, baseName, fields, fcount);
+        return new IrClassDesc(this._q(c.Name), hasBase, baseName, fields, fcount);
     }
 
     private IrFunction[] _pushFunc(IrFunction[] arr, int count, IrFunction irf) {

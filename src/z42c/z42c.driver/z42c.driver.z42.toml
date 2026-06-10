@@ -12,3 +12,6 @@ pack    = true
 "z42c.syntax"    = "0.1.0"
 "z42c.semantics" = "0.1.0"
 "z42c.core"      = "0.1.0"
+"z42c.project"   = "0.1.0"   # build：manifest/源发现/zpkg 组装+写出
+"z42c.ir"        = "0.1.0"   # IrModule（build 编译产物流转；镜像 C# driver→ir 边）
+"z42.io"         = "0.1.0"

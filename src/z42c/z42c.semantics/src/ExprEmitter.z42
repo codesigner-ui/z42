@@ -260,8 +260,9 @@ public sealed class ExprEmitter {
             return idst;
         }
         TypedReg[] args = this._emitArgs(c);
-        string func = c.MethodName;
-        if (c.Kind == "static") { func = c.OwnerClass + "." + c.MethodName; }
+        // 调用目标限定（BP-0）：自由函数/静态类经 ns 前缀（函数表/类表名是 FQ）
+        string func = this._ctx.Qualify(c.MethodName);
+        if (c.Kind == "static") { func = this._ctx.Qualify(c.OwnerClass) + "." + c.MethodName; }
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
         this._ctx.Emit(new CallInstr(dst, func, args, c.ArgCount));
         return dst;
@@ -291,7 +292,7 @@ public sealed class ExprEmitter {
             while (k < inst.ArgCount) { targs[k] = inst.TypeArgs[k].Name(); k = k + 1; }
             tcount = inst.ArgCount;
         }
-        this._ctx.Emit(new ObjNewInstr(dst, className, targs, tcount, args, n.ArgCount));
+        this._ctx.Emit(new ObjNewInstr(dst, this._ctx.Qualify(className), targs, tcount, args, n.ArgCount));
         return dst;
     }
 
@@ -308,7 +309,7 @@ public sealed class ExprEmitter {
     private TypedReg _emitIs(BoundIsExpr e) {
         TypedReg obj = this.Emit(e.E);
         TypedReg dst = this._ctx.Alloc(IrType.Bool);
-        this._ctx.Emit(new IsInstanceInstr(dst, obj, e.TypeName));
+        this._ctx.Emit(new IsInstanceInstr(dst, obj, this._ctx.Qualify(e.TypeName)));
         return dst;
     }
 
@@ -316,7 +317,7 @@ public sealed class ExprEmitter {
     private TypedReg _emitCast(BoundCast c) {
         TypedReg obj = this.Emit(c.E);
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
-        this._ctx.Emit(new AsCastInstr(dst, obj, c.Type().Name()));
+        this._ctx.Emit(new AsCastInstr(dst, obj, this._ctx.Qualify(c.Type().Name())));
         return dst;
     }
 }

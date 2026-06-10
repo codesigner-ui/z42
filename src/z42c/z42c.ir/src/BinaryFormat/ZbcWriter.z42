@@ -13,20 +13,20 @@ public static class ZbcWriter {
     public static ByteWriter Write(IrModule irm) {
         var pool = new ZbcStringPool();
         int[] strRemap = new int[irm.StringCount];   // z42c 1-based 池 idx → 最终 STRS idx
-        ZbcWriter._internPool(irm, pool, strRemap);
+        ZbcWriter.InternPoolStrings(irm, pool, strRemap);
         var alloc = TokenAllocator.FromModule(irm);
 
         var nspc = ZbcWriter._buildNspc(irm.Name);
-        var strs = ZbcWriter._buildStrs(pool);
-        var type = ZbcWriter._buildType(irm, pool);
-        var sigs = ZbcWriter._buildSigs(irm, pool);
+        var strs = ZbcWriter.BuildStrs(pool);
+        var type = ZbcWriter.BuildType(irm.Classes, irm.ClassCount, pool);
+        var sigs = ZbcWriter.BuildSigs(irm.Functions, irm.FuncCount, pool);
         var impt = ZbcWriter._buildImpt(irm, pool);
         var expt = ZbcWriter._buildExpt(irm, pool);
-        var func = ZbcWriter._buildFunc(irm, pool, strRemap, alloc);
-        var regt = ZbcWriter._buildRegt(irm);
+        var func = ZbcWriter.BuildFunc(irm.Functions, irm.FuncCount, pool, strRemap, alloc);
+        var regt = ZbcWriter.BuildRegt(irm.Functions, irm.FuncCount);
 
         // DBUG（add-z42c-source-spans）：任一函数有行表/局部表 → flags.HasDebug + 第 9 section（镜像 C#）。
-        bool hasDebug = ZbcWriter._hasDebug(irm);
+        bool hasDebug = ZbcWriter.HasDebug(irm);
         int secCount = 8;
         if (hasDebug) { secCount = 9; }
         string[]     tags   = new string[secCount];
@@ -39,7 +39,7 @@ public static class ZbcWriter {
         tags[5] = "EXPT"; datas[5] = expt;
         tags[6] = "FUNC"; datas[6] = func;
         tags[7] = "REGT"; datas[7] = regt;
-        if (hasDebug) { tags[8] = "DBUG"; datas[8] = ZbcWriter._buildDbug(irm, pool); }
+        if (hasDebug) { tags[8] = "DBUG"; datas[8] = ZbcWriter.BuildDbug(irm.Functions, irm.FuncCount, pool); }
         int flags = 0;
         if (hasDebug) { flags = 2; }   // ZbcFlags.HasDebug
         return ZbcWriter._assemble(tags, datas, secCount, flags);
@@ -49,7 +49,7 @@ public static class ZbcWriter {
     public static string WriteHex(IrModule irm) { return ZbcWriter.Write(irm).ToHex(); }
 
     // ── 字符串池预扫（顺序即 STRS 字节序，须 1:1 复刻 C# InternPoolStrings full 模式）──────────
-    private static void _internPool(IrModule irm, ZbcStringPool pool, int[] strRemap) {
+    public static void InternPoolStrings(IrModule irm, ZbcStringPool pool, int[] strRemap) {
         pool.Intern(irm.Name);
         // const.str 池（z42c StringPool 1-based，[0]="" 占位 → 从 1 起）→ 记 remap。
         int s = 1;
@@ -101,7 +101,7 @@ public static class ZbcWriter {
     }
 
     // ── STRS：count + (offset u32, len u32)×count + 拼接 UTF-8 data ────────────────
-    private static ByteWriter _buildStrs(ZbcStringPool pool) {
+    public static ByteWriter BuildStrs(ZbcStringPool pool) {
         var w = new ByteWriter();
         int n = pool.Count();
         w.WriteU32(n);
@@ -120,12 +120,12 @@ public static class ZbcWriter {
     }
 
     // ── TYPE：count + 每类描述（ZW-1A trivial 无类 → count 0）─────────────────────────
-    private static ByteWriter _buildType(IrModule irm, ZbcStringPool pool) {
+    public static ByteWriter BuildType(IrClassDesc[] classes, int classCount, ZbcStringPool pool) {
         var w = new ByteWriter();
-        w.WriteU32(irm.ClassCount);
+        w.WriteU32(classCount);
         int c = 0;
-        while (c < irm.ClassCount) {
-            IrClassDesc cd = irm.Classes[c];
+        while (c < classCount) {
+            IrClassDesc cd = classes[c];
             w.WriteU32(pool.Idx(cd.Name));
             if (cd.HasBase) { w.WriteU32(pool.Idx(cd.BaseName)); } else { w.WriteU32(-1); }   // -1 = uint.MaxValue
             w.WriteU16(cd.FieldCount);
@@ -147,12 +147,18 @@ public static class ZbcWriter {
     }
 
     // ── SIGS：count + 每函数签名（zbc 1.11 含 attrCount）─────────────────────────────
-    private static ByteWriter _buildSigs(IrModule irm, ZbcStringPool pool) {
+    public static ByteWriter BuildSigs(IrFunction[] fns, int fnCount, ZbcStringPool pool) {
         var w = new ByteWriter();
-        w.WriteU32(irm.FuncCount);
+        w.WriteU32(fnCount);
+        ZbcWriter.WriteSigEntries(w, fns, fnCount, pool);
+        return w;
+    }
+
+    // SIGS 条目（无 count 头；zbc 单模块与 zpkg 全模块平铺共用——单源防漂移）。
+    public static void WriteSigEntries(ByteWriter w, IrFunction[] fns, int fnCount, ZbcStringPool pool) {
         int fi = 0;
-        while (fi < irm.FuncCount) {
-            IrFunction f = irm.Functions[fi];
+        while (fi < fnCount) {
+            IrFunction f = fns[fi];
             w.WriteU32(pool.Idx(f.Name));
             w.WriteU16(f.ParamCount);
             w.WriteU8(Tag.FromName(f.RetType));
@@ -170,7 +176,6 @@ public static class ZbcWriter {
             w.WriteU16(0);   // attrCount（zbc 1.11）
             fi = fi + 1;
         }
-        return w;
     }
 
     // ── IMPT：导入名 = Call 目标中非本模块函数（镜像 C# BuildImptSection；z42c 无 Builtin 指令）。
@@ -258,12 +263,12 @@ public static class ZbcWriter {
     }
 
     // ── FUNC：count + 每函数体（regCount/blockCount/instrLen/excCount + blockOffsets + instrBytes）─
-    private static ByteWriter _buildFunc(IrModule irm, ZbcStringPool pool, int[] strRemap, TokenAllocator alloc) {
+    public static ByteWriter BuildFunc(IrFunction[] fns, int fnCount, ZbcStringPool pool, int[] strRemap, TokenAllocator alloc) {
         var w = new ByteWriter();
-        w.WriteU32(irm.FuncCount);
+        w.WriteU32(fnCount);
         int fi = 0;
-        while (fi < irm.FuncCount) {
-            IrFunction f = irm.Functions[fi];
+        while (fi < fnCount) {
+            IrFunction f = fns[fi];
             // 块 label 序（终结符目标 → 索引）。
             string[] labels = new string[f.BlockCount];
             int li = 0;
@@ -295,12 +300,12 @@ public static class ZbcWriter {
     }
 
     // ── REGT：count + 每函数 (regCount u32 + regTypes u8×)。RegTypes = enrich 的 IrType 标签。──
-    private static ByteWriter _buildRegt(IrModule irm) {
+    public static ByteWriter BuildRegt(IrFunction[] fns, int fnCount) {
         var w = new ByteWriter();
-        w.WriteU32(irm.FuncCount);
+        w.WriteU32(fnCount);
         int fi = 0;
-        while (fi < irm.FuncCount) {
-            IrFunction f = irm.Functions[fi];
+        while (fi < fnCount) {
+            IrFunction f = fns[fi];
             w.WriteU32(f.RegTypeCount);
             int r = 0;
             while (r < f.RegTypeCount) { w.WriteU8(f.RegTypes[r]); r = r + 1; }
@@ -311,7 +316,7 @@ public static class ZbcWriter {
 
     // ── DBUG：u32 fnCount；每函数 u16 lineCount + 条目(blk u16,instr u16,line u32,file u32|FFFFFFFF,col u32)
     //          + u16 varCount + 条目(name u32, reg u16)。镜像 C# BuildDbugSection。──────────────────
-    private static bool _hasDebug(IrModule irm) {
+    public static bool HasDebug(IrModule irm) {
         int fi = 0;
         while (fi < irm.FuncCount) {
             if (irm.Functions[fi].LineCount > 0 || irm.Functions[fi].LocalVarCount > 0) { return true; }
@@ -320,12 +325,12 @@ public static class ZbcWriter {
         return false;
     }
 
-    private static ByteWriter _buildDbug(IrModule irm, ZbcStringPool pool) {
+    public static ByteWriter BuildDbug(IrFunction[] fns, int fnCount, ZbcStringPool pool) {
         var w = new ByteWriter();
-        w.WriteU32(irm.FuncCount);
+        w.WriteU32(fnCount);
         int fi = 0;
-        while (fi < irm.FuncCount) {
-            IrFunction f = irm.Functions[fi];
+        while (fi < fnCount) {
+            IrFunction f = fns[fi];
             w.WriteU16(f.LineCount);
             int le = 0;
             while (le < f.LineCount) {

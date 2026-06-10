@@ -43,6 +43,11 @@ public static class IrDump {
         return IrDump._buildF(src, "<input>");
     }
 
+    // 公开：源→IrModule（pipeline/driver build 用）。
+    public static IrModule BuildModule(string src, string file) {
+        return IrDump._buildF(src, file);
+    }
+
     private static IrModule _buildF(string src, string file) {
         var p = new Parser(src, file);
         var cu = p.ParseCompilationUnit();

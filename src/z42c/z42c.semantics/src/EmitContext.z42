@@ -20,6 +20,7 @@ public sealed class EmitContext {
     public string[]    ContLabels; public string[] BreakLabels; public int LoopDepth;  // 循环标签栈
     public int[]       RegTags;   public int RegTagCount;   // reg id → IrType 标签（REGT，byte-identical）
     public IrLineEntry[] Lines;  public int LineCount;  public int LastLine;   // DBUG 行表（同行去重，镜像 C# TrackLine）
+    public string Ns;   // 根命名空间（""=无；名字限定 BP-0，镜像 C# QualifyName）
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
         this.Symbols = symbols; this.Gen = gen;
@@ -29,6 +30,18 @@ public sealed class EmitContext {
         this.ContLabels = new string[4]; this.BreakLabels = new string[4]; this.LoopDepth = 0;
         this.RegTags = new int[8]; this.RegTagCount = 0;
         this.Lines = new IrLineEntry[8]; this.LineCount = 0; this.LastLine = 0;
+        this.Ns = "";
+    }
+
+    // 名字限定（镜像 C# QualifyName）：已含 '.' 视为已限定；ns 空则原样。
+    public string Qualify(string name) {
+        if (this.Ns == "") { return name; }
+        int i = 0;
+        while (i < name.Length) {
+            if (name.CharAt(i) == '.') { return name; }
+            i = i + 1;
+        }
+        return this.Ns + "." + name;
     }
 
     // 每语句记源码行（镜像 C# FunctionEmitter.TrackLine）：行号≤0 或与上条同行 → 跳过；

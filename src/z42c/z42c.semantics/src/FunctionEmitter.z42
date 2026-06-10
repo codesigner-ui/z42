@@ -22,6 +22,7 @@ public sealed class FunctionEmitter {
     public IrFunction EmitFunction(string name, MethodDecl md, BoundStmt body, bool isInstance, bool isStaticMethod,
                                    Z42ClassType owner, string[] classTp, int classTpCount) {
         this._ctx = new EmitContext(this._symbols, this._gen);
+        this._ctx.Ns = this._gen.Ns;   // BP-0：emitter 侧名字限定（ObjNew/is/as 类引用）
         this._expr = new ExprEmitter(this._ctx);
         string[] tp = this._mergeTp(classTp, classTpCount, md.TypeParams.Names, md.TypeParams.Count);
         int tpc = classTpCount + md.TypeParams.Count;

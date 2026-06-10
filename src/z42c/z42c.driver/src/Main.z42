@@ -11,6 +11,8 @@ using Std;
 using Std.IO;
 using Z42.Syntax;
 using Z42.Semantics;
+using Z42.Project;
+using Z42.IR;
 
 void Main() {
     string[] argv = Environment.GetCommandLineArgs();
@@ -20,6 +22,10 @@ void Main() {
     }
     string cmd  = argv[0];
     string file = argv[1];
+    if (cmd == "build") {
+        Environment.Exit(_build(file));
+        return;
+    }
     if (cmd == "--emit-zbc") {
         if (argv.Length < 3) {
             ConsoleError.WriteLine("z42c: --emit-zbc requires <file.z42> <out.zbc>");
@@ -42,6 +48,50 @@ void Main() {
     else                            { Console.WriteLine(SemanticDump.DumpAll(src)); }
 }
 
+// `z42c build <toml>`：manifest → 源发现 → 逐文件编译 → packed zpkg → dist/<name>.zpkg。
+// MVP：单工程/packed/无增量（镜像 C# PackageCompiler.BuildTarget 关键路径）。
+int _build(string tomlPath) {
+    ProjectManifest pm = ManifestLoader.Load(tomlPath);
+    string projectDir = Path.GetDirectoryName(tomlPath);
+    if (projectDir == "") { projectDir = "."; }
+    string[] srcs = SourceDiscovery.Discover(projectDir, pm.IncludeGlobs, pm.IncludeCount);
+    if (srcs.Length == 0) {
+        ConsoleError.WriteLine("z42c build: no sources matched [sources].include");
+        return 1;
+    }
+    ZbcFileZ[] mods = new ZbcFileZ[srcs.Length];
+    int i = 0;
+    while (i < srcs.Length) {
+        string text = File.ReadAllText(srcs[i]);
+        IrModule irm = IrDump.BuildModule(text, srcs[i]);
+        // SourceFile = 项目相对路径（fixture 实证；跨机器可复现）
+        string rel = srcs[i];
+        if (rel.StartsWith(projectDir + "/")) { rel = rel.Substring(projectDir.Length + 1, rel.Length - projectDir.Length - 1); }
+        string[] exports = new string[irm.FuncCount];
+        int e = 0;
+        while (e < irm.FuncCount) { exports[e] = irm.Functions[e].Name; e = e + 1; }
+        mods[i] = new ZbcFileZ(rel, ZpkgBuilder.Sha256Hex(text), irm.Name,
+                               exports, irm.FuncCount, irm);
+        i = i + 1;
+    }
+    bool isExe = pm.Kind == "exe";
+    ZpkgFileZ z = ZpkgBuilder.BuildPacked(pm.Name, pm.Version, isExe, pm.HasEntry, pm.Entry, mods, srcs.Length);
+    if (isExe && z.Entry == "<ambiguous>") {
+        ConsoleError.WriteLine("z42c build: multiple Main candidates; set [project].entry explicitly");
+        return 1;
+    }
+    if (isExe && z.Entry == "") {
+        ConsoleError.WriteLine("z42c build: kind=exe but no Main() found");
+        return 1;
+    }
+    string distDir = Path.Join(projectDir, "dist");
+    Directory.Create(distDir);
+    string outPath = Path.Join(distDir, pm.Name + ".zpkg");
+    File.WriteAllBytes(outPath, ZpkgWriterZ.WritePacked(z).ToBytes());
+    Console.WriteLine("wrote -> " + outPath);
+    return 0;
+}
+
 void _usage() {
     Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse/typecheck front-end)");
     Console.WriteLine("usage:");
@@ -50,4 +100,5 @@ void _usage() {
     Console.WriteLine("  z42c --dump-bound  <file.z42>          type-checked Bound tree");
     Console.WriteLine("  z42c --dump-ir     <file.z42>          .zasm-like IR text");
     Console.WriteLine("  z42c --emit-zbc    <file.z42> <out>    compile to .zbc (subset)");
+    Console.WriteLine("  z42c build         <project.z42.toml>  build packed .zpkg -> dist/");
 }

@@ -303,6 +303,25 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         ci = ci + 1;
     }
     Console.WriteLine("  ✓ byte-compare: 3/3 sources byte-identical (z42c vs C#, incl. DBUG)");
+
+    // build e2e（port-z42c-zpkg-build）：z42c build 产 packed zpkg → z42vm 直跑（entry 烤入）。
+    // zpkg 级 byte-compare 对真 C# CLI 还差 TSIG/IMPL（follow-up change）；此处验证可执行性
+    // + 核心七段（META/NSPC/EXPT/DEPS 已与 C# 逐字节一致，SIGS/MODS 同尺寸仅池索引移位）。
+    string bdir = Path.Join(e2eDir, "buildapp");
+    Directory.Create(bdir);
+    string bsrc = Path.Join(bdir, "app.z42");
+    File.WriteAllText(bsrc, "namespace Check.App;\n\nint Twice(int a) { return a + a; }\n\nclass Counter {\n    int v;\n    int Bump(int d) { v = v + d; return v; }\n}\n\nvoid Main() {\n    var c = new Counter();\n    c.Bump(20);\n    c.Bump(1);\n    int x = Twice(c.Bump(0));\n    int ok = 0;\n    if (x == 42) { ok = 1; }\n    int dummy = 100 / ok;\n}\n");
+    string btoml = Path.Join(bdir, "check.app.z42.toml");
+    File.WriteAllText(btoml, "[project]\nname    = \"check.app\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
+    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("build").Arg(btoml)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ z42c build failed"); return 1; }
+    string appZpkg = Path.Join(bdir, "dist/check.app.zpkg");
+    rc = new Process(vm).Arg(appZpkg)
+        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
+        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ z42c-built zpkg failed to run (exit " + rc.ToString() + ")"); return 1; }
+    Console.WriteLine("  ✓ build e2e: z42c-built check.app.zpkg runs directly on z42vm (entry baked)");
     Console.WriteLine("✅ z42c e2e: self-compiled .zbc executes on z42vm");
     return 0;
 }

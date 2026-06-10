@@ -6,5 +6,8 @@ version = "0.1.0"
 kind    = "lib"
 
 [dependencies]
-"z42c.ir"  = "0.1.0"
-"z42.toml" = "0.1.0"
+"z42c.ir"     = "0.1.0"
+"z42.toml"    = "0.1.0"
+"z42.io"      = "0.1.0"   # SourceDiscovery（Glob/GlobRecursive）
+"z42.crypto"  = "0.1.0"   # ZpkgBuilder.Sha256Hex
+"z42.encoding"= "0.1.0"   # Utf8.GetBytes

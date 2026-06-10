@@ -1,0 +1,108 @@
+// zpkg 组装（port-z42c-zpkg-build BP-2）。镜像 C# ZpkgBuilder.BuildPacked +
+// PackageCompiler.AutoDetectEntry + Sha256Hex。cache .zbc 落盘延后（增量编译物质基础，MVP 不需）。
+namespace Z42.Project;
+
+using Std;
+using Std.Crypto;
+using Std.Encoding;
+using Z42.IR;
+
+public static class ZpkgBuilder {
+    // packed 组装：namespaces 去重（首现序）+ exports FQ 限定（幂等）+ entry（显式或自动检测）。
+    // entryError 经返回值外带：entry=="<ambiguous>" 表歧义（调用方报错退出）。
+    public static ZpkgFileZ BuildPacked(string name, string version, bool isExe, bool hasExplicitEntry,
+                                        string explicitEntry, ZbcFileZ[] modules, int moduleCount) {
+        // namespaces：首现序去重（镜像 C# Distinct 保序）
+        string[] nss = new string[4];
+        int nsc = 0;
+        int i = 0;
+        while (i < moduleCount) {
+            string ns = modules[i].Namespace;
+            bool seen = false;
+            int j = 0;
+            while (j < nsc) { if (nss[j] == ns) { seen = true; } j = j + 1; }
+            if (!seen) {
+                if (nsc == nss.Length) {
+                    string[] b = new string[nss.Length * 2];
+                    int k = 0; while (k < nsc) { b[k] = nss[k]; k = k + 1; }
+                    nss = b;
+                }
+                nss[nsc] = ns; nsc = nsc + 1;
+            }
+            i = i + 1;
+        }
+        // exports：平铺 + FQ 限定（幂等：已带 ns 前缀不再加，镜像 C# QualifyExport）
+        ZpkgExportZ[] exps = new ZpkgExportZ[8];
+        int ec = 0;
+        i = 0;
+        while (i < moduleCount) {
+            ZbcFileZ m = modules[i];
+            int x = 0;
+            while (x < m.ExportCount) {
+                string sym = ZpkgBuilder._qualifyExport(m.Namespace, m.Exports[x]);
+                if (ec == exps.Length) {
+                    ZpkgExportZ[] b = new ZpkgExportZ[exps.Length * 2];
+                    int k = 0; while (k < ec) { b[k] = exps[k]; k = k + 1; }
+                    exps = b;
+                }
+                exps[ec] = new ZpkgExportZ(sym, "func"); ec = ec + 1;
+                x = x + 1;
+            }
+            i = i + 1;
+        }
+        // entry
+        string entry = "";
+        if (isExe) {
+            if (hasExplicitEntry) { entry = explicitEntry; }
+            else { entry = ZpkgBuilder.AutoDetectEntry(exps, ec); }   // ""=无候选 / "<ambiguous>"=歧义
+        }
+        return new ZpkgFileZ(name, version, isExe, entry, nss, nsc, exps, ec,
+                             new ZpkgDepZ[0], 0, modules, moduleCount);
+    }
+
+    // entry 自动检测（镜像 C# AutoDetectEntry / vm.rs resolve_entry 四级优先）：
+    // 1. FQ `.Main` 结尾  2. 裸 `Main`  3. FQ `.main`  4. 裸 `main`。同级多候选 → "<ambiguous>"。
+    public static string AutoDetectEntry(ZpkgExportZ[] exports, int count) {
+        string r = ZpkgBuilder._pick(exports, count, ".Main", "Main");
+        if (r != "") { return r; }
+        return ZpkgBuilder._pick(exports, count, ".main", "main");
+    }
+
+    private static string _pick(ZpkgExportZ[] exports, int count, string fqSuffix, string bare) {
+        string fqHit = "";
+        int fqN = 0;
+        string bareHit = "";
+        int bareN = 0;
+        int i = 0;
+        while (i < count) {
+            string s = exports[i].Symbol;
+            if (s.EndsWith(fqSuffix)) { fqHit = s; fqN = fqN + 1; }
+            else if (s == bare) { bareHit = s; bareN = bareN + 1; }
+            i = i + 1;
+        }
+        if (fqN == 1) { return fqHit; }
+        if (fqN > 1) { return "<ambiguous>"; }
+        if (bareN == 1) { return bareHit; }
+        if (bareN > 1) { return "<ambiguous>"; }
+        return "";
+    }
+
+    private static string _qualifyExport(string ns, string export) {
+        if (ns == "" || export.StartsWith(ns + ".")) { return export; }
+        return ns + "." + export;
+    }
+
+    // 源文本 SHA256 大写 hex（镜像 C# Sha256Hex；fixture 64 字符大写实证）。
+    public static string Sha256Hex(string text) {
+        byte[] hash = Sha256.Hash(Utf8.GetBytes(text));
+        string digits = "0123456789ABCDEF";
+        string s = "";
+        int i = 0;
+        while (i < hash.Length) {
+            int b = (int)hash[i];
+            s = s + digits.Substring((b >> 4) & 0xF, 1) + digits.Substring(b & 0xF, 1);
+            i = i + 1;
+        }
+        return s;
+    }
+}

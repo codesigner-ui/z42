@@ -1,0 +1,197 @@
+// packed `.zpkg` 写入器（port-z42c-zpkg-build BP-3）。镜像 C# ZpkgWriter.WritePacked（七段子集）。
+// 段序铁律：META → STRS → NSPC → EXPT → DEPS → SIGS → MODS；intern 序 1:1 C#
+// （zpkg 元串[namespaces→exports→deps] → 逐模块[ns→src→hash→InternPoolStrings]）。
+// 延后：indexed/FILE、sidecar/MDBG/BLID、TSIG/IMPL（ExportedModules）、stripSymbols。
+namespace Z42.Project;
+
+using Z42.IR;
+using Z42.IR.BinaryFormat;
+
+public static class ZpkgWriterZ {
+    // 版本（须与 C# ZpkgWriter.VersionMajor/Minor 一致；strict-pin。bump 同步见 version-bumping.md 第 5 步）。
+    public static int Major = 0;
+    public static int Minor = 16;   // 2026-06-10 add-field-attribute-reflection：随内嵌 zbc 1.14 联动
+
+    public static ByteWriter WritePacked(ZpkgFileZ zpkg) {
+        var pool = new ZbcStringPool();
+        // ── intern：zpkg 元串（镜像 InternZpkgStrings：namespaces → exports → deps）──
+        int i = 0;
+        while (i < zpkg.NsCount) { pool.Intern(zpkg.Namespaces[i]); i = i + 1; }
+        i = 0;
+        while (i < zpkg.ExportCount) { pool.Intern(zpkg.Exports[i].Symbol); i = i + 1; }
+        i = 0;
+        while (i < zpkg.DepCount) {
+            pool.Intern(zpkg.Deps[i].File);
+            int j = 0;
+            while (j < zpkg.Deps[i].NsCount) { pool.Intern(zpkg.Deps[i].Namespaces[j]); j = j + 1; }
+            i = i + 1;
+        }
+        // ── intern：逐模块（ns → src → hash → 模块全量串）。
+        // z42 无交错数组 int[][] → per-module remap 不在此持有；_buildMods 内按模块重算
+        //（ZbcStringPool.Intern 幂等：全部串已入池 → 重算得到相同索引，零新增）。
+        int mi = 0;
+        while (mi < zpkg.ModuleCount) {
+            ZbcFileZ m = zpkg.Modules[mi];
+            pool.Intern(m.Namespace);
+            pool.Intern(m.SourceFile);
+            pool.Intern(m.SourceHash);
+            int[] remap = new int[m.Module.StringCount];
+            ZbcWriter.InternPoolStrings(m.Module, pool, remap);
+            mi = mi + 1;
+        }
+
+        // ── 七段 ──
+        var meta = ZpkgWriterZ._buildMeta(zpkg);
+        var strs = ZbcWriter.BuildStrs(pool);
+        var nspc = ZpkgWriterZ._buildNspc(zpkg, pool);
+        var expt = ZpkgWriterZ._buildExpt(zpkg, pool);
+        var deps = ZpkgWriterZ._buildDeps(zpkg, pool);
+        var sigs = ZpkgWriterZ._buildSigs(zpkg, pool);
+        var mods = ZpkgWriterZ._buildMods(zpkg, pool);
+
+        string[]     tags  = new string[7];
+        ByteWriter[] datas = new ByteWriter[7];
+        tags[0] = "META"; datas[0] = meta;
+        tags[1] = "STRS"; datas[1] = strs;
+        tags[2] = "NSPC"; datas[2] = nspc;
+        tags[3] = "EXPT"; datas[3] = expt;
+        tags[4] = "DEPS"; datas[4] = deps;
+        tags[5] = "SIGS"; datas[5] = sigs;
+        tags[6] = "MODS"; datas[6] = mods;
+
+        int flags = 1;                       // FlagPacked
+        if (zpkg.IsExe) { flags = flags | 2; }   // FlagExe
+        return ZpkgWriterZ._assemble(tags, datas, 7, flags);
+    }
+
+    // META：name + version + entry（各 u16 长 + UTF-8；lib entry 空串）。
+    private static ByteWriter _buildMeta(ZpkgFileZ zpkg) {
+        var w = new ByteWriter();
+        w.WriteStr(zpkg.Name);
+        w.WriteStr(zpkg.Version);
+        w.WriteStr(zpkg.Entry);
+        return w;
+    }
+
+    private static ByteWriter _buildNspc(ZpkgFileZ zpkg, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(zpkg.NsCount);
+        int i = 0;
+        while (i < zpkg.NsCount) { w.WriteU32(pool.Idx(zpkg.Namespaces[i])); i = i + 1; }
+        return w;
+    }
+
+    // EXPT：count + (symbol idx u32 + kind u8：func=0/type=1/const=2)。
+    private static ByteWriter _buildExpt(ZpkgFileZ zpkg, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(zpkg.ExportCount);
+        int i = 0;
+        while (i < zpkg.ExportCount) {
+            w.WriteU32(pool.Idx(zpkg.Exports[i].Symbol));
+            int kind = 0;
+            if (zpkg.Exports[i].Kind == "type") { kind = 1; }
+            else if (zpkg.Exports[i].Kind == "const") { kind = 2; }
+            w.WriteU8(kind);
+            i = i + 1;
+        }
+        return w;
+    }
+
+    private static ByteWriter _buildDeps(ZpkgFileZ zpkg, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(zpkg.DepCount);
+        int i = 0;
+        while (i < zpkg.DepCount) {
+            ZpkgDepZ d = zpkg.Deps[i];
+            w.WriteU32(pool.Idx(d.File));
+            w.WriteU16(d.NsCount);
+            int j = 0;
+            while (j < d.NsCount) { w.WriteU32(pool.Idx(d.Namespaces[j])); j = j + 1; }
+            i = i + 1;
+        }
+        return w;
+    }
+
+    // SIGS：全模块函数总数 + 平铺条目（条目层复用 zbc WriteSigEntries——单源防漂移）。
+    private static ByteWriter _buildSigs(ZpkgFileZ zpkg, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        int total = 0;
+        int i = 0;
+        while (i < zpkg.ModuleCount) { total = total + zpkg.Modules[i].Module.FuncCount; i = i + 1; }
+        w.WriteU32(total);
+        i = 0;
+        while (i < zpkg.ModuleCount) {
+            IrModule m = zpkg.Modules[i].Module;
+            ZbcWriter.WriteSigEntries(w, m.Functions, m.FuncCount, pool);
+            i = i + 1;
+        }
+        return w;
+    }
+
+    // MODS：count + 每模块{ns,src,hash idx + fnCount u16 + firstSigIdx u32 +
+    //        func_len+体, type_len+体, dbug_len+体, regt_len+体, tidx_len(0)}。
+    // 体复用 zbc 段构建器（全局池 + per-module remap + per-module TokenAllocator）。
+    private static ByteWriter _buildMods(ZpkgFileZ zpkg, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(zpkg.ModuleCount);
+        int firstSigIdx = 0;
+        int mi = 0;
+        while (mi < zpkg.ModuleCount) {
+            ZbcFileZ m = zpkg.Modules[mi];
+            IrModule irm = m.Module;
+            var alloc = TokenAllocator.FromModule(irm);
+            // remap 重算（Intern 幂等；预扫已全量入池 → 索引相同）
+            int[] remap = new int[irm.StringCount];
+            int si = 1;
+            while (si < irm.StringCount) { remap[si] = pool.Intern(irm.StringPool[si]); si = si + 1; }
+            ByteWriter funcData = ZbcWriter.BuildFunc(irm.Functions, irm.FuncCount, pool, remap, alloc);
+            ByteWriter typeData = new ByteWriter();
+            if (irm.ClassCount > 0) { typeData = ZbcWriter.BuildType(irm.Classes, irm.ClassCount, pool); }
+            ByteWriter dbugData = new ByteWriter();
+            if (ZbcWriter.HasDebug(irm)) { dbugData = ZbcWriter.BuildDbug(irm.Functions, irm.FuncCount, pool); }
+            ByteWriter regtData = ZbcWriter.BuildRegt(irm.Functions, irm.FuncCount);
+
+            w.WriteU32(pool.Idx(m.Namespace));
+            w.WriteU32(pool.Idx(m.SourceFile));
+            w.WriteU32(pool.Idx(m.SourceHash));
+            w.WriteU16(irm.FuncCount);
+            w.WriteU32(firstSigIdx);
+            w.WriteU32(funcData.Len());
+            w.AppendWriter(funcData);
+            w.WriteU32(typeData.Len());
+            if (typeData.Len() > 0) { w.AppendWriter(typeData); }
+            w.WriteU32(dbugData.Len());
+            if (dbugData.Len() > 0) { w.AppendWriter(dbugData); }
+            w.WriteU32(regtData.Len());
+            if (regtData.Len() > 0) { w.AppendWriter(regtData); }
+            w.WriteU32(0);   // tidx_len（z42c IrModule 无 TestIndex → 0）
+            firstSigIdx = firstSigIdx + irm.FuncCount;
+            mi = mi + 1;
+        }
+        return w;
+    }
+
+    // 装配：header("ZPK\0" + major + minor + flags + secCount + reserved) + directory + data。
+    private static ByteWriter _assemble(string[] tags, ByteWriter[] datas, int secCount, int flags) {
+        var w = new ByteWriter();
+        w.WriteAsciiBytes("ZPK");
+        w.WriteU8(0);
+        w.WriteU16(ZpkgWriterZ.Major);
+        w.WriteU16(ZpkgWriterZ.Minor);
+        w.WriteU16(flags);
+        w.WriteU16(secCount);
+        w.WriteU32(0);
+        int offset = 16 + secCount * 12;
+        int i = 0;
+        while (i < secCount) {
+            w.WriteAsciiBytes(tags[i]);
+            w.WriteU32(offset);
+            w.WriteU32(datas[i].Len());
+            offset = offset + datas[i].Len();
+            i = i + 1;
+        }
+        i = 0;
+        while (i < secCount) { w.AppendWriter(datas[i]); i = i + 1; }
+        return w;
+    }
+}

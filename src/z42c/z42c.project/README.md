@@ -20,3 +20,14 @@
 ## 待移植（后续增量，见 port-z42c-project tasks）
 workspace 继承 / include 链 / policy / `[[exe]]` targets / profiles / tests·bench / 路径模板 / 源文件 glob 发现；
 **ZpkgReader / ZpkgWriter（byte-identical，依赖 z42c.ir 的 ZbcFile）** / ZpkgBuilder。
+
+## zpkg 构建链（port-z42c-zpkg-build，2026-06-10）
+
+| 文件 | 职责 |
+|------|------|
+| `src/SourceDiscovery.z42` | `[sources].include` glob（`**/` 递归）→ 排除 dist/.cache → Ordinal 排序 |
+| `src/PackageTypes.z42` | ZbcFileZ / ZpkgExportZ / ZpkgDepZ / ZpkgFileZ（packed 子集模型）|
+| `src/ZpkgBuilder.z42` | 组装：ns 去重 + exports FQ 幂等 + entry 四级自动检测 + Sha256Hex |
+| `src/ZpkgWriter.z42` | packed 七段（META/STRS/NSPC/EXPT/DEPS/SIGS/MODS）；MODS 体复用 z42c.ir 段构建器（单源防漂移）|
+
+对真 C# CLI：META/NSPC/EXPT/DEPS 逐字节相等；全段 byte-identical 待 TSIG/IMPL（follow-up）。
