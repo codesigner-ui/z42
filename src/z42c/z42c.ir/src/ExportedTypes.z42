@@ -1,0 +1,132 @@
+// 导出类型签名模型（port-z42c-tsig TS-1）。镜像 C# z42.IR/ExportedTypes.cs。
+// TSIG/IMPL 段的内存形态；受限写法 typed array + count。
+namespace Z42.IR;
+
+public sealed class ExportedParamZ {
+    public string Name;       // 方法/函数 "p{i}"；委托 "arg{i}"（C# 实测）
+    public string TypeName;
+    public ExportedParamZ(string name, string typeName) { this.Name = name; this.TypeName = typeName; }
+}
+
+public sealed class ExportedMethodZ {
+    public string           Name;
+    public string           ReturnType;
+    public string           Visibility;   // "public"/"private"/"protected"/"internal"
+    public bool             IsStatic;
+    public bool             IsVirtual;
+    public bool             IsAbstract;
+    public int              MinArgCount;
+    public ExportedParamZ[] Params;
+    public int              ParamCount;
+    public ExportedMethodZ(string name, string returnType, string visibility,
+                           bool isStatic, bool isVirtual, bool isAbstract, int minArgCount,
+                           ExportedParamZ[] params_, int paramCount) {
+        this.Name = name; this.ReturnType = returnType; this.Visibility = visibility;
+        this.IsStatic = isStatic; this.IsVirtual = isVirtual; this.IsAbstract = isAbstract;
+        this.MinArgCount = minArgCount; this.Params = params_; this.ParamCount = paramCount;
+    }
+}
+
+public sealed class ExportedFieldZ {
+    public string Name;
+    public string TypeName;
+    public string Visibility;
+    public bool   IsStatic;
+    public ExportedFieldZ(string name, string typeName, string visibility, bool isStatic) {
+        this.Name = name; this.TypeName = typeName; this.Visibility = visibility; this.IsStatic = isStatic;
+    }
+}
+
+public sealed class ExportedClassZ {
+    public string            Name;        // 裸名（非 FQ；C# ct.Name 实测）
+    public bool              HasBase;
+    public string            BaseName;    // 短名（"Object"——TSIG 用符号表基名，区别于 TYPE 段的 "Std.Object"）
+    public ExportedFieldZ[]  Fields;   public int FieldCount;
+    public ExportedMethodZ[] Methods;  public int MethodCount;
+    public ExportedClassZ(string name, bool hasBase, string baseName,
+                          ExportedFieldZ[] fields, int fieldCount,
+                          ExportedMethodZ[] methods, int methodCount) {
+        this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
+        this.Fields = fields; this.FieldCount = fieldCount;
+        this.Methods = methods; this.MethodCount = methodCount;
+    }
+}
+
+public sealed class ExportedInterfaceZ {
+    public string            Name;
+    public ExportedMethodZ[] Methods;     public int MethodCount;
+    public string[]          TypeParams;  public int TpCount;
+    public ExportedInterfaceZ(string name, ExportedMethodZ[] methods, int methodCount,
+                              string[] typeParams, int tpCount) {
+        this.Name = name; this.Methods = methods; this.MethodCount = methodCount;
+        this.TypeParams = typeParams; this.TpCount = tpCount;
+    }
+}
+
+public sealed class ExportedEnumMemberZ {
+    public string Name;
+    public long   Value;
+    public ExportedEnumMemberZ(string name, long value) { this.Name = name; this.Value = value; }
+}
+
+public sealed class ExportedEnumZ {
+    public string                Name;
+    public ExportedEnumMemberZ[] Members;
+    public int                   MemberCount;
+    public ExportedEnumZ(string name, ExportedEnumMemberZ[] members, int memberCount) {
+        this.Name = name; this.Members = members; this.MemberCount = memberCount;
+    }
+}
+
+public sealed class ExportedFuncZ {
+    public string           Name;        // 短名（sem.Funcs 键；非 FQ——C# 字节实测）
+    public string           ReturnType;
+    public int              MinArgCount;
+    public ExportedParamZ[] Params;
+    public int              ParamCount;
+    public ExportedFuncZ(string name, string returnType, int minArgCount,
+                         ExportedParamZ[] params_, int paramCount) {
+        this.Name = name; this.ReturnType = returnType; this.MinArgCount = minArgCount;
+        this.Params = params_; this.ParamCount = paramCount;
+    }
+}
+
+public sealed class ExportedDelegateZ {
+    public string           Name;
+    public string           ReturnType;
+    public ExportedParamZ[] Params;      public int ParamCount;
+    public string[]         TypeParams;  public int TpCount;
+    public bool             HasContainer;
+    public string           ContainerClass;
+    public ExportedDelegateZ(string name, string returnType,
+                             ExportedParamZ[] params_, int paramCount,
+                             string[] typeParams, int tpCount,
+                             bool hasContainer, string containerClass) {
+        this.Name = name; this.ReturnType = returnType;
+        this.Params = params_; this.ParamCount = paramCount;
+        this.TypeParams = typeParams; this.TpCount = tpCount;
+        this.HasContainer = hasContainer; this.ContainerClass = containerClass;
+    }
+}
+
+public sealed class ExportedModuleZ {
+    public string               Namespace;
+    public ExportedClassZ[]     Classes;     public int ClassCount;
+    public ExportedInterfaceZ[] Interfaces;  public int InterfaceCount;
+    public ExportedEnumZ[]      Enums;       public int EnumCount;
+    public ExportedFuncZ[]      Functions;   public int FunctionCount;
+    public ExportedDelegateZ[]  Delegates;   public int DelegateCount;
+    public ExportedModuleZ(string ns,
+                           ExportedClassZ[] classes, int classCount,
+                           ExportedInterfaceZ[] interfaces, int interfaceCount,
+                           ExportedEnumZ[] enums, int enumCount,
+                           ExportedFuncZ[] functions, int functionCount,
+                           ExportedDelegateZ[] delegates, int delegateCount) {
+        this.Namespace = ns;
+        this.Classes = classes; this.ClassCount = classCount;
+        this.Interfaces = interfaces; this.InterfaceCount = interfaceCount;
+        this.Enums = enums; this.EnumCount = enumCount;
+        this.Functions = functions; this.FunctionCount = functionCount;
+        this.Delegates = delegates; this.DelegateCount = delegateCount;
+    }
+}

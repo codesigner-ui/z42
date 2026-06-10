@@ -18,9 +18,9 @@ ZbcFileZ _mod(string ns, string fname) {
 }
 
 [Test]
-void test_sha256_hex_uppercase() {
-    // SHA256("abc") 标准向量（大写 hex，镜像 C# Sha256Hex/fixture 形态）
-    Assert.Equal("BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD",
+void test_sha256_hex_form() {
+    // SHA256("abc") 标准向量（"sha256:" 前缀 + 小写——真 C# CLI 字节实测形态，port-z42c-tsig 校准）
+    Assert.Equal("sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
                  ZpkgBuilder.Sha256Hex("abc"));
 }
 

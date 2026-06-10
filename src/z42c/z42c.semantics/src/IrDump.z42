@@ -48,6 +48,15 @@ public static class IrDump {
         return IrDump._buildF(src, file);
     }
 
+    // 公开：源→导出类型签名（TSIG；port-z42c-tsig）。独立 parse+collect（与 BuildModule 分离，
+    // 形态简单；增量编译期再合并为单趟）。
+    public static ExportedModuleZ ExtractExports(string src, string file, string ns) {
+        var p = new Parser(src, file);
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().Collect(cu);
+        return ExportedTypeExtractor.Extract(cu, symbols, ns);
+    }
+
     private static IrModule _buildF(string src, string file) {
         var p = new Parser(src, file);
         var cu = p.ParseCompilationUnit();

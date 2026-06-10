@@ -33,3 +33,8 @@
 
 ## 增量进度
 1A 最小类型检查 ✅ / 1B 运算+控制流 ✅ / 1C 调用+receiver+继承 ✅ / 1D is·as·new·数组 ✅ / 1E 三目·?? ✅ / 2A 泛型类·方法·实例化 ✅ / **2B where 约束求解（可行子集：base-class/class/struct/型参引用+互斥；interface·enum·new()·func 延后）✅**。下一步 codegen（Bound→IR，需先 map z42c.ir，单独 design）。
+
+## ExportedTypeExtractor（port-z42c-tsig，2026-06-10）
+TSIG 导出面提取：用户类/函数按 **CU 声明序**（hashed StrMap 不可迭代）+ 编译器级固定内建面静态表
+（Object 四方法前置 / 11 接口 / GCHandleType / Action·Func·Predicate 委托——镜像 C# SymbolCollector
+prelude 注入，C# 同源字节实测校准）。

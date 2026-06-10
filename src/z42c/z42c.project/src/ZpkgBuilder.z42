@@ -92,11 +92,11 @@ public static class ZpkgBuilder {
         return ns + "." + export;
     }
 
-    // 源文本 SHA256 大写 hex（镜像 C# Sha256Hex；fixture 64 字符大写实证）。
+    // 源文本哈希（真 C# CLI 字节实测："sha256:" 前缀 + 小写 hex；fixture 的大写无前缀是测试合成形态）。
     public static string Sha256Hex(string text) {
         byte[] hash = Sha256.Hash(Utf8.GetBytes(text));
-        string digits = "0123456789ABCDEF";
-        string s = "";
+        string digits = "0123456789abcdef";
+        string s = "sha256:";
         int i = 0;
         while (i < hash.Length) {
             int b = (int)hash[i];

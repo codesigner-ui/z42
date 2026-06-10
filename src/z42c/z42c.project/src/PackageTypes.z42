@@ -46,6 +46,7 @@ public sealed class ZpkgFileZ {
     public ZpkgExportZ[] Exports;     public int ExportCount;
     public ZpkgDepZ[]    Deps;        public int DepCount;
     public ZbcFileZ[]    Modules;     public int ModuleCount;
+    public ExportedModuleZ[] Exported; public int ExportedCount;   // TSIG/IMPL（每模块一条）
     public ZpkgFileZ(string name, string version, bool isExe, string entry,
                      string[] namespaces, int nsCount,
                      ZpkgExportZ[] exports, int exportCount,
@@ -56,5 +57,6 @@ public sealed class ZpkgFileZ {
         this.Exports = exports; this.ExportCount = exportCount;
         this.Deps = deps; this.DepCount = depCount;
         this.Modules = modules; this.ModuleCount = moduleCount;
+        this.Exported = new ExportedModuleZ[0]; this.ExportedCount = 0;
     }
 }

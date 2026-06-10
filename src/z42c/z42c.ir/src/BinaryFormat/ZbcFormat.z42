@@ -45,22 +45,24 @@ public static class Tag {
     public static int Char = 0x0C; public static int Str = 0x0D;
     public static int Object = 0x20; public static int Array = 0x21;
 
-    // 类型名 → tag（镜像 C# TypeTags.FromString；canonical + keyword 双拼写）。
+    // 类型名 → tag。**逐字镜像 C# TypeTags.FromString**：仅 str/int/long/double/float 这些拼写命中；
+    // "string"/"short"/"byte"/"uint" 等都落 default→Object（0x20）——zpkg SIGS 对账实证
+    // （Hello ret "string" C# 写 0x20 非 0x0D；早期多拼写版从未被 string-ret 函数测过）。
     public static int FromName(string t) {
         if (t == "void") { return Tag.Unknown; }
         if (t == "bool") { return Tag.Bool; }
         if (t == "i8") { return Tag.I8; }
-        if (t == "i16" || t == "short") { return Tag.I16; }
+        if (t == "i16") { return Tag.I16; }
         if (t == "i32" || t == "int") { return Tag.I32; }
         if (t == "i64" || t == "long") { return Tag.I64; }
-        if (t == "u8" || t == "byte") { return Tag.U8; }
-        if (t == "u16" || t == "ushort") { return Tag.U16; }
-        if (t == "u32" || t == "uint") { return Tag.U32; }
-        if (t == "u64" || t == "ulong") { return Tag.U64; }
+        if (t == "u8") { return Tag.U8; }
+        if (t == "u16") { return Tag.U16; }
+        if (t == "u32") { return Tag.U32; }
+        if (t == "u64") { return Tag.U64; }
         if (t == "f32" || t == "float") { return Tag.F32; }
         if (t == "f64" || t == "double") { return Tag.F64; }
         if (t == "char") { return Tag.Char; }
-        if (t == "str" || t == "string") { return Tag.Str; }
+        if (t == "str") { return Tag.Str; }
         return Tag.Object;
     }
 

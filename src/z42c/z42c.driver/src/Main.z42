@@ -64,9 +64,8 @@ int _build(string tomlPath) {
     while (i < srcs.Length) {
         string text = File.ReadAllText(srcs[i]);
         IrModule irm = IrDump.BuildModule(text, srcs[i]);
-        // SourceFile = 项目相对路径（fixture 实证；跨机器可复现）
+        // SourceFile = 发现到的完整路径原样（真 C# CLI 字节实测；fixture 的相对化是测试合成形态）
         string rel = srcs[i];
-        if (rel.StartsWith(projectDir + "/")) { rel = rel.Substring(projectDir.Length + 1, rel.Length - projectDir.Length - 1); }
         string[] exports = new string[irm.FuncCount];
         int e = 0;
         while (e < irm.FuncCount) { exports[e] = irm.Functions[e].Name; e = e + 1; }
@@ -74,8 +73,17 @@ int _build(string tomlPath) {
                                exports, irm.FuncCount, irm);
         i = i + 1;
     }
+    // TSIG：每模块导出类型签名（port-z42c-tsig）
+    ExportedModuleZ[] exported = new ExportedModuleZ[srcs.Length];
+    i = 0;
+    while (i < srcs.Length) {
+        exported[i] = IrDump.ExtractExports(File.ReadAllText(srcs[i]), srcs[i], mods[i].Namespace);
+        i = i + 1;
+    }
     bool isExe = pm.Kind == "exe";
     ZpkgFileZ z = ZpkgBuilder.BuildPacked(pm.Name, pm.Version, isExe, pm.HasEntry, pm.Entry, mods, srcs.Length);
+    z.Exported = exported;
+    z.ExportedCount = srcs.Length;
     if (isExe && z.Entry == "<ambiguous>") {
         ConsoleError.WriteLine("z42c build: multiple Main candidates; set [project].entry explicitly");
         return 1;
