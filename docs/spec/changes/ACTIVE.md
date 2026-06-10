@@ -9,7 +9,7 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17 SIGS per-param 块；dotnet 1556/1556 + e2e）。⚠️ 暴露 pre-existing 多文件 project-build 命名空间双重限定 bug（非本 change，待独立 fix；见 memory）|
-| `runtime` | add-pal-fs | 2026-06-11 | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`build_type` 写继承 `Name` 槽 + 移除 `builtin_type_name`；cargo 759+21）。add-pal-fs 继续持有（PAL Phase 2，文件零重叠）|
+| `runtime` | —（空闲）| — | add-pal-fs 已归档 2026-06-11 → 释放（PAL Phase 2：corelib/fs.rs 去 cfg → pal/fs.rs make_executable/symlink；cargo 759 + pal::fs 2 单测 + z42.io 45/45 e2e）|
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
 | `z42c` | **port-z42c-char（DRAFT 待审）** | 2026-06-11 | instance-import 归档接力。char 字面量前端整链（lexer→parser→typecheck→codegen→writer；ZW-1E 挂账缺口，编译 z42c 自身必经）+ charcheck zbc 对账第 4 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
@@ -51,6 +51,5 @@
 | ~~fix-chained-property-dispatch~~ | compiler —— ✅ 已归档 2026-06-10（链式 getter 派发 `obj.GetType().BaseType.Name`；唯一根因 P1=Object stub GetType 返 Unknown→改取真实 Std.Type；纯 typecheck，无 zbc 格式/字节漂移；dotnet GoldenTests 1555/1555 + 链式 e2e 全过）|
 | ~~add-parameter-attribute-reflection~~ | compiler + runtime + stdlib + z42c —— ✅ 已归档 2026-06-10（参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17，SIGS 每参数 attr-ref 块；z42c writer 同步；dotnet 1556/1556 + param_attributes.z42 e2e + cargo 757+21 + format 78。xtask gate 阻塞于 pre-existing 多文件 project-build 命名空间双重限定 bug → User 裁决单独 fix change 跟踪，本 change 走 dotnet 权威门）|
 | fix-multifile-project-namespace-qualify | compiler（待开；pre-existing bug，见 memory `reference_multifile_project_namespace_double_qualify_bug`）|
-| add-pal-fs | runtime（PAL Phase 2：corelib/fs.rs + pal/fs.rs；与 align-type-memberinfo-hierarchy 例外共存，文件零重叠）|
 | ~~align-type-memberinfo-hierarchy~~ | stdlib + runtime —— ✅ 已归档 2026-06-11（`Std.Type : MemberInfo`；`typeof(C) is MemberInfo` 真，`Name` 由基类统一提供；短名基类无需编译器改动、无格式 bump；dotnet 1557/1557 + type_is_memberinfo.z42 e2e + cargo 759+21）|
 | plan-0.3.x-three-streams | docs（不上锁） |
