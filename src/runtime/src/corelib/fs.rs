@@ -374,14 +374,7 @@ fn unique_temp_path(prefix: &str, suffix: &str) -> String {
 /// （NTFS 文件可执行性由扩展名而非 ACL bit 决定）。
 pub fn builtin_file_make_executable(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path = arg_str(args, 0, "__file_make_executable")?;
-    #[cfg(unix)] {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(path)?.permissions();
-        let mode = perms.mode() | 0o111;
-        perms.set_mode(mode);
-        std::fs::set_permissions(path, perms)?;
-    }
-    #[cfg(not(unix))] { let _ = path; }
+    crate::pal::fs::make_executable(path)?;
     Ok(Value::Null)
 }
 
@@ -397,12 +390,7 @@ pub fn builtin_file_link(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 pub fn builtin_file_symlink(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let src = arg_str(args, 0, "__file_symlink")?;
     let dst = arg_str(args, 1, "__file_symlink")?;
-    #[cfg(unix)] {
-        std::os::unix::fs::symlink(src, dst)?;
-    }
-    #[cfg(not(unix))] {
-        anyhow::bail!("File.SymLink: not implemented on this platform");
-    }
+    crate::pal::fs::symlink(src, dst)?;
     Ok(Value::Null)
 }
 

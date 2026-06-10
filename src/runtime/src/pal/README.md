@@ -14,14 +14,17 @@ Phase 2-N migration 路径见 [`docs/design/runtime/pal.md`](../../../../docs/de
 | 文件 | 职责 |
 |------|------|
 | `system.rs` | `hostname()` / `os_version()` —— Phase 1 |
+| `fs.rs` | `make_executable()` / `symlink()` —— Phase 2 |
 
-未来：`fs.rs` (Phase 2) / `signal.rs` (Phase 3) / `thread.rs` (Phase 4) /
-`mem.rs` (Phase 5)。
+未来：`signal.rs` (Phase 3) / `thread.rs` (Phase 4，consumer-gated：随多线程
+runtime 落地) / `mem.rs` (Phase 5，consumer-gated：随 GC bump allocator 落地)。
 
 ## 入口点
 
 `pal::system::hostname()` — `Option<String>`，None 在 Windows / WASM
 `pal::system::os_version()` — `String`，空字符串表示 syscall 失败
+`pal::fs::make_executable(path)` — `Result<()>`，unix 加 u+x g+x o+x；非 unix no-op
+`pal::fs::symlink(src, dst)` — `Result<()>`，unix 建符号链接；非 unix bail
 
 ## 不变量（必须遵守）
 

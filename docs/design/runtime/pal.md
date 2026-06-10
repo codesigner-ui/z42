@@ -19,7 +19,7 @@ CoreCLR `src/coreclr/pal/` 含 ~50 个文件抽象：
 | Concern | CoreCLR pal/ 文件 | z42 pal/ 计划 | Status |
 |---|---|---|---|
 | Thread / mutex / TLS | `thread.cpp` / `mutex.cpp` | `pal/thread.rs` (Phase 4) | Pending |
-| File I/O | `file.cpp` / `path.cpp` | `pal/fs.rs` (Phase 2) | Pending |
+| File I/O | `file.cpp` / `path.cpp` | `pal/fs.rs` (Phase 2) | **Phase 2 done** |
 | Signal / exceptions | `signal.cpp` | `pal/signal.rs` (Phase 3) | Pending |
 | Memory / mmap | `virtual.cpp` | `pal/mem.rs` (Phase 5) | Pending |
 | Process / environ | `process.cpp` / `environ.cpp` | `pal/system.rs` 已起步 | Phase 1 done |
@@ -64,20 +64,22 @@ pub fn os_version() -> String;
 
 ## Phase 2-N Migration Plan
 
-### Phase 2: `pal/fs.rs` — 文件系统
+### ~~Phase 2: `pal/fs.rs` — 文件系统~~ — **✅ 已落地 2026-06-11 (`add-pal-fs`)**
 
-迁移 `corelib/fs.rs` 中 4 处 `#[cfg(unix)]` 块：
+迁移 `corelib/fs.rs` 的 2 个 `#[cfg(unix)]` 块（`make_executable` / `symlink`）：
 
 ```rust
-// pal/fs.rs (Phase 2)
-pub fn make_executable(path: &str) -> Result<()>;
-pub fn symlink(src: &str, dst: &str) -> Result<()>;
-pub fn read_permissions(path: &str) -> Result<u32>;
-pub fn set_permissions(path: &str, mode: u32) -> Result<()>;
+// pal/fs.rs
+pub fn make_executable(path: &str) -> Result<()>;  // unix: mode|0o111；非 unix no-op
+pub fn symlink(src: &str, dst: &str) -> Result<()>; // unix symlink；非 unix bail
 ```
 
-`corelib/fs.rs::builtin_file_make_executable` 等改 call `pal::fs::*`，
-零 cfg。
+`corelib/fs.rs::builtin_file_make_executable` / `builtin_file_symlink` 现 call
+`crate::pal::fs::*`，零 cfg（行为保持，cargo 759+pal 2 单测 + z42.io 45/45 e2e）。
+
+> 原设计列的 `read_permissions` / `set_permissions` 是 make_executable 的 building
+> block——当前无独立 consumer，按 YAGNI 折进 `make_executable`（read+modify+set 一体），
+> 单独 split 留待有 consumer 时（不做 speculative API）。
 
 ### Phase 3: `pal/signal.rs` — POSIX signal handler
 
@@ -91,11 +93,12 @@ pub fn signal_safe_write_str(fd: SignalSafeFd, s: &str);
 
 Windows VEH（Phase 3.1）走相同接口的不同 impl。
 
-### Phase 4: `pal/thread.rs` — 多线程基础
+### Phase 4: `pal/thread.rs` — 多线程基础（**consumer-gated**）
 
 当前 `thread/` 是 stub。Phase 4 引入 PAL 抽象 thread spawn / TLS /
 join 作为 multi-thread runtime 的底座（review.md add-multithreading-foundation
-spec 进行中，可对接）。
+spec 进行中，可对接）。**不 speculative 提前做**——它是为多线程 runtime 服务的新
+抽象（非现有平台代码迁移），无 consumer 前空 API 没意义；随多线程 runtime 一起落地。
 
 ```rust
 // pal/thread.rs (Phase 4)
@@ -104,10 +107,12 @@ pub fn current_id() -> ThreadId;
 pub fn yield_now();
 ```
 
-### Phase 5: `pal/mem.rs` — 页对齐分配 / mmap
+### Phase 5: `pal/mem.rs` — 页对齐分配 / mmap（**consumer-gated**）
 
 GC bump allocator（review.md C6）需要页对齐大块虚拟内存。先用 std::alloc
-顶住，Phase 5 切到 mmap / VirtualAlloc 抽象。
+顶住，Phase 5 切到 mmap / VirtualAlloc 抽象。**不 speculative 提前做**——
+它是为 bump allocator 服务的新抽象（非现有平台代码迁移），随 GC bump allocator
+（C6，目前未实现）一起落地。
 
 ```rust
 // pal/mem.rs (Phase 5)

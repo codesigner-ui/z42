@@ -8,17 +8,17 @@
 //!
 //! # Current submodules
 //!
-//! - [`system`] — hostname / OS version (Phase 1; this commit).
+//! - [`system`] — hostname / OS version (Phase 1).
+//! - [`fs`] — file-system OS calls: `make_executable` / `symlink` (Phase 2).
 //!
 //! # Future submodules (independent specs)
 //!
-//! - `fs` — file-system OS calls (Phase 2; migrates `corelib/fs.rs`
-//!   make_executable / symlink).
 //! - `signal` — POSIX signal handler dispatch (Phase 3; migrates
 //!   `signal_handler.rs`).
 //! - `thread` — pthread / Windows-thread primitives backing the future
-//!   multi-thread runtime.
-//! - `mem` — page-aligned alloc / mmap / mprotect for the GC bump
-//!   allocator.
+//!   multi-thread runtime (consumer-gated: lands with the multi-thread runtime).
+//! - `mem` — page-aligned alloc / mmap / mprotect for the GC bump allocator
+//!   (consumer-gated: lands with the bump allocator).
 
 pub mod system;
+pub mod fs;
