@@ -207,7 +207,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__obj_make_weak", object::builtin_obj_make_weak),
     ("__obj_upgrade_weak", object::builtin_obj_upgrade_weak),
     // ── Reflection (add-reflection-mvp, 2026-06-08) ─────────────────────────────
-    ("__type_name",          reflection::builtin_type_name),
+    // align-type-memberinfo-hierarchy: `__type_name` removed — Type.Name inherits
+    // from MemberInfo (build_type populates the field), no native getter.
     ("__type_full_name",     reflection::builtin_type_full_name),
     ("__type_fields",        reflection::builtin_type_fields),
     ("__type_methods",       reflection::builtin_type_methods),

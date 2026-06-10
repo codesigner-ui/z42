@@ -1,0 +1,33 @@
+// align-type-memberinfo-hierarchy: Std.Type : MemberInfo. typeof(C) / GetType()
+// instances ARE MemberInfo; Name comes from the inherited base field; __name
+// (low-level slot) still readable; FullName still works.
+using Std.Reflection;
+
+class Circle {
+    public int radius;
+}
+
+void Main() {
+    Type t = typeof(Circle);
+
+    // Type IS-A MemberInfo (was false before this change)
+    Assert.True(t is MemberInfo);
+
+    // Name via the inherited MemberInfo field
+    Assert.Equal("Circle", t.Name);
+
+    // Reading through a MemberInfo-typed reference reads the same field
+    MemberInfo m = t;
+    Assert.Equal("Circle", m.Name);
+
+    // FullName still works (kept native; MemberInfo has no FullName)
+    Assert.Equal("Circle", t.FullName);   // top-level class → FullName == simple name
+
+    // Low-level backing slot retained for golden / z42.test compatibility
+    Assert.Equal("Circle", t.__name);
+
+    // GetType() path too
+    Circle c = new Circle();
+    Assert.True(c.GetType() is MemberInfo);
+    Assert.Equal("Circle", c.GetType().Name);
+}

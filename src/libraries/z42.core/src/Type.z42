@@ -12,16 +12,21 @@ namespace Std;
 //
 // Mirrors C# `System.Type` (read-only subset; no `Invoke` / `MakeGenericType`
 // — those land with generic instantiation in 0.5.x).
-public sealed class Type {
-    // VM-written backing slots. Prefer the `Name` / `FullName` properties;
+// align-type-memberinfo-hierarchy (2026-06-11): `Type : MemberInfo` — Type IS-A
+// reflection member (mirrors .NET `System.Type : MemberInfo`), so `typeof(C) is
+// MemberInfo` holds and `Name` comes from the shared `MemberInfo` base (one
+// mechanism, not Type's old `[Native]` getter). Short-name base resolves via the
+// global `_classes` map (MemberInfo is a same-package z42.core class).
+public sealed class Type : MemberInfo {
+    // VM-written backing slots. Prefer the inherited `Name` property + `FullName`;
     // these remain public for the low-level golden tests + `z42.test` that read
     // them directly.
     public string __name;
     public string __fullName;
 
-    // Unqualified class name, e.g. "Circle".
-    [Native("__type_name")]
-    public extern string Name { get; }
+    // `Name` (unqualified class name, e.g. "Circle") is inherited from
+    // `MemberInfo` — the VM writes it into the inherited field slot when it
+    // constructs a Type instance (build_type), same as FieldInfo/MethodInfo.
 
     // Fully-qualified name including namespace, e.g. "geometry.Circle".
     [Native("__type_full_name")]

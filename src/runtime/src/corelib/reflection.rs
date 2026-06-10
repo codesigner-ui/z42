@@ -107,6 +107,14 @@ fn build_type(ctx: &VmContext, simple: &str, full: &str, native: NativeData) -> 
     match ctx.try_lookup_type(well_known_names::STD_TYPE) {
         Some(type_td) => {
             let mut slots = vec![Value::Null; type_td.fields.len()];
+            // align-type-memberinfo-hierarchy: `Name` is inherited from
+            // `Std.Reflection.MemberInfo` (Type's base) — populate that slot so
+            // `typeof(C).Name` / `(MemberInfo)typeof(C)).Name` resolve via the
+            // shared base field (same as FieldInfo/MethodInfo). `__name` retained
+            // for low-level golden / z42.test direct reads.
+            if let Some(&i) = type_td.field_index.get("Name") {
+                slots[i] = Value::Str(simple.to_string().into());
+            }
             if let Some(&i) = type_td.field_index.get("__name") {
                 slots[i] = Value::Str(simple.to_string().into());
             }
@@ -176,10 +184,9 @@ fn read_type_str_slot(args: &[Value], field: &str) -> Value {
     Value::Null
 }
 
-/// `__type_name(typeObj) -> string` — unqualified name (`Type.Name`).
-pub fn builtin_type_name(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    Ok(read_type_str_slot(args, "__name"))
-}
+// align-type-memberinfo-hierarchy (2026-06-11): `__type_name` / `builtin_type_name`
+// removed — `Type.Name` now resolves to the inherited `Std.Reflection.MemberInfo`
+// `Name` field (populated by `build_type`), no native getter.
 
 /// `__type_full_name(typeObj) -> string` — fully-qualified name (`Type.FullName`).
 pub fn builtin_type_full_name(_ctx: &VmContext, args: &[Value]) -> Result<Value> {

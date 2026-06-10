@@ -51,4 +51,5 @@
 | ~~add-parameter-attribute-reflection~~ | compiler + runtime + stdlib + z42c —— ✅ 已归档 2026-06-10（参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17，SIGS 每参数 attr-ref 块；z42c writer 同步；dotnet 1556/1556 + param_attributes.z42 e2e + cargo 757+21 + format 78。xtask gate 阻塞于 pre-existing 多文件 project-build 命名空间双重限定 bug → User 裁决单独 fix change 跟踪，本 change 走 dotnet 权威门）|
 | fix-multifile-project-namespace-qualify | compiler（待开；pre-existing bug，见 memory `reference_multifile_project_namespace_double_qualify_bug`）|
 | add-pal-fs | runtime（PAL Phase 2：corelib/fs.rs + pal/fs.rs；与 align-type-memberinfo-hierarchy 例外共存，文件零重叠）|
+| ~~align-type-memberinfo-hierarchy~~ | stdlib + runtime —— ✅ 已归档 2026-06-11（`Std.Type : MemberInfo`；`typeof(C) is MemberInfo` 真，`Name` 由基类统一提供；短名基类无需编译器改动、无格式 bump；dotnet 1557/1557 + type_is_memberinfo.z42 e2e + cargo 759+21）|
 | plan-0.3.x-three-streams | docs（不上锁） |

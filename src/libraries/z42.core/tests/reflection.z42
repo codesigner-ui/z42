@@ -84,6 +84,20 @@ void test_gettype_name_and_fullname() {
     Assert.Equal("Z42CoreReflectionTests.Derived", t.FullName);
 }
 
+// align-type-memberinfo-hierarchy: Type : MemberInfo.
+[Test]
+void test_type_is_memberinfo() {
+    Type t = typeof(Derived);
+    Assert.True(t is MemberInfo);
+    // Name resolves via the inherited MemberInfo field (no native getter)
+    MemberInfo m = t;
+    Assert.Equal("Derived", m.Name);
+    Assert.Equal("Derived", t.Name);
+    // GetType() instances are MemberInfo too
+    Derived d = new Derived();
+    Assert.True(d.GetType() is MemberInfo);
+}
+
 [Test]
 void test_getfields_includes_inherited() {
     Derived d = new Derived();
