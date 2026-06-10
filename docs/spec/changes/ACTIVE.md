@@ -11,7 +11,7 @@
 | `compiler` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17 SIGS per-param 块；dotnet 1556/1556 + e2e）。⚠️ 暴露 pre-existing 多文件 project-build 命名空间双重限定 bug（非本 change，待独立 fix；见 memory）|
 | `runtime` | add-pal-fs | 2026-06-11 | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`build_type` 写继承 `Name` 槽 + 移除 `builtin_type_name`；cargo 759+21）。add-pal-fs 继续持有（PAL Phase 2，文件零重叠）|
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
-| `z42c` | —（空闲）| — | 自举主线全归档：…→import✅→**port-z42c-instance-import✅ 已归档 2026-06-11**（实例跨包链：receiver-aware VCall+依赖追踪 / prim→DepIndex FQ / prim 包装类 typecheck；textapp 对账 → gate zpkg 4/4）。下一步候选：char 字面量前端链 / interface·异常·闭包 typecheck+codegen / 扩 corpus |
+| `z42c` | **port-z42c-char（DRAFT 待审）** | 2026-06-11 | instance-import 归档接力。char 字面量前端整链（lexer→parser→typecheck→codegen→writer；ZW-1E 挂账缺口，编译 z42c 自身必经）+ charcheck zbc 对账第 4 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -27,6 +27,7 @@
 | ~~port-z42c-tsig~~ | z42c —— ✅ 已归档 2026-06-10（zpkg 全文件 byte-identical 2/2；05e615cf）|
 | ~~port-z42c-import~~ | z42c —— ✅ 已归档 2026-06-10（hello-stdlib byte-identical + import e2e；a1fa39d8）|
 | ~~port-z42c-instance-import~~ | z42c —— ✅ 已归档 2026-06-11（textapp byte-identical；gate 4/4）|
+| port-z42c-char | z42c（2026-06-11 开；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
