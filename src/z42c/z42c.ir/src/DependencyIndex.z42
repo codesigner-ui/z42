@@ -1,0 +1,129 @@
+// 跨包依赖调用索引（port-z42c-import CI-2）。镜像 C# z42.IR/DependencyIndex.cs。
+// static 键 "Cls.Method[$arity]" / instance 键 "Method$userArity"+"Method"；
+// first-wins 注册（输入须 prelude-first 排序——common-pitfalls §1）；instance 歧义键剔除。
+namespace Z42.IR;
+
+public sealed class DepCallEntry {
+    public string QualifiedName;   // "Std.Console.WriteLine"
+    public string Namespace;       // "Std"
+    public string RetType;
+    public int    ParamCount;      // 含隐式 this（instance）
+    public DepCallEntry(string qualifiedName, string ns, string retType, int paramCount) {
+        this.QualifiedName = qualifiedName; this.Namespace = ns;
+        this.RetType = retType; this.ParamCount = paramCount;
+    }
+}
+
+public sealed class DependencyIndex {
+    public StrMapIr Statics;     // "Cls.Method" → DepCallEntry
+    public StrMapIr Instances;   // "Method$N"/"Method" → DepCallEntry
+    public StrMapIr Ambiguous;   // instance 歧义键（Seal 时剔除）
+    public DependencyIndex() {
+        this.Statics = new StrMapIr();
+        this.Instances = new StrMapIr();
+        this.Ambiguous = new StrMapIr();
+    }
+
+    // 静态查找：先全键 "Cls.Method"，cls 带 ns 前缀则再试短类名键（镜像 TryGetStatic）。
+    public DepCallEntry GetStatic(string cls, string method) {
+        string key = cls + "." + method;
+        if (this.Statics.ContainsKey(key)) { return this.Statics.Get(key) as DepCallEntry; }
+        int cut = 0 - 1;
+        int i = cls.Length - 1;
+        bool more = i >= 0;
+        while (more) {
+            if (cls.CharAt(i) == '.') { cut = i; more = false; }
+            else { i = i - 1; more = i >= 0; }
+        }
+        if (cut >= 0) {
+            string shortCls = cls.Substring(cut + 1, cls.Length - cut - 1);
+            string k2 = shortCls + "." + method;
+            if (this.Statics.ContainsKey(k2)) { return this.Statics.Get(k2) as DepCallEntry; }
+        }
+        return null;
+    }
+
+    // 实例查找：арity 键优先，bare 兜底（镜像 TryGetInstance）。
+    public DepCallEntry GetInstance(string method, int userArgCount) {
+        string k = method + "$" + userArgCount.ToString();
+        if (this.Instances.ContainsKey(k)) { return this.Instances.Get(k) as DepCallEntry; }
+        if (this.Instances.ContainsKey(method)) { return this.Instances.Get(method) as DepCallEntry; }
+        return null;
+    }
+
+    // 注册一个依赖模块的全部函数签名（镜像 DependencyIndex.Build 单模块段）。
+    // fname 形态：ns.Class.Method[$arity] 或 ns.Func。__static_init__ / 非本 ns 前缀跳过。
+    public void AddModule(IrFunction[] fns, int fnCount, string ns) {
+        int i = 0;
+        while (i < fnCount) {
+            IrFunction f = fns[i];
+            string name = f.Name;
+            if (!name.EndsWith("__static_init__") && name.StartsWith(ns + ".")) {
+                string local = name.Substring(ns.Length + 1, name.Length - ns.Length - 1);
+                // local = "Class.Method[$N]" 或 "Func[$N]"
+                int dot = DependencyIndex._lastDot(local);
+                if (dot >= 0) {
+                    string cls = local.Substring(0, dot);
+                    string method = local.Substring(dot + 1, local.Length - dot - 1);
+                    var entry = new DepCallEntry(name, ns, f.RetType, f.ParamCount);
+                    this.Statics.TryAdd(cls + "." + method, entry);
+                    int dollar = DependencyIndex._dollar(method);
+                    string bare = method;
+                    if (dollar >= 0) {
+                        bare = method.Substring(0, dollar);
+                        this.Statics.TryAdd(cls + "." + bare, entry);
+                    }
+                    if (!f.IsStatic && cls != "Object" && !DependencyIndex._isProtocol(bare)) {
+                        int userArity = f.ParamCount - 1;
+                        this._regInstance(bare + "$" + userArity.ToString(), entry);
+                        this._regInstance(bare, entry);
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    // instance 注册带歧义跟踪：同键二次出现且 FQ 不同 → 标记歧义（Seal 时剔除）。
+    private void _regInstance(string key, DepCallEntry entry) {
+        if (this.Instances.ContainsKey(key)) {
+            DepCallEntry prev = this.Instances.Get(key) as DepCallEntry;
+            if (prev.QualifiedName != entry.QualifiedName) { this.Ambiguous.TryAdd(key, entry); }
+            return;
+        }
+        this.Instances.Put(key, entry);
+    }
+
+    // 终结：剔除歧义 instance 键（镜像 C# ambiguous 集过滤）。StrMapIr 无 Remove → 重建。
+    public void Seal() {
+        if (this.Ambiguous.Count() == 0) { return; }
+        var clean = new StrMapIr();
+        string[] keys = this.Instances.Keys();
+        int i = 0;
+        while (i < keys.Length) {
+            if (!this.Ambiguous.ContainsKey(keys[i])) { clean.Put(keys[i], this.Instances.Get(keys[i])); }
+            i = i + 1;
+        }
+        this.Instances = clean;
+    }
+
+    private static int _lastDot(string s) {
+        int i = s.Length - 1;
+        while (i >= 0) {
+            if (s.CharAt(i) == '.') { return i; }
+            i = i - 1;
+        }
+        return 0 - 1;
+    }
+    private static int _dollar(string s) {
+        int i = 0;
+        while (i < s.Length) {
+            if (s.CharAt(i) == '$') { return i; }
+            i = i + 1;
+        }
+        return 0 - 1;
+    }
+    private static bool _isProtocol(string m) {
+        return m == "ToString" || m == "Equals" || m == "GetHashCode" || m == "GetType";
+    }
+}

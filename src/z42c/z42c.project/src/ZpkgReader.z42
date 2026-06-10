@@ -1,0 +1,405 @@
+// packed `.zpkg` 读取器子集（port-z42c-import CI-1）。镜像 C# ZpkgReader 的消费侧所需面：
+// META（名/版本/entry/kind）/ NSPC / SIGS（签名条目 → IrFunction stub）/ TSIG（→ ExportedModuleZ）。
+// **不解码 FUNC 体**（DependencyIndex 只需签名——C# survey 实证）；indexed 模式/DBUG/REGT 不读。
+namespace Z42.Project;
+
+using Std;
+using Std.Encoding;
+using Z42.IR;
+
+// 读取游标（byte[] + pos；LE 助手）。
+public sealed class ZpkgCursor {
+    public byte[] Data;
+    public int    Pos;
+    public ZpkgCursor(byte[] data, int pos) { this.Data = data; this.Pos = pos; }
+    public int U8()  { int v = (int)this.Data[this.Pos]; this.Pos = this.Pos + 1; return v; }
+    public int U16() { int a = this.U8(); int b = this.U8(); return a | (b << 8); }
+    public int U32() { int a = this.U16(); int b = this.U16(); return a | (b << 16); }
+    public long I64() {
+        long lo = (long)this.U32();
+        long hi = (long)this.U32();
+        return (lo & 0xFFFFFFFFL) | (hi << 32);
+    }
+}
+
+// 段目录条目。
+public sealed class ZpkgSection {
+    public string Tag;
+    public int    Offset;
+    public int    Size;
+    public ZpkgSection(string tag, int offset, int size) { this.Tag = tag; this.Offset = offset; this.Size = size; }
+}
+
+// META 元信息 + 解析后的池/目录（一次解析多次取段）。
+public sealed class ZpkgInfo {
+    public string        Name;
+    public string        Version;
+    public string        Entry;       // "" = lib
+    public bool          IsExe;
+    public string[]      Pool;        public int PoolCount;
+    public ZpkgSection[] Sections;    public int SectionCount;
+    public byte[]        Data;
+    public ZpkgInfo(string name, string version, string entry, bool isExe,
+                    string[] pool, int poolCount, ZpkgSection[] sections, int sectionCount, byte[] data) {
+        this.Name = name; this.Version = version; this.Entry = entry; this.IsExe = isExe;
+        this.Pool = pool; this.PoolCount = poolCount;
+        this.Sections = sections; this.SectionCount = sectionCount; this.Data = data;
+    }
+    public bool HasSection(string tag) {
+        int i = 0;
+        while (i < this.SectionCount) { if (this.Sections[i].Tag == tag) { return true; } i = i + 1; }
+        return false;
+    }
+    public ZpkgSection Section(string tag) {
+        int i = 0;
+        while (i < this.SectionCount) { if (this.Sections[i].Tag == tag) { return this.Sections[i]; } i = i + 1; }
+        return null;
+    }
+}
+
+public static class ZpkgReader {
+
+    // 解析 header/目录/META/STRS（其余段惰性按需）。非 packed / 坏 magic → null（调用方静默跳过）。
+    public static ZpkgInfo Open(byte[] data) {
+        if (data.Length < 16) { return null; }
+        if ((int)data[0] != 90 || (int)data[1] != 80 || (int)data[2] != 75 || (int)data[3] != 0) { return null; }   // "ZPK\0"
+        var c = new ZpkgCursor(data, 8);
+        int flags = c.U16();
+        int secCount = c.U16();
+        if ((flags & 1) == 0) { return null; }   // 非 packed（indexed 不在消费面）
+        bool isExe = (flags & 2) != 0;
+        ZpkgSection[] secs = new ZpkgSection[secCount];
+        c.Pos = 16;
+        int i = 0;
+        while (i < secCount) {
+            string tag = ZpkgReader._tag(data, c.Pos);
+            c.Pos = c.Pos + 4;
+            int off = c.U32();
+            int size = c.U32();
+            secs[i] = new ZpkgSection(tag, off, size);
+            i = i + 1;
+        }
+        // META：name/version/entry（u16 长 + UTF-8）
+        string name = "";
+        string version = "";
+        string entry = "";
+        i = 0;
+        while (i < secCount) {
+            if (secs[i].Tag == "META") {
+                var m = new ZpkgCursor(data, secs[i].Offset);
+                name = ZpkgReader._str(m);
+                version = ZpkgReader._str(m);
+                entry = ZpkgReader._str(m);
+            }
+            i = i + 1;
+        }
+        // STRS：count + (off,len)×count + 数据区
+        string[] pool = new string[0];
+        int poolCount = 0;
+        i = 0;
+        while (i < secCount) {
+            if (secs[i].Tag == "STRS") {
+                var sc = new ZpkgCursor(data, secs[i].Offset);
+                poolCount = sc.U32();
+                pool = new string[poolCount];
+                int dataStart = secs[i].Offset + 4 + poolCount * 8;
+                int j = 0;
+                while (j < poolCount) {
+                    int off = sc.U32();
+                    int len = sc.U32();
+                    pool[j] = ZpkgReader._utf8(data, dataStart + off, len);
+                    j = j + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return new ZpkgInfo(name, version, entry, isExe, pool, poolCount, secs, secCount, data);
+    }
+
+    // NSPC → ns 名列表。
+    public static string[] ReadNamespaces(ZpkgInfo z) {
+        ZpkgSection s = z.Section("NSPC");
+        if (s == null) { return new string[0]; }
+        var c = new ZpkgCursor(z.Data, s.Offset);
+        int n = c.U32();
+        string[] r = new string[n];
+        int i = 0;
+        while (i < n) { r[i] = z.Pool[c.U32()]; i = i + 1; }
+        return r;
+    }
+
+    // SIGS + MODS 头 → 每模块 (ns, IrFunction 签名 stub 列表)。
+    // SIGS 条目布局 = zbc WriteSigEntries（名/арity/retTag/retIdx/exec/static/paramTypes/tp 块/attr 块）。
+    // MODS 只读头（ns/src/hash/fnCount/firstSigIdx）+ 按 len 跳过五个体。
+    public static ZpkgModuleSigs[] ReadModuleSigs(ZpkgInfo z) {
+        ZpkgSection sig = z.Section("SIGS");
+        ZpkgSection mods = z.Section("MODS");
+        if (sig == null || mods == null) { return new ZpkgModuleSigs[0]; }
+        // 全量 SIGS 平铺
+        var c = new ZpkgCursor(z.Data, sig.Offset);
+        int total = c.U32();
+        IrFunction[] all = new IrFunction[total];
+        int i = 0;
+        while (i < total) {
+            string fname = z.Pool[c.U32()];
+            int pc = c.U16();
+            int retTag = c.U8();
+            string ret = z.Pool[c.U32()];
+            int exec = c.U8();
+            int isStatic = c.U8();
+            string[] ptypes = new string[pc];
+            int j = 0;
+            while (j < pc) { ptypes[j] = z.Pool[c.U32()]; j = j + 1; }
+            int tpc = c.U8();
+            j = 0;
+            while (j < tpc) {
+                c.U32();                       // tp 名
+                ZpkgReader._skipConstraintBundle(c);
+            }
+            int attrc = c.U16();
+            j = 0;
+            while (j < attrc) { c.U32(); c.U32(); j = j + 1; }
+            // zbc 1.15：per-param attr 块（每参 u16 count + 对×count）
+            j = 0;
+            while (j < pc) {
+                int pac = c.U16();
+                int x = 0;
+                while (x < pac) { c.U32(); c.U32(); x = x + 1; }
+                j = j + 1;
+            }
+            // 签名 stub：体为空（消费侧不需要）；MaxReg/块 0
+            all[i] = new IrFunction(fname, pc, ret, isStatic == 1,
+                                    new IrBlock[0], 0, 0,
+                                    ZpkgReader._execName(exec), ptypes, pc,
+                                    new int[0], 0,
+                                    new IrLineEntry[0], 0, new IrLocalVarEntry[0], 0);
+            i = i + 1;
+        }
+        // MODS 头切分
+        var m = new ZpkgCursor(z.Data, mods.Offset);
+        int modCount = m.U32();
+        ZpkgModuleSigs[] r = new ZpkgModuleSigs[modCount];
+        i = 0;
+        while (i < modCount) {
+            string ns = z.Pool[m.U32()];
+            m.U32();                            // src
+            m.U32();                            // hash
+            int fnCount = m.U16();
+            int firstSig = m.U32();
+            int k = 0;
+            while (k < 5) {                     // func/type/dbug/regt/tidx 五个 len+体
+                int len = m.U32();
+                m.Pos = m.Pos + len;
+                k = k + 1;
+            }
+            IrFunction[] fns = new IrFunction[fnCount];
+            int j = 0;
+            while (j < fnCount) { fns[j] = all[firstSig + j]; j = j + 1; }
+            r[i] = new ZpkgModuleSigs(ns, fns, fnCount);
+            i = i + 1;
+        }
+        return r;
+    }
+
+    // TSIG → ExportedModuleZ[]（镜像写入器逆操作；IMPL 不读——Phase3 延后）。
+    public static ExportedModuleZ[] ReadTsig(ZpkgInfo z) {
+        ZpkgSection s = z.Section("TSIG");
+        if (s == null) { return new ExportedModuleZ[0]; }
+        var c = new ZpkgCursor(z.Data, s.Offset);
+        int modCount = c.U16();
+        ExportedModuleZ[] r = new ExportedModuleZ[modCount];
+        int mi = 0;
+        while (mi < modCount) {
+            string ns = z.Pool[c.U32()];
+            int cc = c.U16();
+            ExportedClassZ[] classes = new ExportedClassZ[cc];
+            int ci = 0;
+            while (ci < cc) {
+                string cname = z.Pool[c.U32()];
+                int baseIdx = c.U32();
+                bool hasBase = baseIdx != (0 - 1) && baseIdx >= 0 && baseIdx < z.PoolCount;
+                string baseName = "";
+                if (hasBase) { baseName = z.Pool[baseIdx]; }
+                c.U8();                          // class flags（MVP 不消费）
+                int fc = c.U16();
+                ExportedFieldZ[] fields = new ExportedFieldZ[fc];
+                int fi = 0;
+                while (fi < fc) {
+                    string fn2 = z.Pool[c.U32()];
+                    string ft = z.Pool[c.U32()];
+                    string fv = z.Pool[c.U32()];
+                    fields[fi] = new ExportedFieldZ(fn2, ft, fv, c.U8() == 1);
+                    fi = fi + 1;
+                }
+                int mc = c.U16();
+                ExportedMethodZ[] methods = new ExportedMethodZ[mc];
+                int mj = 0;
+                while (mj < mc) { methods[mj] = ZpkgReader._method(c, z); mj = mj + 1; }
+                int ifc = c.U16();
+                int x = 0;
+                while (x < ifc) { c.U32(); x = x + 1; }   // 接口名（MVP 不消费）
+                int tpc = c.U8();
+                x = 0;
+                while (x < tpc) { c.U32(); x = x + 1; }
+                ZpkgReader._skipTpConstraints(c);
+                classes[ci] = new ExportedClassZ(cname, hasBase, baseName, fields, fc, methods, mc);
+                ci = ci + 1;
+            }
+            // interfaces（跳过——MVP 不 import 接口）
+            int nif = c.U16();
+            int ii = 0;
+            while (ii < nif) {
+                c.U32();
+                int imc = c.U16();
+                int mj = 0;
+                while (mj < imc) { ZpkgReader._method(c, z); mj = mj + 1; }
+                int itp = c.U8();
+                int x = 0;
+                while (x < itp) { c.U32(); x = x + 1; }
+                ii = ii + 1;
+            }
+            // enums（跳过）
+            int nen = c.U16();
+            ii = 0;
+            while (ii < nen) {
+                c.U32();
+                int emc = c.U16();
+                int x = 0;
+                while (x < emc) { c.U32(); c.I64(); x = x + 1; }
+                ii = ii + 1;
+            }
+            // functions
+            int nfn = c.U16();
+            ExportedFuncZ[] funcs = new ExportedFuncZ[nfn];
+            ii = 0;
+            while (ii < nfn) {
+                string fn2 = z.Pool[c.U32()];
+                string ret = z.Pool[c.U32()];
+                int minArg = c.U16();
+                int pc = c.U8();
+                ExportedParamZ[] ps = new ExportedParamZ[pc];
+                int x = 0;
+                while (x < pc) {
+                    string pn = z.Pool[c.U32()];
+                    ps[x] = new ExportedParamZ(pn, z.Pool[c.U32()]);
+                    x = x + 1;
+                }
+                int tpc2 = c.U8();
+                x = 0;
+                while (x < tpc2) { c.U32(); x = x + 1; }
+                ZpkgReader._skipTpConstraints(c);
+                funcs[ii] = new ExportedFuncZ(fn2, ret, minArg, ps, pc);
+                ii = ii + 1;
+            }
+            // delegates（跳过）
+            int nd = c.U16();
+            ii = 0;
+            while (ii < nd) {
+                c.U32(); c.U32();
+                int pc = c.U8();
+                int x = 0;
+                while (x < pc) { c.U32(); c.U32(); x = x + 1; }
+                int tpc2 = c.U8();
+                x = 0;
+                while (x < tpc2) { c.U32(); x = x + 1; }
+                c.U32();                         // container
+                ii = ii + 1;
+            }
+            r[mi] = new ExportedModuleZ(ns, classes, cc,
+                                        new ExportedInterfaceZ[0], 0,
+                                        new ExportedEnumZ[0], 0,
+                                        funcs, nfn,
+                                        new ExportedDelegateZ[0], 0);
+            mi = mi + 1;
+        }
+        return r;
+    }
+
+    // ── 私有助手 ─────────────────────────────────────────────────────────────
+
+    private static ExportedMethodZ _method(ZpkgCursor c, ZpkgInfo z) {
+        string name = z.Pool[c.U32()];
+        string ret = z.Pool[c.U32()];
+        string vis = z.Pool[c.U32()];
+        int flags = c.U8();
+        int minArg = c.U16();
+        int pc = c.U8();
+        ExportedParamZ[] ps = new ExportedParamZ[pc];
+        int i = 0;
+        while (i < pc) {
+            string pn = z.Pool[c.U32()];
+            ps[i] = new ExportedParamZ(pn, z.Pool[c.U32()]);
+            i = i + 1;
+        }
+        return new ExportedMethodZ(name, ret, vis,
+                                   (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0,
+                                   minArg, ps, pc);
+    }
+
+    private static void _skipConstraintBundle(ZpkgCursor c) {
+        // zbc WriteConstraintBundle 真布局（C# ZbcWriter.cs:550）：
+        // flags u8 → [bit2 base u32] → [bit3 tpRef u32] → ifaceCount u8 + u32× → [bit6 funcSig: pc u8 + u32×pc + ret u32]
+        int flags = c.U8();
+        if ((flags & 0x04) != 0) { c.U32(); }
+        if ((flags & 0x08) != 0) { c.U32(); }
+        int n = c.U8();
+        int i = 0;
+        while (i < n) { c.U32(); i = i + 1; }
+        if ((flags & 0x40) != 0) {
+            int pc = c.U8();
+            int j = 0;
+            while (j < pc) { c.U32(); j = j + 1; }
+            c.U32();
+        }
+    }
+
+    private static void _skipTpConstraints(ZpkgCursor c) {
+        // TSIG WriteTpConstraints：u8 count + {u32 tp, u8 flags, u8 ifc, u32×, [u32], [u32]}
+        int n = c.U8();
+        int i = 0;
+        while (i < n) {
+            c.U32();
+            int flags = c.U8();
+            int k = c.U8();
+            int j = 0;
+            while (j < k) { c.U32(); j = j + 1; }
+            if ((flags & 0x04) != 0) { c.U32(); }
+            if ((flags & 0x08) != 0) { c.U32(); }
+            i = i + 1;
+        }
+    }
+
+    private static string _execName(int e) {
+        if (e == 1) { return "Jit"; }
+        if (e == 2) { return "Aot"; }
+        return "Interp";
+    }
+
+    private static string _tag(byte[] d, int off) {
+        return ZpkgReader._utf8(d, off, 4);
+    }
+
+    private static string _str(ZpkgCursor c) {
+        int len = c.U16();
+        string s = ZpkgReader._utf8(c.Data, c.Pos, len);
+        c.Pos = c.Pos + len;
+        return s;
+    }
+
+    private static string _utf8(byte[] d, int off, int len) {
+        byte[] b = new byte[len];
+        int i = 0;
+        while (i < len) { b[i] = d[off + i]; i = i + 1; }
+        return Utf8.GetString(b);
+    }
+}
+
+// 模块签名组（ns + SIGS stub 列表）。
+public sealed class ZpkgModuleSigs {
+    public string       Namespace;
+    public IrFunction[] Functions;
+    public int          FuncCount;
+    public ZpkgModuleSigs(string ns, IrFunction[] functions, int funcCount) {
+        this.Namespace = ns; this.Functions = functions; this.FuncCount = funcCount;
+    }
+}

@@ -48,6 +48,57 @@ public static class IrDump {
         return IrDump._buildF(src, file);
     }
 
+    // 公开：带跨包依赖的编译（CI-4）。imported 合并符号表；deps 驱动静态调用 FQ 命中。
+    public static CompiledModuleZ BuildModuleD(string src, string file, DependencyIndex deps, ImportedSymbols imported) {
+        var p = new Parser(src, file);
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().CollectWithImports(cu, imported);
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Infer(cu, symbols);
+        var gen = new IrGen();
+        gen.Deps = deps;
+        IrModule irm = gen.Generate(cu, model);
+        // usings 抽取（DEPS 用）
+        string[] usings = new string[4];
+        int uc = 0;
+        int i = 0;
+        while (i < cu.DeclCount) {
+            if (cu.Decls[i] is UsingDecl) {
+                if (uc == usings.Length) {
+                    string[] b = new string[usings.Length * 2];
+                    int k = 0; while (k < uc) { b[k] = usings[k]; k = k + 1; }
+                    usings = b;
+                }
+                usings[uc] = (cu.Decls[i] as UsingDecl).Name;
+                uc = uc + 1;
+            }
+            i = i + 1;
+        }
+        string ns = "";
+        if (cu.HasNamespace) { ns = cu.Namespace; }
+        return new CompiledModuleZ(irm, ns, usings, uc, gen.UsedDepNs, gen.UsedDepNsCount, diags.ErrorCount());
+    }
+
+    // 公开：仅 usings + 导出（driver 组装期先收 usings 决定激活集时用）。
+    public static string[] ExtractUsings(string src, string file) {
+        var p = new Parser(src, file);
+        var cu = p.ParseCompilationUnit();
+        string[] usings = new string[8];
+        int uc = 0;
+        int i = 0;
+        while (i < cu.DeclCount) {
+            if (cu.Decls[i] is UsingDecl) {
+                usings[uc] = (cu.Decls[i] as UsingDecl).Name;
+                uc = uc + 1;
+            }
+            i = i + 1;
+        }
+        string[] r = new string[uc];
+        i = 0;
+        while (i < uc) { r[i] = usings[i]; i = i + 1; }
+        return r;
+    }
+
     // 公开：源→导出类型签名（TSIG；port-z42c-tsig）。独立 parse+collect（与 BuildModule 分离，
     // 形态简单；增量编译期再合并为单趟）。
     public static ExportedModuleZ ExtractExports(string src, string file, string ns) {
@@ -64,5 +115,19 @@ public static class IrDump {
         var diags = new DiagnosticBag();
         var model = new TypeChecker(diags).Infer(cu, symbols);
         return new IrGen().Generate(cu, model);
+    }
+}
+
+// 带依赖编译的产物束（CI-4）。
+public sealed class CompiledModuleZ {
+    public IrModule Module;
+    public string   Namespace;  // cu 真实 ns（""=无——C# ZbcFile.Namespace 语义；≠ IrModule.Name 的 "main" 缺省）
+    public string[] Usings;     public int UsingCount;
+    public string[] UsedDepNs;  public int UsedDepNsCount;
+    public int      ErrorCount;
+    public CompiledModuleZ(IrModule irm, string ns, string[] usings, int usingCount,
+                           string[] usedDepNs, int usedDepNsCount, int errorCount) {
+        this.Module = irm; this.Namespace = ns; this.Usings = usings; this.UsingCount = usingCount;
+        this.UsedDepNs = usedDepNs; this.UsedDepNsCount = usedDepNsCount; this.ErrorCount = errorCount;
     }
 }

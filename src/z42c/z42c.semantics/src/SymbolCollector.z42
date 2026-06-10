@@ -6,6 +6,26 @@ namespace Z42.Semantics;
 using Z42.Syntax;
 
 public sealed class SymbolCollector {
+    // imported 符号先 seed，本地声明覆盖（CI-4；镜像 C# TypeChecker.Check(cu, imported) 合并语义）。
+    public SymbolTable CollectWithImports(CompilationUnit cu, ImportedSymbols imported) {
+        SymbolTable t = this.Collect(cu);
+        if (imported != null) {
+            string[] cls = imported.Classes.Keys();
+            int i = 0;
+            while (i < cls.Length) {
+                if (!t.Classes.ContainsKey(cls[i])) { t.Classes.Put(cls[i], imported.Classes.Get(cls[i])); }
+                i = i + 1;
+            }
+            string[] fns = imported.Functions.Keys();
+            i = 0;
+            while (i < fns.Length) {
+                if (!t.Functions.ContainsKey(fns[i])) { t.Functions.Put(fns[i], imported.Functions.Get(fns[i])); }
+                i = i + 1;
+            }
+        }
+        return t;
+    }
+
     public SymbolTable Collect(CompilationUnit cu) {
         var table = new SymbolTable();
         // Pass A：类 stub

@@ -12,6 +12,14 @@ public static class ZpkgBuilder {
     // entryError 经返回值外带：entry=="<ambiguous>" 表歧义（调用方报错退出）。
     public static ZpkgFileZ BuildPacked(string name, string version, bool isExe, bool hasExplicitEntry,
                                         string explicitEntry, ZbcFileZ[] modules, int moduleCount) {
+        return ZpkgBuilder.BuildPackedD(name, version, isExe, hasExplicitEntry, explicitEntry,
+                                        modules, moduleCount, new ZpkgDepZ[0], 0);
+    }
+
+    // 带 DEPS 条目（CI-4）。
+    public static ZpkgFileZ BuildPackedD(string name, string version, bool isExe, bool hasExplicitEntry,
+                                         string explicitEntry, ZbcFileZ[] modules, int moduleCount,
+                                         ZpkgDepZ[] deps, int depCount) {
         // namespaces：首现序去重（镜像 C# Distinct 保序）
         string[] nss = new string[4];
         int nsc = 0;
@@ -50,14 +58,114 @@ public static class ZpkgBuilder {
             }
             i = i + 1;
         }
-        // entry
+        // entry：用**原始函数名**检测（限定前——C# AutoDetectEntry 输入是 unit.Exports 原始名；
+        // 字节实证：no-ns 单元 entry="Main" 短名而 EXPT="main.Main"）
         string entry = "";
         if (isExe) {
             if (hasExplicitEntry) { entry = explicitEntry; }
-            else { entry = ZpkgBuilder.AutoDetectEntry(exps, ec); }   // ""=无候选 / "<ambiguous>"=歧义
+            else {
+                ZpkgExportZ[] raw = new ZpkgExportZ[ec];
+                int rc = 0;
+                i = 0;
+                while (i < moduleCount) {
+                    int x = 0;
+                    while (x < modules[i].ExportCount) {
+                        raw[rc] = new ZpkgExportZ(modules[i].Exports[x], "func");
+                        rc = rc + 1;
+                        x = x + 1;
+                    }
+                    i = i + 1;
+                }
+                entry = ZpkgBuilder.AutoDetectEntry(raw, rc);
+            }
         }
         return new ZpkgFileZ(name, version, isExe, entry, nss, nsc, exps, ec,
-                             new ZpkgDepZ[0], 0, modules, moduleCount);
+                             deps, depCount, modules, moduleCount);
+    }
+
+    // DEPS 条目（镜像 C# BuildDependencyMap）：每单元 usings → usedDepNs 顺序 AddDepNs；
+    // ns→file 经 nsNames/nsFiles 平行表（DepScan 产物）。z42 无交错数组/out 参 →
+    // 扁平 (file,ns) 对收集（去重保序）+ 二遍按 file 首现序聚合，holder 返回。
+    public static ZpkgDepList BuildDependencyMap(ZbcFileZ[] modules, int moduleCount,
+                                                 string[] nsNames, string[] nsFiles, int nsCount) {
+        string[] pairFile = new string[8];
+        string[] pairNs   = new string[8];
+        int pairCount = 0;
+        int mi = 0;
+        while (mi < moduleCount) {
+            ZbcFileZ m = modules[mi];
+            int u = 0;
+            while (u < m.UsingCount) {
+                pairCount = ZpkgBuilder._addPair(pairFile, pairNs, pairCount, nsNames, nsFiles, nsCount, m.Usings[u]);
+                if (pairCount > pairFile.Length - 1) {
+                    string[] b1 = new string[pairFile.Length * 2];
+                    string[] b2 = new string[pairFile.Length * 2];
+                    int k = 0; while (k < pairCount) { b1[k] = pairFile[k]; b2[k] = pairNs[k]; k = k + 1; }
+                    pairFile = b1; pairNs = b2;
+                }
+                u = u + 1;
+            }
+            u = 0;
+            while (u < m.UsedDepNsCount) {
+                pairCount = ZpkgBuilder._addPair(pairFile, pairNs, pairCount, nsNames, nsFiles, nsCount, m.UsedDepNs[u]);
+                if (pairCount > pairFile.Length - 1) {
+                    string[] b1 = new string[pairFile.Length * 2];
+                    string[] b2 = new string[pairFile.Length * 2];
+                    int k = 0; while (k < pairCount) { b1[k] = pairFile[k]; b2[k] = pairNs[k]; k = k + 1; }
+                    pairFile = b1; pairNs = b2;
+                }
+                u = u + 1;
+            }
+            mi = mi + 1;
+        }
+        // 二遍：file 首现序聚合
+        string[] files = new string[pairCount + 1];
+        int fileCount = 0;
+        int i = 0;
+        while (i < pairCount) {
+            bool seen = false;
+            int j = 0;
+            while (j < fileCount) { if (files[j] == pairFile[i]) { seen = true; } j = j + 1; }
+            if (!seen) { files[fileCount] = pairFile[i]; fileCount = fileCount + 1; }
+            i = i + 1;
+        }
+        ZpkgDepZ[] deps = new ZpkgDepZ[fileCount];
+        i = 0;
+        while (i < fileCount) {
+            int n = 0;
+            int j = 0;
+            while (j < pairCount) { if (pairFile[j] == files[i]) { n = n + 1; } j = j + 1; }
+            string[] nsList = new string[n];
+            int k = 0;
+            j = 0;
+            while (j < pairCount) {
+                if (pairFile[j] == files[i]) { nsList[k] = pairNs[j]; k = k + 1; }
+                j = j + 1;
+            }
+            deps[i] = new ZpkgDepZ(files[i], nsList, n);
+            i = i + 1;
+        }
+        return new ZpkgDepList(deps, fileCount);
+    }
+
+    // (file,ns) 对去重追加；ns 不在 nsMap → 跳过（镜像 AddDepNs 未解析即略）。返回新 count。
+    private static int _addPair(string[] pairFile, string[] pairNs, int pairCount,
+                                string[] nsNames, string[] nsFiles, int nsCount, string ns) {
+        string file = "";
+        int i = 0;
+        while (i < nsCount) {
+            if (nsNames[i] == ns) { file = nsFiles[i]; }
+            i = i + 1;
+        }
+        if (file == "") { return pairCount; }
+        i = 0;
+        while (i < pairCount) {
+            if (pairFile[i] == file && pairNs[i] == ns) { return pairCount; }
+            i = i + 1;
+        }
+        pairFile[pairCount] = file;
+        pairNs[pairCount] = ns;
+        return pairCount + 1;
     }
 
     // entry 自动检测（镜像 C# AutoDetectEntry / vm.rs resolve_entry 四级优先）：

@@ -1,0 +1,68 @@
+// DependencyIndex 单测（port-z42c-import CI-2）：键形态/first-wins/арity/歧义剔除。
+namespace Z42cIrDepIndexTests;
+
+using Std;
+using Std.Test;
+using Z42.IR;
+
+IrFunction _fn(string name, int pc, bool isStatic) {
+    IrBlock[] blocks = new IrBlock[0];
+    string[] pts = new string[0];
+    int[] rts = new int[0];
+    IrLineEntry[] lt = new IrLineEntry[0];
+    IrLocalVarEntry[] lv = new IrLocalVarEntry[0];
+    return new IrFunction(name, pc, "void", isStatic, blocks, 0, 0, "Interp", pts, 0, rts, 0, lt, 0, lv, 0);
+}
+
+[Test]
+void test_static_key_and_fq() {
+    var idx = new DependencyIndex();
+    IrFunction[] fns = new IrFunction[1];
+    fns[0] = _fn("Std.Console.WriteLine", 1, true);
+    idx.AddModule(fns, 1, "Std");
+    idx.Seal();
+    DepCallEntry e = idx.GetStatic("Console", "WriteLine");
+    Assert.True(e != null);
+    Assert.Equal("Std.Console.WriteLine", e.QualifiedName);
+    Assert.Equal("Std", e.Namespace);
+    // ns 前缀 cls 也命中（短类名兜底）
+    Assert.True(idx.GetStatic("Std.Console", "WriteLine") != null);
+    Assert.True(idx.GetStatic("Console", "Nope") == null);
+}
+
+[Test]
+void test_arity_key_first_wins() {
+    var idx = new DependencyIndex();
+    IrFunction[] fns = new IrFunction[2];
+    fns[0] = _fn("Std.Console.WriteLine$1", 1, true);
+    fns[1] = _fn("Std.Console.WriteLine$0", 0, true);
+    idx.AddModule(fns, 2, "Std");
+    idx.Seal();
+    // arity 键各自命中；bare 键 first-wins（$1 先注册）
+    Assert.Equal("Std.Console.WriteLine$1", idx.GetStatic("Console", "WriteLine$1").QualifiedName);
+    Assert.Equal("Std.Console.WriteLine$0", idx.GetStatic("Console", "WriteLine$0").QualifiedName);
+    Assert.Equal("Std.Console.WriteLine$1", idx.GetStatic("Console", "WriteLine").QualifiedName);
+}
+
+[Test]
+void test_instance_ambiguity_removed() {
+    var idx = new DependencyIndex();
+    IrFunction[] a = new IrFunction[1];
+    a[0] = _fn("Std.Box.Get", 1, false);       // instance：userArity 0
+    idx.AddModule(a, 1, "Std");
+    IrFunction[] b = new IrFunction[1];
+    b[0] = _fn("Std.IO.Sack.Get", 1, false);   // 同方法名不同类 → 歧义
+    idx.AddModule(b, 1, "Std.IO");
+    idx.Seal();
+    Assert.True(idx.GetInstance("Get", 0) == null);   // 歧义键已剔除
+}
+
+[Test]
+void test_protocol_methods_skipped() {
+    var idx = new DependencyIndex();
+    IrFunction[] fns = new IrFunction[1];
+    fns[0] = _fn("Std.Box.ToString", 1, false);
+    idx.AddModule(fns, 1, "Std");
+    idx.Seal();
+    Assert.True(idx.GetInstance("ToString", 0) == null);   // 协议方法不进 instance 索引（恒 VCall）
+}

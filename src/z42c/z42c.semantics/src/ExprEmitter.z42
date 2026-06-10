@@ -260,6 +260,17 @@ public sealed class ExprEmitter {
             return idst;
         }
         TypedReg[] args = this._emitArgs(c);
+        // 静态调用先查 DepIndex（stdlib；арity 键→bare 键，镜像 C# EmitStaticBoundCall）
+        if (c.Kind == "static" && this._ctx.Deps != null) {
+            DepCallEntry de = this._ctx.Deps.GetStatic(c.OwnerClass, c.MethodName + "$" + c.ArgCount.ToString());
+            if (de == null) { de = this._ctx.Deps.GetStatic(c.OwnerClass, c.MethodName); }
+            if (de != null) {
+                this._ctx.TrackDepNamespace(de.Namespace);
+                TypedReg ddst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+                this._ctx.Emit(new CallInstr(ddst, de.QualifiedName, args, c.ArgCount));
+                return ddst;
+            }
+        }
         // 调用目标限定（BP-0）：自由函数/静态类经 ns 前缀（函数表/类表名是 FQ）
         string func = this._ctx.Qualify(c.MethodName);
         if (c.Kind == "static") { func = this._ctx.Qualify(c.OwnerClass) + "." + c.MethodName; }

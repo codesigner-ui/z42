@@ -1,0 +1,146 @@
+// libs 目录扫描（port-z42c-import CI-2）。镜像 C# PackageCompiler.Helpers.BuildDepIndex +
+// BuildTarget.ScanLibsForNamespaces。z42c 运行期 Z42_LIBS 是单目录（flat），扫描该目录全部
+// lib-kind zpkg：**prelude-first + Ordinal 排序**（common-pitfalls §1 + fix-depindex 同款），
+// 一次扫描产出三件：DependencyIndex（签名键表）/ nsMap（ns→zpkg basename，DEPS 用）/
+// TSIG ExportedModuleZ 池（ImportedSymbolLoader 输入）。
+namespace Z42.Pipeline;
+
+using Std;
+using Std.IO;
+using Z42.IR;
+using Z42.Project;
+
+// 一次扫描的产物束。
+public sealed class DepScanResult {
+    public DependencyIndex   Index;
+    public string[]          NsNames;      public int NsCount;       // nsMap 平行数组
+    public string[]          NsFiles;
+    public ExportedModuleZ[] Exported;     public int ExportedCount; // 全部 TSIG 模块
+    public string[]          ExportedPkg;                            // 平行：每模块来源包名
+    public DepScanResult(DependencyIndex index,
+                         string[] nsNames, string[] nsFiles, int nsCount,
+                         ExportedModuleZ[] exported, string[] exportedPkg, int exportedCount) {
+        this.Index = index;
+        this.NsNames = nsNames; this.NsFiles = nsFiles; this.NsCount = nsCount;
+        this.Exported = exported; this.ExportedPkg = exportedPkg; this.ExportedCount = exportedCount;
+    }
+    // ns → zpkg basename（未知 → ""）。
+    public string FileOf(string ns) {
+        int i = 0;
+        while (i < this.NsCount) {
+            if (this.NsNames[i] == ns) { return this.NsFiles[i]; }
+            i = i + 1;
+        }
+        return "";
+    }
+}
+
+public static class DepScan {
+    // prelude 包名单（镜像 C# PreludePackages.Names）。
+    public static bool IsPrelude(string pkgName) { return pkgName == "z42.core"; }
+
+    public static DepScanResult Scan(string libsDir) {
+        var index = new DependencyIndex();
+        string[] nsNames = new string[8];
+        string[] nsFiles = new string[8];
+        int nsCount = 0;
+        ExportedModuleZ[] exported = new ExportedModuleZ[8];
+        string[] exportedPkg = new string[8];
+        int exportedCount = 0;
+        if (!Directory.Exists(libsDir)) {
+            return new DepScanResult(index, nsNames, nsFiles, 0, exported, exportedPkg, 0);
+        }
+        string[] paths = DepScan._sortedZpkgs(libsDir);
+        int pi = 0;
+        while (pi < paths.Length) {
+            ZpkgInfo z = ZpkgReader.Open(File.ReadAllBytes(paths[pi]));
+            if (z != null && !z.IsExe) {                       // lib-kind only（镜像 C# Kind 过滤）
+                string basename = Path.GetFileName(paths[pi]);
+                // nsMap：NSPC 全名单 first-wins
+                string[] nss = ZpkgReader.ReadNamespaces(z);
+                int i = 0;
+                while (i < nss.Length) {
+                    if (DepScan._nsIndexOf(nsNames, nsCount, nss[i]) < 0) {
+                        if (nsCount == nsNames.Length) {
+                            string[] b1 = new string[nsNames.Length * 2];
+                            string[] b2 = new string[nsNames.Length * 2];
+                            int k = 0;
+                            while (k < nsCount) { b1[k] = nsNames[k]; b2[k] = nsFiles[k]; k = k + 1; }
+                            nsNames = b1; nsFiles = b2;
+                        }
+                        nsNames[nsCount] = nss[i];
+                        nsFiles[nsCount] = basename;
+                        nsCount = nsCount + 1;
+                    }
+                    i = i + 1;
+                }
+                // DepIndex：每模块 SIGS 签名
+                ZpkgModuleSigs[] mods = ZpkgReader.ReadModuleSigs(z);
+                i = 0;
+                while (i < mods.Length) {
+                    index.AddModule(mods[i].Functions, mods[i].FuncCount, mods[i].Namespace);
+                    i = i + 1;
+                }
+                // TSIG 模块池
+                ExportedModuleZ[] tsig = ZpkgReader.ReadTsig(z);
+                i = 0;
+                while (i < tsig.Length) {
+                    if (exportedCount == exported.Length) {
+                        ExportedModuleZ[] b1 = new ExportedModuleZ[exported.Length * 2];
+                        string[] b2 = new string[exported.Length * 2];
+                        int k = 0;
+                        while (k < exportedCount) { b1[k] = exported[k]; b2[k] = exportedPkg[k]; k = k + 1; }
+                        exported = b1; exportedPkg = b2;
+                    }
+                    exported[exportedCount] = tsig[i];
+                    exportedPkg[exportedCount] = z.Name;
+                    exportedCount = exportedCount + 1;
+                    i = i + 1;
+                }
+            }
+            pi = pi + 1;
+        }
+        index.Seal();
+        return new DepScanResult(index, nsNames, nsFiles, nsCount, exported, exportedPkg, exportedCount);
+    }
+
+    // prelude-first（"0_"+name）+ Ordinal 排序（镜像 C# BuildDepIndex 的 sortedPaths）。
+    private static string[] _sortedZpkgs(string dir) {
+        string[] paths = Path.Glob(dir, "*.zpkg");
+        // 排序键并行数组 + 插入排序
+        string[] keys = new string[paths.Length];
+        int i = 0;
+        while (i < paths.Length) {
+            string name = Path.GetFileNameWithoutExtension(paths[i]);
+            if (DepScan.IsPrelude(name)) { keys[i] = "0_" + name; }
+            else { keys[i] = "1_" + name; }
+            i = i + 1;
+        }
+        i = 1;
+        while (i < paths.Length) {
+            string k = keys[i];
+            string p = paths[i];
+            int j = i - 1;
+            bool more = j >= 0;
+            while (more) {
+                if (keys[j].CompareTo(k) > 0) {
+                    keys[j + 1] = keys[j]; paths[j + 1] = paths[j];
+                    j = j - 1; more = j >= 0;
+                } else { more = false; }
+            }
+            keys[j + 1] = k;
+            paths[j + 1] = p;
+            i = i + 1;
+        }
+        return paths;
+    }
+
+    private static int _nsIndexOf(string[] a, int n, string s) {
+        int i = 0;
+        while (i < n) {
+            if (a[i] == s) { return i; }
+            i = i + 1;
+        }
+        return 0 - 1;
+    }
+}

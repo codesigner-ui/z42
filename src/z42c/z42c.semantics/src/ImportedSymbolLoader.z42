@@ -1,0 +1,158 @@
+// 跨包符号加载（port-z42c-import CI-3）。镜像 C# ImportedSymbolLoader 的 Phase1/2 子集：
+// TSIG ExportedModuleZ → 短名 Z42ClassType 骨架（Phase1）→ 成员填充（Phase2：实例+静态方法、
+// 字段、自由函数）。激活过滤 = prelude 包 ∪ {提供 cu.Usings 中 ns 的包}（strict-using-resolution）。
+// 延后：Phase3 impl 合并 / 接口·委托·枚举 / 泛型实例化串解析 / E0601 冲突诊断。
+namespace Z42.Semantics;
+
+using Z42.IR;
+
+// string 值盒（StrMap 存 object，prim 不能 `as string` 下行 → 包一层）。
+public sealed class StrBox {
+    public string Value;
+    public StrBox(string value) { this.Value = value; }
+}
+
+// 加载产物（镜像 C# ImportedSymbols 子集）。
+public sealed class ImportedSymbols {
+    public StrMap Classes;          // 短名 → Z42ClassType（成员已填）
+    public StrMap Functions;        // 名 → MethodSymbol（自由函数）
+    public StrMap ClassNamespaces;  // 短名 → 原 ns（QualifyClassName / 诊断用；值存 StrBox）
+    public ImportedSymbols() {
+        this.Classes = new StrMap();
+        this.Functions = new StrMap();
+        this.ClassNamespaces = new StrMap();
+    }
+}
+
+public static class ImportedSymbolLoader {
+
+    // exported/pkgNames 平行（DepScan 产物）；usings = cu 的 using ns 列表。
+    public static ImportedSymbols Load(ExportedModuleZ[] exported, string[] pkgNames, int exportedCount,
+                                       string[] usings, int usingCount) {
+        var r = new ImportedSymbols();
+        // ── 激活集：prelude 包恒激活；非 prelude 须有 using 命中其某模块 ns ──
+        bool[] active = new bool[exportedCount];
+        int i = 0;
+        while (i < exportedCount) {
+            if (ImportedSymbolLoader._isPrelude(pkgNames[i])) { active[i] = true; }
+            else { active[i] = ImportedSymbolLoader._pkgProvidesUsing(exported, pkgNames, exportedCount, pkgNames[i], usings, usingCount); }
+            i = i + 1;
+        }
+        // ── Phase1：骨架（短名 → 空成员 Z42ClassType）──
+        i = 0;
+        while (i < exportedCount) {
+            if (active[i]) {
+                ExportedModuleZ em = exported[i];
+                int c = 0;
+                while (c < em.ClassCount) {
+                    ExportedClassZ cl = em.Classes[c];
+                    if (!r.Classes.ContainsKey(cl.Name)) {        // first-wins（输入已 prelude-first 排序）
+                        string baseName = "";
+                        bool hasBase = cl.HasBase && cl.BaseName != "Object";
+                        if (hasBase) { baseName = cl.BaseName; }
+                        r.Classes.Put(cl.Name, new Z42ClassType(cl.Name, hasBase, baseName));
+                        r.ClassNamespaces.Put(cl.Name, new StrBox(em.Namespace));
+                    }
+                    c = c + 1;
+                }
+            }
+            i = i + 1;
+        }
+        // ── Phase2：成员填充（骨架齐备后解析类型可互指）──
+        i = 0;
+        while (i < exportedCount) {
+            if (active[i]) {
+                ExportedModuleZ em = exported[i];
+                int c = 0;
+                while (c < em.ClassCount) {
+                    ExportedClassZ cl = em.Classes[c];
+                    Z42ClassType ct = r.Classes.Get(cl.Name) as Z42ClassType;
+                    StrBox owner = r.ClassNamespaces.Get(cl.Name) as StrBox;
+                    if (ct != null && owner != null && owner.Value == em.Namespace) {
+                        ImportedSymbolLoader._fillClass(r, ct, cl);
+                    }
+                    c = c + 1;
+                }
+                // 自由函数
+                int f = 0;
+                while (f < em.FunctionCount) {
+                    ExportedFuncZ fz = em.Functions[f];
+                    if (!r.Functions.ContainsKey(fz.Name)) {
+                        Z42Type[] ps = new Z42Type[fz.ParamCount];
+                        int j = 0;
+                        while (j < fz.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, fz.Params[j].TypeName); j = j + 1; }
+                        var sig = new Z42FuncType(ps, fz.ParamCount, ImportedSymbolLoader._resolve(r, fz.ReturnType));
+                        r.Functions.Put(fz.Name, new MethodSymbol(fz.Name, "public", sig, false, "", false, null));
+                    }
+                    f = f + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return r;
+    }
+
+    private static void _fillClass(ImportedSymbols r, Z42ClassType ct, ExportedClassZ cl) {
+        int i = 0;
+        while (i < cl.FieldCount) {
+            ExportedFieldZ fd = cl.Fields[i];
+            if (!ct.Fields.ContainsKey(fd.Name)) {
+                ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, fd.Visibility,
+                    ImportedSymbolLoader._resolve(r, fd.TypeName), fd.IsStatic, ct.Name()));
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < cl.MethodCount) {
+            ExportedMethodZ m = cl.Methods[i];
+            if (!ct.Methods.ContainsKey(m.Name)) {              // bare+arity 键并存，bare first-wins
+                Z42Type[] ps = new Z42Type[m.ParamCount];
+                int j = 0;
+                while (j < m.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, m.Params[j].TypeName); j = j + 1; }
+                var sig = new Z42FuncType(ps, m.ParamCount, ImportedSymbolLoader._resolve(r, m.ReturnType));
+                // z42c 既有约定：静态/实例同进 Methods（IsStatic 标真值）——D3
+                ct.Methods.Put(m.Name, new MethodSymbol(m.Name, m.Visibility, sig, m.IsStatic, ct.Name(), false, null));
+            }
+            i = i + 1;
+        }
+    }
+
+    // TypeResolver 子集（镜像 C# 优先级）：数组后缀 → prim/void → imported class → fallback prim(name)。
+    // 泛型实例化串（含 '<'）MVP fallback。
+    private static Z42Type _resolve(ImportedSymbols r, string name) {
+        if (name.EndsWith("[]")) {
+            return new Z42ArrayType(ImportedSymbolLoader._resolve(r, name.Substring(0, name.Length - 2)));
+        }
+        if (name == "void") { return new Z42VoidType(); }
+        if (ImportedSymbolLoader._isPrim(name)) { return new Z42PrimType(name); }
+        if (r.Classes.ContainsKey(name)) { return r.Classes.Get(name) as Z42ClassType; }
+        return new Z42PrimType(name);    // fallback（含泛型串/接口名——既有 Unknown 吸收兼容）
+    }
+
+    private static bool _isPrim(string n) {
+        return n == "int" || n == "long" || n == "short" || n == "byte"
+            || n == "uint" || n == "ulong" || n == "ushort" || n == "sbyte"
+            || n == "float" || n == "double" || n == "bool" || n == "string" || n == "char"
+            || n == "object" || n == "i8" || n == "i16" || n == "i32" || n == "i64"
+            || n == "u8" || n == "u16" || n == "u32" || n == "u64" || n == "f32" || n == "f64" || n == "str";
+    }
+
+    private static bool _isPrelude(string pkg) { return pkg == "z42.core"; }
+
+    // 包是否提供 usings 中任一 ns（按该包全部 TSIG 模块的 ns 判断）。
+    private static bool _pkgProvidesUsing(ExportedModuleZ[] exported, string[] pkgNames, int count,
+                                          string pkg, string[] usings, int usingCount) {
+        int i = 0;
+        while (i < count) {
+            if (pkgNames[i] == pkg) {
+                int u = 0;
+                while (u < usingCount) {
+                    if (exported[i].Namespace == usings[u]) { return true; }
+                    u = u + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+}

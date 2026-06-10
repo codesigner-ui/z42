@@ -37,6 +37,28 @@ public sealed class IrGen {
     }
 
     public string Ns;   // 根命名空间（BP-0 名字限定；""=无）
+    public DependencyIndex Deps;       // 跨包索引（CI-4；调用方 Generate 前设置，null=无）
+    public string[] UsedDepNs; public int UsedDepNsCount;   // 全函数聚合（首现序）
+
+    public void _mergeUsedNsPub(EmitContext ctx) {
+        int i = 0;
+        while (i < ctx.UsedDepNsCount) {
+            string ns = ctx.UsedDepNs[i];
+            int j = 0;
+            bool seen = false;
+            while (j < this.UsedDepNsCount) { if (this.UsedDepNs[j] == ns) { seen = true; } j = j + 1; }
+            if (!seen) {
+                if (this.UsedDepNsCount == this.UsedDepNs.Length) {
+                    string[] b = new string[this.UsedDepNs.Length * 2];
+                    int k = 0; while (k < this.UsedDepNsCount) { b[k] = this.UsedDepNs[k]; k = k + 1; }
+                    this.UsedDepNs = b;
+                }
+                this.UsedDepNs[this.UsedDepNsCount] = ns;
+                this.UsedDepNsCount = this.UsedDepNsCount + 1;
+            }
+            i = i + 1;
+        }
+    }
 
     private string _q(string name) {
         if (this.Ns == "") { return name; }
@@ -45,6 +67,7 @@ public sealed class IrGen {
 
     public IrModule Generate(CompilationUnit cu, SemanticModel model) {
         this._symbols = model.Symbols;
+        if (this.UsedDepNs == null) { this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0; }
         this.Ns = "";
         if (cu.HasNamespace) { this.Ns = cu.Namespace; }
         IrFunction[] funcs = new IrFunction[8];   int fc = 0;

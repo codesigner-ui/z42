@@ -12,11 +12,22 @@ public sealed class ZbcFileZ {
     public string[] Exports;      // 函数名（FQ）
     public int      ExportCount;
     public IrModule Module;
+    public string[] Usings;     public int UsingCount;       // DEPS 用（CI-4）
+    public string[] UsedDepNs;  public int UsedDepNsCount;   // codegen 期命中的依赖 ns
     public ZbcFileZ(string sourceFile, string sourceHash, string ns,
                     string[] exports, int exportCount, IrModule irm) {
         this.SourceFile = sourceFile; this.SourceHash = sourceHash; this.Namespace = ns;
         this.Exports = exports; this.ExportCount = exportCount; this.Module = irm;
+        this.Usings = new string[0]; this.UsingCount = 0;
+        this.UsedDepNs = new string[0]; this.UsedDepNsCount = 0;
     }
+}
+
+// DEPS 条目束（BuildDependencyMap 返回；z42 无 out 参）。
+public sealed class ZpkgDepList {
+    public ZpkgDepZ[] Items;
+    public int        Count;
+    public ZpkgDepList(ZpkgDepZ[] items, int count) { this.Items = items; this.Count = count; }
 }
 
 // 导出符号（镜像 C# ZpkgExport；kind: "func"=0/"type"=1/"const"=2）。

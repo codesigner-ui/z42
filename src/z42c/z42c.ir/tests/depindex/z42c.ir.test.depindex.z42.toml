@@ -1,0 +1,11 @@
+# DependencyIndex 单测（port-z42c-import CI-2）。
+[project]
+name    = "z42c.ir.test.depindex"
+version = "0.1.0"
+kind    = "lib"
+
+[sources]
+include = ["**/*.z42"]
+
+[dependencies]
+"z42c.ir" = "0.1.0"

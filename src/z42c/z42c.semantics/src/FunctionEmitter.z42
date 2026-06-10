@@ -23,6 +23,7 @@ public sealed class FunctionEmitter {
                                    Z42ClassType owner, string[] classTp, int classTpCount) {
         this._ctx = new EmitContext(this._symbols, this._gen);
         this._ctx.Ns = this._gen.Ns;   // BP-0：emitter 侧名字限定（ObjNew/is/as 类引用）
+        this._ctx.Deps = this._gen.Deps;   // CI-4：跨包调用索引
         this._expr = new ExprEmitter(this._ctx);
         string[] tp = this._mergeTp(classTp, classTpCount, md.TypeParams.Names, md.TypeParams.Count);
         int tpc = classTpCount + md.TypeParams.Count;
@@ -69,6 +70,7 @@ public sealed class FunctionEmitter {
         int li = 0;
         while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
         IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
+        this._gen._mergeUsedNsPub(this._ctx);
         return new IrFunction(name, totalParams, retName, isStaticMethod,
                               this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
                               "Interp", paramTypes, totalParams, regTypes, this._ctx.RegTagCount,

@@ -332,11 +332,22 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         "namespace Demo.Minimal;\n\nclass Greeter {\n    string Hello() { return \"hi\"; }\n}\n\nvoid Main() {\n    var g = new Greeter();\n    g.Hello();\n}\n");
     File.WriteAllText(Path.Join(ddir, "demo.minimal.z42.toml"),
         "[project]\nname    = \"demo.minimal\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
-    string[] cmpTomls = new string[2];
+    // hello-stdlib（port-z42c-import）：using Std + Console.WriteLine——跨包消费链对账工程。
+    // ⚠ 放 /tmp（仓库外）：C# BuildLibsDirs 会 walk-up 仓库布局并按成员目录字母序扫
+    // （z42.cli < z42.core，两者都声明 ns Std）→ 仓库内 DEPS 解析 Std→z42.cli.zpkg；
+    // /tmp 下只剩 Z42_LIBS 单目录 → prelude-first → Std→z42.core.zpkg，两侧编译器环境等价。
+    string hdir = "/tmp/z42c-e2e-buildhello";
+    Directory.Create(hdir);
+    File.WriteAllText(Path.Join(hdir, "hello.z42"),
+        "using Std;\n\nvoid Main() {\n    Console.WriteLine(\"hi\");\n}\n");
+    File.WriteAllText(Path.Join(hdir, "hello.app.z42.toml"),
+        "[project]\nname    = \"hello.app\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
+    string[] cmpTomls = new string[3];
     cmpTomls[0] = btoml;
     cmpTomls[1] = Path.Join(ddir, "demo.minimal.z42.toml");
+    cmpTomls[2] = Path.Join(hdir, "hello.app.z42.toml");
     int pi = 0;
-    while (pi < 2) {
+    while (pi < 3) {
         string pdir = Path.GetDirectoryName(cmpTomls[pi]);
         // z42c build（刚跑过 check.app 也重跑一次保产物新鲜）
         rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("build").Arg(cmpTomls[pi])
@@ -361,7 +372,13 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         }
         pi = pi + 1;
     }
-    Console.WriteLine("  ✓ zpkg byte-compare: 2/2 projects FULL-FILE byte-identical (incl TSIG/IMPL)");
+    Console.WriteLine("  ✓ zpkg byte-compare: 3/3 projects FULL-FILE byte-identical (incl TSIG/IMPL + import/DEPS)");
+    // hello-stdlib 直跑（跨包 Call 链可执行性）
+    rc = new Process(vm).Arg(Path.Join(hdir, "dist/hello.app.zpkg"))
+        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
+        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ hello.app.zpkg failed to run (exit " + rc.ToString() + ")"); return 1; }
+    Console.WriteLine("  ✓ import e2e: z42c-built hello.app.zpkg (using Std; Console.WriteLine) runs on z42vm");
     Console.WriteLine("✅ z42c e2e: self-compiled .zbc executes on z42vm");
     return 0;
 }

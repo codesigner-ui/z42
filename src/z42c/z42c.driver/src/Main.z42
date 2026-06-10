@@ -13,6 +13,7 @@ using Z42.Syntax;
 using Z42.Semantics;
 using Z42.Project;
 using Z42.IR;
+using Z42.Pipeline;
 
 void Main() {
     string[] argv = Environment.GetCommandLineArgs();
@@ -59,18 +60,61 @@ int _build(string tomlPath) {
         ConsoleError.WriteLine("z42c build: no sources matched [sources].include");
         return 1;
     }
+    // ── 跨包依赖（CI-4）：Z42_LIBS 扫描 → DepIndex + nsMap + TSIG 池；usings 聚合决定激活集 ──
+    string libsDir = Environment.GetEnvironmentVariable("Z42_LIBS") ?? "";
+    DepScanResult scan = null;
+    ImportedSymbols imported = null;
+    DependencyIndex depIndex = null;
+    if (libsDir != "") {
+        scan = DepScan.Scan(libsDir);
+        depIndex = scan.Index;
+        // 全工程 usings 聚合（镜像 C# LoadExternalImported 的跨文件聚合）
+        string[] allUsings = new string[8];
+        int auc = 0;
+        int ui = 0;
+        while (ui < srcs.Length) {
+            string[] us = IrDump.ExtractUsings(File.ReadAllText(srcs[ui]), srcs[ui]);
+            int j = 0;
+            while (j < us.Length) {
+                bool seen = false;
+                int k = 0;
+                while (k < auc) { if (allUsings[k] == us[j]) { seen = true; } k = k + 1; }
+                if (!seen) {
+                    if (auc == allUsings.Length) {
+                        string[] b = new string[allUsings.Length * 2];
+                        int m2 = 0; while (m2 < auc) { b[m2] = allUsings[m2]; m2 = m2 + 1; }
+                        allUsings = b;
+                    }
+                    allUsings[auc] = us[j]; auc = auc + 1;
+                }
+                j = j + 1;
+            }
+            ui = ui + 1;
+        }
+        imported = ImportedSymbolLoader.Load(scan.Exported, scan.ExportedPkg, scan.ExportedCount,
+                                             allUsings, auc);
+    }
     ZbcFileZ[] mods = new ZbcFileZ[srcs.Length];
     int i = 0;
     while (i < srcs.Length) {
         string text = File.ReadAllText(srcs[i]);
-        IrModule irm = IrDump.BuildModule(text, srcs[i]);
+        CompiledModuleZ cm = IrDump.BuildModuleD(text, srcs[i], depIndex, imported);
+        if (cm.ErrorCount > 0) {
+            ConsoleError.WriteLine("z42c build: " + cm.ErrorCount.ToString() + " error(s) in " + srcs[i]);
+            return 1;
+        }
+        IrModule irm = cm.Module;
         // SourceFile = 发现到的完整路径原样（真 C# CLI 字节实测；fixture 的相对化是测试合成形态）
         string rel = srcs[i];
         string[] exports = new string[irm.FuncCount];
         int e = 0;
         while (e < irm.FuncCount) { exports[e] = irm.Functions[e].Name; e = e + 1; }
-        mods[i] = new ZbcFileZ(rel, ZpkgBuilder.Sha256Hex(text), irm.Name,
+        string modNs = cm.Namespace;
+        if (modNs == "") { modNs = "main"; }   // C# build 路径字节实证：no-ns 单元 ns="main"（EXPT=main.Main / MODS ns=main）
+        mods[i] = new ZbcFileZ(rel, ZpkgBuilder.Sha256Hex(text), modNs,
                                exports, irm.FuncCount, irm);
+        mods[i].Usings = cm.Usings;       mods[i].UsingCount = cm.UsingCount;
+        mods[i].UsedDepNs = cm.UsedDepNs; mods[i].UsedDepNsCount = cm.UsedDepNsCount;
         i = i + 1;
     }
     // TSIG：每模块导出类型签名（port-z42c-tsig）
@@ -81,7 +125,13 @@ int _build(string tomlPath) {
         i = i + 1;
     }
     bool isExe = pm.Kind == "exe";
-    ZpkgFileZ z = ZpkgBuilder.BuildPacked(pm.Name, pm.Version, isExe, pm.HasEntry, pm.Entry, mods, srcs.Length);
+    // DEPS 条目（usings ∪ usedDepNs → nsMap）
+    ZpkgDepList depList = new ZpkgDepList(new ZpkgDepZ[0], 0);
+    if (scan != null) {
+        depList = ZpkgBuilder.BuildDependencyMap(mods, srcs.Length, scan.NsNames, scan.NsFiles, scan.NsCount);
+    }
+    ZpkgFileZ z = ZpkgBuilder.BuildPackedD(pm.Name, pm.Version, isExe, pm.HasEntry, pm.Entry, mods, srcs.Length,
+                                           depList.Items, depList.Count);
     z.Exported = exported;
     z.ExportedCount = srcs.Length;
     if (isExe && z.Entry == "<ambiguous>") {
