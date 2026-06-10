@@ -40,6 +40,18 @@ public static class SemanticDump {
         return s;
     }
 
+    // 首条诊断的 "line:col"（span 链验证；无诊断 → ""）。
+    public static string FirstErrorPos(string src) {
+        var p = new Parser(src, "<input>");
+        var cu = p.ParseCompilationUnit();
+        var symbols = new SymbolCollector().Collect(cu);
+        var diags = new DiagnosticBag();
+        new TypeChecker(diags).Infer(cu, symbols);
+        if (diags.Count() == 0) { return ""; }
+        Diagnostic d = diags.Get(0);
+        return d.Span.Line.ToString() + ":" + d.Span.Column.ToString();
+    }
+
     // 类型检查诊断错误条数（错误用例断言）。
     public static int ErrorCount(string src) {
         var p = new Parser(src, "<input>");

@@ -50,15 +50,28 @@ public sealed class FunctionEmitter {
         this._ctx.NextReg = totalParams;
         this._ctx.MaxReg = this._ctx.NextReg;
         this._ctx.StartBlock("entry");
-        this._emitStmt(body);
+        // 顶层方法体：直接循环子语句（镜像 C# EmitFunction 的 foreach EmitBoundStmt——体 block 自身不 TrackLine；
+        // 嵌套 block 仍走 _emitStmt → 正常 track）。
+        if (body is BoundBlock) {
+            BoundBlock bb = body as BoundBlock;
+            int bi = 0;
+            while (bi < bb.Count) { this._emitStmt(bb.Stmts[bi]); bi = bi + 1; }
+        } else {
+            this._emitStmt(body);
+        }
         if (!this._ctx.Ended) { this._ctx.EndBlock(new RetTerm(false, null)); }   // 隐式 ret
         string retName = this._symbols.ResolveTypeP(md.RetType, tp, tpc).Name();
         int[] regTypes = new int[this._ctx.RegTagCount];
         int rt = 0;
         while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
+        IrLineEntry[] lines = new IrLineEntry[this._ctx.LineCount];
+        int li = 0;
+        while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
+        IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
         return new IrFunction(name, totalParams, retName, isStaticMethod,
                               this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
-                              "Interp", paramTypes, totalParams, regTypes, this._ctx.RegTagCount);
+                              "Interp", paramTypes, totalParams, regTypes, this._ctx.RegTagCount,
+                              lines, this._ctx.LineCount, localVars, localVars.Length);
     }
 
     private string[] _mergeTp(string[] a, int ac, string[] b, int bc) {
@@ -72,6 +85,7 @@ public sealed class FunctionEmitter {
 
     // ════ 语句（集中 if-is）═══════════════════════════════════════════════════════
     private void _emitStmt(BoundStmt s) {
+        this._ctx.TrackLine(s.Span);   // 每语句记源码行（镜像 C# EmitBoundStmt 入口；同行去重在 ctx）
         if (s is BoundBlock) {
             BoundBlock b = s as BoundBlock;
             int i = 0;
@@ -79,7 +93,10 @@ public sealed class FunctionEmitter {
         } else if (s is BoundVarDeclStmt) {
             BoundVarDeclStmt v = s as BoundVarDeclStmt;
             TypedReg r = this._expr.Emit(v.Init);
-            this._ctx.Locals.Put(v.Name, r);             // var 绑定到 init 结果寄存器
+            // 镜像 C#：每局部变量分配专用寄存器 + copy init（byte-identical：FUNC 指令流/REGT/DBUG instrIdx）
+            TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(v.VarType));
+            this._ctx.Emit(new CopyInstr(dst, r));
+            this._ctx.Locals.Put(v.Name, dst);
         } else if (s is BoundReturn) {
             BoundReturn ret = s as BoundReturn;
             if (ret.HasValue) { TypedReg r = this._expr.Emit(ret.Value); this._ctx.EndBlock(new RetTerm(true, r)); }
@@ -120,9 +137,9 @@ public sealed class FunctionEmitter {
 
     // while → cond/body/end 三块。continue→cond，break→end。
     private void _emitWhile(BoundWhile w) {
-        string condL = this._ctx.Fresh("while_cond");
-        string bodyL = this._ctx.Fresh("while_body");
-        string endL = this._ctx.Fresh("while_end");
+        string condL = this._ctx.Fresh("cond");   // label 拼写 = C#（byte-identical：label 入 STRS）
+        string bodyL = this._ctx.Fresh("body");
+        string endL = this._ctx.Fresh("end");
         this._ctx.EndBlock(new BrTerm(condL));
         this._ctx.StartBlock(condL);
         TypedReg cond = this._expr.Emit(w.Cond);

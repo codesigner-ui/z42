@@ -106,14 +106,14 @@ public sealed class TypeChecker {
             BoundStmt[] outs = new BoundStmt[b.Count];
             int i = 0;
             while (i < b.Count) { outs[i] = this._bindStmt(b.Stmts[i], scope, ret); i = i + 1; }
-            return new BoundBlock(outs, b.Count);
+            return new BoundBlock(outs, b.Count, b.Span);
         }
         if (s is VarDeclStmt) {
             VarDeclStmt v = s as VarDeclStmt;
             BoundExpr init = this._bindExpr(v.Init, env);
             Z42Type vt = this._varType(env, v, init);
             env.Define(v.Name, vt);
-            return new BoundVarDeclStmt(v.Name, vt, init);
+            return new BoundVarDeclStmt(v.Name, vt, init, v.Span);
         }
         if (s is ReturnStmt) {
             ReturnStmt r = s as ReturnStmt;
@@ -121,49 +121,49 @@ public sealed class TypeChecker {
                 BoundExpr val = this._bindExpr(r.Value, env);
                 if (!this._isAssignable(val.Type(), ret, env.Symbols)) {
                     this._diags.Error(DiagnosticCodes.TypeMismatch,
-                        "return type " + val.Type().Name() + " not assignable to " + ret.Name(), this._noSpan());
+                        "return type " + val.Type().Name() + " not assignable to " + ret.Name(), r.Value.Span);
                 }
-                return new BoundReturn(true, val);
+                return new BoundReturn(true, val, r.Span);
             }
-            return new BoundReturn(false, new BoundLitNull(new Z42VoidType()));
+            return new BoundReturn(false, new BoundLitNull(new Z42VoidType(), r.Span), r.Span);
         }
         if (s is ExprStmt) {
             ExprStmt e = s as ExprStmt;
-            return new BoundExprStmt(this._bindExpr(e.E, env));
+            return new BoundExprStmt(this._bindExpr(e.E, env), e.Span);
         }
         if (s is IfStmt) {
             IfStmt f = s as IfStmt;
             BoundExpr cond = this._bindExpr(f.Cond, env);
-            this._requireBool(cond.Type(), "if");
+            this._requireBool(cond.Type(), "if", f.Cond.Span);
             BoundStmt then = this._bindStmt(f.Then, env, ret);
             if (f.HasElse) {
-                return new BoundIf(cond, then, true, this._bindStmt(f.Else, env, ret));
+                return new BoundIf(cond, then, true, this._bindStmt(f.Else, env, ret), f.Span);
             }
-            return new BoundIf(cond, then, false, new BoundBlock(new BoundStmt[0], 0));
+            return new BoundIf(cond, then, false, new BoundBlock(new BoundStmt[0], 0, f.Span), f.Span);
         }
         if (s is WhileStmt) {
             WhileStmt w = s as WhileStmt;
             BoundExpr cond = this._bindExpr(w.Cond, env);
-            this._requireBool(cond.Type(), "while");
+            this._requireBool(cond.Type(), "while", w.Cond.Span);
             this._loopDepth = this._loopDepth + 1;
             BoundStmt body = this._bindStmt(w.Body, env, ret);
             this._loopDepth = this._loopDepth - 1;
-            return new BoundWhile(cond, body);
+            return new BoundWhile(cond, body, w.Span);
         }
         if (s is BreakStmt) {
             if (this._loopDepth == 0) {
-                this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", this._noSpan());
+                this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", s.Span);
             }
-            return new BoundBreak();
+            return new BoundBreak(s.Span);
         }
         if (s is ContinueStmt) {
             if (this._loopDepth == 0) {
-                this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`continue` outside of loop", this._noSpan());
+                this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`continue` outside of loop", s.Span);
             }
-            return new BoundContinue();
+            return new BoundContinue(s.Span);
         }
-        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", this._noSpan());
-        return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType()));
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", s.Span);
+        return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType(), s.Span), s.Span);
     }
 
     // `var x` → 推断 init 类型；显式类型 → 解析 + 检查 init 可赋。
@@ -175,7 +175,7 @@ public sealed class TypeChecker {
         Z42Type vt = env.ResolveType(v.Type);
         if (!this._isAssignable(init.Type(), vt, env.Symbols)) {
             this._diags.Error(DiagnosticCodes.TypeMismatch,
-                "cannot assign " + init.Type().Name() + " to " + vt.Name(), this._noSpan());
+                "cannot assign " + init.Type().Name() + " to " + vt.Name(), v.Init.Span);
         }
         return vt;
     }
@@ -184,31 +184,31 @@ public sealed class TypeChecker {
     private BoundExpr _bindExpr(Expr e, TypeEnv env) {
         if (e is IntLitExpr) {
             IntLitExpr lit = e as IntLitExpr;
-            return new BoundLitInt(lit.Value, new Z42PrimType("int"));   // 1A: int（long 推断 1B）
+            return new BoundLitInt(lit.Value, new Z42PrimType("int"), lit.Span);   // 1A: int（long 推断 1B）
         }
         if (e is FloatLitExpr) {
             FloatLitExpr lit = e as FloatLitExpr;
-            return new BoundLitFloat(lit.Value, this._floatLitType(lit.Value));
+            return new BoundLitFloat(lit.Value, this._floatLitType(lit.Value), lit.Span);
         }
         if (e is StringLitExpr) {
             StringLitExpr lit = e as StringLitExpr;
-            return new BoundLitStr(lit.Raw, new Z42PrimType("string"));
+            return new BoundLitStr(lit.Raw, new Z42PrimType("string"), lit.Span);
         }
         if (e is BoolLitExpr) {
             BoolLitExpr lit = e as BoolLitExpr;
-            return new BoundLitBool(lit.Value, new Z42PrimType("bool"));
+            return new BoundLitBool(lit.Value, new Z42PrimType("bool"), lit.Span);
         }
         if (e is NullLitExpr) {
-            return new BoundLitNull(new Z42UnknownType());
+            return new BoundLitNull(new Z42UnknownType(), e.Span);
         }
         if (e is IdentExpr) {
             IdentExpr id = e as IdentExpr;
             Z42Type t = env.LookupVar(id.Name);
             if (t == null) {
-                this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined: " + id.Name, this._noSpan());
-                return new BoundError("undefined " + id.Name, new Z42ErrorType());
+                this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined: " + id.Name, id.Span);
+                return new BoundError("undefined " + id.Name, new Z42ErrorType(), id.Span);
             }
-            return new BoundIdent(id.Name, t);
+            return new BoundIdent(id.Name, t, id.Span);
         }
         if (e is AssignExpr) {
             AssignExpr a = e as AssignExpr;
@@ -216,9 +216,9 @@ public sealed class TypeChecker {
             BoundExpr value = this._bindExpr(a.Value, env);
             if (!this._isAssignable(value.Type(), target.Type(), env.Symbols)) {
                 this._diags.Error(DiagnosticCodes.TypeMismatch,
-                    "cannot assign " + value.Type().Name() + " to " + target.Type().Name(), this._noSpan());
+                    "cannot assign " + value.Type().Name() + " to " + target.Type().Name(), a.Value.Span);
             }
-            return new BoundAssign(target, value, target.Type());
+            return new BoundAssign(target, value, target.Type(), a.Span);
         }
         if (e is BinaryExpr) {
             return this._bindBinary(e as BinaryExpr, env);
@@ -233,12 +233,12 @@ public sealed class TypeChecker {
             IsExpr ix = e as IsExpr;
             BoundExpr operand = this._bindExpr(ix.E, env);
             Z42Type target = env.ResolveType(ix.Type);
-            return new BoundIsExpr(operand, target.Name());
+            return new BoundIsExpr(operand, target.Name(), ix.Span);
         }
         if (e is AsExpr) {
             AsExpr ax = e as AsExpr;
             BoundExpr operand = this._bindExpr(ax.E, env);
-            return new BoundCast(operand, env.ResolveType(ax.Type));
+            return new BoundCast(operand, env.ResolveType(ax.Type), ax.Span);
         }
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
@@ -246,10 +246,10 @@ public sealed class TypeChecker {
         if (e is TernaryExpr) {
             TernaryExpr t = e as TernaryExpr;
             BoundExpr cond = this._bindExpr(t.Cond, env);
-            this._requireBool(cond.Type(), "ternary");
+            this._requireBool(cond.Type(), "ternary", t.Cond.Span);
             BoundExpr thenE = this._bindExpr(t.Then, env);
             BoundExpr elseE = this._bindExpr(t.Else, env);
-            return new BoundConditional(cond, thenE, elseE, this._commonType(thenE.Type(), elseE.Type(), env.Symbols));
+            return new BoundConditional(cond, thenE, elseE, this._commonType(thenE.Type(), elseE.Type(), env.Symbols), t.Span);
         }
         if (e is IndexExpr) {
             IndexExpr ix = e as IndexExpr;
@@ -258,19 +258,19 @@ public sealed class TypeChecker {
             Z42Type tt = target.Type();
             if (tt is Z42ArrayType) {
                 Z42ArrayType at = tt as Z42ArrayType;
-                return new BoundIndex(target, index, at.Elem);
+                return new BoundIndex(target, index, at.Elem, ix.Span);
             }
             if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
-                return new BoundIndex(target, index, new Z42ErrorType());
+                return new BoundIndex(target, index, new Z42ErrorType(), ix.Span);
             }
-            this._diags.Error(DiagnosticCodes.TypeMismatch, "index on non-array `" + tt.Name() + "`", this._noSpan());
-            return new BoundIndex(target, index, new Z42ErrorType());
+            this._diags.Error(DiagnosticCodes.TypeMismatch, "index on non-array `" + tt.Name() + "`", ix.Span);
+            return new BoundIndex(target, index, new Z42ErrorType(), ix.Span);
         }
         if (e is CallExpr) {
             return this._bindCall(e as CallExpr, env);
         }
-        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported expression (1A)", this._noSpan());
-        return new BoundError("unsupported expr", new Z42ErrorType());
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported expression (1A)", e.Span);
+        return new BoundError("unsupported expr", new Z42ErrorType(), e.Span);
     }
 
     // ════ 运算（集中 if-is + BinaryTypeTable，1B）═══════════════════════════════
@@ -280,57 +280,57 @@ public sealed class TypeChecker {
         Z42Type lt = left.Type();
         Z42Type rt = right.Type();
         if ((lt is Z42ErrorType) || (rt is Z42ErrorType)) {
-            return new BoundBinary(bin.Op, left, right, new Z42ErrorType());
+            return new BoundBinary(bin.Op, left, right, new Z42ErrorType(), bin.Span);
         }
         // null 合并 a ?? b → 公共类型（不在拓宽表内）。
         if (bin.Op == "??") {
-            return new BoundBinary("??", left, right, this._commonType(lt, rt, env.Symbols));
+            return new BoundBinary("??", left, right, this._commonType(lt, rt, env.Symbols), bin.Span);
         }
         // 字符串拼接特例（任一侧 string）：先于查表，镜像 C# CheckBinary 前置。
         if (bin.Op == "+") {
             if (lt.Name() == "string" || rt.Name() == "string") {
-                return new BoundBinary(bin.Op, left, right, new Z42PrimType("string"));
+                return new BoundBinary(bin.Op, left, right, new Z42PrimType("string"), bin.Span);
             }
         }
         BinaryRule rule = BinaryTypeTable.Lookup(bin.Op);
         if (!rule.Known) {
-            return new BoundBinary(bin.Op, left, right, new Z42UnknownType());
+            return new BoundBinary(bin.Op, left, right, new Z42UnknownType(), bin.Span);
         }
-        this._checkOperand(rule.Left,  rule.Requirement, lt, bin.Op);
-        this._checkOperand(rule.Right, rule.Requirement, rt, bin.Op);
-        return new BoundBinary(bin.Op, left, right, BinaryTypeTable.ResultType(rule.Out, lt, rt));
+        this._checkOperand(rule.Left,  rule.Requirement, lt, bin.Op, bin.Left.Span);
+        this._checkOperand(rule.Right, rule.Requirement, rt, bin.Op, bin.Right.Span);
+        return new BoundBinary(bin.Op, left, right, BinaryTypeTable.ResultType(rule.Out, lt, rt), bin.Span);
     }
 
     private BoundExpr _bindUnary(UnaryExpr u, TypeEnv env) {
         BoundExpr operand = this._bindExpr(u.Operand, env);
         Z42Type ot = operand.Type();
         if (ot is Z42ErrorType) {
-            return new BoundUnary(u.Op, operand, new Z42ErrorType());
+            return new BoundUnary(u.Op, operand, new Z42ErrorType(), u.Span);
         }
         BinaryRule rule = BinaryTypeTable.LookupUnary(u.Op);
         if (!rule.Known) {
-            return new BoundUnary(u.Op, operand, ot);
+            return new BoundUnary(u.Op, operand, ot, u.Span);
         }
-        this._checkOperand(rule.Left, rule.Requirement, ot, u.Op);
-        return new BoundUnary(u.Op, operand, BinaryTypeTable.ResultType(rule.Out, ot, ot));
+        this._checkOperand(rule.Left, rule.Requirement, ot, u.Op, u.Operand.Span);
+        return new BoundUnary(u.Op, operand, BinaryTypeTable.ResultType(rule.Out, ot, ot), u.Span);
     }
 
     // 操作数约束检查（None / unknown / error → 跳过，防级联）。镜像 C# CheckBinaryOperand。
-    private void _checkOperand(int kind, string req, Z42Type t, string op) {
+    private void _checkOperand(int kind, string req, Z42Type t, string op, Span sp) {
         if (kind == OperandKind.None) { return; }
         if ((t is Z42UnknownType) || (t is Z42ErrorType)) { return; }
         if (!TypeFacts.SatisfiesKind(kind, t)) {
             this._diags.Error(DiagnosticCodes.TypeMismatch,
-                "operator `" + op + "` requires " + req + " operand, got `" + t.Name() + "`", this._noSpan());
+                "operator `" + op + "` requires " + req + " operand, got `" + t.Name() + "`", sp);
         }
     }
 
     // 条件必须 bool（if/while）。error/unknown 吸收。镜像 C# RequireBool。
-    private void _requireBool(Z42Type t, string context) {
+    private void _requireBool(Z42Type t, string context, Span sp) {
         if ((t is Z42ErrorType) || (t is Z42UnknownType)) { return; }
         if (!TypeFacts.IsBool(t)) {
             this._diags.Error(DiagnosticCodes.TypeMismatch,
-                "`" + context + "` condition must be `bool`, got `" + t.Name() + "`", this._noSpan());
+                "`" + context + "` condition must be `bool`, got `" + t.Name() + "`", sp);
         }
     }
 
@@ -351,17 +351,17 @@ public sealed class TypeChecker {
         if (tt is Z42ClassType) {
             Z42ClassType ct = tt as Z42ClassType;
             FieldSymbol fs = this._findField(env.Symbols, ct, m.Name);
-            if (fs != null) { return new BoundMember(target, m.Name, fs.FieldType); }
+            if (fs != null) { return new BoundMember(target, m.Name, fs.FieldType, m.Span); }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
-                "no field `" + m.Name + "` on `" + ct.Name() + "`", this._noSpan());
-            return new BoundMember(target, m.Name, new Z42ErrorType());
+                "no field `" + m.Name + "` on `" + ct.Name() + "`", m.Span);
+            return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
         if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
-            return new BoundMember(target, m.Name, new Z42ErrorType());
+            return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch,
-            "member access on non-class `" + tt.Name() + "`", this._noSpan());
-        return new BoundMember(target, m.Name, new Z42ErrorType());
+            "member access on non-class `" + tt.Name() + "`", m.Span);
+        return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
     }
 
     // 字段查找：本类 → base 链（迭代）。
@@ -399,20 +399,20 @@ public sealed class TypeChecker {
             IdentExpr id = call.Callee as IdentExpr;
             if (env.Symbols.HasFunc(id.Name)) {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);
-                return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, ms.Signature.Ret);
+                return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, ms.Signature.Ret, call.Span);
             }
-            this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined function: " + id.Name, this._noSpan());
-            return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, new Z42ErrorType());
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined function: " + id.Name, call.Span);
+            return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, new Z42ErrorType(), call.Span);
         }
         // 成员调用：obj.m(args) / Class.m(args)
         if (call.Callee is MemberExpr) {
-            return this._bindMemberCall(call.Callee as MemberExpr, args, call.ArgCount, env);
+            return this._bindMemberCall(call.Callee as MemberExpr, args, call.ArgCount, env, call.Span);
         }
-        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported call form", this._noSpan());
-        return new BoundError("unsupported call", new Z42ErrorType());
+        this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported call form", call.Span);
+        return new BoundError("unsupported call", new Z42ErrorType(), call.Span);
     }
 
-    private BoundExpr _bindMemberCall(MemberExpr mem, BoundExpr[] args, int argCount, TypeEnv env) {
+    private BoundExpr _bindMemberCall(MemberExpr mem, BoundExpr[] args, int argCount, TypeEnv env, Span sp) {
         // 静态：target 是裸类名（非局部变量）→ Class.m(args)
         if (mem.Target is IdentExpr) {
             IdentExpr tid = mem.Target as IdentExpr;
@@ -420,11 +420,11 @@ public sealed class TypeChecker {
                 Z42ClassType ct = env.Symbols.GetClass(tid.Name);
                 MethodSymbol ms = this._findMethod(env.Symbols, ct, mem.Name);
                 if (ms != null) {
-                    return new BoundCall("static", false, null, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret);
+                    return new BoundCall("static", false, null, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret, sp);
                 }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol,
-                    "no static method `" + mem.Name + "` on `" + ct.Name() + "`", this._noSpan());
-                return new BoundCall("static", false, null, tid.Name, mem.Name, args, argCount, new Z42ErrorType());
+                    "no static method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
+                return new BoundCall("static", false, null, tid.Name, mem.Name, args, argCount, new Z42ErrorType(), sp);
             }
         }
         // 实例：bind target 为值
@@ -434,18 +434,18 @@ public sealed class TypeChecker {
             Z42ClassType ct = rt as Z42ClassType;
             MethodSymbol ms = this._findMethod(env.Symbols, ct, mem.Name);
             if (ms != null) {
-                return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret);
+                return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret, sp);
             }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
-                "no method `" + mem.Name + "` on `" + ct.Name() + "`", this._noSpan());
-            return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, new Z42ErrorType());
+                "no method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
+            return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, new Z42ErrorType(), sp);
         }
         if ((rt is Z42ErrorType) || (rt is Z42UnknownType)) {
-            return new BoundCall("instance", true, recv, "<?>", mem.Name, args, argCount, new Z42ErrorType());
+            return new BoundCall("instance", true, recv, "<?>", mem.Name, args, argCount, new Z42ErrorType(), sp);
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch,
-            "call on non-class `" + rt.Name() + "`", this._noSpan());
-        return new BoundError("call on non-class", new Z42ErrorType());
+            "call on non-class `" + rt.Name() + "`", sp);
+        return new BoundError("call on non-class", new Z42ErrorType(), sp);
     }
 
     // 两分支公共类型（三目 / ??）：互为可赋取较宽，否则取左（C# 报错；1E 简化）。
@@ -462,12 +462,12 @@ public sealed class TypeChecker {
         while (i < n.ArgCount) { args[i] = this._bindExpr(n.Args[i], env); i = i + 1; }
         Z42Type t = env.ResolveType(n.Type);
         if (t is Z42UnknownType) {
-            this._diags.Error(DiagnosticCodes.UndefinedSymbol, "unknown type in `new`: " + n.Type.Dump(), this._noSpan());
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol, "unknown type in `new`: " + n.Type.Dump(), n.Span);
         }
         if (t is Z42InstantiatedType) {   // 2B：泛型实例化 → 校验型参约束（委托 ConstraintChecker）
             this._constraints.Check(env.GetSymbols(), t as Z42InstantiatedType);
         }
-        return new BoundNew(t.Name(), args, n.ArgCount, t);
+        return new BoundNew(t.Name(), args, n.ArgCount, t, n.Span);
     }
 
     // 方法查找：本类 → base 链（迭代）。
@@ -485,6 +485,4 @@ public sealed class TypeChecker {
         return null;
     }
 
-    // AST 节点 1A 暂不携 Span → 占位（span-bearing AST 是后续 syntax 增强）。
-    private Span _noSpan() { return new Span(0, 0, 1, 1, "<sem>"); }
 }

@@ -6,6 +6,7 @@ namespace Z42cSyntaxStmtTests;
 using Std;
 using Std.Test;
 using Z42.Syntax;
+using Z42.Core;
 
 string parseStmt(string src) {
     var p = new Parser(src, "t.z42");
@@ -116,4 +117,17 @@ void test_try() {
     // 裸 catch（无类型无变量）
     Assert.Equal("(try (block (expr (call a))) (catch _ _ (block (expr (call b)))))",
                  parseStmt("try { a(); } catch { b(); }"));
+}
+
+// ── span（add-z42c-source-spans）────────────────────────────────────────────────
+[Test]
+void test_stmt_spans() {
+    // 第 2 行的 return：span 行/列指向起始 token
+    var p = new Parser("int F() {\n    return 5;\n}", "t.z42");
+    var cu = p.ParseCompilationUnit();
+    MethodDecl f = cu.Decls[0] as MethodDecl;
+    BlockStmt body = f.Body as BlockStmt;
+    Assert.Equal(2, body.Stmts[0].Span.Line);
+    Assert.Equal(5, body.Stmts[0].Span.Column);
+    Assert.Equal("t.z42", body.Stmts[0].Span.File);
 }

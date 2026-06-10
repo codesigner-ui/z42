@@ -4,7 +4,10 @@
 //   + decl / return / expr-stmt / block。运算/成员/控制流见 1B+。
 namespace Z42.Semantics;
 
+using Z42.Core;
+
 public class BoundExpr {
+    public Span Span;
     public virtual Z42Type Type() { return new Z42UnknownType(); }
     public virtual string  Dump() { return "?bexpr"; }
 }
@@ -12,7 +15,7 @@ public class BoundExpr {
 public sealed class BoundLitInt : BoundExpr {
     public string Text;       // 原始字面量文本（数值解析留 codegen）
     private Z42Type _type;
-    public BoundLitInt(string text, Z42Type type) { this.Text = text; this._type = type; }
+    public BoundLitInt(string text, Z42Type type, Span span) { this.Span = span; this.Text = text; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(lit-int " + this.Text + " :" + this._type.Name() + ")"; }
 }
@@ -20,7 +23,7 @@ public sealed class BoundLitInt : BoundExpr {
 public sealed class BoundLitFloat : BoundExpr {
     public string Text;       // 原始字面量文本（含可能的 f/d 后缀；数值解析留 codegen）
     private Z42Type _type;
-    public BoundLitFloat(string text, Z42Type type) { this.Text = text; this._type = type; }
+    public BoundLitFloat(string text, Z42Type type, Span span) { this.Span = span; this.Text = text; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(lit-float " + this.Text + " :" + this._type.Name() + ")"; }
 }
@@ -28,7 +31,7 @@ public sealed class BoundLitFloat : BoundExpr {
 public sealed class BoundLitStr : BoundExpr {
     public string Raw;        // 原始词素（含引号）
     private Z42Type _type;
-    public BoundLitStr(string raw, Z42Type type) { this.Raw = raw; this._type = type; }
+    public BoundLitStr(string raw, Z42Type type, Span span) { this.Span = span; this.Raw = raw; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(lit-str " + this.Raw + " :" + this._type.Name() + ")"; }
 }
@@ -36,7 +39,7 @@ public sealed class BoundLitStr : BoundExpr {
 public sealed class BoundLitBool : BoundExpr {
     public bool Value;
     private Z42Type _type;
-    public BoundLitBool(bool value, Z42Type type) { this.Value = value; this._type = type; }
+    public BoundLitBool(bool value, Z42Type type, Span span) { this.Span = span; this.Value = value; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() {
         string v = "false"; if (this.Value) { v = "true"; }
@@ -46,7 +49,7 @@ public sealed class BoundLitBool : BoundExpr {
 
 public sealed class BoundLitNull : BoundExpr {
     private Z42Type _type;
-    public BoundLitNull(Z42Type type) { this._type = type; }
+    public BoundLitNull(Z42Type type, Span span) { this.Span = span; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(lit-null :" + this._type.Name() + ")"; }
 }
@@ -54,7 +57,7 @@ public sealed class BoundLitNull : BoundExpr {
 public sealed class BoundIdent : BoundExpr {
     public string Name;
     private Z42Type _type;
-    public BoundIdent(string name, Z42Type type) { this.Name = name; this._type = type; }
+    public BoundIdent(string name, Z42Type type, Span span) { this.Span = span; this.Name = name; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(ident " + this.Name + " :" + this._type.Name() + ")"; }
 }
@@ -63,7 +66,7 @@ public sealed class BoundAssign : BoundExpr {
     public BoundExpr Target;
     public BoundExpr Value;
     private Z42Type _type;
-    public BoundAssign(BoundExpr target, BoundExpr value, Z42Type type) {
+    public BoundAssign(BoundExpr target, BoundExpr value, Z42Type type, Span span) { this.Span = span;
         this.Target = target; this.Value = value; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -84,7 +87,7 @@ public sealed class BoundCall : BoundExpr {
     public int         ArgCount;
     private Z42Type _retType;
     public BoundCall(string kind, bool hasReceiver, BoundExpr receiver, string ownerClass,
-                     string methodName, BoundExpr[] args, int argCount, Z42Type retType) {
+                     string methodName, BoundExpr[] args, int argCount, Z42Type retType, Span span) { this.Span = span;
         this.Kind = kind; this.HasReceiver = hasReceiver; this.Receiver = receiver;
         this.OwnerClass = ownerClass; this.MethodName = methodName;
         this.Args = args; this.ArgCount = argCount; this._retType = retType;
@@ -107,7 +110,7 @@ public sealed class BoundBinary : BoundExpr {
     public BoundExpr Left;
     public BoundExpr Right;
     private Z42Type _type;
-    public BoundBinary(string op, BoundExpr left, BoundExpr right, Z42Type type) {
+    public BoundBinary(string op, BoundExpr left, BoundExpr right, Z42Type type, Span span) { this.Span = span;
         this.Op = op; this.Left = left; this.Right = right; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -121,7 +124,7 @@ public sealed class BoundUnary : BoundExpr {
     public string    Op;
     public BoundExpr Operand;
     private Z42Type _type;
-    public BoundUnary(string op, BoundExpr operand, Z42Type type) {
+    public BoundUnary(string op, BoundExpr operand, Z42Type type, Span span) { this.Span = span;
         this.Op = op; this.Operand = operand; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -135,7 +138,7 @@ public sealed class BoundMember : BoundExpr {
     public BoundExpr Target;
     public string    MemberName;
     private Z42Type _type;
-    public BoundMember(BoundExpr target, string memberName, Z42Type type) {
+    public BoundMember(BoundExpr target, string memberName, Z42Type type, Span span) { this.Span = span;
         this.Target = target; this.MemberName = memberName; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -149,7 +152,7 @@ public sealed class BoundIndex : BoundExpr {
     public BoundExpr Target;
     public BoundExpr Index;
     private Z42Type _type;
-    public BoundIndex(BoundExpr target, BoundExpr index, Z42Type type) {
+    public BoundIndex(BoundExpr target, BoundExpr index, Z42Type type, Span span) { this.Span = span;
         this.Target = target; this.Index = index; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -163,7 +166,7 @@ public sealed class BoundIsExpr : BoundExpr {
     public BoundExpr E;
     public string    TypeName;
     private Z42Type _type;
-    public BoundIsExpr(BoundExpr e, string typeName) { this.E = e; this.TypeName = typeName; this._type = new Z42PrimType("bool"); }
+    public BoundIsExpr(BoundExpr e, string typeName, Span span) { this.Span = span; this.E = e; this.TypeName = typeName; this._type = new Z42PrimType("bool"); }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(is " + this.E.Dump() + " " + this.TypeName + " :bool)"; }
 }
@@ -172,7 +175,7 @@ public sealed class BoundIsExpr : BoundExpr {
 public sealed class BoundCast : BoundExpr {
     public BoundExpr E;
     private Z42Type _type;
-    public BoundCast(BoundExpr e, Z42Type type) { this.E = e; this._type = type; }
+    public BoundCast(BoundExpr e, Z42Type type, Span span) { this.Span = span; this.E = e; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(cast " + this.E.Dump() + " :" + this._type.Name() + ")"; }
 }
@@ -183,7 +186,7 @@ public sealed class BoundNew : BoundExpr {
     public BoundExpr[] Args;
     public int         ArgCount;
     private Z42Type _type;
-    public BoundNew(string typeName, BoundExpr[] args, int argCount, Z42Type type) {
+    public BoundNew(string typeName, BoundExpr[] args, int argCount, Z42Type type, Span span) { this.Span = span;
         this.TypeName = typeName; this.Args = args; this.ArgCount = argCount; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -198,7 +201,7 @@ public sealed class BoundNew : BoundExpr {
 public sealed class BoundError : BoundExpr {
     public string Message;
     private Z42Type _type;
-    public BoundError(string message, Z42Type type) { this.Message = message; this._type = type; }
+    public BoundError(string message, Z42Type type, Span span) { this.Span = span; this.Message = message; this._type = type; }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() { return "(error :" + this._type.Name() + ")"; }
 }
@@ -209,7 +212,7 @@ public sealed class BoundConditional : BoundExpr {
     public BoundExpr Then;
     public BoundExpr Else;
     private Z42Type _type;
-    public BoundConditional(BoundExpr cond, BoundExpr then, BoundExpr els, Z42Type type) {
+    public BoundConditional(BoundExpr cond, BoundExpr then, BoundExpr els, Z42Type type, Span span) { this.Span = span;
         this.Cond = cond; this.Then = then; this.Else = els; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
@@ -221,6 +224,7 @@ public sealed class BoundConditional : BoundExpr {
 // ── 语句 ──────────────────────────────────────────────────────────────────────
 
 public class BoundStmt {
+    public Span Span;
     public virtual string Dump() { return "?bstmt"; }
 }
 
@@ -228,7 +232,7 @@ public sealed class BoundVarDeclStmt : BoundStmt {
     public string    Name;
     public Z42Type   VarType;
     public BoundExpr Init;
-    public BoundVarDeclStmt(string name, Z42Type varType, BoundExpr init) {
+    public BoundVarDeclStmt(string name, Z42Type varType, BoundExpr init, Span span) { this.Span = span;
         this.Name = name; this.VarType = varType; this.Init = init;
     }
     public override string Dump() {
@@ -239,7 +243,7 @@ public sealed class BoundVarDeclStmt : BoundStmt {
 public sealed class BoundReturn : BoundStmt {
     public bool      HasValue;
     public BoundExpr Value;     // 仅 HasValue
-    public BoundReturn(bool hasValue, BoundExpr value) { this.HasValue = hasValue; this.Value = value; }
+    public BoundReturn(bool hasValue, BoundExpr value, Span span) { this.Span = span; this.HasValue = hasValue; this.Value = value; }
     public override string Dump() {
         if (this.HasValue) { return "(return " + this.Value.Dump() + ")"; }
         return "(return)";
@@ -248,14 +252,14 @@ public sealed class BoundReturn : BoundStmt {
 
 public sealed class BoundExprStmt : BoundStmt {
     public BoundExpr E;
-    public BoundExprStmt(BoundExpr e) { this.E = e; }
+    public BoundExprStmt(BoundExpr e, Span span) { this.Span = span; this.E = e; }
     public override string Dump() { return "(expr " + this.E.Dump() + ")"; }
 }
 
 public sealed class BoundBlock : BoundStmt {
     public BoundStmt[] Stmts;
     public int         Count;
-    public BoundBlock(BoundStmt[] stmts, int count) { this.Stmts = stmts; this.Count = count; }
+    public BoundBlock(BoundStmt[] stmts, int count, Span span) { this.Span = span; this.Stmts = stmts; this.Count = count; }
     public override string Dump() {
         string s = "(block";
         int i = 0;
@@ -272,7 +276,7 @@ public sealed class BoundIf : BoundStmt {
     public BoundStmt Then;
     public bool      HasElse;
     public BoundStmt Else;     // 仅 HasElse
-    public BoundIf(BoundExpr cond, BoundStmt then, bool hasElse, BoundStmt els) {
+    public BoundIf(BoundExpr cond, BoundStmt then, bool hasElse, BoundStmt els, Span span) { this.Span = span;
         this.Cond = cond; this.Then = then; this.HasElse = hasElse; this.Else = els;
     }
     public override string Dump() {
@@ -286,18 +290,18 @@ public sealed class BoundIf : BoundStmt {
 public sealed class BoundWhile : BoundStmt {
     public BoundExpr Cond;
     public BoundStmt Body;
-    public BoundWhile(BoundExpr cond, BoundStmt body) { this.Cond = cond; this.Body = body; }
+    public BoundWhile(BoundExpr cond, BoundStmt body, Span span) { this.Span = span; this.Cond = cond; this.Body = body; }
     public override string Dump() {
         return "(while " + this.Cond.Dump() + " " + this.Body.Dump() + ")";
     }
 }
 
 public sealed class BoundBreak : BoundStmt {
-    public BoundBreak() {}
+    public BoundBreak(Span span) { this.Span = span;}
     public override string Dump() { return "(break)"; }
 }
 
 public sealed class BoundContinue : BoundStmt {
-    public BoundContinue() {}
+    public BoundContinue(Span span) { this.Span = span;}
     public override string Dump() { return "(continue)"; }
 }

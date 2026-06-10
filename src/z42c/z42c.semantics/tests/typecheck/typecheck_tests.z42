@@ -41,6 +41,8 @@ void test_free_func_call() {
 void test_error_return_type_mismatch() {
     string src = "class C { int Bad() { return \"hi\"; } }";   // string 不可赋给 int
     Assert.Equal(1, SemanticDump.ErrorCount(src));
+    // 诊断指向表达式（"hi" 在 1:30）——span 链验证（add-z42c-source-spans）
+    Assert.Equal("1:30", SemanticDump.FirstErrorPos(src));
 }
 
 [Test]

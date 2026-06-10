@@ -2,49 +2,52 @@
 // 表达式：字面量/标识符/一元/二元/后缀（成员·调用·索引）/赋值。语句见 Stmt.z42。
 namespace Z42.Syntax;
 
+using Z42.Core;
+
 public class Expr {
+    public Span Span;
     public virtual string Dump() { return "?"; }
 }
 
 public sealed class IntLitExpr : Expr {
     public string Value;
-    public IntLitExpr(string value) { this.Value = value; }
+    public IntLitExpr(string value, Span span) { this.Span = span; this.Value = value; }
     public override string Dump() { return this.Value; }
 }
 
 public sealed class FloatLitExpr : Expr {
     public string Value;
-    public FloatLitExpr(string value) { this.Value = value; }
+    public FloatLitExpr(string value, Span span) { this.Span = span; this.Value = value; }
     public override string Dump() { return this.Value; }
 }
 
 public sealed class StringLitExpr : Expr {
     public string Raw;
-    public StringLitExpr(string raw) { this.Raw = raw; }
+    public StringLitExpr(string raw, Span span) { this.Span = span; this.Raw = raw; }
     public override string Dump() { return this.Raw; }
 }
 
 public sealed class BoolLitExpr : Expr {
     public bool Value;
-    public BoolLitExpr(bool value) { this.Value = value; }
+    public BoolLitExpr(bool value, Span span) { this.Span = span; this.Value = value; }
     public override string Dump() { if (this.Value) { return "true"; } return "false"; }
 }
 
 public sealed class NullLitExpr : Expr {
-    public NullLitExpr() {}
+    public NullLitExpr(Span span) { this.Span = span;}
     public override string Dump() { return "null"; }
 }
 
 public sealed class IdentExpr : Expr {
     public string Name;
-    public IdentExpr(string name) { this.Name = name; }
+    public IdentExpr(string name, Span span) { this.Span = span; this.Name = name; }
     public override string Dump() { return this.Name; }
 }
 
 public sealed class UnaryExpr : Expr {
     public string Op;
     public Expr   Operand;
-    public UnaryExpr(string op, Expr operand) { this.Op = op; this.Operand = operand; }
+    public UnaryExpr(string op, Expr operand, Span span) { this.Span = span; this.Op = op; this.Operand = operand; }
     public override string Dump() { return "(" + this.Op + " " + this.Operand.Dump() + ")"; }
 }
 
@@ -52,7 +55,7 @@ public sealed class BinaryExpr : Expr {
     public string Op;
     public Expr   Left;
     public Expr   Right;
-    public BinaryExpr(string op, Expr left, Expr right) {
+    public BinaryExpr(string op, Expr left, Expr right, Span span) { this.Span = span;
         this.Op = op; this.Left = left; this.Right = right;
     }
     public override string Dump() {
@@ -65,14 +68,14 @@ public sealed class BinaryExpr : Expr {
 public sealed class MemberExpr : Expr {
     public Expr   Target;
     public string Name;
-    public MemberExpr(Expr target, string name) { this.Target = target; this.Name = name; }
+    public MemberExpr(Expr target, string name, Span span) { this.Span = span; this.Target = target; this.Name = name; }
     public override string Dump() { return "(. " + this.Target.Dump() + " " + this.Name + ")"; }
 }
 
 public sealed class IndexExpr : Expr {
     public Expr Target;
     public Expr Index;
-    public IndexExpr(Expr target, Expr index) { this.Target = target; this.Index = index; }
+    public IndexExpr(Expr target, Expr index, Span span) { this.Span = span; this.Target = target; this.Index = index; }
     public override string Dump() { return "(index " + this.Target.Dump() + " " + this.Index.Dump() + ")"; }
 }
 
@@ -80,7 +83,7 @@ public sealed class AssignExpr : Expr {
     public string Op;    // "=" / "+=" / "-=" / ...
     public Expr   Target;
     public Expr   Value;
-    public AssignExpr(string op, Expr target, Expr value) { this.Op = op; this.Target = target; this.Value = value; }
+    public AssignExpr(string op, Expr target, Expr value, Span span) { this.Span = span; this.Op = op; this.Target = target; this.Value = value; }
     public override string Dump() { return "(" + this.Op + " " + this.Target.Dump() + " " + this.Value.Dump() + ")"; }
 }
 
@@ -88,7 +91,7 @@ public sealed class CallExpr : Expr {
     public Expr   Callee;
     public Expr[] Args;
     public int    ArgCount;
-    public CallExpr(Expr callee, Expr[] args, int argCount) {
+    public CallExpr(Expr callee, Expr[] args, int argCount, Span span) { this.Span = span;
         this.Callee = callee; this.Args = args; this.ArgCount = argCount;
     }
     public override string Dump() {
@@ -103,7 +106,7 @@ public sealed class TernaryExpr : Expr {
     public Expr Cond;
     public Expr Then;
     public Expr Else;
-    public TernaryExpr(Expr cond, Expr then, Expr els) { this.Cond = cond; this.Then = then; this.Else = els; }
+    public TernaryExpr(Expr cond, Expr then, Expr els, Span span) { this.Span = span; this.Cond = cond; this.Then = then; this.Else = els; }
     public override string Dump() {
         return "(?: " + this.Cond.Dump() + " " + this.Then.Dump() + " " + this.Else.Dump() + ")";
     }
@@ -112,14 +115,14 @@ public sealed class TernaryExpr : Expr {
 public sealed class IsExpr : Expr {
     public Expr     E;
     public TypeExpr Type;
-    public IsExpr(Expr e, TypeExpr type) { this.E = e; this.Type = type; }
+    public IsExpr(Expr e, TypeExpr type, Span span) { this.Span = span; this.E = e; this.Type = type; }
     public override string Dump() { return "(is " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 
 public sealed class AsExpr : Expr {
     public Expr     E;
     public TypeExpr Type;
-    public AsExpr(Expr e, TypeExpr type) { this.E = e; this.Type = type; }
+    public AsExpr(Expr e, TypeExpr type, Span span) { this.Span = span; this.E = e; this.Type = type; }
     public override string Dump() { return "(as " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 
@@ -127,7 +130,7 @@ public sealed class ObjNewExpr : Expr {
     public TypeExpr Type;
     public Expr[]   Args;
     public int      ArgCount;
-    public ObjNewExpr(TypeExpr type, Expr[] args, int argCount) {
+    public ObjNewExpr(TypeExpr type, Expr[] args, int argCount, Span span) { this.Span = span;
         this.Type = type; this.Args = args; this.ArgCount = argCount;
     }
     public override string Dump() {

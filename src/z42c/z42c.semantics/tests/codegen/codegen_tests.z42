@@ -8,7 +8,7 @@ using Z42.Semantics;
 [Test]
 void test_return_int_literal() {
     string src = "int F() { return 5; }";
-    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 5\n  ret %0\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -24,7 +24,7 @@ void test_binary_add_instance_method() {
 void test_var_decl_and_assign() {
     // var x = 1; x = x + 2; return x; —— 赋值回写 copy 进 x 的寄存器（SSA-lite）
     string src = "int F() { var x = 1; x = x + 2; return x; }";
-    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i32 1\n  %1 = const.i32 2\n  %2 = add i32 %0, %1\n  %0 = copy %2\n  ret %0\n}",
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 1\n  %1 = copy %0\n  %2 = const.i64 2\n  %3 = add i32 %1, %2\n  %1 = copy %3\n  ret %1\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -54,14 +54,15 @@ void test_string_literal() {
 void test_void_implicit_ret() {
     // void 方法无显式 return → entry 块以隐式 ret 终结
     string src = "void F() { }";
-    Assert.Equal("fn @F(0) -> void {\nentry:\n  ret\n}", IrDump.DumpFunc(src, "F"));
+    Assert.Equal("fn @F(0) -> void {\nentry:\n  ret\n}",
+                 IrDump.DumpFunc(src, "F"));
 }
 
 [Test]
 void test_module_dump() {
     // 模块名 = 根命名空间（无 → "main"，对齐 C# `cu.Namespace ?? "main"`）
     string src = "int F() { return 5; }";
-    Assert.Equal("module \"main\"\n\nfn @F(0) -> int {\nentry:\n  %0 = const.i32 5\n  ret %0\n}",
+    Assert.Equal("module \"main\"\n\nfn @F(0) -> int {\nentry:\n  %0 = const.i64 5\n  ret %0\n}",
                  IrDump.DumpModule(src));
 }
 
@@ -71,7 +72,7 @@ void test_module_dump() {
 void test_if_then_return() {
     // if 无 else：cond 块 br.cond → then / 汇合 end（end 可达，承接后续 return）
     string src = "int F(bool c) { if (c) { return 1; } return 2; }";
-    Assert.Equal("fn @F(1) -> int {\nentry:\n  br.cond %0, then_0, end_1\nthen_0:\n  %1 = const.i32 1\n  ret %1\nend_1:\n  %2 = const.i32 2\n  ret %2\n}",
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  br.cond %0, then_0, end_1\nthen_0:\n  %1 = const.i64 1\n  ret %1\nend_1:\n  %2 = const.i64 2\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -79,7 +80,7 @@ void test_if_then_return() {
 void test_if_else_merge() {
     // if/else 两分支写 x，汇合 end 块读 x
     string src = "int F(bool c) { int x = 0; if (c) { x = 1; } else { x = 2; } return x; }";
-    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br.cond %0, then_0, else_1\nthen_0:\n  %2 = const.i32 1\n  %1 = copy %2\n  br end_2\nelse_1:\n  %3 = const.i32 2\n  %1 = copy %3\n  br end_2\nend_2:\n  ret %1\n}",
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i64 0\n  %2 = copy %1\n  br.cond %0, then_0, else_1\nthen_0:\n  %3 = const.i64 1\n  %2 = copy %3\n  br end_2\nelse_1:\n  %4 = const.i64 2\n  %2 = copy %4\n  br end_2\nend_2:\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -87,7 +88,7 @@ void test_if_else_merge() {
 void test_while_break() {
     // while：entry→cond，cond br.cond→body/end；break→end
     string src = "void F(bool c) { while (c) { break; } }";
-    Assert.Equal("fn @F(1) -> void {\nentry:\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  br while_end_2\nwhile_end_2:\n  ret\n}",
+    Assert.Equal("fn @F(1) -> void {\nentry:\n  br cond_0\ncond_0:\n  br.cond %0, body_1, end_2\nbody_1:\n  br end_2\nend_2:\n  ret\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -95,15 +96,15 @@ void test_while_break() {
 void test_while_continue() {
     // continue→cond（回边）
     string src = "void F(bool c) { while (c) { continue; } }";
-    Assert.Equal("fn @F(1) -> void {\nentry:\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  br while_cond_0\nwhile_end_2:\n  ret\n}",
+    Assert.Equal("fn @F(1) -> void {\nentry:\n  br cond_0\ncond_0:\n  br.cond %0, body_1, end_2\nbody_1:\n  br cond_0\nend_2:\n  ret\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
 [Test]
-void test_while_body_assign() {
+void test_body_assign() {
     // body 非空，末尾回边 br cond
     string src = "int F(bool c) { int x = 0; while (c) { x = 1; } return x; }";
-    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br while_cond_0\nwhile_cond_0:\n  br.cond %0, while_body_1, while_end_2\nwhile_body_1:\n  %2 = const.i32 1\n  %1 = copy %2\n  br while_cond_0\nwhile_end_2:\n  ret %1\n}",
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i64 0\n  %2 = copy %1\n  br cond_0\ncond_0:\n  br.cond %0, body_1, end_2\nbody_1:\n  %3 = const.i64 1\n  %2 = copy %3\n  br cond_0\nend_2:\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -143,7 +144,7 @@ void test_free_call() {
 [Test]
 void test_free_call_args() {
     string src = "int Add(int a, int b) { return a + b; } int Main() { return Add(1, 2); }";
-    Assert.Equal("fn @Main(0) -> int {\nentry:\n  %0 = const.i32 1\n  %1 = const.i32 2\n  %2 = call @Add(%0, %1)\n  ret %2\n}",
+    Assert.Equal("fn @Main(0) -> int {\nentry:\n  %0 = const.i64 1\n  %1 = const.i64 2\n  %2 = call @Add(%0, %1)\n  ret %2\n}",
                  IrDump.DumpFunc(src, "Main"));
 }
 
@@ -175,21 +176,21 @@ void test_new() {
 [Test]
 void test_new_args() {
     string src = "class P { } class D { P Make() { return new P(1, 2); } }";
-    Assert.Equal("fn @D.Make(1) -> P {\nentry:\n  %1 = const.i32 1\n  %2 = const.i32 2\n  %3 = obj_new P(%1, %2)\n  ret %3\n}",
+    Assert.Equal("fn @D.Make(1) -> P {\nentry:\n  %1 = const.i64 1\n  %2 = const.i64 2\n  %3 = obj_new P(%1, %2)\n  ret %3\n}",
                  IrDump.DumpFunc(src, "D.Make"));
 }
 
 [Test]
 void test_array_get() {
     string src = "class C { int First(int[] xs) { return xs[0]; } }";
-    Assert.Equal("fn @C.First(2) -> int {\nentry:\n  %2 = const.i32 0\n  %3 = array_get %1[%2]\n  ret %3\n}",
+    Assert.Equal("fn @C.First(2) -> int {\nentry:\n  %2 = const.i64 0\n  %3 = array_get %1[%2]\n  ret %3\n}",
                  IrDump.DumpFunc(src, "C.First"));
 }
 
 [Test]
 void test_array_set() {
     string src = "class C { void Set(int[] xs, int v) { xs[0] = v; } }";
-    Assert.Equal("fn @C.Set(3) -> void {\nentry:\n  %3 = const.i32 0\n  array_set %1[%3], %2\n  ret\n}",
+    Assert.Equal("fn @C.Set(3) -> void {\nentry:\n  %3 = const.i64 0\n  array_set %1[%3], %2\n  ret\n}",
                  IrDump.DumpFunc(src, "C.Set"));
 }
 
@@ -240,9 +241,9 @@ void test_unary_not() {
 
 [Test]
 void test_string_concat() {
-    // a + b（string）→ str_concat（非 add）
+    // a + b（string）→ add tag=str（C# 字节实证）
     string src = "string F(string a, string b) { return a + b; }";
-    Assert.Equal("fn @F(2) -> string {\nentry:\n  %2 = str_concat %0, %1\n  ret %2\n}",
+    Assert.Equal("fn @F(2) -> string {\nentry:\n  %2 = add str %0, %1\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -250,7 +251,7 @@ void test_string_concat() {
 void test_loop_with_comparison() {
     // 真实循环：while (i < n) { i = i + 1; } —— 比较条件 + 回边
     string src = "int F(int n) { int i = 0; while (i < n) { i = i + 1; } return i; }";
-    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i32 0\n  br while_cond_0\nwhile_cond_0:\n  %2 = lt i32 %1, %0\n  br.cond %2, while_body_1, while_end_2\nwhile_body_1:\n  %3 = const.i32 1\n  %4 = add i32 %1, %3\n  %1 = copy %4\n  br while_cond_0\nwhile_end_2:\n  ret %1\n}",
+    Assert.Equal("fn @F(1) -> int {\nentry:\n  %1 = const.i64 0\n  %2 = copy %1\n  br cond_0\ncond_0:\n  %3 = lt i32 %2, %0\n  br.cond %3, body_1, end_2\nbody_1:\n  %4 = const.i64 1\n  %5 = add i32 %2, %4\n  %2 = copy %5\n  br cond_0\nend_2:\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 

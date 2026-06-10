@@ -4,17 +4,21 @@ namespace Z42cSemanticsBoundTests;
 using Std;
 using Std.Test;
 using Z42.Semantics;
+using Z42.Core;
+
+// 测试占位 span（Dump 不消费）。
+Span _sp() { return new Span(0, 0, 1, 1, "<t>"); }
 
 [Test]
 void test_bound_dump() {
     var i = new Z42PrimType("int");
-    var lit = new BoundLitInt("5", i);
+    var lit = new BoundLitInt("5", i, _sp());
     Assert.Equal("(lit-int 5 :int)", lit.Dump());
-    var id = new BoundIdent("x", i);
+    var id = new BoundIdent("x", i, _sp());
     Assert.Equal("(ident x :int)", id.Dump());
-    var decl = new BoundVarDeclStmt("y", i, lit);
+    var decl = new BoundVarDeclStmt("y", i, lit, _sp());
     Assert.Equal("(decl y :int (lit-int 5 :int))", decl.Dump());
-    var ret = new BoundReturn(true, id);
+    var ret = new BoundReturn(true, id, _sp());
     Assert.Equal("(return (ident x :int))", ret.Dump());
 }
 
@@ -22,9 +26,9 @@ void test_bound_dump() {
 void test_bound_block_and_assign() {
     var i = new Z42PrimType("int");
     var stmts = new BoundStmt[1];
-    var asn = new BoundAssign(new BoundIdent("x", i), new BoundLitInt("3", i), i);
-    stmts[0] = new BoundExprStmt(asn);
-    var blk = new BoundBlock(stmts, 1);
+    var asn = new BoundAssign(new BoundIdent("x", i, _sp()), new BoundLitInt("3", i, _sp()), i, _sp());
+    stmts[0] = new BoundExprStmt(asn, _sp());
+    var blk = new BoundBlock(stmts, 1, _sp());
     Assert.Equal("(block (expr (assign (ident x :int) (lit-int 3 :int) :int)))", blk.Dump());
 }
 
@@ -55,13 +59,13 @@ void test_typeenv_with_class() {
 void test_bound_binary_unary_dump() {
     var i = new Z42PrimType("int");
     var b = new Z42PrimType("bool");
-    var bin = new BoundBinary("+", new BoundIdent("x", i), new BoundLitInt("1", i), i);
+    var bin = new BoundBinary("+", new BoundIdent("x", i, _sp()), new BoundLitInt("1", i, _sp()), i, _sp());
     Assert.Equal("(bin + (ident x :int) (lit-int 1 :int) :int)", bin.Dump());
-    var un = new BoundUnary("-", new BoundIdent("x", i), i);
+    var un = new BoundUnary("-", new BoundIdent("x", i, _sp()), i, _sp());
     Assert.Equal("(unary - (ident x :int) :int)", un.Dump());
-    var not = new BoundUnary("!", new BoundLitBool(true, b), b);
+    var not = new BoundUnary("!", new BoundLitBool(true, b, _sp()), b, _sp());
     Assert.Equal("(unary ! (lit-bool true :bool) :bool)", not.Dump());
-    var f = new BoundLitFloat("1.5", new Z42PrimType("double"));
+    var f = new BoundLitFloat("1.5", new Z42PrimType("double"), _sp());
     Assert.Equal("(lit-float 1.5 :double)", f.Dump());
 }
 
@@ -69,18 +73,18 @@ void test_bound_binary_unary_dump() {
 void test_bound_control_flow_dump() {
     var b = new Z42PrimType("bool");
     var noStmts = new BoundStmt[0];
-    var emptyBlk = new BoundBlock(noStmts, 0);
+    var emptyBlk = new BoundBlock(noStmts, 0, _sp());
     // if 无 else
-    var ifNoElse = new BoundIf(new BoundLitBool(true, b), emptyBlk, false, emptyBlk);
+    var ifNoElse = new BoundIf(new BoundLitBool(true, b, _sp()), emptyBlk, false, emptyBlk, _sp());
     Assert.Equal("(if (lit-bool true :bool) (block))", ifNoElse.Dump());
     // if + else
-    var ifElse = new BoundIf(new BoundLitBool(false, b), emptyBlk, true, emptyBlk);
+    var ifElse = new BoundIf(new BoundLitBool(false, b, _sp()), emptyBlk, true, emptyBlk, _sp());
     Assert.Equal("(if (lit-bool false :bool) (block) (block))", ifElse.Dump());
     // while + break/continue 在体内
     var inner = new BoundStmt[2];
-    inner[0] = new BoundBreak();
-    inner[1] = new BoundContinue();
-    var body = new BoundBlock(inner, 2);
-    var wh = new BoundWhile(new BoundLitBool(true, b), body);
+    inner[0] = new BoundBreak(_sp());
+    inner[1] = new BoundContinue(_sp());
+    var body = new BoundBlock(inner, 2, _sp());
+    var wh = new BoundWhile(new BoundLitBool(true, b, _sp()), body, _sp());
     Assert.Equal("(while (lit-bool true :bool) (block (break) (continue)))", wh.Dump());
 }

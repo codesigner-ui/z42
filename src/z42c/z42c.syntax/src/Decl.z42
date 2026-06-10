@@ -3,33 +3,39 @@
 // 受限写法：class 继承 + virtual Dump()。类型/修饰符捕获为字符串文本（增量；TypeExpr 后续）。
 namespace Z42.Syntax;
 
+using Z42.Core;
+
 public sealed class Param {
+    public Span Span;
     public TypeExpr Type;
     public string   Name;
-    public Param(TypeExpr type, string name) { this.Type = type; this.Name = name; }
+    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; }
     public string Dump() { return this.Type.Dump() + " " + this.Name; }
 }
 
 // 解析期临时持有者：参数列表（Items + Count）。z42 无元组返回 → 用 holder。
 public sealed class ParamList {
+    public Span Span;
     public Param[] Items;
     public int     Count;
-    public ParamList(Param[] items, int count) { this.Items = items; this.Count = count; }
+    public ParamList(Param[] items, int count, Span span) { this.Span = span; this.Items = items; this.Count = count; }
 }
 
 // 解析期临时持有者：类型列表（基类/接口列表）。
 public sealed class TypeList {
+    public Span Span;
     public TypeExpr[] Items;
     public int        Count;
-    public TypeList(TypeExpr[] items, int count) { this.Items = items; this.Count = count; }
+    public TypeList(TypeExpr[] items, int count, Span span) { this.Span = span; this.Items = items; this.Count = count; }
 }
 
 // 单个 attribute：Name [( arg, ... )]。参数捕获为表达式（命名参数 `k=v` 即 AssignExpr）。
 public sealed class Attr {
+    public Span Span;
     public string Name;
     public Expr[] Args;
     public int    ArgCount;
-    public Attr(string name, Expr[] args, int argCount) {
+    public Attr(string name, Expr[] args, int argCount, Span span) { this.Span = span;
         this.Name = name; this.Args = args; this.ArgCount = argCount;
     }
     public string Dump() {
@@ -42,12 +48,14 @@ public sealed class Attr {
 
 // 解析期临时持有者：前置 attribute 集合。
 public sealed class AttrList {
+    public Span Span;
     public Attr[] Items;
     public int    Count;
-    public AttrList(Attr[] items, int count) { this.Items = items; this.Count = count; }
+    public AttrList(Attr[] items, int count, Span span) { this.Span = span; this.Items = items; this.Count = count; }
 }
 
 public class Decl {
+    public Span Span;
     public virtual string Dump() { return "?decl"; }
 }
 
@@ -56,7 +64,7 @@ public sealed class AttributedDecl : Decl {
     public Attr[] Attrs;
     public int    AttrCount;
     public Decl   Inner;
-    public AttributedDecl(Attr[] attrs, int attrCount, Decl inner) {
+    public AttributedDecl(Attr[] attrs, int attrCount, Decl inner, Span span) { this.Span = span;
         this.Attrs = attrs; this.AttrCount = attrCount; this.Inner = inner;
     }
     public override string Dump() {
@@ -69,7 +77,7 @@ public sealed class AttributedDecl : Decl {
 
 public sealed class UsingDecl : Decl {
     public string Name;
-    public UsingDecl(string name) { this.Name = name; }
+    public UsingDecl(string name, Span span) { this.Span = span; this.Name = name; }
     public override string Dump() { return "(using " + this.Name + ")"; }
 }
 
@@ -79,7 +87,7 @@ public sealed class FieldDecl : Decl {
     public string   Name;
     public bool     HasInit;
     public Expr     Init;
-    public FieldDecl(string mods, TypeExpr type, string name, bool hasInit, Expr init) {
+    public FieldDecl(string mods, TypeExpr type, string name, bool hasInit, Expr init, Span span) { this.Span = span;
         this.Mods = mods; this.Type = type; this.Name = name;
         this.HasInit = hasInit; this.Init = init;
     }
@@ -108,7 +116,8 @@ public sealed class MethodDecl : Decl {
     public Stmt          Body;        // 仅 HasBody 时有效
     public MethodDecl(string mods, bool isFree, bool isCtor, TypeExpr retType, string name,
                       TypeParamList typeParams, WhereClause[] wheres, int whereCount,
-                      Param[] ps, int pc, bool hasBody, Stmt body) {
+                      Param[] ps, int pc, bool hasBody, Stmt body,
+                Span span) { this.Span = span;
         this.Mods = mods; this.IsFree = isFree; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
         this.TypeParams = typeParams; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
@@ -146,7 +155,8 @@ public sealed class PropertyDecl : Decl {
     public Expr     Init;      // 仅 HasInit 时有效
     public PropertyDecl(string mods, TypeExpr type, string name,
                         bool hasGet, string getMods, bool hasSet, string setMods,
-                        bool hasInit, Expr init) {
+                        bool hasInit, Expr init,
+                Span span) { this.Span = span;
         this.Mods = mods; this.Type = type; this.Name = name;
         this.HasGet = hasGet; this.GetMods = getMods; this.HasSet = hasSet; this.SetMods = setMods;
         this.HasInit = hasInit; this.Init = init;
@@ -178,7 +188,8 @@ public sealed class ClassDecl : Decl {
     public Decl[]        Members;
     public int           MemberCount;
     public ClassDecl(string kind, string mods, string name, TypeParamList typeParams,
-                     TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc) {
+                     TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc,
+                Span span) { this.Span = span;
         this.Kind = kind; this.Mods = mods; this.Name = name; this.TypeParams = typeParams;
         this.Bases = bases; this.BaseCount = baseCount; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Members = members; this.MemberCount = mc;
@@ -215,10 +226,11 @@ public class DeclHelpers {
 }
 
 public sealed class EnumMember {
+    public Span Span;
     public string Name;
     public bool   HasValue;
     public string Value;   // int 字面量文本（可含前导 '-'）；仅 HasValue 时有效
-    public EnumMember(string name, bool hasValue, string value) {
+    public EnumMember(string name, bool hasValue, string value, Span span) { this.Span = span;
         this.Name = name; this.HasValue = hasValue; this.Value = value;
     }
     public string Dump() {
@@ -234,7 +246,7 @@ public sealed class EnumDecl : Decl {
     public TypeExpr     Base;        // 仅 HasBase 时有效
     public EnumMember[] Members;
     public int          MemberCount;
-    public EnumDecl(string mods, string name, bool hasBase, TypeExpr baseType, EnumMember[] members, int mc) {
+    public EnumDecl(string mods, string name, bool hasBase, TypeExpr baseType, EnumMember[] members, int mc, Span span) { this.Span = span;
         this.Mods = mods; this.Name = name; this.HasBase = hasBase; this.Base = baseType;
         this.Members = members; this.MemberCount = mc;
     }
@@ -259,7 +271,8 @@ public sealed class DelegateDecl : Decl {
     public Param[]       Params;
     public int           ParamCount;
     public DelegateDecl(string mods, TypeExpr retType, string name, TypeParamList typeParams,
-                        Param[] ps, int pc, WhereClause[] wheres, int whereCount) {
+                        Param[] ps, int pc, WhereClause[] wheres, int whereCount,
+                Span span) { this.Span = span;
         this.Mods = mods; this.RetType = retType; this.Name = name; this.TypeParams = typeParams;
         this.Params = ps; this.ParamCount = pc; this.Wheres = wheres; this.WhereCount = whereCount;
     }
@@ -293,7 +306,8 @@ public sealed class RecordDecl : Decl {
     public Decl[]        Members;
     public int           MemberCount;
     public RecordDecl(string mods, string name, TypeParamList typeParams, Param[] pos, int pc,
-                      TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc) {
+                      TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc,
+                Span span) { this.Span = span;
         this.Mods = mods; this.Name = name; this.TypeParams = typeParams; this.PosParams = pos; this.PosCount = pc;
         this.Bases = bases; this.BaseCount = baseCount; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Members = members; this.MemberCount = mc;
@@ -312,11 +326,12 @@ public sealed class RecordDecl : Decl {
 }
 
 public sealed class CompilationUnit {
+    public Span Span;
     public bool   HasNamespace;
     public string Namespace;
     public Decl[] Decls;
     public int    DeclCount;
-    public CompilationUnit(bool hasNs, string ns, Decl[] decls, int dc) {
+    public CompilationUnit(bool hasNs, string ns, Decl[] decls, int dc, Span span) { this.Span = span;
         this.HasNamespace = hasNs; this.Namespace = ns; this.Decls = decls; this.DeclCount = dc;
     }
     public string Dump() {

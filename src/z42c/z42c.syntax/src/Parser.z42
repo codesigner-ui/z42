@@ -59,7 +59,7 @@ public sealed class Parser {
                 string name = this._peek().Text;
                 if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
                 else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name after '.'", this._peek().Span); }
-                left = new MemberExpr(left, name);
+                left = new MemberExpr(left, name, left.Span);
                 continue;
             }
             if (k == TokenKind.LParen) { this._advance(); left = this._parseCall(left); continue; }
@@ -67,7 +67,7 @@ public sealed class Parser {
                 this._advance();
                 Expr idx = this._parseExpr(0);
                 this._expect(TokenKind.RBracket, "]");
-                left = new IndexExpr(left, idx);
+                left = new IndexExpr(left, idx, left.Span);
                 continue;
             }
             // is / as（bp 60，右侧为类型）
@@ -75,14 +75,14 @@ public sealed class Parser {
                 bool isIs = (k == TokenKind.Is);
                 this._advance();
                 TypeExpr ty = this._parseType();
-                if (isIs) { left = new IsExpr(left, ty); } else { left = new AsExpr(left, ty); }
+                if (isIs) { left = new IsExpr(left, ty, left.Span); } else { left = new AsExpr(left, ty, left.Span); }
                 continue;
             }
             // ??（右结合，bp 25）
             if (k == TokenKind.QuestionQuestion && minBp <= 25) {
                 this._advance();
                 Expr rr = this._parseExpr(25);
-                left = new BinaryExpr("??", left, rr);
+                left = new BinaryExpr("??", left, rr, left.Span);
                 continue;
             }
             // 三目 ?:（右结合，bp 20）
@@ -91,7 +91,7 @@ public sealed class Parser {
                 Expr thenE = this._parseExpr(0);
                 this._expect(TokenKind.Colon, ":");
                 Expr elseE = this._parseExpr(20);
-                left = new TernaryExpr(left, thenE, elseE);
+                left = new TernaryExpr(left, thenE, elseE, left.Span);
                 continue;
             }
             // 赋值 / 复合赋值（右结合，bp 10）
@@ -99,7 +99,7 @@ public sealed class Parser {
                 string aop = this._peek().Text;
                 this._advance();
                 Expr rhs = this._parseExpr(10);
-                left = new AssignExpr(aop, left, rhs);
+                left = new AssignExpr(aop, left, rhs, left.Span);
                 continue;
             }
             // 二元
@@ -108,7 +108,7 @@ public sealed class Parser {
             string op = this._peek().Text;
             this._advance();
             Expr right = this._parseExpr(bp + 1);
-            left = new BinaryExpr(op, left, right);
+            left = new BinaryExpr(op, left, right, left.Span);
         }
         return left;
     }
@@ -129,7 +129,7 @@ public sealed class Parser {
             }
         }
         this._expect(TokenKind.RParen, ")");
-        return new CallExpr(callee, args, n);
+        return new CallExpr(callee, args, n, callee.Span);
     }
 
     private Expr _parsePrefix() {
@@ -138,7 +138,7 @@ public sealed class Parser {
         if (k == TokenKind.Minus || k == TokenKind.Bang || k == TokenKind.Tilde || k == TokenKind.Plus) {
             this._advance();
             Expr operand = this._parseExpr(85);
-            return new UnaryExpr(t.Text, operand);
+            return new UnaryExpr(t.Text, operand, t.Span);
         }
         if (k == TokenKind.LParen) {
             this._advance();
@@ -166,18 +166,18 @@ public sealed class Parser {
                 }
                 this._expect(TokenKind.RParen, ")");
             }
-            return new ObjNewExpr(ty, args, n);
+            return new ObjNewExpr(ty, args, n, t.Span);
         }
-        if (k == TokenKind.IntLiteral)    { this._advance(); return new IntLitExpr(t.Text); }
-        if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text); }
-        if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text); }
-        if (k == TokenKind.True)          { this._advance(); return new BoolLitExpr(true); }
-        if (k == TokenKind.False)         { this._advance(); return new BoolLitExpr(false); }
-        if (k == TokenKind.Null)          { this._advance(); return new NullLitExpr(); }
-        if (k == TokenKind.Identifier)    { this._advance(); return new IdentExpr(t.Text); }
+        if (k == TokenKind.IntLiteral)    { this._advance(); return new IntLitExpr(t.Text, t.Span); }
+        if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text, t.Span); }
+        if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text, t.Span); }
+        if (k == TokenKind.True)          { this._advance(); return new BoolLitExpr(true, t.Span); }
+        if (k == TokenKind.False)         { this._advance(); return new BoolLitExpr(false, t.Span); }
+        if (k == TokenKind.Null)          { this._advance(); return new NullLitExpr(t.Span); }
+        if (k == TokenKind.Identifier)    { this._advance(); return new IdentExpr(t.Text, t.Span); }
         this._diags.Error(DiagnosticCodes.UnexpectedToken, "unexpected token in expression", t.Span);
         this._advance();
-        return new IdentExpr("<error>");
+        return new IdentExpr("<error>", t.Span);
     }
 
     private int _infixBp(int k) {
@@ -204,7 +204,8 @@ public sealed class Parser {
 
     // ════ 语句 ══════════════════════════════════════════════════════════════
     public Stmt ParseStatement() {
-        int k = this._peek().Kind;
+        Token st = this._peek();
+        int k = st.Kind;
         if (k == TokenKind.LBrace)  { return this._parseBlock(); }
         if (k == TokenKind.Return)  { return this._parseReturn(); }
         if (k == TokenKind.If)      { return this._parseIf(); }
@@ -214,16 +215,17 @@ public sealed class Parser {
         if (k == TokenKind.Do)      { return this._parseDoWhile(); }
         if (k == TokenKind.Switch)  { return this._parseSwitch(); }
         if (k == TokenKind.Try)     { return this._parseTry(); }
-        if (k == TokenKind.Break)   { this._advance(); this._expectSemi(); return new BreakStmt(); }
-        if (k == TokenKind.Continue){ this._advance(); this._expectSemi(); return new ContinueStmt(); }
-        if (k == TokenKind.Throw)   { this._advance(); Expr te = this._parseExpr(0); this._expectSemi(); return new ThrowStmt(te); }
+        if (k == TokenKind.Break)   { this._advance(); this._expectSemi(); return new BreakStmt(st.Span); }
+        if (k == TokenKind.Continue){ this._advance(); this._expectSemi(); return new ContinueStmt(st.Span); }
+        if (k == TokenKind.Throw)   { this._advance(); Expr te = this._parseExpr(0); this._expectSemi(); return new ThrowStmt(te, st.Span); }
         if (this._isVarDeclStart()) { return this._parseVarDecl(); }
         Expr e = this._parseExpr(0);
         this._expectSemi();
-        return new ExprStmt(e);
+        return new ExprStmt(e, st.Span);
     }
 
     private Stmt _parseForeach() {
+        Span sp = this._peek().Span;
         this._advance();   // foreach
         this._expect(TokenKind.LParen, "(");
         TypeExpr t = this._parseType();
@@ -234,31 +236,33 @@ public sealed class Parser {
         Expr iter = this._parseExpr(0);
         this._expect(TokenKind.RParen, ")");
         Stmt body = this.ParseStatement();
-        return new ForeachStmt(t, n, iter, body);
+        return new ForeachStmt(t, n, iter, body, sp);
     }
 
     // for (init; cond; incr) body —— 三段任意可省。init 走 ParseStatement（消费自身 ';'）。
     private Stmt _parseFor() {
+        Span sp = this._peek().Span;
         this._advance();   // for
         this._expect(TokenKind.LParen, "(");
         bool hasInit = false;
-        Stmt init = new ExprStmt(new NullLitExpr());
+        Stmt init = new ExprStmt(new NullLitExpr(sp), sp);
         if (this._peek().Kind != TokenKind.Semicolon) { init = this.ParseStatement(); hasInit = true; }
         else { this._advance(); }   // 空 init：吃掉 ';'
         bool hasCond = false;
-        Expr cond = new NullLitExpr();
+        Expr cond = new NullLitExpr(sp);
         if (this._peek().Kind != TokenKind.Semicolon) { cond = this._parseExpr(0); hasCond = true; }
         this._expectSemi();
         bool hasIncr = false;
-        Expr incr = new NullLitExpr();
+        Expr incr = new NullLitExpr(sp);
         if (this._peek().Kind != TokenKind.RParen) { incr = this._parseExpr(0); hasIncr = true; }
         this._expect(TokenKind.RParen, ")");
         Stmt body = this.ParseStatement();
-        return new ForStmt(hasInit, init, hasCond, cond, hasIncr, incr, body);
+        return new ForStmt(hasInit, init, hasCond, cond, hasIncr, incr, body, sp);
     }
 
     // do body while (cond);
     private Stmt _parseDoWhile() {
+        Span sp = this._peek().Span;
         this._advance();   // do
         Stmt body = this.ParseStatement();
         this._expect(TokenKind.While, "while");
@@ -266,11 +270,12 @@ public sealed class Parser {
         Expr cond = this._parseExpr(0);
         this._expect(TokenKind.RParen, ")");
         this._expectSemi();
-        return new DoWhileStmt(body, cond);
+        return new DoWhileStmt(body, cond, sp);
     }
 
     // switch (subj) { case p: stmts...  default: stmts... }
     private Stmt _parseSwitch() {
+        Span sp = this._peek().Span;
         this._advance();   // switch
         this._expect(TokenKind.LParen, "(");
         Expr subject = this._parseExpr(0);
@@ -279,8 +284,9 @@ public sealed class Parser {
         SwitchCase[] cases = new SwitchCase[8];
         int cc = 0;
         while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            Span csp = this._peek().Span;
             bool hasPattern = false;
-            Expr pattern = new NullLitExpr();
+            Expr pattern = new NullLitExpr(csp);
             if (this._peek().Kind == TokenKind.Default) {
                 this._advance(); this._expect(TokenKind.Colon, ":");
             } else {
@@ -304,19 +310,21 @@ public sealed class Parser {
                 int i = 0; while (i < cc) { bigger[i] = cases[i]; i = i + 1; }
                 cases = bigger;
             }
-            cases[cc] = new SwitchCase(hasPattern, pattern, body, bc); cc = cc + 1;
+            cases[cc] = new SwitchCase(hasPattern, pattern, body, bc, csp); cc = cc + 1;
         }
         this._expect(TokenKind.RBrace, "}");
-        return new SwitchStmt(subject, cases, cc);
+        return new SwitchStmt(subject, cases, cc, sp);
     }
 
     // try {} catch (Type v) {} catch {} finally {} —— 类型/变量名均可省。
     private Stmt _parseTry() {
+        Span sp = this._peek().Span;
         this._advance();   // try
         Stmt tryBody = this._parseBlock();
         CatchClause[] catches = new CatchClause[4];
         int cc = 0;
         while (this._peek().Kind == TokenKind.Catch) {
+            Span ksp = this._peek().Span;
             this._advance();   // catch
             bool hasType = false;
             TypeExpr exType = this._emptyType();
@@ -338,17 +346,18 @@ public sealed class Parser {
                 int i = 0; while (i < cc) { bigger[i] = catches[i]; i = i + 1; }
                 catches = bigger;
             }
-            catches[cc] = new CatchClause(hasType, exType, hasVar, varName, cbody); cc = cc + 1;
+            catches[cc] = new CatchClause(hasType, exType, hasVar, varName, cbody, ksp); cc = cc + 1;
         }
         bool hasFinally = false;
-        Stmt finallyBody = new BlockStmt(new Stmt[0], 0);
+        Stmt finallyBody = new BlockStmt(new Stmt[0], 0, sp);
         if (this._peek().Kind == TokenKind.Finally) {
             this._advance(); finallyBody = this._parseBlock(); hasFinally = true;
         }
-        return new TryCatchStmt(tryBody, catches, cc, hasFinally, finallyBody);
+        return new TryCatchStmt(tryBody, catches, cc, hasFinally, finallyBody, sp);
     }
 
     private Stmt _parseBlock() {
+        Span sp = this._peek().Span;
         this._advance();   // {
         Stmt[] stmts = new Stmt[8];
         int n = 0;
@@ -361,21 +370,23 @@ public sealed class Parser {
             stmts[n] = this.ParseStatement(); n = n + 1;
         }
         this._expect(TokenKind.RBrace, "}");
-        return new BlockStmt(stmts, n);
+        return new BlockStmt(stmts, n, sp);
     }
 
     private Stmt _parseReturn() {
+        Span sp = this._peek().Span;
         this._advance();   // return
         if (this._peek().Kind == TokenKind.Semicolon) {
             this._advance();
-            return new ReturnStmt(false, new NullLitExpr());
+            return new ReturnStmt(false, new NullLitExpr(sp), sp);
         }
         Expr v = this._parseExpr(0);
         this._expectSemi();
-        return new ReturnStmt(true, v);
+        return new ReturnStmt(true, v, sp);
     }
 
     private Stmt _parseIf() {
+        Span sp = this._peek().Span;
         this._advance();   // if
         this._expect(TokenKind.LParen, "(");
         Expr cond = this._parseExpr(0);
@@ -384,18 +395,19 @@ public sealed class Parser {
         if (this._peek().Kind == TokenKind.Else) {
             this._advance();
             Stmt els = this.ParseStatement();
-            return new IfStmt(cond, then, true, els);
+            return new IfStmt(cond, then, true, els, sp);
         }
-        return new IfStmt(cond, then, false, then);
+        return new IfStmt(cond, then, false, then, sp);
     }
 
     private Stmt _parseWhile() {
+        Span sp = this._peek().Span;
         this._advance();   // while
         this._expect(TokenKind.LParen, "(");
         Expr cond = this._parseExpr(0);
         this._expect(TokenKind.RParen, ")");
         Stmt body = this.ParseStatement();
-        return new WhileStmt(cond, body);
+        return new WhileStmt(cond, body, sp);
     }
 
     // var x = e;  /  int x = e;  /  Foo x = e;
@@ -408,6 +420,7 @@ public sealed class Parser {
     }
 
     private Stmt _parseVarDecl() {
+        Span sp = this._peek().Span;
         TypeExpr type = this._parseType();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
@@ -415,7 +428,7 @@ public sealed class Parser {
         this._expect(TokenKind.Eq, "=");
         Expr init = this._parseExpr(0);
         this._expectSemi();
-        return new VarDeclStmt(type, name, init);
+        return new VarDeclStmt(type, name, init, sp);
     }
 
     private bool _isTypeKeyword(int k) {
@@ -431,6 +444,7 @@ public sealed class Parser {
 
     // ════ 顶层声明 ══════════════════════════════════════════════════════════
     public CompilationUnit ParseCompilationUnit() {
+        Span cusp = this._peek().Span;
         bool hasNs = false;
         string ns = "";
         Decl[] decls = new Decl[16];
@@ -442,14 +456,15 @@ public sealed class Parser {
                 continue;
             }
             if (k == TokenKind.Using) {
+                Span usp = this._peek().Span;
                 this._advance(); string un = this._parseQualifiedName(); this._expectSemi();
-                decls = this._growDecls(decls, n); decls[n] = new UsingDecl(un); n = n + 1;
+                decls = this._growDecls(decls, n); decls[n] = new UsingDecl(un, usp); n = n + 1;
                 continue;
             }
             AttrList attrs = this._parseAttributes();
             string mods = this._parseModifiers();
             int dk = this._peek().Kind;
-            Decl d = new UsingDecl("<error>");
+            Decl d = new UsingDecl("<error>", this._peek().Span);
             bool ok = true;
             if (dk == TokenKind.Class || dk == TokenKind.Struct || dk == TokenKind.Interface) {
                 string kind = "class";
@@ -471,11 +486,11 @@ public sealed class Parser {
                 ok = false;
             }
             if (ok) {
-                if (attrs.Count > 0) { d = new AttributedDecl(attrs.Items, attrs.Count, d); }
+                if (attrs.Count > 0) { d = new AttributedDecl(attrs.Items, attrs.Count, d, d.Span); }
                 decls = this._growDecls(decls, n); decls[n] = d; n = n + 1;
             }
         }
-        return new CompilationUnit(hasNs, ns, decls, n);
+        return new CompilationUnit(hasNs, ns, decls, n, cusp);
     }
 
     private Decl[] _growDecls(Decl[] a, int n) {
@@ -499,11 +514,13 @@ public sealed class Parser {
     // 前置 attribute：连续的 `[ Name [(args)] [, Name2 ...] ]` 组（args 为表达式，命名参数即 AssignExpr）。
     // 仅在声明/成员起始位置调用（此处 `[` 不会与索引/数组类型歧义）。
     private AttrList _parseAttributes() {
+        Span alsp = this._peek().Span;
         Attr[] items = new Attr[4];
         int n = 0;
         while (this._peek().Kind == TokenKind.LBracket) {
             this._advance();   // [
             while (true) {
+                Span asp = this._peek().Span;
                 string name = this._parseQualifiedName();
                 Expr[] args = new Expr[4];
                 int ac = 0;
@@ -527,12 +544,12 @@ public sealed class Parser {
                     int i = 0; while (i < n) { b[i] = items[i]; i = i + 1; }
                     items = b;
                 }
-                items[n] = new Attr(name, args, ac); n = n + 1;
+                items[n] = new Attr(name, args, ac, asp); n = n + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
             }
             this._expect(TokenKind.RBracket, "]");
         }
-        return new AttrList(items, n);
+        return new AttrList(items, n, alsp);
     }
 
     private string _parseModifiers() {
@@ -555,6 +572,7 @@ public sealed class Parser {
     // class / struct / interface 共用：消费关键字 + 名字 + 基类/接口列表 + 成员块。
     // 三者结构同构（仅 Kind 不同）；语义差异（struct 值类型、interface 仅签名）留给后端。
     private Decl _parseTypeDecl(string mods, string kind) {
+        Span sp = this._peek().Span;
         this._advance();   // class / struct / interface
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
@@ -575,11 +593,12 @@ public sealed class Parser {
             members = this._growDecls(members, mc); members[mc] = mem; mc = mc + 1;
         }
         this._expect(TokenKind.RBrace, "}");
-        return new ClassDecl(kind, mods, name, typeParams, bases, bc, wl.Items, wl.Count, members, mc);
+        return new ClassDecl(kind, mods, name, typeParams, bases, bc, wl.Items, wl.Count, members, mc, sp);
     }
 
     // enum Color [: int] { Red, Green = 5, Blue }  —— 成员 name [= [-]int]；值仅捕获文本，自增/校验留给后端。
     private Decl _parseEnum(string mods) {
+        Span sp = this._peek().Span;
         this._advance();   // enum
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
@@ -593,6 +612,7 @@ public sealed class Parser {
         EnumMember[] members = new EnumMember[8];
         int mc = 0;
         while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            Span msp = this._peek().Span;
             string mName = this._peek().Text;
             if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
             else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected enum member name", this._peek().Span); this._advance(); }
@@ -611,15 +631,16 @@ public sealed class Parser {
                 int i = 0; while (i < mc) { b[i] = members[i]; i = i + 1; }
                 members = b;
             }
-            members[mc] = new EnumMember(mName, hasValue, value); mc = mc + 1;
+            members[mc] = new EnumMember(mName, hasValue, value, msp); mc = mc + 1;
             if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
         }
         this._expect(TokenKind.RBrace, "}");
-        return new EnumDecl(mods, name, hasBase, baseType, members, mc);
+        return new EnumDecl(mods, name, hasBase, baseType, members, mc, sp);
     }
 
     // delegate R Name<T>(params) where ...;
     private Decl _parseDelegate(string mods) {
+        Span sp = this._peek().Span;
         this._advance();   // delegate
         TypeExpr retType = this._parseType();
         string name = this._peek().Text;
@@ -629,21 +650,23 @@ public sealed class Parser {
         ParamList pl = this._parseParamList();
         WhereList wl = this._parseWhereClause();
         this._expectSemi();
-        return new DelegateDecl(mods, retType, name, typeParams, pl.Items, pl.Count, wl.Items, wl.Count);
+        return new DelegateDecl(mods, retType, name, typeParams, pl.Items, pl.Count, wl.Items, wl.Count, sp);
     }
 
     // 顶层自由函数：retType Name<T>(params) where ... { body }（命名空间级，无 this）。
     private Decl _parseTopLevelFunc(string mods) {
+        Span sp = this._peek().Span;
         TypeExpr retType = this._parseType();
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected function name", this._peek().Span); }
         TypeParamList typeParams = this._parseTypeParams();
-        return this._parseMethodTail(mods, true, false, retType, name, typeParams);
+        return this._parseMethodTail(mods, true, false, retType, name, typeParams, sp);
     }
 
     // record Name<T> [(pos params)] [: base] [where ...] { members }  /  record Name(...) ;
     private Decl _parseRecord(string mods) {
+        Span sp = this._peek().Span;
         this._advance();   // record
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
@@ -673,24 +696,25 @@ public sealed class Parser {
         } else {
             this._expectSemi();
         }
-        return new RecordDecl(mods, name, typeParams, pos, pc, bases, bc, wl.Items, wl.Count, members, mc);
+        return new RecordDecl(mods, name, typeParams, pos, pc, bases, bc, wl.Items, wl.Count, members, mc, sp);
     }
 
     private Decl _parseMember(string className) {
         AttrList attrs = this._parseAttributes();
         string mods = this._parseModifiers();
         Decl d = this._parseMemberBody(mods, className);
-        if (attrs.Count > 0) { return new AttributedDecl(attrs.Items, attrs.Count, d); }
+        if (attrs.Count > 0) { return new AttributedDecl(attrs.Items, attrs.Count, d, d.Span); }
         return d;
     }
 
     private Decl _parseMemberBody(string mods, string className) {
+        Span sp = this._peek().Span;
         // 构造器：标识符(==类名) 紧跟 '('
         if (this._peek().Kind == TokenKind.Identifier && this._peek().Text == className
             && this._peekAt(1).Kind == TokenKind.LParen) {
             string cname = this._peek().Text;
             this._advance();
-            return this._parseMethodTail(mods, false, true, this._emptyType(), cname, this._emptyTypeParams());
+            return this._parseMethodTail(mods, false, true, this._emptyType(), cname, this._emptyTypeParams(), sp);
         }
         TypeExpr type = this._parseType();
         string name = this._peek().Text;
@@ -699,20 +723,20 @@ public sealed class Parser {
         // 泛型方法 `T Make<T>(...)`：成员名后的 `<` 必为类型形参（字段不会有 `<`）。
         TypeParamList mTypeParams = this._parseTypeParams();
         if (this._peek().Kind == TokenKind.LParen) {
-            return this._parseMethodTail(mods, false, false, type, name, mTypeParams);
+            return this._parseMethodTail(mods, false, false, type, name, mTypeParams, sp);
         }
         if (this._peek().Kind == TokenKind.LBrace) {
-            return this._parseProperty(mods, type, name);
+            return this._parseProperty(mods, type, name, sp);
         }
         bool hasInit = false;
-        Expr init = new NullLitExpr();
+        Expr init = new NullLitExpr(sp);
         if (this._peek().Kind == TokenKind.Eq) { this._advance(); init = this._parseExpr(0); hasInit = true; }
         this._expectSemi();
-        return new FieldDecl(mods, type, name, hasInit, init);
+        return new FieldDecl(mods, type, name, hasInit, init, sp);
     }
 
     // auto-property `{ [vis]? get; [ [vis]? set; ] }` [= init;]。get/set 为上下文标识符（非关键字）。
-    private Decl _parseProperty(string mods, TypeExpr type, string name) {
+    private Decl _parseProperty(string mods, TypeExpr type, string name, Span sp) {
         this._advance();   // {
         bool hasGet = false; string getMods = "";
         bool hasSet = false; string setMods = "";
@@ -736,11 +760,11 @@ public sealed class Parser {
         }
         this._expect(TokenKind.RBrace, "}");
         bool hasInit = false;
-        Expr init = new NullLitExpr();
+        Expr init = new NullLitExpr(sp);
         if (this._peek().Kind == TokenKind.Eq) {
             this._advance(); init = this._parseExpr(0); hasInit = true; this._expectSemi();
         }
-        return new PropertyDecl(mods, type, name, hasGet, getMods, hasSet, setMods, hasInit, init);
+        return new PropertyDecl(mods, type, name, hasGet, getMods, hasSet, setMods, hasInit, init, sp);
     }
 
     private bool _isVisibilityModifier(int k) {
@@ -751,6 +775,7 @@ public sealed class Parser {
 
     // 参数列表 `( T a, T b )`（消费两端括号）。method/ctor/func/delegate/record 位置参数共用。
     private ParamList _parseParamList() {
+        Span sp = this._peek().Span;
         this._expect(TokenKind.LParen, "(");
         Param[] ps = new Param[8];
         int pc = 0;
@@ -765,16 +790,17 @@ public sealed class Parser {
                     int i = 0; while (i < pc) { b[i] = ps[i]; i = i + 1; }
                     ps = b;
                 }
-                ps[pc] = new Param(pt, pn); pc = pc + 1;
+                ps[pc] = new Param(pt, pn, pt.Span); pc = pc + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
             }
         }
         this._expect(TokenKind.RParen, ")");
-        return new ParamList(ps, pc);
+        return new ParamList(ps, pc, sp);
     }
 
     // 基类/接口列表 `: A, B, C`（假定 peek==Colon）。
     private TypeList _parseBaseList() {
+        Span sp = this._peek().Span;
         this._advance();   // :
         TypeExpr[] items = new TypeExpr[4];
         int n = 0;
@@ -788,27 +814,28 @@ public sealed class Parser {
             }
             items[n] = this._parseType(); n = n + 1;
         }
-        return new TypeList(items, n);
+        return new TypeList(items, n, sp);
     }
 
     // ctor 占位返回类型（永不 Dump）。
-    private TypeExpr _emptyType() { return new NamedType("", new TypeExpr[0], 0); }
+    private TypeExpr _emptyType() { return new NamedType("", new TypeExpr[0], 0, this._peek().Span); }
 
     // method / ctor / 顶层 func 尾部：参数列表 + 可选 where + body（`{}`）或无体（`;`）。
-    private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, TypeExpr retType, string name, TypeParamList typeParams) {
+    private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, TypeExpr retType, string name, TypeParamList typeParams, Span sp) {
         ParamList pl = this._parseParamList();
         WhereList wl = this._parseWhereClause();
         bool hasBody = false;
-        Stmt body = new BlockStmt(new Stmt[0], 0);
+        Stmt body = new BlockStmt(new Stmt[0], 0, sp);
         if (this._peek().Kind == TokenKind.LBrace) { body = this._parseBlock(); hasBody = true; }
         else { this._expectSemi(); }
-        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body);
+        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body, sp);
     }
 
-    private TypeParamList _emptyTypeParams() { return new TypeParamList(new string[0], 0); }
+    private TypeParamList _emptyTypeParams() { return new TypeParamList(new string[0], 0, this._peek().Span); }
 
     // 类型形参声明 `<T>` / `<K, V>`（仅名字，单层；closing 单 `>`）。无 → 空 TypeParamList。
     private TypeParamList _parseTypeParams() {
+        Span sp = this._peek().Span;
         string[] names = new string[4];
         int n = 0;
         if (this._peek().Kind == TokenKind.Lt) {
@@ -829,14 +856,16 @@ public sealed class Parser {
             }
             this._expect(TokenKind.Gt, ">");
         }
-        return new TypeParamList(names, n);
+        return new TypeParamList(names, n, sp);
     }
 
     // where 子句：`where T : C1, C2 [where U : ...]`（可多段）。约束含类型 / new() / class / struct。
     private WhereList _parseWhereClause() {
+        Span sp = this._peek().Span;
         WhereClause[] items = new WhereClause[4];
         int n = 0;
         while (this._peek().Kind == TokenKind.Where) {
+            Span wsp = this._peek().Span;
             this._advance();
             string tp = this._peek().Text;
             if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
@@ -859,26 +888,28 @@ public sealed class Parser {
                 int i = 0; while (i < n) { b[i] = items[i]; i = i + 1; }
                 items = b;
             }
-            items[n] = new WhereClause(tp, cons, cn); n = n + 1;
+            items[n] = new WhereClause(tp, cons, cn, wsp); n = n + 1;
         }
-        return new WhereList(items, n);
+        return new WhereList(items, n, sp);
     }
 
     private WhereConstraint _parseConstraint() {
+        Span sp = this._peek().Span;
         int k = this._peek().Kind;
         if (k == TokenKind.New) {
             this._advance();
             this._expect(TokenKind.LParen, "(");
             this._expect(TokenKind.RParen, ")");
-            return new WhereConstraint(false, this._emptyType(), "new()");
+            return new WhereConstraint(false, this._emptyType(), "new()", sp);
         }
-        if (k == TokenKind.Class)  { this._advance(); return new WhereConstraint(false, this._emptyType(), "class"); }
-        if (k == TokenKind.Struct) { this._advance(); return new WhereConstraint(false, this._emptyType(), "struct"); }
-        return new WhereConstraint(true, this._parseType(), "");
+        if (k == TokenKind.Class)  { this._advance(); return new WhereConstraint(false, this._emptyType(), "class", sp); }
+        if (k == TokenKind.Struct) { this._advance(); return new WhereConstraint(false, this._emptyType(), "struct", sp); }
+        return new WhereConstraint(true, this._parseType(), "", sp);
     }
 
     // 结构化类型（incr 6d）：限定名 + 泛型 <...>（递归，含 >>/>>> 拆分）+ 数组 [] + nullable ?。
     private TypeExpr _parseType() {
+        Span sp = this._peek().Span;
         string name = this._peek().Text;
         this._advance();
         while (this._peek().Kind == TokenKind.Dot) {
@@ -906,12 +937,12 @@ public sealed class Parser {
                 }
             }
         }
-        TypeExpr t = new NamedType(name, args, ac);
+        TypeExpr t = new NamedType(name, args, ac, sp);
         while (this._peek().Kind == TokenKind.LBracket && this._peekAt(1).Kind == TokenKind.RBracket) {
             this._advance(); this._advance();
-            t = new ArrayType(t);
+            t = new ArrayType(t, sp);
         }
-        if (this._peek().Kind == TokenKind.Question) { this._advance(); t = new NullableType(t); }
+        if (this._peek().Kind == TokenKind.Question) { this._advance(); t = new NullableType(t, sp); }
         return t;
     }
 

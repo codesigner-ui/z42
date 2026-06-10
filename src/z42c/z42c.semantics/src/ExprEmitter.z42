@@ -15,8 +15,9 @@ public sealed class ExprEmitter {
             BoundLitInt li = e as BoundLitInt;
             int tag = this._ctx.ToIrType(li.Type());
             TypedReg r = this._ctx.Alloc(tag);
-            if (tag == IrType.I64 || tag == IrType.U64) { this._ctx.Emit(new ConstI64Instr(r, li.Text)); }
-            else { this._ctx.Emit(new ConstI32Instr(r, li.Text)); }
+            // 恒 ConstI64（镜像 C# FunctionEmitterExprs：int 字面量一律 ConstI64Instr，dst 仍按类型 tag；
+            // ConstI32 仅闭包 capture index 用——byte-identical 关键）。
+            this._ctx.Emit(new ConstI64Instr(r, li.Text));
             return r;
         }
         if (e is BoundLitFloat) {
@@ -99,8 +100,8 @@ public sealed class ExprEmitter {
         else if (op == "<<") { this._ctx.Emit(new ShlInstr(d, a, c)); }
         else if (op == ">>") { this._ctx.Emit(new ShrInstr(d, a, c)); }
         else if (op == "+") {
-            if (d.Type == IrType.Str) { this._ctx.Emit(new StrConcatInstr(d, a, c)); }
-            else { this._ctx.Emit(new AddInstr(d, a, c)); }
+            // 字符串拼接也走 Add（tag=str；C# 字节实证 0x10 非 0x85——StrConcatInstr 留作他途）
+            this._ctx.Emit(new AddInstr(d, a, c));
         }
         else { this._ctx.Emit(new AddInstr(d, a, c)); }   // && / || / ?? → CG-1E-2（占位）
         return d;

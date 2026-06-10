@@ -29,13 +29,22 @@ public static class IrDump {
         return ZbcWriter.WriteHex(IrDump._build(src));
     }
 
-    // 整模块 → .zbc 字节（driver --emit-zbc 写盘；纯函数，IO 在 driver）。
-    public static byte[] ZbcBytes(string src) {
-        return ZbcWriter.Write(IrDump._build(src)).ToBytes();
+    // 整模块 → .zbc 字节（driver --emit-zbc 写盘；纯函数，IO 在 driver）。file 进 span→DBUG（basename 化在 TrackLine）。
+    public static byte[] ZbcBytes(string src, string file) {
+        return ZbcWriter.Write(IrDump._buildF(src, file)).ToBytes();
+    }
+
+    // golden-hex 断言用：指定文件名（DBUG file 串须与 C# 同源 capture 一致）。
+    public static string DumpZbcHexF(string src, string file) {
+        return ZbcWriter.WriteHex(IrDump._buildF(src, file));
     }
 
     private static IrModule _build(string src) {
-        var p = new Parser(src, "<input>");
+        return IrDump._buildF(src, "<input>");
+    }
+
+    private static IrModule _buildF(string src, string file) {
+        var p = new Parser(src, file);
         var cu = p.ParseCompilationUnit();
         var symbols = new SymbolCollector().Collect(cu);
         var diags = new DiagnosticBag();

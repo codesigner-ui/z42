@@ -26,9 +26,10 @@ void Main() {
             Environment.Exit(2);
             return;
         }
-        File.WriteAllBytes(argv[2], IrDump.ZbcBytes(File.ReadAllText(file)));
+        File.WriteAllBytes(argv[2], IrDump.ZbcBytes(File.ReadAllText(file), file));
         return;
     }
+    if (cmd == "--dump-ir") { Console.WriteLine(IrDump.DumpModule(File.ReadAllText(file))); return; }
     if (cmd != "--dump-tokens" && cmd != "--dump-ast" && cmd != "--dump-bound") {
         ConsoleError.WriteLine("z42c: unknown command '" + cmd + "'");
         _usage();
@@ -47,5 +48,6 @@ void _usage() {
     Console.WriteLine("  z42c --dump-tokens <file.z42>          token stream");
     Console.WriteLine("  z42c --dump-ast    <file.z42>          AST s-expression");
     Console.WriteLine("  z42c --dump-bound  <file.z42>          type-checked Bound tree");
+    Console.WriteLine("  z42c --dump-ir     <file.z42>          .zasm-like IR text");
     Console.WriteLine("  z42c --emit-zbc    <file.z42> <out>    compile to .zbc (subset)");
 }

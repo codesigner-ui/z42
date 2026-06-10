@@ -48,6 +48,28 @@ public sealed class IrBlock {
     }
 }
 
+// 源码行表条目（DBUG section；镜像 C# IrLineEntry(BlockIdx,InstrIdx,Line,File,Column)）。
+// HasFile=false → 写 0xFFFFFFFF（C# File==null）。File 为 basename（跨机器可复现）。
+public sealed class IrLineEntry {
+    public int    BlockIdx;
+    public int    InstrIdx;
+    public int    Line;
+    public bool   HasFile;
+    public string File;
+    public int    Column;
+    public IrLineEntry(int blockIdx, int instrIdx, int line, bool hasFile, string file, int column) {
+        this.BlockIdx = blockIdx; this.InstrIdx = instrIdx; this.Line = line;
+        this.HasFile = hasFile; this.File = file; this.Column = column;
+    }
+}
+
+// 局部变量表条目（DBUG；镜像 C# IrLocalVarEntry(Name, RegId)）。
+public sealed class IrLocalVarEntry {
+    public string Name;
+    public int    RegId;
+    public IrLocalVarEntry(string name, int regId) { this.Name = name; this.RegId = regId; }
+}
+
 // 函数 IR：名 + 形参数（含 this）+ 返回类型名 + 基本块。MaxReg = 寄存器总数（预分配提示）。
 // byte-identical .zbc 必需的元数据（port-z42c-zbc-writer enrich）：
 //   ExecMode（SIGS，默认 "Interp"）/ ParamTypes（SIGS 每形参类型名）/ RegTypes（REGT 每寄存器 IrType 标签）。
@@ -64,14 +86,20 @@ public sealed class IrFunction {
     public int       ParamTypeCount;
     public int[]     RegTypes;        // reg id → IrType 标签（REGT section）
     public int       RegTypeCount;
+    public IrLineEntry[]     LineTable;  public int LineCount;       // DBUG 行表（add-z42c-source-spans）
+    public IrLocalVarEntry[] LocalVars;  public int LocalVarCount;   // DBUG 局部变量表
     public IrFunction(string name, int paramCount, string retType, bool isStatic,
                       IrBlock[] blocks, int blockCount, int maxReg,
                       string execMode, string[] paramTypes, int paramTypeCount,
-                      int[] regTypes, int regTypeCount) {
+                      int[] regTypes, int regTypeCount,
+                      IrLineEntry[] lineTable, int lineCount,
+                      IrLocalVarEntry[] localVars, int localVarCount) {
         this.Name = name; this.ParamCount = paramCount; this.RetType = retType; this.IsStatic = isStatic;
         this.Blocks = blocks; this.BlockCount = blockCount; this.MaxReg = maxReg;
         this.ExecMode = execMode; this.ParamTypes = paramTypes; this.ParamTypeCount = paramTypeCount;
         this.RegTypes = regTypes; this.RegTypeCount = regTypeCount;
+        this.LineTable = lineTable; this.LineCount = lineCount;
+        this.LocalVars = localVars; this.LocalVarCount = localVarCount;
     }
     public string Dump() {
         string s = "fn @" + this.Name + "(" + this.ParamCount.ToString() + ") -> " + this.RetType + " {";

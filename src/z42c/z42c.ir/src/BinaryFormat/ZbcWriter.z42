@@ -25,8 +25,12 @@ public static class ZbcWriter {
         var func = ZbcWriter._buildFunc(irm, pool, strRemap, alloc);
         var regt = ZbcWriter._buildRegt(irm);
 
-        string[]     tags   = new string[8];
-        ByteWriter[] datas  = new ByteWriter[8];
+        // DBUG（add-z42c-source-spans）：任一函数有行表/局部表 → flags.HasDebug + 第 9 section（镜像 C#）。
+        bool hasDebug = ZbcWriter._hasDebug(irm);
+        int secCount = 8;
+        if (hasDebug) { secCount = 9; }
+        string[]     tags   = new string[secCount];
+        ByteWriter[] datas  = new ByteWriter[secCount];
         tags[0] = "NSPC"; datas[0] = nspc;
         tags[1] = "STRS"; datas[1] = strs;
         tags[2] = "TYPE"; datas[2] = type;
@@ -35,7 +39,10 @@ public static class ZbcWriter {
         tags[5] = "EXPT"; datas[5] = expt;
         tags[6] = "FUNC"; datas[6] = func;
         tags[7] = "REGT"; datas[7] = regt;
-        return ZbcWriter._assemble(tags, datas, 8);
+        if (hasDebug) { tags[8] = "DBUG"; datas[8] = ZbcWriter._buildDbug(irm, pool); }
+        int flags = 0;
+        if (hasDebug) { flags = 2; }   // ZbcFlags.HasDebug
+        return ZbcWriter._assemble(tags, datas, secCount, flags);
     }
 
     // golden-hex 断言便捷封装。
@@ -74,6 +81,14 @@ public static class ZbcWriter {
                 while (ii < blk.InstrCount) { ZbcInstr.InternStrings(pool, blk.Instrs[ii]); ii = ii + 1; }
                 b = b + 1;
             }
+            // DBUG 串（镜像 C# InternPoolStrings：块循环后 LineTable.File → LocalVar.Name）。
+            int le = 0;
+            while (le < fdef.LineCount) {
+                if (fdef.LineTable[le].HasFile) { pool.Intern(fdef.LineTable[le].File); }
+                le = le + 1;
+            }
+            int lv = 0;
+            while (lv < fdef.LocalVarCount) { pool.Intern(fdef.LocalVars[lv].Name); lv = lv + 1; }
             fi = fi + 1;
         }
     }
@@ -294,15 +309,55 @@ public static class ZbcWriter {
         return w;
     }
 
+    // ── DBUG：u32 fnCount；每函数 u16 lineCount + 条目(blk u16,instr u16,line u32,file u32|FFFFFFFF,col u32)
+    //          + u16 varCount + 条目(name u32, reg u16)。镜像 C# BuildDbugSection。──────────────────
+    private static bool _hasDebug(IrModule irm) {
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            if (irm.Functions[fi].LineCount > 0 || irm.Functions[fi].LocalVarCount > 0) { return true; }
+            fi = fi + 1;
+        }
+        return false;
+    }
+
+    private static ByteWriter _buildDbug(IrModule irm, ZbcStringPool pool) {
+        var w = new ByteWriter();
+        w.WriteU32(irm.FuncCount);
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            IrFunction f = irm.Functions[fi];
+            w.WriteU16(f.LineCount);
+            int le = 0;
+            while (le < f.LineCount) {
+                IrLineEntry e = f.LineTable[le];
+                w.WriteU16(e.BlockIdx);
+                w.WriteU16(e.InstrIdx);
+                w.WriteU32(e.Line);
+                if (e.HasFile) { w.WriteU32(pool.Idx(e.File)); } else { w.WriteU32(-1); }   // -1 = 0xFFFFFFFF
+                w.WriteU32(e.Column);
+                le = le + 1;
+            }
+            w.WriteU16(f.LocalVarCount);
+            int lv = 0;
+            while (lv < f.LocalVarCount) {
+                w.WriteU32(pool.Idx(f.LocalVars[lv].Name));
+                w.WriteU16(f.LocalVars[lv].RegId);
+                lv = lv + 1;
+            }
+            fi = fi + 1;
+        }
+        return w;
+    }
+
     // ── 组装：header(16) + directory(secCount×12) + section data；offset 绝对回填 ──────────
-    private static ByteWriter _assemble(string[] tags, ByteWriter[] datas, int secCount) {
+    private static ByteWriter _assemble(string[] tags, ByteWriter[] datas, int secCount, int flags) {
         var w = new ByteWriter();
         // header
         w.WriteAsciiBytes("ZBC");
         w.WriteU8(0);
         w.WriteU16(ZbcVersion.Major);
         w.WriteU16(ZbcVersion.Minor);
-        w.WriteU16(0);          // flags（full 模式 = 0）
+        w.WriteU16(flags);      // bit1 = HasDebug
         w.WriteU16(secCount);
         w.WriteU32(0);          // reserved
         // directory：offset 从 header+dir 之后起，逐段累加 size。
