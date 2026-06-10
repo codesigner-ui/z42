@@ -9,8 +9,8 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | fix-qualified-base-upcast 调查后放弃（2026-06-10）：根因非 FQN-upcast 而是合成 attribute factory 返回类型回落 PrimType 的 name-resolution 缺陷，过深，留 reflection.md Deferred `attr-factory-return-type-resolution`，workaround（unqualified 基名）已在 |
-| `runtime` | add-reflection-value-record-flags | 2026-06-10 | `__type_is_value_type` / `__type_is_record`（读已有 class_flags bit2/3，无格式变更）|
-| `stdlib` | add-reflection-value-record-flags | 2026-06-10 | `Type.IsValueType` / `Type.IsRecord` |
+| `runtime` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`__type_is_value_type` / `__type_is_record`，无格式变更）|
+| `stdlib` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`Type.IsValueType` / `Type.IsRecord`）|
 | `z42c` | **port-z42c-zpkg-build（DRAFT 待审）** | 2026-06-10 | 自举主线（前序全归档：core→syntax→project 机械段→semantics→codegen→zbc-writer→source-spans✅）。本 change：`z42c build <toml>` 端到端产 **byte-identical packed .zpkg**（BP-0 IrGen ns 限定 / BP-R 段构建器共享化 / project 源发现 / ZpkgBuilder+Writer / driver build / packed-minimal golden + e2e build byte-compare）。design DRAFT 待 User 审批，未批不动代码 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
@@ -43,4 +43,5 @@
 | ~~fix-reflection-test-compile~~ | stdlib + docs —— ✅ 已归档 2026-06-10（add-field 遗留 reflection.z42 编译失败：`none` 关键字 + 限定基名 `: Std.Attribute` upcast；改 `noneAttrs` + unqualified `: Attribute`；dotnet test 1554/1554。根因 compiler FQN-upcast bug 入 reflection.md Deferred `attr-factory-qualified-base-upcast`）|
 | ~~migrate-xtask-launcher-to-std-cli~~ | toolchain —— ✅ 已归档 2026-06-10（xtask+launcher → Std.Cli 嵌套 router；`package`/`feature-matrix` 提顶层；删 `lib` 别名；每层 help；CI build package→package ×5。xtask GREEN 270/22 + test dist 347/0）|
 | ~~add-field-attribute-reflection~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（字段级用户 attribute 反射 `FieldInfo.GetCustomAttributes()`；zbc 1.14 / zpkg 0.16；cargo 799/0 + GoldenTests 1554/1554；参数 attr = follow-up）|
+| ~~add-reflection-value-record-flags~~ | runtime + stdlib —— ✅ 已归档 2026-06-10（`Type.IsValueType` / `Type.IsRecord`，读 type-flags 已捕获的 struct/record 位；**无格式 bump**；cargo 800/0 + GoldenTests 1554/1554）|
 | plan-0.3.x-three-streams | docs（不上锁） |

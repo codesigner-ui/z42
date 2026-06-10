@@ -16,6 +16,14 @@ class Derived : Shape {   // concrete subclass of an abstract base
     public int y;
 }
 
+// add-reflection-value-record-flags: struct → IsValueType, record → IsRecord.
+struct Vec2 {
+    public int x;
+    public int y;
+}
+
+record Pair(int a, int b);
+
 void Main() {
     Type ts = typeof(Shape);
     Assert.True(ts.IsAbstract);
@@ -28,6 +36,17 @@ void Main() {
     Type tp = typeof(Plain);
     Assert.False(tp.IsAbstract);
     Assert.False(tp.IsSealed);
+    Assert.False(tp.IsValueType);   // plain class is a reference type
+    Assert.False(tp.IsRecord);
+
+    // struct → IsValueType; record → IsRecord (each its own flag bit).
+    Type tv = typeof(Vec2);
+    Assert.True(tv.IsValueType);
+    Assert.False(tv.IsRecord);
+
+    Type tr = typeof(Pair);
+    Assert.True(tr.IsRecord);
+    Assert.False(tr.IsValueType);
 
     // Modifiers do not propagate through inheritance.
     Type td = typeof(Derived);
@@ -38,4 +57,6 @@ void Main() {
     Type ti = typeof(int);
     Assert.False(ti.IsAbstract);
     Assert.False(ti.IsSealed);
+    Assert.False(ti.IsValueType);
+    Assert.False(ti.IsRecord);
 }

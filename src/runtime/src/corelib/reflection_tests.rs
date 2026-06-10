@@ -227,6 +227,26 @@ fn type_flags_false_for_handle_less() {
     let c = ctx();
     assert_eq!(builtin_type_is_abstract(&c, &[Value::I64(7)]).unwrap(), Value::Bool(false));
     assert_eq!(builtin_type_is_sealed(&c, &[]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_value_type(&c, &[Value::I64(7)]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_record(&c, &[]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn type_flags_decode_struct_and_record() {
+    use crate::metadata::bytecode::{CLASS_FLAG_RECORD, CLASS_FLAG_STRUCT};
+    let c = ctx();
+    // Struct-only.
+    let tv = type_obj(&c, td_with_flags("Demo.Point", CLASS_FLAG_STRUCT));
+    assert_eq!(builtin_type_is_value_type(&c, &[tv.clone()]).unwrap(), Value::Bool(true));
+    assert_eq!(builtin_type_is_record(&c, &[tv]).unwrap(), Value::Bool(false));
+    // Record-only.
+    let tr = type_obj(&c, td_with_flags("Demo.Pair", CLASS_FLAG_RECORD));
+    assert_eq!(builtin_type_is_value_type(&c, &[tr.clone()]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_record(&c, &[tr]).unwrap(), Value::Bool(true));
+    // Plain class (flags 0).
+    let tp = type_obj(&c, bare_td("Demo.Plain"));
+    assert_eq!(builtin_type_is_value_type(&c, &[tp.clone()]).unwrap(), Value::Bool(false));
+    assert_eq!(builtin_type_is_record(&c, &[tp]).unwrap(), Value::Bool(false));
 }
 
 #[test]

@@ -41,6 +41,14 @@ public sealed class Type {
     [Native("__type_is_sealed")]
     public extern bool IsSealed { get; }
 
+    // True for a value type (`struct`). (add-reflection-value-record-flags)
+    [Native("__type_is_value_type")]
+    public extern bool IsValueType { get; }
+
+    // True if the type was declared `record`.
+    [Native("__type_is_record")]
+    public extern bool IsRecord { get; }
+
     // Public instance fields (including inherited; base-first). Empty for
     // primitives / arrays.
     [Native("__type_fields")]

@@ -47,6 +47,13 @@ sealed class SealedThing {
     public int n;
 }
 
+// add-reflection-value-record-flags: struct → IsValueType, record → IsRecord.
+struct ValueThing {
+    public int v;
+}
+
+record RecordThing(int a, int b);
+
 // add-reflection-static-fields: GetFields() includes static fields + IsStatic.
 class FieldHolder {
     public int instanceVal;
@@ -218,6 +225,22 @@ void test_type_is_sealed() {
     Type ts = typeof(SealedThing);
     Assert.True(ts.IsSealed);
     Assert.False(ts.IsAbstract);
+}
+
+[Test]
+void test_type_is_value_type() {
+    Type tv = typeof(ValueThing);
+    Assert.True(tv.IsValueType);
+    Assert.False(tv.IsRecord);
+    Type tc = typeof(Base);   // plain class
+    Assert.False(tc.IsValueType);
+}
+
+[Test]
+void test_type_is_record() {
+    Type tr = typeof(RecordThing);
+    Assert.True(tr.IsRecord);
+    Assert.False(tr.IsValueType);
 }
 
 [Test]

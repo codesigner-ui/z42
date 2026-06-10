@@ -633,6 +633,24 @@ pub fn builtin_type_is_sealed(_ctx: &VmContext, args: &[Value]) -> Result<Value>
     )))
 }
 
+/// `__type_is_value_type(typeObj) -> bool` — true for a `struct` (value type).
+/// Reads the struct bit captured in the TYPE-section flags byte (no new wire).
+/// add-reflection-value-record-flags.
+pub fn builtin_type_is_value_type(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    Ok(Value::Bool(class_flag_set(
+        args,
+        crate::metadata::bytecode::CLASS_FLAG_STRUCT,
+    )))
+}
+
+/// `__type_is_record(typeObj) -> bool` — true if the type was declared `record`.
+pub fn builtin_type_is_record(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    Ok(Value::Bool(class_flag_set(
+        args,
+        crate::metadata::bytecode::CLASS_FLAG_RECORD,
+    )))
+}
+
 /// Is the given class-flag bit set on the reflected Type's `TypeDesc`?
 /// Handle-less Types (primitive / array, `NativeData::None`) → false (lenient).
 fn class_flag_set(args: &[Value], bit: u8) -> bool {

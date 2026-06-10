@@ -217,6 +217,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__type_properties",    reflection::builtin_type_properties),
     ("__type_is_abstract",   reflection::builtin_type_is_abstract),
     ("__type_is_sealed",     reflection::builtin_type_is_sealed),
+    ("__type_is_value_type", reflection::builtin_type_is_value_type),
+    ("__type_is_record",     reflection::builtin_type_is_record),
     ("__type_custom_attributes", reflection::builtin_type_custom_attributes),
     ("__method_custom_attributes", reflection::builtin_method_custom_attributes),
     ("__field_custom_attributes", reflection::builtin_field_custom_attributes),
