@@ -153,20 +153,20 @@ int _executeChangedPlan(string[] cmds) {
     return exitCode;
 }
 
-// Run one plan command in-process. Logical `xtask test …` re-enters the test
-// router `_test` (argv[0] == "test"); raw `cargo …` runs via _exec. Returns the
-// command's exit code (2 on an unrecognized prefix, which shouldn't occur given
-// the mapping only ever emits these two shapes).
+// Run one plan command in-process. Logical `xtask test …` re-enters the
+// Std.Cli router via `_runCli` (argv[0] == "test"); raw `cargo …` runs via
+// _exec. Returns the command's exit code (2 on an unrecognized prefix, which
+// shouldn't occur given the mapping only ever emits these two shapes).
 int _runPlanCmd(string cmd) {
     string[] toks = _splitWords(cmd);
     if (toks.Length == 0) { return 0; }
     if (toks[0] == "xtask") {
         // Drop the leading "xtask"; the remainder ("test", "vm", …) is the
-        // _test argv (sub = argv[1]).
+        // _runCli argv (argv[0] == "test").
         string[] argv = new string[toks.Length - 1];
         int i = 1;
         while (i < toks.Length) { argv[i - 1] = toks[i]; i = i + 1; }
-        return _test(argv);
+        return _runCli(argv);
     }
     if (toks[0] == "cargo") {
         Process p = new Process("cargo");

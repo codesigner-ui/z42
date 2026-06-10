@@ -253,7 +253,7 @@ jobs:
           cargo test --manifest-path src/runtime/Cargo.toml -- --test-threads=1
 
       # ── host RID SDK package smoke ──
-      # Host-RID package via `z42 xtask.zpkg build package` (stdlib already built above).
+      # Host-RID package via `z42 xtask.zpkg package` (stdlib already built above).
       # Verifies the per-arch flat SDK layout (Phase 1.1 + 1.4 + drop-android-32bit)
       # works end-to-end on each desktop runner. Cross-platform RIDs (iOS / Android /
       # browser-wasm) deferred to a later CI matrix.
@@ -261,13 +261,13 @@ jobs:
       # shell: bash everywhere — on windows-latest this uses Git Bash (per
       # docs/workflow/windows.md; .gitattributes ensures LF on .sh).
 
-      - name: Package host RID (z42 xtask.zpkg build package)
+      - name: Package host RID (z42 xtask.zpkg package)
         shell: bash
         run: |
           set -euo pipefail
           vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            "$vm" artifacts/xtask/xtask.zpkg -- build package release
+            "$vm" artifacts/xtask/xtask.zpkg -- package release
 
       - name: Verify package manifest + native artifacts
         shell: bash
@@ -565,7 +565,7 @@ jobs:
 
       - uses: ./.github/actions/xtask-bootstrap-source
 
-      - name: Package ios-arm64 + iossim-arm64 (z42 xtask.zpkg build package)
+      - name: Package ios-arm64 + iossim-arm64 (z42 xtask.zpkg package)
         shell: bash
         run: |
           set -euo pipefail
@@ -573,7 +573,7 @@ jobs:
           libs="$PWD/artifacts/build/libraries/dist/release"
           for rid in ios-arm64 iossim-arm64; do
             Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" \
-              "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid "$rid"
+              "$vm" artifacts/xtask/xtask.zpkg -- package release --rid "$rid"
           done
 
       - name: Verify iOS packages
@@ -665,7 +665,7 @@ jobs:
 
       - uses: ./.github/actions/xtask-bootstrap-source
 
-      - name: Package android-arm64 + android-x64 (z42 xtask.zpkg build package)
+      - name: Package android-arm64 + android-x64 (z42 xtask.zpkg package)
         shell: bash
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -675,7 +675,7 @@ jobs:
           libs="$PWD/artifacts/build/libraries/dist/release"
           for rid in android-arm64 android-x64; do
             Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" \
-              "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid "$rid"
+              "$vm" artifacts/xtask/xtask.zpkg -- package release --rid "$rid"
           done
 
       - name: Verify Android packages
@@ -720,7 +720,7 @@ jobs:
   # Packages browser-wasm via wasm-pack (no Node.js needed — wasm-pack build
   # only generates JS glue, it doesn't execute it).
   # platforms/wasm/build.sh produces pkg-web/ + pkg-nodejs/ (required by
-  # before `xtask build package` can assemble the wasm SDK package).
+  # before `xtask package` can assemble the wasm SDK package).
   package-wasm:
     name: package-wasm
     runs-on: ubuntu-latest
@@ -767,13 +767,13 @@ jobs:
         run: ./build.sh
         working-directory: src/toolchain/host/platforms/wasm
 
-      - name: Package browser-wasm (z42 xtask.zpkg build package)
+      - name: Package browser-wasm (z42 xtask.zpkg package)
         shell: bash
         run: |
           set -euo pipefail
           vm="$PWD/artifacts/build/runtime/release/z42vm"
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid browser-wasm
+            "$vm" artifacts/xtask/xtask.zpkg -- package release --rid browser-wasm
 
       - name: Verify wasm package + WebAssembly validation
         run: |

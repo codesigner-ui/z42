@@ -23,36 +23,27 @@ namespace Z42Xtask;
 using Std;
 using Std.IO;
 using Std.Toml;
+using Std.Cli;
 
-int _depsInstall(string[] argv) {
+// Args from a Std.Cli ParseResult: --os <platform> / --check / --drift /
+// --print-env / --force flags + optional [step] positional (node|android-emulator).
+int _depsInstall(ParseResult r) {
     string mode = "install";
-    string platform = "";
-    bool force = false;
-    bool wantNode = false;
-    bool wantAndroidEmu = false;
-    int i = 2;   // argv[0]=deps, argv[1]=install
-    while (i < argv.Length) {
-        string a = argv[i];
-        if (a == "--check")          { mode = "check"; }
-        else if (a == "--drift")     { mode = "drift"; }
-        else if (a == "--print-env") { mode = "print-env"; }
-        else if (a == "--force")     { force = true; }
-        else if (a == "--os") {
-            i = i + 1;
-            if (i >= argv.Length) { ConsoleError.WriteLine("deps install --os: missing platform (android|ios|wasm)"); return 2; }
-            platform = argv[i];
-            if (platform != "android" && platform != "ios" && platform != "wasm") {
-                ConsoleError.WriteLine("deps install --os: unknown platform '" + platform + "' (android|ios|wasm)"); return 2;
-            }
-        }
-        else if (a == "node")             { wantNode = true; }
-        else if (a == "android-emulator") { wantAndroidEmu = true; }
-        else { ConsoleError.WriteLine("deps install: unknown arg " + a + " (try --os <android|ios|wasm> | node | android-emulator | --check/--drift/--print-env/--force)"); return 2; }
-        i = i + 1;
+    if (r.GetFlag("check"))     { mode = "check"; }
+    if (r.GetFlag("drift"))     { mode = "drift"; }
+    if (r.GetFlag("print-env")) { mode = "print-env"; }
+    bool force = r.GetFlag("force");
+    string platform = r.GetOption("os");
+    if (platform.Length > 0 && platform != "android" && platform != "ios" && platform != "wasm") {
+        ConsoleError.WriteLine("deps install --os: unknown platform '" + platform + "' (android|ios|wasm)"); return 2;
+    }
+    string step = r.GetPositional(0);   // "" | node | android-emulator
+    if (step.Length > 0 && step != "node" && step != "android-emulator") {
+        ConsoleError.WriteLine("deps install: unknown step '" + step + "' (node|android-emulator)"); return 2;
     }
     // TIER 2 — step-specific lazy installers (run when you reach the step).
-    if (wantNode)       { return _depsInstallNode(force); }
-    if (wantAndroidEmu) { return _depsInstallAndroidEmulator(force); }
+    if (step == "node")             { return _depsInstallNode(force); }
+    if (step == "android-emulator") { return _depsInstallAndroidEmulator(force); }
 
     string root = _root();
     TomlValue toml = TomlValue.Parse(File.ReadAllText(Path.Join(root, "versions.toml")));

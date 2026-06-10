@@ -15,19 +15,14 @@ using Std.Toml;
 // resolves artifacts/build/runtime/debug/z42vm and JIT dlopens the compressor),
 // then run the in-process golden runner (_runVmGoldens, xtask_test_vm.z42) with
 // the parsed modes/jobs — no separate compile + zpkg spawn.
-int _testVm(string[] argv) {
-    string modes = "interp jit";
-    bool rebuild = true;
-    string jobs = "1";
-    bool gotMode = false;
-    int i = 2;
-    while (i < argv.Length) {
-        string a = argv[i];
-        if (a == "--no-rebuild")        { rebuild = false; }
-        else if (a.StartsWith("--jobs=")) { jobs = a.Substring(7); }
-        else if (!a.StartsWith("-")) { if (!gotMode) { modes = a; gotMode = true; } }
-        i = i + 1;
-    }
+int _testVm(ParseResult r) {
+    string modeArg = r.GetPositional(0);         // "" | interp | jit
+    string modes = modeArg.Length > 0 ? modeArg : "interp jit";
+    return _testVmCore(modes, !r.GetFlag("no-rebuild"), r.GetOption("jobs"));
+}
+
+int _testVmCore(string modes, bool rebuild, string jobs) {
+    if (jobs.Length == 0) { jobs = "1"; }
     if (rebuild) { int c = _regenCore(false, true); if (c != 0) { return c; } }
     int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
         .Arg("--manifest-path").Arg(_runtimeManifest()));
@@ -50,9 +45,13 @@ int _testVm(string[] argv) {
 // ensure stdlib present, then run the in-process cross-zpkg driver
 // (_testCrossZpkgImpl, xtask_test_cross.z42) with the parsed mode — no separate
 // compile + zpkg spawn.
-int _testCrossZpkg(string[] argv) {
-    string mode = _at(argv, 2);
+int _testCrossZpkg(ParseResult r) {
+    string mode = r.GetPositional(0);
     if (mode.Length == 0) { mode = "interp"; }
+    return _testCrossZpkgCore(mode);
+}
+
+int _testCrossZpkgCore(string mode) {
     int c = _buildCompiler(); if (c != 0) { return c; }
     int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
         .Arg("--manifest-path").Arg(_runtimeManifest()));
@@ -71,7 +70,7 @@ int _testCrossZpkg(string[] argv) {
 // in-process dist e2e (_testDistRun, xtask_test_dist.z42) which drives the
 // PACKAGED z42c/z42vm against the goldens + a launcher smoke — no separate
 // compile + zpkg spawn. Not in the default GREEN gate (run on demand).
-int _testDist(string[] argv) {
+int _testDist(ParseResult r) {
     string root = _root();
     int c = _buildCompiler(); if (c != 0) { return c; }
     c = _exec(_cargoRelease().Arg("-q")
@@ -81,10 +80,9 @@ int _testDist(string[] argv) {
     }
     // Ensure a host release package exists (build it if absent).
     if (!_hasReleasePkg(root)) {
-        string[] pa = new string[3]; pa[0] = "build"; pa[1] = "package"; pa[2] = "release";
-        c = _buildPackage(pa); if (c != 0) { return c; }
+        c = _buildPackageCore("release", "", ""); if (c != 0) { return c; }
     }
-    return _testDistRun(argv);
+    return _testDistRun(r.GetPositional(0));
 }
 
 bool _hasReleasePkg(string root) {
@@ -133,16 +131,13 @@ int _testAll() {
     c = _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj").Arg("--nologo")); if (c != 0) { return c; }
     // stage 2: VM goldens (both modes, no rebuild)
     Console.WriteLine("\n=== stage: VM goldens ===");
-    string[] vmA = new string[4]; vmA[0] = "test"; vmA[1] = "vm"; vmA[2] = "--no-rebuild"; vmA[3] = "--jobs=4";
-    c = _testVm(vmA); if (c != 0) { return c; }
+    c = _testVmCore("interp jit", false, "4"); if (c != 0) { return c; }
     // stage 3: cross-zpkg
     Console.WriteLine("\n=== stage: cross-zpkg ===");
-    string[] cA = new string[2]; cA[0] = "test"; cA[1] = "cross-zpkg";
-    c = _testCrossZpkg(cA); if (c != 0) { return c; }
+    c = _testCrossZpkgCore("interp"); if (c != 0) { return c; }
     // stage 4: stdlib [Test] (no build)
     Console.WriteLine("\n=== stage: stdlib [Test] ===");
-    string[] lA = new string[4]; lA[0] = "test"; lA[1] = "lib"; lA[2] = "--no-build"; lA[3] = "--jobs=4";
-    c = _testLib(lA, "test"); if (c != 0) { return c; }
+    c = _testLibCore("test", new string[0], true, "", "4"); if (c != 0) { return c; }
     Console.WriteLine("\n✅ GREEN — all stages passed (compiler + vm + cross-zpkg + stdlib)");
     return 0;
 }
@@ -153,32 +148,28 @@ int _testAll() {
 // harness. Mirrors the former scripts/test-lib.sh (sequential; --jobs parallel batching is
 // a later optimization). Each src/libraries/<lib>/tests/*.z42 is compiled to
 // .zbc via z42c then run through z42-test-runner; results aggregated.
-int _testLib(string[] argv, string kind) {
+// ParseResult wrapper: single optional [lib] positional + --no-build / -k
+// filter / --jobs flags (declared on the stdlib/bench leaf in xtask_cli.z42).
+// Note: the legacy multi-lib form (`test stdlib a b c`) narrows to a single
+// lib here — Std.Cli positionals are fixed-arity. Pass one lib or none (all).
+int _testLib(ParseResult r, string kind) {
+    string lib = r.GetPositional(0);
+    string[] libs;
+    if (lib.Length > 0) { libs = new string[1]; libs[0] = lib; }
+    else { libs = new string[0]; }
+    return _testLibCore(kind, libs, r.GetFlag("no-build"), r.GetOption("filter"), r.GetOption("jobs"));
+}
+
+int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, string jobs) {
     // kind = "test" → discover <lib>/tests/, merge [tests.dependencies], emit
     // <lib>.test.<unit> to <lib>/release/tests/. "bench" → <lib>/bench/,
     // [bench.dependencies], <lib>.bench.<unit> to <lib>/release/bench/. The
     // z42-test-runner runs both [Test] and [Benchmark] regardless.
     string subdir = (kind == "bench") ? "bench" : "tests";
     string label  = (kind == "bench") ? "bench" : "test";
-    bool noBuild = false;
-    string filter = "";
-    string jobs = "1";   // forwarded to z42-test-runner ([Test]-method parallelism)
-    string[] reqLibs = new string[64];
-    int nReq = 0;
-    int i = 2;
-    while (i < argv.Length) {
-        string a = argv[i];
-        if (a == "--no-build") { noBuild = true; }
-        else if (a.StartsWith("-k")) {
-            if (a.Length > 2) { filter = a.Substring(2); }
-            else { i = i + 1; if (i < argv.Length) { filter = argv[i]; } }
-        }
-        else if (a.StartsWith("--jobs=")) { jobs = a.Substring(7); }
-        else if (a == "--jobs" || a == "-j") { i = i + 1; if (i < argv.Length) { jobs = argv[i]; } }
-        else if (a.StartsWith("-j")) { jobs = a.Substring(2); }
-        else if (!a.StartsWith("-")) { reqLibs[nReq] = a; nReq = nReq + 1; }
-        i = i + 1;
-    }
+    if (jobs.Length == 0) { jobs = "1"; }   // forwarded to z42-test-runner
+    string[] reqLibs = reqLibsIn;
+    int nReq = reqLibsIn.Length;
     string root = _root();
     if (!noBuild) {
         Console.WriteLine("→ Preparing tooling (stdlib + z42vm + z42-test-runner; release)...");

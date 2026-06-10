@@ -21,7 +21,7 @@ dotnet build src/compiler/z42.slnx                    # 无编译错误
 cargo build --manifest-path src/runtime/Cargo.toml    # 无编译错误
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj   # 100% 通过
 z42 xtask.zpkg test vm                                # 100% 通过（interp + jit 双模）
-z42 xtask.zpkg test lib                               # 100% 通过
+z42 xtask.zpkg test stdlib                               # 100% 通过
 z42 xtask.zpkg test cross-zpkg                        # 100% 通过
 ```
 

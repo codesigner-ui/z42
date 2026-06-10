@@ -11,21 +11,21 @@ namespace Z42Xtask;
 
 using Std;
 using Std.IO;
+using Std.Cli;
 
-// `build package [release|debug] [--rid R] [--variant V]`
-int _buildPackage(string[] argv) {
-    string profile = "release";   // xtask defaults release (package.sh default is debug)
-    string rid = "";
-    string variant = "";
-    int i = 2;
-    while (i < argv.Length) {
-        string a = argv[i];
-        if (a == "release" || a == "Release") { profile = "release"; }
-        else if (a == "debug" || a == "Debug") { profile = "debug"; }
-        else if (a == "--rid") { i = i + 1; if (i < argv.Length) { rid = argv[i]; } }
-        else if (a == "--variant") { i = i + 1; if (i < argv.Length) { variant = argv[i]; } }
-        i = i + 1;
-    }
+// `package [release|debug] [--rid R] [--variant V]` (top-level since
+// migrate-xtask-launcher-to-std-cli; was `build package`). Args from ParseResult.
+int _buildPackage(ParseResult r) {
+    string prof = r.GetPositional(0);   // "" | release | debug | Release | Debug
+    string profile = "release";          // xtask defaults release (package.sh default is debug)
+    if (prof == "debug" || prof == "Debug") { profile = "debug"; }
+    else if (prof == "release" || prof == "Release") { profile = "release"; }
+    return _buildPackageCore(profile, r.GetOption("rid"), r.GetOption("variant"));
+}
+
+// Core packaging by explicit (profile, rid, variant) — callable without a
+// ParseResult (e.g. from `test dist` which needs a host release package).
+int _buildPackageCore(string profile, string rid, string variant) {
     string root = _root();
     string hostRid = _detectHostRid();
     if (rid.Length == 0) { rid = hostRid; }

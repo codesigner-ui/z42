@@ -15,14 +15,14 @@ Z42_TEST_CHANGED_BASE=origin/main z42 xtask.zpkg test changed
 
 | 改动 | 触发 |
 |------|------|
-| `src/libraries/<lib>/src/*` | `z42 xtask.zpkg test lib <lib>` + `z42 xtask.zpkg test vm` |
-| `src/libraries/<lib>/tests/*` | `z42 xtask.zpkg test lib <lib>` |
+| `src/libraries/<lib>/src/*` | `z42 xtask.zpkg test stdlib <lib>` + `z42 xtask.zpkg test vm` |
+| `src/libraries/<lib>/tests/*` | `z42 xtask.zpkg test stdlib <lib>` |
 | `src/runtime/src/*` / `Cargo.toml` / `build.rs` | `cargo test` + `z42 xtask.zpkg test vm` |
 | `src/runtime/tests/*` | `cargo test` |
 | `src/tests/cross-zpkg/*` | `z42 xtask.zpkg test cross-zpkg` |
 | `src/tests/*` | `z42 xtask.zpkg test vm` |
 | `src/compiler/*` | `z42 xtask.zpkg test compiler` + `z42 xtask.zpkg test vm` |
-| `src/toolchain/*` | runner cargo test + `z42 xtask.zpkg test lib` |
+| `src/toolchain/*` | runner cargo test + `z42 xtask.zpkg test stdlib` |
 | `*.md` / `docs/**` / `.claude/**` | 不触发 |
 | `*.workspace.toml` / `build.rs` / `scripts/xtask*.z42` | 全套 `z42 xtask.zpkg test` |
 | 其他 `src/**` | 全套 `z42 xtask.zpkg test`（防御性） |

@@ -140,7 +140,7 @@ jobs:
         run: ./build.sh
         working-directory: src/toolchain/host/platforms/wasm
 
-      - name: Package ${{ matrix.rid }} (z42 xtask.zpkg build package)
+      - name: Package ${{ matrix.rid }} (z42 xtask.zpkg package)
         shell: bash
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
@@ -148,7 +148,7 @@ jobs:
           set -euo pipefail
           vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            "$vm" artifacts/xtask/xtask.zpkg -- build package release --rid ${{ matrix.rid }}
+            "$vm" artifacts/xtask/xtask.zpkg -- package release --rid ${{ matrix.rid }}
 
       - name: Archive
         shell: bash

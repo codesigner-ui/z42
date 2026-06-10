@@ -1,0 +1,276 @@
+// xtask CLI layer (migrate-xtask-launcher-to-std-cli, 2026-06-10).
+//
+// Builds the Std.Cli nested SubcommandRouter for xtask and dispatches a
+// resolved command to its handler. Replaces the former hand-written
+// if-else chains in xtask.z42 (Main / _build / _test / _deps). Each leaf
+// declares its flags/options/positionals via ArgParser, so `-h` works at
+// every level and help text is generated (no hand-written _help()).
+//
+// `test` and `bench` are "default-action" commands (no subcommand = run
+// all / e2e) which the plain router doesn't model — _runCli handles those
+// two default cases before Resolve. They are still registered in the tree
+// so `xtask -h` lists them and `xtask test vm -h` etc. work via Resolve.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+
+// ── entry: the whole Main body (shims + resolve + dispatch) → exit code ──────
+
+int _runCli(string[] argv) {
+    string c0 = argv.Length > 0 ? argv[0] : "";
+    string c1 = argv.Length > 1 ? argv[1] : "";
+
+    // default-action shim: `test` (empty / leading non-help flag) → full gate.
+    if (c0 == "test" && (c1 == "" || (_isFlag(c1) && !_isHelpFlag(c1)))) {
+        return _testAll();
+    }
+    // default-action shim: `bench` (anything but the `stdlib` subcommand) → e2e.
+    if (c0 == "bench" && c1 != "stdlib") {
+        return _benchE2e(argv);
+    }
+    // `run` is a raw passthrough to the launcher (forwards `<app> [-- args]`
+    // verbatim) — a strict ArgParser can't model the `--` tail, so intercept
+    // before Resolve. `xtask run -h` forwards to the launcher's own run help.
+    if (c0 == "run") {
+        return _run(argv);
+    }
+
+    SubcommandRouter root = _cliRoot();
+    CommandResolution res;
+    // A leaf ArgParser raises CliException on unknown flag / missing value /
+    // bad positional count — surface it cleanly (Resolve only routes; it does
+    // not swallow option-level errors).
+    try { res = root.Resolve(argv); }
+    catch (CliException e) {
+        ConsoleError.WriteLine("xtask: " + e.Message);
+        return 2;
+    }
+    if (res.IsHelp())    { Console.WriteLine(res.HelpText()); return 0; }
+    if (res.IsUnknown()) {
+        ConsoleError.WriteLine(res.ErrorMessage());
+        Console.WriteLine(res.HelpText());
+        return 2;
+    }
+    return _dispatch(res);
+}
+
+bool _isFlag(string a) { return a.Length >= 1 && a.CharAt(0) == '-'; }
+bool _isHelpFlag(string a) { return a == "-h" || a == "--help"; }
+
+// ── root tree ────────────────────────────────────────────────────────────────
+
+SubcommandRouter _cliRoot() {
+    SubcommandRouter root = new SubcommandRouter("xtask", "z42 repo dev CLI");
+
+    root.AddRouter("build", "build components", _buildRouter());
+
+    ArgParser pkg = new ArgParser("xtask package", "assemble a full SDK package");
+    pkg.AddOption("rid", "", "target RID (default: host)", "");
+    pkg.AddOption("variant", "", "package variant suffix", "");
+    pkg.AddOptionalPositional("profile", "release|debug (default release)");
+    root.Add("package", "assemble a full SDK package", pkg);
+
+    root.Add("feature-matrix", "verify each cargo feature combo compiles",
+        new ArgParser("xtask feature-matrix", "verify each cargo feature combo compiles"));
+
+    root.AddRouter("test", "run tests", _testRouter());
+    root.AddRouter("deps", "toolchain deps", _depsRouter());
+    root.AddRouter("bench", "benchmarks (no subcommand = e2e; see `bench -h`)", _benchRouter());
+
+    ArgParser regen = new ArgParser("xtask regen", "regenerate golden .zbc fixtures");
+    regen.AddFlag("no-stdlib", "", "skip stdlib rebuild");
+    regen.AddOptionalPositional("profile", "release (default debug)");
+    root.Add("regen", "regenerate golden .zbc fixtures", regen);
+
+    root.Add("audit", "scan src/ + insert missing 'using' directives",
+        new ArgParser("xtask audit", "scan src/ + insert missing 'using' directives"));
+
+    ArgParser clean = new ArgParser("xtask clean", "remove build artifacts");
+    clean.AddOptionalPositional("target", "tests|bench|all (default: production cache/dist)");
+    root.Add("clean", "remove build artifacts", clean);
+
+    ArgParser run = new ArgParser("xtask run", "run a zpkg / .z42 via the launcher");
+    run.AllowExtras();
+    run.AddOptionalPositional("target", "<app.zpkg|script.z42> [-- args]");
+    root.Add("run", "run a zpkg / .z42 via the launcher", run);
+
+    return root;
+}
+
+SubcommandRouter _buildRouter() {
+    SubcommandRouter b = new SubcommandRouter("xtask build", "build components");
+    b.Add("runtime", "cargo build z42vm + libz42 (--release)",
+        new ArgParser("xtask build runtime", "cargo build z42vm + libz42"));
+    b.Add("compiler", "dotnet build z42c (C# bootstrap)",
+        new ArgParser("xtask build compiler", "dotnet build z42c"));
+    b.Add("compiler-z42", "build z42 self-host compiler (src/z42c)",
+        new ArgParser("xtask build compiler-z42", "build z42 self-host compiler"));
+    ArgParser stdlib = new ArgParser("xtask build stdlib", "build stdlib (all)");
+    stdlib.AddOptionalPositional("lib", "(currently builds all)");
+    b.Add("stdlib", "build stdlib -> build/libraries/dist", stdlib);
+    b.Add("launcher", "trampoline + launcher.zpkg",
+        new ArgParser("xtask build launcher", "trampoline + launcher.zpkg"));
+    b.Add("all", "runtime + compiler + stdlib + compiler-z42",
+        new ArgParser("xtask build all", "runtime + compiler + stdlib"));
+    return b;
+}
+
+SubcommandRouter _testRouter() {
+    SubcommandRouter t = new SubcommandRouter("xtask test", "run tests");
+    t.Add("all", "compiler + vm + cross-zpkg + stdlib",
+        new ArgParser("xtask test all", "full gate"));
+    ArgParser stdlib = new ArgParser("xtask test stdlib", "stdlib [Test] (all or one)");
+    stdlib.AddFlag("no-build", "", "skip tooling rebuild");
+    stdlib.AddOption("filter", "k", "test-name filter", "");
+    stdlib.AddOption("jobs", "", "parallel [Test] jobs", "");
+    stdlib.AddOptionalPositional("lib", "single lib (default: all)");
+    t.Add("stdlib", "stdlib [Test] (all or one)", stdlib);
+    ArgParser vm = new ArgParser("xtask test vm", "golden VM tests");
+    vm.AddFlag("no-rebuild", "", "skip rebuild before run");
+    vm.AddOption("jobs", "", "parallel jobs", "");
+    vm.AddOptionalPositional("mode", "interp|jit (default: both)");
+    t.Add("vm", "golden VM tests", vm);
+    ArgParser cross = new ArgParser("xtask test cross-zpkg", "cross-zpkg e2e");
+    cross.AddOptionalPositional("mode", "interp|jit (default: interp)");
+    t.Add("cross-zpkg", "cross-zpkg e2e", cross);
+    ArgParser dist = new ArgParser("xtask test dist", "distribution verification");
+    dist.AddOptionalPositional("mode", "interp|jit (default: interp)");
+    t.Add("dist", "distribution verification", dist);
+    t.Add("compiler", "dotnet test (C# bootstrap)",
+        new ArgParser("xtask test compiler", "dotnet test"));
+    t.Add("compiler-z42", "build src/z42c + smoke",
+        new ArgParser("xtask test compiler-z42", "z42c smoke"));
+    ArgParser changed = new ArgParser("xtask test changed", "only changed-area tests");
+    changed.AddFlag("dry-run", "", "print the plan, don't run");
+    changed.AddOptionalPositional("base", "git base ref (default: HEAD)");
+    t.Add("changed", "only changed-area tests", changed);
+    return t;
+}
+
+SubcommandRouter _depsRouter() {
+    SubcommandRouter d = new SubcommandRouter("xtask deps", "toolchain deps");
+    d.Add("check", "versions.toml <-> source-file drift check",
+        new ArgParser("xtask deps check", "version drift check"));
+    ArgParser install = new ArgParser("xtask deps install", "toolchain presence check + install");
+    install.AddOption("os", "", "platform: android|ios|wasm", "");
+    install.AddFlag("check", "", "check only");
+    install.AddFlag("drift", "", "report drift");
+    install.AddFlag("print-env", "", "print env exports");
+    install.AddFlag("force", "", "force reinstall");
+    install.AddOptionalPositional("step", "node|android-emulator (step-specific)");
+    d.Add("install", "cross-platform toolchain presence check", install);
+    return d;
+}
+
+SubcommandRouter _benchRouter() {
+    SubcommandRouter bn = new SubcommandRouter("xtask bench", "benchmarks");
+    ArgParser stdlib = new ArgParser("xtask bench stdlib", "per-lib [Benchmark]");
+    stdlib.AddFlag("no-build", "", "skip tooling rebuild");
+    stdlib.AddOption("filter", "k", "bench-name filter", "");
+    stdlib.AddOption("jobs", "", "parallel jobs", "");
+    stdlib.AddOptionalPositional("lib", "single lib (default: all)");
+    bn.Add("stdlib", "per-lib [Benchmark]", stdlib);
+    return bn;
+}
+
+// The `bench` default-action e2e parser (used by _benchE2e + `bench -h`).
+ArgParser _benchE2eParser() {
+    ArgParser p = new ArgParser("xtask bench", "e2e hyperfine scenarios (no subcommand; subcommand: stdlib [lib])");
+    p.AddFlag("quick", "", "fewer runs/warmup");
+    p.AddFlag("diff", "", "compare two result sets");
+    p.AddOption("current", "", "current result path", "");
+    p.AddOption("baseline", "", "baseline result path", "");
+    p.AddOption("threshold-time", "", "time regression threshold", "");
+    p.AddOption("threshold-memory", "", "memory regression threshold", "");
+    p.AddFlag("quiet", "", "quiet output");
+    return p;
+}
+
+int _benchE2e(string[] argv) {
+    ArgParser p = _benchE2eParser();
+    ParseResult r;
+    try { r = p.Parse(_sliceFrom(argv, 1)); }
+    catch (CliException e) {
+        ConsoleError.WriteLine("xtask bench: " + e.Message);
+        return 2;
+    }
+    if (r.ShowHelp()) { Console.WriteLine(p.HelpText()); return 0; }
+    if (r.GetFlag("diff")) { return _benchDiff(r); }
+    return _bench(r);
+}
+
+// ── dispatch (resolved command → handler) ─────────────────────────────────────
+
+int _dispatch(CommandResolution res) {
+    string[] p = res.Path();
+    if (p.Length == 0) { return 2; }
+    ParseResult r = res.Result();
+    string top = p[0];
+    if (top == "build")          { return _dispatchBuild(p, r); }
+    if (top == "package")        { return _buildPackage(r); }
+    if (top == "feature-matrix") { return _featureMatrix(); }
+    if (top == "test")           { return _dispatchTest(p, r); }
+    if (top == "deps")           { return _dispatchDeps(p, r); }
+    if (top == "bench")          { return _dispatchBench(p, r); }
+    if (top == "regen")          { return _regen(r); }
+    if (top == "audit")          { return _auditRun(); }
+    if (top == "clean")          { return _clean(r); }
+    // `run` is intercepted in _runCli (raw passthrough) — not reached here.
+    return 2;
+}
+
+int _dispatchBuild(string[] p, ParseResult r) {
+    string sub = p.Length > 1 ? p[1] : "";
+    if (sub == "runtime")      { return _buildRuntime(); }
+    if (sub == "compiler")     { return _buildCompiler(); }
+    if (sub == "compiler-z42") { return _buildCompilerZ42(); }
+    if (sub == "stdlib")       { return _buildStdlib(); }
+    if (sub == "launcher")     { return _exec(_cargoRelease()
+                                     .Arg("--manifest-path").Arg("src/toolchain/launcher/Cargo.toml")); }
+    if (sub == "all") {
+        int c = _buildRuntime();  if (c != 0) { return c; }
+        c = _buildCompiler();     if (c != 0) { return c; }
+        c = _buildStdlib();       if (c != 0) { return c; }
+        return _buildCompilerZ42();
+    }
+    return 2;
+}
+
+int _dispatchTest(string[] p, ParseResult r) {
+    string sub = p.Length > 1 ? p[1] : "";
+    if (sub == "all")          { return _testAll(); }
+    if (sub == "stdlib")       { return _testLib(r, "test"); }
+    if (sub == "vm")           { return _testVm(r); }
+    if (sub == "cross-zpkg")   { return _testCrossZpkg(r); }
+    if (sub == "dist")         { return _testDist(r); }
+    if (sub == "compiler")     { return _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj")); }
+    if (sub == "compiler-z42") { return _testCompilerZ42(); }
+    if (sub == "changed")      { return _testChanged(r); }
+    return 2;
+}
+
+int _dispatchDeps(string[] p, ParseResult r) {
+    string sub = p.Length > 1 ? p[1] : "";
+    if (sub == "check")   { return _depsCheck(); }
+    if (sub == "install") { return _depsInstall(r); }
+    return 2;
+}
+
+int _dispatchBench(string[] p, ParseResult r) {
+    string sub = p.Length > 1 ? p[1] : "";
+    if (sub == "stdlib") { return _testLib(r, "bench"); }
+    return 2;
+}
+
+// ── small helper ──────────────────────────────────────────────────────────────
+
+string[] _sliceFrom(string[] arr, int start) {
+    if (start >= arr.Length) { return new string[0]; }
+    int n = arr.Length - start;
+    string[] outArr = new string[n];
+    int j = 0;
+    while (j < n) { outArr[j] = arr[start + j]; j = j + 1; }
+    return outArr;
+}

@@ -28,9 +28,9 @@ using Std.IO;
 
 // `test dist [interp|jit]` body — run in-process. Returns 0 on pass, 1 on any
 // failure (compile error / mismatch / launcher-smoke fail / missing package).
-// `argv` is the xtask argv; the optional mode positional is argv[2] (matching
-// the old standalone's single mode arg). Empty → both modes ("interp jit").
-int _testDistRun(string[] argv) {
+// `modeArg` is the optional mode positional (interp|jit). Empty → both
+// modes ("interp jit").
+int _testDistRun(string modeArg) {
     string root = _root();
 
     // ── Resolve the packaged distribution dir ────────────────────────────
@@ -74,10 +74,7 @@ int _testDistRun(string[] argv) {
     overallFail = overallFail + ah[1];
 
     // ── Golden cases per mode ────────────────────────────────────────────
-    // The optional mode positional is argv[2] (matches the old standalone's
-    // single mode arg, formerly Z42_DIST_MODES); empty → both modes.
-    string modeArg = "";
-    if (argv.Length > 2) { modeArg = argv[2]; }
+    // The optional mode positional (formerly Z42_DIST_MODES); empty → both.
     if (modeArg.Length == 0) { modeArg = "interp jit"; }
     string[] modes = _splitWords(modeArg);
     int mi = 0;
