@@ -8,10 +8,10 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | fix-chained-property-dispatch 已归档 2026-06-10 → 释放。插桩证伪原 two-part 判断：P2 早被 fix-fqn-class-resolution 修掉、"4th layer" 不存在，**真根因唯 P1**（Object stub GetType 返回 Unknown）。修 = stub 构建时从 `_classes["Type"]` 取真实 Std.Type（跨阶段降级 fixup）。|
-| `runtime` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`__type_is_value_type` / `__type_is_record`，无格式变更）|
-| `stdlib` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`Type.IsValueType` / `Type.IsRecord`）|
-| `z42c` | **port-z42c-tsig（DRAFT 待审）** | 2026-06-10 | zpkg-build 已归档（z42c build 端到端 + 直跑 e2e；META/NSPC/EXPT/DEPS 已 byte-EQUAL）。本 change：TSIG/IMPL 段 + ExportedTypeExtractor → zpkg **全文件 byte-identical**（裁决 A 的 follow-up）。DRAFT 待 User 审批 |
+| `compiler` | **add-parameter-attribute-reflection（DRAFT 待审）** | 2026-06-10 | 参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；SIGS section 每参数追加 attr-ref 块（zbc 1.14→1.15 / zpkg 0.16→0.17）。⚠️ 版本 bump 须同步 z42c writer（ZbcFormat.z42 版本常量 + zbc_tests.z42 golden）—— **z42c 被 port-z42c-tsig 占用**，故实施须待 port 归档或 User 授权共占 z42c。DRAFT 待审 |
+| `runtime` | **add-parameter-attribute-reflection（DRAFT 待审）** | 2026-06-10 | 同上：zbc_reader 读 SIGS 每参数 attr-ref + loader 索引 + `__param_custom_attributes` builtin |
+| `stdlib` | **add-parameter-attribute-reflection（DRAFT 待审）** | 2026-06-10 | 同上：`ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)` |
+| `z42c` | —（空闲）| — | 自举主线全归档：…→zbc-writer✅→source-spans✅→zpkg-build✅→**port-z42c-tsig✅ 已归档 2026-06-10**（TSIG/IMPL + 内建面静态镜像 → **`z42c build` 对真 C# CLI 全文件 byte-identical，gate zpkg byte-compare 2/2 常驻**；05e615cf）。下一步候选：跨包 import 消费侧（ZpkgReader/DepIndex/ImportedSymbolLoader）/ char 字面量 / interface·异常·闭包 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -24,7 +24,7 @@
 | ~~port-z42c-zbc-writer~~ | z42c —— ✅ 已归档 2026-06-10（功能完整 .zbc writer + empty 逐字节 + e2e 四向；DBUG/span 移交 add-z42c-source-spans）|
 | ~~add-z42c-source-spans~~ | z42c —— ✅ 已归档 2026-06-10（span→DBUG + byte-compare 3/3；7942ab7d）|
 | ~~port-z42c-zpkg-build~~ | z42c —— ✅ 已归档 2026-06-10（z42c build 端到端+直跑；e1ff3503）|
-| port-z42c-tsig | z42c（2026-06-10 开；zpkg-build 归档接力；DRAFT 待审）|
+| ~~port-z42c-tsig~~ | z42c —— ✅ 已归档 2026-06-10（zpkg 全文件 byte-identical 2/2；05e615cf）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
