@@ -11,7 +11,7 @@
 | `compiler` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（字段 attr + zbc 1.14 / zpkg 0.16）|
 | `runtime` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`field_attributes` + `__field_custom_attributes`）|
 | `stdlib` | —（空闲）| — | add-cli-optional-positional 已归档 2026-06-10 → 释放（`ArgParser.AddOptionalPositional`，z42.cli 10 文件/11 [Test] 绿）|
-| `z42c` | …→ port-z42c-zbc-writer✅ → **add-z42c-source-spans（DRAFT 待审）** | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project 机械段✅ → semantics 类型检查半✅ → codegen✅ → **port-z42c-zbc-writer✅ 已归档 2026-06-10**（功能完整 .zbc writer：ZW-1A–1E 全收口；`empty` 逐字节对账[zbc 1.14] + e2e 四向[selfcheck/callcheck/typecheck/divzero]；commit 7df55e8b…6a704ce1）→ **add-z42c-source-spans**（DBUG/span 链：syntax AST 携 span → IR LineTable → DBUG section，解锁全函数 byte-identical；design DRAFT 待 User 审批，未批不动代码）|
+| `z42c` | —（空闲）| — | 自举移植主线全归档：core✅→syntax✅→project 机械段✅→semantics✅→codegen✅→zbc-writer✅→**add-z42c-source-spans✅ 已归档 2026-06-10**（span→DBUG 链 + per-construct byte-identical：3 真实程序 z42c vs C# 逐字节含 DBUG，commit 7942ab7d）。下一步候选：pipeline/build 命令（端到端 zpkg）/ char 字面量前端 / project 文件系统段 |
 | `toolchain` | port-z42c-core **+ migrate-xtask-launcher-to-std-cli**（协调共占）| 2026-06-07 / 2026-06-10 | port-z42c-core：xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。<br>⚠️ **协调（2026-06-10，User 授权）**：migrate-xtask-launcher-to-std-cli 共占 toolchain，足迹为 xtask Main/build/package/test/deps/bench dispatch + launcher/apphost —— 与 port-z42c-core 的 `xtask_compiler_z42.z42` 非重叠区域，User 裁决可并行。|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -22,7 +22,7 @@
 | port-z42c-core | z42c + toolchain |
 | ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|
 | ~~port-z42c-zbc-writer~~ | z42c —— ✅ 已归档 2026-06-10（功能完整 .zbc writer + empty 逐字节 + e2e 四向；DBUG/span 移交 add-z42c-source-spans）|
-| add-z42c-source-spans | z42c（2026-06-10 开；zbc-writer 归档释放后接力；DRAFT 待审）|
+| ~~add-z42c-source-spans~~ | z42c —— ✅ 已归档 2026-06-10（span→DBUG + byte-compare 3/3；7942ab7d）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
