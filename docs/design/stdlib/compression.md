@@ -197,6 +197,16 @@ empty archive (22-byte EOCD only), magic-byte verification, method
 validation, ExtractAllTo pipeline, empty content, UTF-8 filename
 byte-fidelity, DEFLATE beats STORE on repetitive input).
 
+### `compression-future-zip-create-from-directory`
+
+`Zip.CreateFromDirectory(dir) → byte[]`（对称于已落地的 `Zip.ExtractAllTo`）：
+递归枚举 `dir` 下文件 → 每个相对路径作为 entry name → `Zip.Write` 组装。
+
+- **来源**：stdlib-p1-p2-backlog（已归档/删除）的 `Zip.ExtractAllTo` 行 follow-up 注记。
+- **前置依赖**：`Zip.Write`（✅ 已落地 2026-05-27），现已解锁。
+- **触发原因**：当年 Zip.Write 未就绪而推迟；纯 z42 atop `Zip.Write` + `Directory.Enumerate` 递归即可，小工作量。
+- **当前 workaround**：调用方自己枚举目录 + 构 `ZipEntry[]` + `Zip.Write`。
+
 ### ~~`compression-future-streaming-decode`~~ — **✅ 已落地 2026-05-27 (add-compression-streaming-decode)**
 
 Shipped: cdylib's slot-table decoders refactored from

@@ -357,7 +357,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | ~~URL-safe Base64~~ ✅ + ~~Base32~~ ✅ + ~~UTF-16/32~~ ✅ + ~~Crockford~~ ✅ + ~~Base32-hex~~ ✅ + Encoding streaming / Base85 | **Base64Url / Base32 已落地 2026-05-25**；**UTF-16 + UTF-32 已落地 2026-05-27** (`37b7191e`)；**Base32Crockford + Base32Hex 已落地 2026-05-25**；仅 **Encoding streaming API + Base85** 仍延后 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
 | HMAC-SHA256 | v0 SHA-256 落地后的下一步；RFC 2104 公式 | [stdlib/crypto.md](design/stdlib/crypto.md#hmac-sha256) |
 | ~~Std.Crypto.SecureRandom (CSPRNG)~~ ✅ | **✅ 已落地 2026-05-26** (add-csprng-to-crypto)；wasm32 bridge 仍延后 | [stdlib/crypto.md](design/stdlib/crypto.md#csprng-wasm32-bridgestdcryptosecurerandom-on-wasm32) |
-| Zip.Write | byte[][] 类型系统或 2-pass workaround；v0 仅 Read | [stdlib/compression.md](design/stdlib/compression.md#compression-future-zip-write) |
+| ~~Zip.Write~~ ✅ + Zip.CreateFromDirectory | **Zip.Write 已落地 2026-05-27** (`add-zip-write`，single-buffer 2-pass 绕过 byte[][])；仅 **`Zip.CreateFromDirectory`**（atop Zip.Write + Directory.Enumerate）仍延后 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-zip-create-from-directory) |
 | ~~Compression streaming decode~~ ✅ | **cdylib 流式 2026-05-27** (`add-compression-streaming-decode`) + **z42 消费端 per-chunk pull 2026-06-09** (`compression-decoder-pull-mode`) → 流式解压端到端，不再 accumulate-then-decompress | [stdlib/compression.md](design/stdlib/compression.md#compression-future-streaming-decode) |
 | Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |
 | wasm zstd | 需 WASI SDK 或 ruzstd | [stdlib/compression.md](design/stdlib/compression.md#compression-future-wasm-zstd) |
