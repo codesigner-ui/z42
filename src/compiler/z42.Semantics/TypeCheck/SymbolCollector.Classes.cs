@@ -61,12 +61,26 @@ public sealed partial class SymbolCollector
             // before this fix `MergeImported` used TryAdd which left this stub
             // shadowing the real class, so any GetType call on an Object-typed
             // receiver hit E0402 "type Object has no method GetType".
-            // Type return type uses `Z42Type.Unknown` because the real `Std.Type`
-            // class isn't loaded yet during this pre-registration; downstream
-            // typechecker treats Unknown as compatible (avoids cascading errors).
+            // fix-chained-property-dispatch (2026-06-10): GetType's return type
+            // resolves to the real `Std.Type` class when it is already present in
+            // `_classes` (MergeImported runs before CollectClasses, so the imported
+            // Type class — keyed by short name "Type" — is available here). Only
+            // falls back to `Z42Type.Unknown` when Type isn't imported (e.g. a CU
+            // with no z42.core dependency). Returning Unknown caused chained
+            // getter dispatch (`obj.GetType().BaseType.Name`) to degrade: the
+            // Unknown intermediate made `.BaseType` / `.Name` hit the silent
+            // member fallback (TypeChecker.Exprs.Members.cs:174) → emitted as a
+            // FieldGet → runtime "FieldGet on Null". The local-variable form
+            // (`Type t = obj.GetType(); t.BaseType.Name`) worked only because the
+            // explicit annotation re-resolved the receiver to the real Type class.
+            // This is the cross-phase downgrade fixup pattern (philosophy.md):
+            // produce the correct type at the source instead of patching consumers.
             // split-symbol-from-type: Object's built-in methods are constructed as
             // MethodSymbol-wrapped IMethodSymbol entries (decl=null, ContainingType
             // assigned post-construction below).
+            Z42Type getTypeRet = _classes.TryGetValue("Type", out var typeCls)
+                ? typeCls
+                : Z42Type.Unknown;
             var objectClassSkeleton = new Z42ClassType(
                 "Object",
                 new Dictionary<string, IFieldSymbol>(),
@@ -90,7 +104,7 @@ public sealed partial class SymbolCollector
                                                    FunctionModifiers.Virtual, default,
                                                    Visibility.Public, decl: null, testAttributes: null),
                 ["GetType"]     = new MethodSymbol("GetType", objectClassSkeleton,
-                                                   new Z42FuncType([], Z42Type.Unknown),
+                                                   new Z42FuncType([], getTypeRet),
                                                    FunctionModifiers.None, default,
                                                    Visibility.Public, decl: null, testAttributes: null),
             };

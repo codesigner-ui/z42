@@ -8,7 +8,7 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | **fix-chained-property-dispatch（2026-06-10 重启）** | 2026-06-10 | 从文档化的 4th-layer handoff 重启：先插桩定位 `_classes` 里 Std.Type 真实 key + Object stub 是否 clobber 导入的真 Object，再修 P1（stub GetType 升级为真 Std.Type）+ P2（ResolveTypeName FQN→短名重查）。仅触 SymbolCollector* + ImportedSymbolLoader.TypeResolver。|
+| `compiler` | —（空闲）| — | fix-chained-property-dispatch 已归档 2026-06-10 → 释放。插桩证伪原 two-part 判断：P2 早被 fix-fqn-class-resolution 修掉、"4th layer" 不存在，**真根因唯 P1**（Object stub GetType 返回 Unknown）。修 = stub 构建时从 `_classes["Type"]` 取真实 Std.Type（跨阶段降级 fixup）。|
 | `runtime` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`__type_is_value_type` / `__type_is_record`，无格式变更）|
 | `stdlib` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`Type.IsValueType` / `Type.IsRecord`）|
 | `z42c` | **port-z42c-tsig（DRAFT 待审）** | 2026-06-10 | zpkg-build 已归档（z42c build 端到端 + 直跑 e2e；META/NSPC/EXPT/DEPS 已 byte-EQUAL）。本 change：TSIG/IMPL 段 + ExportedTypeExtractor → zpkg **全文件 byte-identical**（裁决 A 的 follow-up）。DRAFT 待 User 审批 |
@@ -45,4 +45,5 @@
 | ~~migrate-xtask-launcher-to-std-cli~~ | toolchain —— ✅ 已归档 2026-06-10（xtask+launcher → Std.Cli 嵌套 router；`package`/`feature-matrix` 提顶层；删 `lib` 别名；每层 help；CI build package→package ×5。xtask GREEN 270/22 + test dist 347/0）|
 | ~~add-field-attribute-reflection~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（字段级用户 attribute 反射 `FieldInfo.GetCustomAttributes()`；zbc 1.14 / zpkg 0.16；cargo 799/0 + GoldenTests 1554/1554；参数 attr = follow-up）|
 | ~~add-reflection-value-record-flags~~ | runtime + stdlib —— ✅ 已归档 2026-06-10（`Type.IsValueType` / `Type.IsRecord`，读 type-flags 已捕获的 struct/record 位；**无格式 bump**；cargo 800/0 + GoldenTests 1554/1554）|
+| ~~fix-chained-property-dispatch~~ | compiler —— ✅ 已归档 2026-06-10（链式 getter 派发 `obj.GetType().BaseType.Name`；唯一根因 P1=Object stub GetType 返 Unknown→改取真实 Std.Type；纯 typecheck，无 zbc 格式/字节漂移；dotnet GoldenTests 1555/1555 + 链式 e2e 全过）|
 | plan-0.3.x-three-streams | docs（不上锁） |

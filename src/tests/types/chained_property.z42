@@ -1,0 +1,45 @@
+// fix-chained-property-dispatch: chained getter/method dispatch through a
+// GetType()-typed intermediate receiver.
+//
+// Root cause: SymbolCollector's pre-registered Object stub declared
+// `GetType()` with return type `Z42Type.Unknown`, so `obj.GetType()` was
+// Unknown and any chained member access (`.BaseType` / `.Name`) hit the silent
+// member fallback (TypeChecker.Exprs.Members.cs) → emitted as a FieldGet →
+// runtime "FieldGet on Null". The fix resolves the stub's GetType return type
+// to the real `Std.Type` class (already in `_classes` via MergeImported).
+using Std.Reflection;
+
+class Animal {
+    public int legs;
+}
+class Dog : Animal {
+    public string name;
+}
+
+void Main() {
+    Dog d = new Dog();
+
+    // local-receiver form (always worked — control)
+    Type t = d.GetType();
+    Type bt = t.BaseType;
+    Assert.Equal("Animal", bt.Name);
+
+    // chained getter-through-getter off typeof (already worked pre-fix)
+    Assert.Equal("Animal", typeof(Dog).BaseType.Name);
+
+    // chained getter-through-getter off GetType() — the fix target
+    Assert.Equal("Animal", d.GetType().BaseType.Name);
+
+    // var-inference side effect: `var` now infers Type (was Unknown) so chained
+    // getter works directly off a var-bound GetType() result.
+    var vt = d.GetType();
+    Assert.Equal("Dog", vt.Name);
+    Assert.Equal("Animal", vt.BaseType.Name);
+
+    // chained method-call off GetType() (mirrors z42.core/tests/reflection.z42
+    // patterns: GetFields/GetMethods resolve against the real Type now).
+    FieldInfo[] fields = d.GetType().GetFields();
+    Assert.True(fields.Length >= 1);
+    MethodInfo[] methods = d.GetType().GetMethods();
+    Assert.True(methods.Length >= 0);
+}

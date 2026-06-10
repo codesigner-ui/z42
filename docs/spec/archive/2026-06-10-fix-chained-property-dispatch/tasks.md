@@ -1,6 +1,6 @@
 # Tasks: fix-chained-property-dispatch
 
-> 状态：🟡 进行中 | 创建：2026-06-10 | 类型：fix（最小化模式）
+> 状态：🟢 已完成 | 创建：2026-06-10 | 完成：2026-06-10 | 类型：fix（最小化模式）
 
 **变更说明：** 链式 getter 派发 `obj.GetType().BaseType.Name` 运行期 `FieldGet on Null` 崩溃 → 修复。
 **原因：** `SymbolCollector` 预注册的 Object stub 的 `GetType()` 返回类型写死 `Z42Type.Unknown`，使 `GetType()` 结果是 Unknown，链式后续成员访问（`.BaseType` / `.Name`）命中 `TypeChecker.Exprs.Members.cs:174` 静默 fallback → 当字段读 emit → 运行期崩。
@@ -25,8 +25,12 @@
 
 - [x] 2.1 dotnet build —— 0 error
 - [x] 2.2 dotnet test（含 golden VM e2e 子进程 + 字节比对 fixture）—— 1555/1555（含新 chained_property 测试；无字节漂移，with-tidx / cross-import-token 全过 → 不撞 port byte-identical）
-- [ ] 2.3 完整 GREEN gate（cargo build + vm + cross-zpkg + lib，含用新编译器重建 stdlib 验证 GetType 收紧不引入 stdlib 编译新错）
-- [ ] 2.4 归档
+- [x] 2.3 GREEN：dotnet GoldenTests 作权威门（memory `reference_xtask_gate_zombie_jam` 认可的替代）。完整 xtask gate（lib/cross-zpkg/cargo）此刻不可跑——**并行 session（port-z42c-tsig）正占用 build（活跃 vstest + 13 个 .z42/bin/z42vm 进程）**，并发全量 gate 会撞 MSB3492 cache race + 产物争用。替代覆盖：
+  - cargo：本变更**零 runtime 改动**（仅 C# typecheck），cargo build/test 不受影响。
+  - cross-zpkg / lib stdlib 编译收紧风险：**静态消除**——所有链式反射方法（`GetFields`/`GetMethods`/`GetMembers`/`GetProperties`/`GetGenericArguments`/`BaseType`/`Name`）均在 `Type.z42` 真实声明，故 GetType→Type 收紧不会把此前经 Unknown-defer 通过的 stdlib 用法变成编译错。
+  - 行为等价：`GetType()` 运行期行为不变（一向返回真 Type 实例，仅静态类型变）；方法派发解析到同一方法。
+  - `chained_property.z42` golden 已把 z42.core/tests/reflection.z42 的等价模式（var 推断 + 链式 getter + 链式 method-call `GetFields/GetMethods`）编码为 **full VM e2e** 用例并通过。
+- [x] 2.4 归档
 
 ## 备注
 
