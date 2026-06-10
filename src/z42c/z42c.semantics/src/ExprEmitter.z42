@@ -253,8 +253,27 @@ public sealed class ExprEmitter {
     // 调用分派：free → call @f / static → call @Class.m / instance → vcall recv.m。
     private TypedReg _emitCall(BoundCall c) {
         if (c.Kind == "instance") {
-            TypedReg recv = this.Emit(c.Receiver);
+            // 镜像 C# EmitBoundCall：实参先于 receiver（寄存器编号序——byte-identical）
             TypedReg[] iargs = this._emitArgs(c);
+            TypedReg recv = this.Emit(c.Receiver);
+            // IC-1 反劫持守卫：receiver 类链（local+imported）自有方法 → VCall（vtable 赢）
+            bool owns = this._ctx.ChainHasMethod(c.OwnerClass, c.MethodName);
+            if (!owns && this._ctx.Deps != null) {
+                // IC-2：prim/unknown/链上无 → DepIndex instance 捷径（arity 键→bare）
+                DepCallEntry de = this._ctx.Deps.GetInstance(c.MethodName, c.ArgCount);
+                if (de != null) {
+                    this._ctx.TrackDepNamespace(de.Namespace);
+                    TypedReg[] full = new TypedReg[c.ArgCount + 1];
+                    full[0] = recv;
+                    int fi = 0;
+                    while (fi < c.ArgCount) { full[fi + 1] = iargs[fi]; fi = fi + 1; }
+                    TypedReg ddst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+                    this._ctx.Emit(new CallInstr(ddst, de.QualifiedName, full, c.ArgCount + 1));
+                    return ddst;
+                }
+            }
+            // VCall fallback：imported receiver → 依赖 ns 追踪（C# 行 198-200 镜像，缺则 DEPS 漏条目）
+            this._ctx.TrackImportedClass(c.OwnerClass);
             TypedReg idst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
             this._ctx.Emit(new VCallInstr(idst, recv, c.MethodName, iargs, c.ArgCount));
             return idst;
@@ -303,7 +322,7 @@ public sealed class ExprEmitter {
             while (k < inst.ArgCount) { targs[k] = inst.TypeArgs[k].Name(); k = k + 1; }
             tcount = inst.ArgCount;
         }
-        this._ctx.Emit(new ObjNewInstr(dst, this._ctx.Qualify(className), targs, tcount, args, n.ArgCount));
+        this._ctx.Emit(new ObjNewInstr(dst, this._ctx.QualifyClass(className), targs, tcount, args, n.ArgCount));
         return dst;
     }
 
@@ -320,7 +339,7 @@ public sealed class ExprEmitter {
     private TypedReg _emitIs(BoundIsExpr e) {
         TypedReg obj = this.Emit(e.E);
         TypedReg dst = this._ctx.Alloc(IrType.Bool);
-        this._ctx.Emit(new IsInstanceInstr(dst, obj, this._ctx.Qualify(e.TypeName)));
+        this._ctx.Emit(new IsInstanceInstr(dst, obj, this._ctx.QualifyClass(e.TypeName)));
         return dst;
     }
 
@@ -328,7 +347,7 @@ public sealed class ExprEmitter {
     private TypedReg _emitCast(BoundCast c) {
         TypedReg obj = this.Emit(c.E);
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
-        this._ctx.Emit(new AsCastInstr(dst, obj, this._ctx.Qualify(c.Type().Name())));
+        this._ctx.Emit(new AsCastInstr(dst, obj, this._ctx.QualifyClass(c.Type().Name())));
         return dst;
     }
 }

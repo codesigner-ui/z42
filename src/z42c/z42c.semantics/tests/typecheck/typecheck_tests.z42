@@ -441,3 +441,11 @@ void test_constraint_unconstrained_any_arg() {
     string src = "class Box<T> { } class C { void M() { var b = new Box<int>(); } }";
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── 实例跨包（port-z42c-instance-import IC-3）────────────────────────────────
+[Test]
+void test_prim_receiver_loose_binding() {
+    // prim receiver 方法调用不再报错（松绑定；包装类不在本单测符号域 → ret Unknown 吸收）
+    string src = "class C { void M(string s) { s.Substring(0, 2); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

@@ -443,9 +443,25 @@ public sealed class TypeChecker {
         if ((rt is Z42ErrorType) || (rt is Z42UnknownType)) {
             return new BoundCall("instance", true, recv, "<?>", mem.Name, args, argCount, new Z42ErrorType(), sp);
         }
-        this._diags.Error(DiagnosticCodes.TypeMismatch,
-            "call on non-class `" + rt.Name() + "`", sp);
-        return new BoundError("call on non-class", new Z42ErrorType(), sp);
+        // prim receiver（IC-3，镜像 C#）：prim 名首字母大写 → stdlib 包装类（"string"→"String"，
+        // imported 自 z42.core TSIG）→ 取方法 ret 真类型（dst tag 字节实证 Str 非 Unknown）；
+        // 查无则松绑定 Unknown（codegen 经 DepIndex 真实解析）。
+        string wrapper = TypeChecker._capFirst(rt.Name());
+        if (env.Symbols.HasClass(wrapper)) {
+            Z42ClassType wct = env.Symbols.GetClass(wrapper);
+            MethodSymbol wms = this._findMethod(env.Symbols, wct, mem.Name);
+            if (wms != null) {
+                return new BoundCall("instance", true, recv, rt.Name(), mem.Name, args, argCount, wms.Signature.Ret, sp);
+            }
+        }
+        return new BoundCall("instance", true, recv, rt.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
+    }
+
+    // prim 名 → stdlib 包装类名（首字母大写，镜像 C# CapitalizeFirst）。
+    private static string _capFirst(string name) {
+        if (name.Length == 0) { return name; }
+        string head = name.Substring(0, 1).ToUpper();
+        return head + name.Substring(1, name.Length - 1);
     }
 
     // 两分支公共类型（三目 / ??）：互为可赋取较宽，否则取左（C# 报错；1E 简化）。

@@ -57,6 +57,7 @@ public static class IrDump {
         var model = new TypeChecker(diags).Infer(cu, symbols);
         var gen = new IrGen();
         gen.Deps = deps;
+        if (imported != null) { gen.ImportedClassNs = imported.ClassNamespaces; }
         IrModule irm = gen.Generate(cu, model);
         // usings 抽取（DEPS 用）
         string[] usings = new string[4];

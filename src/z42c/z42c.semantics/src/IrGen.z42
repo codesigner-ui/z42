@@ -38,6 +38,7 @@ public sealed class IrGen {
 
     public string Ns;   // 根命名空间（BP-0 名字限定；""=无）
     public DependencyIndex Deps;       // 跨包索引（CI-4；调用方 Generate 前设置，null=无）
+    public StrMap ImportedClassNs;     // imported 短类名 → ns（IC-1）
     public string[] UsedDepNs; public int UsedDepNsCount;   // 全函数聚合（首现序）
 
     public void _mergeUsedNsPub(EmitContext ctx) {

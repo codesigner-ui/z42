@@ -111,10 +111,26 @@ public static class ImportedSymbolLoader {
                 while (j < m.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, m.Params[j].TypeName); j = j + 1; }
                 var sig = new Z42FuncType(ps, m.ParamCount, ImportedSymbolLoader._resolve(r, m.ReturnType));
                 // z42c 既有约定：静态/实例同进 Methods（IsStatic 标真值）——D3
-                ct.Methods.Put(m.Name, new MethodSymbol(m.Name, m.Visibility, sig, m.IsStatic, ct.Name(), false, null));
+                var sym = new MethodSymbol(m.Name, m.Visibility, sig, m.IsStatic, ct.Name(), false, null);
+                ct.Methods.Put(m.Name, sym);
+                // 重载 arity 后缀（"Substring$2"）→ 同时注册 bare 键 first-wins（镜像 C# Phase2）
+                int dollar = ImportedSymbolLoader._dollarAt(m.Name);
+                if (dollar >= 0) {
+                    string bare = m.Name.Substring(0, dollar);
+                    if (!ct.Methods.ContainsKey(bare)) { ct.Methods.Put(bare, sym); }
+                }
             }
             i = i + 1;
         }
+    }
+
+    private static int _dollarAt(string s) {
+        int i = 0;
+        while (i < s.Length) {
+            if (s.CharAt(i) == '$') { return i; }
+            i = i + 1;
+        }
+        return 0 - 1;
     }
 
     // TypeResolver 子集（镜像 C# 优先级）：数组后缀 → prim/void → imported class → fallback prim(name)。

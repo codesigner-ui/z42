@@ -22,6 +22,7 @@ public sealed class EmitContext {
     public IrLineEntry[] Lines;  public int LineCount;  public int LastLine;   // DBUG 行表（同行去重，镜像 C# TrackLine）
     public string Ns;   // 根命名空间（""=无；名字限定 BP-0，镜像 C# QualifyName）
     public DependencyIndex Deps;       // 跨包调用索引（CI-4；null=无依赖）
+    public StrMap ImportedClassNs;     // imported 短类名 → ns（StrBox；IC-1：VCall 依赖追踪 + ObjNew FQ）
     public string[] UsedDepNs; public int UsedDepNsCount;   // codegen 期实际命中的依赖 ns（DEPS 用，首现序）
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
@@ -34,6 +35,7 @@ public sealed class EmitContext {
         this.Lines = new IrLineEntry[8]; this.LineCount = 0; this.LastLine = 0;
         this.Ns = "";
         this.Deps = null;
+        this.ImportedClassNs = null;
         this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0;
     }
 
@@ -51,6 +53,38 @@ public sealed class EmitContext {
         }
         this.UsedDepNs[this.UsedDepNsCount] = ns;
         this.UsedDepNsCount = this.UsedDepNsCount + 1;
+    }
+
+    // 类名限定（镜像 C# QualifyClassName）：imported 类 → 其原 ns 前缀；否则按模块 ns 限定。
+    public string QualifyClass(string name) {
+        if (this.ImportedClassNs != null && this.ImportedClassNs.ContainsKey(name)) {
+            StrBox b = this.ImportedClassNs.Get(name) as StrBox;
+            if (b != null) { return b.Value + "." + name; }
+        }
+        return this.Qualify(name);
+    }
+
+    // receiver 类链（local+imported 合并表，走 base 链）是否自有该方法（IC-1 反劫持守卫）。
+    public bool ChainHasMethod(string clsName, string method) {
+        string cur = clsName;
+        int hops = 0;
+        while (hops < 32) {
+            if (!this.Symbols.HasClass(cur)) { return false; }
+            Z42ClassType ct = this.Symbols.GetClass(cur);
+            if (ct.Methods.ContainsKey(method)) { return true; }
+            if (!ct.HasBase || ct.BaseName == "") { return false; }
+            cur = ct.BaseName;
+            hops = hops + 1;
+        }
+        return false;
+    }
+
+    // imported receiver 的依赖 ns 追踪（IC-1 镜像 C# VCall fallback 行 198-200）。
+    public void TrackImportedClass(string clsName) {
+        if (this.ImportedClassNs != null && this.ImportedClassNs.ContainsKey(clsName)) {
+            StrBox b = this.ImportedClassNs.Get(clsName) as StrBox;
+            if (b != null) { this.TrackDepNamespace(b.Value); }
+        }
     }
 
     // 名字限定（镜像 C# QualifyName）：已含 '.' 视为已限定；ns 空则原样。
