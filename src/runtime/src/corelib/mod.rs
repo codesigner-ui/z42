@@ -222,6 +222,7 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__type_custom_attributes", reflection::builtin_type_custom_attributes),
     ("__method_custom_attributes", reflection::builtin_method_custom_attributes),
     ("__field_custom_attributes", reflection::builtin_field_custom_attributes),
+    ("__param_custom_attributes", reflection::builtin_param_custom_attributes),
     ("__typeof",             reflection::builtin_typeof),
 
     // ── Array protocol（add-array-base-class，2026-05-07）─────────────────────

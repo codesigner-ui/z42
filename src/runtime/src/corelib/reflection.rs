@@ -315,6 +315,46 @@ pub fn builtin_field_custom_attributes(ctx: &VmContext, args: &[Value]) -> Resul
     call_attribute_factories(ctx, &attrs)
 }
 
+/// `__param_custom_attributes(qualified, position) -> Std.Attribute[]` — live
+/// attribute instances for parameter `position` (source index, excluding the
+/// implicit `this`) of the method/function named by `qualified`. The z42
+/// `ParameterInfo` passes its hidden `__qualified` + `__position`. The backing
+/// `Function`'s `param_attributes` are SIGS-aligned (include the `this` slot),
+/// so the wire index = position + (is_static ? 0 : 1). add-parameter-attribute-reflection.
+pub fn builtin_param_custom_attributes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let qualified = match args.iter().find_map(|v| match v {
+        Value::Str(s) => Some(s.to_string()),
+        _ => None,
+    }) {
+        Some(q) => q,
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    let position = match args.iter().find_map(|v| match v {
+        Value::I64(n) if *n >= 0 => Some(*n as usize),
+        _ => None,
+    }) {
+        Some(p) => p,
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    // Resolve the backing Function (main module first, then lazy loader) and read
+    // its SIGS-aligned per-param attrs. wire_index = position + (this offset).
+    let lookup = |f: &crate::metadata::bytecode::Function| {
+        let wire_index = position + if f.is_static { 0 } else { 1 };
+        f.param_attributes().get(wire_index).map(|a| a.to_vec())
+    };
+    let attrs: Vec<crate::metadata::bytecode::AttributeRef> = ctx
+        .module()
+        .and_then(|m| {
+            m.func_index
+                .get(qualified.as_str())
+                .and_then(|&i| m.functions.get(i))
+                .and_then(lookup)
+        })
+        .or_else(|| ctx.try_lookup_function(&qualified).and_then(|f| lookup(&f)))
+        .unwrap_or_default();
+    call_attribute_factories(ctx, &attrs)
+}
+
 /// Build live attribute instances by invoking each synthesized factory function
 /// (`() => new T(args)`) via `run_returning`. Shared by the class
 /// (`__type_custom_attributes`) and method (`__method_custom_attributes`) paths.
@@ -396,6 +436,10 @@ fn build_method_info(
                         ("Name", Value::Str(format!("arg{pos}").into())),
                         ("ParameterType", make_type_from_name(ctx, tag)),
                         ("Position", Value::I64(pos)),
+                        // add-parameter-attribute-reflection: backing func name so
+                        // ParameterInfo.GetCustomAttributes() can resolve the param's
+                        // attribute factories (paired with Position).
+                        ("__qualified", Value::Str(qualified.to_string().into())),
                     ],
                 )?);
             }

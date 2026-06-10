@@ -10,7 +10,7 @@ using Z42.IR.BinaryFormat;
 public static class ZpkgWriterZ {
     // 版本（须与 C# ZpkgWriter.VersionMajor/Minor 一致；strict-pin。bump 同步见 version-bumping.md 第 5 步）。
     public static int Major = 0;
-    public static int Minor = 16;   // 2026-06-10 add-field-attribute-reflection：随内嵌 zbc 1.14 联动
+    public static int Minor = 17;   // 2026-06-10 add-parameter-attribute-reflection：随内嵌 zbc 1.15 联动（SIGS per-param attr 块）
 
     public static ByteWriter WritePacked(ZpkgFileZ zpkg) {
         var pool = new ZbcStringPool();

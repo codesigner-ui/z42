@@ -12,4 +12,41 @@ public class ParameterInfo {
 
     // Zero-based position in the parameter list.
     public int Position;
+
+    // ── Custom attributes (add-parameter-attribute-reflection) ──────────────
+
+    // Qualified name of the backing method/function (VM-written), used together
+    // with Position to resolve this parameter's attribute factories.
+    public string __qualified;
+
+    // Cached attribute instances (see Type.GetCustomAttributes for rationale).
+    public Std.Attribute[] __attrCache;
+
+    [Native("__param_custom_attributes")]
+    public extern Std.Attribute[] __customAttributes(string qualified, int position);
+
+    // User attributes applied to this parameter, as live instances. Cached.
+    public Std.Attribute[] GetCustomAttributes() {
+        if (this.__attrCache != null) {
+            return this.__attrCache;
+        }
+        this.__attrCache = this.__customAttributes(this.__qualified, this.Position);
+        return this.__attrCache;
+    }
+
+    // The single attribute of the given type, or null if absent. Compares by
+    // the instance's runtime type (FullName), so subclass attributes match too.
+    public Std.Attribute GetAttribute(Std.Type attributeType) {
+        Std.Attribute[] all = this.GetCustomAttributes();
+        int i = 0;
+        while (i < all.Length) {
+            Std.Attribute a = all[i];
+            Std.Type at = a.GetType();
+            if (at.FullName == attributeType.FullName) {
+                return a;
+            }
+            i = i + 1;
+        }
+        return null;
+    }
 }

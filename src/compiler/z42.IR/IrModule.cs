@@ -161,7 +161,15 @@ public sealed record IrFunction(
     /// method / top-level function. Same shape as <see cref="IrClassDesc.Attributes"/>
     /// — each points at a synthesized factory the runtime calls for
     /// `MethodInfo.GetCustomAttributes()`.
-    List<IrAttributeRef>? Attributes = null);
+    List<IrAttributeRef>? Attributes = null,
+    /// add-parameter-attribute-reflection: per-parameter user attributes,
+    /// aligned by index with the SIGS parameter array (length == ParamCount,
+    /// including the implicit `this` slot at index 0 for instance methods,
+    /// which always carries an empty list). Each inner list points at the
+    /// synthesized factories for `ParameterInfo.GetCustomAttributes()`.
+    /// Null = no parameter on this function carries any attribute (keeps
+    /// existing functions byte-identical: the writer emits per-param count=0).
+    List<List<IrAttributeRef>>? ParamAttributes = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
 public sealed record IrLocalVarEntry(string Name, int RegId);

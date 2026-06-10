@@ -46,8 +46,9 @@ public static class AttributeFactorySynthesizer
     /// (common case — avoids rebuilding the declaration lists).</summary>
     public static CompilationUnit Run(CompilationUnit cu)
     {
-        bool any = cu.Functions.Any(HasAttrs)
-                || cu.Classes.Any(c => HasAttrs(c.Attributes) || c.Methods.Any(HasAttrs)
+        bool any = cu.Functions.Any(f => HasAttrs(f) || HasParamAttrs(f))
+                || cu.Classes.Any(c => HasAttrs(c.Attributes)
+                                    || c.Methods.Any(m => HasAttrs(m) || HasParamAttrs(m))  // add-parameter-attribute-reflection
                                     || c.Fields.Any(f => HasAttrs(f.Attributes)));  // add-field-attribute-reflection
         if (!any) return cu;
 
@@ -68,6 +69,7 @@ public static class AttributeFactorySynthesizer
 
     private static bool HasAttrs(FunctionDecl fn) => HasAttrs(fn.Attributes);
     private static bool HasAttrs(List<AttributeApp>? attrs) => attrs is { Count: > 0 };
+    private static bool HasParamAttrs(FunctionDecl fn) => fn.Params.Any(p => HasAttrs(p.Attributes));
 
     private static ClassDecl ProcessClass(ClassDecl cls, List<FunctionDecl> factories)
     {
@@ -90,8 +92,30 @@ public static class AttributeFactorySynthesizer
 
     private static FunctionDecl ProcessFunction(FunctionDecl fn, string keyPrefix, List<FunctionDecl> factories)
     {
-        var newAttrs = ProcessAttributes(fn.Attributes, keyPrefix, factories);
-        return ReferenceEquals(newAttrs, fn.Attributes) ? fn : fn with { Attributes = newAttrs };
+        var newAttrs  = ProcessAttributes(fn.Attributes, keyPrefix, factories);
+        var newParams = ProcessParams(fn.Params, keyPrefix, factories);
+        if (ReferenceEquals(newAttrs, fn.Attributes) && ReferenceEquals(newParams, fn.Params))
+            return fn;
+        return fn with { Attributes = newAttrs, Params = newParams };
+    }
+
+    /// <summary>add-parameter-attribute-reflection: synthesize factories for each
+    /// parameter's attributes. Param `j`'s factories key under
+    /// `<keyPrefix>$prm$<j>` (e.g. `__attr$mth$C$M$prm$0$0`). Returns the input
+    /// list unchanged when no parameter carries an attribute.</summary>
+    private static List<Param> ProcessParams(
+        IReadOnlyList<Param> parms, string keyPrefix, List<FunctionDecl> factories)
+    {
+        if (!parms.Any(p => HasAttrs(p.Attributes)))
+            return (List<Param>)parms;
+        var result = new List<Param>(parms.Count);
+        for (int j = 0; j < parms.Count; j++)
+        {
+            var p  = parms[j];
+            var pa = ProcessAttributes(p.Attributes, keyPrefix + "$prm$" + j, factories);
+            result.Add(ReferenceEquals(pa, p.Attributes) ? p : p with { Attributes = pa });
+        }
+        return result;
     }
 
     /// <summary>For each application, synthesize a factory function (appended to

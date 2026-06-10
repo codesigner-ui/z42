@@ -20,6 +20,16 @@ internal static partial class TopLevelParser
         var parms = new List<Param>();
         while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
         {
+            // add-parameter-attribute-reflection: leading `[Attr(...)]` on a
+            // parameter. Only user attributes (AttributeApp) are meaningful here;
+            // native / test attributes don't apply to parameters and are ignored
+            // (TryParseAttribute returns them null for a plain `[Tag]`).
+            List<AttributeApp>? pAttrs = null;
+            while (cursor.Current.Kind == TokenKind.LBracket)
+            {
+                var (_, _, parsedUser) = TryParseAttribute(ref cursor, feat, diags);
+                if (parsedUser != null) (pAttrs ??= new()).Add(parsedUser);
+            }
             var pSpan = cursor.Current.Span;
             // Optional parameter modifier (spec: define-ref-out-in-parameters).
             // `In` token is reused from `foreach...in`; in parameter list position
@@ -41,7 +51,7 @@ internal static partial class TopLevelParser
                 cursor   = cursor.Advance();
                 pDefault = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
             }
-            parms.Add(new Param(pName, pType, pDefault, pSpan, pModifier));
+            parms.Add(new Param(pName, pType, pDefault, pSpan, pModifier, pAttrs));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
         }

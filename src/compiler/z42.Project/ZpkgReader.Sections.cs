@@ -212,6 +212,13 @@ public static partial class ZpkgReader
             // attr refs (u16 count + (type, factory) u32 pairs) to stay aligned.
             ushort attrCount = r.ReadUInt16();
             for (int a = 0; a < attrCount; a++) { r.ReadUInt32(); r.ReadUInt32(); }
+            // add-parameter-attribute-reflection (zbc 1.15): skip per-parameter
+            // attr blocks — exactly paramCount blocks (u16 count + pairs).
+            for (int p = 0; p < paramCount; p++)
+            {
+                ushort pCount = r.ReadUInt16();
+                for (int a = 0; a < pCount; a++) { r.ReadUInt32(); r.ReadUInt32(); }
+            }
             result.Add((name, paramCount, retType, execMode, isStatic));
         }
         return result;

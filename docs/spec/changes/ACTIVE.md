@@ -8,9 +8,9 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | **add-parameter-attribute-reflection（实施中）** | 2026-06-10 | 参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；SIGS section 每参数追加 attr-ref 块（zbc 1.14→1.15 / zpkg 0.16→0.17）。port-z42c-tsig 归档释放 z42c → 本变更共占 z42c，clean full impl（含 z42c writer 同步），一次 GREEN commit |
-| `runtime` | **add-parameter-attribute-reflection（实施中）** | 2026-06-10 | 同上：zbc_reader 读 SIGS 每参数 attr-ref + loader 索引 + `__param_custom_attributes` builtin |
-| `stdlib` | **add-parameter-attribute-reflection（实施中）** | 2026-06-10 | 同上：`ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)` |
+| `compiler` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17 SIGS per-param 块；dotnet 1556/1556 + e2e）。⚠️ 暴露 pre-existing 多文件 project-build 命名空间双重限定 bug（非本 change，待独立 fix；见 memory）|
+| `runtime` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（zbc_reader SIGS per-param + `__param_custom_attributes`；cargo 757+21）|
+| `stdlib` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)`）|
 | `z42c` | **port-z42c-import（DRAFT 待审）** | 2026-06-10 | tsig 已归档（zpkg 全文件 byte-identical 2/2）。本 change：跨包 import 消费侧 MVP（ZpkgReader 子集/DependencyIndex/ImportedSymbolLoader Phase1·2/DEPS 真实条目/静态调用 FQ 命中）→ z42c 可编译 stdlib-using 代码 + hello-stdlib 全文件对账。DRAFT 待 User 审批 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
@@ -47,4 +47,6 @@
 | ~~add-field-attribute-reflection~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（字段级用户 attribute 反射 `FieldInfo.GetCustomAttributes()`；zbc 1.14 / zpkg 0.16；cargo 799/0 + GoldenTests 1554/1554；参数 attr = follow-up）|
 | ~~add-reflection-value-record-flags~~ | runtime + stdlib —— ✅ 已归档 2026-06-10（`Type.IsValueType` / `Type.IsRecord`，读 type-flags 已捕获的 struct/record 位；**无格式 bump**；cargo 800/0 + GoldenTests 1554/1554）|
 | ~~fix-chained-property-dispatch~~ | compiler —— ✅ 已归档 2026-06-10（链式 getter 派发 `obj.GetType().BaseType.Name`；唯一根因 P1=Object stub GetType 返 Unknown→改取真实 Std.Type；纯 typecheck，无 zbc 格式/字节漂移；dotnet GoldenTests 1555/1555 + 链式 e2e 全过）|
+| ~~add-parameter-attribute-reflection~~ | compiler + runtime + stdlib + z42c —— ✅ 已归档 2026-06-10（参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17，SIGS 每参数 attr-ref 块；z42c writer 同步；dotnet 1556/1556 + param_attributes.z42 e2e + cargo 757+21 + format 78。xtask gate 阻塞于 pre-existing 多文件 project-build 命名空间双重限定 bug → User 裁决单独 fix change 跟踪，本 change 走 dotnet 权威门）|
+| fix-multifile-project-namespace-qualify | compiler（待开；pre-existing bug，见 memory `reference_multifile_project_namespace_double_qualify_bug`）|
 | plan-0.3.x-three-streams | docs（不上锁） |

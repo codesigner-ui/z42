@@ -285,6 +285,13 @@ pub struct FunctionCold {
     /// synthesized factory the runtime calls for `MethodInfo.GetCustomAttributes()`.
     #[serde(default)]
     pub custom_attributes: Box<[AttributeRef]>,
+    /// add-parameter-attribute-reflection (zbc 1.15): per-parameter user
+    /// attributes, aligned by index with the SIGS parameter array (length ==
+    /// `param_count`, including the implicit `this` slot at index 0 for instance
+    /// methods, which is empty). `loader` re-indexes these by source position
+    /// (excluding `this`) for `ParameterInfo.GetCustomAttributes()`.
+    #[serde(default)]
+    pub param_attributes: Box<[Box<[AttributeRef]>]>,
 }
 
 /// A single function.
@@ -356,6 +363,9 @@ impl Function {
     #[inline] pub fn type_param_constraints(&self)  -> &[ConstraintBundle] { self.cold_slice(|c| &c.type_param_constraints) }
     /// C3b add-attribute-reflection-methods: user attributes applied to this function.
     #[inline] pub fn custom_attributes(&self)       -> &[AttributeRef]     { self.cold_slice(|c| &c.custom_attributes) }
+    /// add-parameter-attribute-reflection: per-parameter attributes (SIGS-aligned,
+    /// incl. `this` slot). Empty slice when the cold side-table is absent.
+    #[inline] pub fn param_attributes(&self)        -> &[Box<[AttributeRef]>] { self.cold_slice(|c| &c.param_attributes) }
 
     /// Lazy-init the cold side-table for mutation. Used by sidecar debug-
     /// symbol overlay in `metadata::loader`.

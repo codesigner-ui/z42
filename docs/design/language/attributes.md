@@ -134,11 +134,8 @@ native `__type_custom_attributes(type)` 对每条 ref 用 `run_returning` 调工
 ### ~~attribute-future-targets-fields（field 目标）~~ — 已落地（2026-06-10）
 - **状态**：字段级用户 attribute 已落地 2026-06-10（add-field-attribute-reflection）。`[Doc("x")] public int f;`（实例 + 静态字段）经 `FieldInfo.GetCustomAttributes()` / `GetAttribute(Type)` 反射活实例。机制同 C3a/C3b（factory-thunk，key `fld$<Class>$<Field>`）；attr refs 进 zbc TYPE section 每字段记录（zbc 1.14 / zpkg 0.16），运行期索引进 `TypeDescCold.field_attributes`。
 
-### attribute-future-targets-params（parameter 目标）
-- **来源**：add-attribute-reflection（C3a）→ field 部分已落地，param 拆出
-- **触发原因**：参数无 per-param wire 元数据（`ParameterInfo` 运行期由函数签名构造），加参数 attribute 需在 SIGS 段新增 per-param attr 块 + parser 在参数列表解析 `[Attr]` + `ParameterInfo.GetCustomAttributes`，基础设施不同、更大。
-- **触发条件**：需要反射参数 attribute 时；独立 change `add-param-attribute-reflection`。
-- **当前 workaround**：无（参数 attribute 暂不支持）。
+### ~~attribute-future-targets-params（parameter 目标）~~ — 已落地（2026-06-10）
+- **状态**：参数级用户 attribute 已落地 2026-06-10（add-parameter-attribute-reflection）。`void M([Tag("x")] int p)` 经 `ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)` 反射活实例。机制同 field（factory-thunk，key `__attr$<funcKey>$prm$<idx>$<n>`）；attr refs 进 zbc SIGS section 每函数记录的 per-parameter attr 块（zbc 1.15 / zpkg 0.17，每参数 `u16 count` + 对偶，含实例方法 `this` 空槽），运行期载入 `FunctionCold.param_attributes`，`__param_custom_attributes(qualified, position)` 按源参数位置取（wire 索引 = position + this 偏移）。parser 在参数列表解析 leading `[Attr]`（此前丢弃）。
 
 ### attribute-future-generic-and-typed-lookup
 - **触发原因**：泛型 attribute 类 + `GetAttribute<T>()` 泛型糖依赖 0.5.x 泛型方法实例化。MVP 用 `GetAttribute(typeof(T))`。

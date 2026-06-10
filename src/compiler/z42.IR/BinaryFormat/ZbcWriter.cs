@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 14;  // 2026-06-10 add-field-attribute-reflection: each TYPE-section field record (instance + static block) appends a per-field attr-ref block (u16 count + (type-name, factory) str-idx pairs) after type_str. Surfaced by FieldInfo.GetCustomAttributes(). Pre-1.14 not readable.
+    public const ushort VersionMinor = 15;  // 2026-06-10 add-parameter-attribute-reflection: each SIGS-section function record appends, after the method-level attr block, a per-parameter attr block — for each of param_count params: u16 count + (type-name, factory) str-idx pairs. Surfaced by ParameterInfo.GetCustomAttributes(). Pre-1.15 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -294,6 +294,10 @@ public static partial class ZbcWriter
                     foreach (var b in fn.TypeParamConstraints)
                         InternConstraintBundle(pool, b);
                 InternAttributeRefs(pool, fn.Attributes);  // C3b
+                // add-parameter-attribute-reflection: intern per-param attr strings
+                if (fn.ParamAttributes != null)
+                    foreach (var pa in fn.ParamAttributes)
+                        InternAttributeRefs(pool, pa);
             }
         }
         else
@@ -482,6 +486,19 @@ public static partial class ZbcWriter
                     w.Write((uint)pool.Idx(a.TypeName));
                     w.Write((uint)pool.Idx(a.FactoryFunc));
                 }
+
+            // add-parameter-attribute-reflection (zbc 1.15): per-parameter attr
+            // block — for each of ParamCount params, an attr-ref block (u16 count
+            // + (type-name, factory) str-idx pairs). ParamAttributes is aligned by
+            // index with the SIGS param array (incl. the implicit `this` slot for
+            // instance methods, which is empty). Null / short → write count=0 so
+            // the wire always has exactly ParamCount per-param blocks.
+            for (int i = 0; i < fn.ParamCount; i++)
+            {
+                var pa = (fn.ParamAttributes != null && i < fn.ParamAttributes.Count)
+                    ? fn.ParamAttributes[i] : null;
+                WriteAttrRefs(w, pool, pa);
+            }
         }
 
         return ms.ToArray();

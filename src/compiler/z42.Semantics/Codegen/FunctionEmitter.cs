@@ -219,7 +219,8 @@ internal sealed partial class FunctionEmitter
             TypeParams: method.TypeParams,
             TypeParamConstraints: constraints,
             ParamModifiers: paramMods,
-            Attributes: BuildAttributeRefs(method.Attributes));
+            Attributes: BuildAttributeRefs(method.Attributes),
+            ParamAttributes: BuildParamAttributeRefs(method.Params, paramOffset));
     }
 
     /// Spec impl-ref-out-in-runtime: convert `Param.Modifier` enum values to
@@ -304,7 +305,8 @@ internal sealed partial class FunctionEmitter
             TypeParams: fn.TypeParams,
             TypeParamConstraints: constraints,
             ParamModifiers: paramMods,
-            Attributes: BuildAttributeRefs(fn.Attributes));
+            Attributes: BuildAttributeRefs(fn.Attributes),
+            ParamAttributes: BuildParamAttributeRefs(fn.Params, 0));
     }
 
     /// C3b add-attribute-reflection-methods: map a declaration's user attributes
@@ -321,5 +323,31 @@ internal sealed partial class FunctionEmitter
                 _ctx.QualifyName(a.FactoryFunc!)))
             .ToList();
         return refs.Count == 0 ? null : refs;
+    }
+
+    /// add-parameter-attribute-reflection: build per-parameter attribute refs
+    /// aligned with the SIGS parameter array. <paramref name="leadingOffset"/>
+    /// reserves empty slots for the implicit `this` (instance methods). Returns
+    /// null when no parameter carries a factory-bearing attribute — the writer
+    /// then emits per-param count=0 and existing functions stay byte-identical.
+    private List<List<IrAttributeRef>>? BuildParamAttributeRefs(
+        IReadOnlyList<Param> parms, int leadingOffset)
+    {
+        bool anyFactory = parms.Any(p =>
+            p.Attributes is { Count: > 0 } && p.Attributes.Any(a => a.FactoryFunc is not null));
+        if (!anyFactory) return null;
+        var result = new List<List<IrAttributeRef>>(parms.Count + leadingOffset);
+        for (int i = 0; i < leadingOffset; i++) result.Add(new List<IrAttributeRef>()); // `this` slot
+        foreach (var p in parms)
+        {
+            var refs = (p.Attributes ?? (IEnumerable<AttributeApp>)Array.Empty<AttributeApp>())
+                .Where(a => a.FactoryFunc is not null)
+                .Select(a => new IrAttributeRef(
+                    _ctx.QualifyClassName(a.Name),
+                    _ctx.QualifyName(a.FactoryFunc!)))
+                .ToList();
+            result.Add(refs);
+        }
+        return result;
     }
 }

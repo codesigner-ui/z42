@@ -71,6 +71,11 @@ class TaggedFields {
     public int unmarked;
 }
 
+// add-parameter-attribute-reflection: parameter-level user attributes.
+class TaggedParams {
+    public void Op([FieldTag("first")] int a, int b, [FieldTag("third")] string c) { }
+}
+
 [Test]
 void test_gettype_name_and_fullname() {
     Derived d = new Derived();
@@ -276,4 +281,32 @@ void test_field_custom_attributes() {
         }
     }
     Assert.True(checkedMarked);
+}
+
+[Test]
+void test_param_custom_attributes() {
+    Type t = typeof(TaggedParams);
+    MethodInfo[] methods = t.GetMethods();
+    bool checkedOp = false;
+    foreach (var m in methods) {
+        if (m.Name == "Op") {
+            checkedOp = true;
+            ParameterInfo[] ps = m.GetParameters();
+            Assert.Equal(3, ps.Length);
+
+            // param 0 (a): [FieldTag("first")]
+            Std.Attribute[] a0 = ps[0].GetCustomAttributes();
+            Assert.Equal(1, a0.Length);
+            FieldTag g0 = (FieldTag) ps[0].GetAttribute(typeof(FieldTag));
+            Assert.Equal("first", g0.Note);
+
+            // param 1 (b): none
+            Assert.Equal(0, ps[1].GetCustomAttributes().Length);
+
+            // param 2 (c): [FieldTag("third")]
+            FieldTag g2 = (FieldTag) ps[2].GetAttribute(typeof(FieldTag));
+            Assert.Equal("third", g2.Note);
+        }
+    }
+    Assert.True(checkedOp);
 }

@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 16;  // 2026-06-10 add-field-attribute-reflection: coupled with inner zbc 1.14 (per-field attr-ref block in TYPE section). Outer zpkg layout unchanged; bump tracks the inner zbc format change. Pre-0.16 not readable.
+    public const ushort VersionMinor = 17;  // 2026-06-10 add-parameter-attribute-reflection: coupled with inner zbc 1.15 (per-parameter attr-ref block in SIGS section). Outer zpkg layout unchanged; bump tracks the inner zbc format change. Pre-0.17 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

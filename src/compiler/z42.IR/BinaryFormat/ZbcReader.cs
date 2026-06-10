@@ -109,7 +109,8 @@ public static partial class ZbcReader
                 LineTable: lineTable, LocalVarTable: localVars,
                 TypeParams: typeParams, TypeParamConstraints: typeParamConstraints,
                 RegTypes: regTypes,
-                Attributes: sig?.Attributes));
+                Attributes: sig?.Attributes,
+                ParamAttributes: sig?.ParamAttributes));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -490,7 +491,8 @@ public static partial class ZbcReader
         string Name, ushort ParamCount, string RetType, string ExecMode, bool IsStatic,
         List<string>? ParamTypes,
         List<string>? TypeParams, List<IrConstraintBundle>? TypeParamConstraints,
-        List<IrAttributeRef>? Attributes = null);  // C3b
+        List<IrAttributeRef>? Attributes = null,                  // C3b
+        List<List<IrAttributeRef>>? ParamAttributes = null);     // 1.15 param attrs
 
     private static List<SigEntry> ReadSigsSection(byte[] data, string[] pool)
     {
@@ -541,9 +543,20 @@ public static partial class ZbcReader
                 string factoryFunc = P(pool, r.ReadUInt32());
                 attributes!.Add(new IrAttributeRef(typeName, factoryFunc));
             }
+            // add-parameter-attribute-reflection (zbc 1.15): per-parameter attr
+            // block — exactly paramCount attr-ref blocks (each u16 count + pairs).
+            var paramAttrsTmp = new List<List<IrAttributeRef>>(paramCount);
+            bool anyParamAttr = false;
+            for (int p = 0; p < paramCount && ms.Position < ms.Length; p++)
+            {
+                var pa = ReadAttrRefs(r, pool);
+                paramAttrsTmp.Add(pa ?? new List<IrAttributeRef>());
+                if (pa is { Count: > 0 }) anyParamAttr = true;
+            }
+            var paramAttributes = anyParamAttr ? paramAttrsTmp : null;
             result.Add(new SigEntry(name, paramCount, retType, execMode, isStatic,
                 paramTypes,
-                typeParams, typeParamConstraints, attributes));
+                typeParams, typeParamConstraints, attributes, paramAttributes));
         }
         return result;
     }

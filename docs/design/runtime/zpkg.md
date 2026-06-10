@@ -210,6 +210,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.14 | 2026-06-10 | [add-reflection-type-flags](../../spec/changes/add-reflection-type-flags/) | inner zbc 1.12（TYPE section 每 class 追加 `flags: u8` 类修饰符字节）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 | 0.15 | 2026-06-10 | [add-reflection-static-fields](../../spec/changes/add-reflection-static-fields/) | inner zbc 1.13（TYPE section 每 class 在 flags 字节后追加静态字段块）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 | 0.16 | 2026-06-10 | [add-field-attribute-reflection](../../spec/changes/add-field-attribute-reflection/) | inner zbc 1.14（TYPE section 每字段记录追加 attr-ref 块）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
+| 0.17 | 2026-06-10 | [add-parameter-attribute-reflection](../../spec/changes/add-parameter-attribute-reflection/) | inner zbc 1.15（SIGS section 每函数记录追加每参数 attr-ref 块）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 

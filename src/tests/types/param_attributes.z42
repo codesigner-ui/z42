@@ -1,0 +1,43 @@
+// add-parameter-attribute-reflection: user attributes on method parameters,
+// read back via ParameterInfo.GetCustomAttributes() / GetAttribute(Type).
+// Exercises the `this` offset (instance method): wire param index = source
+// Position + 1, so x→1, y→2, z→3 with the implicit `this` at 0.
+using Std.Reflection;
+
+class ParamTag : Attribute {   // unqualified base (via `using Std`) — see reflection.md Deferred attr-factory-qualified-base-upcast
+    public string Note;
+    public ParamTag(string note) { this.Note = note; }
+}
+
+class Endpoint {
+    // x and z carry attributes; y is bare.
+    public void Handle([ParamTag("id")] int x, int y, [ParamTag("body")] string z) { }
+}
+
+void Main() {
+    Type t = typeof(Endpoint);
+    MethodInfo[] methods = t.GetMethods();
+    bool found = false;
+    foreach (var m in methods) {
+        if (m.Name == "Handle") {
+            found = true;
+            ParameterInfo[] ps = m.GetParameters();
+            Assert.Equal(3, ps.Length);
+
+            // param 0 (x): [ParamTag("id")]
+            Std.Attribute[] a0 = ps[0].GetCustomAttributes();
+            Assert.Equal(1, a0.Length);
+            ParamTag t0 = (ParamTag) ps[0].GetAttribute(typeof(ParamTag));
+            Assert.Equal("id", t0.Note);
+
+            // param 1 (y): no attributes
+            Std.Attribute[] a1 = ps[1].GetCustomAttributes();
+            Assert.Equal(0, a1.Length);
+
+            // param 2 (z): [ParamTag("body")]
+            ParamTag t2 = (ParamTag) ps[2].GetAttribute(typeof(ParamTag));
+            Assert.Equal("body", t2.Note);
+        }
+    }
+    Assert.True(found);
+}

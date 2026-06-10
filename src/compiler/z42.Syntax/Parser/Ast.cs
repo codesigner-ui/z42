@@ -231,7 +231,12 @@ public enum ParamModifier { None, Ref, Out, In }
 
 public sealed record Param(
     string Name, TypeExpr Type, Expr? Default, Span Span,
-    ParamModifier Modifier = ParamModifier.None);
+    ParamModifier Modifier = ParamModifier.None,
+    // add-parameter-attribute-reflection: user attributes applied to this
+    // parameter (`[Tag] int p`). Null = none. The AttributeFactorySynthesizer
+    // fills each entry's FactoryFunc; IrGen lowers them into
+    // IrFunction.ParamAttributes for the SIGS per-param attr block.
+    List<AttributeApp>? Attributes = null);
 
 // ── Test attributes (spec R1) ────────────────────────────────────────────────
 

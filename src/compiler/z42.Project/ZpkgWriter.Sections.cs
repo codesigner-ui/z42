@@ -231,6 +231,22 @@ public static partial class ZpkgWriter
                         w.Write((uint)pool.Idx(a.TypeName));
                         w.Write((uint)pool.Idx(a.FactoryFunc));
                     }
+                // add-parameter-attribute-reflection (zbc 1.15): per-parameter attr
+                // block — exactly ParamCount attr-ref blocks (u16 count + (type,
+                // factory) pairs). Mirror ZbcWriter.BuildSigsSection — packed +
+                // single-module writers lock-step.
+                for (int i = 0; i < fn.ParamCount; i++)
+                {
+                    var pa = (fn.ParamAttributes != null && i < fn.ParamAttributes.Count)
+                        ? fn.ParamAttributes[i] : null;
+                    w.Write((ushort)(pa?.Count ?? 0));
+                    if (pa != null)
+                        foreach (var a in pa)
+                        {
+                            w.Write((uint)pool.Idx(a.TypeName));
+                            w.Write((uint)pool.Idx(a.FactoryFunc));
+                        }
+                }
             }
 
         return ms.ToArray();
