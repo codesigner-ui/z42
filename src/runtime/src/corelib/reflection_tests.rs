@@ -141,6 +141,40 @@ fn type_flags_decode_abstract_and_sealed() {
 }
 
 #[test]
+fn static_fields_accessor_reads_cold() {
+    use crate::metadata::bytecode::FieldDesc;
+    use crate::metadata::TypeDesc;
+    // No cold box → empty.
+    assert!(bare_td("Demo.Plain").static_fields().is_empty());
+    // Cold box with one static field → accessor returns it.
+    let mut td = TypeDesc {
+        name: "Demo.Cfg".to_string(),
+        base_name: None,
+        class_flags: 0,
+        fields: Vec::new(),
+        field_index: NameIndex::new(),
+        vtable: Vec::new(),
+        vtable_index: NameIndex::new(),
+        cold: None,
+        id: TypeId::UNRESOLVED,
+    };
+    td.cold_mut().static_fields = Box::new([FieldDesc {
+        name: "count".to_string(),
+        type_tag: "int".to_string(),
+    }]);
+    assert_eq!(td.static_fields().len(), 1);
+    assert_eq!(td.static_fields()[0].name, "count");
+}
+
+#[test]
+fn type_fields_empty_for_non_type_arg_with_static() {
+    // builtin_type_fields stays lenient for a non-Type arg even after the
+    // static-field merge (no handle → empty, never bail).
+    let c = ctx();
+    assert_eq!(array_len(&builtin_type_fields(&c, &[Value::I64(7)]).unwrap()), 0);
+}
+
+#[test]
 fn type_flags_false_for_handle_less() {
     // Non-Type arg / no handle → false, never bail (lenient).
     let c = ctx();

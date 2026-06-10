@@ -62,7 +62,12 @@ public sealed record IrClassDesc(
     bool IsAbstract = false,
     bool IsSealed = false,
     bool IsStruct = false,
-    bool IsRecord = false);
+    bool IsRecord = false,
+    /// add-reflection-static-fields (zbc 1.13): the class's static fields,
+    /// serialized as a separate block after the flags byte. Kept apart from
+    /// `Fields` (instance layout) so the runtime hot path stays pure; surfaced
+    /// by `Type.GetFields()` with `FieldInfo.IsStatic = true`.
+    List<IrFieldDesc>? StaticFields = null);
 
 public sealed record IrFieldDesc(string Name, string Type);
 

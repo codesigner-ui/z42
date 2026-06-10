@@ -22,6 +22,7 @@ fn empty_module(name: &str) -> Module {
 
 fn simple_class(name: &str) -> ClassDesc {
     ClassDesc {
+        static_fields: vec![].into(),
         class_flags: 0,
         name: name.to_owned(),
         base_class: None,

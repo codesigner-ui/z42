@@ -86,6 +86,7 @@ impl Module {
             type_args:              c.type_args.clone(),
             type_param_constraints: c.type_param_constraints.clone(),
             custom_attributes:      c.custom_attributes.clone(),
+            static_fields:          c.static_fields.clone(),
         }));
         let rebuilt = Arc::new(TypeDesc {
             name: td.name.clone(),
@@ -141,6 +142,12 @@ pub struct ClassDesc {
     /// `Type.IsAbstract` / `Type.IsSealed` reflection.
     #[serde(default)]
     pub class_flags: u8,
+    /// add-reflection-static-fields (zbc 1.13): the class's static fields
+    /// (separate from `fields`, which is the instance layout). Threaded into
+    /// `TypeDescCold::static_fields`; surfaced by `Type.GetFields()` with
+    /// `FieldInfo.IsStatic = true`.
+    #[serde(default)]
+    pub static_fields: Box<[FieldDesc]>,
 }
 
 /// C3 add-attribute-reflection: one applied attribute — the attribute class's
@@ -202,7 +209,7 @@ impl ConstraintBundle {
 }
 
 /// A single field in a class descriptor.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldDesc {
     pub name: String,
     #[serde(rename = "type")]

@@ -52,7 +52,11 @@ public sealed partial class IrGen
             attrs,
             // add-reflection-type-flags (zbc 1.12): class-shape modifiers.
             IsAbstract: cls.IsAbstract, IsSealed: cls.IsSealed,
-            IsStruct: cls.IsStruct, IsRecord: cls.IsRecord);
+            IsStruct: cls.IsStruct, IsRecord: cls.IsRecord,
+            // add-reflection-static-fields (zbc 1.13): static fields, separate
+            // from the instance `Fields` list above.
+            StaticFields: cls.Fields.Where(f => f.IsStatic)
+                .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
     }
 
     /// (L3-G3a) Build a parallel list of IrConstraintBundle aligned with `typeParams`.

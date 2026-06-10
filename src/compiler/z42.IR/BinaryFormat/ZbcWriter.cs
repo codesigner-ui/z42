@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 12;  // 2026-06-10 add-reflection-type-flags: TYPE section appends a class-shape flags byte (bit0 abstract / bit1 sealed / bit2 struct / bit3 record) at the end of each class record. Backs Type.IsAbstract / Type.IsSealed. Pre-1.12 not readable.
+    public const ushort VersionMinor = 13;  // 2026-06-10 add-reflection-static-fields: TYPE section appends a static-fields block (u16 count + per-field name/type) after the flags byte. Surfaced by Type.GetFields() with FieldInfo.IsStatic. Pre-1.13 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -246,6 +246,11 @@ public static partial class ZbcWriter
                 pool.Intern(cls.Name);
                 if (cls.BaseClass != null) pool.Intern(cls.BaseClass);
                 foreach (var fld in cls.Fields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
+                // add-reflection-static-fields (zbc 1.13): BuildTypeSection writes the
+                // static-fields block via pool.Idx — names/types must be interned here
+                // or Idx throws KeyNotFound for any class with static fields.
+                if (cls.StaticFields != null)
+                    foreach (var fld in cls.StaticFields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
                 if (cls.TypeParams != null)
                     foreach (var tp in cls.TypeParams)
                         pool.Intern(tp);
@@ -404,6 +409,19 @@ public static partial class ZbcWriter
             byte flags = (byte)((cls.IsAbstract ? 1 : 0) | (cls.IsSealed ? 2 : 0)
                               | (cls.IsStruct ? 4 : 0) | (cls.IsRecord ? 8 : 0));
             w.Write(flags);
+            // add-reflection-static-fields (zbc 1.13): static fields block —
+            // u16 count + (name str idx, type_tag u8, type str idx) per field,
+            // same shape as the instance fields block above. Surfaced by
+            // GetFields() with FieldInfo.IsStatic = true.
+            var staticFields = cls.StaticFields;
+            w.Write((ushort)(staticFields?.Count ?? 0));
+            if (staticFields != null)
+                foreach (var fld in staticFields)
+                {
+                    w.Write((uint)pool.Idx(fld.Name));
+                    w.Write(TypeTags.FromString(fld.Type));
+                    w.Write((uint)pool.Idx(fld.Type));
+                }
         }
 
         return ms.ToArray();

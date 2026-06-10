@@ -418,9 +418,20 @@ public static partial class ZbcReader
             }
             // add-reflection-type-flags (zbc 1.12): class-shape flags byte.
             byte flags = r.ReadByte();
+            // add-reflection-static-fields (zbc 1.13): static fields block.
+            ushort staticCount = r.ReadUInt16();
+            List<IrFieldDesc>? staticFields = staticCount > 0 ? new(staticCount) : null;
+            for (int sf = 0; sf < staticCount; sf++)
+            {
+                string sfName = P(pool, r.ReadUInt32());
+                r.ReadByte();                              // type_tag (hint; string authoritative)
+                string sfType = P(pool, r.ReadUInt32());
+                staticFields!.Add(new IrFieldDesc(sfName, sfType));
+            }
             classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes,
                 IsAbstract: (flags & 1) != 0, IsSealed: (flags & 2) != 0,
-                IsStruct: (flags & 4) != 0, IsRecord: (flags & 8) != 0));
+                IsStruct: (flags & 4) != 0, IsRecord: (flags & 8) != 0,
+                StaticFields: staticFields));
         }
         return classes;
     }

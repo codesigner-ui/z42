@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 14;  // 2026-06-10 add-reflection-type-flags: coupled with inner zbc 1.12 (TYPE section class-shape flags byte). Outer zpkg layout unchanged; bump tracks the inner zbc format change. Pre-0.14 not readable.
+    public const ushort VersionMinor = 15;  // 2026-06-10 add-reflection-static-fields: coupled with inner zbc 1.13 (TYPE section static-fields block). Outer zpkg layout unchanged; bump tracks the inner zbc format change. Pre-0.15 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

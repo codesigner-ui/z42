@@ -662,12 +662,15 @@ pub fn build_type_registry(module: &mut Module) {
             type_param_constraints: desc.type_param_constraints.clone(),
             // C3 add-attribute-reflection: carry the class's user attributes.
             custom_attributes:      desc.attributes.clone(),
+            // add-reflection-static-fields: carry the class's static fields.
+            static_fields:          desc.static_fields.clone(),
         };
         let cold = if cold_inner.own_fields.is_empty()
             && cold_inner.own_methods.is_empty()
             && cold_inner.type_params.is_empty()
             && cold_inner.type_param_constraints.is_empty()
             && cold_inner.custom_attributes.is_empty()
+            && cold_inner.static_fields.is_empty()
         {
             None
         } else {

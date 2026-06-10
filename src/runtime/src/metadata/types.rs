@@ -173,6 +173,10 @@ pub struct TypeDescCold {
     /// name, factory-func qualified name). `__type_custom_attributes` calls each
     /// factory once and caches the resulting instances on the Type object.
     pub custom_attributes: Box<[super::bytecode::AttributeRef]>,
+    /// add-reflection-static-fields (zbc 1.13): the class's static fields
+    /// (separate from hot `TypeDesc::fields`, the instance layout). Reflection
+    /// only — surfaced by `Type.GetFields()` with `FieldInfo.IsStatic = true`.
+    pub static_fields: Box<[super::bytecode::FieldDesc]>,
 }
 
 impl TypeDesc {
@@ -191,6 +195,8 @@ impl TypeDesc {
     #[inline] pub fn type_param_constraints(&self) -> &[super::bytecode::ConstraintBundle]      { self.cold_slice(|c| &c.type_param_constraints) }
     /// C3 add-attribute-reflection: user attributes applied to this class.
     #[inline] pub fn custom_attributes(&self)      -> &[super::bytecode::AttributeRef]          { self.cold_slice(|c| &c.custom_attributes) }
+    /// add-reflection-static-fields: the class's static fields (reflection only).
+    #[inline] pub fn static_fields(&self)          -> &[super::bytecode::FieldDesc]             { self.cold_slice(|c| &c.static_fields) }
 
     /// Lazy-init the cold side-table for mutation.
     #[inline]

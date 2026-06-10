@@ -47,6 +47,12 @@ sealed class SealedThing {
     public int n;
 }
 
+// add-reflection-static-fields: GetFields() includes static fields + IsStatic.
+class FieldHolder {
+    public int instanceVal;
+    public static int staticVal;
+}
+
 [Test]
 void test_gettype_name_and_fullname() {
     Derived d = new Derived();
@@ -201,4 +207,18 @@ void test_type_is_sealed() {
     Type ts = typeof(SealedThing);
     Assert.True(ts.IsSealed);
     Assert.False(ts.IsAbstract);
+}
+
+[Test]
+void test_getfields_includes_static() {
+    Type t = typeof(FieldHolder);
+    FieldInfo[] fields = t.GetFields();
+    bool sawInstance = false;
+    bool sawStatic = false;
+    foreach (var f in fields) {
+        if (f.Name == "instanceVal") { sawInstance = true; Assert.False(f.IsStatic); }
+        if (f.Name == "staticVal") { sawStatic = true; Assert.True(f.IsStatic); }
+    }
+    Assert.True(sawInstance);
+    Assert.True(sawStatic);
 }

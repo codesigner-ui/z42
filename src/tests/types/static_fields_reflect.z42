@@ -1,0 +1,48 @@
+// add-reflection-static-fields (2026-06-10): Type.GetFields() includes static
+// fields (after instance fields), each FieldInfo carrying IsStatic. Static
+// field metadata is persisted in the zbc TYPE-section static-fields block (1.13).
+using Std.Reflection;
+
+class Account {
+    public int balance;          // instance
+    public static int count;     // static
+}
+
+class Config {
+    public static string env;    // static-only class
+}
+
+void Main() {
+    Type t = typeof(Account);
+    FieldInfo[] fields = t.GetFields();
+    Assert.Equal(2, fields.Length);
+
+    bool sawBalance = false;
+    bool sawCount = false;
+    foreach (var f in fields) {
+        if (f.Name == "balance") {
+            sawBalance = true;
+            Assert.False(f.IsStatic);
+            Type ft = f.FieldType;
+            Assert.Equal("int", ft.Name);
+        }
+        if (f.Name == "count") {
+            sawCount = true;
+            Assert.True(f.IsStatic);
+            Type ft = f.FieldType;
+            Assert.Equal("int", ft.Name);
+        }
+    }
+    Assert.True(sawBalance);
+    Assert.True(sawCount);
+
+    // Static-only class.
+    Type tc = typeof(Config);
+    FieldInfo[] cf = tc.GetFields();
+    Assert.Equal(1, cf.Length);
+    foreach (var f in cf) {
+        Assert.True(f.IsStatic);
+        Type ft = f.FieldType;
+        Assert.Equal("string", ft.Name);
+    }
+}

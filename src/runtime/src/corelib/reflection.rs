@@ -195,7 +195,9 @@ pub fn builtin_type_fields(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         Some(t) => t,
         None => return Ok(ctx.heap().alloc_array(Vec::new())),
     };
-    let mut out = Vec::with_capacity(td.fields.len());
+    let statics = td.static_fields();
+    let mut out = Vec::with_capacity(td.fields.len() + statics.len());
+    // Instance fields (base-first, IsStatic = false).
     for f in &td.fields {
         let ftype = make_type_from_name(ctx, &f.type_tag);
         out.push(alloc_named(
@@ -204,6 +206,20 @@ pub fn builtin_type_fields(ctx: &VmContext, args: &[Value]) -> Result<Value> {
             &[
                 ("Name", Value::Str(f.name.to_string().into())),
                 ("FieldType", ftype),
+                ("IsStatic", Value::Bool(false)),
+            ],
+        )?);
+    }
+    // add-reflection-static-fields: the class's own static fields (IsStatic = true).
+    for f in statics {
+        let ftype = make_type_from_name(ctx, &f.type_tag);
+        out.push(alloc_named(
+            ctx,
+            STD_REFLECTION_FIELDINFO,
+            &[
+                ("Name", Value::Str(f.name.to_string().into())),
+                ("FieldType", ftype),
+                ("IsStatic", Value::Bool(true)),
             ],
         )?);
     }
