@@ -22,7 +22,7 @@ cargo build --manifest-path src/runtime/Cargo.toml --release    # Release
 cargo run --manifest-path src/runtime/Cargo.toml -- <file.zbc | file.zpkg> [--mode interp|jit|aot]
 ```
 
-或用分发版 binary（先 `z42 xtask.zpkg build package debug`）：
+或用分发版 binary（先 `z42 xtask.zpkg package debug`）：
 
 ```bash
 ./artifacts/build/runtime/release/z42vm <file.zbc>

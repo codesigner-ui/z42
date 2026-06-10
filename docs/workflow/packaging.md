@@ -7,9 +7,9 @@
 ## 统一入口
 
 ```bash
-z42 xtask.zpkg build package release --rid <rid>  # 见下表选 RID
-z42 xtask.zpkg build package debug --rid <rid>    # debug profile（dev 用）
-z42 xtask.zpkg build package release              # 不带 --rid → 自动用 host RID
+z42 xtask.zpkg package release --rid <rid>  # 见下表选 RID
+z42 xtask.zpkg package debug --rid <rid>    # debug profile（dev 用）
+z42 xtask.zpkg package release              # 不带 --rid → 自动用 host RID
 z42 xtask.zpkg --help                             # 完整选项
 ```
 
@@ -103,9 +103,9 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 # → "WebAssembly (wasm) binary module"
 ```
 
-### 4. SHA-256 invariant（z42 xtask.zpkg build package 末尾自动跑 SHA-256 invariant，原生 byte compare）
+### 4. SHA-256 invariant（z42 xtask.zpkg package 末尾自动跑 SHA-256 invariant，原生 byte compare）
 
-`z42 xtask.zpkg build package` 末尾会自动跑 SHA-256 invariant（原生 byte compare），确保跨 9 包 byte-identical：
+`z42 xtask.zpkg package` 末尾会自动跑 SHA-256 invariant（原生 byte compare），确保跨 9 包 byte-identical：
 
 - `libs/*.zpkg` — stdlib 二进制（平台无关；无 namespace 索引——读 NSPC）
 - `native/include/z42_abi.h` + `z42_host.h` — Tier 1 C ABI 头
@@ -133,10 +133,10 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 
 | 流程 | 入口 | 用途 |
 |------|------|------|
-| **per-arch flat package**（本文）| `z42 xtask.zpkg build package --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
+| **per-arch flat package**（本文）| `z42 xtask.zpkg package --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
 | **in-repo native build** | `src/toolchain/host/platforms/<x>/build.sh` | 给 `add-<plat>-tests` 跑 in-repo 测试（emulator / simulator / wasm-pack）|
 
-两条流程**共存**：`build.sh` 产物供 in-repo 测试用；`z42 xtask.zpkg build package` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
+两条流程**共存**：`build.sh` 产物供 in-repo 测试用；`z42 xtask.zpkg package` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
 
 ## 失败排查
 

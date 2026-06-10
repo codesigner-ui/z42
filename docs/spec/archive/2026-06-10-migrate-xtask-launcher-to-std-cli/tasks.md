@@ -8,9 +8,11 @@
 - [x] 阶段 0: 准备（manifest 依赖 + 命令树定稿）
 - [x] 阶段 1: xtask router 树 + Main 三分支 dispatch（xtask_cli.z42 _runCli/_cliRoot/_dispatch）
 - [x] 阶段 2: xtask leaf handlers → ParseResult（package/test*/install/bench；core/wrapper 拆分）
-- [ ] 阶段 3: launcher + apphost 迁移
-- [x] 阶段 4: CI（build package→package ×5）+ docs（test lib→stdlib）联动
-- [~] 阶段 5: xtask 侧已验证（每层 help + 提顶层 + 未知报错 + 完整 GREEN gate 270/22）；launcher 待
+- [x] 阶段 3: launcher + apphost 迁移（launcher_cli.z42 _runLauncher/_launcherRoot；handlers→ParseResult；Apphost.BuildOne）
+- [x] 阶段 4: CI（build package→package ×5）+ docs（test lib→stdlib + workflow build package→package 命令形）联动
+- [x] 阶段 5: 全验证 —— xtask 完整 GREEN gate 270/22；launcher 直接 smoke（每层 help/未知/list）+ **test dist 347/0**（fresh package：launcher smoke ✓ apphost smoke ✓ goldens 全绿）
+
+> 状态：🟢 已完成 2026-06-10
 
 ## 阶段 0: 准备
 - [ ] 0.1 确认 `scripts/xtask.z42.toml` 含 `z42.cli` 依赖（无则加）

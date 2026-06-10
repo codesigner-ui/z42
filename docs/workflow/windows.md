@@ -86,7 +86,7 @@ z42 xtask.zpkg build stdlib
 z42 xtask.zpkg test
 
 # 打 host (windows-x64) SDK package
-z42 xtask.zpkg build package release --rid windows-x64
+z42 xtask.zpkg package release --rid windows-x64
 ```
 
 xtask 调用的 POSIX 子进程都在 Git Bash 直接跑（shebang `#!/usr/bin/env bash` 生效），无需额外 prefix。
@@ -106,7 +106,7 @@ Git Bash 内部把 `C:\foo\bar` 映射为 `/c/foo/bar`。但 .NET / Cargo 这种
 | 动态库 | `libz42.dylib` | `libz42.so` | `z42.dll` (+ `z42.lib` import lib) |
 | 静态库 | `libz42.a` | `libz42.a` | （cargo 不出，因为 Windows 没有惯例的 `.a`）|
 
-`z42 xtask.zpkg build package` 的 desktop 打包步骤（原 `scripts/_lib/package_desktop.sh`，已移植进 xtask）自动检测哪个后缀存在并 cp 进 `bin/`。
+`z42 xtask.zpkg package` 的 desktop 打包步骤（原 `scripts/_lib/package_desktop.sh`，已移植进 xtask）自动检测哪个后缀存在并 cp 进 `bin/`。
 
 ### Line endings
 
@@ -131,11 +131,11 @@ xtask 打包的 sha256 校验（原 `scripts/_lib/package_helpers.sh` 的 `pkg_s
 
 ### `file` / `ar` 工具
 
-Git Bash 自带 `file`、`ar`、`grep`、`awk`、`sed`、`tr` —— `z42 xtask.zpkg build package` 用到的全部 POSIX 工具都有。`xxd` / `hexdump` 也在。
+Git Bash 自带 `file`、`ar`、`grep`、`awk`、`sed`、`tr` —— `z42 xtask.zpkg package` 用到的全部 POSIX 工具都有。`xxd` / `hexdump` 也在。
 
 ### `xcrun` / `xcodebuild` —— iOS RID
 
-iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows host 跑 `z42 xtask.zpkg build package --rid ios-arm64` 直接被 `validate_rid_supported_on_host` 拒绝。
+iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows host 跑 `z42 xtask.zpkg package --rid ios-arm64` 直接被 `validate_rid_supported_on_host` 拒绝。
 
 ## 跑得通的 RID matrix（Windows host）
 
@@ -158,7 +158,7 @@ z42 xtask.zpkg build stdlib
 dotnet build src/compiler/z42.slnx
 
 # 3. 打 windows-x64 package
-z42 xtask.zpkg build package release --rid windows-x64
+z42 xtask.zpkg package release --rid windows-x64
 
 # 4. 验证产物
 ls artifacts/packages/z42-0.1.0-windows-x64-release/

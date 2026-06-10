@@ -34,23 +34,11 @@ using Std.Encoding;
 using Std.Toml;
 
 public static class Apphost {
-    // z42 apphost build <app.zpkg> [--out <path>]
-    //   or: z42 apphost build <project.z42.toml>   (reads [apphost])
-    public static void Build(string[] rest) {
-        if (rest.Length == 0 || rest[0] != "build") {
-            ConsoleError.WriteLine(_usage());
-            Environment.Exit(2);
-            return;
-        }
-
-        string arg = "";
-        string outName = "";
-        int i = 1;
-        while (i < rest.Length) {
-            if (rest[i] == "--out" && i + 1 < rest.Length) { outName = rest[i + 1]; i = i + 2; continue; }
-            if (arg.Length == 0) { arg = rest[i]; }
-            i = i + 1;
-        }
+    // z42 apphost build <app.zpkg | project.z42.toml> [--out <path>]
+    // Args resolved by the Std.Cli router (launcher_cli.z42): `arg` is the
+    // <app|toml> positional, `outName` the optional --out path.
+    // migrate-xtask-launcher-to-std-cli (2026-06-10).
+    public static void BuildOne(string arg, string outName) {
         if (arg.Length == 0) {
             ConsoleError.WriteLine(_usage());
             Environment.Exit(2);

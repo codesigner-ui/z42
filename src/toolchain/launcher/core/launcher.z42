@@ -20,29 +20,15 @@ using Std.Net.Http;
 using Std.Compression;
 using Std.Archive;
 using Std.Crypto;
+using Std.Cli;
 
+// migrate-xtask-launcher-to-std-cli (2026-06-10): Main delegates to the Std.Cli
+// nested router in launcher_cli.z42 (_runLauncher). The command tree, per-level
+// `-h` help, and unknown-command errors live there; the apphost shorthand
+// (`z42 app.zpkg`) and `run` passthrough are handled before Resolve. Handlers
+// below read their args from a Std.Cli ParseResult (except _cmdRun, raw).
 void Main() {
-    string[] argv = Environment.GetCommandLineArgs();
-    if (argv.Length == 0) { _help(); return; }
-
-    string cmd = argv[0];
-    string[] rest = _tail(argv, 1);
-
-    if (cmd == "help" || cmd == "-h" || cmd == "--help") { _help(); return; }
-    if (cmd == "info")    { _cmdInfo();        return; }
-    if (cmd == "list")    { _cmdList();        return; }
-    if (cmd == "default") { _cmdDefault(rest); return; }
-    if (cmd == "link")    { _cmdLink(rest);    return; }
-    if (cmd == "which")   { _cmdWhich(rest);   return; }
-    if (cmd == "run")     { _cmdRun(rest);     return; }
-    if (cmd == "install")   { _cmdInstall(rest);   return; }
-    if (cmd == "uninstall") { _cmdUninstall(rest); return; }
-    if (cmd == "apphost")   { Apphost.Build(rest); return; }
-    // Bare apphost form: `z42 app.zpkg [-- args]`
-    if (cmd.EndsWith(".zpkg") || cmd.EndsWith(".zbc")) { _cmdRun(argv); return; }
-
-    ConsoleError.WriteLine("z42: unknown command `" + cmd + "` (try `z42 help`)");
-    Environment.Exit(2);
+    _runLauncher(Environment.GetCommandLineArgs());
 }
 
 // ── layout helpers ──────────────────────────────────────────────────────────
@@ -174,12 +160,12 @@ void _cmdList() {
     }
 }
 
-void _cmdDefault(string[] rest) {
-    if (rest.Length == 0) {
+void _cmdDefault(ParseResult r) {
+    string ver = r.GetPositional(0);
+    if (ver.Length == 0) {
         Console.WriteLine(_defaultVersion() ?? "(none)");
         return;
     }
-    string ver = rest[0];
     if (_runtimeDir(ver) == null) {
         ConsoleError.WriteLine("z42: runtime `" + ver + "` not installed (see `z42 list`).");
         Environment.Exit(2);
@@ -190,15 +176,9 @@ void _cmdDefault(string[] rest) {
 }
 
 // z42 link <dir> --as <ver>
-void _cmdLink(string[] rest) {
-    string dir = "";
-    string ver = "";
-    int i = 0;
-    while (i < rest.Length) {
-        if (rest[i] == "--as" && i + 1 < rest.Length) { ver = rest[i + 1]; i = i + 2; continue; }
-        if (dir.Length == 0) { dir = rest[i]; }
-        i = i + 1;
-    }
+void _cmdLink(ParseResult r) {
+    string dir = r.GetPositional(0);
+    string ver = r.GetOption("as");
     if (dir.Length == 0 || ver.Length == 0) {
         ConsoleError.WriteLine("usage: z42 link <runtime-dir> --as <ver>");
         Environment.Exit(2);
@@ -215,8 +195,9 @@ void _cmdLink(string[] rest) {
     Console.WriteLine("linked `" + ver + "` → " + dir);
 }
 
-void _cmdWhich(string[] rest) {
-    string? ver = _flagValue(rest, "--runtime");
+void _cmdWhich(ParseResult r) {
+    string verOpt = r.GetOption("runtime");
+    string? ver = verOpt.Length > 0 ? verOpt : null;
     string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
     if (portableVm.Length > 0 && (ver ?? "").Length == 0) {
         Console.WriteLine(portableVm);
@@ -335,13 +316,13 @@ void _cmdRun(string[] rest) {
 // z42 install <version|nightly> — download a runtime from GitHub Releases
 // (add-z42-install). Direct: .../releases/download/<tag>/z42-<ver>-<rid>.tar.gz
 // + SHA256SUMS verify, gunzip + untar into runtimes/<ver>.
-void _cmdInstall(string[] rest) {
-    if (rest.Length == 0) {
+void _cmdInstall(ParseResult r) {
+    string ver = r.GetPositional(0);
+    if (ver.Length == 0) {
         ConsoleError.WriteLine("usage: z42 install <version|nightly>");
         Environment.Exit(2);
         return;
     }
-    string ver = rest[0];
     string rid = _hostRid();
     if (rid.Length == 0) {
         ConsoleError.WriteLine("z42: unsupported host (" + Platform.OS() + "/" + Platform.Arch() + ")");
@@ -401,13 +382,13 @@ void _cmdInstall(string[] rest) {
     Console.WriteLine("installed " + ver + " → " + target);
 }
 
-void _cmdUninstall(string[] rest) {
-    if (rest.Length == 0) {
+void _cmdUninstall(ParseResult r) {
+    string ver = r.GetPositional(0);
+    if (ver.Length == 0) {
         ConsoleError.WriteLine("usage: z42 uninstall <version>");
         Environment.Exit(2);
         return;
     }
-    string ver = rest[0];
     string dir = Path.Join(_runtimesDir(), ver);
     if (!Directory.Exists(dir)) {
         ConsoleError.WriteLine("z42: `" + ver + "` not installed.");
@@ -447,23 +428,8 @@ string _findSum(string text, string asset) {
     return "";
 }
 
-void _help() {
-    Console.WriteLine("z42 — launcher for the z42 runtime");
-    Console.WriteLine("");
-    Console.WriteLine("usage: z42 <command> [args]");
-    Console.WriteLine("       z42 <app.zpkg> [-- <args>]      run an app (apphost form)");
-    Console.WriteLine("");
-    Console.WriteLine("commands:");
-    Console.WriteLine("  run [--runtime V] <app.zpkg> [-- a]  run an app with the resolved runtime");
-    Console.WriteLine("  link <dir> --as <ver>                register a local runtime dir as <ver>");
-    Console.WriteLine("  list                                 list installed runtimes");
-    Console.WriteLine("  default [<ver>]                      show or set the default runtime");
-    Console.WriteLine("  which [--runtime V] [app]            print the resolved z42vm path");
-    Console.WriteLine("  install <version|nightly>            download a runtime from GitHub Releases");
-    Console.WriteLine("  uninstall <version>                  remove an installed runtime");
-    Console.WriteLine("  apphost build <app.zpkg> [--out N]   make a native apphost exe for an app");
-    Console.WriteLine("  info                                 show Z42_HOME / default / counts");
-}
+// Help is generated by the Std.Cli router (launcher_cli.z42 :: _launcherRoot);
+// the former hand-written _help() is removed.
 
 // ── small array/flag utils ───────────────────────────────────────────────────
 

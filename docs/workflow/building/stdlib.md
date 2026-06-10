@@ -54,12 +54,12 @@ artifacts/build/libraries/
 ```
 
 `z42 xtask.zpkg build stdlib` 同时产每-lib 构建产物 + 扁平视图；
-`z42 xtask.zpkg build package` 在分发版打包阶段把扁平视图整份拷进 SDK 的 `libs/`。
+`z42 xtask.zpkg package` 在分发版打包阶段把扁平视图整份拷进 SDK 的 `libs/`。
 
 ## 分发链端到端
 
 ```bash
-z42 xtask.zpkg build package release   # 1. 打 z42c + z42vm 到 artifacts/build/runtime/release/
+z42 xtask.zpkg package release   # 1. 打 z42c + z42vm 到 artifacts/build/runtime/release/
 z42 xtask.zpkg test dist               # 2. 用分发版 z42c 重编译 stdlib 并跑 goldens（interp + jit）
 z42 xtask.zpkg test dist interp        # 仅 interp 模式
 ```

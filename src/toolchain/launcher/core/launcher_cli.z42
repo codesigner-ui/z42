@@ -1,0 +1,116 @@
+// z42 launcher CLI layer (migrate-xtask-launcher-to-std-cli, 2026-06-10).
+//
+// Builds the Std.Cli nested SubcommandRouter for the `z42` launcher and
+// dispatches a resolved command. Replaces the hand-written if-else chain in
+// launcher.z42's Main. Each leaf declares its flags/positionals via ArgParser,
+// so `-h` works at every level (z42 run -h / z42 link -h / z42 apphost build -h)
+// and help is generated (no hand-written _help()).
+//
+// Two commands bypass Resolve (handled in _runLauncher before routing):
+//   - the apphost shorthand `z42 <app.zpkg|.zbc> [-- args]` → run
+//   - `z42 run <app> [-- args]` → raw passthrough (the `--` app-args tail
+//     can't go through a strict ArgParser)
+namespace Z42Launcher;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+
+// Entry: the whole Main body (shorthand + run passthrough + resolve + dispatch).
+void _runLauncher(string[] argv) {
+    if (argv.Length == 0) { Console.WriteLine(_launcherRoot().HelpText()); return; }
+    string c0 = argv[0];
+
+    // apphost shorthand: `z42 app.zpkg [-- args]` runs the app directly.
+    if (c0.EndsWith(".zpkg") || c0.EndsWith(".zbc")) { _cmdRun(argv); return; }
+    // `run` is a raw passthrough (forwards `<app> [-- args]` verbatim).
+    if (c0 == "run") { _cmdRun(_tail(argv, 1)); return; }
+
+    SubcommandRouter root = _launcherRoot();
+    CommandResolution res;
+    try { res = root.Resolve(argv); }
+    catch (CliException e) {
+        ConsoleError.WriteLine("z42: " + e.Message);
+        Environment.Exit(2);
+        return;
+    }
+    if (res.IsHelp())    { Console.WriteLine(res.HelpText()); return; }
+    if (res.IsUnknown()) {
+        ConsoleError.WriteLine(res.ErrorMessage());
+        Console.WriteLine(res.HelpText());
+        Environment.Exit(2);
+        return;
+    }
+    _dispatchLauncher(res);
+}
+
+SubcommandRouter _launcherRoot() {
+    SubcommandRouter root = new SubcommandRouter("z42", "launcher for the z42 runtime");
+
+    root.Add("info", "show Z42_HOME / default / counts",
+        new ArgParser("z42 info", "show Z42_HOME / default / counts"));
+    root.Add("list", "list installed runtimes",
+        new ArgParser("z42 list", "list installed runtimes"));
+
+    ArgParser def = new ArgParser("z42 default", "show or set the default runtime");
+    def.AddOptionalPositional("version", "runtime version to set (omit to show)");
+    root.Add("default", "show or set the default runtime", def);
+
+    ArgParser link = new ArgParser("z42 link", "register a local runtime dir as <ver>");
+    link.AddOption("as", "", "version label", "");
+    link.AddPositional("dir", "runtime directory");
+    root.Add("link", "register a local runtime dir as <ver>", link);
+
+    ArgParser which = new ArgParser("z42 which", "print the resolved z42vm path");
+    which.AddOption("runtime", "", "runtime version", "");
+    which.AddOptionalPositional("app", "app (ignored; for symmetry)");
+    root.Add("which", "print the resolved z42vm path", which);
+
+    ArgParser runP = new ArgParser("z42 run", "run an app with the resolved runtime");
+    runP.AllowExtras();
+    runP.AddOption("runtime", "", "runtime version", "");
+    runP.AddOptionalPositional("app", "<app.zpkg> [-- args]");
+    root.Add("run", "run an app with the resolved runtime", runP);
+
+    ArgParser inst = new ArgParser("z42 install", "download a runtime from GitHub Releases");
+    inst.AddPositional("version", "version | nightly");
+    root.Add("install", "download a runtime from GitHub Releases", inst);
+
+    ArgParser uninst = new ArgParser("z42 uninstall", "remove an installed runtime");
+    uninst.AddPositional("version", "installed version");
+    root.Add("uninstall", "remove an installed runtime", uninst);
+
+    root.AddRouter("apphost", "make a native apphost exe for an app", _apphostRouter());
+
+    return root;
+}
+
+SubcommandRouter _apphostRouter() {
+    SubcommandRouter a = new SubcommandRouter("z42 apphost", "make a native apphost exe for an app");
+    ArgParser build = new ArgParser("z42 apphost build", "build a native apphost exe");
+    build.AddOption("out", "", "output exe path (default: beside app)", "");
+    build.AddPositional("target", "<app.zpkg | project.z42.toml>");
+    a.Add("build", "build a native apphost exe", build);
+    return a;
+}
+
+// ── dispatch ──────────────────────────────────────────────────────────────
+
+void _dispatchLauncher(CommandResolution res) {
+    string[] p = res.Path();
+    if (p.Length == 0) { return; }
+    ParseResult r = res.Result();
+    string top = p[0];
+    if (top == "info")      { _cmdInfo();      return; }
+    if (top == "list")      { _cmdList();      return; }
+    if (top == "default")   { _cmdDefault(r);  return; }
+    if (top == "link")      { _cmdLink(r);     return; }
+    if (top == "which")     { _cmdWhich(r);    return; }
+    if (top == "install")   { _cmdInstall(r);  return; }
+    if (top == "uninstall") { _cmdUninstall(r); return; }
+    if (top == "apphost") {
+        // p = ["apphost", "build"]
+        Apphost.BuildOne(r.GetPositional(0), r.GetOption("out"));
+        return;
+    }
+}

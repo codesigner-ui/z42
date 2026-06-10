@@ -54,7 +54,7 @@ is:
 - z42vm's dev-mode `Z42_LIBS` fallback
   ([`src/runtime/src/main.rs`](../../../src/runtime/src/main.rs) `resolve_libs_dir`,
   `config.rs` hint, `host_tests.rs`);
-- what `z42 xtask.zpkg build package` copies wholesale into a package's `libs/`.
+- what `z42 xtask.zpkg package` copies wholesale into a package's `libs/`.
 
 This keeps `build/` fully mirroring `src/` (everything maps to a `src/` path)
 while giving the VM/packaging one stable aggregate to point at. (Replaced the

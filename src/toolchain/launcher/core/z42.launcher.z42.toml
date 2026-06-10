@@ -19,6 +19,7 @@ include = ["*.z42"]
 "z42.crypto"      = "0.1.0"   # Sha256 — verify against SHA256SUMS
 "z42.encoding"    = "0.1.0"   # Utf8.GetBytes — patch apphost placeholder
 "z42.toml"        = "0.1.0"   # read [apphost].publish_dir in `apphost build <toml>`
+"z42.cli"         = "0.1.0"   # Std.Cli nested router + ArgParser (command parsing)
 
 [build]
 # reorg-artifacts-layout (2026-06-04): emit launcher.zpkg into the shared
