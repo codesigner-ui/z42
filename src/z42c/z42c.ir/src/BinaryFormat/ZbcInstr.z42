@@ -10,6 +10,10 @@ using Std;
 public static class ZbcInstr {
     public static int NoReg = 0xFFFF;
 
+    // f64 → IEEE754 bits（runtime 既有 builtin，z42.io.binary BinaryWriter 同款；z42c 自声明免 stdlib 改动）。
+    [Native("__double_to_bits")]
+    public static extern long DoubleToBits(double v);
+
     // 一条指令 → 字节。strRemap：z42c 1-based 池 idx → 最终 STRS idx（ConstStr）；
     // alloc：Call/ObjNew/IsInstance/AsCast 的 token（VCall/Field 不 token 化，直 pool idx）。
     public static void WriteInstr(ByteWriter w, IrInstr ins, ZbcStringPool pool, int[] strRemap, TokenAllocator alloc) {
@@ -17,6 +21,12 @@ public static class ZbcInstr {
             ConstStrInstr i = ins as ConstStrInstr;
             w.WriteU8(Op.ConstStr); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
             w.WriteU32(strRemap[i.Idx]);
+            return;
+        }
+        if (ins is ConstF64Instr) {
+            ConstF64Instr i = ins as ConstF64Instr;
+            w.WriteU8(Op.ConstF); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteI64(ZbcInstr.DoubleToBits(Convert.ToDouble(ZbcInstr._cleanFloat(i.Text))));
             return;
         }
         if (ins is CallInstr) {
@@ -86,6 +96,22 @@ public static class ZbcInstr {
     // z42c 无 ctor 解析（BoundNew.CtorName 延后）→ 合成 FQ ctor 名 "Class.Class"（镜像 C# ctor-less：
     // CtorName=className → fqCtor="{cls}.{cls}"；VM 查无此函数即跳过 ctor = 默认无参语义）。
     public static string CtorName(string className) { return className + "." + className; }
+
+    // 浮点字面量文本 → Convert.ToDouble 可解析形（剥后缀 f/F/d/D/m/M + 去 `_` 分隔符）。
+    private static string _cleanFloat(string text) {
+        string s = "";
+        int i = 0;
+        while (i < text.Length) {
+            char c = text.CharAt(i);
+            if (c != '_') {
+                bool isSuffix = (i == text.Length - 1)
+                    && (c == 'f' || c == 'F' || c == 'd' || c == 'D' || c == 'm' || c == 'M');
+                if (!isSuffix) { s = s + text.Substring(i, 1); }
+            }
+            i = i + 1;
+        }
+        return s;
+    }
 
     private static void _args(ByteWriter w, TypedReg[] args, int argCount) {
         w.WriteU8(argCount);

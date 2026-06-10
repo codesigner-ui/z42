@@ -60,8 +60,15 @@
 - 🔴 **编译器诊断 backlog（Scope 外，独立 fix）**：访问静态类**不存在的成员**（`Op.Call` 在常量未定义时）→ C# bootstrap codegen ICE `undefined variable Op`（无文件/行号），应为带 span 的 E0402；干扰排查良久
 - 同步：zbc 1.13（并行 add-reflection-static-fields）——ZbcVersion.Minor=13 + TYPE static-fields count + empty golden 重截（0c00→0d00）；其 InternPoolStrings 漏 intern static 字段名（writer crash）已修并被并行 commit `27974818` 吸收
 
-## ZW-1E（后续）
-- [ ] REGT 完备 + f64/char 字面量（BitConverter）；DBUG/span 链（解锁全面 byte-identical）；TYPE 类描述完备（base/字段表 e2e 已覆盖、tp/attr/static 仍 0 占位）
+## ZW-1E：f64 字面量 + is/as·继承 e2e —— ✅ 已完成（char 顺延：z42c 前端未接 char 字面量）
+- [x] 1E-1 ConstF64 编码：`Convert.ToDouble` + **z42c 自声明 `[Native("__double_to_bits")]` extern**（runtime builtin 已有，z42.io.binary 同款——零 stdlib 改动零锁冲突）→ WriteI64 8 字节 IEEE754 LE；`_cleanFloat`（剥 f/F/d/D/m/M 后缀 + `_` 分隔符）；tag 取 dst（f32 字面量 tag 0a、bits 仍 8 字节，镜像 C#）
+- [x] 1E-2 zbc_tests +1（1.5 → 0x3FF8000000000000 LE + 后缀剥离）
+- [x] 1E-3 xtask e2e +typecheck 程序（double 乘/等比较 + `A a = new B()` 子类赋值 + `a is B`/`as` + TYPE base 链）
+- [x] 验证：`xtask test compiler-z42` = **14 units 全绿 + e2e 四向通过**（selfcheck/callcheck/typecheck/divzero）
+- 顺延：char 字面量（z42c syntax→typecheck→codegen 整链未接，先于 writer）；REGT/TYPE 其余占位（tp/attr/static 需 IrClassDesc enrich）
+
+## 剩余（解锁全面 byte-identical）
+- [ ] DBUG/span 链（syntax AST 携 span → IR LineTable → DBUG section）——最后的大件；落地后 const/算术/调用全函数可逐字节对账 C#
 
 ## 延后（design.md Deferred）
 - ZbcReader / 可选 section DBUG·TIDX·BLID·FRCS / native·闭包·异常 opcode / stripped+sidecar / xtask 全量对账 gate

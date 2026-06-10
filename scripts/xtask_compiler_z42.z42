@@ -240,6 +240,32 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
     if (rc != 0) { Console.WriteLine("  ✗ callcheck.zbc trapped on z42vm (exit " + rc.ToString() + ") — call/object/string miscomputation"); return 1; }
     Console.WriteLine("  ✓ callcheck.zbc: calls/objects/fields/strings computed correctly");
 
+    // 正向 #3（ZW-1E）：浮点字面量（IEEE754 bits）+ is/as + 继承（TYPE base 链）
+    string typeSrc = Path.Join(e2eDir, "typecheck.z42");
+    File.WriteAllText(typeSrc, "class A { }\n"
+        + "class B : A { }\n"
+        + "int Main() {\n"
+        + "    double d = 1.5;\n"
+        + "    double e = d * 4.0;\n"
+        + "    int ok = 0;\n"
+        + "    if (e == 6.0) { ok = ok + 1; }\n"
+        + "    A a = new B();\n"
+        + "    if (a is B) { ok = ok + 1; }\n"
+        + "    B b = a as B;\n"
+        + "    if (b is B) { ok = ok + 1; }\n"
+        + "    int good = 0;\n"
+        + "    if (ok == 3) { good = 1; }\n"
+        + "    return 100 / good;\n"
+        + "}\n");
+    string typeZbc = Path.Join(e2eDir, "typecheck.zbc");
+    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(typeSrc).Arg(typeZbc)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed on typecheck (" + rc.ToString() + ")"); return 1; }
+    rc = new Process(vm).Arg(typeZbc).Arg("Main")
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ typecheck.zbc trapped on z42vm (exit " + rc.ToString() + ") — float/is·as/inheritance miscomputation"); return 1; }
+    Console.WriteLine("  ✓ typecheck.zbc: floats/is·as/inheritance computed correctly");
+
     // 负向（oracle 有效性）：必然 div-zero 的程序必须非零退出
     string badSrc = Path.Join(e2eDir, "divzero.z42");
     File.WriteAllText(badSrc, "int Main() { int z = 0; return 1 / z; }\n");

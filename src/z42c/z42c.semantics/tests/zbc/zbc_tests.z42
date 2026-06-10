@@ -99,6 +99,21 @@ void test_zbc_objnew_ctorless_import_token() {
 }
 
 [Test]
+void test_zbc_const_f64_encoding() {
+    // const.f64 1.5 → op 0x01 + tag f64(0b) + dst + IEEE754 bits LE（1.5 = 0x3FF8000000000000）
+    var pool = new ZbcStringPool();
+    var w = new ByteWriter();
+    ZbcInstr.WriteInstr(w, new ConstF64Instr(new TypedReg(0, IrType.F64), "1.5"),
+                        pool, new int[1], _emptyAlloc());
+    Assert.Equal("010b0000000000000000f83f", w.ToHex());
+    // 后缀剥离：1.5f → float tag(0a)，bits 仍按 double 写（镜像 C# ConstF64Instr.Val 恒 8 字节）
+    var w2 = new ByteWriter();
+    ZbcInstr.WriteInstr(w2, new ConstF64Instr(new TypedReg(1, IrType.F32), "1.5f"),
+                        pool, new int[1], _emptyAlloc());
+    Assert.Equal("010a0100000000000000f83f", w2.ToHex());
+}
+
+[Test]
 void test_zbc_selfcheck_program_header() {
     // e2e 自检程序（mul/add/le/eq/while/if/div）写出不应损坏：header = magic+1.13+flags0
     string src = "int Main() { int x = 6 * 7; int ok = 0; if (x == 42) { ok = 1; } return 100 / ok; }";

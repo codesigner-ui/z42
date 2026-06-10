@@ -15,7 +15,7 @@
 | `src/BinaryFormat/ZbcFormat.z42` | .zbc 格式常量（ZbcVersion（随 C# 同步，见 version-bumping.md 第 5 步）/ Op / Tag / ExecMode）+ Tag.FromName/FromIrType（**IrType 序≠zbc tag 序，显式映射**） |
 | `src/BinaryFormat/ZbcStringPool.z42` | .zbc 字符串池（插入序 intern + idx 查找，0-based；STRS 字节序 = intern 序） |
 | `src/BinaryFormat/TokenAllocator.z42` | token 分配（ZW-1C）：FromModule 插入序 name→index；跨模块 = `ImportBase(1<<31)\|STRS idx`；VCall/Field 不 token 化 |
-| `src/BinaryFormat/ZbcInstr.z42` | 指令/终结符字节编码（集中 if-is，镜像 C# WriteInstr/WriteTerminator）：const(int/bool/null/str)/copy/算术/比较/位/一元/concat + call/vcall/field/obj_new/is·as/array + ret/retval/br/brcond/throw + InternStrings 预扫 |
+| `src/BinaryFormat/ZbcInstr.z42` | 指令/终结符字节编码（集中 if-is，镜像 C# WriteInstr/WriteTerminator）：const(int/f64[IEEE754 bits]/bool/null/str)/copy/算术/比较/位/一元/concat + call/vcall/field/obj_new/is·as/array + ret/retval/br/brcond/throw + InternStrings 预扫 |
 | `src/BinaryFormat/ZbcWriter.z42` | `IrModule → .zbc 字节`（byte-identical vs C# ZbcWriter）：intern 预扫 + 全 8-section（NSPC/STRS/TYPE/SIGS/IMPT/EXPT/FUNC/REGT）+ header/directory 组装。ZW-1A：trivial 函数（`empty` 逐字节对账通过） |
 | `src/IrSkeleton.z42` | B0 占位（暂留：SemanticsSkeleton/ProjectSkeleton/PipelineSkeleton 仍引用；随其移除时清理） |
 
