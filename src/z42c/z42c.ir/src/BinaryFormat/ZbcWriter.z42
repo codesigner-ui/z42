@@ -12,7 +12,9 @@ public static class ZbcWriter {
     // 顶层：IrModule → 完整 .zbc 字节缓冲。
     public static ByteWriter Write(IrModule irm) {
         var pool = new ZbcStringPool();
-        ZbcWriter._internPool(irm, pool);
+        int[] strRemap = new int[irm.StringCount];   // z42c 1-based 池 idx → 最终 STRS idx
+        ZbcWriter._internPool(irm, pool, strRemap);
+        var alloc = TokenAllocator.FromModule(irm);
 
         var nspc = ZbcWriter._buildNspc(irm.Name);
         var strs = ZbcWriter._buildStrs(pool);
@@ -20,7 +22,7 @@ public static class ZbcWriter {
         var sigs = ZbcWriter._buildSigs(irm, pool);
         var impt = ZbcWriter._buildImpt(irm, pool);
         var expt = ZbcWriter._buildExpt(irm, pool);
-        var func = ZbcWriter._buildFunc(irm, pool);
+        var func = ZbcWriter._buildFunc(irm, pool, strRemap, alloc);
         var regt = ZbcWriter._buildRegt(irm);
 
         string[]     tags   = new string[8];
@@ -40,11 +42,11 @@ public static class ZbcWriter {
     public static string WriteHex(IrModule irm) { return ZbcWriter.Write(irm).ToHex(); }
 
     // ── 字符串池预扫（顺序即 STRS 字节序，须 1:1 复刻 C# InternPoolStrings full 模式）──────────
-    private static void _internPool(IrModule irm, ZbcStringPool pool) {
+    private static void _internPool(IrModule irm, ZbcStringPool pool, int[] strRemap) {
         pool.Intern(irm.Name);
-        // const.str 池（z42c StringPool 1-based，[0]="" 占位 → 从 1 起）。
+        // const.str 池（z42c StringPool 1-based，[0]="" 占位 → 从 1 起）→ 记 remap。
         int s = 1;
-        while (s < irm.StringCount) { pool.Intern(irm.StringPool[s]); s = s + 1; }
+        while (s < irm.StringCount) { strRemap[s] = pool.Intern(irm.StringPool[s]); s = s + 1; }
         // 类（名/基类/字段名+类型）。z42c IrClassDesc 无 typeparam/attr 字段 → 不 intern。
         int c = 0;
         while (c < irm.ClassCount) {
@@ -63,9 +65,15 @@ public static class ZbcWriter {
             pool.Intern(fdef.RetType);
             int p = 0;
             while (p < fdef.ParamTypeCount) { pool.Intern(fdef.ParamTypes[p]); p = p + 1; }
+            // 镜像 C#：每块先 label 再该块指令引用串（Call.Func/VCall.Method/Field/ObjNew 类名+ctor 等）。
             int b = 0;
-            while (b < fdef.BlockCount) { pool.Intern(fdef.Blocks[b].Label); b = b + 1; }
-            // 指令引用串（Call.Func/Field 等）→ ZW-1C；trivial const/算术无。
+            while (b < fdef.BlockCount) {
+                IrBlock blk = fdef.Blocks[b];
+                pool.Intern(blk.Label);
+                int ii = 0;
+                while (ii < blk.InstrCount) { ZbcInstr.InternStrings(pool, blk.Instrs[ii]); ii = ii + 1; }
+                b = b + 1;
+            }
             fi = fi + 1;
         }
     }
@@ -116,6 +124,7 @@ public static class ZbcWriter {
             w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）
             w.WriteU16(0);    // attrCount（zbc 1.10）
             w.WriteU8(0);     // class-shape flags（zbc 1.12：bit0 abstract/bit1 sealed/bit2 struct/bit3 record；z42c IrClassDesc 暂无标志 → 0）
+            w.WriteU16(0);    // static-fields count（zbc 1.13；z42c IrClassDesc 暂无静态字段 → 0）
             c = c + 1;
         }
         return w;
@@ -148,11 +157,75 @@ public static class ZbcWriter {
         return w;
     }
 
-    // ── IMPT：导入名（Ordinal sort）。ZW-1A trivial 无调用 → count 0（真扫描 ZW-1C）─────────
+    // ── IMPT：导入名 = Call 目标中非本模块函数（镜像 C# BuildImptSection；z42c 无 Builtin 指令）。
+    //    HashSet 迭代非确定 → 写前 Ordinal sort（插入排序 + String.CompareTo）。──────────────
     private static ByteWriter _buildImpt(IrModule irm, ZbcStringPool pool) {
+        string[] imports = new string[8];
+        int n = 0;
+        int fi = 0;
+        while (fi < irm.FuncCount) {
+            IrFunction f = irm.Functions[fi];
+            int b = 0;
+            while (b < f.BlockCount) {
+                IrBlock blk = f.Blocks[b];
+                int ii = 0;
+                while (ii < blk.InstrCount) {
+                    if (blk.Instrs[ii] is CallInstr) {
+                        CallInstr ci = blk.Instrs[ii] as CallInstr;
+                        if (!ZbcWriter._isLocalFunc(irm, ci.Func) && !ZbcWriter._contains(imports, n, ci.Func)) {
+                            if (n == imports.Length) {
+                                string[] bigger = new string[imports.Length * 2];
+                                int k = 0; while (k < n) { bigger[k] = imports[k]; k = k + 1; }
+                                imports = bigger;
+                            }
+                            imports[n] = ci.Func; n = n + 1;
+                        }
+                    }
+                    ii = ii + 1;
+                }
+                b = b + 1;
+            }
+            fi = fi + 1;
+        }
+        // 插入排序（Ordinal；CompareTo 是 scalar 序）。
+        int i = 1;
+        while (i < n) {
+            string key = imports[i];
+            int j = i - 1;
+            bool more = j >= 0;
+            while (more) {
+                if (imports[j].CompareTo(key) > 0) {
+                    imports[j + 1] = imports[j];
+                    j = j - 1;
+                    more = j >= 0;
+                } else { more = false; }
+            }
+            imports[j + 1] = key;
+            i = i + 1;
+        }
         var w = new ByteWriter();
-        w.WriteU32(0);
+        w.WriteU32(n);
+        i = 0;
+        while (i < n) { w.WriteU32(pool.Idx(imports[i])); i = i + 1; }
         return w;
+    }
+
+    private static bool _isLocalFunc(IrModule irm, string name) {
+        int i = 0;
+        while (i < irm.FuncCount) {
+            if (irm.Functions[i].Name == name) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    private static bool _contains(string[] arr, int n, string s) {
+        int i = 0;
+        while (i < n) {
+            if (arr[i] == s) { return true; }
+            i = i + 1;
+        }
+        return false;
     }
 
     // ── EXPT：导出函数（默认全部）+ kind u8=0 ─────────────────────────────────────────
@@ -169,7 +242,7 @@ public static class ZbcWriter {
     }
 
     // ── FUNC：count + 每函数体（regCount/blockCount/instrLen/excCount + blockOffsets + instrBytes）─
-    private static ByteWriter _buildFunc(IrModule irm, ZbcStringPool pool) {
+    private static ByteWriter _buildFunc(IrModule irm, ZbcStringPool pool, int[] strRemap, TokenAllocator alloc) {
         var w = new ByteWriter();
         w.WriteU32(irm.FuncCount);
         int fi = 0;
@@ -187,7 +260,7 @@ public static class ZbcWriter {
                 blockOffsets[b] = instrs.Len();
                 IrBlock blk = f.Blocks[b];
                 int ii = 0;
-                while (ii < blk.InstrCount) { ZbcInstr.WriteInstr(instrs, blk.Instrs[ii], pool); ii = ii + 1; }
+                while (ii < blk.InstrCount) { ZbcInstr.WriteInstr(instrs, blk.Instrs[ii], pool, strRemap, alloc); ii = ii + 1; }
                 if (blk.HasTerm) { ZbcInstr.WriteTerm(instrs, blk.Term, labels, f.BlockCount); }
                 b = b + 1;
             }

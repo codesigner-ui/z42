@@ -217,6 +217,29 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
     if (rc != 0) { Console.WriteLine("  ✗ self-check zbc trapped on z42vm (exit " + rc.ToString() + ") — miscomputation"); return 1; }
     Console.WriteLine("  ✓ selfcheck.zbc: computed correctly, clean exit");
 
+    // 正向 #2（ZW-1C/1D）：自由调用 + 对象/字段（new/vcall/field_get·set）+ 字符串（const.str/concat/eq）
+    string callSrc = Path.Join(e2eDir, "callcheck.z42");
+    File.WriteAllText(callSrc, "int Twice(int a) { return a + a; }\n"
+        + "class Counter { int v; int Bump(int d) { v = v + d; return v; } }\n"
+        + "int Main() {\n"
+        + "    var c = new Counter();\n"
+        + "    c.Bump(20);\n"
+        + "    c.Bump(1);\n"
+        + "    int x = Twice(c.Bump(0));\n"
+        + "    string s = \"h\" + \"i\";\n"
+        + "    int ok = 0;\n"
+        + "    if (x == 42) { if (s == \"hi\") { ok = 1; } }\n"
+        + "    return 100 / ok;\n"
+        + "}\n");
+    string callZbc = Path.Join(e2eDir, "callcheck.zbc");
+    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(callSrc).Arg(callZbc)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed on callcheck (" + rc.ToString() + ")"); return 1; }
+    rc = new Process(vm).Arg(callZbc).Arg("Main")
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ callcheck.zbc trapped on z42vm (exit " + rc.ToString() + ") — call/object/string miscomputation"); return 1; }
+    Console.WriteLine("  ✓ callcheck.zbc: calls/objects/fields/strings computed correctly");
+
     // 负向（oracle 有效性）：必然 div-zero 的程序必须非零退出
     string badSrc = Path.Join(e2eDir, "divzero.z42");
     File.WriteAllText(badSrc, "int Main() { int z = 0; return 1 / z; }\n");

@@ -49,8 +49,19 @@
 
 > **🎉 ZW-1B 完成 = 自举里程碑：z42c 第一次产出能在 z42vm 上正确执行的 `.zbc`**（`z42c --emit-zbc` → 多基本块 while/if + mul/add/le/eq/copy/div 全部算对）。功能性验证收口；byte-identical 全覆盖等 DBUG/span 链（ZW-1C+）。
 
-## ZW-1C–1E（后续增量，详见 design.md 增量表）
-- [ ] ZW-1C 调用+token+字段；ZW-1D 对象+TYPE；ZW-1E REGT 完备+float；DBUG/span 链（解锁全面 byte-identical）
+## ZW-1C+1D：调用 + token + 字段 + 对象 + ConstStr —— ✅ 已完成（合并做：e2e 验证实例调用需对象）
+- [x] 1C-1 `TokenAllocator.z42`（NEW）：FromModule 插入序 name→index（Functions/Classes）；ResolveMethod/ResolveType 本模块→index、跨模块→`ImportBase(1<<31) | pool.Intern`（用 `|` 避带符号加法；预扫已 intern → Intern 命中即 Idx）
+- [x] 1C-2 `ZbcInstr`：ConstStr(strRemap)/Call(token)/VCall(pool idx，不 token 化)/FieldGet·Set/ObjNew(class+ctor token+type_args)/IsInstance/AsCast/ArrayGet·Set + `InternStrings`（镜像 C# InternInstrStrings）+ `CtorName`（z42c 无 ctor 解析 → 合成 "Class.Class"，镜像 C# ctor-less 行为，VM 查无即跳）
+- [x] 1C-3 `ZbcWriter`：_internPool 改每块 label→指令串序（1:1 C#）+ strRemap 构建 + `_buildImpt` 真扫描（Call 目标非本模块 → 去重 + 插入排序 Ordinal）+ alloc 穿线 + TYPE static-fields count（zbc 1.13）
+- [x] 1C-4 zbc_tests +3（Call token / FieldGet pool idx / ObjNew ctor-less import token，spec-derived hex）；全部测试改 5-arg WriteInstr
+- [x] 1C-5 xtask e2e +callcheck（自由调用+Counter 对象 vcall/field_get·set+字符串 concat·eq → div-zero oracle）
+- [x] 验证：`xtask test compiler-z42` = **14 units 全绿 + e2e 三向通过**（selfcheck/callcheck/divzero）
+- 🔴 **dogfood 抓出 codegen bug**：ExprEmitter 把 string 字面量 **raw lexeme（含引号）**入 IR 池（C# 入解码值）→ 同池比较碰巧相等但 concat 错（callcheck 抓出）。修：`Lexer.DecodeString(ls.Raw)`（独立 fix commit）
+- 🔴 **编译器诊断 backlog（Scope 外，独立 fix）**：访问静态类**不存在的成员**（`Op.Call` 在常量未定义时）→ C# bootstrap codegen ICE `undefined variable Op`（无文件/行号），应为带 span 的 E0402；干扰排查良久
+- 同步：zbc 1.13（并行 add-reflection-static-fields）——ZbcVersion.Minor=13 + TYPE static-fields count + empty golden 重截（0c00→0d00）；其 InternPoolStrings 漏 intern static 字段名（writer crash）已修并被并行 commit `27974818` 吸收
+
+## ZW-1E（后续）
+- [ ] REGT 完备 + f64/char 字面量（BitConverter）；DBUG/span 链（解锁全面 byte-identical）；TYPE 类描述完备（base/字段表 e2e 已覆盖、tp/attr/static 仍 0 占位）
 
 ## 延后（design.md Deferred）
 - ZbcReader / 可选 section DBUG·TIDX·BLID·FRCS / native·闭包·异常 opcode / stripped+sidecar / xtask 全量对账 gate

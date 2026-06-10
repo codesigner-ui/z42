@@ -10,8 +10,91 @@ using Std;
 public static class ZbcInstr {
     public static int NoReg = 0xFFFF;
 
-    // 一条指令 → 字节（strRemap：z42c 1-based 池 idx → 最终池 idx；ZW-1A 无 ConstStr 暂未用）。
-    public static void WriteInstr(ByteWriter w, IrInstr ins, ZbcStringPool pool) {
+    // 一条指令 → 字节。strRemap：z42c 1-based 池 idx → 最终 STRS idx（ConstStr）；
+    // alloc：Call/ObjNew/IsInstance/AsCast 的 token（VCall/Field 不 token 化，直 pool idx）。
+    public static void WriteInstr(ByteWriter w, IrInstr ins, ZbcStringPool pool, int[] strRemap, TokenAllocator alloc) {
+        if (ins is ConstStrInstr) {
+            ConstStrInstr i = ins as ConstStrInstr;
+            w.WriteU8(Op.ConstStr); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32(strRemap[i.Idx]);
+            return;
+        }
+        if (ins is CallInstr) {
+            CallInstr i = ins as CallInstr;
+            w.WriteU8(Op.Call); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32(alloc.ResolveMethod(i.Func, pool));
+            ZbcInstr._args(w, i.Args, i.ArgCount);
+            return;
+        }
+        if (ins is VCallInstr) {
+            VCallInstr i = ins as VCallInstr;
+            w.WriteU8(Op.VCall); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32(pool.Idx(i.Method)); w.WriteU16(i.Obj.Id);
+            ZbcInstr._args(w, i.Args, i.ArgCount);
+            return;
+        }
+        if (ins is FieldGetInstr) {
+            FieldGetInstr i = ins as FieldGetInstr;
+            w.WriteU8(Op.FieldGet); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU16(i.Obj.Id); w.WriteU32(pool.Idx(i.Field));
+            return;
+        }
+        if (ins is FieldSetInstr) {
+            FieldSetInstr i = ins as FieldSetInstr;
+            w.WriteU8(Op.FieldSet); w.WriteU8(Tag.FromIrType(i.Val.Type)); w.WriteU16(ZbcInstr.NoReg);
+            w.WriteU16(i.Obj.Id); w.WriteU32(pool.Idx(i.Field)); w.WriteU16(i.Val.Id);
+            return;
+        }
+        if (ins is ObjNewInstr) {
+            ObjNewInstr i = ins as ObjNewInstr;
+            w.WriteU8(Op.ObjNew); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32(alloc.ResolveType(i.ClassName, pool));
+            w.WriteU32(alloc.ResolveMethod(ZbcInstr.CtorName(i.ClassName), pool));
+            ZbcInstr._args(w, i.Args, i.ArgCount);
+            w.WriteU8(i.TypeArgCount);
+            int t = 0;
+            while (t < i.TypeArgCount) { w.WriteU32(pool.Idx(i.TypeArgs[t])); t = t + 1; }
+            return;
+        }
+        if (ins is IsInstanceInstr) {
+            IsInstanceInstr i = ins as IsInstanceInstr;
+            w.WriteU8(Op.IsInstance); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU16(i.Obj.Id); w.WriteU32(alloc.ResolveType(i.ClassName, pool));
+            return;
+        }
+        if (ins is AsCastInstr) {
+            AsCastInstr i = ins as AsCastInstr;
+            w.WriteU8(Op.AsCast); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU16(i.Obj.Id); w.WriteU32(alloc.ResolveType(i.ClassName, pool));
+            return;
+        }
+        if (ins is ArrayGetInstr) {
+            ArrayGetInstr i = ins as ArrayGetInstr;
+            w.WriteU8(Op.ArrayGet); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU16(i.Arr.Id); w.WriteU16(i.Idx.Id);
+            return;
+        }
+        if (ins is ArraySetInstr) {
+            ArraySetInstr i = ins as ArraySetInstr;
+            w.WriteU8(Op.ArraySet); w.WriteU8(Tag.FromIrType(i.Val.Type)); w.WriteU16(ZbcInstr.NoReg);
+            w.WriteU16(i.Arr.Id); w.WriteU16(i.Idx.Id); w.WriteU16(i.Val.Id);
+            return;
+        }
+        ZbcInstr._writeCore(w, ins);
+    }
+
+    // z42c 无 ctor 解析（BoundNew.CtorName 延后）→ 合成 FQ ctor 名 "Class.Class"（镜像 C# ctor-less：
+    // CtorName=className → fqCtor="{cls}.{cls}"；VM 查无此函数即跳过 ctor = 默认无参语义）。
+    public static string CtorName(string className) { return className + "." + className; }
+
+    private static void _args(ByteWriter w, TypedReg[] args, int argCount) {
+        w.WriteU8(argCount);
+        int i = 0;
+        while (i < argCount) { w.WriteU16(args[i].Id); i = i + 1; }
+    }
+
+    // 无字符串/token 操作数的核心指令（const/copy/算术/比较/位/一元）。
+    private static void _writeCore(ByteWriter w, IrInstr ins) {
         if (ins is ConstI32Instr) {
             ConstI32Instr i = ins as ConstI32Instr;
             w.WriteU8(Op.ConstI); w.WriteU8(Tag.I32); w.WriteU16(i.Dst.Id);
@@ -116,5 +199,22 @@ public static class ZbcInstr {
             i = i + 1;
         }
         return 0;
+    }
+
+    // 指令引用串预扫 intern（镜像 C# InternInstrStrings；调用序 = STRS 字节序的一部分，须 1:1）。
+    public static void InternStrings(ZbcStringPool pool, IrInstr ins) {
+        if (ins is CallInstr) { CallInstr i = ins as CallInstr; pool.Intern(i.Func); return; }
+        if (ins is VCallInstr) { VCallInstr i = ins as VCallInstr; pool.Intern(i.Method); return; }
+        if (ins is FieldGetInstr) { FieldGetInstr i = ins as FieldGetInstr; pool.Intern(i.Field); return; }
+        if (ins is FieldSetInstr) { FieldSetInstr i = ins as FieldSetInstr; pool.Intern(i.Field); return; }
+        if (ins is ObjNewInstr) {
+            ObjNewInstr i = ins as ObjNewInstr;
+            pool.Intern(i.ClassName); pool.Intern(ZbcInstr.CtorName(i.ClassName));
+            int t = 0;
+            while (t < i.TypeArgCount) { pool.Intern(i.TypeArgs[t]); t = t + 1; }
+            return;
+        }
+        if (ins is IsInstanceInstr) { IsInstanceInstr i = ins as IsInstanceInstr; pool.Intern(i.ClassName); return; }
+        if (ins is AsCastInstr) { AsCastInstr i = ins as AsCastInstr; pool.Intern(i.ClassName); return; }
     }
 }

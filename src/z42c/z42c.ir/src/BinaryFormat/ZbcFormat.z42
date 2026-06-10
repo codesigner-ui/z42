@@ -5,7 +5,7 @@ namespace Z42.IR.BinaryFormat;
 // 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 12;   // 2026-06-10 add-reflection-type-flags：TYPE 每类记录尾加 class-shape flags 字节（bit0 abstract/bit1 sealed/bit2 struct/bit3 record）
+    public static int Minor = 13;   // 2026-06-10 add-reflection-static-fields：TYPE 每类 flags 字节后加 static-fields 块（u16 count + 每字段 name/tag/type）
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
@@ -21,6 +21,10 @@ public static class Op {
     public static int Neg = 0x15; public static int Not = 0x18;
     public static int BitAnd = 0x19; public static int BitOr = 0x1A; public static int BitXor = 0x1B;
     public static int BitNot = 0x1C; public static int Shl = 0x1D; public static int Shr = 0x1E;
+    public static int Call = 0x50; public static int VCall = 0x52;
+    public static int FieldGet = 0x60; public static int FieldSet = 0x61;
+    public static int ObjNew = 0x70; public static int IsInstance = 0x71; public static int AsCast = 0x72;
+    public static int ArrayGet = 0x82; public static int ArraySet = 0x83;
     public static int Eq = 0x30; public static int Ne = 0x31; public static int Lt = 0x32;
     public static int Le = 0x33; public static int Gt = 0x34; public static int Ge = 0x35;
     public static int Br     = 0x40;

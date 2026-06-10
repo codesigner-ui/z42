@@ -1,0 +1,49 @@
+// token 分配（port-z42c-zbc-writer ZW-1C）。镜像 C# TokenAllocator.cs + Tokens.cs。
+// 编码（与 Rust IdMap 一致）：intra-module [0, 0x7FFFFFFE] = module.Functions/Classes 插入序 index；
+// cross-zpkg = IMPORT_BASE(0x80000000) | STRS idx。确定性：插入序 = IrGen 源序，无 hash 迭代。
+// VCall.Method / FieldGet·Set.Field 不 token 化（保持 STRS pool idx，v1.0 约定）。
+namespace Z42.IR.BinaryFormat;
+
+using Z42.IR;
+
+public sealed class TokenAllocator {
+    public string[] FuncNames;  public int FuncCount;
+    public string[] ClassNames; public int ClassCount;
+
+    public TokenAllocator(string[] funcNames, int funcCount, string[] classNames, int classCount) {
+        this.FuncNames = funcNames; this.FuncCount = funcCount;
+        this.ClassNames = classNames; this.ClassCount = classCount;
+    }
+
+    // IMPORT_BASE = 0x80000000（int 字面量越界 → 用 1<<31；与 token 组合用 `|` 避免带符号加法）。
+    public static int ImportBase() { return 1 << 31; }
+
+    public static TokenAllocator FromModule(IrModule irm) {
+        string[] fns = new string[irm.FuncCount];
+        int i = 0;
+        while (i < irm.FuncCount) { fns[i] = irm.Functions[i].Name; i = i + 1; }
+        string[] cls = new string[irm.ClassCount];
+        i = 0;
+        while (i < irm.ClassCount) { cls[i] = irm.Classes[i].Name; i = i + 1; }
+        return new TokenAllocator(fns, irm.FuncCount, cls, irm.ClassCount);
+    }
+
+    // 本模块函数 → 插入序 index；否则 import token（名字须已在预扫 intern → Intern 命中返回既有 idx）。
+    public int ResolveMethod(string name, ZbcStringPool pool) {
+        int i = 0;
+        while (i < this.FuncCount) {
+            if (this.FuncNames[i] == name) { return i; }
+            i = i + 1;
+        }
+        return TokenAllocator.ImportBase() | pool.Intern(name);
+    }
+
+    public int ResolveType(string name, ZbcStringPool pool) {
+        int i = 0;
+        while (i < this.ClassCount) {
+            if (this.ClassNames[i] == name) { return i; }
+            i = i + 1;
+        }
+        return TokenAllocator.ImportBase() | pool.Intern(name);
+    }
+}
