@@ -15,6 +15,12 @@ public sealed class IntLitExpr : Expr {
     public override string Dump() { return this.Value; }
 }
 
+public sealed class CharLitExpr : Expr {
+    public char Value;     // 解码后（剥引号+转义；镜像 C# LitCharExpr——区别于 Int/Str 存 raw）
+    public CharLitExpr(char value, Span span) { this.Span = span; this.Value = value; }
+    public override string Dump() { return "(char " + this.Value.ToString() + ")"; }
+}
+
 public sealed class FloatLitExpr : Expr {
     public string Value;
     public FloatLitExpr(string value, Span span) { this.Span = span; this.Value = value; }

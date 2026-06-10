@@ -26,6 +26,12 @@ public sealed class ExprEmitter {
             this._ctx.Emit(new ConstF64Instr(r, lf.Text));
             return r;
         }
+        if (e is BoundLitChar) {
+            BoundLitChar lc = e as BoundLitChar;
+            TypedReg r = this._ctx.Alloc(IrType.Char);
+            this._ctx.Emit(new ConstCharInstr(r, lc.Value));
+            return r;
+        }
         if (e is BoundLitBool) {
             BoundLitBool lb = e as BoundLitBool;
             TypedReg r = this._ctx.Alloc(IrType.Bool);

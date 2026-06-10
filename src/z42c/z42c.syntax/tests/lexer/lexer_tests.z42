@@ -195,3 +195,13 @@ void test_line_column_tracking() {
     Assert.Equal(2, lx.TokenAt(1).Span.Line);
     Assert.Equal(3, lx.TokenAt(1).Span.Column);
 }
+
+[Test]
+void test_char_literal_tokens() {
+    // char 字面量：普通 / 转义（整 token 含引号，raw lexeme）
+    var lx = new Lexer("'A' '\\n'", "t.z42");
+    lx.Tokenize();
+    Assert.Equal(TokenKind.CharLiteral, lx.TokenAt(0).Kind);
+    Assert.Equal("'A'", lx.TokenAt(0).Text);
+    Assert.Equal(TokenKind.CharLiteral, lx.TokenAt(1).Kind);
+}

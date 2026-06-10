@@ -186,6 +186,10 @@ public sealed class TypeChecker {
             IntLitExpr lit = e as IntLitExpr;
             return new BoundLitInt(lit.Value, new Z42PrimType("int"), lit.Span);   // 1A: int（long 推断 1B）
         }
+        if (e is CharLitExpr) {
+            CharLitExpr ch = e as CharLitExpr;
+            return new BoundLitChar(ch.Value, new Z42PrimType("char"), ch.Span);
+        }
         if (e is FloatLitExpr) {
             FloatLitExpr lit = e as FloatLitExpr;
             return new BoundLitFloat(lit.Value, this._floatLitType(lit.Value), lit.Span);

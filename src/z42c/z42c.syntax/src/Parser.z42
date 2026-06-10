@@ -169,6 +169,7 @@ public sealed class Parser {
             return new ObjNewExpr(ty, args, n, t.Span);
         }
         if (k == TokenKind.IntLiteral)    { this._advance(); return new IntLitExpr(t.Text, t.Span); }
+        if (k == TokenKind.CharLiteral)   { this._advance(); return new CharLitExpr(Parser._unescapeChar(t.Text), t.Span); }
         if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text, t.Span); }
         if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text, t.Span); }
         if (k == TokenKind.True)          { this._advance(); return new BoolLitExpr(true, t.Span); }
@@ -954,4 +955,12 @@ public sealed class Parser {
         return false;
     }
 
+
+    // char 字面量解码（镜像 C# UnescapeChar）：剥引号 → 复用 Lexer.DecodeString 还原转义 → 取首字符。
+    private static char _unescapeChar(string tokenText) {
+        if (tokenText.Length < 3) { return '?'; }
+        string decoded = Lexer.DecodeString(tokenText);
+        if (decoded.Length > 0) { return decoded.CharAt(0); }
+        return '?';
+    }
 }

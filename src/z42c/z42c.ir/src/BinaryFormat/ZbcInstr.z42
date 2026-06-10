@@ -144,6 +144,12 @@ public static class ZbcInstr {
             w.WriteI64(Convert.ToInt64(i.Text));
             return;
         }
+        if (ins is ConstCharInstr) {
+            ConstCharInstr i = ins as ConstCharInstr;
+            w.WriteU8(Op.ConstChar); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32((int)i.Val);
+            return;
+        }
         if (ins is ConstBoolInstr) {
             ConstBoolInstr i = ins as ConstBoolInstr;
             w.WriteU8(Op.ConstBool); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);

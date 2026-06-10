@@ -280,10 +280,29 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
 
     // byte-compare（add-z42c-source-spans）：同源经 z42c 与 C# 编译 → 逐字节 diff。
     // 这是 self-hosting 对账 gate 的 .zbc 段（含 DBUG 行表——span 链全程参与）。
-    string[] cmpSrcs = new string[3];
-    cmpSrcs[0] = okSrc; cmpSrcs[1] = callSrc; cmpSrcs[2] = typeSrc;
+    // charcheck（port-z42c-char）：char 字面量/比较 + div-zero oracle
+    string charSrc = Path.Join(e2eDir, "charcheck.z42");
+    File.WriteAllText(charSrc, "int Main() {\n"
+        + "    char a = 'A';\n"
+        + "    char d = '.';\n"
+        + "    int ok = 0;\n"
+        + "    if (a == 'A') { if (a != d) { if (d < a) { ok = 1; } } }\n"
+        + "    return 100 / ok;\n"
+        + "}\n");
+    string charZbc = Path.Join(e2eDir, "charcheck.zbc");
+    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(charSrc).Arg(charZbc)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ charcheck emit failed"); return 1; }
+    rc = new Process(vm).Arg(charZbc).Arg("Main")
+        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
+        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ charcheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
+    Console.WriteLine("  ✓ charcheck.zbc: char literals/compare computed correctly");
+
+    string[] cmpSrcs = new string[4];
+    cmpSrcs[0] = okSrc; cmpSrcs[1] = callSrc; cmpSrcs[2] = typeSrc; cmpSrcs[3] = charSrc;
     int ci = 0;
-    while (ci < 3) {
+    while (ci < 4) {
         string csOut = cmpSrcs[ci] + ".cs.zbc";
         string zOut  = cmpSrcs[ci] + ".z42c.zbc";
         rc = new Process("dotnet")
@@ -302,7 +321,7 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         }
         ci = ci + 1;
     }
-    Console.WriteLine("  ✓ byte-compare: 3/3 sources byte-identical (z42c vs C#, incl. DBUG)");
+    Console.WriteLine("  ✓ byte-compare: 4/4 sources byte-identical (z42c vs C#, incl. DBUG + char)");
 
     // build e2e（port-z42c-zpkg-build）：z42c build 产 packed zpkg → z42vm 直跑（entry 烤入）。
     // zpkg 级 byte-compare 对真 C# CLI 还差 TSIG/IMPL（follow-up change）；此处验证可执行性

@@ -449,3 +449,12 @@ void test_prim_receiver_loose_binding() {
     string src = "class C { void M(string s) { s.Substring(0, 2); } }";
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── char 字面量（port-z42c-char）──────────────────────────────────────────────
+[Test]
+void test_char_literal_typecheck() {
+    string src = "class C { bool M() { char a = 'A'; return a == 'B'; } }";
+    Assert.Equal("(block (decl a :char (lit-char A :char)) (return (bin == (ident a :char) (lit-char B :char) :bool)))",
+                 SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

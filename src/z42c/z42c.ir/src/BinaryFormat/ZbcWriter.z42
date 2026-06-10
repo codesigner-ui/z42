@@ -355,6 +355,7 @@ public static class ZbcWriter {
         if (ins is ConstI64Instr)  { ZbcWriter._regtVis(rt, (ins as ConstI64Instr).Dst); return; }
         if (ins is ConstF64Instr)  { ZbcWriter._regtVis(rt, (ins as ConstF64Instr).Dst); return; }
         if (ins is ConstBoolInstr) { ZbcWriter._regtVis(rt, (ins as ConstBoolInstr).Dst); return; }
+        if (ins is ConstCharInstr) { ZbcWriter._regtVis(rt, (ins as ConstCharInstr).Dst); return; }
         if (ins is ConstNullInstr) { ZbcWriter._regtVis(rt, (ins as ConstNullInstr).Dst); return; }
         if (ins is CopyInstr) { CopyInstr c = ins as CopyInstr; ZbcWriter._regtVis(rt, c.Dst); ZbcWriter._regtVis(rt, c.Src); return; }
         if (ins is AddInstr) { AddInstr i = ins as AddInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.A); ZbcWriter._regtVis(rt, i.B); return; }

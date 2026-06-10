@@ -20,6 +20,14 @@ public sealed class BoundLitInt : BoundExpr {
     public override string  Dump() { return "(lit-int " + this.Text + " :" + this._type.Name() + ")"; }
 }
 
+public sealed class BoundLitChar : BoundExpr {
+    public char Value;
+    private Z42Type _t;
+    public BoundLitChar(char value, Z42Type t, Span span) { this.Span = span; this.Value = value; this._t = t; }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(lit-char " + this.Value.ToString() + " :" + this._t.Name() + ")"; }
+}
+
 public sealed class BoundLitFloat : BoundExpr {
     public string Text;       // 原始字面量文本（含可能的 f/d 后缀；数值解析留 codegen）
     private Z42Type _type;

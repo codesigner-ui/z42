@@ -35,6 +35,12 @@ public sealed class ConstF64Instr : IrInstr {
     public override string Dump() { return this.Dst.Dump() + " = const.f64 " + this.Text; }
 }
 
+public sealed class ConstCharInstr : IrInstr {
+    public TypedReg Dst; public char Val;
+    public ConstCharInstr(TypedReg dst, char val) { this.Dst = dst; this.Val = val; }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = const.char " + this.Val.ToString(); }
+}
+
 public sealed class ConstBoolInstr : IrInstr {
     public TypedReg Dst;
     public bool     Value;

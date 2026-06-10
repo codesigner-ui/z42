@@ -10,6 +10,7 @@ public static class ZbcVersion {
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
 public static class Op {
+    public static int ConstChar = 0x08;
     public static int ConstI    = 0x00;
     public static int ConstF    = 0x01;
     public static int ConstBool = 0x02;

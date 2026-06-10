@@ -321,3 +321,11 @@ void test_generic_method_param() {
     Assert.Equal("fn @Box.Echo(2) -> T {\nentry:\n  ret %1\n}",
                  IrDump.DumpFunc(src, "Box.Echo"));
 }
+
+// ── char（port-z42c-char）────────────────────────────────────────────────────
+[Test]
+void test_char_const() {
+    string src = "char F() { return 'x'; }";
+    Assert.Equal("fn @F(0) -> char {\nentry:\n  %0 = const.char x\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
