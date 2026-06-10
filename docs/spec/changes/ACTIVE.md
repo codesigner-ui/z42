@@ -8,10 +8,10 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | **add-parameter-attribute-reflection（DRAFT 待审）** | 2026-06-10 | 参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；SIGS section 每参数追加 attr-ref 块（zbc 1.14→1.15 / zpkg 0.16→0.17）。⚠️ 版本 bump 须同步 z42c writer（ZbcFormat.z42 版本常量 + zbc_tests.z42 golden）—— **z42c 被 port-z42c-tsig 占用**，故实施须待 port 归档或 User 授权共占 z42c。DRAFT 待审 |
-| `runtime` | **add-parameter-attribute-reflection（DRAFT 待审）** | 2026-06-10 | 同上：zbc_reader 读 SIGS 每参数 attr-ref + loader 索引 + `__param_custom_attributes` builtin |
-| `stdlib` | **add-parameter-attribute-reflection（DRAFT 待审）** | 2026-06-10 | 同上：`ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)` |
-| `z42c` | —（空闲）| — | 自举主线全归档：…→zbc-writer✅→source-spans✅→zpkg-build✅→**port-z42c-tsig✅ 已归档 2026-06-10**（TSIG/IMPL + 内建面静态镜像 → **`z42c build` 对真 C# CLI 全文件 byte-identical，gate zpkg byte-compare 2/2 常驻**；05e615cf）。下一步候选：跨包 import 消费侧（ZpkgReader/DepIndex/ImportedSymbolLoader）/ char 字面量 / interface·异常·闭包 |
+| `compiler` | **add-parameter-attribute-reflection（实施中）** | 2026-06-10 | 参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；SIGS section 每参数追加 attr-ref 块（zbc 1.14→1.15 / zpkg 0.16→0.17）。port-z42c-tsig 归档释放 z42c → 本变更共占 z42c，clean full impl（含 z42c writer 同步），一次 GREEN commit |
+| `runtime` | **add-parameter-attribute-reflection（实施中）** | 2026-06-10 | 同上：zbc_reader 读 SIGS 每参数 attr-ref + loader 索引 + `__param_custom_attributes` builtin |
+| `stdlib` | **add-parameter-attribute-reflection（实施中）** | 2026-06-10 | 同上：`ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)` |
+| `z42c` | **port-z42c-import（DRAFT 待审）** | 2026-06-10 | tsig 已归档（zpkg 全文件 byte-identical 2/2）。本 change：跨包 import 消费侧 MVP（ZpkgReader 子集/DependencyIndex/ImportedSymbolLoader Phase1·2/DEPS 真实条目/静态调用 FQ 命中）→ z42c 可编译 stdlib-using 代码 + hello-stdlib 全文件对账。DRAFT 待 User 审批 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -25,6 +25,7 @@
 | ~~add-z42c-source-spans~~ | z42c —— ✅ 已归档 2026-06-10（span→DBUG + byte-compare 3/3；7942ab7d）|
 | ~~port-z42c-zpkg-build~~ | z42c —— ✅ 已归档 2026-06-10（z42c build 端到端+直跑；e1ff3503）|
 | ~~port-z42c-tsig~~ | z42c —— ✅ 已归档 2026-06-10（zpkg 全文件 byte-identical 2/2；05e615cf）|
+| port-z42c-import | z42c（2026-06-10 开；tsig 归档接力；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
