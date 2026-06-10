@@ -1,15 +1,15 @@
 # Tasks: port-z42c-zbc-writer — IrModule → byte-identical .zbc
 
-> 状态：🟡 进行中 | 创建：2026-06-09 | 子系统锁：z42c（顺序续作，codegen 归档后占用）
+> 状态：🟢 已完成 | 创建：2026-06-09 | 归档：2026-06-10 | 子系统锁：z42c（已释放 → add-z42c-source-spans 接力）
 > **变更说明：** z42c.ir 加 BinaryFormat/，从零镜像 C# ZbcWriter，把 IrModule 写为 byte-identical .zbc。
 > **设计**：[design.md](design.md)（D1 ByteWriter / D2 集中 if-is / D3 字符串池插入序 / D4 TokenAllocator / D5 golden-hex 验证，待 User 审批）。
 
 ## 进度概览
-- [ ] ZW-1A 最小：header + directory + NSPC/STRS/SIGS/FUNC + const/算术/ret opcode → trivial byte-identical
-- [ ] ZW-1B 控制流（Br/BrCond + 块索引）+ 比较/位/一元 opcode
-- [ ] ZW-1C 调用 + TokenAllocator + IMPT/EXPT + 字段
-- [ ] ZW-1D 对象/数组/is·as + TYPE section
-- [ ] ZW-1E REGT + 端到端 z42vm 执行 + f64/char（BitConverter）
+- [x] ZW-1A 最小：header + directory + 全 8-section + const/算术/ret opcode → `empty` byte-identical
+- [x] ZW-1B 控制流（Br/BrCond + 块索引）+ 比较/位/一元 opcode + driver --emit-zbc + e2e
+- [x] ZW-1C 调用 + TokenAllocator + IMPT + 字段
+- [x] ZW-1D 对象/数组/is·as + TYPE section
+- [x] ZW-1E f64（IEEE754 bits）+ 端到端 z42vm 执行（char 顺延前端）
 
 ## ZW-1A：最小 byte-identical（trivial 函数）
 ### ZW-1A-0 前置：IrModule enrich（design §②，✅ 已完成）
@@ -67,8 +67,8 @@
 - [x] 验证：`xtask test compiler-z42` = **14 units 全绿 + e2e 四向通过**（selfcheck/callcheck/typecheck/divzero）
 - 顺延：char 字面量（z42c syntax→typecheck→codegen 整链未接，先于 writer）；REGT/TYPE 其余占位（tp/attr/static 需 IrClassDesc enrich）
 
-## 剩余（解锁全面 byte-identical）
-- [ ] DBUG/span 链（syntax AST 携 span → IR LineTable → DBUG section）——最后的大件；落地后 const/算术/调用全函数可逐字节对账 C#
+## 剩余（解锁全面 byte-identical）—— 移出本 change（User 裁决 Option A，2026-06-10）
+- DBUG/span 链（syntax AST 携 span → IR LineTable → DBUG section）→ **独立 change `add-z42c-source-spans`**（架构级跨 syntax+semantics+ir，须独立 design+审批）。本 change 以"功能完整 .zbc writer + empty 逐字节 + e2e 四向"收口归档。
 
 ## 延后（design.md Deferred）
 - ZbcReader / 可选 section DBUG·TIDX·BLID·FRCS / native·闭包·异常 opcode / stripped+sidecar / xtask 全量对账 gate

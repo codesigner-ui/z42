@@ -10,8 +10,8 @@
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（字段 attr + zbc 1.14 / zpkg 0.16）|
 | `runtime` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`field_attributes` + `__field_custom_attributes`）|
-| `stdlib` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`FieldInfo.GetCustomAttributes()`）|
-| `z42c` | …→ port-z42c-codegen✅ → port-z42c-zbc-writer | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 类型检查半 1A–2B✅ → **port-z42c-codegen✅ Bound→IR 内存模型 CG-1A–2（已归档 2026-06-09，210 cases）** → **port-z42c-zbc-writer 进行中**（byte-identical .zbc：IrModule→bytes，镜像 ZbcWriter.cs + Tokens）<br>⚠️ **协调（2026-06-09，User 裁决，格式已变更）**：C3 attribute 反射已落地并 bump **.zbc → 1.11**（1.10 TYPE-section per-class attr refs + 1.11 SIGS-section per-function attr refs）+ **.zpkg → 0.13**（含 ZpkgWriter global SIGS 同步）→ 本 port 需**按 1.11 新格式重新镜像 ZbcWriter.cs**（接受 re-port，byte-identical gate 在 re-port 完成前暂红）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-type-flags 再 bump **.zbc → 1.12 / .zpkg → 0.14**（TYPE section 每类追加 `flags:u8`）→ port **直接对齐 1.12**（趁 mid-re-port，同周期不多一轮）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-static-fields 再 bump **.zbc → 1.13 / .zpkg → 0.15**（TYPE section 每类 flags 后追加静态字段块）→ port 对齐 1.13（同 re-port 周期）。<br>⚠️ **追加协调（2026-06-10）**：add-field-attribute-reflection 再 bump **.zbc → 1.14 / .zpkg → 0.16**（TYPE section 每字段记录追加 attr refs）→ port 对齐 1.14。 |
+| `stdlib` | add-cli-optional-positional | 2026-06-10 | `ArgParser.AddOptionalPositional`（z42.cli）；migrate-xtask-launcher-to-std-cli 前置。代码完成，验证待跑（add-field 已落地，工具链 1.14/0.16 一致）|
+| `z42c` | …→ port-z42c-zbc-writer✅ → **add-z42c-source-spans（DRAFT 待审）** | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project 机械段✅ → semantics 类型检查半✅ → codegen✅ → **port-z42c-zbc-writer✅ 已归档 2026-06-10**（功能完整 .zbc writer：ZW-1A–1E 全收口；`empty` 逐字节对账[zbc 1.14] + e2e 四向[selfcheck/callcheck/typecheck/divzero]；commit 7df55e8b…6a704ce1）→ **add-z42c-source-spans**（DBUG/span 链：syntax AST 携 span → IR LineTable → DBUG section，解锁全函数 byte-identical；design DRAFT 待 User 审批，未批不动代码）|
 | `toolchain` | port-z42c-core **+ migrate-xtask-launcher-to-std-cli**（协调共占）| 2026-06-07 / 2026-06-10 | port-z42c-core：xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。<br>⚠️ **协调（2026-06-10，User 授权）**：migrate-xtask-launcher-to-std-cli 共占 toolchain，足迹为 xtask Main/build/package/test/deps/bench dispatch + launcher/apphost —— 与 port-z42c-core 的 `xtask_compiler_z42.z42` 非重叠区域，User 裁决可并行。|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -21,7 +21,8 @@
 | scaffold-z42c-selfhost | z42c + compiler（已提交 127b7f11；gate 确认中，归档待绿）|
 | port-z42c-core | z42c + toolchain |
 | ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|
-| port-z42c-zbc-writer | z42c（2026-06-09 开；codegen 归档释放 z42c 锁后占用）|
+| ~~port-z42c-zbc-writer~~ | z42c —— ✅ 已归档 2026-06-10（功能完整 .zbc writer + empty 逐字节 + e2e 四向；DBUG/span 移交 add-z42c-source-spans）|
+| add-z42c-source-spans | z42c（2026-06-10 开；zbc-writer 归档释放后接力；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
