@@ -9,9 +9,9 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | fix-qualified-base-upcast 调查后放弃（2026-06-10）：根因非 FQN-upcast 而是合成 attribute factory 返回类型回落 PrimType 的 name-resolution 缺陷，过深，留 reflection.md Deferred `attr-factory-return-type-resolution`，workaround（unqualified 基名）已在 |
-| `runtime` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`field_attributes` + `__field_custom_attributes`）|
-| `stdlib` | —（空闲）| — | add-cli-optional-positional 已归档 2026-06-10 → 释放（`ArgParser.AddOptionalPositional`，z42.cli 10 文件/11 [Test] 绿）|
-| `z42c` | —（空闲）| — | 自举移植主线全归档：core✅→syntax✅→project 机械段✅→semantics✅→codegen✅→zbc-writer✅→**add-z42c-source-spans✅ 已归档 2026-06-10**（span→DBUG 链 + per-construct byte-identical：3 真实程序 z42c vs C# 逐字节含 DBUG，commit 7942ab7d）。下一步候选：pipeline/build 命令（端到端 zpkg）/ char 字面量前端 / project 文件系统段 |
+| `runtime` | add-reflection-value-record-flags | 2026-06-10 | `__type_is_value_type` / `__type_is_record`（读已有 class_flags bit2/3，无格式变更）|
+| `stdlib` | add-reflection-value-record-flags | 2026-06-10 | `Type.IsValueType` / `Type.IsRecord` |
+| `z42c` | **port-z42c-zpkg-build（DRAFT 待审）** | 2026-06-10 | 自举主线（前序全归档：core→syntax→project 机械段→semantics→codegen→zbc-writer→source-spans✅）。本 change：`z42c build <toml>` 端到端产 **byte-identical packed .zpkg**（BP-0 IrGen ns 限定 / BP-R 段构建器共享化 / project 源发现 / ZpkgBuilder+Writer / driver build / packed-minimal golden + e2e build byte-compare）。design DRAFT 待 User 审批，未批不动代码 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -23,6 +23,7 @@
 | ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|
 | ~~port-z42c-zbc-writer~~ | z42c —— ✅ 已归档 2026-06-10（功能完整 .zbc writer + empty 逐字节 + e2e 四向；DBUG/span 移交 add-z42c-source-spans）|
 | ~~add-z42c-source-spans~~ | z42c —— ✅ 已归档 2026-06-10（span→DBUG + byte-compare 3/3；7942ab7d）|
+| port-z42c-zpkg-build | z42c（2026-06-10 开；source-spans 归档释放后接力；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
