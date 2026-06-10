@@ -9,7 +9,7 @@
  *
  * Build + run end-to-end via the sibling `build.sh`. The script:
  *   - ensures runtime `libz42.a` exists (cargo build --release)
- *   - ensures z42c + stdlib zpkgs exist (./scripts/build-stdlib.sh)
+ *   - ensures z42c + stdlib zpkgs exist (z42 xtask.zpkg build stdlib)
  *   - compiles `examples/embedding/hello.z42` → out/hello.zbc
  *   - cc main.c + links libz42.a + platform native libs
  *   - runs the binary and asserts stdout == "[host] hello, world\n"

@@ -53,7 +53,7 @@ public sealed class StdlibDelegateTests
     private static (SemanticModel model, DiagnosticBag diags) Check(string src)
     {
         if (Imported is null)
-            throw new InvalidOperationException("stdlib not built; run scripts/build-stdlib.sh first");
+            throw new InvalidOperationException("stdlib not built; run z42 xtask.zpkg build stdlib first");
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
         var diags  = new DiagnosticBag();

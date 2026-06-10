@@ -300,7 +300,7 @@ public static partial class ZpkgReader
         // Strict-pin policy (freeze-zpkg-v0, 2026-05-14): reader accepts exactly
         // major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor.
         // Pre-1.0 z42 doesn't keep older zpkg minor readable; regen via
-        // scripts/build-stdlib.sh. See docs/design/runtime/zpkg.md.
+        // z42 xtask.zpkg build stdlib. See docs/design/runtime/zpkg.md.
         if (major != ZpkgWriter.VersionMajor)
             throw new InvalidDataException(
                 $"zpkg major {major} not supported (writer is at {ZpkgWriter.VersionMajor})");
@@ -308,7 +308,7 @@ public static partial class ZpkgReader
             throw new InvalidDataException(
                 $"zpkg minor {minor} not supported (writer is at " +
                 $"{ZpkgWriter.VersionMajor}.{ZpkgWriter.VersionMinor}); " +
-                $"regen via ./scripts/build-stdlib.sh");
+                $"regen via z42 xtask.zpkg build stdlib");
 
         var dir = new Dictionary<string, (int Offset, int Size)>(StringComparer.Ordinal);
         int pos = 16;

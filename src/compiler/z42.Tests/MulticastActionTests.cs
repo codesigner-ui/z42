@@ -49,7 +49,7 @@ public sealed class MulticastActionTests
     private static (SemanticModel model, DiagnosticBag diags) Check(string src)
     {
         if (Imported is null)
-            throw new InvalidOperationException("stdlib not built; run scripts/build-stdlib.sh");
+            throw new InvalidOperationException("stdlib not built; run z42 xtask.zpkg build stdlib");
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
         var diags  = new DiagnosticBag();

@@ -103,7 +103,7 @@ public static class SingleFileCompiler
 
     /// Walk up from the source file's directory to find stdlib zpkg dir.
     /// 搜索路径（redesign-artifact-layout, 2026-05-12）：
-    ///   1. `artifacts/build/libraries/dist/release/` (dev flat view, built by build-stdlib.sh)
+    ///   1. `artifacts/build/libraries/dist/release/` (dev flat view, built by xtask build stdlib)
     ///   2. `artifacts/build/libraries/dist/debug/`
     ///   3. `artifacts/z42/libs/` (legacy fallback)
     public static DependencyIndex LocateDepIndex(string sourceFullPath)

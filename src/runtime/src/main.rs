@@ -68,7 +68,7 @@ enum ExecMode {
 /// Search order (redesign-artifact-layout, 2026-05-12):
 ///   1. `$Z42_LIBS`                                         — env override
 ///   2. `<binary-dir>/../libs/`                             — packages/<pkg>/libs/ adjacent
-///   3. `<cwd>/artifacts/build/libraries/dist/release/`               — dev flat view (build-stdlib.sh)
+///   3. `<cwd>/artifacts/build/libraries/dist/release/`               — dev flat view (xtask build stdlib)
 ///   4. `<cwd>/artifacts/build/libraries/dist/debug/`                 — dev flat view (debug profile)
 ///   5. `<cwd>/artifacts/z42/libs/`                         — legacy fallback (pre-2026-05-12)
 fn resolve_libs_dir() -> Option<PathBuf> {
@@ -88,7 +88,7 @@ fn resolve_libs_dir() -> Option<PathBuf> {
             }
         }
     }
-    // 3-4. dev flat view（build-stdlib.sh 产出）
+    // 3-4. dev flat view（xtask build stdlib 产出）
     if let Ok(cwd) = std::env::current_dir() {
         for p in [
             cwd.join("artifacts/build/libraries/dist/release"),
@@ -273,7 +273,7 @@ fn print_build_info() {
     // Effective libs dir lookup result.
     match resolve_libs_dir() {
         Some(dir) => println!("libs dir: {}", dir.display()),
-        None => println!("libs dir: (not found — run ./scripts/build-stdlib.sh or set Z42_LIBS)"),
+        None => println!("libs dir: (not found — run z42 xtask.zpkg build stdlib or set Z42_LIBS)"),
     }
 }
 

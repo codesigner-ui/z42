@@ -803,7 +803,7 @@ pub fn parse_zpkg_sidecar(data: &[u8]) -> Result<ZpkgSidecarData> {
         bail!(
             "zpkg sidecar {major}.{minor} not supported (writer is at \
              {ZPKG_VERSION_MAJOR}.{ZPKG_VERSION_MINOR}); \
-             regen via ./scripts/build-stdlib.sh"
+             regen via z42 xtask.zpkg build stdlib"
         );
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
@@ -1350,7 +1350,7 @@ pub fn read_zpkg_meta(data: &[u8]) -> Result<ZpkgInfo> {
         bail!(
             "zpkg minor {minor} not supported (writer is at \
              {ZPKG_VERSION_MAJOR}.{ZPKG_VERSION_MINOR}); \
-             regen via ./scripts/build-stdlib.sh"
+             regen via z42 xtask.zpkg build stdlib"
         );
     }
     let flags     = u16::from_le_bytes([data[8], data[9]]);
@@ -1405,7 +1405,7 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String, Vec<u8>)>> 
     let is_packed = flags & 0x01 != 0;
     // Strict-pin policy (freeze-zpkg-v0, 2026-05-14): exact match with writer.
     // Pre-1.0 z42 doesn't keep older zpkg minor readable; regen via
-    // scripts/build-stdlib.sh. See docs/design/runtime/zpkg.md.
+    // z42 xtask.zpkg build stdlib. See docs/design/runtime/zpkg.md.
     if major != ZPKG_VERSION_MAJOR {
         bail!("zpkg major {major} not supported (writer is at {ZPKG_VERSION_MAJOR})");
     }
@@ -1413,7 +1413,7 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String, Vec<u8>)>> 
         bail!(
             "zpkg minor {minor} not supported (writer is at \
              {ZPKG_VERSION_MAJOR}.{ZPKG_VERSION_MINOR}); \
-             regen via ./scripts/build-stdlib.sh"
+             regen via z42 xtask.zpkg build stdlib"
         );
     }
     if (flags & 0x04) != 0 {
