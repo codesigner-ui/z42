@@ -88,6 +88,12 @@ ParseResult r = res.Result();  // 叶子解析结果
 | `positional1 positional2 ...` | positional 按声明顺序匹配 |
 | `-h` / `--help` | 自动 register；触发 `ShowHelp() == true`，跳过 positional 校验 |
 
+### 必填 vs 可选 positional
+
+- `AddPositional(name, help)` —— **必填**，缺则抛 `CliException`，help 渲染 `<name>`。
+- `AddOptionalPositional(name, help)` —— **可选**，未提供时 `GetPositional(i)` 返回 `""`、不报错，help 渲染 `[name]`。
+- **排序约束**：可选 positional 必须在所有必填之后声明（否则声明期抛）。典型用法 `prog [release|debug]`、`test vm [interp|jit]`、`build stdlib [lib]`。
+
 ## 错误情况（抛 CliException）
 
 - 未知 long flag (`--bogus`)

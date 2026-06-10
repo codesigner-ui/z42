@@ -44,7 +44,7 @@ class CliException : Exception     // in Std namespace
 | 3. Value 形式 | `--name v` `--name=v` `-nv` | 前两种 | `-nv` 易歧义 |
 | 4. 类型转换 | string + bool only / int / float | string + bool only | 通用；caller 自行 Parse |
 | 5. Required mark | required / 默认值即"有" | 默认值 | 简单；caller check `== ""` |
-| 6. Positional 数量 | 严格 / 宽松 | 严格 | 不匹配抛 CliException |
+| 6. Positional 数量 | 严格必填 / 可选 | 必填 + **可选** | `AddPositional`（必填）+ `AddOptionalPositional`（可选，缺→`""`）；多余仍抛 |
 | 7. Unknown flag | 抛异常 / 忽略 | 抛 | fail-fast |
 | 8. -h/--help | auto / 手定义 | auto | 始终 register |
 | 9. 异常类 | CliException 在 Std namespace | yes | 同 UriException / RegexException 模式 |
@@ -75,6 +75,27 @@ dispatch on top of `ArgParser`. Top-level `--help` lists commands;
 unknown subcommand surfaces a Levenshtein "did you mean ..."
 suggestion.
 - **当前 workaround**：调用方手动 `if argv[0] == "build"` 分支再 new sub-parser
+
+### ~~cli-future-optional-positional~~ — ✅ 已落地 2026-06-10 (add-cli-optional-positional)
+
+`ArgParser.AddOptionalPositional(name, help)` —— 可选 positional。由 xtask/launcher
+迁移 Std.Cli（migrate-xtask-launcher-to-std-cli）的 dogfood 暴露：其命令遍地
+`test vm [interp|jit]` / `build stdlib [lib]` / `package [release|debug]` 等可选 positional，
+而原 `AddPositional` 严格必填、`AllowExtras` 不覆盖 positional。
+
+- 缺省：`GetPositional(i)` 返回 `""`（声明槽位默认空串）；`PositionalCount()` 仍为实际提供数。
+- **排序约束**：可选必须在所有必填之后（`AddPositional` 在 optional 之后 → 声明期抛）。使 Parse 的缺-必填校验简化为 `提供数 ≥ requiredCount`（leading 必填数）。
+- 多余 positional（超声明总数）仍抛，不进 `Extras()`。
+- `GetPositional(i)` 边界从"已提供数"放宽到"声明总数"（未提供可选 → `""`；越声明数仍抛）。
+- HelpText：必填 `<name>`、可选 `[name]`。
+
+实现：`ArgParser._positionalOptional: bool[]` parallel array + `AddOptionalPositional`
++ Parse requiredCount 校验 + HelpText 分支；`ParseResult.GetPositional` 边界。
+11 [Test]（缺/有、必填+可选混合、与 flag 混用、排序违规、多余报错、help 渲染、help 短路）。
+
+### 变长 positional（Deferred）
+
+`args...` 收集剩余为 list —— 暂未实现；当前可用可重复 option（`-D k=v`）或调用方手切分替代。
 
 ### ~~cli-future-nested-subcommand~~ — ✅ 已落地 2026-06-10 (add-cli-nested-subcommands)
 

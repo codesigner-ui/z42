@@ -60,6 +60,10 @@ public class ArgParser {
     // Declared positionals (in order)
     private string[] _positionalNames;
     private string[] _positionalHelps;
+    // add-cli-optional-positional (2026-06-10): per-positional optional flag.
+    // Optional positionals must follow all required ones (enforced in
+    // AddPositional). Missing optional → GetPositional returns "".
+    private bool[]   _positionalOptional;
     private int      _positionalCount;
 
     public ArgParser(string programName, string description) {
@@ -82,6 +86,7 @@ public class ArgParser {
         this._mutexGroupCount = 0;
         this._positionalNames = new string[8];
         this._positionalHelps = new string[8];
+        this._positionalOptional = new bool[8];
         this._positionalCount = 0;
     }
 
@@ -208,9 +213,27 @@ public class ArgParser {
 
     /// 注册 positional 参数（按声明顺序匹配 argv 中非 flag/option 的部分）。
     public void AddPositional(string name, string help) {
+        // add-cli-optional-positional: required positionals must precede all
+        // optional ones (so the missing-required check is a simple count).
+        if (this._positionalCount > 0 && this._positionalOptional[this._positionalCount - 1]) {
+            throw new CliException("required positional '" + name +
+                "' cannot follow an optional positional");
+        }
         this.EnsurePositionalCap();
         this._positionalNames[this._positionalCount] = name;
         this._positionalHelps[this._positionalCount] = help;
+        this._positionalOptional[this._positionalCount] = false;
+        this._positionalCount = this._positionalCount + 1;
+    }
+
+    /// 注册可选 positional —— 未提供时 `GetPositional(i)` 返回 ""，且不触发
+    /// "缺 positional" 报错。必须在所有必填 positional 之后声明（否则报错）。
+    /// help 中渲染为 `[name]`。add-cli-optional-positional (2026-06-10).
+    public void AddOptionalPositional(string name, string help) {
+        this.EnsurePositionalCap();
+        this._positionalNames[this._positionalCount] = name;
+        this._positionalHelps[this._positionalCount] = help;
+        this._positionalOptional[this._positionalCount] = true;
         this._positionalCount = this._positionalCount + 1;
     }
 
@@ -307,8 +330,14 @@ public class ArgParser {
             }
         }
 
-        // positional 数量校验（ShowHelp 时跳过）
-        if (!r._showHelp && r._positionalCount < this._positionalCount) {
+        // positional 数量校验（ShowHelp 时跳过）—— 只对必填 positional。
+        // 必填全在前（AddPositional 排序约束），requiredCount = leading 必填数。
+        // add-cli-optional-positional: 缺可选不报错。
+        int requiredCount = 0;
+        while (requiredCount < this._positionalCount && !this._positionalOptional[requiredCount]) {
+            requiredCount = requiredCount + 1;
+        }
+        if (!r._showHelp && r._positionalCount < requiredCount) {
             throw new CliException("missing positional argument: '" +
                 this._positionalNames[r._positionalCount] + "'");
         }
@@ -501,9 +530,15 @@ public class ArgParser {
         sb.Append(" [OPTIONS]");
         int p = 0;
         while (p < this._positionalCount) {
-            sb.Append(" <");
-            sb.Append(this._positionalNames[p]);
-            sb.Append(">");
+            if (this._positionalOptional[p]) {
+                sb.Append(" [");
+                sb.Append(this._positionalNames[p]);
+                sb.Append("]");
+            } else {
+                sb.Append(" <");
+                sb.Append(this._positionalNames[p]);
+                sb.Append(">");
+            }
             p = p + 1;
         }
         sb.Append("\n\n");
@@ -561,9 +596,15 @@ public class ArgParser {
             sb.Append("ARGS:\n");
             int i = 0;
             while (i < this._positionalCount) {
-                sb.Append("    <");
-                sb.Append(this._positionalNames[i]);
-                sb.Append(">    ");
+                if (this._positionalOptional[i]) {
+                    sb.Append("    [");
+                    sb.Append(this._positionalNames[i]);
+                    sb.Append("]    ");
+                } else {
+                    sb.Append("    <");
+                    sb.Append(this._positionalNames[i]);
+                    sb.Append(">    ");
+                }
                 sb.Append(this._positionalHelps[i]);
                 sb.Append("\n");
                 i = i + 1;
@@ -673,13 +714,16 @@ public class ArgParser {
         int n = this._positionalNames.Length * 2;
         string[] gn = new string[n];
         string[] gh = new string[n];
+        bool[]   go = new bool[n];
         int i = 0;
         while (i < this._positionalCount) {
             gn[i] = this._positionalNames[i];
             gh[i] = this._positionalHelps[i];
+            go[i] = this._positionalOptional[i];
             i = i + 1;
         }
         this._positionalNames = gn;
         this._positionalHelps = gh;
+        this._positionalOptional = go;
     }
 }

@@ -1,0 +1,146 @@
+// add-cli-optional-positional (2026-06-10): AddOptionalPositional coverage.
+namespace Z42CliOptionalPositionalTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+// ── optional alone ──────────────────────────────────────────────────────────
+
+[Test]
+void test_optional_absent_returns_empty() {
+    var p = new ArgParser("prog", "t");
+    p.AddOptionalPositional("mode", "interp|jit");
+    ParseResult r = p.Parse(new string[0]);
+    Assert.Equal("", r.GetPositional(0));
+    Assert.Equal(0, r.PositionalCount());
+}
+
+[Test]
+void test_optional_provided() {
+    var p = new ArgParser("prog", "t");
+    p.AddOptionalPositional("mode", "interp|jit");
+    string[] argv = new string[1];
+    argv[0] = "jit";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("jit", r.GetPositional(0));
+    Assert.Equal(1, r.PositionalCount());
+}
+
+// ── required + optional mix ─────────────────────────────────────────────────
+
+[Test]
+void test_required_then_optional_only_required() {
+    var p = new ArgParser("prog", "t");
+    p.AddPositional("src", "source");
+    p.AddOptionalPositional("dst", "destination");
+    string[] argv = new string[1];
+    argv[0] = "a";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("a", r.GetPositional(0));
+    Assert.Equal("", r.GetPositional(1));
+    Assert.Equal(1, r.PositionalCount());
+}
+
+[Test]
+void test_required_then_optional_both() {
+    var p = new ArgParser("prog", "t");
+    p.AddPositional("src", "source");
+    p.AddOptionalPositional("dst", "destination");
+    string[] argv = new string[2];
+    argv[0] = "a"; argv[1] = "b";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("a", r.GetPositional(0));
+    Assert.Equal("b", r.GetPositional(1));
+}
+
+[Test]
+void test_missing_required_with_optional_throws() {
+    var p = new ArgParser("prog", "t");
+    p.AddPositional("src", "source");
+    p.AddOptionalPositional("dst", "destination");
+    bool caught = false;
+    try { p.Parse(new string[0]); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+// ── mix with flags/options ──────────────────────────────────────────────────
+
+[Test]
+void test_optional_positional_with_flags_and_options() {
+    var p = new ArgParser("prog", "t");
+    p.AddFlag("no-rebuild", "", "skip rebuild");
+    p.AddOption("jobs", "", "parallelism", "1");
+    p.AddOptionalPositional("mode", "interp|jit");
+    string[] argv = new string[3];
+    argv[0] = "jit"; argv[1] = "--jobs"; argv[2] = "4";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("jit", r.GetPositional(0));
+    Assert.Equal("4", r.GetOption("jobs"));
+    Assert.False(r.GetFlag("no-rebuild"));
+}
+
+// ── ordering constraint ─────────────────────────────────────────────────────
+
+[Test]
+void test_required_after_optional_throws_at_declaration() {
+    var p = new ArgParser("prog", "t");
+    p.AddOptionalPositional("a", "first");
+    bool caught = false;
+    try { p.AddPositional("b", "second"); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+// ── extra positional still rejected ─────────────────────────────────────────
+
+[Test]
+void test_extra_beyond_declared_throws() {
+    var p = new ArgParser("prog", "t");
+    p.AddOptionalPositional("mode", "interp|jit");
+    string[] argv = new string[2];
+    argv[0] = "x"; argv[1] = "y";
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+// ── help shows --help short-circuits required (with optional present) ────────
+
+[Test]
+void test_help_short_circuits_missing_required() {
+    var p = new ArgParser("prog", "t");
+    p.AddPositional("src", "source");
+    p.AddOptionalPositional("dst", "destination");
+    string[] argv = new string[1];
+    argv[0] = "--help";
+    ParseResult r = p.Parse(argv);   // must NOT throw despite missing required
+    Assert.True(r.ShowHelp());
+}
+
+// ── HelpText rendering ──────────────────────────────────────────────────────
+
+[Test]
+void test_help_text_marks_required_and_optional() {
+    var p = new ArgParser("prog", "t");
+    p.AddPositional("src", "source");
+    p.AddOptionalPositional("dst", "destination");
+    string help = p.HelpText();
+    Assert.True(help.Contains("<src>"));
+    Assert.True(help.Contains("[dst]"));
+}
+
+// ── out of declared range still throws ──────────────────────────────────────
+
+[Test]
+void test_get_positional_beyond_declared_throws() {
+    var p = new ArgParser("prog", "t");
+    p.AddOptionalPositional("mode", "interp|jit");
+    ParseResult r = p.Parse(new string[0]);
+    bool caught = false;
+    try { r.GetPositional(5); }   // 5 >= declared(1) → throw
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}

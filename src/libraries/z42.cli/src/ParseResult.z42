@@ -220,10 +220,13 @@ public class ParseResult {
     }
 
     /// 返回第 index 个 positional（0-based）。越界抛 CliException。
+    /// 返回第 index 个 positional（0-based）。边界为**声明总数**（非已提供数）：
+    /// 已声明但未提供的可选 positional 返回 ""（其槽位默认空串）。index 超出
+    /// 声明总数抛 CliException。add-cli-optional-positional (2026-06-10)。
     public string GetPositional(int index) {
-        if (index < 0 || index >= this._positionalCount) {
+        if (index < 0 || index >= this._positionalValues.Length) {
             throw new CliException("positional index " + index.ToString() +
-                " out of range (have " + this._positionalCount.ToString() + ")");
+                " out of range (declared " + this._positionalValues.Length.ToString() + ")");
         }
         return this._positionalValues[index];
     }

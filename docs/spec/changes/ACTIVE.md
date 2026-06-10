@@ -10,7 +10,7 @@
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（字段 attr + zbc 1.14 / zpkg 0.16）|
 | `runtime` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`field_attributes` + `__field_custom_attributes`）|
-| `stdlib` | add-cli-optional-positional | 2026-06-10 | `ArgParser.AddOptionalPositional`（z42.cli）；migrate-xtask-launcher-to-std-cli 前置。代码完成，验证待跑（add-field 已落地，工具链 1.14/0.16 一致）|
+| `stdlib` | —（空闲）| — | add-cli-optional-positional 已归档 2026-06-10 → 释放（`ArgParser.AddOptionalPositional`，z42.cli 10 文件/11 [Test] 绿）|
 | `z42c` | …→ port-z42c-zbc-writer✅ → **add-z42c-source-spans（DRAFT 待审）** | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project 机械段✅ → semantics 类型检查半✅ → codegen✅ → **port-z42c-zbc-writer✅ 已归档 2026-06-10**（功能完整 .zbc writer：ZW-1A–1E 全收口；`empty` 逐字节对账[zbc 1.14] + e2e 四向[selfcheck/callcheck/typecheck/divzero]；commit 7df55e8b…6a704ce1）→ **add-z42c-source-spans**（DBUG/span 链：syntax AST 携 span → IR LineTable → DBUG section，解锁全函数 byte-identical；design DRAFT 待 User 审批，未批不动代码）|
 | `toolchain` | port-z42c-core **+ migrate-xtask-launcher-to-std-cli**（协调共占）| 2026-06-07 / 2026-06-10 | port-z42c-core：xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。<br>⚠️ **协调（2026-06-10，User 授权）**：migrate-xtask-launcher-to-std-cli 共占 toolchain，足迹为 xtask Main/build/package/test/deps/bench dispatch + launcher/apphost —— 与 port-z42c-core 的 `xtask_compiler_z42.z42` 非重叠区域，User 裁决可并行。|
 
@@ -38,6 +38,8 @@
 | ~~add-reflection-type-flags~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（`Type.IsAbstract`/`IsSealed`；zbc 1.12 / zpkg 0.14，TYPE section flags 字节；cargo 795/0 + GoldenTests 1552/1552）|
 | ~~add-cli-nested-subcommands~~ | stdlib —— ✅ 已归档 2026-06-10（`Std.Cli` 嵌套 `AddRouter`/`Resolve`/`CommandResolution`；14 新 [Test]；GREEN 269 文件/22 lib）。② xtask/launcher 迁移（合流 migrate-scripts-to-z42）解锁可开 |
 | ~~add-reflection-static-fields~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（`GetFields()` 含静态 + `FieldInfo.IsStatic`；zbc 1.13 / zpkg 0.15，TYPE section 静态字段块；cargo 797/0 + GoldenTests 1553/1553）|
-| migrate-xtask-launcher-to-std-cli | toolchain（2026-06-10 开，与 port-z42c-core 协调共占）；xtask+launcher 迁移 Std.Cli 嵌套 router；package/feature-matrix 提顶层；删 lib 别名；每层 help。消费 add-cli-nested-subcommands |
+| ~~add-cli-optional-positional~~ | stdlib —— ✅ 已归档 2026-06-10（`ArgParser.AddOptionalPositional`，z42.cli；11 新 [Test]）。migrate-xtask 前置 |
+| fix-attr-factory-upcast | compiler（2026-06-10；add-field 遗留：`z42.core/tests/reflection.z42` 编译失败——`none` 关键字 + 合成 attribute factory upcast；其 gate 漏编此 stdlib 测试）|
+| migrate-xtask-launcher-to-std-cli | toolchain（2026-06-10 开，与 port-z42c-core 协调共占）；xtask+launcher 迁移 Std.Cli 嵌套 router；package/feature-matrix 提顶层；删 lib 别名；每层 help。消费 add-cli-nested-subcommands + add-cli-optional-positional |
 | ~~add-field-attribute-reflection~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（字段级用户 attribute 反射 `FieldInfo.GetCustomAttributes()`；zbc 1.14 / zpkg 0.16；cargo 799/0 + GoldenTests 1554/1554；参数 attr = follow-up）|
 | plan-0.3.x-three-streams | docs（不上锁） |
