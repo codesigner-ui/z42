@@ -401,7 +401,7 @@ fn module_with_one_class(
             name: name.to_owned(),
             base_class: base.map(str::to_owned),
             fields: fields.into_iter().map(|(n, t)| FieldDesc {
-                name: n.to_owned(), type_tag: t.to_owned(),
+                name: n.to_owned(), type_tag: t.to_owned(), attributes: Box::new([]),
             }).collect(),
             type_params: Box::new([]),
             type_param_constraints: Box::new([]),

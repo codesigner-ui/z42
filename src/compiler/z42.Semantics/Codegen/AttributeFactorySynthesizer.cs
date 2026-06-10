@@ -47,7 +47,8 @@ public static class AttributeFactorySynthesizer
     public static CompilationUnit Run(CompilationUnit cu)
     {
         bool any = cu.Functions.Any(HasAttrs)
-                || cu.Classes.Any(c => HasAttrs(c.Attributes) || c.Methods.Any(HasAttrs));
+                || cu.Classes.Any(c => HasAttrs(c.Attributes) || c.Methods.Any(HasAttrs)
+                                    || c.Fields.Any(f => HasAttrs(f.Attributes)));  // add-field-attribute-reflection
         if (!any) return cu;
 
         var factories = new List<FunctionDecl>();
@@ -76,7 +77,15 @@ public static class AttributeFactorySynthesizer
         foreach (var m in cls.Methods)
             newMethods.Add(ProcessFunction(m, "mth$" + cls.Name + "$" + m.Name, factories));
 
-        return cls with { Attributes = newClassAttrs, Methods = newMethods };
+        // add-field-attribute-reflection: synthesize factories for field attributes.
+        var newFields = new List<FieldDecl>(cls.Fields.Count);
+        foreach (var f in cls.Fields)
+        {
+            var fa = ProcessAttributes(f.Attributes, "fld$" + cls.Name + "$" + f.Name, factories);
+            newFields.Add(ReferenceEquals(fa, f.Attributes) ? f : f with { Attributes = fa });
+        }
+
+        return cls with { Attributes = newClassAttrs, Methods = newMethods, Fields = newFields };
     }
 
     private static FunctionDecl ProcessFunction(FunctionDecl fn, string keyPrefix, List<FunctionDecl> factories)

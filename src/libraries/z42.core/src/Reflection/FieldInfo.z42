@@ -8,4 +8,41 @@ public class FieldInfo : MemberInfo {
 
     // True for static fields, false for instance. (add-reflection-static-fields)
     public bool IsStatic;
+
+    // ── Custom attributes (add-field-attribute-reflection) ──────────────────
+
+    // Qualified field name (VM-written, "<Class>.<Field>"), used to resolve
+    // this field's attribute factories.
+    public string __qualified;
+
+    // Cached attribute instances (see Type.GetCustomAttributes for rationale).
+    public Std.Attribute[] __attrCache;
+
+    [Native("__field_custom_attributes")]
+    public extern Std.Attribute[] __customAttributes(string qualified);
+
+    // User attributes applied to this field, as live instances. Cached.
+    public Std.Attribute[] GetCustomAttributes() {
+        if (this.__attrCache != null) {
+            return this.__attrCache;
+        }
+        this.__attrCache = this.__customAttributes(this.__qualified);
+        return this.__attrCache;
+    }
+
+    // The single attribute of the given type, or null if absent. Compares by
+    // the instance's runtime type (FullName), so subclass attributes match too.
+    public Std.Attribute GetAttribute(Std.Type attributeType) {
+        Std.Attribute[] all = this.GetCustomAttributes();
+        int i = 0;
+        while (i < all.Length) {
+            Std.Attribute a = all[i];
+            Std.Type at = a.GetType();
+            if (at.FullName == attributeType.FullName) {
+                return a;
+            }
+            i = i + 1;
+        }
+        return null;
+    }
 }

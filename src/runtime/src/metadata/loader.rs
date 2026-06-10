@@ -654,6 +654,14 @@ pub fn build_type_registry(module: &mut Module) {
 
         let type_id = crate::metadata::tokens::TypeId(next_type_id);
         next_type_id += 1;
+        // add-field-attribute-reflection: index per-field attr refs (instance +
+        // static fields with attributes) by field name for reflection.
+        let field_attributes: Box<[(Box<str>, Box<[crate::metadata::bytecode::AttributeRef]>)]> =
+            desc.fields.iter()
+                .chain(desc.static_fields.iter())
+                .filter(|f| !f.attributes.is_empty())
+                .map(|f| (f.name.as_str().into(), f.attributes.clone()))
+                .collect();
         let cold_inner = crate::metadata::types::TypeDescCold {
             own_fields:             own_fields.into(),
             own_methods:            own_methods.into(),
@@ -664,6 +672,8 @@ pub fn build_type_registry(module: &mut Module) {
             custom_attributes:      desc.attributes.clone(),
             // add-reflection-static-fields: carry the class's static fields.
             static_fields:          desc.static_fields.clone(),
+            // add-field-attribute-reflection: per-field attr refs by name.
+            field_attributes,
         };
         let cold = if cold_inner.own_fields.is_empty()
             && cold_inner.own_methods.is_empty()
@@ -671,6 +681,7 @@ pub fn build_type_registry(module: &mut Module) {
             && cold_inner.type_param_constraints.is_empty()
             && cold_inner.custom_attributes.is_empty()
             && cold_inner.static_fields.is_empty()
+            && cold_inner.field_attributes.is_empty()
         {
             None
         } else {

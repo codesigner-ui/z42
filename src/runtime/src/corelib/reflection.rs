@@ -199,31 +199,36 @@ pub fn builtin_type_fields(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let mut out = Vec::with_capacity(td.fields.len() + statics.len());
     // Instance fields (base-first, IsStatic = false).
     for f in &td.fields {
-        let ftype = make_type_from_name(ctx, &f.type_tag);
-        out.push(alloc_named(
-            ctx,
-            STD_REFLECTION_FIELDINFO,
-            &[
-                ("Name", Value::Str(f.name.to_string().into())),
-                ("FieldType", ftype),
-                ("IsStatic", Value::Bool(false)),
-            ],
-        )?);
+        out.push(build_field_info(ctx, &td.name, &f.name, &f.type_tag, false)?);
     }
     // add-reflection-static-fields: the class's own static fields (IsStatic = true).
     for f in statics {
-        let ftype = make_type_from_name(ctx, &f.type_tag);
-        out.push(alloc_named(
-            ctx,
-            STD_REFLECTION_FIELDINFO,
-            &[
-                ("Name", Value::Str(f.name.to_string().into())),
-                ("FieldType", ftype),
-                ("IsStatic", Value::Bool(true)),
-            ],
-        )?);
+        out.push(build_field_info(ctx, &td.name, &f.name, &f.type_tag, true)?);
     }
     Ok(ctx.heap().alloc_array(out))
+}
+
+/// Build a `FieldInfo`. `__qualified` ("<Class>.<Field>") lets
+/// `FieldInfo.GetCustomAttributes()` resolve the field's attribute factories
+/// (add-field-attribute-reflection).
+fn build_field_info(
+    ctx: &VmContext,
+    class: &str,
+    field: &str,
+    type_tag: &str,
+    is_static: bool,
+) -> Result<Value> {
+    let ftype = make_type_from_name(ctx, type_tag);
+    alloc_named(
+        ctx,
+        STD_REFLECTION_FIELDINFO,
+        &[
+            ("Name", Value::Str(field.to_string().into())),
+            ("FieldType", ftype),
+            ("IsStatic", Value::Bool(is_static)),
+            ("__qualified", Value::Str(format!("{class}.{field}").into())),
+        ],
+    )
 }
 
 // ── Attribute reflection (C3 add-attribute-reflection) ──────────────────────
@@ -271,6 +276,41 @@ pub fn builtin_method_custom_attributes(ctx: &VmContext, args: &[Value]) -> Resu
                 .map(|f| f.custom_attributes().to_vec())
         })
         .or_else(|| ctx.try_lookup_function(&qualified).map(|f| f.custom_attributes().to_vec()))
+        .unwrap_or_default();
+    call_attribute_factories(ctx, &attrs)
+}
+
+/// `__field_custom_attributes(qualified) -> Std.Attribute[]` — live attribute
+/// instances for the field named by "<Class>.<Field>" (FieldInfo passes its
+/// hidden `__qualified`). Resolves the class TypeDesc, finds the field in
+/// `cold.field_attributes`, and calls each factory. add-field-attribute-reflection.
+pub fn builtin_field_custom_attributes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let qualified = match args.iter().find_map(|v| match v {
+        Value::Str(s) => Some(s.to_string()),
+        _ => None,
+    }) {
+        Some(q) => q,
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    // Split "<Class>.<Field>" at the last dot.
+    let dot = match qualified.rfind('.') {
+        Some(d) => d,
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    let (class, field) = (&qualified[..dot], &qualified[dot + 1..]);
+    let td = ctx
+        .module()
+        .and_then(|m| m.type_registry.get(class).cloned())
+        .or_else(|| ctx.try_lookup_type(class));
+    let attrs: Vec<crate::metadata::bytecode::AttributeRef> = td
+        .as_ref()
+        .map(|td| {
+            td.field_attributes()
+                .iter()
+                .find(|(n, _)| n.as_ref() == field)
+                .map(|(_, refs)| refs.to_vec())
+                .unwrap_or_default()
+        })
         .unwrap_or_default();
     call_attribute_factories(ctx, &attrs)
 }

@@ -131,8 +131,14 @@ native `__type_custom_attributes(type)` 对每条 ref 用 `run_returning` 调工
 - **触发原因**：MVP 不校验 target（attribute 可标任意支持位）。
 - **触发条件**：需要 target 限制时；做成声明上的一等子句（非 C# 元属性自循环），默认 AllowMultiple=true、无隐式继承。
 
-### attribute-future-targets-fields-params
-- **触发原因**：MVP 仅 class（C3a）+ method（C3b）；field / parameter 目标未做。
+### ~~attribute-future-targets-fields（field 目标）~~ — 已落地（2026-06-10）
+- **状态**：字段级用户 attribute 已落地 2026-06-10（add-field-attribute-reflection）。`[Doc("x")] public int f;`（实例 + 静态字段）经 `FieldInfo.GetCustomAttributes()` / `GetAttribute(Type)` 反射活实例。机制同 C3a/C3b（factory-thunk，key `fld$<Class>$<Field>`）；attr refs 进 zbc TYPE section 每字段记录（zbc 1.14 / zpkg 0.16），运行期索引进 `TypeDescCold.field_attributes`。
+
+### attribute-future-targets-params（parameter 目标）
+- **来源**：add-attribute-reflection（C3a）→ field 部分已落地，param 拆出
+- **触发原因**：参数无 per-param wire 元数据（`ParameterInfo` 运行期由函数签名构造），加参数 attribute 需在 SIGS 段新增 per-param attr 块 + parser 在参数列表解析 `[Attr]` + `ParameterInfo.GetCustomAttributes`，基础设施不同、更大。
+- **触发条件**：需要反射参数 attribute 时；独立 change `add-param-attribute-reflection`。
+- **当前 workaround**：无（参数 attribute 暂不支持）。
 
 ### attribute-future-generic-and-typed-lookup
 - **触发原因**：泛型 attribute 类 + `GetAttribute<T>()` 泛型糖依赖 0.5.x 泛型方法实例化。MVP 用 `GetAttribute(typeof(T))`。

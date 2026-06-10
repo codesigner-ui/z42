@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 13;  // 2026-06-10 add-reflection-static-fields: TYPE section appends a static-fields block (u16 count + per-field name/type) after the flags byte. Surfaced by Type.GetFields() with FieldInfo.IsStatic. Pre-1.13 not readable.
+    public const ushort VersionMinor = 14;  // 2026-06-10 add-field-attribute-reflection: each TYPE-section field record (instance + static block) appends a per-field attr-ref block (u16 count + (type-name, factory) str-idx pairs) after type_str. Surfaced by FieldInfo.GetCustomAttributes(). Pre-1.14 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -245,12 +245,12 @@ public static partial class ZbcWriter
             {
                 pool.Intern(cls.Name);
                 if (cls.BaseClass != null) pool.Intern(cls.BaseClass);
-                foreach (var fld in cls.Fields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
+                foreach (var fld in cls.Fields) { pool.Intern(fld.Name); pool.Intern(fld.Type); InternAttributeRefs(pool, fld.Attributes); }
                 // add-reflection-static-fields (zbc 1.13): BuildTypeSection writes the
                 // static-fields block via pool.Idx — names/types must be interned here
                 // or Idx throws KeyNotFound for any class with static fields.
                 if (cls.StaticFields != null)
-                    foreach (var fld in cls.StaticFields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
+                    foreach (var fld in cls.StaticFields) { pool.Intern(fld.Name); pool.Intern(fld.Type); InternAttributeRefs(pool, fld.Attributes); }
                 if (cls.TypeParams != null)
                     foreach (var tp in cls.TypeParams)
                         pool.Intern(tp);
@@ -380,6 +380,7 @@ public static partial class ZbcWriter
                 // string (u32 str idx). Reader treats this as authoritative;
                 // type_tag above is a hint only (kept for disasm + future JIT).
                 w.Write((uint)pool.Idx(fld.Type));
+                WriteAttrRefs(w, pool, fld.Attributes);  // 1.14 field attributes
             }
             // Generic type parameters for this class (L3-G1) + per-tp constraints (L3-G3a)
             var tpCount = (byte)(cls.TypeParams?.Count ?? 0);
@@ -421,6 +422,7 @@ public static partial class ZbcWriter
                     w.Write((uint)pool.Idx(fld.Name));
                     w.Write(TypeTags.FromString(fld.Type));
                     w.Write((uint)pool.Idx(fld.Type));
+                    WriteAttrRefs(w, pool, fld.Attributes);  // 1.14 field attributes
                 }
         }
 
@@ -495,6 +497,20 @@ public static partial class ZbcWriter
     {
         if (attrs is null) return;
         foreach (var a in attrs) { pool.Intern(a.TypeName); pool.Intern(a.FactoryFunc); }
+    }
+
+    /// add-field-attribute-reflection (zbc 1.14): write a per-field attr-ref
+    /// block — `attr_count: u16` + (type-name str idx, factory str idx) pairs.
+    /// Count always written (0 = none) for a uniform per-field layout.
+    internal static void WriteAttrRefs(BinaryWriter w, StringPool pool, List<IrAttributeRef>? attrs)
+    {
+        w.Write((ushort)(attrs?.Count ?? 0));
+        if (attrs != null)
+            foreach (var a in attrs)
+            {
+                w.Write((uint)pool.Idx(a.TypeName));
+                w.Write((uint)pool.Idx(a.FactoryFunc));
+            }
     }
 
     /// Interns all strings referenced by a constraint bundle so they land in the pool

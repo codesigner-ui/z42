@@ -103,7 +103,7 @@ void Demo() {
 |------|---------|------|
 | `Type` | `Std`（z42.core）| `Name` / `FullName` / `BaseType` / `IsAbstract` / `IsSealed` / `GetFields()` / `GetMethods()` / `GetMembers()` / `GetProperties()` / `GetGenericArguments()` |
 | `MemberInfo` | `Std.Reflection` | `Name`（`FieldInfo` / `MethodInfo` / `PropertyInfo` 的基类）|
-| `FieldInfo : MemberInfo` | `Std.Reflection` | `FieldType : Type` / `IsStatic` |
+| `FieldInfo : MemberInfo` | `Std.Reflection` | `FieldType : Type` / `IsStatic` / `GetCustomAttributes()` / `GetAttribute(Type)` |
 | `MethodInfo : MemberInfo` | `Std.Reflection` | `ReturnType : Type` / `IsStatic` / `IsVirtual` / `GetParameters()` |
 | `ParameterInfo` | `Std.Reflection` | `Name` / `ParameterType : Type` / `Position` |
 | `PropertyInfo : MemberInfo` | `Std.Reflection` | `PropertyType : Type` / `CanRead` / `CanWrite` |

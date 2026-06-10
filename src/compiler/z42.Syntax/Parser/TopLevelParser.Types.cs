@@ -350,6 +350,9 @@ internal static partial class TopLevelParser
                 {
                     pendingNative = null;
                     pendingTestAttrs = null;
+                    // add-field-attribute-reflection: capture accumulated user
+                    // attributes to attach to the field (previously discarded).
+                    var fieldUserAttrs = pendingUserAttrs;
                     pendingUserAttrs = null;
                     var fSpan = cursor.Current.Span;
                     var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
@@ -384,7 +387,8 @@ internal static partial class TopLevelParser
                         fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1, diags: diags).Unwrap(ref cursor);
                     }
                     ExpectKind(ref cursor, TokenKind.Semicolon);
-                    var rawField = new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan, fIsEvent);
+                    var rawField = new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan, fIsEvent,
+                        Attributes: fieldUserAttrs);
                     if (fIsEvent)
                     {
                         // 2026-05-03 D2c-多播：合成 add_X / remove_X 方法 + auto-init

@@ -43,7 +43,9 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // a class-shape flags byte (abstract/sealed/struct/record) per class record.
 // 2026-06-10 add-reflection-static-fields: bumped to 1.13 — TYPE section
 // appends a static-fields block (u16 count + per-field) after the flags byte.
-pub const ZBC_VERSION_MINOR: u16 = 13;
+// 2026-06-10 add-field-attribute-reflection: bumped to 1.14 — each field record
+// (instance + static block) appends a per-field attr-ref block after type_str.
+pub const ZBC_VERSION_MINOR: u16 = 14;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -70,7 +72,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // zbc 1.12 (TYPE section class-shape flags byte).
 // 2026-06-10 add-reflection-static-fields: bumped to 0.15, coupled with inner
 // zbc 1.13 (TYPE section static-fields block).
-pub const ZPKG_VERSION_MINOR: u16 = 15;
+// 2026-06-10 add-field-attribute-reflection: bumped to 0.16, coupled with inner
+// zbc 1.14 (per-field attr-ref block).
+pub const ZPKG_VERSION_MINOR: u16 = 16;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -307,10 +311,10 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             let fnam_idx = c.read_u32()?;
             let _type_tag_hint = c.read_u8()?;       // 1.7: tag retained as hint only
             let type_str_idx = c.read_u32()?;        // 1.7 align-zbc-reader-writer-asymmetry: authoritative
-            fields.push(FieldDesc {
-                name: c.pool_str(pool, fnam_idx)?.to_owned(),
-                type_tag: c.pool_str(pool, type_str_idx)?.to_owned(),
-            });
+            let name = c.pool_str(pool, fnam_idx)?.to_owned();
+            let type_tag = c.pool_str(pool, type_str_idx)?.to_owned();
+            let attributes = read_attr_refs(&mut c, pool)?;  // 1.14 field attrs
+            fields.push(FieldDesc { name, type_tag, attributes });
         }
         // Generic type parameters + per-tp constraints (L3-G3a)
         let tp_count = c.read_u8()? as usize;
@@ -342,10 +346,10 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             let snam_idx = c.read_u32()?;
             let _type_tag_hint = c.read_u8()?;
             let type_str_idx = c.read_u32()?;
-            static_fields.push(crate::metadata::bytecode::FieldDesc {
-                name: c.pool_str(pool, snam_idx)?.to_owned(),
-                type_tag: c.pool_str(pool, type_str_idx)?.to_owned(),
-            });
+            let name = c.pool_str(pool, snam_idx)?.to_owned();
+            let type_tag = c.pool_str(pool, type_str_idx)?.to_owned();
+            let attributes = read_attr_refs(&mut c, pool)?;  // 1.14 field attrs
+            static_fields.push(crate::metadata::bytecode::FieldDesc { name, type_tag, attributes });
         }
         classes.push(ClassDesc {
             name,
@@ -364,6 +368,25 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
 /// Decode one constraint bundle. Mirrors ZbcWriter.WriteConstraintBundle (v0.6).
 /// Layout: `flags: u8, [if bit2] base_class_idx: u32, [if bit3] type_param_constraint_idx: u32,
 ///          interface_count: u8, iface_idx[]: u32`.
+/// add-field-attribute-reflection (zbc 1.14): read a per-field attr-ref block
+/// (u16 count + (type-name, factory) str-idx pairs).
+fn read_attr_refs(
+    c: &mut Cursor,
+    pool: &[String],
+) -> Result<Box<[crate::metadata::bytecode::AttributeRef]>> {
+    let count = c.read_u16()? as usize;
+    let mut refs = Vec::with_capacity(count);
+    for _ in 0..count {
+        let type_idx = c.read_u32()?;
+        let factory_idx = c.read_u32()?;
+        refs.push(crate::metadata::bytecode::AttributeRef {
+            type_name: c.pool_str(pool, type_idx)?.to_owned(),
+            factory_func: c.pool_str(pool, factory_idx)?.to_owned(),
+        });
+    }
+    Ok(refs.into_boxed_slice())
+}
+
 fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintBundle> {
     let flags = c.read_u8()?;
     let requires_class       = (flags & 0x01) != 0;

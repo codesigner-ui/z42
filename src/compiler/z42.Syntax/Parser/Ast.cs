@@ -163,7 +163,11 @@ public sealed record FieldDecl(
     bool IsStatic,
     Expr? Initializer,
     Span Span,
-    bool IsEvent = false);
+    bool IsEvent = false,
+    /// add-field-attribute-reflection: user attributes applied to this field
+    /// (each later backed by a synthesized factory func; FactoryFunc filled by
+    /// AttributeFactorySynthesizer). Null = no attributes.
+    List<AttributeApp>? Attributes = null);
 
 // ── Function modifiers ────────────────────────────────────────────────────────
 

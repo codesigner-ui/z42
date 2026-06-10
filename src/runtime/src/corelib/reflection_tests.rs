@@ -161,9 +161,56 @@ fn static_fields_accessor_reads_cold() {
     td.cold_mut().static_fields = Box::new([FieldDesc {
         name: "count".to_string(),
         type_tag: "int".to_string(),
+        attributes: Box::new([]),
     }]);
     assert_eq!(td.static_fields().len(), 1);
     assert_eq!(td.static_fields()[0].name, "count");
+}
+
+#[test]
+fn field_custom_attributes_lenient_for_bad_qualified() {
+    // Non-string / dotless / unknown-class qualified names → empty, never bail.
+    let c = ctx();
+    assert_eq!(array_len(&builtin_field_custom_attributes(&c, &[Value::I64(7)]).unwrap()), 0);
+    assert_eq!(
+        array_len(&builtin_field_custom_attributes(&c, &[Value::Str("nodot".into())]).unwrap()),
+        0
+    );
+    assert_eq!(
+        array_len(&builtin_field_custom_attributes(&c, &[Value::Str("Unknown.field".into())]).unwrap()),
+        0
+    );
+}
+
+#[test]
+fn field_attributes_accessor_reads_cold() {
+    use crate::metadata::bytecode::AttributeRef;
+    use crate::metadata::TypeDesc;
+    // No cold → empty.
+    assert!(bare_td("Demo.Plain").field_attributes().is_empty());
+    // Cold with one field's attrs → accessor finds it by name.
+    let mut td = TypeDesc {
+        name: "Demo.C".to_string(),
+        base_name: None,
+        class_flags: 0,
+        fields: Vec::new(),
+        field_index: NameIndex::new(),
+        vtable: Vec::new(),
+        vtable_index: NameIndex::new(),
+        cold: None,
+        id: TypeId::UNRESOLVED,
+    };
+    td.cold_mut().field_attributes = Box::new([(
+        "x".into(),
+        Box::new([AttributeRef {
+            type_name: "Demo.A".to_string(),
+            factory_func: "__attr$fld$C$x$0".to_string(),
+        }]) as Box<[_]>,
+    )]);
+    let fa = td.field_attributes();
+    assert_eq!(fa.len(), 1);
+    assert_eq!(fa[0].0.as_ref(), "x");
+    assert_eq!(fa[0].1.len(), 1);
 }
 
 #[test]

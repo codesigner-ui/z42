@@ -87,6 +87,7 @@ impl Module {
             type_param_constraints: c.type_param_constraints.clone(),
             custom_attributes:      c.custom_attributes.clone(),
             static_fields:          c.static_fields.clone(),
+            field_attributes:       c.field_attributes.clone(),
         }));
         let rebuilt = Arc::new(TypeDesc {
             name: td.name.clone(),
@@ -214,6 +215,11 @@ pub struct FieldDesc {
     pub name: String,
     #[serde(rename = "type")]
     pub type_tag: String,
+    /// add-field-attribute-reflection (zbc 1.14): user attributes applied to
+    /// this field. Surfaced by `FieldInfo.GetCustomAttributes()` (the loader
+    /// indexes these into `TypeDescCold::field_attributes`).
+    #[serde(default)]
+    pub attributes: Box<[AttributeRef]>,
 }
 
 /// Format a function's stack-trace display name with parameter signature.

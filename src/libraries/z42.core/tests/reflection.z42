@@ -53,6 +53,17 @@ class FieldHolder {
     public static int staticVal;
 }
 
+// add-field-attribute-reflection: field-level user attributes.
+class FieldTag : Std.Attribute {
+    public string Note;
+    public FieldTag(string note) { this.Note = note; }
+}
+
+class TaggedFields {
+    [FieldTag("hot")] public int marked;
+    public int unmarked;
+}
+
 [Test]
 void test_gettype_name_and_fullname() {
     Derived d = new Derived();
@@ -221,4 +232,25 @@ void test_getfields_includes_static() {
     }
     Assert.True(sawInstance);
     Assert.True(sawStatic);
+}
+
+[Test]
+void test_field_custom_attributes() {
+    Type t = typeof(TaggedFields);
+    FieldInfo[] fields = t.GetFields();
+    bool checkedMarked = false;
+    foreach (var f in fields) {
+        if (f.Name == "marked") {
+            checkedMarked = true;
+            Std.Attribute[] attrs = f.GetCustomAttributes();
+            Assert.Equal(1, attrs.Length);
+            FieldTag tag = (FieldTag) f.GetAttribute(typeof(FieldTag));
+            Assert.Equal("hot", tag.Note);
+        }
+        if (f.Name == "unmarked") {
+            Std.Attribute[] none = f.GetCustomAttributes();
+            Assert.Equal(0, none.Length);
+        }
+    }
+    Assert.True(checkedMarked);
 }

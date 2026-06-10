@@ -395,7 +395,7 @@ public static partial class ZbcReader
                 string fldName = P(pool, r.ReadUInt32());
                 r.ReadByte();                                      // type_tag (hint; ignored — string is authoritative since 1.7)
                 string fldType = P(pool, r.ReadUInt32());          // 1.7 align-zbc-reader-writer-asymmetry
-                fields.Add(new IrFieldDesc(fldName, fldType));
+                fields.Add(new IrFieldDesc(fldName, fldType, ReadAttrRefs(r, pool)));  // 1.14 field attrs
             }
             // Generic type parameters (L3-G1) + per-tp constraints (L3-G3a)
             byte tpCount = r.ReadByte();
@@ -426,7 +426,7 @@ public static partial class ZbcReader
                 string sfName = P(pool, r.ReadUInt32());
                 r.ReadByte();                              // type_tag (hint; string authoritative)
                 string sfType = P(pool, r.ReadUInt32());
-                staticFields!.Add(new IrFieldDesc(sfName, sfType));
+                staticFields!.Add(new IrFieldDesc(sfName, sfType, ReadAttrRefs(r, pool)));  // 1.14 field attrs
             }
             classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes,
                 IsAbstract: (flags & 1) != 0, IsSealed: (flags & 2) != 0,
@@ -434,6 +434,22 @@ public static partial class ZbcReader
                 StaticFields: staticFields));
         }
         return classes;
+    }
+
+    /// add-field-attribute-reflection (zbc 1.14): read a per-field attr-ref
+    /// block (u16 count + (type-name, factory) str-idx pairs). Null when count 0.
+    private static List<IrAttributeRef>? ReadAttrRefs(BinaryReader r, string[] pool)
+    {
+        ushort count = r.ReadUInt16();
+        if (count == 0) return null;
+        var refs = new List<IrAttributeRef>(count);
+        for (int a = 0; a < count; a++)
+        {
+            string typeName    = P(pool, r.ReadUInt32());
+            string factoryFunc = P(pool, r.ReadUInt32());
+            refs.Add(new IrAttributeRef(typeName, factoryFunc));
+        }
+        return refs;
     }
 
     // ── Constraint bundle codec (L3-G3a) ─────────────────────────────────────

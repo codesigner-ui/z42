@@ -69,7 +69,10 @@ public sealed record IrClassDesc(
     /// by `Type.GetFields()` with `FieldInfo.IsStatic = true`.
     List<IrFieldDesc>? StaticFields = null);
 
-public sealed record IrFieldDesc(string Name, string Type);
+public sealed record IrFieldDesc(string Name, string Type,
+    /// add-field-attribute-reflection (zbc 1.14): user attributes applied to
+    /// this field (each backed by a synthesized factory). Null = none.
+    List<IrAttributeRef>? Attributes = null);
 
 /// C3 add-attribute-reflection: one applied attribute, recorded as the
 /// attribute class's qualified name + the qualified name of the synthesized

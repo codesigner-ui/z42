@@ -112,7 +112,7 @@ fn merge_deduplicates_classes_by_name() {
         class_flags: 0,
         name: "Std.Object".to_string(),
         base_class: None,
-        fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string() }].into_boxed_slice(),
+        fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string(), attributes: Box::new([]) }].into_boxed_slice(),
         type_params: Box::new([]),
         type_param_constraints: Box::new([]),
         attributes: Box::new([]),

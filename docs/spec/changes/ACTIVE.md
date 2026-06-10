@@ -8,10 +8,10 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | add-reflection-static-fields 已归档 2026-06-10 → 释放（TYPE section 静态字段块 + zbc 1.13 / zpkg 0.15）|
-| `runtime` | —（空闲）| — | add-reflection-static-fields 已归档 2026-06-10 → 释放（`static_fields` + `builtin_type_fields` 含静态）|
-| `stdlib` | —（空闲）| — | add-reflection-static-fields 已归档 2026-06-10 → 释放（`FieldInfo.IsStatic`）|
-| `z42c` | …→ port-z42c-codegen✅ → port-z42c-zbc-writer | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 类型检查半 1A–2B✅ → **port-z42c-codegen✅ Bound→IR 内存模型 CG-1A–2（已归档 2026-06-09，210 cases）** → **port-z42c-zbc-writer 进行中**（byte-identical .zbc：IrModule→bytes，镜像 ZbcWriter.cs + Tokens）<br>⚠️ **协调（2026-06-09，User 裁决，格式已变更）**：C3 attribute 反射已落地并 bump **.zbc → 1.11**（1.10 TYPE-section per-class attr refs + 1.11 SIGS-section per-function attr refs）+ **.zpkg → 0.13**（含 ZpkgWriter global SIGS 同步）→ 本 port 需**按 1.11 新格式重新镜像 ZbcWriter.cs**（接受 re-port，byte-identical gate 在 re-port 完成前暂红）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-type-flags 再 bump **.zbc → 1.12 / .zpkg → 0.14**（TYPE section 每类追加 `flags:u8`）→ port **直接对齐 1.12**（趁 mid-re-port，同周期不多一轮）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-static-fields 再 bump **.zbc → 1.13 / .zpkg → 0.15**（TYPE section 每类 flags 后追加静态字段块）→ port 对齐 1.13（同 re-port 周期）。 |
+| `compiler` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（字段 attr + zbc 1.14 / zpkg 0.16）|
+| `runtime` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`field_attributes` + `__field_custom_attributes`）|
+| `stdlib` | —（空闲）| — | add-field-attribute-reflection 已归档 2026-06-10 → 释放（`FieldInfo.GetCustomAttributes()`）|
+| `z42c` | …→ port-z42c-codegen✅ → port-z42c-zbc-writer | 2026-06-07 | 自举逐子系统移植（顺序续作，单人）：core✅ → syntax✅ → project（manifest/workspace/路径模板✅）→ semantics 类型检查半 1A–2B✅ → **port-z42c-codegen✅ Bound→IR 内存模型 CG-1A–2（已归档 2026-06-09，210 cases）** → **port-z42c-zbc-writer 进行中**（byte-identical .zbc：IrModule→bytes，镜像 ZbcWriter.cs + Tokens）<br>⚠️ **协调（2026-06-09，User 裁决，格式已变更）**：C3 attribute 反射已落地并 bump **.zbc → 1.11**（1.10 TYPE-section per-class attr refs + 1.11 SIGS-section per-function attr refs）+ **.zpkg → 0.13**（含 ZpkgWriter global SIGS 同步）→ 本 port 需**按 1.11 新格式重新镜像 ZbcWriter.cs**（接受 re-port，byte-identical gate 在 re-port 完成前暂红）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-type-flags 再 bump **.zbc → 1.12 / .zpkg → 0.14**（TYPE section 每类追加 `flags:u8`）→ port **直接对齐 1.12**（趁 mid-re-port，同周期不多一轮）。<br>⚠️ **追加协调（2026-06-10）**：add-reflection-static-fields 再 bump **.zbc → 1.13 / .zpkg → 0.15**（TYPE section 每类 flags 后追加静态字段块）→ port 对齐 1.13（同 re-port 周期）。<br>⚠️ **追加协调（2026-06-10）**：add-field-attribute-reflection 再 bump **.zbc → 1.14 / .zpkg → 0.16**（TYPE section 每字段记录追加 attr refs）→ port 对齐 1.14。 |
 | `toolchain` | port-z42c-core **+ migrate-xtask-launcher-to-std-cli**（协调共占）| 2026-06-07 / 2026-06-10 | port-z42c-core：xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。<br>⚠️ **协调（2026-06-10，User 授权）**：migrate-xtask-launcher-to-std-cli 共占 toolchain，足迹为 xtask Main/build/package/test/deps/bench dispatch + launcher/apphost —— 与 port-z42c-core 的 `xtask_compiler_z42.z42` 非重叠区域，User 裁决可并行。|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -38,4 +38,5 @@
 | ~~add-cli-nested-subcommands~~ | stdlib —— ✅ 已归档 2026-06-10（`Std.Cli` 嵌套 `AddRouter`/`Resolve`/`CommandResolution`；14 新 [Test]；GREEN 269 文件/22 lib）。② xtask/launcher 迁移（合流 migrate-scripts-to-z42）解锁可开 |
 | ~~add-reflection-static-fields~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（`GetFields()` 含静态 + `FieldInfo.IsStatic`；zbc 1.13 / zpkg 0.15，TYPE section 静态字段块；cargo 797/0 + GoldenTests 1553/1553）|
 | migrate-xtask-launcher-to-std-cli | toolchain（2026-06-10 开，与 port-z42c-core 协调共占）；xtask+launcher 迁移 Std.Cli 嵌套 router；package/feature-matrix 提顶层；删 lib 别名；每层 help。消费 add-cli-nested-subcommands |
+| ~~add-field-attribute-reflection~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-10（字段级用户 attribute 反射 `FieldInfo.GetCustomAttributes()`；zbc 1.14 / zpkg 0.16；cargo 799/0 + GoldenTests 1554/1554；参数 attr = follow-up）|
 | plan-0.3.x-three-streams | docs（不上锁） |

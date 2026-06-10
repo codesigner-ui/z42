@@ -1,0 +1,70 @@
+namespace Demo;
+
+using Std;
+using Std.Reflection;
+
+// add-field-attribute-reflection: user attributes applied to fields, reflected
+// via FieldInfo.GetCustomAttributes() — live cached instances, same factory-thunk
+// mechanism as class-level (C3a) / method-level (C3b).
+
+class Doc : Attribute {
+    public string Text;
+    public Doc(string text) { this.Text = text; }
+}
+
+class Route : Attribute {
+    public string Path;
+    public Route(string path) { this.Path = path; }
+}
+
+class Service {
+    [Doc("the id")]
+    [Route("/id")]
+    public int id;
+
+    [Doc("env name")]
+    public static string env;
+
+    public int plain;
+}
+
+FieldInfo findField(FieldInfo[] fields, string name) {
+    int i = 0;
+    while (i < fields.Length) {
+        FieldInfo f = fields[i];
+        if (f.Name == name) {
+            return f;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+void Main() {
+    Type t = typeof(Service);
+    FieldInfo[] fields = t.GetFields();
+
+    // Instance field `id` has two attributes.
+    FieldInfo idF = findField(fields, "id");
+    Attribute[] attrs = idF.GetCustomAttributes();
+    Assert.Equal(2, attrs.Length);
+    Doc d = (Doc) idF.GetAttribute(typeof(Doc));
+    Assert.Equal("the id", d.Text);
+    Route r = (Route) idF.GetAttribute(typeof(Route));
+    Assert.Equal("/id", r.Path);
+
+    // Static field `env` has one.
+    FieldInfo envF = findField(fields, "env");
+    Assert.True(envF.IsStatic);
+    Doc ed = (Doc) envF.GetAttribute(typeof(Doc));
+    Assert.Equal("env name", ed.Text);
+
+    // Plain field has none; GetAttribute returns null.
+    FieldInfo plainF = findField(fields, "plain");
+    Assert.Equal(0, plainF.GetCustomAttributes().Length);
+    Assert.Null(plainF.GetAttribute(typeof(Doc)));
+
+    // Cached: repeated calls return the same instances.
+    Attribute[] again = idF.GetCustomAttributes();
+    Assert.True(attrs[0] == again[0]);
+}

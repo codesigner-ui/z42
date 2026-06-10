@@ -177,6 +177,11 @@ pub struct TypeDescCold {
     /// (separate from hot `TypeDesc::fields`, the instance layout). Reflection
     /// only — surfaced by `Type.GetFields()` with `FieldInfo.IsStatic = true`.
     pub static_fields: Box<[super::bytecode::FieldDesc]>,
+    /// add-field-attribute-reflection (zbc 1.14): per-field user-attribute refs,
+    /// indexed by field name (instance + static fields with attributes).
+    /// `__field_custom_attributes` resolves a field's factories here.
+    /// Reflection only; empty for classes with no field attributes.
+    pub field_attributes: Box<[(Box<str>, Box<[super::bytecode::AttributeRef]>)]>,
 }
 
 impl TypeDesc {
@@ -197,6 +202,8 @@ impl TypeDesc {
     #[inline] pub fn custom_attributes(&self)      -> &[super::bytecode::AttributeRef]          { self.cold_slice(|c| &c.custom_attributes) }
     /// add-reflection-static-fields: the class's static fields (reflection only).
     #[inline] pub fn static_fields(&self)          -> &[super::bytecode::FieldDesc]             { self.cold_slice(|c| &c.static_fields) }
+    /// add-field-attribute-reflection: per-field attr refs (field name → refs).
+    #[inline] pub fn field_attributes(&self)       -> &[(Box<str>, Box<[super::bytecode::AttributeRef]>)] { self.cold_slice(|c| &c.field_attributes) }
 
     /// Lazy-init the cold side-table for mutation.
     #[inline]

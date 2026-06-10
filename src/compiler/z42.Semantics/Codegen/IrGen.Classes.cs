@@ -45,8 +45,7 @@ public sealed partial class IrGen
         if (attrs is { Count: 0 }) attrs = null;
 
         return new(QualifyName(shortName), baseClass,
-            cls.Fields.Where(f => !f.IsStatic)
-                .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList(),
+            cls.Fields.Where(f => !f.IsStatic).Select(EmitFieldDesc).ToList(),
             cls.TypeParams?.ToList(),
             BuildConstraintList(shortName, cls.TypeParams, _semanticModel?.ClassConstraints),
             attrs,
@@ -55,8 +54,21 @@ public sealed partial class IrGen
             IsStruct: cls.IsStruct, IsRecord: cls.IsRecord,
             // add-reflection-static-fields (zbc 1.13): static fields, separate
             // from the instance `Fields` list above.
-            StaticFields: cls.Fields.Where(f => f.IsStatic)
-                .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
+            StaticFields: cls.Fields.Where(f => f.IsStatic).Select(EmitFieldDesc).ToList());
+    }
+
+    /// add-field-attribute-reflection (zbc 1.14): build an IrFieldDesc carrying
+    /// the field's user-attribute refs (each → its synthesized factory func).
+    private IrFieldDesc EmitFieldDesc(FieldDecl f)
+    {
+        var fattrs = f.Attributes
+            ?.Where(a => a.FactoryFunc is not null)
+            .Select(a => new IrAttributeRef(
+                ((IEmitterContext)this).QualifyClassName(a.Name),
+                QualifyName(a.FactoryFunc!)))
+            .ToList();
+        if (fattrs is { Count: 0 }) fattrs = null;
+        return new IrFieldDesc(f.Name, TypeName(f.Type), fattrs);
     }
 
     /// (L3-G3a) Build a parallel list of IrConstraintBundle aligned with `typeParams`.
