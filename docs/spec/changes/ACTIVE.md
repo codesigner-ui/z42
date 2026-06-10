@@ -9,9 +9,9 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17 SIGS per-param 块；dotnet 1556/1556 + e2e）。⚠️ 暴露 pre-existing 多文件 project-build 命名空间双重限定 bug（非本 change，待独立 fix；见 memory）|
-| `runtime` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（zbc_reader SIGS per-param + `__param_custom_attributes`；cargo 757+21）|
-| `stdlib` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()` / `GetAttribute(Type)`）|
-| `z42c` | **port-z42c-instance-import（DRAFT 待审）** | 2026-06-11 | import 归档接力。实例方法跨包命中链：receiver-aware 守卫（vtable 赢）+ VCall 依赖追踪 + DepIndex instance 捷径（prim receiver）+ typecheck prim 吸收 → corpus 扩 StringBuilder/Substring 第 4 对账工程 |
+| `runtime` | add-pal-fs | 2026-06-11 | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`build_type` 写继承 `Name` 槽 + 移除 `builtin_type_name`；cargo 759+21）。add-pal-fs 继续持有（PAL Phase 2，文件零重叠）|
+| `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
+| `z42c` | —（空闲）| — | 自举主线全归档：…→import✅→**port-z42c-instance-import✅ 已归档 2026-06-11**（实例跨包链：receiver-aware VCall+依赖追踪 / prim→DepIndex FQ / prim 包装类 typecheck；textapp 对账 → gate zpkg 4/4）。下一步候选：char 字面量前端链 / interface·异常·闭包 typecheck+codegen / 扩 corpus |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -26,7 +26,7 @@
 | ~~port-z42c-zpkg-build~~ | z42c —— ✅ 已归档 2026-06-10（z42c build 端到端+直跑；e1ff3503）|
 | ~~port-z42c-tsig~~ | z42c —— ✅ 已归档 2026-06-10（zpkg 全文件 byte-identical 2/2；05e615cf）|
 | ~~port-z42c-import~~ | z42c —— ✅ 已归档 2026-06-10（hello-stdlib byte-identical + import e2e；a1fa39d8）|
-| port-z42c-instance-import | z42c（2026-06-11 开；import 归档接力；DRAFT 待审）|
+| ~~port-z42c-instance-import~~ | z42c —— ✅ 已归档 2026-06-11（textapp byte-identical；gate 4/4）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
@@ -50,4 +50,5 @@
 | ~~fix-chained-property-dispatch~~ | compiler —— ✅ 已归档 2026-06-10（链式 getter 派发 `obj.GetType().BaseType.Name`；唯一根因 P1=Object stub GetType 返 Unknown→改取真实 Std.Type；纯 typecheck，无 zbc 格式/字节漂移；dotnet GoldenTests 1555/1555 + 链式 e2e 全过）|
 | ~~add-parameter-attribute-reflection~~ | compiler + runtime + stdlib + z42c —— ✅ 已归档 2026-06-10（参数级用户 attribute 反射 `ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17，SIGS 每参数 attr-ref 块；z42c writer 同步；dotnet 1556/1556 + param_attributes.z42 e2e + cargo 757+21 + format 78。xtask gate 阻塞于 pre-existing 多文件 project-build 命名空间双重限定 bug → User 裁决单独 fix change 跟踪，本 change 走 dotnet 权威门）|
 | fix-multifile-project-namespace-qualify | compiler（待开；pre-existing bug，见 memory `reference_multifile_project_namespace_double_qualify_bug`）|
+| add-pal-fs | runtime（PAL Phase 2：corelib/fs.rs + pal/fs.rs；与 align-type-memberinfo-hierarchy 例外共存，文件零重叠）|
 | plan-0.3.x-three-streams | docs（不上锁） |
