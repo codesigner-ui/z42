@@ -8,7 +8,7 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | fix-qualified-base-upcast 调查后放弃（2026-06-10）：根因非 FQN-upcast 而是合成 attribute factory 返回类型回落 PrimType 的 name-resolution 缺陷，过深，留 reflection.md Deferred `attr-factory-return-type-resolution`，workaround（unqualified 基名）已在 |
+| `compiler` | —（空闲）| — | fix-chained-property-dispatch 调查后放弃（2026-06-10）：根因精确（2-part：Object stub GetType 返 Unknown + ResolveTypeName FQN→PrimType），但 3 次实现尝试逐层揭深坑（FQN→key 短/FQN 双键→MergeImported 在 CollectClasses 前的时序→correctly-timed 直接 fixup 仍不生效）。与 attr-factory-return-type-resolution 同族「过深」。完整发现入 reflection.md Deferred；workaround（链式先赋值局部变量）已在 |
 | `runtime` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`__type_is_value_type` / `__type_is_record`，无格式变更）|
 | `stdlib` | —（空闲）| — | add-reflection-value-record-flags 已归档 2026-06-10 → 释放（`Type.IsValueType` / `Type.IsRecord`）|
 | `z42c` | **port-z42c-zpkg-build（DRAFT 待审）** | 2026-06-10 | 自举主线（前序全归档：core→syntax→project 机械段→semantics→codegen→zbc-writer→source-spans✅）。本 change：`z42c build <toml>` 端到端产 **byte-identical packed .zpkg**（BP-0 IrGen ns 限定 / BP-R 段构建器共享化 / project 源发现 / ZpkgBuilder+Writer / driver build / packed-minimal golden + e2e build byte-compare）。design DRAFT 待 User 审批，未批不动代码 |
