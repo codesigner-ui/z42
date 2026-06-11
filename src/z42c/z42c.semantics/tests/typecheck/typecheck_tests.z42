@@ -458,3 +458,17 @@ void test_char_literal_typecheck() {
                  SemanticDump.DumpBody(src, "C.M"));
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── try/catch/throw（port-z42c-try）─────────────────────────────────────────
+[Test]
+void test_try_catch_finally_bind() {
+    string src = "class E { } class C { int M() { int r = 0; try { throw new E(); } catch (E ex) { r = 1; } finally { r = r + 1; } return r; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_catch_var_in_scope() {
+    // catch 变量类型 = 解析的异常类；体内可用
+    string src = "class E { public int Code; } class C { int M() { try { return 1; } catch (E ex) { return ex.Code; } } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

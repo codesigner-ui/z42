@@ -24,6 +24,7 @@ public sealed class EmitContext {
     public DependencyIndex Deps;       // 跨包调用索引（CI-4；null=无依赖）
     public StrMap ImportedClassNs;     // imported 短类名 → ns（StrBox；IC-1：VCall 依赖追踪 + ObjNew FQ）
     public string[] UsedDepNs; public int UsedDepNsCount;   // codegen 期实际命中的依赖 ns（DEPS 用，首现序）
+    public IrExcEntry[] ExcTable; public int ExcCount;       // 异常表（port-z42c-try）
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
         this.Symbols = symbols; this.Gen = gen;
@@ -37,6 +38,17 @@ public sealed class EmitContext {
         this.Deps = null;
         this.ImportedClassNs = null;
         this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0;
+        this.ExcTable = new IrExcEntry[2]; this.ExcCount = 0;
+    }
+
+    public void AddExc(IrExcEntry e) {
+        if (this.ExcCount == this.ExcTable.Length) {
+            IrExcEntry[] b = new IrExcEntry[this.ExcTable.Length * 2];
+            int k = 0; while (k < this.ExcCount) { b[k] = this.ExcTable[k]; k = k + 1; }
+            this.ExcTable = b;
+        }
+        this.ExcTable[this.ExcCount] = e;
+        this.ExcCount = this.ExcCount + 1;
     }
 
     // 记录命中的依赖 ns（首现序去重；镜像 C# TrackDepNamespace）。

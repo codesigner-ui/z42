@@ -329,3 +329,11 @@ void test_char_const() {
     Assert.Equal("fn @F(0) -> char {\nentry:\n  %0 = const.char x\n  ret %0\n}",
                  IrDump.DumpFunc(src, "F"));
 }
+
+// ── try/throw（port-z42c-try）────────────────────────────────────────────────
+[Test]
+void test_throw_lowering() {
+    string src = "class E { } class C { void M() { throw new E(); } }";
+    Assert.Equal("fn @C.M(1) -> void {\nentry:\n  %1 = obj_new E()\n  throw %1\n}",
+                 IrDump.DumpFunc(src, "C.M"));
+}

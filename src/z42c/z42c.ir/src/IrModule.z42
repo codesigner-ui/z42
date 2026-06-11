@@ -27,6 +27,21 @@ public sealed class IrClassDesc {
     }
 }
 
+// 异常表条目（port-z42c-try；镜像 C# IrExceptionEntry：标签存名，写出时映射块号）。
+public sealed class IrExcEntry {
+    public string   TryStart;
+    public string   TryEnd;
+    public string   CatchLabel;
+    public bool     HasCatchType;
+    public string   CatchType;    // FQ 类名 / "*"（catch-all）；HasCatchType=false → 无类型（wire 0xFFFFFFFF）
+    public TypedReg CatchReg;
+    public IrExcEntry(string tryStart, string tryEnd, string catchLabel,
+                      bool hasCatchType, string catchType, TypedReg catchReg) {
+        this.TryStart = tryStart; this.TryEnd = tryEnd; this.CatchLabel = catchLabel;
+        this.HasCatchType = hasCatchType; this.CatchType = catchType; this.CatchReg = catchReg;
+    }
+}
+
 // 基本块：label + 直线指令 + 终结符（显式，无 fall-through）。
 // Instrs/Term 是其他文件的基类（IrInstr/IrTerminator，含 virtual Dump）→ 跨文件引用基类 OK。
 public sealed class IrBlock {
@@ -85,6 +100,8 @@ public sealed class IrFunction {
     public string[]  ParamTypes;      // 每形参（含 this 不计）解析后类型名
     public int       ParamTypeCount;
     public int[]     RegTypes;        // reg id → IrType 标签（REGT section）
+    public IrExcEntry[] ExcTable;     // 异常表（port-z42c-try；可变公字段——16 参 ctor 已是上限，调用方按需赋值）
+    public int          ExcCount;
     public int       RegTypeCount;
     public IrLineEntry[]     LineTable;  public int LineCount;       // DBUG 行表（add-z42c-source-spans）
     public IrLocalVarEntry[] LocalVars;  public int LocalVarCount;   // DBUG 局部变量表
@@ -98,6 +115,7 @@ public sealed class IrFunction {
         this.Blocks = blocks; this.BlockCount = blockCount; this.MaxReg = maxReg;
         this.ExecMode = execMode; this.ParamTypes = paramTypes; this.ParamTypeCount = paramTypeCount;
         this.RegTypes = regTypes; this.RegTypeCount = regTypeCount;
+        this.ExcTable = new IrExcEntry[0]; this.ExcCount = 0;
         this.LineTable = lineTable; this.LineCount = lineCount;
         this.LocalVars = localVars; this.LocalVarCount = localVarCount;
     }

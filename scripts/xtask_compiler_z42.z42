@@ -299,10 +299,39 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
     if (rc != 0) { Console.WriteLine("  ✗ charcheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
     Console.WriteLine("  ✓ charcheck.zbc: char literals/compare computed correctly");
 
-    string[] cmpSrcs = new string[4];
-    cmpSrcs[0] = okSrc; cmpSrcs[1] = callSrc; cmpSrcs[2] = typeSrc; cmpSrcs[3] = charSrc;
+    // trycheck（port-z42c-try）：本地异常类 + throw/catch/finally + oracle
+    string trySrc = Path.Join(e2eDir, "trycheck.z42");
+    File.WriteAllText(trySrc, "class Exception { public string Message; }\n"
+        + "class MyErr : Exception { }\n"
+        + "\n"
+        + "int Main() {\n"
+        + "    int ok = 0;\n"
+        + "    int fin = 0;\n"
+        + "    try {\n"
+        + "        throw new MyErr();\n"
+        + "    } catch (MyErr e) {\n"
+        + "        ok = 1;\n"
+        + "    } finally {\n"
+        + "        fin = 1;\n"
+        + "    }\n"
+        + "    int total = 0;\n"
+        + "    if (ok == 1) { if (fin == 1) { total = 1; } }\n"
+        + "    return 100 / total;\n"
+        + "}\n");
+    string tryZbc = Path.Join(e2eDir, "trycheck.zbc");
+    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(trySrc).Arg(tryZbc)
+        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ trycheck emit failed"); return 1; }
+    rc = new Process(vm).Arg(tryZbc).Arg("Main")
+        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
+        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ trycheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
+    Console.WriteLine("  ✓ trycheck.zbc: throw/catch/finally computed correctly");
+
+    string[] cmpSrcs = new string[5];
+    cmpSrcs[0] = okSrc; cmpSrcs[1] = callSrc; cmpSrcs[2] = typeSrc; cmpSrcs[3] = charSrc; cmpSrcs[4] = trySrc;
     int ci = 0;
-    while (ci < 4) {
+    while (ci < 5) {
         string csOut = cmpSrcs[ci] + ".cs.zbc";
         string zOut  = cmpSrcs[ci] + ".z42c.zbc";
         rc = new Process("dotnet")
@@ -321,7 +350,7 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         }
         ci = ci + 1;
     }
-    Console.WriteLine("  ✓ byte-compare: 4/4 sources byte-identical (z42c vs C#, incl. DBUG + char)");
+    Console.WriteLine("  ✓ byte-compare: 5/5 sources byte-identical (z42c vs C#, incl. DBUG + char + exceptions)");
 
     // build e2e（port-z42c-zpkg-build）：z42c build 产 packed zpkg → z42vm 直跑（entry 烤入）。
     // zpkg 级 byte-compare 对真 C# CLI 还差 TSIG/IMPL（follow-up change）；此处验证可执行性

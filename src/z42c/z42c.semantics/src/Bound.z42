@@ -295,6 +295,51 @@ public sealed class BoundIf : BoundStmt {
     }
 }
 
+public sealed class BoundCatchClause {
+    public Span     Span;
+    public bool     HasType;
+    public string   ExTypeName;   // 解析后 FQ 候选（QualifyClass 在 codegen；此处存解析类名或 ""）
+    public bool     HasVar;
+    public string   VarName;
+    public BoundStmt Body;
+    public BoundCatchClause(bool hasType, string exTypeName, bool hasVar, string varName, BoundStmt body, Span span) {
+        this.Span = span; this.HasType = hasType; this.ExTypeName = exTypeName;
+        this.HasVar = hasVar; this.VarName = varName; this.Body = body;
+    }
+    public string Dump() {
+        string s = "(catch";
+        if (this.HasType) { s = s + " :" + this.ExTypeName; }
+        if (this.HasVar) { s = s + " " + this.VarName; }
+        return s + " " + this.Body.Dump() + ")";
+    }
+}
+
+public sealed class BoundTry : BoundStmt {
+    public BoundStmt           TryBody;
+    public BoundCatchClause[]  Catches;
+    public int                 CatchCount;
+    public bool                HasFinally;
+    public BoundStmt           Finally;
+    public BoundTry(BoundStmt tryBody, BoundCatchClause[] catches, int catchCount,
+                    bool hasFinally, BoundStmt finallyBody, Span span) {
+        this.Span = span; this.TryBody = tryBody; this.Catches = catches; this.CatchCount = catchCount;
+        this.HasFinally = hasFinally; this.Finally = finallyBody;
+    }
+    public override string Dump() {
+        string s = "(try " + this.TryBody.Dump();
+        int i = 0;
+        while (i < this.CatchCount) { s = s + " " + this.Catches[i].Dump(); i = i + 1; }
+        if (this.HasFinally) { s = s + " (finally " + this.Finally.Dump() + ")"; }
+        return s + ")";
+    }
+}
+
+public sealed class BoundThrow : BoundStmt {
+    public BoundExpr E;
+    public BoundThrow(BoundExpr e, Span span) { this.Span = span; this.E = e; }
+    public override string Dump() { return "(throw " + this.E.Dump() + ")"; }
+}
+
 public sealed class BoundWhile : BoundStmt {
     public BoundExpr Cond;
     public BoundStmt Body;
