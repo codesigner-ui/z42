@@ -1,0 +1,25 @@
+// reflection-future-parameter-names: ParameterInfo.Name surfaces the real
+// source parameter name from debug symbols (Function debug local-vars, reg ==
+// param index), falling back to arg{n} when debug symbols are absent.
+using Std.Reflection;
+
+class Svc {
+    public int Add(int alpha, int beta) { return alpha + beta; }
+}
+
+void Main() {
+    Type t = typeof(Svc);
+    bool checkedAdd = false;
+    foreach (var m in t.GetMethods()) {
+        if (m.Name == "Add") {
+            checkedAdd = true;
+            ParameterInfo[] ps = m.GetParameters();
+            Assert.Equal(2, ps.Length);
+            Assert.Equal("alpha", ps[0].Name);
+            Assert.Equal(0, ps[0].Position);
+            Assert.Equal("beta", ps[1].Name);
+            Assert.Equal(1, ps[1].Position);
+        }
+    }
+    Assert.True(checkedAdd);
+}

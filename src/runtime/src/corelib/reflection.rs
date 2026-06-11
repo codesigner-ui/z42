@@ -445,18 +445,25 @@ fn build_method_info(
     is_virtual: bool,
 ) -> Result<Value> {
     let (ret_tag, is_static, params) = match resolve_func_sig(ctx, qualified) {
-        Some((param_count, ret_type, fn_is_static, param_types)) => {
+        Some((param_count, ret_type, fn_is_static, param_types, param_names)) => {
             // Instance methods carry `this` at param 0 — skip it.
             let start = if fn_is_static { 0 } else { 1 };
             let mut params = Vec::new();
             for i in start..param_count {
                 let tag = param_types.get(i).map(|s| s.as_str()).unwrap_or("?");
                 let pos = (i - start) as i64;
+                // reflection-future-parameter-names: real source name from debug
+                // symbols when present; `arg{n}` fallback otherwise.
+                let name = param_names
+                    .get(i)
+                    .filter(|n| !n.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("arg{pos}"));
                 params.push(alloc_named(
                     ctx,
                     STD_REFLECTION_PARAMINFO,
                     &[
-                        ("Name", Value::Str(format!("arg{pos}").into())),
+                        ("Name", Value::Str(name.into())),
                         ("ParameterType", make_type_from_name(ctx, tag)),
                         ("Position", Value::I64(pos)),
                         // add-parameter-attribute-reflection: backing func name so
@@ -494,27 +501,31 @@ fn build_method_info(
 fn resolve_func_sig(
     ctx: &VmContext,
     qualified: &str,
-) -> Option<(usize, String, bool, Vec<String>)> {
+) -> Option<(usize, String, bool, Vec<String>, Vec<String>)> {
+    // reflection-future-parameter-names: parameters occupy registers
+    // 0..param_count on entry, so a param's source name is the debug local-var
+    // whose `reg` matches its index. Empty string when no debug symbols are
+    // present (the builder falls back to `arg{n}`).
+    fn extract(
+        f: &crate::metadata::bytecode::Function,
+    ) -> (usize, String, bool, Vec<String>, Vec<String>) {
+        let mut names = vec![String::new(); f.param_count];
+        for lv in f.local_vars() {
+            let r = lv.reg as usize;
+            if r < f.param_count {
+                names[r] = lv.name.clone();
+            }
+        }
+        (f.param_count, f.ret_type.clone(), f.is_static, f.param_types().to_vec(), names)
+    }
     if let Some(m) = ctx.module() {
         if let Some(&i) = m.func_index.get(qualified) {
             if let Some(f) = m.functions.get(i) {
-                return Some((
-                    f.param_count,
-                    f.ret_type.clone(),
-                    f.is_static,
-                    f.param_types().to_vec(),
-                ));
+                return Some(extract(f));
             }
         }
     }
-    ctx.try_lookup_function(qualified).map(|f| {
-        (
-            f.param_count,
-            f.ret_type.clone(),
-            f.is_static,
-            f.param_types().to_vec(),
-        )
-    })
+    ctx.try_lookup_function(qualified).map(|f| extract(&f))
 }
 
 // ── Property reflection ─────────────────────────────────────────────────────
@@ -592,7 +603,7 @@ fn accumulate_property(ctx: &VmContext, simple: &str, qualified: &str, props: &m
     let sig = resolve_func_sig(ctx, qualified);
     if is_get {
         let ty = match &sig {
-            Some((pc, ret, is_static, _)) => {
+            Some((pc, ret, is_static, _, _)) => {
                 if pc.saturating_sub(if *is_static { 0 } else { 1 }) != 0 {
                     return; // get_X(args) — a regular method, not a property
                 }
@@ -603,7 +614,7 @@ fn accumulate_property(ctx: &VmContext, simple: &str, qualified: &str, props: &m
         upsert_prop(props, prop_name).getter_type = Some(ty);
     } else {
         let ty = match &sig {
-            Some((pc, _, is_static, ptypes)) => {
+            Some((pc, _, is_static, ptypes, _)) => {
                 let base = if *is_static { 0 } else { 1 };
                 if pc.saturating_sub(base) != 1 {
                     return; // set_X with != 1 value param — a regular method

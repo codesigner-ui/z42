@@ -60,4 +60,5 @@
 | ~~slim-instruction-enum~~ | runtime —— ✅ 已归档 2026-06-11（`Instruction` enum 96B→32B：装箱 15 个带 String 冷变体 `Variant(Box<XxxInsn>)`，热算术变体 inline；internally-tagged newtype 自动摊平保 JSON wire format；**无 zbc bump**，fixture 6/6 无字节 delta；cargo 806/0 + vm goldens 346/0）|
 | ~~cache-cross-zpkg-call-target~~ | runtime —— ✅ 已归档 2026-06-11（review.md C7：per-site `OnceLock<Arc<Function>>` cross-zpkg Call 目标缓存，平行 method_tokens；首次解析后借用，消除每调用 `try_lookup_function` String hash；本模块快路径零额外开销；OnceLock write-once、per-site 无全局并发表；**无格式 bump**；cargo lib 764/0 + vm goldens 346/0 + cross-zpkg 2/0）|
 | ~~add-reflection-inherited-static-fields~~ | runtime —— ✅ 已归档 2026-06-11（`Type.GetFields()` 含继承静态字段：`builtin_type_fields` 沿 base 链聚合祖先类 static_fields；对齐 C# 默认含继承公共静态；无格式 bump；dotnet 1559/1559 + inherited_static_fields.z42 e2e + cargo 764+21）|
+| ~~add-reflection-parameter-names~~ | runtime —— ✅ 已归档 2026-06-11（`ParameterInfo.Name` 返真实源参数名：`resolve_func_sig` 读 Function DBUG local-vars（reg==参数索引），无符号回落 `arg{n}`；无格式 bump；dotnet 1560/1560 + parameter_names.z42 e2e + cargo 764+21）|
 | plan-0.3.x-three-streams | docs（不上锁） |
