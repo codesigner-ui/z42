@@ -11,7 +11,7 @@
 | `compiler` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `typeof(T[])` VisitTypeof emit `<elem>[]`（替 `Std.Array`），让运行期可还原元素类型。DRAFT 待审 |
 | `runtime` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `make_type_from_name` 识别 `[]` 后缀 → 建 array Type（`__isArray`/`__elementName`）；`__type_element` builtin；object.rs arr.GetType 标 IsArray。无格式 bump |
 | `stdlib` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `Std.Type` 加 `IsArray` + `GetElementType()`。无格式 bump |
-| `z42c` | —（空闲）| — | 自举主线全归档：…→closures✅→**port-z42c-package-symbols✅ 已归档 2026-06-11**（同包跨文件+arr.Length；zpkg 对账 6/6）。自举首包剩两缺口：G3 静态字段/常量访问 + G4 数组创建 → 下一 change |
+| `z42c` | **port-z42c-statics-arrays（DRAFT 待审）** | 2026-06-12 | 自举首包临门：G3 静态字段（StaticGet/Set+__static_init__ 首位合成）+ G4 数组创建（ArrayNew 0x80）→ sacheck 对账 7/7 + **z42c.core 自编译冒烟 gate 步** |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -32,6 +32,7 @@
 | ~~port-z42c-interface~~ | z42c —— ✅ 已归档 2026-06-11（ifacecheck byte-identical；zbc 6/6）|
 | ~~port-z42c-closures~~ | z42c —— ✅ 已归档 2026-06-11（closcheck byte-identical；zpkg 5/5）|
 | ~~port-z42c-package-symbols~~ | z42c —— ✅ 已归档 2026-06-11（multifile byte-identical；zpkg 6/6）|
+| port-z42c-statics-arrays | z42c（2026-06-12 开；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
