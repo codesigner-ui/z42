@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use z42::metadata::{
-    BasicBlock, ExecMode, Function, Instruction, Module, Terminator, Value,
+    BasicBlock, CallNativeInsn, ExecMode, FieldGetInsn, Function, Instruction, Module, Terminator, Value,
 };
 use z42::vm_context::VmContext;
 
@@ -55,7 +55,7 @@ fn pin_str_then_field_len_returns_byte_length() {
         vec![
             Instruction::ConstStr { dst: 0, idx: 0 },           // r0 = "hello world"
             Instruction::PinPtr { dst: 1, src: 0 },             // r1 = PinnedView{...}
-            Instruction::FieldGet { dst: 2, obj: 1, field_name: "len".to_string() },
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst: 2, obj: 1, field_name: "len".to_string() })),
             Instruction::UnpinPtr { pinned: 1 },
         ],
         Terminator::Ret { reg: Some(2) },
@@ -71,7 +71,7 @@ fn pin_str_then_field_ptr_returns_nonzero() {
         vec![
             Instruction::ConstStr { dst: 0, idx: 0 },
             Instruction::PinPtr { dst: 1, src: 0 },
-            Instruction::FieldGet { dst: 2, obj: 1, field_name: "ptr".to_string() },
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst: 2, obj: 1, field_name: "ptr".to_string() })),
             Instruction::UnpinPtr { pinned: 1 },
         ],
         Terminator::Ret { reg: Some(2) },
@@ -90,7 +90,7 @@ fn pin_view_unknown_field_traps() {
         vec![
             Instruction::ConstStr { dst: 0, idx: 0 },
             Instruction::PinPtr { dst: 1, src: 0 },
-            Instruction::FieldGet { dst: 2, obj: 1, field_name: "lulz".to_string() },
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst: 2, obj: 1, field_name: "lulz".to_string() })),
         ],
         Terminator::Ret { reg: Some(2) },
     );
@@ -109,7 +109,7 @@ fn pin_empty_array_returns_zero_length_view() {
         vec![
             Instruction::ArrayNewLit { dst: 0, elems: vec![].into() },
             Instruction::PinPtr { dst: 1, src: 0 },
-            Instruction::FieldGet { dst: 2, obj: 1, field_name: "len".to_string() },
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst: 2, obj: 1, field_name: "len".to_string() })),
             Instruction::UnpinPtr { pinned: 1 },
         ],
         Terminator::Ret { reg: Some(2) },
@@ -130,7 +130,7 @@ fn pin_array_u8_snapshots_bytes() {
             Instruction::ConstI64 { dst: 1, val: 0x69 }, // 'i'
             Instruction::ArrayNewLit { dst: 2, elems: vec![0, 1].into() },
             Instruction::PinPtr { dst: 3, src: 2 },
-            Instruction::FieldGet { dst: 4, obj: 3, field_name: "len".to_string() },
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst: 4, obj: 3, field_name: "len".to_string() })),
             Instruction::UnpinPtr { pinned: 3 },
         ],
         Terminator::Ret { reg: Some(4) },
@@ -192,7 +192,7 @@ fn unpin_then_str_still_usable() {
             Instruction::ConstStr { dst: 0, idx: 0 },
             Instruction::PinPtr { dst: 1, src: 0 },
             Instruction::UnpinPtr { pinned: 1 },
-            Instruction::FieldGet { dst: 2, obj: 0, field_name: "Length".to_string() },
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst: 2, obj: 0, field_name: "Length".to_string() })),
         ],
         Terminator::Ret { reg: Some(2) },
     );

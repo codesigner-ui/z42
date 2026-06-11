@@ -263,34 +263,39 @@ pub fn resolve_module(module: &crate::metadata::Module, ctx: &crate::vm_context:
             for (instr_idx, instr) in block.instructions.iter().enumerate() {
                 use crate::metadata::Instruction;
                 let site_idx = match instr {
-                    Instruction::Call { func: name, .. } => {
+                    Instruction::Call(insn) => {
                         let s = method_site_names.len() as u32;
-                        method_site_names.push(name.clone());
+                        method_site_names.push(insn.func.clone());
                         s
                     }
-                    Instruction::Builtin { name, .. } => {
+                    Instruction::Builtin(insn) => {
                         let s = builtin_site_names.len() as u32;
-                        builtin_site_names.push(name.clone());
+                        builtin_site_names.push(insn.name.clone());
                         s
                     }
-                    Instruction::ObjNew { class_name, .. } => {
+                    Instruction::ObjNew(insn) => {
                         let s = type_site_names.len() as u32;
-                        type_site_names.push(class_name.clone());
+                        type_site_names.push(insn.class_name.clone());
                         s
                     }
-                    Instruction::VCall { .. } => {
+                    Instruction::VCall(_) => {
                         let s = vcall_site_count;
                         vcall_site_count += 1;
                         s
                     }
-                    Instruction::FieldGet { .. } | Instruction::FieldSet { .. } => {
+                    Instruction::FieldGet(_) | Instruction::FieldSet(_) => {
                         let s = field_site_count;
                         field_site_count += 1;
                         s
                     }
-                    Instruction::StaticGet { field, .. } | Instruction::StaticSet { field, .. } => {
+                    Instruction::StaticGet(insn) => {
                         let s = static_site_names.len() as u32;
-                        static_site_names.push(field.clone());
+                        static_site_names.push(insn.field.clone());
+                        s
+                    }
+                    Instruction::StaticSet(insn) => {
+                        let s = static_site_names.len() as u32;
+                        static_site_names.push(insn.field.clone());
                         s
                     }
                     _ => UNRESOLVED, // non-token-bearing instruction

@@ -420,6 +420,141 @@ pub struct BasicBlock {
 /// Register index.
 pub type Reg = u32;
 
+// ── Boxed instruction payloads (slim-instruction-enum, 2026-06-11) ───────────
+// Variants carrying a `String` (name-bearing, cold) keep their payload behind a
+// `Box<XxxInsn>` so the `Instruction` enum stays ≤32 B (was ~120 B). Hot
+// register/scalar variants remain inline. JSON wire format is unchanged: an
+// internally-tagged (`tag = "op"`) newtype variant whose inner type is a struct
+// merges the tag into the struct's fields, so `Call(Box<CallInsn>)` serializes
+// to the same `{"op":"call", dst, func, args}` as the old struct variant.
+// See docs/design/runtime/ir.md (hot/cold boxing strategy).
+
+/// Payload for [`Instruction::Call`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CallInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub func: String,
+    #[serde(with = "typed_reg_vec_serde")] pub args: Box<[Reg]>,
+}
+
+/// Payload for [`Instruction::Builtin`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BuiltinInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub name: String,
+    #[serde(with = "typed_reg_vec_serde")] pub args: Box<[Reg]>,
+}
+
+/// Payload for [`Instruction::LoadFn`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoadFnInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub func: String,
+}
+
+/// Payload for [`Instruction::LoadFnCached`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoadFnCachedInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub func: String,
+    pub slot_id: u32,
+}
+
+/// Payload for [`Instruction::MkClos`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MkClosInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub fn_name: String,
+    #[serde(with = "typed_reg_vec_serde")] pub captures: Box<[Reg]>,
+    #[serde(default)] pub stack_alloc: bool,
+}
+
+/// Payload for [`Instruction::ObjNew`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ObjNewInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub class_name: String,
+    pub ctor_name: String,
+    #[serde(with = "typed_reg_vec_serde")] pub args: Box<[Reg]>,
+    /// Resolved generic type-arguments for this allocation (e.g. `["int"]` for
+    /// `new Foo<int>()`); empty for non-generic. `Box<[String]>` (immutable IR).
+    #[serde(default)] pub type_args: Box<[String]>,
+}
+
+/// Payload for [`Instruction::FieldGet`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FieldGetInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    #[serde(with = "typed_reg_serde")] pub obj: Reg,
+    pub field_name: String,
+}
+
+/// Payload for [`Instruction::FieldSet`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FieldSetInsn {
+    #[serde(with = "typed_reg_serde")] pub obj: Reg,
+    pub field_name: String,
+    #[serde(with = "typed_reg_serde")] pub val: Reg,
+}
+
+/// Payload for [`Instruction::VCall`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VCallInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    #[serde(with = "typed_reg_serde")] pub obj: Reg,
+    pub method: String,
+    #[serde(with = "typed_reg_vec_serde")] pub args: Box<[Reg]>,
+}
+
+/// Payload for [`Instruction::IsInstance`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct IsInstanceInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    #[serde(with = "typed_reg_serde")] pub obj: Reg,
+    pub class_name: String,
+}
+
+/// Payload for [`Instruction::AsCast`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AsCastInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    #[serde(with = "typed_reg_serde")] pub obj: Reg,
+    pub class_name: String,
+}
+
+/// Payload for [`Instruction::StaticGet`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StaticGetInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub field: String,
+}
+
+/// Payload for [`Instruction::StaticSet`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StaticSetInsn {
+    pub field: String,
+    #[serde(with = "typed_reg_serde")] pub val: Reg,
+}
+
+/// Payload for [`Instruction::CallNative`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CallNativeInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub module: String,
+    pub type_name: String,
+    pub symbol: String,
+    #[serde(with = "typed_reg_vec_serde")] pub args: Box<[Reg]>,
+}
+
+/// Payload for [`Instruction::LoadFieldAddr`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LoadFieldAddrInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    /// Reg holding the object (must be `Value::Object(GcRef<...>)`).
+    #[serde(with = "typed_reg_serde")] pub obj: Reg,
+    pub field_name: String,
+}
+
 /// SSA instructions.
 /// JSON wire format: {"op": "<snake_case_name>", <named fields...>}
 ///
@@ -576,12 +711,7 @@ pub enum Instruction {
         /// Reg holding the index (must be `Value::I64`).
         #[serde(with = "typed_reg_serde")] idx: Reg,
     },
-    LoadFieldAddr {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        /// Reg holding the object (must be `Value::Object(GcRef<...>)`).
-        #[serde(with = "typed_reg_serde")] obj: Reg,
-        field_name: String,
-    },
+    LoadFieldAddr(Box<LoadFieldAddrInsn>),
     /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): runtime
     /// resolution of `default(T)` where T is a generic type-parameter of the
     /// receiver class. Reads `frame.regs[0]` (this) → `Object → type_desc.type_args[param_index]`,
@@ -611,32 +741,17 @@ pub enum Instruction {
         to_tag: u8,
     },
     // Calls
-    Call {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        func: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
-    },
-    Builtin {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        name: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
-    },
+    Call(Box<CallInsn>),
+    Builtin(Box<BuiltinInsn>),
     /// Push a function-reference value onto a register. The runtime resolves
     /// `func` at call site (current usage: L2 no-capture lambda lifted as a
     /// module-level function). See docs/design/language/closure.md §6.
-    LoadFn {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        func: String,
-    },
+    LoadFn(Box<LoadFnInsn>),
     /// 2026-05-02 add-method-group-conversion (D1b): cached method group
     /// conversion. First execution stores `Value::FuncRef(func)` into VmContext
     /// `func_ref_slots[slot_id]`; subsequent hits read from slot. Same fully-
     /// qualified `func` shares a `slot_id` across all call sites in a module.
-    LoadFnCached {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        func: String,
-        slot_id: u32,
-    },
+    LoadFnCached(Box<LoadFnCachedInsn>),
     /// Indirect call via a register holding a `FuncRef` value. See
     /// docs/design/language/closure.md §6.
     CallIndirect {
@@ -648,12 +763,7 @@ pub enum Instruction {
     /// value and write it to `dst`. See docs/design/language/closure.md §6.
     /// `stack_alloc=true` (impl-closure-l3-escape-stack): VM 走 frame-local
     /// arena → `Value::StackClosure`；否则 heap → `Value::Closure`。
-    MkClos {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        fn_name: String,
-        #[serde(with = "typed_reg_vec_serde")] captures: Box<[Reg]>,
-        #[serde(default)] stack_alloc: bool,
-    },
+    MkClos(Box<MkClosInsn>),
     // Arrays
     /// Allocate a zero-initialised array of `size` elements. Each slot is
     /// filled with the per-type default value derived from `elem_tag`
@@ -693,75 +803,26 @@ pub enum Instruction {
     /// Allocate a new object of `class_name`, calling overload-resolved
     /// ctor `ctor_name` (FQ, 含 `$N` suffix 如有) with `args`. VM 不再做
     /// `${class}.${simple}` 名字推断 — 直查 `func_index[ctor_name]`.
-    ObjNew {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        class_name: String,
-        ctor_name: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
-        /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): resolved
-        /// generic type-arguments for this allocation, e.g. `["int"]` for
-        /// `new Foo<int>()`. VM populates the new instance's
-        /// `ScriptObject.type_args` from this list. Empty for non-generic.
-        ///
-        /// review.md E5.2 (2026-05-26): `Box<[String]>` instead of `Vec<String>`
-        /// — immutable IR; saves 8 B/ObjNew. JIT helper takes `*const String`
-        /// + `usize` from this storage (auto-deref ok since `Box<[T]>` ptr is
-        /// the underlying T-array head).
-        #[serde(default)]
-        type_args: Box<[String]>,
-    },
+    ObjNew(Box<ObjNewInsn>),
     /// Load field `field_name` of object `obj` into `dst`.
-    FieldGet {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_serde")] obj: Reg,
-        field_name: String,
-    },
+    FieldGet(Box<FieldGetInsn>),
     /// Store `val` into field `field_name` of object `obj`.
-    FieldSet {
-        #[serde(with = "typed_reg_serde")] obj: Reg,
-        field_name: String,
-        #[serde(with = "typed_reg_serde")] val: Reg,
-    },
+    FieldSet(Box<FieldSetInsn>),
     /// Virtual dispatch: invoke `method` on runtime class of `obj`, walking base classes.
-    VCall {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_serde")] obj: Reg,
-        method: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
-    },
+    VCall(Box<VCallInsn>),
     /// `expr is ClassName` — dst = true if obj's runtime type is class_name or a subclass.
-    IsInstance {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_serde")] obj: Reg,
-        class_name: String,
-    },
+    IsInstance(Box<IsInstanceInsn>),
     /// `expr as ClassName` — dst = obj if it is an instance of class_name (or subclass), else null.
-    AsCast {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_serde")] obj: Reg,
-        class_name: String,
-    },
+    AsCast(Box<AsCastInsn>),
     /// Load the module-level static field `field` into `dst`.
-    StaticGet {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        field: String,
-    },
+    StaticGet(Box<StaticGetInsn>),
     /// Store `val` into the module-level static field `field`.
-    StaticSet {
-        field: String,
-        #[serde(with = "typed_reg_serde")] val: Reg,
-    },
+    StaticSet(Box<StaticSetInsn>),
 
     // Native interop (C1 scaffold; semantics by C2/C4/C5)
     /// Direct native symbol call. Resolved at load time; runtime behaviour
     /// arrives in spec C2.
-    CallNative {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        module: String,
-        type_name: String,
-        symbol: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
-    },
+    CallNative(Box<CallNativeInsn>),
     /// Native-type vtable indirect call. `vtable_slot` is filled by the C5
     /// source generator at compile time so no name lookup happens at runtime.
     CallNativeVtable {
@@ -801,3 +862,7 @@ pub enum Terminator {
         #[serde(with = "typed_reg_serde")] reg: Reg,
     },
 }
+
+#[cfg(test)]
+#[path = "bytecode_tests.rs"]
+mod bytecode_tests;

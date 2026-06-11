@@ -9,7 +9,7 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | fix-namespace-qualified-free-call 已归档 2026-06-11 → 释放（`ns.func()` 同命名空间限定自由调用：BindMemberCallOnUnknownTarget 识别 `tgtName==current ns` + member 是自由函数 → 绑 Free call；修双重限定 `ns.ns.func`；dotnet 1558/1558 + 多文件 packed repro exit 0）|
-| `runtime` | **slim-instruction-enum（DRAFT 待审）** | 2026-06-11 | review.md E2.P4：Instruction enum ~120B→≤32B（装箱带 String/多字段的冷变体 Call/CallNative/ObjNew/VCall/FieldGet 等，热算术变体不动）。**无 zbc 格式 bump**（内存布局 vs 二进制格式解耦）；JSON serde 用 `#[serde(flatten)]` 保持不变。改 zbc_reader/interp/jit match-site |
+| `runtime` | —（空闲）| — | slim-instruction-enum 已归档 2026-06-11 → 释放（review.md E2.P4：Instruction enum **实测 96B→32B**，装箱 15 个带 String 冷变体为 `Variant(Box<XxxInsn>)`，热算术变体不动；**无 zbc 格式 bump**，fixture 6/6 无字节 delta；JSON serde 改 internally-tagged newtype 自动摊平（非 flatten）保 wire format；cargo 806/0 + vm goldens 346/0（interp 177 + jit 169））|
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
 | `z42c` | **port-z42c-interface（DRAFT 待审）** | 2026-06-11 | try 归档接力（三大件第②）。Z42InterfaceType+收集/基表判别/可赋性/接口分派（探针实证：无 TYPE 条目、VCall 短名、base 回落 Std.Object）+ TSIG 补全 + ifacecheck 第 6 zbc 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
@@ -56,4 +56,5 @@
 | ~~align-type-memberinfo-hierarchy~~ | stdlib + runtime —— ✅ 已归档 2026-06-11（`Std.Type : MemberInfo`；`typeof(C) is MemberInfo` 真，`Name` 由基类统一提供；短名基类无需编译器改动、无格式 bump；dotnet 1557/1557 + type_is_memberinfo.z42 e2e + cargo 759+21）|
 | ~~fix-stale-build-stdlib-sh-refs~~ | runtime + compiler + toolchain —— ✅ 已归档 2026-06-11（报错/注释里 `./scripts/build-stdlib.sh` → `z42 xtask.zpkg build stdlib`；该脚本已折进 xtask；cargo+dotnet build 绿）|
 | ~~fix-namespace-qualified-free-call~~ | compiler —— ✅ 已归档 2026-06-11（`ns.func()` 命名空间限定自由调用此前误绑 static-call-on-class `ns` → 双重限定 `ns.ns.func` 运行期 undefined；修 BindMemberCallOnUnknownTarget 识别同 ns 自由调用 → Free call；dotnet 1558/1558 + packed repro exit 0。即 fix-multifile-project-namespace-qualify 幻影下暴露的唯一真 bug）|
+| ~~slim-instruction-enum~~ | runtime —— ✅ 已归档 2026-06-11（`Instruction` enum 96B→32B：装箱 15 个带 String 冷变体 `Variant(Box<XxxInsn>)`，热算术变体 inline；internally-tagged newtype 自动摊平保 JSON wire format；**无 zbc bump**，fixture 6/6 无字节 delta；cargo 806/0 + vm goldens 346/0）|
 | plan-0.3.x-three-streams | docs（不上锁） |

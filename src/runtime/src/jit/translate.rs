@@ -6,6 +6,10 @@
 /// emitted as inline Cranelift instructions.
 
 use crate::metadata::{Function, Instruction, Terminator};
+use crate::metadata::{
+    AsCastInsn, BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, IsInstanceInsn,
+    LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn, StaticSetInsn, VCallInsn,
+};
 use anyhow::{bail, Result};
 use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlags};
 use cranelift_codegen::ir::types;
@@ -58,32 +62,32 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::Shr       { dst, .. }  => Some(*dst),
                 Instruction::StrConcat { dst, .. }  => Some(*dst),
                 Instruction::ToStr     { dst, .. }  => Some(*dst),
-                Instruction::Call      { dst, .. }  => Some(*dst),
+                Instruction::Call(insn)              => Some(insn.dst),
                 // Spec impl-ref-out-in-runtime: address-load opcodes (interp
                 // only; JIT body match further down emits unimplemented).
                 Instruction::LoadLocalAddr { dst, .. } => Some(*dst),
                 Instruction::LoadElemAddr  { dst, .. } => Some(*dst),
-                Instruction::LoadFieldAddr { dst, .. } => Some(*dst),
+                Instruction::LoadFieldAddr(insn)       => Some(insn.dst),
                 Instruction::DefaultOf     { dst, .. } => Some(*dst),
-                Instruction::Builtin   { dst, .. }  => Some(*dst),
+                Instruction::Builtin(insn)          => Some(insn.dst),
                 Instruction::ArrayNew    { dst, .. } => Some(*dst),
                 Instruction::ArrayNewLit { dst, .. } => Some(*dst),
                 Instruction::ArrayGet    { dst, .. } => Some(*dst),
                 Instruction::ArraySet    { .. }      => None,
                 Instruction::ArrayLen    { dst, .. } => Some(*dst),
-                Instruction::ObjNew    { dst, .. }  => Some(*dst),
-                Instruction::FieldGet  { dst, .. }  => Some(*dst),
-                Instruction::FieldSet  { .. }       => None,
-                Instruction::VCall     { dst, .. }  => Some(*dst),
-                Instruction::IsInstance { dst, .. } => Some(*dst),
-                Instruction::AsCast     { dst, .. } => Some(*dst),
-                Instruction::StaticGet  { dst, .. } => Some(*dst),
-                Instruction::StaticSet  { .. }      => None,
+                Instruction::ObjNew(insn)           => Some(insn.dst),
+                Instruction::FieldGet(insn)         => Some(insn.dst),
+                Instruction::FieldSet(_)            => None,
+                Instruction::VCall(insn)            => Some(insn.dst),
+                Instruction::IsInstance(insn)       => Some(insn.dst),
+                Instruction::AsCast(insn)           => Some(insn.dst),
+                Instruction::StaticGet(insn)        => Some(insn.dst),
+                Instruction::StaticSet(_)           => None,
 
                 // C1 native interop scaffold — JIT path lands in L3.M16; for
                 // now compute dst register correctly so reg-allocator stays
                 // sound when these opcodes appear in interp-mode bytecode.
-                Instruction::CallNative       { dst, .. } => Some(*dst),
+                Instruction::CallNative(insn)             => Some(insn.dst),
                 Instruction::CallNativeVtable { dst, .. } => Some(*dst),
                 Instruction::PinPtr           { dst, .. } => Some(*dst),
                 Instruction::UnpinPtr         { .. }      => None,
@@ -91,10 +95,10 @@ pub fn max_reg(func: &Function) -> usize {
                 // impl-lambda-l2: JIT path lands in L3+. For now compute dst
                 // correctly so reg-allocation stays sound; translation falls
                 // back to interp mode (see translate.rs match below).
-                Instruction::LoadFn       { dst, .. } => Some(*dst),
-                Instruction::LoadFnCached { dst, .. } => Some(*dst),
+                Instruction::LoadFn(insn)             => Some(insn.dst),
+                Instruction::LoadFnCached(insn)       => Some(insn.dst),
                 Instruction::CallIndirect { dst, .. } => Some(*dst),
-                Instruction::MkClos       { dst, .. } => Some(*dst),
+                Instruction::MkClos(insn)             => Some(insn.dst),
 
                 // spec fix-numeric-cast-lowering (2026-05-13)
                 Instruction::Convert      { dst, .. } => Some(*dst),
@@ -783,7 +787,8 @@ pub fn translate_function(
                 // formalize-jit-method-token Phase 2.C (2026-05-08): emit
                 // pre-resolved MethodId + name (fallback for cross-zpkg).
                 // Helper checks id first; UNRESOLVED → uses name HashMap.
-                Instruction::Call { dst, func: fname, args } => {
+                Instruction::Call(insn) => {
+                    let CallInsn { dst, func: fname, args } = &**insn;
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(fname);
                     let (ap, al) = regs_val!(args);
@@ -802,7 +807,8 @@ pub fn translate_function(
                     // partway through; the caller catches it on return.
                     builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
                 }
-                Instruction::Builtin { dst, name, args } => {
+                Instruction::Builtin(insn) => {
+                    let BuiltinInsn { dst, name, args } = &**insn;
                     // formalize-jit-method-token Phase 2 (2026-05-08): emit
                     // pre-resolved BuiltinId as i32 const, drop name pointers.
                     // Resolver populates Function.resolved.builtin_tokens at
@@ -856,7 +862,8 @@ pub fn translate_function(
                 }
 
                 // Objects
-                Instruction::ObjNew { dst, class_name, ctor_name, args, type_args } => {
+                Instruction::ObjNew(insn) => {
+                    let ObjNewInsn { dst, class_name, ctor_name, args, type_args } = &**insn;
                     // 2026-05-07 expand-jit-type-args: marshal `Vec<String>` as a
                     // `*const String` + count to `jit_obj_new`. The IR storage
                     // lives for the module lifetime, so the raw pointer is valid
@@ -875,7 +882,8 @@ pub fn translate_function(
                 // FieldIC pointer as i64 const so helper can take IC fast
                 // path on monomorphic sites. Pointer is stable through
                 // Function.resolved (OnceLock-set, never overwritten).
-                Instruction::FieldGet { dst, obj, field_name } => {
+                Instruction::FieldGet(insn) => {
+                    let FieldGetInsn { dst, obj, field_name } = &**insn;
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (fp, fl) = str_val!(field_name);
                     let ic_ptr = field_ic_ptr_at(z42_func, block_idx, instr_idx);
@@ -883,7 +891,8 @@ pub fn translate_function(
                     let inst = builder.ins().call(hr_field_get, &[frame_val, ctx_val, d, o, fp, fl, ic_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::FieldSet { obj, field_name, val } => {
+                Instruction::FieldSet(insn) => {
+                    let FieldSetInsn { obj, field_name, val } = &**insn;
                     let o = ri!(*obj);
                     let (fp, fl) = str_val!(field_name);
                     let v = ri!(*val);
@@ -893,7 +902,8 @@ pub fn translate_function(
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 // Phase 2.E: emit VCallIC pointer as trailing helper arg.
-                Instruction::VCall { dst, obj, method, args } => {
+                Instruction::VCall(insn) => {
+                    let VCallInsn { dst, obj, method, args } = &**insn;
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (mp, ml) = str_val!(method);
                     let (ap, al) = regs_val!(args);
@@ -906,12 +916,14 @@ pub fn translate_function(
                     let inst = builder.ins().call(hr_vcall, &[frame_val, ctx_val, d, o, mp, ml, ap, al, ic_val, line_val, col_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::IsInstance { dst, obj, class_name } => {
+                Instruction::IsInstance(insn) => {
+                    let IsInstanceInsn { dst, obj, class_name } = &**insn;
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (cp, cl) = str_val!(class_name);
                     builder.ins().call(hr_is_instance, &[frame_val, ctx_val, d, o, cp, cl]);
                 }
-                Instruction::AsCast { dst, obj, class_name } => {
+                Instruction::AsCast(insn) => {
+                    let AsCastInsn { dst, obj, class_name } = &**insn;
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (cp, cl) = str_val!(class_name);
                     builder.ins().call(hr_as_cast, &[frame_val, ctx_val, d, o, cp, cl]);
@@ -922,13 +934,15 @@ pub fn translate_function(
                 // pre-resolved StaticFieldId directly. Resolver populates
                 // static_field_tokens at load via lazy ID allocation
                 // (always succeeds), so id is never UNRESOLVED here.
-                Instruction::StaticGet { dst, field } => {
+                Instruction::StaticGet(insn) => {
+                    let StaticGetInsn { dst, field } = &**insn;
                     let d = ri!(*dst);
                     let field_id = static_field_id_at(z42_func, block_idx, instr_idx, field);
                     let id_val = builder.ins().iconst(types::I32, field_id as i64);
                     builder.ins().call(hr_static_get, &[frame_val, ctx_val, d, id_val]);
                 }
-                Instruction::StaticSet { field, val } => {
+                Instruction::StaticSet(insn) => {
+                    let StaticSetInsn { field, val } = &**insn;
                     let v = ri!(*val);
                     let field_id = static_field_id_at(z42_func, block_idx, instr_idx, field);
                     let id_val = builder.ins().iconst(types::I32, field_id as i64);
@@ -938,7 +952,8 @@ pub fn translate_function(
                 // C1 native interop scaffold: JIT translation lands in
                 // L3.M16. Refuse to compile a function that contains these
                 // opcodes; caller should keep the function in Interp mode.
-                Instruction::CallNative { module, type_name, symbol, .. } => {
+                Instruction::CallNative(insn) => {
+                    let CallNativeInsn { module, type_name, symbol, .. } = &**insn;
                     bail!(
                         "JIT cannot translate CallNative yet (L3.M16): {module}::{type_name}::{symbol}"
                     );
@@ -965,7 +980,7 @@ pub fn translate_function(
                 Instruction::LoadElemAddr { .. } => {
                     bail!("JIT cannot translate LoadElemAddr yet (impl-ref-out-in-runtime; interp only)");
                 }
-                Instruction::LoadFieldAddr { .. } => {
+                Instruction::LoadFieldAddr(_) => {
                     bail!("JIT cannot translate LoadFieldAddr yet (impl-ref-out-in-runtime; interp only)");
                 }
                 // 2026-05-07 D-8b-3 Phase 2 + switch-multicast-funcpredicate-to-generic-exception:
@@ -1016,14 +1031,16 @@ pub fn translate_function(
                 // caller keeps the function in Interp mode.
                 // L3 closure helpers (impl-closure-l3-jit-complete).
                 // Behaviour mirrors interp::exec_instr; see closure.md §6.
-                Instruction::LoadFn { dst, func } => {
+                Instruction::LoadFn(insn) => {
+                    let LoadFnInsn { dst, func } = &**insn;
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(func);
                     let inst = builder.ins().call(hr_load_fn, &[frame_val, ctx_val, d, np, nl]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 // 2026-05-02 D1b: cached method group conversion
-                Instruction::LoadFnCached { dst, func, slot_id } => {
+                Instruction::LoadFnCached(insn) => {
+                    let LoadFnCachedInsn { dst, func, slot_id } = &**insn;
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(func);
                     let sid = builder.ins().iconst(types::I32, *slot_id as i64);
@@ -1031,7 +1048,8 @@ pub fn translate_function(
                         &[frame_val, ctx_val, d, np, nl, sid]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
+                Instruction::MkClos(insn) => {
+                    let MkClosInsn { dst, fn_name, captures, stack_alloc } = &**insn;
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(fn_name);
                     let (cp, cl) = regs_val!(captures);

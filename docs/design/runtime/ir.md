@@ -445,3 +445,54 @@ opcode 编号在 `impl-closure-l3` 变更落地时分配。
 ## Binary Format
 
 `.zbc` 和 `.zpkg` 二进制格式的完整规范见 [zbc.md](zbc.md)。
+
+## Rust 内存表示：热/冷装箱（slim-instruction-enum, 2026-06-11）
+
+> 这是 **VM 内部内存布局** 决策，与 zbc/zpkg wire format **完全解耦**——
+> 二进制字节序列不变，无版本 bump。
+
+VM 的 `metadata::Instruction` 是一个枚举，`Function.body` 是其 `Box<[Instruction]>`
+热数组，interp / JIT 顺序迭代。枚举 size = 最大变体 size，所以一个臃肿变体会拖胖
+**每一条** 指令槽位（含 `Add`/`Copy` 这类纯寄存器热指令），劣化 cache 局部性。
+
+**策略**：凡 **携带 `String`**（name-bearing，冷路径）的变体，把 payload 移入一个
+`<Variant>Insn` struct，变体改为 newtype `Variant(Box<XxxInsn>)`；纯寄存器/小标量的
+**热变体保持 inline**，dispatch 热路径不增一次指针解引用。
+
+- **装箱的 15 个冷变体**：`Call` `Builtin` `LoadFn` `LoadFnCached` `MkClos` `ObjNew`
+  `FieldGet` `FieldSet` `VCall` `IsInstance` `AsCast` `StaticGet` `StaticSet`
+  `CallNative` `LoadFieldAddr`（payload struct 见 `bytecode.rs`）。
+- **保持 inline**：所有算术/比较/位运算/常量/数组存取/地址加载（`LoadLocalAddr` 等）
+  /`Convert`/`DefaultOf`/`PinPtr`/`UnpinPtr`，以及无 `String` 的 call 类
+  `CallIndirect` / `CallNativeVtable`（它们的 inline payload 仍 ≤ 枚举上限）。
+- **效果**：`size_of::<Instruction>()` 从 **96 B**（旧最大变体 `CallNative`，三个
+  inline `String`）降到 **32 B**（现由 `CallIndirect` / `CallNativeVtable` 这两个无
+  String 但带 `Box<[Reg]>` 的变体决定）。`metadata::bytecode_tests::instruction_size_is_slim`
+  静态断言 ≤ 32 B 守门。
+
+**JSON wire format 不变**：枚举是 internally-tagged（`#[serde(tag = "op")]`），
+newtype 变体的内层 struct 字段会被 serde **摊平进 tag 对象**，故
+`Call(Box<CallInsn>)` 仍序列化为 `{"op":"call", dst, func, args}`——与装箱前逐字符
+相同（`bytecode_tests` 的 round-trip 单测守门）。
+
+### Deferred / Future Work
+
+#### slim-terminator-future: 装箱 `Terminator` 的 String label
+
+- **来源**：slim-instruction-enum（2026-06-11）
+- **触发原因**：`Terminator`（`Br { label }` / `BrCond { …labels }`）带 `String`，
+  但它是 **per-block**（每个 basic block 末尾一个），不是 per-instruction 热数组，
+  装箱收益远低于 `Instruction`。
+- **前置依赖**：无。
+- **触发条件**：若后续 profiling 显示 block 元数据内存成为瓶颈，或 `Terminator`
+  新增更多 String-carrying 变体时回来评估。
+- **当前 workaround**：无（保持 inline struct 变体）。
+
+#### slim-instruction-stringid: `String → StringId` 收敛（E2.P3，正交后续）
+
+- **来源**：review.md E2.P3。
+- **触发原因**：本变更只调整装箱布局，未改 `String` 表示本身；把 name 字段换成
+  intern 过的 `StringId` 可进一步缩小 payload struct 并去重。
+- **前置依赖**：StringId intern 表贯通 zbc reader → metadata。
+- **触发条件**：name 重复内存占用或字符串比较成为热点时。
+- **当前 workaround**：payload struct 持有 owned `String`。

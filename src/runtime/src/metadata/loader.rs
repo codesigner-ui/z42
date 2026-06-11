@@ -514,10 +514,10 @@ fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
         for block in &func.blocks {
             for instr in &block.instructions {
                 let target = match instr {
-                    Instruction::Call { func, .. }    if !defined.contains(func.as_str()) => func,
-                    Instruction::Builtin { name, .. } => name,
-                    Instruction::StaticGet { field, .. } => field,
-                    Instruction::StaticSet { field, .. } => field,
+                    Instruction::Call(insn)    if !defined.contains(insn.func.as_str()) => &insn.func,
+                    Instruction::Builtin(insn) => &insn.name,
+                    Instruction::StaticGet(insn) => &insn.field,
+                    Instruction::StaticSet(insn) => &insn.field,
                     // fix-objnew-import-ns (2026-05-29): `new Foo()` on an imported
                     // class emits ObjNew (not Call), and the subsequent method
                     // calls are VCall (vtable) — neither was scanned, so the
@@ -530,7 +530,7 @@ fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
                     // when the method happened to compile to a Call (DepIndex
                     // shortcut) instead of a VCall — order-dependent, hence the
                     // cross-platform-flaky failures.
-                    Instruction::ObjNew { class_name, .. } if !defined.contains(class_name.as_str()) => class_name,
+                    Instruction::ObjNew(insn) if !defined.contains(insn.class_name.as_str()) => &insn.class_name,
                     _ => continue,
                 };
                 for ns in infer_namespace_candidates(target) {

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use z42::metadata::{
-    BasicBlock, ExecMode, Function, Instruction, Module, Terminator, Value,
+    BasicBlock, CallNativeInsn, ExecMode, FieldGetInsn, Function, Instruction, Module, Terminator, Value,
 };
 use z42::vm_context::VmContext;
 
@@ -65,13 +65,13 @@ fn call_native_unknown_type_traps() {
     // native type" because no library has registered numz42::Tensor.
     let m = module_with_single_instr(
         "call_native_unknown_type",
-        Instruction::CallNative {
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 0,
             module: "numz42".into(),
             type_name: "Tensor".into(),
             symbol: "__shim_Tensor_dot".into(),
             args: vec![].into(),
-        },
+        })),
     );
     let err = run(&m).expect_err("CallNative must fail when type is unregistered");
     assert_trap_with(err, "unknown native type");

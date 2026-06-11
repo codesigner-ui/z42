@@ -115,7 +115,7 @@ fn remap_block(block: &mut BasicBlock, str_offset: u32, slot_offset: u32) {
     for instr in block.instructions.iter_mut() {
         match instr {
             Instruction::ConstStr { idx, .. } if str_offset != 0 => *idx += str_offset,
-            Instruction::LoadFnCached { slot_id, .. } if slot_offset != 0 => *slot_id += slot_offset,
+            Instruction::LoadFnCached(insn) if slot_offset != 0 => insn.slot_id += slot_offset,
             _ => {}
         }
     }

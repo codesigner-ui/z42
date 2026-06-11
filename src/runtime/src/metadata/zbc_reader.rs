@@ -15,6 +15,11 @@ use anyhow::{bail, Result};
 use super::bytecode::{
     BasicBlock, ClassDesc, ConstraintBundle, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator,
 };
+use super::bytecode::{
+    AsCastInsn, BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, IsInstanceInsn,
+    LoadFieldAddrInsn, LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn,
+    StaticSetInsn, VCallInsn,
+};
 use super::formats::{ZpkgDep, ZPKG_MAGIC, ZBC_MAGIC};
 use super::types::ExecMode;
 
@@ -928,16 +933,16 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             // to v0.9 (pool_str) or v1.0 (IMPORT_BASE bit) decode based on header.
             let func = id_map.resolve_method(c.read_u32()?)?;
             let args = read_args(c)?;
-            Instruction::Call { dst, func, args }
+            Instruction::Call(Box::new(CallInsn { dst, func, args }))
         }
         OP_LOAD_FN => {
             let func = id_map.resolve_method(c.read_u32()?)?;
-            Instruction::LoadFn { dst, func }
+            Instruction::LoadFn(Box::new(LoadFnInsn { dst, func }))
         }
         OP_LOAD_FN_CACHED => {
             let func    = id_map.resolve_method(c.read_u32()?)?;
             let slot_id = c.read_u32()?;
-            Instruction::LoadFnCached { dst, func, slot_id }
+            Instruction::LoadFnCached(Box::new(LoadFnCachedInsn { dst, func, slot_id }))
         }
         OP_CALL_INDIRECT => {
             let callee = c.read_u16()? as u32;
@@ -949,35 +954,35 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             // 2026-05-02 impl-closure-l3-escape-stack: 1 byte flag
             let stack_alloc = c.read_u8()? != 0;
             let captures    = read_args(c)?;
-            Instruction::MkClos { dst, fn_name, captures, stack_alloc }
+            Instruction::MkClos(Box::new(MkClosInsn { dst, fn_name, captures, stack_alloc }))
         }
         OP_BUILTIN => {
             let name = pool_str_owned(pool, c.read_u32()?)?;
             let args = read_args(c)?;
-            Instruction::Builtin { dst, name, args }
+            Instruction::Builtin(Box::new(BuiltinInsn { dst, name, args }))
         }
         OP_VCALL => {
             let method = pool_str_owned(pool, c.read_u32()?)?;
             let obj    = c.read_u16()? as u32;
             let args   = read_args(c)?;
-            Instruction::VCall { dst, obj, method, args }
+            Instruction::VCall(Box::new(VCallInsn { dst, obj, method, args }))
         }
         OP_FIELD_GET => {
             let obj        = c.read_u16()? as u32;
             let field_name = pool_str_owned(pool, c.read_u32()?)?;
-            Instruction::FieldGet { dst, obj, field_name }
+            Instruction::FieldGet(Box::new(FieldGetInsn { dst, obj, field_name }))
         }
         OP_FIELD_SET => {
             let obj        = c.read_u16()? as u32;
             let field_name = pool_str_owned(pool, c.read_u32()?)?;
             let val        = c.read_u16()? as u32;
-            Instruction::FieldSet { obj, field_name, val }
+            Instruction::FieldSet(Box::new(FieldSetInsn { obj, field_name, val }))
         }
-        OP_STATIC_GET => Instruction::StaticGet { dst, field: pool_str_owned(pool, c.read_u32()?)? },
+        OP_STATIC_GET => Instruction::StaticGet(Box::new(StaticGetInsn { dst, field: pool_str_owned(pool, c.read_u32()?)? })),
         OP_STATIC_SET => {
             let field = pool_str_owned(pool, c.read_u32()?)?;
             let val   = c.read_u16()? as u32;
-            Instruction::StaticSet { field, val }
+            Instruction::StaticSet(Box::new(StaticSetInsn { field, val }))
         }
         OP_OBJ_NEW => {
             let class_name = id_map.resolve_type(c.read_u32()?)?;
@@ -989,17 +994,17 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             for _ in 0..t_count {
                 type_args.push(pool_str_owned(pool, c.read_u32()?)?);
             }
-            Instruction::ObjNew { dst, class_name, ctor_name, args, type_args: type_args.into_boxed_slice() }
+            Instruction::ObjNew(Box::new(ObjNewInsn { dst, class_name, ctor_name, args, type_args: type_args.into_boxed_slice() }))
         }
         OP_IS_INSTANCE => {
             let obj        = c.read_u16()? as u32;
             let class_name = id_map.resolve_type(c.read_u32()?)?;
-            Instruction::IsInstance { dst, obj, class_name }
+            Instruction::IsInstance(Box::new(IsInstanceInsn { dst, obj, class_name }))
         }
         OP_AS_CAST => {
             let obj        = c.read_u16()? as u32;
             let class_name = id_map.resolve_type(c.read_u32()?)?;
-            Instruction::AsCast { dst, obj, class_name }
+            Instruction::AsCast(Box::new(AsCastInsn { dst, obj, class_name }))
         }
         OP_ARRAY_NEW     => {
             let size = c.read_u16()? as u32;
@@ -1024,7 +1029,7 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             let type_name = pool_str_owned(pool, c.read_u32()?)?;
             let symbol    = pool_str_owned(pool, c.read_u32()?)?;
             let args      = read_args(c)?;
-            Instruction::CallNative { dst, module, type_name, symbol, args }
+            Instruction::CallNative(Box::new(CallNativeInsn { dst, module, type_name, symbol, args }))
         }
         OP_CALL_NATIVE_VTABLE => {
             let recv = c.read_u16()? as u32;
@@ -1049,7 +1054,7 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
         OP_LOAD_FIELD_ADDR => {
             let obj = c.read_u16()? as u32;
             let field_name = pool_str_owned(pool, c.read_u32()?)?;
-            Instruction::LoadFieldAddr { dst, obj, field_name }
+            Instruction::LoadFieldAddr(Box::new(LoadFieldAddrInsn { dst, obj, field_name }))
         }
 
         // add-default-generic-typeparam (D-8b-3 Phase 2)

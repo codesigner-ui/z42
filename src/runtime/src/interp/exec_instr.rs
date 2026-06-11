@@ -11,6 +11,10 @@
 /// the throw upstack. All other helpers return `Result<()>`.
 
 use crate::metadata::{Function, Instruction, Module, Value};
+use crate::metadata::{
+    BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, MkClosInsn, ObjNewInsn,
+    StaticGetInsn, StaticSetInsn, VCallInsn,
+};
 use crate::metadata::tokens::UNRESOLVED;
 use crate::vm_context::VmContext;
 use anyhow::Result;
@@ -110,7 +114,7 @@ pub fn exec_instr(
         // ── Address-load (spec impl-ref-out-in-runtime) ─────────────────────
         Instruction::LoadLocalAddr { dst, slot } => exec_address::load_local_addr(ctx, frame, *dst, *slot),
         Instruction::LoadElemAddr  { dst, arr, idx } => exec_address::load_elem_addr(frame, *dst, *arr, *idx)?,
-        Instruction::LoadFieldAddr { dst, obj, field_name } => exec_address::load_field_addr(frame, *dst, *obj, field_name)?,
+        Instruction::LoadFieldAddr(insn) => exec_address::load_field_addr(frame, insn.dst, insn.obj, &insn.field_name)?,
 
         // ── Generic default(T) at runtime (D-8b-3 Phase 2) ──────────────────
         Instruction::DefaultOf { dst, param_index } => exec_address::default_of(frame, *dst, *param_index),
@@ -119,7 +123,8 @@ pub fn exec_instr(
         Instruction::Convert { dst, src, to_tag } => exec_value::convert(frame, *dst, *src, *to_tag)?,
 
         // ── Calls ────────────────────────────────────────────────────────────
-        Instruction::Call { dst, func: fname, args } => {
+        Instruction::Call(insn) => {
+            let CallInsn { dst, func: fname, args } = &**insn;
             // 2026-05-10 exception-stack-trace: stamp current site's source
             // line on this frame's FrameInfo before descending into the
             // callee, so a downstream `throw` snapshot shows our call site.
@@ -139,7 +144,8 @@ pub fn exec_instr(
             // in the callee.
             crate::gc::safepoint::check_safepoint(ctx);
         }
-        Instruction::Builtin { dst, name, args } => {
+        Instruction::Builtin(insn) => {
+            let BuiltinInsn { dst, name, args } = &**insn;
             // Hot path: resolver populates Function.resolved.builtin_tokens
             // with BuiltinId per site at load time (closed set, all hits).
             // Fallback to name lookup when resolver hasn't run.
@@ -152,8 +158,8 @@ pub fn exec_instr(
                 return Ok(Some(thrown));
             }
         }
-        Instruction::LoadFn { dst, func } => exec_call::load_fn(frame, *dst, func),
-        Instruction::LoadFnCached { dst, func, slot_id } => exec_call::load_fn_cached(ctx, frame, *dst, func, *slot_id),
+        Instruction::LoadFn(insn) => exec_call::load_fn(frame, insn.dst, &insn.func),
+        Instruction::LoadFnCached(insn) => exec_call::load_fn_cached(ctx, frame, insn.dst, &insn.func, insn.slot_id),
         Instruction::CallIndirect { dst, callee, args } => {
             update_caller_line(ctx, func, block_idx, instr_idx);
             if let Some(thrown) = exec_call::call_indirect(ctx, module, frame, *dst, *callee, args)? {
@@ -161,7 +167,8 @@ pub fn exec_instr(
             }
             crate::gc::safepoint::check_safepoint(ctx);
         }
-        Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
+        Instruction::MkClos(insn) => {
+            let MkClosInsn { dst, fn_name, captures, stack_alloc } = &**insn;
             if let Some(thrown) = exec_call::mk_clos(ctx, module, frame, *dst, fn_name, captures, *stack_alloc)? {
                 return Ok(Some(thrown));
             }
@@ -183,7 +190,8 @@ pub fn exec_instr(
         Instruction::ArrayLen    { dst, arr }       => exec_array::array_len(frame, *dst, *arr)?,
 
         // ── Objects ──────────────────────────────────────────────────────────
-        Instruction::ObjNew { dst, class_name, ctor_name, args, type_args } => {
+        Instruction::ObjNew(insn) => {
+            let ObjNewInsn { dst, class_name, ctor_name, args, type_args } = &**insn;
             // Hot path: pass type_token cache for repopulation. Dispatch via
             // type_registry / lazy_loader unchanged.
             let type_token = resolved
@@ -198,19 +206,22 @@ pub fn exec_instr(
                 return Ok(Some(thrown));
             }
         }
-        Instruction::FieldGet { dst, obj, field_name } => {
+        Instruction::FieldGet(insn) => {
+            let FieldGetInsn { dst, obj, field_name } = &**insn;
             let field_ic = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
                 .and_then(|r| r.field_ic.get(_site_idx as usize));
             exec_object::field_get(frame, *dst, *obj, field_name, field_ic)?;
         }
-        Instruction::FieldSet { obj, field_name, val } => {
+        Instruction::FieldSet(insn) => {
+            let FieldSetInsn { obj, field_name, val } = &**insn;
             let field_ic = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
                 .and_then(|r| r.field_ic.get(_site_idx as usize));
             exec_object::field_set(ctx, frame, *obj, field_name, *val, field_ic)?;
         }
-        Instruction::VCall { dst, obj, method, args } => {
+        Instruction::VCall(insn) => {
+            let VCallInsn { dst, obj, method, args } = &**insn;
             update_caller_line(ctx, func, block_idx, instr_idx);
             // Hot path: monomorphic inline cache fires when receiver TypeId
             // matches the cached one at this site (same site + same recv type).
@@ -222,9 +233,10 @@ pub fn exec_instr(
                 return Ok(Some(thrown));
             }
         }
-        Instruction::IsInstance { dst, obj, class_name } => exec_object::is_instance(ctx, module, frame, *dst, *obj, class_name)?,
-        Instruction::AsCast     { dst, obj, class_name } => exec_object::as_cast(ctx, module, frame, *dst, *obj, class_name)?,
-        Instruction::StaticGet  { dst, field } => {
+        Instruction::IsInstance(insn) => exec_object::is_instance(ctx, module, frame, insn.dst, insn.obj, &insn.class_name)?,
+        Instruction::AsCast(insn) => exec_object::as_cast(ctx, module, frame, insn.dst, insn.obj, &insn.class_name)?,
+        Instruction::StaticGet(insn) => {
+            let StaticGetInsn { dst, field } = &**insn;
             // Hot path: pre-resolved StaticFieldId → direct Vec index.
             use std::sync::atomic::Ordering;
             let field_id = resolved
@@ -234,7 +246,8 @@ pub fn exec_instr(
                 .filter(|&id| id != UNRESOLVED);
             exec_object::static_get(ctx, frame, *dst, field, field_id);
         }
-        Instruction::StaticSet  { field, val } => {
+        Instruction::StaticSet(insn) => {
+            let StaticSetInsn { field, val } = &**insn;
             use std::sync::atomic::Ordering;
             let field_id = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
@@ -250,7 +263,8 @@ pub fn exec_instr(
         // (these opcodes shouldn't appear in a wasm-targeted .zbc anyway,
         // but malformed input shouldn't UAF the interp either).
         #[cfg(feature = "native-interop")]
-        Instruction::CallNative { dst, module: m, type_name, symbol, args } => {
+        Instruction::CallNative(insn) => {
+            let CallNativeInsn { dst, module: m, type_name, symbol, args } = &**insn;
             // 2026-05-11 retire-z-codes: marshal failures throw
             // Std.InvalidMarshalException via Ok(Some(exc)).
             if let Some(thrown) = exec_native::call_native(ctx, module, frame, *dst, m, type_name, symbol, args)? {
@@ -268,7 +282,7 @@ pub fn exec_instr(
         #[cfg(feature = "native-interop")]
         Instruction::UnpinPtr { pinned }     => exec_native::unpin_ptr(ctx, frame, *pinned)?,
         #[cfg(not(feature = "native-interop"))]
-        Instruction::CallNative { .. }
+        Instruction::CallNative(_)
         | Instruction::CallNativeVtable { .. }
         | Instruction::PinPtr { .. }
         | Instruction::UnpinPtr { .. } => {

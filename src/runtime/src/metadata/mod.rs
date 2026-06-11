@@ -64,6 +64,11 @@ pub use types::ObjectData;
 
 // Re-exports: bytecode IR structures
 pub use bytecode::{BasicBlock, ClassDesc, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator};
+pub use bytecode::{
+    AsCastInsn, BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, IsInstanceInsn,
+    LoadFieldAddrInsn, LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn,
+    StaticSetInsn, VCallInsn,
+};
 
 // Re-exports: package format types and artifact loading
 pub use formats::{ZbcFile, ZpkgFile};

@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 
 use z42::metadata::{
-    BasicBlock, ExecMode, Function, Instruction, Module, Terminator, Value,
+    BasicBlock, CallNativeInsn, ExecMode, FieldGetInsn, Function, Instruction, Module, Terminator, Value,
 };
 use z42::vm_context::VmContext;
 
@@ -140,41 +140,41 @@ fn callnative_counter_inc_three_times_then_get_returns_three() {
     //   r1 = call.native numz42::Counter::get(r0)
     //   ret r1
     let instructions = vec![
-        Instruction::CallNative {
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 0,
             module: "numz42".into(),
             type_name: "Counter".into(),
             symbol: "__alloc__".into(),
             args: vec![].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 2,
             module: "numz42".into(),
             type_name: "Counter".into(),
             symbol: "inc".into(),
             args: vec![0].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 2,
             module: "numz42".into(),
             type_name: "Counter".into(),
             symbol: "inc".into(),
             args: vec![0].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 2,
             module: "numz42".into(),
             type_name: "Counter".into(),
             symbol: "inc".into(),
             args: vec![0].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 1,
             module: "numz42".into(),
             type_name: "Counter".into(),
             symbol: "get".into(),
             args: vec![0].into(),
-        },
+        })),
     ];
     let m = build_module("counter_e2e", instructions, Terminator::Ret { reg: Some(1) });
     let func = &m.functions[0];
@@ -231,34 +231,34 @@ fn rust_counter_callnative_inc_three_times_then_get_returns_three() {
 
     let instructions = vec![
         Instruction::ConstI64 { dst: 0, val: counter_as_i64 },
-        Instruction::CallNative {
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 2,
             module: "numz42_rs".into(),
             type_name: "Counter".into(),
             symbol: "inc".into(),
             args: vec![0].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 2,
             module: "numz42_rs".into(),
             type_name: "Counter".into(),
             symbol: "inc".into(),
             args: vec![0].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 2,
             module: "numz42_rs".into(),
             type_name: "Counter".into(),
             symbol: "inc".into(),
             args: vec![0].into(),
-        },
-        Instruction::CallNative {
+        })),
+        Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 1,
             module: "numz42_rs".into(),
             type_name: "Counter".into(),
             symbol: "get".into(),
             args: vec![0].into(),
-        },
+        })),
     ];
     let m = build_module(
         "rust_counter_e2e",
@@ -414,13 +414,13 @@ fn z42_str_marshals_to_cstr_via_strlen() {
         "hello world",
         vec![
             Instruction::ConstStr { dst: 0, idx: 0 },
-            Instruction::CallNative {
+            Instruction::CallNative(Box::new(CallNativeInsn {
                 dst: 1,
                 module: "numz42".into(),
                 type_name: "Counter".into(),
                 symbol: "strlen".into(),
                 args: vec![0].into(),
-            },
+            })),
         ],
         Terminator::Ret { reg: Some(1) },
     );
@@ -457,15 +457,15 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
                 Instruction::ConstI64 { dst: 2, val: 0x21 }, // '!'
                 Instruction::ArrayNewLit { dst: 3, elems: vec![0, 1, 2].into() },
                 Instruction::PinPtr { dst: 4, src: 3 },
-                Instruction::FieldGet { dst: 5, obj: 4, field_name: "ptr".into() },
-                Instruction::FieldGet { dst: 6, obj: 4, field_name: "len".into() },
-                Instruction::CallNative {
+                Instruction::FieldGet(Box::new(FieldGetInsn { dst: 5, obj: 4, field_name: "ptr".into() })),
+                Instruction::FieldGet(Box::new(FieldGetInsn { dst: 6, obj: 4, field_name: "len".into() })),
+                Instruction::CallNative(Box::new(CallNativeInsn {
                     dst: 7,
                     module: "numz42".into(),
                     type_name: "Counter".into(),
                     symbol: "buflen".into(),
                     args: vec![5, 6].into(),
-                },
+                })),
                 Instruction::UnpinPtr { pinned: 4 },
             ],
             terminator: Terminator::Ret { reg: Some(7) },
@@ -515,13 +515,13 @@ fn z42_str_with_interior_nul_traps_marshal() {
             label: "entry".into(),
             instructions: vec![
                 Instruction::ConstStr { dst: 0, idx: 0 },
-                Instruction::CallNative {
+                Instruction::CallNative(Box::new(CallNativeInsn {
                     dst: 1,
                     module: "numz42".into(),
                     type_name: "Counter".into(),
                     symbol: "strlen".into(),
                     args: vec![0].into(),
-                },
+                })),
             ],
             terminator: Terminator::Ret { reg: Some(1) },
         }],
@@ -555,13 +555,13 @@ fn callnative_unknown_method_traps() {
     let ctx = vm_with_counter_registered();
     let m = build_module(
         "unknown_method_e2e",
-        vec![Instruction::CallNative {
+        vec![Instruction::CallNative(Box::new(CallNativeInsn {
             dst: 0,
             module: "numz42".into(),
             type_name: "Counter".into(),
             symbol: "ghost_method".into(),
             args: vec![].into(),
-        }],
+        }))],
         Terminator::Ret { reg: None },
     );
     let func = &m.functions[0];

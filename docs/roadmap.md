@@ -383,6 +383,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | **D-11** | introduce-bound-visitor（review.md §2.1 visitor 抽象基类）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-11-introduce-bound-visitorreviewmd-21-visitor-抽象基类) |
 | `compiler-future-typed-overload-resolution` | mangling 改为类型编码键 + IR/zpkg/resolver 同步 + 类型 best-match 选择；解锁 stdlib 类的 `(byte[])` / `(Stream)` 等同元不同类型 ctor / method 重载（当前用 static factory workaround） | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-typed-overload-resolution) |
 | ~~`compiler-future-vcall-base-class-fallback`~~ ✅ | 已修复 (2026-05-26) — 三处协同修复：IrGen.Classes.cs `.base` 元数据用 QualifyClassName；FunctionEmitter.cs base ctor IR 名从 SemanticModel 推导；exec_vcall.rs lazy walk 对深层 base 用 ctx.try_lookup_type() | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-vcall-base-class-fallback-已修复-2026-05-26) |
+| `slim-terminator-future` | 装箱 `Terminator` 的 String label（per-block，非热数组，收益低于 Instruction）| [runtime/ir.md](design/runtime/ir.md#deferred--future-work) |
+| `slim-instruction-stringid` (E2.P3) | `String → StringId` intern 收敛，进一步缩小 payload struct（正交 slim-instruction-enum 之后）| [runtime/ir.md](design/runtime/ir.md#deferred--future-work) |
 
 ### 代码内临时绕过（in-code stopgaps，待正解）
 
