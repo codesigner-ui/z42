@@ -202,15 +202,31 @@ pub fn builtin_type_fields(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         Some(t) => t,
         None => return Ok(ctx.heap().alloc_array(Vec::new())),
     };
-    let statics = td.static_fields();
-    let mut out = Vec::with_capacity(td.fields.len() + statics.len());
-    // Instance fields (base-first, IsStatic = false).
+    let mut out = Vec::with_capacity(td.fields.len() + td.static_fields().len());
+    // Instance fields (already base-first — cross-zpkg fixup merges inherited
+    // instance fields into `td.fields`; IsStatic = false).
     for f in &td.fields {
         out.push(build_field_info(ctx, &td.name, &f.name, &f.type_tag, false)?);
     }
-    // add-reflection-static-fields: the class's own static fields (IsStatic = true).
-    for f in statics {
-        out.push(build_field_info(ctx, &td.name, &f.name, &f.type_tag, true)?);
+    // add-reflection-inherited-static-fields: static fields are stored per
+    // declaring class (no instance-field-style fixup), so walk the base chain
+    // and aggregate each ancestor's static fields (most-derived first), matching
+    // C# `GetFields()` which includes inherited public statics. Each FieldInfo's
+    // `__qualified` uses the DECLARING class name so attribute resolution targets
+    // the right class. Dedup by name (a derived `new`-style shadow wins).
+    let mut seen = std::collections::HashSet::new();
+    let mut cur = Some(td.clone());
+    while let Some(c) = cur {
+        for f in c.static_fields() {
+            if seen.insert(f.name.clone()) {
+                out.push(build_field_info(ctx, &c.name, &f.name, &f.type_tag, true)?);
+            }
+        }
+        cur = c.base_name.as_ref().and_then(|b| {
+            ctx.module()
+                .and_then(|m| m.type_registry.get(b).cloned())
+                .or_else(|| ctx.try_lookup_type(b))
+        });
     }
     Ok(ctx.heap().alloc_array(out))
 }

@@ -9,7 +9,7 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | fix-namespace-qualified-free-call 已归档 2026-06-11 → 释放（`ns.func()` 同命名空间限定自由调用：BindMemberCallOnUnknownTarget 识别 `tgtName==current ns` + member 是自由函数 → 绑 Free call；修双重限定 `ns.ns.func`；dotnet 1558/1558 + 多文件 packed repro exit 0）|
-| `runtime` | **add-reflection-inherited-static-fields（实施中）** | 2026-06-11 | `GetFields()` 沿 base 链聚合祖先类静态字段（运行期 base-walk，对齐 C# 默认含继承静态）。纯 runtime reflection.rs，**无格式 bump**|
+| `runtime` | —（空闲）| — | add-reflection-inherited-static-fields 已归档 2026-06-11 → 释放（`GetFields()` 沿 base 链聚合祖先类静态字段；运行期 base-walk，无格式 bump；dotnet 1559/1559 + cargo 764+21）|
 | `stdlib` | **add-collection-contract-phase2（DRAFT 待审）** | 2026-06-11 | review.md S2.4 Phase 2：`IBasicCollection<T>` 加 `AddOne(T)` 统一单元素插入；5 个集合（Queue/Stack/LinkedList/SortedSet/PriorityQueue）各委托其自然 add；`BasicCollectionContract` 扩 add→count→clear 生命周期（用 distinct 元素，对 SortedSet 去重也成立）。纯 stdlib，无格式 bump，dotnet test 验证 |
 | `z42c` | **port-z42c-closures（DRAFT 待审）** | 2026-06-11 | interface 归档接力（三大件第③收官）。lambda 整链 MVP：parser `=>` + BindLambda（expected 推导/捕获分析）+ lift（LoadFn/MkClos/CallIndirect 0x55-0x57）+ closcheck 第 7 zbc 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
@@ -59,4 +59,5 @@
 | ~~fix-namespace-qualified-free-call~~ | compiler —— ✅ 已归档 2026-06-11（`ns.func()` 命名空间限定自由调用此前误绑 static-call-on-class `ns` → 双重限定 `ns.ns.func` 运行期 undefined；修 BindMemberCallOnUnknownTarget 识别同 ns 自由调用 → Free call；dotnet 1558/1558 + packed repro exit 0。即 fix-multifile-project-namespace-qualify 幻影下暴露的唯一真 bug）|
 | ~~slim-instruction-enum~~ | runtime —— ✅ 已归档 2026-06-11（`Instruction` enum 96B→32B：装箱 15 个带 String 冷变体 `Variant(Box<XxxInsn>)`，热算术变体 inline；internally-tagged newtype 自动摊平保 JSON wire format；**无 zbc bump**，fixture 6/6 无字节 delta；cargo 806/0 + vm goldens 346/0）|
 | ~~cache-cross-zpkg-call-target~~ | runtime —— ✅ 已归档 2026-06-11（review.md C7：per-site `OnceLock<Arc<Function>>` cross-zpkg Call 目标缓存，平行 method_tokens；首次解析后借用，消除每调用 `try_lookup_function` String hash；本模块快路径零额外开销；OnceLock write-once、per-site 无全局并发表；**无格式 bump**；cargo lib 764/0 + vm goldens 346/0 + cross-zpkg 2/0）|
+| ~~add-reflection-inherited-static-fields~~ | runtime —— ✅ 已归档 2026-06-11（`Type.GetFields()` 含继承静态字段：`builtin_type_fields` 沿 base 链聚合祖先类 static_fields；对齐 C# 默认含继承公共静态；无格式 bump；dotnet 1559/1559 + inherited_static_fields.z42 e2e + cargo 764+21）|
 | plan-0.3.x-three-streams | docs（不上锁） |

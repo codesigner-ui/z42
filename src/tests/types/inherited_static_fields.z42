@@ -1,0 +1,50 @@
+// add-reflection-inherited-static-fields (2026-06-11): Type.GetFields() now
+// aggregates inherited static fields by walking the base chain (matching C#,
+// which includes inherited public statics). Static fields are stored per
+// declaring class (no instance-field-style layout fixup), so the runtime
+// base-walk in builtin_type_fields surfaces ancestors' statics with the
+// declaring class as their qualifier.
+using Std.Reflection;
+
+class Base {
+    public int baseInst;            // inherited instance field
+    public static int baseStat;     // inherited static field (the fix target)
+}
+
+class Derived : Base {
+    public int derivedInst;
+    public static string derivedStat;
+}
+
+void Main() {
+    Type t = typeof(Derived);
+    FieldInfo[] fields = t.GetFields();
+    // instance: baseInst (inherited) + derivedInst = 2
+    // static:   derivedStat (own) + baseStat (inherited) = 2
+    Assert.Equal(4, fields.Length);
+
+    bool sawBaseStat = false;
+    bool sawDerivedStat = false;
+    bool sawBaseInst = false;
+    int staticCount = 0;
+    foreach (var f in fields) {
+        if (f.IsStatic) { staticCount = staticCount + 1; }
+        if (f.Name == "baseStat") {
+            sawBaseStat = true;
+            Assert.True(f.IsStatic);          // inherited static
+            Assert.Equal("int", f.FieldType.Name);
+        }
+        if (f.Name == "derivedStat") {
+            sawDerivedStat = true;
+            Assert.True(f.IsStatic);
+        }
+        if (f.Name == "baseInst") {
+            sawBaseInst = true;
+            Assert.False(f.IsStatic);          // inherited instance
+        }
+    }
+    Assert.True(sawBaseStat);       // inherited static surfaced
+    Assert.True(sawDerivedStat);
+    Assert.True(sawBaseInst);
+    Assert.Equal(2, staticCount);
+}
