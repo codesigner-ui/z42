@@ -9,10 +9,15 @@ using Z42.Core;
 public sealed class TypeChecker {
     private DiagnosticBag     _diags;
     private int               _loopDepth;    // break/continue 越界检查（1B）
+    // lambda 捕获 frame（port-z42c-closures）：active 时 Ident 钩子检测外层命中。
+    private bool _lambdaActive;
+    private StrMap _lambdaLocals;
+    private BoundCapture[] _lambdaCaps; private int _lambdaCapCount;
     private ConstraintChecker _constraints;  // 泛型 where 约束解析 + call-site 校验（2B）
     public TypeChecker(DiagnosticBag diags) {
         this._diags = diags;
         this._loopDepth = 0;
+        this._lambdaActive = false;
         this._constraints = new ConstraintChecker(diags);
     }
 
@@ -110,9 +115,17 @@ public sealed class TypeChecker {
         }
         if (s is VarDeclStmt) {
             VarDeclStmt v = s as VarDeclStmt;
-            BoundExpr init = this._bindExpr(v.Init, env);
+            BoundExpr init = null;
+            if (v.Init is LambdaExpr) {                              // lambda + 显式 Func 类型 → expected 推导
+                Z42Type declared = env.ResolveType(v.Type);          // `var` → Unknown，自然跳过
+                if (declared is Z42FuncType) {
+                    init = this._bindLambda(v.Init as LambdaExpr, declared as Z42FuncType, env);
+                }
+            }
+            if (init == null) { init = this._bindExpr(v.Init, env); }
             Z42Type vt = this._varType(env, v, init);
             env.Define(v.Name, vt);
+            if (this._lambdaActive) { this._lambdaLocals.Put(v.Name, vt); }
             return new BoundVarDeclStmt(v.Name, vt, init, v.Span);
         }
         if (s is ReturnStmt) {
@@ -242,6 +255,26 @@ public sealed class TypeChecker {
             if (t == null) {
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined: " + id.Name, id.Span);
                 return new BoundError("undefined " + id.Name, new Z42ErrorType(), id.Span);
+            }
+            // lambda 捕获钩子（port-z42c-closures）：域内未声明而外层命中 → 记捕获 + BoundCapturedIdent
+            if (this._lambdaActive && !this._lambdaLocals.ContainsKey(id.Name)) {
+                int ci = 0;
+                int hit = 0 - 1;
+                while (ci < this._lambdaCapCount) {
+                    if (this._lambdaCaps[ci].Name == id.Name) { hit = ci; }
+                    ci = ci + 1;
+                }
+                if (hit < 0) {
+                    if (this._lambdaCapCount == this._lambdaCaps.Length) {
+                        BoundCapture[] b = new BoundCapture[this._lambdaCaps.Length * 2];
+                        int k = 0; while (k < this._lambdaCapCount) { b[k] = this._lambdaCaps[k]; k = k + 1; }
+                        this._lambdaCaps = b;
+                    }
+                    hit = this._lambdaCapCount;
+                    this._lambdaCaps[hit] = new BoundCapture(id.Name, t);
+                    this._lambdaCapCount = this._lambdaCapCount + 1;
+                }
+                return new BoundCapturedIdent(id.Name, hit, t, id.Span);
             }
             return new BoundIdent(id.Name, t, id.Span);
         }
@@ -435,6 +468,11 @@ public sealed class TypeChecker {
         // 顶层自由函数：f(args)
         if (call.Callee is IdentExpr) {
             IdentExpr id = call.Callee as IdentExpr;
+            Z42Type vfn = env.LookupVar(id.Name);
+            if (vfn != null && (vfn is Z42FuncType)) {              // Func 值间接调用（port-z42c-closures）
+                BoundExpr callee = this._bindExpr(call.Callee, env);
+                return new BoundIndirectCall(callee, args, call.ArgCount, (vfn as Z42FuncType).Ret, call.Span);
+            }
             if (env.Symbols.HasFunc(id.Name)) {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);
                 return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, ms.Signature.Ret, call.Span);
@@ -503,6 +541,46 @@ public sealed class TypeChecker {
             }
         }
         return new BoundCall("instance", true, recv, rt.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
+    }
+
+    // lambda 绑定（port-z42c-closures；expected 自声明类型）：参数类型 = 显式或 expected 对位；
+    // 体在 frame 下绑定（捕获钩子激活；嵌套 lambda 延后——frame 不重入）。
+    private BoundExpr _bindLambda(LambdaExpr lam, Z42FuncType expected, TypeEnv env) {
+        if (lam.ParamCount != expected.ParamCount) {
+            this._diags.Error(DiagnosticCodes.TypeMismatch,
+                "lambda arity " + lam.ParamCount.ToString() + " != expected " + expected.ParamCount.ToString(), lam.Span);
+        }
+        string[] pnames = new string[lam.ParamCount];
+        Z42Type[] ptypes = new Z42Type[lam.ParamCount];
+        TypeEnv lenv = env.PushScope();
+        int i = 0;
+        while (i < lam.ParamCount) {
+            pnames[i] = lam.Params[i].Name;
+            Z42Type pt = new Z42UnknownType();
+            if (lam.Params[i].HasType) { pt = env.ResolveType(lam.Params[i].Type); }
+            else if (i < expected.ParamCount) { pt = expected.ParamTypes[i]; }
+            ptypes[i] = pt;
+            lenv.Define(pnames[i], pt);
+            i = i + 1;
+        }
+        // frame 激活（不重入：嵌套 lambda 延后）
+        this._lambdaActive = true;
+        this._lambdaLocals = new StrMap();
+        i = 0;
+        while (i < lam.ParamCount) { this._lambdaLocals.Put(pnames[i], ptypes[i]); i = i + 1; }
+        this._lambdaCaps = new BoundCapture[2];
+        this._lambdaCapCount = 0;
+        BoundExpr exprBody = null;
+        BoundStmt blockBody = null;
+        if (lam.HasBlock) { blockBody = this._bindStmt(lam.BlockBody, lenv, expected.Ret); }
+        else { exprBody = this._bindExpr(lam.ExprBody, lenv); }
+        this._lambdaActive = false;
+        BoundCapture[] caps = new BoundCapture[this._lambdaCapCount];
+        i = 0;
+        while (i < this._lambdaCapCount) { caps[i] = this._lambdaCaps[i]; i = i + 1; }
+        return new BoundLambda(pnames, ptypes, lam.ParamCount,
+                               lam.HasBlock, exprBody, blockBody,
+                               caps, this._lambdaCapCount, expected, lam.Span);
     }
 
     // prim 名 → stdlib 包装类名（首字母大写，镜像 C# CapitalizeFirst）。

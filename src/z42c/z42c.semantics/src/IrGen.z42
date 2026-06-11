@@ -39,6 +39,18 @@ public sealed class IrGen {
     public string Ns;   // 根命名空间（BP-0 名字限定；""=无）
     public DependencyIndex Deps;       // 跨包索引（CI-4；调用方 Generate 前设置，null=无）
     public StrMap ImportedClassNs;     // imported 短类名 → ns（IC-1）
+    public IrFunction[] Lifted; public int LiftedCount;   // lambda lift（port-z42c-closures；模块尾追加）
+
+    public void AddLifted(IrFunction f) {
+        if (this.Lifted == null) { this.Lifted = new IrFunction[2]; this.LiftedCount = 0; }
+        if (this.LiftedCount == this.Lifted.Length) {
+            IrFunction[] b = new IrFunction[this.Lifted.Length * 2];
+            int k = 0; while (k < this.LiftedCount) { b[k] = this.Lifted[k]; k = k + 1; }
+            this.Lifted = b;
+        }
+        this.Lifted[this.LiftedCount] = f;
+        this.LiftedCount = this.LiftedCount + 1;
+    }
     public string[] UsedDepNs; public int UsedDepNsCount;   // 全函数聚合（首现序）
 
     public void _mergeUsedNsPub(EmitContext ctx) {
@@ -69,6 +81,7 @@ public sealed class IrGen {
     public IrModule Generate(CompilationUnit cu, SemanticModel model) {
         this._symbols = model.Symbols;
         if (this.UsedDepNs == null) { this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0; }
+        if (this.Lifted == null) { this.Lifted = new IrFunction[2]; this.LiftedCount = 0; }
         this.Ns = "";
         if (cu.HasNamespace) { this.Ns = cu.Namespace; }
         IrFunction[] funcs = new IrFunction[8];   int fc = 0;
@@ -120,6 +133,13 @@ public sealed class IrGen {
                 }
             }
             i = i + 1;
+        }
+        // lift 函数末尾追加（port-z42c-closures；镜像 C# _liftedFunctions AddRange）
+        int li2 = 0;
+        while (li2 < this.LiftedCount) {
+            funcs = this._pushFunc(funcs, fc, this.Lifted[li2]);
+            fc = fc + 1;
+            li2 = li2 + 1;
         }
         string modName = "main";   // 模块名 = 根命名空间（对齐 C# `cu.Namespace ?? "main"`）
         if (cu.HasNamespace) { modName = cu.Namespace; }

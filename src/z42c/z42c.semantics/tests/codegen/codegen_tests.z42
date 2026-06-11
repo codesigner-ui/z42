@@ -337,3 +337,12 @@ void test_throw_lowering() {
     Assert.Equal("fn @C.M(1) -> void {\nentry:\n  %1 = obj_new E()\n  throw %1\n}",
                  IrDump.DumpFunc(src, "C.M"));
 }
+
+// ── lambda（port-z42c-closures）─────────────────────────────────────────────
+[Test]
+void test_lambda_lift_loadfn() {
+    // 无捕获 → lift + load_fn；lift 函数追加在模块尾
+    string src = "int Use() { Func<int, int> f = x => x + 1; return f(1); }";
+    Assert.Equal("fn @Use(0) -> int {\nentry:\n  %0 = load_fn @Use__lambda_0\n  %1 = copy %0\n  %2 = const.i64 1\n  %3 = call_ind %1(%2)\n  ret %3\n}",
+                 IrDump.DumpFunc(src, "Use"));
+}

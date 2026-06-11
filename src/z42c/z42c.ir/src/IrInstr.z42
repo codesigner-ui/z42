@@ -35,6 +35,51 @@ public sealed class ConstF64Instr : IrInstr {
     public override string Dump() { return this.Dst.Dump() + " = const.f64 " + this.Text; }
 }
 
+// 闭包三指令（port-z42c-closures）。
+public sealed class LoadFnInstr : IrInstr {
+    public TypedReg Dst; public string Func;
+    public LoadFnInstr(TypedReg dst, string func) { this.Dst = dst; this.Func = func; }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = load_fn @" + this.Func; }
+}
+
+public sealed class MkClosInstr : IrInstr {
+    public TypedReg Dst; public string Func;
+    public TypedReg[] Captures; public int CaptureCount;
+    public bool StackAlloc;
+    public MkClosInstr(TypedReg dst, string func, TypedReg[] captures, int captureCount, bool stackAlloc) {
+        this.Dst = dst; this.Func = func; this.Captures = captures; this.CaptureCount = captureCount;
+        this.StackAlloc = stackAlloc;
+    }
+    public override string Dump() {
+        string s = "%" + this.Dst.Id.ToString() + " = mk_clos @" + this.Func + "(";
+        int i = 0;
+        while (i < this.CaptureCount) {
+            if (i > 0) { s = s + ", "; }
+            s = s + "%" + this.Captures[i].Id.ToString();
+            i = i + 1;
+        }
+        return s + ")";
+    }
+}
+
+public sealed class CallIndirectInstr : IrInstr {
+    public TypedReg Dst; public TypedReg Callee;
+    public TypedReg[] Args; public int ArgCount;
+    public CallIndirectInstr(TypedReg dst, TypedReg callee, TypedReg[] args, int argCount) {
+        this.Dst = dst; this.Callee = callee; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = "%" + this.Dst.Id.ToString() + " = call_ind %" + this.Callee.Id.ToString() + "(";
+        int i = 0;
+        while (i < this.ArgCount) {
+            if (i > 0) { s = s + ", "; }
+            s = s + "%" + this.Args[i].Id.ToString();
+            i = i + 1;
+        }
+        return s + ")";
+    }
+}
+
 public sealed class ConstCharInstr : IrInstr {
     public TypedReg Dst; public char Val;
     public ConstCharInstr(TypedReg dst, char val) { this.Dst = dst; this.Val = val; }

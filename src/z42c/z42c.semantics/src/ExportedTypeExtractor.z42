@@ -283,11 +283,12 @@ public static class ExportedTypeExtractor {
         m[1] = ExportedTypeExtractor._im("IsAlive", "bool", ExportedTypeExtractor._t0(), 0);
         m[2] = ExportedTypeExtractor._im("OnInvoked", "void", ExportedTypeExtractor._t0(), 0);
         r[0] = ExportedTypeExtractor._iface("ISubscription", ExportedTypeExtractor._t1("TD"), 1, m, 3);
-        m = new ExportedMethodZ[3];
+        m = new ExportedMethodZ[4];
         m[0] = ExportedTypeExtractor._im("Count", "int", ExportedTypeExtractor._t0(), 0);
         m[1] = ExportedTypeExtractor._im("IsEmpty", "bool", ExportedTypeExtractor._t0(), 0);
         m[2] = ExportedTypeExtractor._im("Clear", "void", ExportedTypeExtractor._t0(), 0);
-        r[1] = ExportedTypeExtractor._iface("IBasicCollection", ExportedTypeExtractor._t1("T"), 1, m, 3);
+        m[3] = ExportedTypeExtractor._im("AddOne", "void", ExportedTypeExtractor._t1("T"), 1);   // 2026-06-11 prelude 漂移（并行流）
+        r[1] = ExportedTypeExtractor._iface("IBasicCollection", ExportedTypeExtractor._t1("T"), 1, m, 4);
         m = new ExportedMethodZ[1];
         m[0] = ExportedTypeExtractor._im("CompareTo", "int", ExportedTypeExtractor._t1("T"), 1);
         r[2] = ExportedTypeExtractor._iface("IComparable", ExportedTypeExtractor._t1("T"), 1, m, 1);

@@ -490,3 +490,19 @@ void test_interface_dispatch_bind() {
                  SemanticDump.DumpBody(src, "U.Use"));
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── lambda（port-z42c-closures）─────────────────────────────────────────────
+[Test]
+void test_lambda_infer_and_capture() {
+    // expected 推导 + 捕获记录（k 捕获 → cap-ident）
+    string src = "class C { int M() { int k = 3; Func<int, int> f = x => x * k; return k; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_indirect_call_bind() {
+    string src = "class C { int M(Func<int, int> f) { return f(2); } }";
+    Assert.Equal("(block (return (call-ind (ident f :Func<int, int>) :int)))",
+                 SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

@@ -430,13 +430,32 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         "using Std;\nusing Std.Text;\n\nvoid Main() {\n    var sb = new StringBuilder();\n    sb.Append(\"ab\");\n    sb.Append(\"cd\");\n    string s = sb.ToString();\n    string sub = s.Substring(0, 2);\n    Console.WriteLine(sub);\n}\n");
     File.WriteAllText(Path.Join(tdir, "text.app.z42.toml"),
         "[project]\nname    = \"text.app\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
-    string[] cmpTomls = new string[4];
+    // closcheck（port-z42c-closures）：无捕获/捕获 lambda + Func 形参 + 间接调用 + oracle。
+    // 注意逃逸形态（Apply 传参）：C# 逃逸分析对非逃逸闭包发 stackAlloc=1（z42c 恒 0 延后）。
+    string cdir = "/tmp/z42c-e2e-buildclos";
+    Directory.Create(cdir);
+    File.WriteAllText(Path.Join(cdir, "app.z42"),
+        "int Apply(Func<int, int> f, int v) {\n"
+        + "    return f(v);\n"
+        + "}\n\n"
+        + "int Main() {\n"
+        + "    Func<int, int> dbl = x => x * 2;\n"
+        + "    int k = 3;\n"
+        + "    Func<int, int> mul = x => x * k;\n"
+        + "    int ok = 0;\n"
+        + "    if (dbl(21) == 42) { if (Apply(mul, 14) == 42) { ok = 1; } }\n"
+        + "    return 100 / ok;\n"
+        + "}\n");
+    File.WriteAllText(Path.Join(cdir, "clos.app.z42.toml"),
+        "[project]\nname    = \"clos.app\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
+    string[] cmpTomls = new string[5];
     cmpTomls[0] = btoml;
     cmpTomls[1] = Path.Join(ddir, "demo.minimal.z42.toml");
     cmpTomls[2] = Path.Join(hdir, "hello.app.z42.toml");
     cmpTomls[3] = Path.Join(tdir, "text.app.z42.toml");
+    cmpTomls[4] = Path.Join(cdir, "clos.app.z42.toml");
     int pi = 0;
-    while (pi < 4) {
+    while (pi < 5) {
         string pdir = Path.GetDirectoryName(cmpTomls[pi]);
         // z42c build（刚跑过 check.app 也重跑一次保产物新鲜）
         rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("build").Arg(cmpTomls[pi])
@@ -461,8 +480,12 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         }
         pi = pi + 1;
     }
-    Console.WriteLine("  ✓ zpkg byte-compare: 4/4 projects FULL-FILE byte-identical (incl instance import)");
+    Console.WriteLine("  ✓ zpkg byte-compare: 5/5 projects FULL-FILE byte-identical (incl closures)");
     // hello-stdlib 直跑（跨包 Call 链可执行性）
+    rc = new Process(vm).Arg(Path.Join(cdir, "dist/clos.app.zpkg"))
+        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
+        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ clos.app.zpkg failed to run (exit " + rc.ToString() + ")"); return 1; }
     rc = new Process(vm).Arg(Path.Join(tdir, "dist/text.app.zpkg"))
         .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
         .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;

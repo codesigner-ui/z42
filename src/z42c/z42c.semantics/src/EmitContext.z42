@@ -25,6 +25,9 @@ public sealed class EmitContext {
     public StrMap ImportedClassNs;     // imported 短类名 → ns（StrBox；IC-1：VCall 依赖追踪 + ObjNew FQ）
     public string[] UsedDepNs; public int UsedDepNsCount;   // codegen 期实际命中的依赖 ns（DEPS 用，首现序）
     public IrExcEntry[] ExcTable; public int ExcCount;       // 异常表（port-z42c-try）
+    public string CurFnName;                                  // lift 命名用（port-z42c-closures）
+    public int LambdaIdx;                                     // 本函数 lambda 计数（镜像 NextLambdaIndex）
+    public bool InLambdaEnv;                                  // lift env 版：BoundCapturedIdent → array_get env(reg0)
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
         this.Symbols = symbols; this.Gen = gen;
@@ -39,6 +42,7 @@ public sealed class EmitContext {
         this.ImportedClassNs = null;
         this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0;
         this.ExcTable = new IrExcEntry[2]; this.ExcCount = 0;
+        this.CurFnName = ""; this.LambdaIdx = 0; this.InLambdaEnv = false;
     }
 
     public void AddExc(IrExcEntry e) {

@@ -53,6 +53,26 @@ public sealed class ExprEmitter {
             return r;
         }
         if (e is BoundIdent) { return this._lookupIdent(e as BoundIdent); }
+        if (e is BoundCapturedIdent) {
+            // lift env 版体内：array_get env(reg0)[captureIdx]（镜像 C#——idx 用 ConstI32，唯一 ConstI32 场景）
+            BoundCapturedIdent ci = e as BoundCapturedIdent;
+            TypedReg idxReg = this._ctx.Alloc(IrType.I32);
+            this._ctx.Emit(new ConstI32Instr(idxReg, ci.CaptureIdx.ToString()));
+            TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(ci.Type()));
+            this._ctx.Emit(new ArrayGetInstr(dst, new TypedReg(0, IrType.Ref), idxReg));
+            return dst;
+        }
+        if (e is BoundLambda) { return this._emitLambda(e as BoundLambda); }
+        if (e is BoundIndirectCall) {
+            BoundIndirectCall ic = e as BoundIndirectCall;
+            TypedReg[] args = new TypedReg[ic.ArgCount];
+            int ai = 0;
+            while (ai < ic.ArgCount) { args[ai] = this.Emit(ic.Args[ai]); ai = ai + 1; }
+            TypedReg callee = this.Emit(ic.Callee);
+            TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(ic.Type()));
+            this._ctx.Emit(new CallIndirectInstr(dst, callee, args, ic.ArgCount));
+            return dst;
+        }
         if (e is BoundBinary) { return this._emitBinary(e as BoundBinary); }
         if (e is BoundUnary) { return this._emitUnary(e as BoundUnary); }
         if (e is BoundAssign) { return this._emitAssign(e as BoundAssign); }
@@ -67,6 +87,28 @@ public sealed class ExprEmitter {
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(e.Type()));
         this._ctx.Emit(new ConstNullInstr(ph));
         return ph;
+    }
+
+    // lambda 发射（port-z42c-closures）：lift 子发射器 + LoadFn（无捕获）/ MkClos（捕获，恒堆）。
+    private TypedReg _emitLambda(BoundLambda lam) {
+        string liftName = this._ctx.CurFnName + "__lambda_" + this._ctx.LambdaIdx.ToString();
+        this._ctx.LambdaIdx = this._ctx.LambdaIdx + 1;
+        var fe = new FunctionEmitter(this._ctx.Symbols, this._ctx.Gen);
+        IrFunction lifted = fe.EmitLambdaLifted(liftName, lam);
+        this._ctx.Gen.AddLifted(lifted);
+        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(lam.Type()));
+        if (lam.CaptureCount == 0) {
+            this._ctx.Emit(new LoadFnInstr(dst, liftName));
+            return dst;
+        }
+        TypedReg[] caps = new TypedReg[lam.CaptureCount];
+        int i = 0;
+        while (i < lam.CaptureCount) {
+            caps[i] = this._ctx.Locals.Get(lam.Captures[i].Name) as TypedReg;
+            i = i + 1;
+        }
+        this._ctx.Emit(new MkClosInstr(dst, liftName, caps, lam.CaptureCount, false));
+        return dst;
     }
 
     // ident：local/param → 寄存器；裸自身字段 → field_get(reg0=this)；静态字段/未解析 → 占位。

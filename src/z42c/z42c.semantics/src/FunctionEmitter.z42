@@ -25,6 +25,7 @@ public sealed class FunctionEmitter {
         this._ctx.Ns = this._gen.Ns;   // BP-0：emitter 侧名字限定（ObjNew/is/as 类引用）
         this._ctx.Deps = this._gen.Deps;   // CI-4：跨包调用索引
         this._ctx.ImportedClassNs = this._gen.ImportedClassNs;   // IC-1
+        this._ctx.CurFnName = name;                               // lift 命名（port-z42c-closures）
         this._expr = new ExprEmitter(this._ctx);
         string[] tp = this._mergeTp(classTp, classTpCount, md.TypeParams.Names, md.TypeParams.Count);
         int tpc = classTpCount + md.TypeParams.Count;
@@ -46,9 +47,10 @@ public sealed class FunctionEmitter {
         while (p < md.ParamCount) {
             Z42Type pt = this._symbols.ResolveTypeP(md.Params[p].Type, tp, tpc);
             int ptag = this._ctx.ToIrType(pt);
-            // 接口形参寄存器 = Unknown（C# 签名解析序怪癖：REGT 字节实证——体内接口局部是 Ref，
-            // 签名形参是 Unknown；port-z42c-interface）
+            // 接口/Func 形参寄存器 = Unknown（C# 签名解析序怪癖：REGT 字节实证——体内局部是 Ref，
+            // 签名形参是 Unknown；port-z42c-interface + closures 同款）
             if (pt is Z42InterfaceType) { ptag = IrType.Unknown; }
+            if (pt is Z42FuncType) { ptag = IrType.Unknown; }
             this._ctx.Locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, ptag));
             this._ctx.RecordReg(p + paramOffset, ptag);
             paramTypes[p + paramOffset] = pt.Name();
@@ -88,6 +90,63 @@ public sealed class FunctionEmitter {
             irf.ExcCount = this._ctx.ExcCount;
         }
         return irf;
+    }
+
+    // lambda lift 发射（port-z42c-closures；镜像 C# EmitLifted/EmitLiftedLambdaWithEnv）。
+    // hasEnv：env=reg0、参数 reg1..；否则参数 reg0..。体内 BoundCapturedIdent → array_get env[idx]。
+    public IrFunction EmitLambdaLifted(string name, BoundLambda lam) {
+        // 子发射器自建 ctx（EmitFunction 才建 _ctx；镜像其入口装配）
+        this._ctx = new EmitContext(this._symbols, this._gen);
+        this._ctx.Ns = this._gen.Ns;
+        this._ctx.Deps = this._gen.Deps;
+        this._ctx.ImportedClassNs = this._gen.ImportedClassNs;
+        this._ctx.CurFnName = name;
+        this._expr = new ExprEmitter(this._ctx);
+        bool hasEnv = lam.CaptureCount > 0;
+        int paramOffset = 0;
+        if (hasEnv) { paramOffset = 1; }
+        int totalParams = lam.ParamCount + paramOffset;
+        string[] paramTypes = new string[totalParams];
+        if (hasEnv) {
+            this._ctx.RecordReg(0, IrType.Ref);                  // env 槽
+            paramTypes[0] = "?";
+        }
+        int p = 0;
+        while (p < lam.ParamCount) {
+            int ptag = this._ctx.ToIrType(lam.ParamTypes[p]);
+            this._ctx.Locals.Put(lam.ParamNames[p], new TypedReg(p + paramOffset, ptag));
+            this._ctx.RecordReg(p + paramOffset, ptag);
+            paramTypes[p + paramOffset] = "?";                   // lift 形参类型串恒 "?"（SIGS 字节实证）
+            p = p + 1;
+        }
+        this._ctx.NextReg = totalParams;                     // 参数区之后分配（漏此则 const 撞 reg0）
+        this._ctx.MaxReg = this._ctx.NextReg;
+        this._ctx.InLambdaEnv = hasEnv;
+        this._ctx.StartBlock("entry");
+        if (lam.HasBlock) {
+            this._emitBlockChildren(lam.BlockBody);
+            if (!this._ctx.Ended) { this._ctx.EndBlock(new RetTerm(false, null)); }
+        } else {
+            this._ctx.TrackLine(lam.ExprBody.Span);          // 表达式体记 1 条行（DBUG 字节实证：体表达式位置）
+            TypedReg r = this._expr.Emit(lam.ExprBody);
+            this._ctx.EndBlock(new RetTerm(true, r));
+        }
+        Z42FuncType ft = lam.Type() as Z42FuncType;
+        string retName = "void";
+        if (ft != null) { retName = ft.Ret.Name(); }
+        int[] regTypes = new int[this._ctx.RegTagCount];
+        int rt = 0;
+        while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
+        IrLineEntry[] lines = new IrLineEntry[this._ctx.LineCount];
+        int li = 0;
+        while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
+        IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
+        this._gen._mergeUsedNsPub(this._ctx);
+        // IsStatic=false（SIGS 字节实证——survey 报告与字节相左，以字节为准）
+        return new IrFunction(name, totalParams, retName, false,
+                              this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
+                              "Interp", paramTypes, totalParams, regTypes, this._ctx.RegTagCount,
+                              lines, this._ctx.LineCount, localVars, localVars.Length);
     }
 
     // 块体直循环（镜像 C# EmitBoundBlock：子语句逐条 EmitBoundStmt，块自身不 TrackLine）。

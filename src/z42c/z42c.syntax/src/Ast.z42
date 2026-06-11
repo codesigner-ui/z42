@@ -15,6 +15,41 @@ public sealed class IntLitExpr : Expr {
     public override string Dump() { return this.Value; }
 }
 
+public sealed class LambdaParam {
+    public Span     Span;
+    public bool     HasType;
+    public TypeExpr Type;      // 仅 HasType
+    public string   Name;
+    public LambdaParam(bool hasType, TypeExpr type, string name, Span span) {
+        this.Span = span; this.HasType = hasType; this.Type = type; this.Name = name;
+    }
+}
+
+public sealed class LambdaExpr : Expr {
+    public LambdaParam[] Params;
+    public int           ParamCount;
+    public bool          HasBlock;
+    public Expr          ExprBody;   // !HasBlock
+    public Stmt          BlockBody;  // HasBlock
+    public LambdaExpr(LambdaParam[] params_, int paramCount, bool hasBlock, Expr exprBody, Stmt blockBody, Span span) {
+        this.Span = span; this.Params = params_; this.ParamCount = paramCount;
+        this.HasBlock = hasBlock; this.ExprBody = exprBody; this.BlockBody = blockBody;
+    }
+    public override string Dump() {
+        string s = "(lambda (";
+        int i = 0;
+        while (i < this.ParamCount) {
+            if (i > 0) { s = s + " "; }
+            s = s + this.Params[i].Name;
+            i = i + 1;
+        }
+        s = s + ")";
+        if (this.HasBlock) { s = s + " " + this.BlockBody.Dump(); }
+        else { s = s + " " + this.ExprBody.Dump(); }
+        return s + ")";
+    }
+}
+
 public sealed class CharLitExpr : Expr {
     public char Value;     // 解码后（剥引号+转义；镜像 C# LitCharExpr——区别于 Int/Str 存 raw）
     public CharLitExpr(char value, Span span) { this.Span = span; this.Value = value; }

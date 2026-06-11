@@ -358,3 +358,61 @@ public sealed class BoundContinue : BoundStmt {
     public BoundContinue(Span span) { this.Span = span;}
     public override string Dump() { return "(continue)"; }
 }
+
+// lambda（port-z42c-closures）：参数名/类型 + 体（表达式或块）+ 捕获表 + 函数类型。
+public sealed class BoundCapture {
+    public string  Name;
+    public Z42Type CapType;
+    public BoundCapture(string name, Z42Type capType) { this.Name = name; this.CapType = capType; }
+}
+
+public sealed class BoundCapturedIdent : BoundExpr {
+    public string Name;
+    public int    CaptureIdx;    // env 槽位（lift 发射 array_get env[idx]）
+    private Z42Type _t;
+    public BoundCapturedIdent(string name, int captureIdx, Z42Type t, Span span) {
+        this.Span = span; this.Name = name; this.CaptureIdx = captureIdx; this._t = t;
+    }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(cap-ident " + this.Name + " #" + this.CaptureIdx.ToString() + " :" + this._t.Name() + ")"; }
+}
+
+public sealed class BoundLambda : BoundExpr {
+    public string[]       ParamNames;
+    public Z42Type[]      ParamTypes;
+    public int            ParamCount;
+    public bool           HasBlock;
+    public BoundExpr      ExprBody;     // !HasBlock
+    public BoundStmt      BlockBody;    // HasBlock
+    public BoundCapture[] Captures;
+    public int            CaptureCount;
+    private Z42Type _t;                 // Z42FuncType
+    public BoundLambda(string[] paramNames, Z42Type[] paramTypes, int paramCount,
+                       bool hasBlock, BoundExpr exprBody, BoundStmt blockBody,
+                       BoundCapture[] captures, int captureCount, Z42Type t, Span span) {
+        this.Span = span; this.ParamNames = paramNames; this.ParamTypes = paramTypes; this.ParamCount = paramCount;
+        this.HasBlock = hasBlock; this.ExprBody = exprBody; this.BlockBody = blockBody;
+        this.Captures = captures; this.CaptureCount = captureCount; this._t = t;
+    }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() {
+        string s = "(lambda";
+        int i = 0;
+        while (i < this.CaptureCount) { s = s + " [cap " + this.Captures[i].Name + "]"; i = i + 1; }
+        if (this.HasBlock) { s = s + " " + this.BlockBody.Dump(); }
+        else { s = s + " " + this.ExprBody.Dump(); }
+        return s + " :" + this._t.Name() + ")";
+    }
+}
+
+public sealed class BoundIndirectCall : BoundExpr {
+    public BoundExpr   Callee;
+    public BoundExpr[] Args;
+    public int         ArgCount;
+    private Z42Type _t;
+    public BoundIndirectCall(BoundExpr callee, BoundExpr[] args, int argCount, Z42Type t, Span span) {
+        this.Span = span; this.Callee = callee; this.Args = args; this.ArgCount = argCount; this._t = t;
+    }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(call-ind " + this.Callee.Dump() + " :" + this._t.Name() + ")"; }
+}

@@ -66,6 +66,27 @@ public static class ZbcInstr {
             while (t < i.TypeArgCount) { w.WriteU32(pool.Idx(i.TypeArgs[t])); t = t + 1; }
             return;
         }
+        if (ins is LoadFnInstr) {
+            LoadFnInstr lf = ins as LoadFnInstr;
+            w.WriteU8(Op.LoadFn); w.WriteU8(Tag.FromIrType(lf.Dst.Type)); w.WriteU16(lf.Dst.Id);
+            w.WriteU32(alloc.ResolveMethod(lf.Func, pool));
+            return;
+        }
+        if (ins is MkClosInstr) {
+            MkClosInstr mk = ins as MkClosInstr;
+            w.WriteU8(Op.MkClos); w.WriteU8(Tag.FromIrType(mk.Dst.Type)); w.WriteU16(mk.Dst.Id);
+            w.WriteU32(alloc.ResolveMethod(mk.Func, pool));
+            if (mk.StackAlloc) { w.WriteU8(1); } else { w.WriteU8(0); }
+            ZbcInstr._args(w, mk.Captures, mk.CaptureCount);
+            return;
+        }
+        if (ins is CallIndirectInstr) {
+            CallIndirectInstr cind = ins as CallIndirectInstr;
+            w.WriteU8(Op.CallIndirect); w.WriteU8(Tag.FromIrType(cind.Dst.Type)); w.WriteU16(cind.Dst.Id);
+            w.WriteU16(cind.Callee.Id);
+            ZbcInstr._args(w, cind.Args, cind.ArgCount);
+            return;
+        }
         if (ins is IsInstanceInstr) {
             IsInstanceInstr i = ins as IsInstanceInstr;
             w.WriteU8(Op.IsInstance); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
@@ -247,6 +268,8 @@ public static class ZbcInstr {
     // 指令引用串预扫 intern（镜像 C# InternInstrStrings；调用序 = STRS 字节序的一部分，须 1:1）。
     public static void InternStrings(ZbcStringPool pool, IrInstr ins) {
         if (ins is CallInstr) { CallInstr i = ins as CallInstr; pool.Intern(i.Func); return; }
+        if (ins is LoadFnInstr) { pool.Intern((ins as LoadFnInstr).Func); return; }       // C# 池序实证：lift 名入池
+        if (ins is MkClosInstr) { pool.Intern((ins as MkClosInstr).Func); return; }
         if (ins is VCallInstr) { VCallInstr i = ins as VCallInstr; pool.Intern(i.Method); return; }
         if (ins is FieldGetInstr) { FieldGetInstr i = ins as FieldGetInstr; pool.Intern(i.Field); return; }
         if (ins is FieldSetInstr) { FieldSetInstr i = ins as FieldSetInstr; pool.Intern(i.Field); return; }
