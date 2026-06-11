@@ -143,6 +143,19 @@ public sealed partial class TypeChecker
     {
         var args = call.Args.Select(a => BindArgValue(a, env)).ToList();
 
+        // fix-namespace-qualified-free-call: `ns.func()` where `ns` is the current
+        // namespace and `func` is a free function in it — a namespace-qualified
+        // free call, NOT a static call on a class named `ns`. Without this, it
+        // falls through to BoundCall(Static, ReceiverClass="ns"), and codegen's
+        // QualifyClassName("ns") (a namespace mistaken for a class) → QualifyName
+        // → `ns.ns.func` → runtime "undefined function". Route to the free-call
+        // binder so the short name is qualified exactly once (→ `ns.func`).
+        // Scoped to the current namespace: cross-namespace qualified free calls
+        // would need codegen to qualify by `tgtName` (not the current ns) — a
+        // separate concern; the idiomatic form there is `using OtherNs;` + bare call.
+        if (tgtName == _currentNamespace && env.LookupFunc(mCallee.Member) is not null)
+            return BindFreeIdentCall(new IdentExpr(mCallee.Member, mCallee.Span), call, args, env);
+
         // Map keyword → stdlib class FQN via TypeRegistry (single source of truth).
         // Covers all 12 primitives + string + object; falls through to tgtName for user types.
         // See rename-primitives-to-pascal-case spec for the keyword→PascalCase BCL mapping.

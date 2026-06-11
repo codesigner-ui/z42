@@ -8,7 +8,7 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | **fix-namespace-qualified-free-call（实施中）** | 2026-06-11 | `ns.func()`（命名空间限定的自由函数调用）被 binder 误绑为 static-call-on-class `ns` → codegen `QualifyClassName("ns")` 双重限定 `ns.ns.func`。修：BindMemberCallOnUnknownTarget 识别「tgtName 是命名空间 + member 是该 ns 的自由函数」→ 绑 Free call 限定名。niche，不撞 gate（已证 gate 幻影）|
+| `compiler` | —（空闲）| — | fix-namespace-qualified-free-call 已归档 2026-06-11 → 释放（`ns.func()` 同命名空间限定自由调用：BindMemberCallOnUnknownTarget 识别 `tgtName==current ns` + member 是自由函数 → 绑 Free call；修双重限定 `ns.ns.func`；dotnet 1558/1558 + 多文件 packed repro exit 0）|
 | `runtime` | —（空闲）| — | add-pal-signal 已归档 2026-06-11 → 释放（PAL Phase 3：signal OS 原语 → pal/signal.rs，z42 崩溃 reporter 留 signal_handler.rs；cargo 759 + pal::signal 9 单测；e2e 被陈年 UE 僵尸堵塞→verbatim 抽取 + 单测验证）。PAL Phase 4/5 = consumer-gated 延后 |
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
 | `z42c` | **port-z42c-try（DRAFT 待审）** | 2026-06-11 | char 归档接力（三大件第①：异常）。try/catch/throw 整链（typecheck/codegen/ExceptionTable 编码——syntax 6a 已有）+ trycheck zbc 对账第 5 源 |
@@ -54,4 +54,5 @@
 | ~~fix-multifile-project-namespace-qualify~~ | compiler —— ⚠️ **误判更正 2026-06-11**：xtask `undefined fn Z42Xtask.Std.Int32.Parse` 是**陈旧/混版产物幻影**，非真 bug。干净 worktree（origin/main）全量重建后 `xtask test vm`=346/0、零 undefined-function。gate 在干净树正常。仅存真 bug=niche 命名空间限定自由调用 `ns.func()`→`ns.ns.func`（xtask/常规不触发，低优先，待独立评估）。详见 memory `reference_multifile_project_namespace_double_qualify_bug`|
 | ~~align-type-memberinfo-hierarchy~~ | stdlib + runtime —— ✅ 已归档 2026-06-11（`Std.Type : MemberInfo`；`typeof(C) is MemberInfo` 真，`Name` 由基类统一提供；短名基类无需编译器改动、无格式 bump；dotnet 1557/1557 + type_is_memberinfo.z42 e2e + cargo 759+21）|
 | ~~fix-stale-build-stdlib-sh-refs~~ | runtime + compiler + toolchain —— ✅ 已归档 2026-06-11（报错/注释里 `./scripts/build-stdlib.sh` → `z42 xtask.zpkg build stdlib`；该脚本已折进 xtask；cargo+dotnet build 绿）|
+| ~~fix-namespace-qualified-free-call~~ | compiler —— ✅ 已归档 2026-06-11（`ns.func()` 命名空间限定自由调用此前误绑 static-call-on-class `ns` → 双重限定 `ns.ns.func` 运行期 undefined；修 BindMemberCallOnUnknownTarget 识别同 ns 自由调用 → Free call；dotnet 1558/1558 + packed repro exit 0。即 fix-multifile-project-namespace-qualify 幻影下暴露的唯一真 bug）|
 | plan-0.3.x-three-streams | docs（不上锁） |

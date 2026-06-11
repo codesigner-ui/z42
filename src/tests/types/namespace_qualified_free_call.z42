@@ -1,0 +1,14 @@
+// fix-namespace-qualified-free-call: calling a free function with an explicit
+// current-namespace prefix `ns.func()` must resolve to the free function (not be
+// mistaken for a static call on a class named `ns`, which double-qualified to
+// `ns.ns.func` → runtime undefined). The bare form `func()` already worked.
+namespace nsfree;
+
+int doubler(int x) { return x * 2; }
+
+void Main() {
+    // namespace-qualified free call (the fix target)
+    Assert.Equal(14, nsfree.doubler(7));
+    // bare form still works (control)
+    Assert.Equal(20, doubler(10));
+}
