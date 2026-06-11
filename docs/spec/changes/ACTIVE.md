@@ -11,7 +11,7 @@
 | `compiler` | —（空闲）| — | fix-namespace-qualified-free-call 已归档 2026-06-11 → 释放（`ns.func()` 同命名空间限定自由调用：BindMemberCallOnUnknownTarget 识别 `tgtName==current ns` + member 是自由函数 → 绑 Free call；修双重限定 `ns.ns.func`；dotnet 1558/1558 + 多文件 packed repro exit 0）|
 | `runtime` | **slim-instruction-enum（DRAFT 待审）** | 2026-06-11 | review.md E2.P4：Instruction enum ~120B→≤32B（装箱带 String/多字段的冷变体 Call/CallNative/ObjNew/VCall/FieldGet 等，热算术变体不动）。**无 zbc 格式 bump**（内存布局 vs 二进制格式解耦）；JSON serde 用 `#[serde(flatten)]` 保持不变。改 zbc_reader/interp/jit match-site |
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
-| `z42c` | —（空闲）| — | 自举主线全归档：…→char✅→**port-z42c-try✅ 已归档 2026-06-11**（异常整链；zbc 对账 5/5）。三大件剩：interface → 闭包（User 定序）|
+| `z42c` | **port-z42c-interface（DRAFT 待审）** | 2026-06-11 | try 归档接力（三大件第②）。Z42InterfaceType+收集/基表判别/可赋性/接口分派（探针实证：无 TYPE 条目、VCall 短名、base 回落 Std.Object）+ TSIG 补全 + ifacecheck 第 6 zbc 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -29,6 +29,7 @@
 | ~~port-z42c-instance-import~~ | z42c —— ✅ 已归档 2026-06-11（textapp byte-identical；gate 4/4）|
 | ~~port-z42c-char~~ | z42c —— ✅ 已归档 2026-06-11（charcheck byte-identical；zbc 4/4）|
 | ~~port-z42c-try~~ | z42c —— ✅ 已归档 2026-06-11（trycheck byte-identical；zbc 5/5）|
+| port-z42c-interface | z42c（2026-06-11 开；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
