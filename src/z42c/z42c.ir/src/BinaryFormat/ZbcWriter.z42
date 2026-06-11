@@ -414,6 +414,7 @@ public static class ZbcWriter {
         if (ins is ObjNewInstr) { ObjNewInstr i = ins as ObjNewInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtArgs(rt, i.Args, i.ArgCount); return; }
         if (ins is IsInstanceInstr) { IsInstanceInstr i = ins as IsInstanceInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
         if (ins is AsCastInstr) { AsCastInstr i = ins as AsCastInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
+        if (ins is ArrayLenInstr) { ArrayLenInstr al2 = ins as ArrayLenInstr; ZbcWriter._regtVis(rt, al2.Dst); ZbcWriter._regtVis(rt, al2.Arr); return; }
         if (ins is LoadFnInstr) { ZbcWriter._regtVis(rt, (ins as LoadFnInstr).Dst); return; }
         if (ins is CallIndirectInstr) { CallIndirectInstr ci2 = ins as CallIndirectInstr; ZbcWriter._regtVis(rt, ci2.Dst); ZbcWriter._regtVis(rt, ci2.Callee); ZbcWriter._regtArgs(rt, ci2.Args, ci2.ArgCount); return; }
         if (ins is MkClosInstr) { MkClosInstr mk2 = ins as MkClosInstr; ZbcWriter._regtVis(rt, mk2.Dst); ZbcWriter._regtArgs(rt, mk2.Captures, mk2.CaptureCount); return; }

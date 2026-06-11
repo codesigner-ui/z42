@@ -292,6 +292,13 @@ public sealed class ExprEmitter {
 
     // obj.field 读 → field_get。
     private TypedReg _emitMember(BoundMember m) {
+        // arr.Length（PS-2）：按 target 静态类型判别（防类字段同名误击）
+        if (m.MemberName == "Length" && (m.Target.Type() is Z42ArrayType)) {
+            TypedReg arr0 = this.Emit(m.Target);
+            TypedReg dst0 = this._ctx.Alloc(this._ctx.ToIrType(m.Type()));
+            this._ctx.Emit(new ArrayLenInstr(dst0, arr0));
+            return dst0;
+        }
         TypedReg obj = this.Emit(m.Target);
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(m.Type()));
         this._ctx.Emit(new FieldGetInstr(dst, obj, m.MemberName));

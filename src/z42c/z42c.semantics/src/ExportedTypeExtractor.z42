@@ -16,6 +16,19 @@ using Z42.IR;
 
 public static class ExportedTypeExtractor {
 
+    // 全包自由函数版（PS-1 镜像 C#：sem.Funcs 含兄弟合并 → 每模块 TSIG functions 全包泄漏；
+    // classes 有 imported/intra 过滤故不重复——字节实证 13B/条）。
+    public static ExportedModuleZ ExtractP(CompilationUnit cu, SymbolTable symbols, string ns,
+                                           ExportedFuncZ[] allFuncs, int allFuncCount) {
+        ExportedModuleZ em = ExportedTypeExtractor.Extract(cu, symbols, ns);
+        return new ExportedModuleZ(em.Namespace,
+            em.Classes, em.ClassCount,
+            em.Interfaces, em.InterfaceCount,
+            em.Enums, em.EnumCount,
+            allFuncs, allFuncCount,
+            em.Delegates, em.DelegateCount);
+    }
+
     public static ExportedModuleZ Extract(CompilationUnit cu, SymbolTable symbols, string ns) {
         // ── 用户类（CU 声明序）──
         ExportedClassZ[] classes = new ExportedClassZ[4];

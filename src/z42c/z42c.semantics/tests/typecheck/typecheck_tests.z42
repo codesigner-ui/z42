@@ -506,3 +506,12 @@ void test_indirect_call_bind() {
                  SemanticDump.DumpBody(src, "C.M"));
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── arr.Length（port-z42c-package-symbols PS-2）──────────────────────────────
+[Test]
+void test_array_length() {
+    string src = "class C { int M(int[] xs) { return xs.Length; } }";
+    Assert.Equal("(block (return (member (ident xs :int[]) Length :int)))",
+                 SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

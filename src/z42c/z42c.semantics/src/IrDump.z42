@@ -48,6 +48,67 @@ public static class IrDump {
         return IrDump._buildF(src, file);
     }
 
+    // 包级编译（PS-1）：全文件 parse → 全包合并收集 → 逐文件 typecheck/codegen（per-file IrModule）。
+    public static CompiledModuleZ[] BuildPackage(string[] srcs, string[] files, int count,
+                                                 DependencyIndex deps, ImportedSymbols imported) {
+        CompilationUnit[] cus = new CompilationUnit[count];
+        int i = 0;
+        while (i < count) {
+            var pp = new Parser(srcs[i], files[i]);
+            cus[i] = pp.ParseCompilationUnit();
+            i = i + 1;
+        }
+        SymbolTable symbols = new SymbolCollector().CollectAll(cus, count, imported);
+        // 全包自由函数聚合（文件序+声明序）——每模块 TSIG functions 全包（C# sem.Funcs 兄弟泄漏镜像）
+        ExportedFuncZ[] allFuncs = new ExportedFuncZ[4];
+        int afc = 0;
+        i = 0;
+        while (i < count) {
+            ExportedModuleZ own = ExportedTypeExtractor.Extract(cus[i], symbols, "");
+            int f = 0;
+            while (f < own.FunctionCount) {
+                if (afc == allFuncs.Length) {
+                    ExportedFuncZ[] b = new ExportedFuncZ[allFuncs.Length * 2];
+                    int k = 0; while (k < afc) { b[k] = allFuncs[k]; k = k + 1; }
+                    allFuncs = b;
+                }
+                allFuncs[afc] = own.Functions[f];
+                afc = afc + 1;
+                f = f + 1;
+            }
+            i = i + 1;
+        }
+        CompiledModuleZ[] r = new CompiledModuleZ[count];
+        i = 0;
+        while (i < count) {
+            r[i] = IrDump._compileCu(cus[i], symbols, deps, imported);
+            string ns2 = "main";                                 // no-ns build 路径缺省（C# 字节实证）
+            if (cus[i].HasNamespace) { ns2 = cus[i].Namespace; }
+            r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc);
+            i = i + 1;
+        }
+        return r;
+    }
+
+    private static CompiledModuleZ _compileCu(CompilationUnit cu, SymbolTable symbols, DependencyIndex deps, ImportedSymbols imported) {
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Infer(cu, symbols);
+        var gen = new IrGen();
+        gen.Deps = deps;
+        if (imported != null) { gen.ImportedClassNs = imported.ClassNamespaces; }   // QualifyClass（漏则 ObjNew 短名，运行期 vtable miss）
+        IrModule irm = gen.Generate(cu, model);
+        string[] usings = new string[8];
+        int uc = 0;
+        int i = 0;
+        while (i < cu.DeclCount) {
+            if (cu.Decls[i] is UsingDecl) { usings[uc] = (cu.Decls[i] as UsingDecl).Name; uc = uc + 1; }
+            i = i + 1;
+        }
+        string ns = "";
+        if (cu.HasNamespace) { ns = cu.Namespace; }
+        return new CompiledModuleZ(irm, ns, usings, uc, gen.UsedDepNs, gen.UsedDepNsCount, diags.ErrorCount());
+    }
+
     // 公开：带跨包依赖的编译（CI-4）。imported 合并符号表；deps 驱动静态调用 FQ 命中。
     public static CompiledModuleZ BuildModuleD(string src, string file, DependencyIndex deps, ImportedSymbols imported) {
         var p = new Parser(src, file);
@@ -122,6 +183,7 @@ public static class IrDump {
 // 带依赖编译的产物束（CI-4）。
 public sealed class CompiledModuleZ {
     public IrModule Module;
+    public ExportedModuleZ Exported;   // PS-1：包级提取（全包函数泄漏镜像）
     public string   Namespace;  // cu 真实 ns（""=无——C# ZbcFile.Namespace 语义；≠ IrModule.Name 的 "main" 缺省）
     public string[] Usings;     public int UsingCount;
     public string[] UsedDepNs;  public int UsedDepNsCount;

@@ -424,6 +424,9 @@ public sealed class TypeChecker {
                 "no field `" + m.Name + "` on `" + ct.Name() + "`", m.Span);
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
+        if ((tt is Z42ArrayType) && m.Name == "Length") {           // arr.Length（PS-2）
+            return new BoundMember(target, m.Name, new Z42PrimType("int"), m.Span);
+        }
         if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }

@@ -66,6 +66,12 @@ public static class ZbcInstr {
             while (t < i.TypeArgCount) { w.WriteU32(pool.Idx(i.TypeArgs[t])); t = t + 1; }
             return;
         }
+        if (ins is ArrayLenInstr) {
+            ArrayLenInstr al = ins as ArrayLenInstr;
+            w.WriteU8(Op.ArrayLen); w.WriteU8(Tag.FromIrType(al.Dst.Type)); w.WriteU16(al.Dst.Id);
+            w.WriteU16(al.Arr.Id);
+            return;
+        }
         if (ins is LoadFnInstr) {
             LoadFnInstr lf = ins as LoadFnInstr;
             w.WriteU8(Op.LoadFn); w.WriteU8(Tag.FromIrType(lf.Dst.Type)); w.WriteU16(lf.Dst.Id);

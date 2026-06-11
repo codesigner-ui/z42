@@ -35,6 +35,12 @@ public sealed class ConstF64Instr : IrInstr {
     public override string Dump() { return this.Dst.Dump() + " = const.f64 " + this.Text; }
 }
 
+public sealed class ArrayLenInstr : IrInstr {
+    public TypedReg Dst; public TypedReg Arr;
+    public ArrayLenInstr(TypedReg dst, TypedReg arr) { this.Dst = dst; this.Arr = arr; }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = array_len %" + this.Arr.Id.ToString(); }
+}
+
 // 闭包三指令（port-z42c-closures）。
 public sealed class LoadFnInstr : IrInstr {
     public TypedReg Dst; public string Func;

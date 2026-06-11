@@ -448,14 +448,25 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         + "}\n");
     File.WriteAllText(Path.Join(cdir, "clos.app.z42.toml"),
         "[project]\nname    = \"clos.app\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
-    string[] cmpTomls = new string[5];
+    // multifile（port-z42c-package-symbols）：同包跨文件互引（namespaced——C# no-ns 多文件互引自身有
+    // pre-existing VCall 缺陷 `main.Pair.Sum not found`，挂账上游）
+    string mdir = "/tmp/z42c-e2e-buildmulti";
+    Directory.Create(mdir);
+    File.WriteAllText(Path.Join(mdir, "types.z42"),
+        "namespace App;\n\nclass Pair {\n    public int A;\n    public int B;\n    public int Sum() { return A + B; }\n}\n");
+    File.WriteAllText(Path.Join(mdir, "main.z42"),
+        "namespace App;\n\nint Main() {\n    var p = new Pair();\n    p.A = 40;\n    p.B = 2;\n    int ok = 0;\n    if (p.Sum() == 42) { ok = 1; }\n    return 100 / ok;\n}\n");
+    File.WriteAllText(Path.Join(mdir, "multi.app.z42.toml"),
+        "[project]\nname    = \"multi.app\"\nversion = \"0.1.0\"\nkind    = \"exe\"\npack    = true\n\n[sources]\ninclude = [\"*.z42\"]\n");
+    string[] cmpTomls = new string[6];
     cmpTomls[0] = btoml;
     cmpTomls[1] = Path.Join(ddir, "demo.minimal.z42.toml");
     cmpTomls[2] = Path.Join(hdir, "hello.app.z42.toml");
     cmpTomls[3] = Path.Join(tdir, "text.app.z42.toml");
     cmpTomls[4] = Path.Join(cdir, "clos.app.z42.toml");
+    cmpTomls[5] = Path.Join(mdir, "multi.app.z42.toml");
     int pi = 0;
-    while (pi < 5) {
+    while (pi < 6) {
         string pdir = Path.GetDirectoryName(cmpTomls[pi]);
         // z42c build（刚跑过 check.app 也重跑一次保产物新鲜）
         rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("build").Arg(cmpTomls[pi])
@@ -480,7 +491,7 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
         }
         pi = pi + 1;
     }
-    Console.WriteLine("  ✓ zpkg byte-compare: 5/5 projects FULL-FILE byte-identical (incl closures)");
+    Console.WriteLine("  ✓ zpkg byte-compare: 6/6 projects FULL-FILE byte-identical (incl multi-file packages)");
     // hello-stdlib 直跑（跨包 Call 链可执行性）
     rc = new Process(vm).Arg(Path.Join(cdir, "dist/clos.app.zpkg"))
         .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))

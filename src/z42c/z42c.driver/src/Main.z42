@@ -94,11 +94,16 @@ int _build(string tomlPath) {
         imported = ImportedSymbolLoader.Load(scan.Exported, scan.ExportedPkg, scan.ExportedCount,
                                              allUsings, auc);
     }
-    ZbcFileZ[] mods = new ZbcFileZ[srcs.Length];
+    // 包级编译（PS-1）：全文件先 parse 合并收集符号，再逐文件产物——同包跨文件互引可见
+    string[] texts = new string[srcs.Length];
     int i = 0;
+    while (i < srcs.Length) { texts[i] = File.ReadAllText(srcs[i]); i = i + 1; }
+    CompiledModuleZ[] cms = IrDump.BuildPackage(texts, srcs, srcs.Length, depIndex, imported);
+    ZbcFileZ[] mods = new ZbcFileZ[srcs.Length];
+    i = 0;
     while (i < srcs.Length) {
-        string text = File.ReadAllText(srcs[i]);
-        CompiledModuleZ cm = IrDump.BuildModuleD(text, srcs[i], depIndex, imported);
+        string text = texts[i];
+        CompiledModuleZ cm = cms[i];
         if (cm.ErrorCount > 0) {
             ConsoleError.WriteLine("z42c build: " + cm.ErrorCount.ToString() + " error(s) in " + srcs[i]);
             return 1;
@@ -117,13 +122,10 @@ int _build(string tomlPath) {
         mods[i].UsedDepNs = cm.UsedDepNs; mods[i].UsedDepNsCount = cm.UsedDepNsCount;
         i = i + 1;
     }
-    // TSIG：每模块导出类型签名（port-z42c-tsig）
+    // TSIG：BuildPackage 已产 per-file Exported（PS-1）
     ExportedModuleZ[] exported = new ExportedModuleZ[srcs.Length];
     i = 0;
-    while (i < srcs.Length) {
-        exported[i] = IrDump.ExtractExports(File.ReadAllText(srcs[i]), srcs[i], mods[i].Namespace);
-        i = i + 1;
-    }
+    while (i < srcs.Length) { exported[i] = cms[i].Exported; i = i + 1; }
     bool isExe = pm.Kind == "exe";
     // DEPS 条目（usings ∪ usedDepNs → nsMap）
     ZpkgDepList depList = new ZpkgDepList(new ZpkgDepZ[0], 0);

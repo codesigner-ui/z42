@@ -346,3 +346,11 @@ void test_lambda_lift_loadfn() {
     Assert.Equal("fn @Use(0) -> int {\nentry:\n  %0 = load_fn @Use__lambda_0\n  %1 = copy %0\n  %2 = const.i64 1\n  %3 = call_ind %1(%2)\n  ret %3\n}",
                  IrDump.DumpFunc(src, "Use"));
 }
+
+// ── arr.Length（port-z42c-package-symbols PS-2）──────────────────────────────
+[Test]
+void test_array_len_lowering() {
+    string src = "class C { int M(int[] xs) { return xs.Length; } }";
+    Assert.Equal("fn @C.M(2) -> int {\nentry:\n  %2 = array_len %1\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "C.M"));
+}

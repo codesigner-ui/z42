@@ -26,9 +26,43 @@ public sealed class SymbolCollector {
         return t;
     }
 
+    // 全包合并收集（PS-1）：多 CU 同表（接口 stub 全包 → 类 stub 全包 → 成员/函数全包）。
+    // 语义等价 C# sibling-exports（其逐文件+缓存导出形态为增量编译服务）。同名冲突 first-wins（诊断挂账）。
+    public SymbolTable CollectAll(CompilationUnit[] cus, int cuCount, ImportedSymbols imported) {
+        var table = new SymbolTable();
+        int c = 0;
+        while (c < cuCount) { this._passInterfaces(table, cus[c]); c = c + 1; }
+        c = 0;
+        while (c < cuCount) { this._passClassStubs(table, cus[c]); c = c + 1; }
+        c = 0;
+        while (c < cuCount) { this._passMembers(table, cus[c]); c = c + 1; }
+        if (imported != null) {
+            string[] cls = imported.Classes.Keys();
+            int i = 0;
+            while (i < cls.Length) {
+                if (!table.Classes.ContainsKey(cls[i])) { table.Classes.Put(cls[i], imported.Classes.Get(cls[i])); }
+                i = i + 1;
+            }
+            string[] fns = imported.Functions.Keys();
+            i = 0;
+            while (i < fns.Length) {
+                if (!table.Functions.ContainsKey(fns[i])) { table.Functions.Put(fns[i], imported.Functions.Get(fns[i])); }
+                i = i + 1;
+            }
+        }
+        return table;
+    }
+
     public SymbolTable Collect(CompilationUnit cu) {
         var table = new SymbolTable();
-        // Pass A0：接口 stub（先于类——基表判别要查 Interfaces）（port-z42c-interface）
+        this._passInterfaces(table, cu);
+        this._passClassStubs(table, cu);
+        this._passMembers(table, cu);
+        return table;
+    }
+
+    // Pass A0：接口 stub（先于类——基表判别要查 Interfaces）（port-z42c-interface）
+    private void _passInterfaces(SymbolTable table, CompilationUnit cu) {
         int i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
@@ -40,8 +74,11 @@ public sealed class SymbolCollector {
             }
             i = i + 1;
         }
-        // Pass A：类 stub（基表判别：接口入 InterfaceNames，类→base——探针实证 base 回落 Std.Object 由 IrGen 做）
-        i = 0;
+    }
+
+    // Pass A：类 stub（基表判别：接口入 InterfaceNames，类→base）
+    private void _passClassStubs(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
             if (d is ClassDecl) {
@@ -66,8 +103,11 @@ public sealed class SymbolCollector {
             }
             i = i + 1;
         }
-        // Pass B：成员 + 顶层 func
-        i = 0;
+    }
+
+    // Pass B：成员 + 顶层 func
+    private void _passMembers(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
             if (d is ClassDecl) {
@@ -80,7 +120,6 @@ public sealed class SymbolCollector {
             }
             i = i + 1;
         }
-        return table;
     }
 
     private Decl _unwrap(Decl d) {
