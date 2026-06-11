@@ -9,7 +9,7 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17 SIGS per-param 块；dotnet 1556/1556 + e2e）。⚠️ 暴露 pre-existing 多文件 project-build 命名空间双重限定 bug（非本 change，待独立 fix；见 memory）|
-| `runtime` | —（空闲）| — | add-pal-fs 已归档 2026-06-11 → 释放（PAL Phase 2：corelib/fs.rs 去 cfg → pal/fs.rs make_executable/symlink；cargo 759 + pal::fs 2 单测 + z42.io 45/45 e2e）|
+| `runtime` | —（空闲）| — | add-pal-signal 已归档 2026-06-11 → 释放（PAL Phase 3：signal OS 原语 → pal/signal.rs，z42 崩溃 reporter 留 signal_handler.rs；cargo 759 + pal::signal 9 单测；e2e 被陈年 UE 僵尸堵塞→verbatim 抽取 + 单测验证）。PAL Phase 4/5 = consumer-gated 延后 |
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
 | `z42c` | —（空闲）| — | 自举主线全归档：…→instance-import✅→**port-z42c-char✅ 已归档 2026-06-11**（char 整链；zbc 对账 4/4）。下一步候选：interface·异常·闭包 typecheck+codegen（User 定序第③项）/ 扩 corpus |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
