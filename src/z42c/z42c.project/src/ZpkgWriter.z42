@@ -189,6 +189,8 @@ public static class ZpkgWriterZ {
             pool.Intern(cl.Name);
             if (cl.HasBase) { pool.Intern(cl.BaseName); }
             int i = 0;
+            while (i < cl.InterfaceCount) { pool.Intern(cl.Interfaces[i]); i = i + 1; }   // C# InternTsigStrings：base 后接口
+            i = 0;
             while (i < cl.FieldCount) {
                 pool.Intern(cl.Fields[i].Name); pool.Intern(cl.Fields[i].TypeName); pool.Intern(cl.Fields[i].Visibility);
                 i = i + 1;
@@ -267,7 +269,9 @@ public static class ZpkgWriterZ {
                 w.WriteU16(cl.MethodCount);
                 i = 0;
                 while (i < cl.MethodCount) { ZpkgWriterZ._writeMethod(w, cl.Methods[i], pool); i = i + 1; }
-                w.WriteU16(0);                      // interfaces（z42c 类无接口实现声明）
+                w.WriteU16(cl.InterfaceCount);      // 类接口表（port-z42c-interface）
+                int ifx = 0;
+                while (ifx < cl.InterfaceCount) { w.WriteU32(pool.Idx(cl.Interfaces[ifx])); ifx = ifx + 1; }
                 w.WriteU8(0);                       // type params
                 w.WriteU8(0);                       // constraints
                 c = c + 1;

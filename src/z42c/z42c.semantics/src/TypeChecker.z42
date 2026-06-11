@@ -422,6 +422,9 @@ public sealed class TypeChecker {
         if ((from is Z42ClassType) && (to is Z42ClassType)) {
             return symbols.IsSubclassOf(from.Name(), to.Name());
         }
+        if ((from is Z42ClassType) && (to is Z42InterfaceType)) {   // class→iface（port-z42c-interface；单向）
+            return symbols.Implements(from.Name(), to.Name());
+        }
         return false;
     }
 
@@ -474,6 +477,16 @@ public sealed class TypeChecker {
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                 "no method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
             return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, new Z42ErrorType(), sp);
+        }
+        if (rt is Z42InterfaceType) {                                // 接口收者（port-z42c-interface）
+            Z42InterfaceType it = rt as Z42InterfaceType;
+            MethodSymbol ims = it.Methods.Get(mem.Name) as MethodSymbol;
+            if (ims != null) {
+                return new BoundCall("instance", true, recv, it.Name(), mem.Name, args, argCount, ims.Signature.Ret, sp);
+            }
+            this._diags.Error(DiagnosticCodes.UndefinedSymbol,
+                "no method `" + mem.Name + "` on interface `" + it.Name() + "`", sp);
+            return new BoundCall("instance", true, recv, it.Name(), mem.Name, args, argCount, new Z42ErrorType(), sp);
         }
         if ((rt is Z42ErrorType) || (rt is Z42UnknownType)) {
             return new BoundCall("instance", true, recv, "<?>", mem.Name, args, argCount, new Z42ErrorType(), sp);

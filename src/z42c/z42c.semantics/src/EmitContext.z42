@@ -239,6 +239,7 @@ public sealed class EmitContext {
 
     // Z42Type → IrType 标签（z42c.ir 是无依赖叶子不能引用 Z42Type，故映射在 semantics 侧）。
     public int ToIrType(Z42Type t) {
+        if (t is Z42InterfaceType) { return IrType.Ref; }   // 接口值=Ref（体内局部；签名形参另见 FunctionEmitter——REGT 字节实证两形态）
         if (t is Z42VoidType) { return IrType.Void; }
         if (t is Z42PrimType) { return this.PrimTag(t.Name()); }
         return IrType.Ref;   // class / instantiated / array / func / generic-param → ref

@@ -472,3 +472,21 @@ void test_catch_var_in_scope() {
     string src = "class E { public int Code; } class C { int M() { try { return 1; } catch (E ex) { return ex.Code; } } }";
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── interface（port-z42c-interface）─────────────────────────────────────────
+[Test]
+void test_interface_assignability() {
+    string src = "interface IA { int F(); } class C : IA { public int F() { return 1; } } class D { } class U { IA Get(C c) { return c; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    // 未实现类 → 不可赋
+    string bad = "interface IA { int F(); } class D { } class U { IA Get(D d) { return d; } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(bad));
+}
+
+[Test]
+void test_interface_dispatch_bind() {
+    string src = "interface IA { int F(); } class C : IA { public int F() { return 1; } } class U { int Use(IA a) { return a.F(); } }";
+    Assert.Equal("(block (return (call-inst (ident a :IA) F :int)))",
+                 SemanticDump.DumpBody(src, "U.Use"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

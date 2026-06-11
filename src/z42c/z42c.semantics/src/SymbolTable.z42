@@ -7,15 +7,38 @@ using Z42.Syntax;
 
 public sealed class SymbolTable {
     public StrMap Classes;          // name → Z42ClassType
+    public StrMap Interfaces;       // name → Z42InterfaceType（port-z42c-interface）
     public StrMap Functions;        // name → MethodSymbol（顶层 func）
     public StrMap ClassConstraints; // name → ConstraintSet（2B；仅有 where 子句的泛型类登记）
     public SymbolTable() {
         this.Classes = new StrMap();
+        this.Interfaces = new StrMap();
         this.Functions = new StrMap();
         this.ClassConstraints = new StrMap();
     }
 
     public bool          HasClass(string name) { return this.Classes.ContainsKey(name); }
+    public bool             HasInterface(string name) { return this.Interfaces.ContainsKey(name); }
+    public Z42InterfaceType GetInterface(string name) { return this.Interfaces.Get(name) as Z42InterfaceType; }
+
+    // class（含 base 链）是否实现接口（可赋性 class→iface）。
+    public bool Implements(string clsName, string ifaceName) {
+        string cur = clsName;
+        int hops = 0;
+        while (hops < 32) {
+            if (!this.Classes.ContainsKey(cur)) { return false; }
+            Z42ClassType ct = this.Classes.Get(cur) as Z42ClassType;
+            int i = 0;
+            while (i < ct.InterfaceCount) {
+                if (ct.InterfaceNames[i] == ifaceName) { return true; }
+                i = i + 1;
+            }
+            if (!ct.HasBase || ct.BaseName == "") { return false; }
+            cur = ct.BaseName;
+            hops = hops + 1;
+        }
+        return false;
+    }
     public Z42ClassType  GetClass(string name) { return this.Classes.Get(name) as Z42ClassType; }
     public bool          HasFunc(string name)  { return this.Functions.ContainsKey(name); }
     public MethodSymbol  GetFunc(string name)  { return this.Functions.Get(name) as MethodSymbol; }
@@ -53,6 +76,7 @@ public sealed class SymbolTable {
             }
             if (n == "void") { return new Z42VoidType(); }
             if (this._isPrim(n)) { return new Z42PrimType(n); }
+            if (this.Interfaces.ContainsKey(n)) { return this.Interfaces.Get(n) as Z42InterfaceType; }
             if (this.Classes.ContainsKey(n)) {
                 Z42ClassType def = this.Classes.Get(n) as Z42ClassType;
                 if (nt.ArgCount > 0) {       // 泛型实例化 Box<int>（2A-2）

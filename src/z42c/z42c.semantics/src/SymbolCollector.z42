@@ -28,17 +28,40 @@ public sealed class SymbolCollector {
 
     public SymbolTable Collect(CompilationUnit cu) {
         var table = new SymbolTable();
-        // Pass A：类 stub
+        // Pass A0：接口 stub（先于类——基表判别要查 Interfaces）（port-z42c-interface）
         int i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
             if (d is ClassDecl) {
                 ClassDecl c = d as ClassDecl;
+                if (c.Kind == "interface") {
+                    table.Interfaces.Put(c.Name, new Z42InterfaceType(c.Name));
+                }
+            }
+            i = i + 1;
+        }
+        // Pass A：类 stub（基表判别：接口入 InterfaceNames，类→base——探针实证 base 回落 Std.Object 由 IrGen 做）
+        i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
                 if (c.Kind == "class" || c.Kind == "struct") {
-                    bool hasBase = c.BaseCount > 0;
+                    bool hasBase = false;
                     string baseName = "";
-                    if (hasBase) { baseName = c.Bases[0].Dump(); }
-                    table.Classes.Put(c.Name, new Z42ClassType(c.Name, hasBase, baseName));
+                    string[] ifaces = new string[c.BaseCount];
+                    int ifc = 0;
+                    int b = 0;
+                    while (b < c.BaseCount) {
+                        string bn = c.Bases[b].Dump();
+                        if (table.Interfaces.ContainsKey(bn)) { ifaces[ifc] = bn; ifc = ifc + 1; }
+                        else if (!hasBase) { hasBase = true; baseName = bn; }
+                        b = b + 1;
+                    }
+                    Z42ClassType ct = new Z42ClassType(c.Name, hasBase, baseName);
+                    ct.InterfaceNames = ifaces;
+                    ct.InterfaceCount = ifc;
+                    table.Classes.Put(c.Name, ct);
                 }
             }
             i = i + 1;
@@ -50,6 +73,7 @@ public sealed class SymbolCollector {
             if (d is ClassDecl) {
                 ClassDecl c = d as ClassDecl;
                 if (c.Kind == "class" || c.Kind == "struct") { this._fillClass(table, c); }
+                else if (c.Kind == "interface") { this._fillInterface(table, c); }
             } else if (d is MethodDecl) {
                 MethodDecl m = d as MethodDecl;            // 顶层 func（IsFree）
                 table.Functions.Put(m.Name, this._methodSymbol(table, m, "", new string[0], 0));
@@ -62,6 +86,20 @@ public sealed class SymbolCollector {
     private Decl _unwrap(Decl d) {
         if (d is AttributedDecl) { AttributedDecl ad = d as AttributedDecl; return ad.Inner; }
         return d;
+    }
+
+    // 接口方法签名（体可无；签名同类方法解析）（port-z42c-interface）。
+    private void _fillInterface(SymbolTable table, ClassDecl c) {
+        Z42InterfaceType it = table.Interfaces.Get(c.Name) as Z42InterfaceType;
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[j]);
+            if (mem is MethodDecl) {
+                MethodDecl md = mem as MethodDecl;
+                it.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, new string[0], 0));
+            }
+            j = j + 1;
+        }
     }
 
     private void _fillClass(SymbolTable table, ClassDecl c) {

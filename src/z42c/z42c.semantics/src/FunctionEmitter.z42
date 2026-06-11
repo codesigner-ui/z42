@@ -45,8 +45,12 @@ public sealed class FunctionEmitter {
         int p = 0;
         while (p < md.ParamCount) {
             Z42Type pt = this._symbols.ResolveTypeP(md.Params[p].Type, tp, tpc);
-            this._ctx.Locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, this._ctx.ToIrType(pt)));
-            this._ctx.RecordReg(p + paramOffset, this._ctx.ToIrType(pt));
+            int ptag = this._ctx.ToIrType(pt);
+            // 接口形参寄存器 = Unknown（C# 签名解析序怪癖：REGT 字节实证——体内接口局部是 Ref，
+            // 签名形参是 Unknown；port-z42c-interface）
+            if (pt is Z42InterfaceType) { ptag = IrType.Unknown; }
+            this._ctx.Locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, ptag));
+            this._ctx.RecordReg(p + paramOffset, ptag);
             paramTypes[p + paramOffset] = pt.Name();
             p = p + 1;
         }

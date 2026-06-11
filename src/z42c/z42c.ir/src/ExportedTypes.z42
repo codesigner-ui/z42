@@ -43,12 +43,14 @@ public sealed class ExportedClassZ {
     public string            BaseName;    // 短名（"Object"——TSIG 用符号表基名，区别于 TYPE 段的 "Std.Object"）
     public ExportedFieldZ[]  Fields;   public int FieldCount;
     public ExportedMethodZ[] Methods;  public int MethodCount;
+    public string[] Interfaces; public int InterfaceCount;   // 实现的接口名（port-z42c-interface）
     public ExportedClassZ(string name, bool hasBase, string baseName,
                           ExportedFieldZ[] fields, int fieldCount,
                           ExportedMethodZ[] methods, int methodCount) {
         this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = fields; this.FieldCount = fieldCount;
         this.Methods = methods; this.MethodCount = methodCount;
+        this.Interfaces = new string[0]; this.InterfaceCount = 0;
     }
 }
 

@@ -139,9 +139,15 @@ public sealed class IrGen {
     private IrClassDesc _classDesc(ClassDecl c) {
         bool hasBase = true;   // 镜像 C#：无显式基类 → "Std.Object"（universal base，TYPE base idx 非 0xFFFFFFFF）
         string baseName = "Std.Object";
-        if (c.BaseCount > 0) {
-            baseName = c.Bases[0].Dump();
-            if (!this._hasDot(baseName)) { baseName = this._q(baseName); }   // 本地基类 → FQ
+        int bi2 = 0;
+        while (bi2 < c.BaseCount) {       // 基表判别（port-z42c-interface）：跳过接口，取首个类
+            string bn = c.Bases[bi2].Dump();
+            if (!this._symbols.HasInterface(bn)) {
+                baseName = bn;
+                if (!this._hasDot(baseName)) { baseName = this._q(baseName); }
+                bi2 = c.BaseCount;        // 取首个类即止
+            }
+            bi2 = bi2 + 1;
         }
         IrFieldDesc[] fields = new IrFieldDesc[4];
         int fcount = 0;

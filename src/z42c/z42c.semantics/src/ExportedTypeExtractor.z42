@@ -50,12 +50,64 @@ public static class ExportedTypeExtractor {
             }
             i = i + 1;
         }
+        // 本地接口（声明序）+ 内建接口（C# sem.Interfaces 插入序：内建先注入、本地后注册——校准制）
+        ExportedInterfaceZ[] localIfs = new ExportedInterfaceZ[4];
+        int lic = 0;
+        i = 0;
+        while (i < cu.DeclCount) {
+            Decl d2 = ExportedTypeExtractor._unwrap(cu.Decls[i]);
+            if (d2 is ClassDecl) {
+                ClassDecl c2 = d2 as ClassDecl;
+                if (c2.Kind == "interface") {
+                    if (lic == localIfs.Length) {
+                        ExportedInterfaceZ[] b2 = new ExportedInterfaceZ[localIfs.Length * 2];
+                        int k2 = 0; while (k2 < lic) { b2[k2] = localIfs[k2]; k2 = k2 + 1; }
+                        localIfs = b2;
+                    }
+                    localIfs[lic] = ExportedTypeExtractor._extractInterface(c2, symbols);
+                    lic = lic + 1;
+                }
+            }
+            i = i + 1;
+        }
+        ExportedInterfaceZ[] builtins = ExportedTypeExtractor._builtinInterfaces();
+        ExportedInterfaceZ[] allIfs = new ExportedInterfaceZ[11 + lic];
+        i = 0;
+        while (i < 11) { allIfs[i] = builtins[i]; i = i + 1; }
+        i = 0;
+        while (i < lic) { allIfs[11 + i] = localIfs[i]; i = i + 1; }
         return new ExportedModuleZ(ns,
             classes, cc,
-            ExportedTypeExtractor._builtinInterfaces(), 11,
+            allIfs, 11 + lic,
             ExportedTypeExtractor._builtinEnums(), 1,
             funcs, fc,
             ExportedTypeExtractor._builtinDelegates(), 11);
+    }
+
+    // 本地接口导出（方法 flags=virtual|abstract，p{i} 参名——内建接口同形态）。
+    private static ExportedInterfaceZ _extractInterface(ClassDecl c, SymbolTable symbols) {
+        Z42InterfaceType it = symbols.GetInterface(c.Name);
+        ExportedMethodZ[] ms = new ExportedMethodZ[c.MemberCount];
+        int mc = 0;
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl mem = ExportedTypeExtractor._unwrap(c.Members[j]);
+            if (mem is MethodDecl) {
+                MethodDecl md = mem as MethodDecl;
+                MethodSymbol sym = null;
+                if (it != null) { sym = it.Methods.Get(md.Name) as MethodSymbol; }
+                if (sym != null) {
+                    Z42FuncType sig = sym.Signature;
+                    string[] pts = new string[sig.ParamCount];
+                    int x = 0;
+                    while (x < sig.ParamCount) { pts[x] = sig.ParamTypes[x].Name(); x = x + 1; }
+                    ms[mc] = ExportedTypeExtractor._im(md.Name, sig.Ret.Name(), pts, sig.ParamCount);
+                    mc = mc + 1;
+                }
+            }
+            j = j + 1;
+        }
+        return new ExportedInterfaceZ(c.Name, ms, mc, new string[0], 0);
     }
 
     private static Decl _unwrap(Decl d) {
@@ -67,7 +119,7 @@ public static class ExportedTypeExtractor {
     private static ExportedClassZ _extractClass(ClassDecl c, SymbolTable symbols) {
         Z42ClassType ct = symbols.GetClass(c.Name);
         string baseName = "Object";
-        if (c.BaseCount > 0) { baseName = c.Bases[0].Dump(); }
+        if (ct != null && ct.HasBase) { baseName = ct.BaseName; }   // 基表判别后的真基类（接口已剔除）
 
         ExportedFieldZ[] fields = new ExportedFieldZ[4];
         int fldc = 0;
@@ -137,7 +189,12 @@ public static class ExportedTypeExtractor {
             }
             pass = pass + 1;
         }
-        return new ExportedClassZ(c.Name, true, baseName, fields, fldc, methods, mc);
+        ExportedClassZ ez = new ExportedClassZ(c.Name, true, baseName, fields, fldc, methods, mc);
+        if (ct != null && ct.InterfaceCount > 0) {                  // 类接口表（port-z42c-interface）
+            ez.Interfaces = ct.InterfaceNames;
+            ez.InterfaceCount = ct.InterfaceCount;
+        }
+        return ez;
     }
 
     private static ExportedMethodZ _fromSymbol(MethodDecl md, MethodSymbol ms, bool isStatic) {

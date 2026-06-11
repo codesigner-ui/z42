@@ -35,16 +35,30 @@ public sealed class Z42ClassType : Z42Type {
     public string BaseName;
     public StrMap Fields;    // name → FieldSymbol（1A-3 收集时回填）
     public StrMap Methods;   // name → MethodSymbol
+    public string[] InterfaceNames; public int InterfaceCount;   // 实现的接口（port-z42c-interface）
     public Z42ClassType(string name, bool hasBase, string baseName) {
         this._name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = new StrMap();
         this.Methods = new StrMap();
+        this.InterfaceNames = new string[0]; this.InterfaceCount = 0;
     }
     public override string Name() { return this._name; }
     public override bool IsAssignableTo(Z42Type other) {
         if (other is Z42ErrorType) { return true; }
         // 同名（1A-1 不查继承链；subclass→base 赋值在 1C，需类表走 base 链）
         return (other is Z42ClassType) && this._name == other.Name();
+    }
+}
+
+// 接口类型（port-z42c-interface）：方法签名表（MethodSymbol，同类方法形态——D1）。
+public sealed class Z42InterfaceType : Z42Type {
+    private string _name;
+    public StrMap Methods;    // name → MethodSymbol
+    public Z42InterfaceType(string name) { this._name = name; this.Methods = new StrMap(); }
+    public override string Name() { return this._name; }
+    public override bool IsAssignableTo(Z42Type other) {
+        if (other is Z42ErrorType) { return true; }
+        return (other is Z42InterfaceType) && this._name == other.Name();
     }
 }
 
