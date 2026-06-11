@@ -40,6 +40,9 @@ public class PriorityQueue<T> : IBasicCollection<T> where T: IComparable<T> {
         this.SiftUp(this.count - 1);
     }
 
+    // IBasicCollection contract entry (add-collection-contract-phase2): heap add.
+    public void AddOne(T item) { this.Enqueue(item); }
+
     /// Remove and return the smallest element. Throws if empty. O(log n).
     public T Dequeue() {
         if (this.count == 0) {

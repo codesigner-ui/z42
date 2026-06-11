@@ -1,0 +1,16 @@
+// z42.collections local test — Stack<T> shared IBasicCollection contract.
+namespace Z42CollectionsTests;
+
+using Std;
+using Std.Test;
+using Std.Test.Contracts;
+using Std.Collections;
+
+// add-collection-contract-phase2 (2026-06-11): drive the shared collection
+// contract (empty → AddOne ×3 distinct → Count==3 → Clear → empty) against a
+// Stack<int>. Phase 1 wired LinkedList/SortedSet/PriorityQueue; this closes
+// Stack's coverage in one line.
+[Test]
+void test_stack_basic_collection_contract() {
+    BasicCollectionContract.Run("Stack<int>", new Stack<int>());
+}

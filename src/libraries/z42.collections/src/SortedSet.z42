@@ -39,6 +39,10 @@ public class SortedSet<T> : IBasicCollection<T> where T: IComparable<T> + IEquat
         return true;
     }
 
+    // IBasicCollection contract entry (add-collection-contract-phase2): sorted
+    // insert (discard the returned bool; dedups, so contract uses distinct elems).
+    public void AddOne(T item) { this.Add(item); }
+
     public bool Contains(T item) {
         int idx = this.LowerBound(item);
         return idx < this.count && this.items[idx].Equals(item);

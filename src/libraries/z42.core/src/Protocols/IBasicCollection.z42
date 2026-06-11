@@ -13,11 +13,18 @@ namespace Std;
 //   - `IsEmpty()` — 等价于 `Count() == 0` 的语义快捷
 //   - `Clear()` — 清空所有元素；幂等
 //
-// 为什么不放具体 `Add(T)`：5 个集合的"添加"语义命名不同（Push / Enqueue /
-// AddLast / Add），且语义本身不同（LIFO vs FIFO vs sorted vs heap）。统一
-// 接口会强迫机械别名，不如等 Phase 2 spec 决定一个有意义的更丰富契约。
+// 为什么 Phase 1 不放具体 `Add(T)`：5 个集合的"添加"语义命名不同（Push /
+// Enqueue / AddLast / Add），且语义本身不同（LIFO vs FIFO vs sorted vs heap）。
+//
+// add-collection-contract-phase2 (2026-06-11)：加 `AddOne(T)` —— 契约层的
+// **最小公共插入**（"把一个元素放进集合"）。各集合委托其自然 add（Enqueue /
+// Push / AddLast / Add），返回 void（自然 add 的 bool/node 返回值丢弃）。这不是
+// 机械别名替代自然 API，而是给契约一个统一入口断言"加元素后 Count 增长、Clear
+// 后回空"——这些不变量不依赖顺序/去重策略，对全部集合普适。
 public interface IBasicCollection<T> {
     int Count();
     bool IsEmpty();
     void Clear();
+    // 契约用统一单元素插入；顺序/去重策略由实现决定（见上）。
+    void AddOne(T item);
 }

@@ -89,6 +89,10 @@ public class LinkedList<T> : IBasicCollection<T> where T: IEquatable<T> {
         return node;
     }
 
+    // IBasicCollection contract entry (add-collection-contract-phase2): append
+    // at tail (discard the returned node).
+    public void AddOne(T item) { this.AddLast(item); }
+
     // ── Removals ────────────────────────────────────────────────────────────
 
     public T RemoveFirst() {

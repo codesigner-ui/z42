@@ -24,6 +24,9 @@ public class Stack<T> : IBasicCollection<T> {
         this.count = this.count + 1;
     }
 
+    // IBasicCollection contract entry (add-collection-contract-phase2): LIFO add.
+    public void AddOne(T item) { this.Push(item); }
+
     public T Pop() {
         this.count = this.count - 1;
         return this.items[this.count];

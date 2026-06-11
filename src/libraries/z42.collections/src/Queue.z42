@@ -29,6 +29,9 @@ public class Queue<T> : IBasicCollection<T> {
         this.count = this.count + 1;
     }
 
+    // IBasicCollection contract entry (add-collection-contract-phase2): FIFO add.
+    public void AddOne(T item) { this.Enqueue(item); }
+
     public T Dequeue() {
         T item = this.items[this.head];
         this.head = (this.head + 1) % this.capacity;
