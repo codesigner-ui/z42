@@ -10,6 +10,7 @@
 |------|------|
 | [launcher-command-dispatch.md](launcher-command-dispatch.md) | `z42` 如何分发命令：core / SDK / workload 三层 + 目录发现 + Std.Cli 统一注册 |
 | [platform-export-lifecycle.md](platform-export-lifecycle.md) | z42 项目 → 导出平台工程（managed + eject）+ 全平台生命周期（build / export / publish / test） |
+| [runtime-workload-distribution.md](runtime-workload-distribution.md) | GitHub Releases 为后端：host runtime / workload 的安装·更新·运行 + `release-index.json` manifest 契约 + 版本解析 |
 
 ## 与已有规范的关系
 
