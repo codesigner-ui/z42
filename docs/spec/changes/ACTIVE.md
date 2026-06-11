@@ -8,10 +8,10 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | add-parameter-attribute-reflection 已归档 2026-06-10 → 释放（`ParameterInfo.GetCustomAttributes()`；zbc 1.15 / zpkg 0.17 SIGS per-param 块；dotnet 1556/1556 + e2e）。⚠️ 暴露 pre-existing 多文件 project-build 命名空间双重限定 bug（非本 change，待独立 fix；见 memory）|
+| `compiler` | **fix-namespace-qualified-free-call（实施中）** | 2026-06-11 | `ns.func()`（命名空间限定的自由函数调用）被 binder 误绑为 static-call-on-class `ns` → codegen `QualifyClassName("ns")` 双重限定 `ns.ns.func`。修：BindMemberCallOnUnknownTarget 识别「tgtName 是命名空间 + member 是该 ns 的自由函数」→ 绑 Free call 限定名。niche，不撞 gate（已证 gate 幻影）|
 | `runtime` | —（空闲）| — | add-pal-signal 已归档 2026-06-11 → 释放（PAL Phase 3：signal OS 原语 → pal/signal.rs，z42 崩溃 reporter 留 signal_handler.rs；cargo 759 + pal::signal 9 单测；e2e 被陈年 UE 僵尸堵塞→verbatim 抽取 + 单测验证）。PAL Phase 4/5 = consumer-gated 延后 |
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
-| `z42c` | —（空闲）| — | 自举主线全归档：…→instance-import✅→**port-z42c-char✅ 已归档 2026-06-11**（char 整链；zbc 对账 4/4）。下一步候选：interface·异常·闭包 typecheck+codegen（User 定序第③项）/ 扩 corpus |
+| `z42c` | **port-z42c-try（DRAFT 待审）** | 2026-06-11 | char 归档接力（三大件第①：异常）。try/catch/throw 整链（typecheck/codegen/ExceptionTable 编码——syntax 6a 已有）+ trycheck zbc 对账第 5 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -28,6 +28,7 @@
 | ~~port-z42c-import~~ | z42c —— ✅ 已归档 2026-06-10（hello-stdlib byte-identical + import e2e；a1fa39d8）|
 | ~~port-z42c-instance-import~~ | z42c —— ✅ 已归档 2026-06-11（textapp byte-identical；gate 4/4）|
 | ~~port-z42c-char~~ | z42c —— ✅ 已归档 2026-06-11（charcheck byte-identical；zbc 4/4）|
+| port-z42c-try | z42c（2026-06-11 开；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
