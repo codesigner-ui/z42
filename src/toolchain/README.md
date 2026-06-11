@@ -6,16 +6,22 @@
 
 ## 子目录
 
-| 目录 | 职责 |
-|------|------|
-| [host/](host/) | 将 z42 VM 嵌入外部宿主（IDE、GUI、其他进程）的集成层 |
-| [debugger/](debugger/) | z42 程序调试器（断点、单步、变量查看） |
-| [packager/](packager/) | 应用打包与发行（将 z42 程序 + 运行时打成独立可分发产物） |
-| [workload/](workload/) | 端到端工作流与发行场景测试 |
+| 目录 | 职责 | 状态 |
+|------|------|:----:|
+| [launcher/](launcher/) | `z42` launcher（muxer）：原生 trampoline + `launcher.zpkg`（run/link/list/install/apphost…）+ per-app 原生 apphost（`apphost.z42`）。类比 `dotnet` muxer + `rustup` | ✅ 已实装 |
+| [host/](host/) | 将 z42 VM 嵌入外部宿主（IDE、GUI、其他进程）的集成层：Rust `z42-host` crate（`host/embed/`）+ C 嵌入示例 | ✅ 已实装 |
+| [test-runner/](test-runner/) | `z42-test-runner`：跑 stdlib / 工程的 `[Test]` / `[Benchmark]`，输出 TAP（`xtask test` 内嵌调用） | ✅ 已实装 |
+| [debugger/](debugger/) | z42 程序调试器（断点、单步、变量查看） | 占位 |
+| [packager/](packager/) | 应用打包与发行（将 z42 程序 + 运行时打成独立可分发产物） | 占位 |
+| [workload/](workload/) | 端到端工作流与发行场景测试 | 占位 |
+
+> 命名说明：`toolchain` 取"围绕 compiler/runtime 的整套配套工具"之广义；语言核心**编译器在 [`../compiler/`](../compiler/) + [`../z42c/`](../z42c/)**、VM 在 [`../runtime/`](../runtime/)，不在本目录。
 
 ## 状态
 
-占位目录，各子项尚未开始实现。具体设计与落地时机见 `docs/roadmap.md`。
+launcher / host / test-runner 已实装并在 CI / xtask 中使用；debugger / packager / workload 为占位，具体设计与落地时机见 `docs/roadmap.md`。
+
+> launcher 的演进方向（命令分发三层、平台工程导出、runtime/workload 分发）见 [`docs/design/toolchain/`](../../docs/design/toolchain/)。
 
 ## 依赖关系
 
