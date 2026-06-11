@@ -20,7 +20,7 @@ CoreCLR `src/coreclr/pal/` 含 ~50 个文件抽象：
 |---|---|---|---|
 | Thread / mutex / TLS | `thread.cpp` / `mutex.cpp` | `pal/thread.rs` (Phase 4) | Pending |
 | File I/O | `file.cpp` / `path.cpp` | `pal/fs.rs` (Phase 2) | **Phase 2 done** |
-| Signal / exceptions | `signal.cpp` | `pal/signal.rs` (Phase 3) | Pending |
+| Signal / exceptions | `signal.cpp` | `pal/signal.rs` (Phase 3，仅 OS 原语；z42 reporter 留 signal_handler.rs) | **Phase 3 done** |
 | Memory / mmap | `virtual.cpp` | `pal/mem.rs` (Phase 5) | Pending |
 | Process / environ | `process.cpp` / `environ.cpp` | `pal/system.rs` 已起步 | Phase 1 done |
 | Clock / time | `time.cpp` | `pal/clock.rs` (post-MVP) | Pending |
@@ -81,17 +81,27 @@ pub fn symlink(src: &str, dst: &str) -> Result<()>; // unix symlink；非 unix b
 > block——当前无独立 consumer，按 YAGNI 折进 `make_executable`（read+modify+set 一体），
 > 单独 split 留待有 consumer 时（不做 speculative API）。
 
-### Phase 3: `pal/signal.rs` — POSIX signal handler
+### ~~Phase 3: `pal/signal.rs` — POSIX signal 原语~~ — **✅ 已落地 2026-06-11 (`add-pal-signal`)**
 
-`signal_handler.rs` 整文件 `#![cfg(unix)]` —— 迁移：
+> **设计修正（2026-06-11，User 裁决）**：原计划「`signal_handler.rs` **整文件**迁移」
+> 与 PAL「OS-neutral surface」不变量冲突——该文件混了 OS 原语**和** z42 崩溃 reporter
+> （`write_call_stacks` 走 `VM_CORES`/`vm_contexts`，是 runtime 内省，非 OS 代码）。整文件
+> 搬会把 VM 内部知识塞进 `pal/`。改为**只抽 OS 原语**，z42 崩溃逻辑留 `signal_handler.rs`。
+
+抽到 `pal/signal.rs`（`#![cfg(unix)]`，async-signal-safe）：
 
 ```rust
-// pal/signal.rs (Phase 3)
-pub fn install_handler(sig: Signal, handler: SignalHandler);
-pub fn signal_safe_write_str(fd: SignalSafeFd, s: &str);
+// pal/signal.rs
+pub fn register_fatal_handlers(handler: extern "C" fn(i32)); // 5 fatal 信号注册
+pub fn signal_name(sig: i32) -> &'static [u8];
+pub fn reset_default_and_reraise(sig: i32);                  // SIG_DFL + raise
+pub mod sigsafe { pub fn write_str / write_dec_u32 / write_hex_u64 }
 ```
 
-Windows VEH（Phase 3.1）走相同接口的不同 impl。
+`signal_handler.rs` 保留 z42 崩溃 reporter（`install` / `handler` / `write_call_stacks`
+走 VM_CORES），改 call `crate::pal::signal::*`（公开 surface / async-signal-safe 约束不变；
+cargo 759 + pal::signal 9 单测 + install idempotent + e2e 信号崩溃路径）。Windows VEH
+（Phase 3.1）走 `pal::signal` 同接口不同 impl，仍延后（无 Windows CI runner）。
 
 ### Phase 4: `pal/thread.rs` — 多线程基础（**consumer-gated**）
 

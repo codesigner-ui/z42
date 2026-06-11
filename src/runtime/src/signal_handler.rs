@@ -33,6 +33,11 @@
 
 use std::sync::atomic::{AtomicI32, Ordering};
 
+// PAL Phase 3 (add-pal-signal): OS signal primitives live in `pal::signal`;
+// the call sites below (`sigsafe::*`, `signal_name(sig)`) resolve to them via
+// these imports, so the z42 crash-report logic in this file stays unchanged.
+use crate::pal::signal::{self, sigsafe, signal_name};
+
 /// File descriptor for the optional `Z42_CRASH_DIR` persistence file.
 /// `-1` = no file (env var not set or open failed). Opened once at
 /// [`install`] time; the OS reclaims it at process exit.
@@ -51,18 +56,8 @@ pub fn install() {
     // Open crash_report fd from Z42_CRASH_DIR (if set + writable)
     open_crash_report_fd();
 
-    // Register handlers for all 5 fatal signals
-    for &sig in &[libc::SIGSEGV, libc::SIGABRT, libc::SIGFPE, libc::SIGILL, libc::SIGBUS] {
-        // SAFETY: `handler` only invokes async-signal-safe primitives
-        // (`sigsafe::write_*` → `libc::write`, atomic loads, `libc::raise`).
-        // See module-level doc + `handler` implementation.
-        unsafe {
-            if let Err(e) = signal_hook_registry::register_signal_unchecked(sig, move || handler(sig)) {
-                tracing::warn!("failed to register signal handler for {}: {e}",
-                    std::str::from_utf8(signal_name(sig)).unwrap_or("?"));
-            }
-        }
-    }
+    // Register the z42 crash `handler` for the 5 fatal signals (OS primitive).
+    signal::register_fatal_handlers(handler);
 
     tracing::debug!("OS signal handlers installed for SIGSEGV/SIGABRT/SIGFPE/SIGILL/SIGBUS");
 }
@@ -127,10 +122,7 @@ extern "C" fn handler(sig: i32) {
     }
 
     // 5. Reset disposition + reraise — kernel default takes over (coredump if ulimit -c permits)
-    unsafe {
-        libc::signal(sig, libc::SIG_DFL);
-        libc::raise(sig);
-    }
+    signal::reset_default_and_reraise(sig);
 }
 
 fn write_banner(fd: i32) {
@@ -237,72 +229,8 @@ fn write_call_stacks(fd: i32) {
     sigsafe::write_str(fd, b"===\n");
 }
 
-/// Map signal number to constant string. Returns `b"UNKNOWN"` for unhandled.
-pub(crate) fn signal_name(sig: i32) -> &'static [u8] {
-    match sig {
-        libc::SIGSEGV => b"SIGSEGV",
-        libc::SIGABRT => b"SIGABRT",
-        libc::SIGFPE  => b"SIGFPE",
-        libc::SIGILL  => b"SIGILL",
-        libc::SIGBUS  => b"SIGBUS",
-        _             => b"UNKNOWN",
-    }
-}
-
-/// Async-signal-safe write primitives. **Only these may be invoked from
-/// within `handler()`.** Uses raw `libc::write(2)` syscalls + stack buffers
-/// (no allocation, no Mutex, no stdio lock).
-pub(crate) mod sigsafe {
-    /// Write a byte slice to a file descriptor. Handles partial writes; on
-    /// any negative return (including EINTR) gives up silently — process is
-    /// already crashing, partial output is better than infinite loop.
-    /// Phase 2.6 may add proper EINTR retry across platforms.
-    pub fn write_str(fd: i32, bytes: &[u8]) {
-        let mut remaining = bytes;
-        while !remaining.is_empty() {
-            let n = unsafe {
-                libc::write(fd, remaining.as_ptr() as *const _, remaining.len())
-            };
-            if n <= 0 { break; }
-            remaining = &remaining[n as usize..];
-        }
-    }
-
-    /// Write a base-10 representation of `v` to `fd`. No allocation.
-    pub fn write_dec_u32(fd: i32, v: u32) {
-        if v == 0 { write_str(fd, b"0"); return; }
-        let mut buf = [0u8; 10];  // u32::MAX is 10 digits
-        let mut i = 10usize;
-        let mut n = v;
-        while n > 0 && i > 0 {
-            i -= 1;
-            buf[i] = b'0' + (n % 10) as u8;
-            n /= 10;
-        }
-        write_str(fd, &buf[i..]);
-    }
-
-    /// Write a `0x`-prefixed hex representation of `v` to `fd`. No allocation.
-    ///
-    /// Currently unused in `handler()` — held in reserve for Phase 2.2
-    /// (stack-pointer-based thread attribution) where signal `si_addr` /
-    /// instruction pointer values will be written.
-    #[allow(dead_code)]
-    pub fn write_hex_u64(fd: i32, v: u64) {
-        if v == 0 { write_str(fd, b"0x0"); return; }
-        let mut buf = [0u8; 16];  // u64 = 16 hex nibbles max
-        let mut i = 16usize;
-        let mut n = v;
-        let hex = b"0123456789abcdef";
-        while n > 0 && i > 0 {
-            i -= 1;
-            buf[i] = hex[(n & 0xf) as usize];
-            n >>= 4;
-        }
-        write_str(fd, b"0x");
-        write_str(fd, &buf[i..]);
-    }
-}
+// signal_name + the `sigsafe` write primitives moved to `pal::signal`
+// (PAL Phase 3); see the imports at the top of this file.
 
 #[cfg(test)]
 #[path = "signal_handler_tests.rs"]

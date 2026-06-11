@@ -15,9 +15,10 @@ Phase 2-N migration 路径见 [`docs/design/runtime/pal.md`](../../../../docs/de
 |------|------|
 | `system.rs` | `hostname()` / `os_version()` —— Phase 1 |
 | `fs.rs` | `make_executable()` / `symlink()` —— Phase 2 |
+| `signal.rs` (unix) | fatal-signal 注册 + `sigsafe` async-signal-safe write + `signal_name` + reset/reraise —— Phase 3（z42 崩溃 reporter 在 `signal_handler.rs`，调本模块）|
 
-未来：`signal.rs` (Phase 3) / `thread.rs` (Phase 4，consumer-gated：随多线程
-runtime 落地) / `mem.rs` (Phase 5，consumer-gated：随 GC bump allocator 落地)。
+未来：`thread.rs` (Phase 4，consumer-gated：随多线程 runtime 落地) /
+`mem.rs` (Phase 5，consumer-gated：随 GC bump allocator 落地)。
 
 ## 入口点
 
@@ -25,6 +26,8 @@ runtime 落地) / `mem.rs` (Phase 5，consumer-gated：随 GC bump allocator 落
 `pal::system::os_version()` — `String`，空字符串表示 syscall 失败
 `pal::fs::make_executable(path)` — `Result<()>`，unix 加 u+x g+x o+x；非 unix no-op
 `pal::fs::symlink(src, dst)` — `Result<()>`，unix 建符号链接；非 unix bail
+`pal::signal::register_fatal_handlers(handler)` — 注册 5 fatal 信号（unix）
+`pal::signal::sigsafe::write_str(fd, bytes)` — async-signal-safe 写（unix）
 
 ## 不变量（必须遵守）
 

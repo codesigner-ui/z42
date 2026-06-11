@@ -10,11 +10,12 @@
 //!
 //! - [`system`] — hostname / OS version (Phase 1).
 //! - [`fs`] — file-system OS calls: `make_executable` / `symlink` (Phase 2).
+//! - `signal` (unix) — fatal-signal registration + async-signal-safe write
+//!   primitives + signal-name table (Phase 3). The z42 crash *reporter*
+//!   (`signal_handler.rs`) drives these; pal owns only the OS primitives.
 //!
 //! # Future submodules (independent specs)
 //!
-//! - `signal` — POSIX signal handler dispatch (Phase 3; migrates
-//!   `signal_handler.rs`).
 //! - `thread` — pthread / Windows-thread primitives backing the future
 //!   multi-thread runtime (consumer-gated: lands with the multi-thread runtime).
 //! - `mem` — page-aligned alloc / mmap / mprotect for the GC bump allocator
@@ -22,3 +23,6 @@
 
 pub mod system;
 pub mod fs;
+
+#[cfg(unix)]
+pub mod signal;
