@@ -9,9 +9,9 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | fix-namespace-qualified-free-call 已归档 2026-06-11 → 释放（`ns.func()` 同命名空间限定自由调用：BindMemberCallOnUnknownTarget 识别 `tgtName==current ns` + member 是自由函数 → 绑 Free call；修双重限定 `ns.ns.func`；dotnet 1558/1558 + 多文件 packed repro exit 0）|
-| `runtime` | —（空闲）| — | cache-cross-zpkg-call-target 已归档 2026-06-11 → 释放（review.md C7：per-site `OnceLock<Arc<Function>>` cache 与 method_tokens 平行，cross-zpkg Call 首次解析后借用缓存，消除每调用 `try_lookup_function` String hash；本模块快路径不动；**无格式 bump**；cargo lib 764/0 + vm goldens 346/0 + cross-zpkg 2/0）|
-| `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
-| `z42c` | —（空闲）| — | 自举主线全归档：…→try✅→**port-z42c-interface✅ 已归档 2026-06-11**（接口类型+分派；zbc 对账 6/6）。三大件剩：闭包（最后一件）|
+| `runtime` | **add-reflection-inherited-static-fields（实施中）** | 2026-06-11 | `GetFields()` 沿 base 链聚合祖先类静态字段（运行期 base-walk，对齐 C# 默认含继承静态）。纯 runtime reflection.rs，**无格式 bump**|
+| `stdlib` | **add-collection-contract-phase2（DRAFT 待审）** | 2026-06-11 | review.md S2.4 Phase 2：`IBasicCollection<T>` 加 `AddOne(T)` 统一单元素插入；5 个集合（Queue/Stack/LinkedList/SortedSet/PriorityQueue）各委托其自然 add；`BasicCollectionContract` 扩 add→count→clear 生命周期（用 distinct 元素，对 SortedSet 去重也成立）。纯 stdlib，无格式 bump，dotnet test 验证 |
+| `z42c` | **port-z42c-closures（DRAFT 待审）** | 2026-06-11 | interface 归档接力（三大件第③收官）。lambda 整链 MVP：parser `=>` + BindLambda（expected 推导/捕获分析）+ lift（LoadFn/MkClos/CallIndirect 0x55-0x57）+ closcheck 第 7 zbc 源 |
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
@@ -30,6 +30,7 @@
 | ~~port-z42c-char~~ | z42c —— ✅ 已归档 2026-06-11（charcheck byte-identical；zbc 4/4）|
 | ~~port-z42c-try~~ | z42c —— ✅ 已归档 2026-06-11（trycheck byte-identical；zbc 5/5）|
 | ~~port-z42c-interface~~ | z42c —— ✅ 已归档 2026-06-11（ifacecheck byte-identical；zbc 6/6）|
+| port-z42c-closures | z42c（2026-06-11 开；DRAFT 待审）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
