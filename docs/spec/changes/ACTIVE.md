@@ -9,7 +9,7 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | fix-namespace-qualified-free-call 已归档 2026-06-11 → 释放（`ns.func()` 同命名空间限定自由调用：BindMemberCallOnUnknownTarget 识别 `tgtName==current ns` + member 是自由函数 → 绑 Free call；修双重限定 `ns.ns.func`；dotnet 1558/1558 + 多文件 packed repro exit 0）|
-| `runtime` | **cache-cross-zpkg-call-target（DRAFT 待审）** | 2026-06-11 | review.md C7：cross-zpkg `Call` 当前每次走 `try_lookup_function(&str)`（lazy loader String HashMap）。加 per-site `OnceLock<Arc<Function>>` cache（与 method_tokens 平行），首次命中后借用缓存，消除每调用 2 次 String hash。行为不变（perf）；改 resolver/exec_call/exec_instr |
+| `runtime` | —（空闲）| — | cache-cross-zpkg-call-target 已归档 2026-06-11 → 释放（review.md C7：per-site `OnceLock<Arc<Function>>` cache 与 method_tokens 平行，cross-zpkg Call 首次解析后借用缓存，消除每调用 `try_lookup_function` String hash；本模块快路径不动；**无格式 bump**；cargo lib 764/0 + vm goldens 346/0 + cross-zpkg 2/0）|
 | `stdlib` | —（空闲）| — | align-type-memberinfo-hierarchy 已归档 2026-06-11 → 释放（`Std.Type : MemberInfo` 短名基类；移除 Type `[Native] Name` getter → 继承字段；无格式 bump；dotnet 1557/1557）|
 | `z42c` | —（空闲）| — | 自举主线全归档：…→try✅→**port-z42c-interface✅ 已归档 2026-06-11**（接口类型+分派；zbc 对账 6/6）。三大件剩：闭包（最后一件）|
 | `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
@@ -57,4 +57,5 @@
 | ~~fix-stale-build-stdlib-sh-refs~~ | runtime + compiler + toolchain —— ✅ 已归档 2026-06-11（报错/注释里 `./scripts/build-stdlib.sh` → `z42 xtask.zpkg build stdlib`；该脚本已折进 xtask；cargo+dotnet build 绿）|
 | ~~fix-namespace-qualified-free-call~~ | compiler —— ✅ 已归档 2026-06-11（`ns.func()` 命名空间限定自由调用此前误绑 static-call-on-class `ns` → 双重限定 `ns.ns.func` 运行期 undefined；修 BindMemberCallOnUnknownTarget 识别同 ns 自由调用 → Free call；dotnet 1558/1558 + packed repro exit 0。即 fix-multifile-project-namespace-qualify 幻影下暴露的唯一真 bug）|
 | ~~slim-instruction-enum~~ | runtime —— ✅ 已归档 2026-06-11（`Instruction` enum 96B→32B：装箱 15 个带 String 冷变体 `Variant(Box<XxxInsn>)`，热算术变体 inline；internally-tagged newtype 自动摊平保 JSON wire format；**无 zbc bump**，fixture 6/6 无字节 delta；cargo 806/0 + vm goldens 346/0）|
+| ~~cache-cross-zpkg-call-target~~ | runtime —— ✅ 已归档 2026-06-11（review.md C7：per-site `OnceLock<Arc<Function>>` cross-zpkg Call 目标缓存，平行 method_tokens；首次解析后借用，消除每调用 `try_lookup_function` String hash；本模块快路径零额外开销；OnceLock write-once、per-site 无全局并发表；**无格式 bump**；cargo lib 764/0 + vm goldens 346/0 + cross-zpkg 2/0）|
 | plan-0.3.x-three-streams | docs（不上锁） |

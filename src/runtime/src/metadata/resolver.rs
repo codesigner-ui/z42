@@ -23,7 +23,9 @@
 //! `ResolvedTokens`).
 
 use crate::metadata::tokens::UNRESOLVED;
+use crate::metadata::Function;
 use std::sync::atomic::AtomicU32;
+use std::sync::{Arc, OnceLock};
 
 /// Per-function lazy-init cache populated by `resolve_module`. Stored on
 /// `Function.resolved: OnceLock<ResolvedTokens>` (`#[serde(skip)]`).
@@ -37,6 +39,15 @@ pub struct ResolvedTokens {
     /// `Call` sites: cached `MethodId` (UNRESOLVED until first dispatch
     /// resolves it via `module.func_index` or lazy loader).
     pub method_tokens: Vec<AtomicU32>,
+    /// `Call` sites: cached **cross-zpkg** target (review.md C7,
+    /// cache-cross-zpkg-call-target). Parallel to `method_tokens` (same site
+    /// index). A cross-zpkg target lives in the lazy loader's `function_table`,
+    /// not `module.functions`, so a `u32` index can't reach it — the resolved
+    /// `Arc<Function>` is cached here on first dispatch and borrowed thereafter
+    /// (`OnceLock::get`), eliminating the per-call `try_lookup_function` hash.
+    /// Empty cell for intra-module-only sites. `OnceLock` (write-once) because
+    /// FQ-name → target is stable within a run; `Sync`-safe for future MT.
+    pub cross_module_targets: Vec<OnceLock<Arc<Function>>>,
     /// `Builtin` sites: `BuiltinId` resolved at load (closed set —
     /// panic if a builtin name is unknown).
     pub builtin_tokens: Vec<u32>,
@@ -314,6 +325,12 @@ pub fn resolve_module(module: &crate::metadata::Module, ctx: &crate::vm_context:
             ))
             .collect();
 
+        // Parallel cross-zpkg target cache: one empty cell per Call site,
+        // filled on first cross-zpkg dispatch (review.md C7). Intra-module
+        // sites resolve via `method_tokens` and leave their cell untouched.
+        let cross_module_targets: Vec<OnceLock<Arc<Function>>> =
+            method_site_names.iter().map(|_| OnceLock::new()).collect();
+
         let builtin_tokens: Vec<u32> = builtin_site_names.iter()
             .map(|name| {
                 // Static `BUILTINS[]` first, then per-VM ext registry (populated by
@@ -353,6 +370,7 @@ pub fn resolve_module(module: &crate::metadata::Module, ctx: &crate::vm_context:
 
         let resolved = ResolvedTokens {
             method_tokens,
+            cross_module_targets,
             builtin_tokens,
             type_tokens,
             vcall_ic,
@@ -374,12 +392,56 @@ mod resolver_tests {
     fn resolved_tokens_default_is_empty() {
         let r = ResolvedTokens::default();
         assert!(r.method_tokens.is_empty());
+        assert!(r.cross_module_targets.is_empty());
         assert!(r.builtin_tokens.is_empty());
         assert!(r.type_tokens.is_empty());
         assert!(r.vcall_ic.is_empty());
         assert!(r.field_ic.is_empty());
         assert!(r.static_field_tokens.is_empty());
         assert!(r.site_index.is_empty());
+    }
+
+    /// review.md C7 / cache-cross-zpkg-call-target: the per-site cross-zpkg
+    /// cell contract that `exec_call::call` relies on — empty until first
+    /// dispatch, write-once fill, borrow-after returns the same `Arc`, and a
+    /// concurrent/repeat `set` is ignored (so a winner's target stays stable).
+    #[test]
+    fn cross_module_target_cell_fill_once_then_borrow() {
+        use crate::metadata::bytecode::{BasicBlock, Terminator};
+        use crate::metadata::types::ExecMode;
+
+        let mk = |name: &str| {
+            Arc::new(Function {
+                name: name.to_string(),
+                param_count: 0,
+                ret_type: "void".to_string(),
+                exec_mode: ExecMode::Interp,
+                blocks: vec![BasicBlock {
+                    label: "entry".to_string(),
+                    instructions: Vec::new(),
+                    terminator: Terminator::Ret { reg: None },
+                }],
+                is_static: false,
+                max_reg: 0,
+                cold: None,
+                reg_types: Box::new([]),
+                block_index: std::collections::HashMap::new(),
+                resolved: OnceLock::new(),
+            })
+        };
+
+        let cell: OnceLock<Arc<Function>> = OnceLock::new();
+        assert!(cell.get().is_none(), "fresh cell must be empty (forces first-dispatch resolve)");
+
+        let first = mk("Other.zpkg.fn");
+        assert!(cell.set(Arc::clone(&first)).is_ok(), "first fill succeeds");
+        assert!(Arc::ptr_eq(cell.get().unwrap(), &first), "borrow returns the cached Arc, no re-resolve");
+
+        // A second resolve (e.g. concurrent double-fill) must not replace the
+        // cached target — set() returns Err and the original Arc stays.
+        let second = mk("Other.zpkg.fn");
+        assert!(cell.set(Arc::clone(&second)).is_err(), "repeat fill is rejected (write-once)");
+        assert!(Arc::ptr_eq(cell.get().unwrap(), &first), "cached target unchanged after rejected fill");
     }
 
     #[test]

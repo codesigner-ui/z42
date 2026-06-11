@@ -280,6 +280,39 @@ try_lookup_function(func_name):
 策略 B 是安全网，处理 zpkg 元数据不完整 / 用户 zbc 的 import_namespaces
 不全等边界情况。
 
+### Per-site cross-zpkg Call 目标缓存（review.md C7，2026-06-11 cache-cross-zpkg-call-target）
+
+`try_lookup_function` 即使命中（function_table 已有），也是一次
+`HashMap<String, Arc<Function>>` 探测（String hash + compare）。本模块 Call 有
+`ResolvedTokens.method_tokens[site]`（`AtomicU32`）缓存 `module.functions` 下标，
+第二次起纯整数索引；但 **cross-zpkg 目标不在 `module.functions`**（在 lazy loader
+的 `function_table`），u32 下标够不着 → 这类 site 的 token slot 永远 `UNRESOLVED`，
+**每次调用都重跑** `try_lookup_function`（上面的策略 C/B，至少一次 String hash）。
+
+修法：`ResolvedTokens` 加一条与 `method_tokens` 平行、同 site 索引的
+`cross_module_targets: Vec<OnceLock<Arc<Function>>>`。dispatch（[exec_call.rs](../../../src/runtime/src/interp/exec_call.rs)）在
+**本模块两级 miss 之后**：
+
+```
+if let Some(cell) = cross_cell:
+  match cell.get():
+    Some(arc) => 借用 arc            # 命中：零 hash、零 atomic-RMW（仅一次 acquire load）
+    None      => arc = try_lookup_function(fname)?   # 首次：解析一次
+                 cell.set(arc)        # 写一次（OnceLock 幂等：并发双填取胜者，同函数无害）
+                 borrow
+```
+
+设计要点（对照 CoreCLR：cross-assembly call 首次 prestub 解析后 patch call site，
+第二次直接跳）：
+
+- **per-site cell，不建全局整数寻址表**：避免全局可变注册表 + 并发 append 协议
+  （runtime 热子系统返工高发区）；每个 `OnceLock` 独立、天然 `Sync`。
+- **`OnceLock`（write-once）而非可失效缓存**：一次运行内 FQ-name → 目标函数稳定
+  （function_table 装入后 `Arc<Function>` 不变；hot-reload 是独立失效路径，不经此 site 缓存）。
+- **只在本模块 miss 后介入**：本模块命中路径一条多余指令都不加（`cross_cell` 仅在
+  既有 cross-zpkg 慢路径处取用）。
+- **仅 interp**：JIT 的 cross-zpkg 走 `jit_call` helper，本机制不动它。
+
 ### 依赖传递（Decision 4：着色算法）
 
 ```

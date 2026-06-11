@@ -4,9 +4,10 @@
 /// Helpers that may propagate a user exception from a callee return
 /// `Result<Option<Value>>` (Some = thrown). Pure helpers return `Result<()>`.
 
-use crate::metadata::{Module, Value};
+use crate::metadata::{Function, Module, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
+use std::sync::{Arc, OnceLock};
 
 use super::ops::collect_args;
 use super::{ExecOutcome, Frame};
@@ -19,6 +20,13 @@ pub(super) fn call(
     // falls back to string lookup + lazy loader, then writes the resolved id back into
     // the slot. None: pure string lookup (back-compat).
     method_token: Option<&std::sync::atomic::AtomicU32>,
+    // cross_cell: Pre-resolved cross-zpkg target cache from
+    // Function.resolved.cross_module_targets[site_idx] (review.md C7). Only
+    // consulted *after* the intra-module fast path misses — a cross-zpkg target
+    // lives in the lazy loader, not `module.functions`, so it can't be an
+    // index. First cross-zpkg hit stores the resolved `Arc<Function>`; later
+    // calls borrow it (no `try_lookup_function` hash). None: back-compat.
+    cross_cell: Option<&OnceLock<Arc<Function>>>,
 ) -> Result<Option<Value>> {
     use std::sync::atomic::Ordering;
     let arg_vals = collect_args(&frame.regs, args)?;
@@ -45,7 +53,24 @@ pub(super) fn call(
 
     let outcome = if let Some(callee) = callee_fn {
         super::exec_function(ctx, module, callee, &arg_vals)?
+    } else if let Some(cell) = cross_cell {
+        // Cross-zpkg: borrow the cached Arc<Function> on hit (zero hash);
+        // resolve via the lazy loader once on first miss and backfill the cell.
+        let target = match cell.get() {
+            Some(arc) => arc,
+            None => {
+                let resolved = ctx.try_lookup_function(fname)
+                    .ok_or_else(|| anyhow::anyhow!("undefined function `{fname}`"))?;
+                // set() is idempotent: a concurrent double-fill resolves to the
+                // same function, so either winner is correct; get() then returns
+                // the stored Arc.
+                let _ = cell.set(resolved);
+                cell.get().expect("cell was just set")
+            }
+        };
+        super::exec_function(ctx, module, target.as_ref(), &arg_vals)?
     } else if let Some(lazy_fn) = ctx.try_lookup_function(fname) {
+        // No cross cell (back-compat): pure lazy-loader lookup, uncached.
         super::exec_function(ctx, module, lazy_fn.as_ref(), &arg_vals)?
     } else {
         bail!("undefined function `{fname}`");

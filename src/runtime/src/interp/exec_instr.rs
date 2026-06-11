@@ -135,7 +135,12 @@ pub fn exec_instr(
             let method_token = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
                 .and_then(|r| r.method_tokens.get(_site_idx as usize));
-            if let Some(thrown) = exec_call::call(ctx, module, frame, *dst, fname, args, method_token)? {
+            // review.md C7: per-site cross-zpkg target cache (parallel to
+            // method_tokens). Borrowed on hit; backfilled on first cross-zpkg call.
+            let cross_cell = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.cross_module_targets.get(_site_idx as usize));
+            if let Some(thrown) = exec_call::call(ctx, module, frame, *dst, fname, args, method_token, cross_cell)? {
                 return Ok(Some(thrown));
             }
             // add-gc-safepoint (2026-05-20): post-Call safepoint — long-running
