@@ -892,7 +892,9 @@ jobs:
               cp -R "$src" "$dst"
               if [ "$rid" = "windows-x64" ]; then
                   archive="artifacts/release/z42-nightly-${rid}.zip"
-                  tar -C artifacts/packages -a -cf "$archive" "$new_name"
+                  # Use `zip` (not `tar -a`): GNU tar's zip output is incompatible
+                  # with Windows Expand-Archive / Explorer on some tar versions.
+                  (cd artifacts/packages && zip -r "../release/z42-nightly-${rid}.zip" "$new_name")
               else
                   archive="artifacts/release/z42-nightly-${rid}.tar.gz"
                   tar -C artifacts/packages -czf "$archive" "$new_name"
@@ -908,6 +910,50 @@ jobs:
           shasum -a 256 z42-nightly-*.tar.gz z42-nightly-*.zip 2>/dev/null | sort -k2 > SHA256SUMS
           echo "--- SHA256SUMS ---"
           cat SHA256SUMS
+
+      - name: Generate release-index.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          get_sha() { grep " $1$" artifacts/release/SHA256SUMS | awk '{print $1}'; }
+          sha_linux_x64="$(get_sha "z42-nightly-linux-x64.tar.gz")"
+          sha_linux_arm64="$(get_sha "z42-nightly-linux-arm64.tar.gz")"
+          sha_macos_arm64="$(get_sha "z42-nightly-macos-arm64.tar.gz")"
+          sha_windows_x64="$(get_sha "z42-nightly-windows-x64.zip")"
+
+          for pair in "linux-x64:$sha_linux_x64" "linux-arm64:$sha_linux_arm64" \
+                      "macos-arm64:$sha_macos_arm64" "windows-x64:$sha_windows_x64"; do
+            rid="${pair%%:*}"; sha="${pair#*:}"
+            [ -n "$sha" ] || { echo "release-index: missing sha256 for $rid" >&2; exit 1; }
+          done
+
+          jq -n \
+            --argjson schema 1 \
+            --arg version "nightly" \
+            --arg channel "nightly" \
+            --arg tag "nightly" \
+            --arg published "$ts" \
+            --arg sha_linux_x64   "$sha_linux_x64" \
+            --arg sha_linux_arm64 "$sha_linux_arm64" \
+            --arg sha_macos_arm64 "$sha_macos_arm64" \
+            --arg sha_windows_x64 "$sha_windows_x64" \
+            '{
+              schema: $schema,
+              version: $version,
+              channel: $channel,
+              tag: $tag,
+              published: $published,
+              runtimes: {
+                "linux-x64":   { archive: "z42-nightly-linux-x64.tar.gz",   sha256: $sha_linux_x64 },
+                "linux-arm64": { archive: "z42-nightly-linux-arm64.tar.gz", sha256: $sha_linux_arm64 },
+                "macos-arm64": { archive: "z42-nightly-macos-arm64.tar.gz", sha256: $sha_macos_arm64 },
+                "windows-x64": { archive: "z42-nightly-windows-x64.zip",    sha256: $sha_windows_x64 }
+              }
+            }' > artifacts/release/release-index.json
+          echo "--- release-index.json ---"
+          cat artifacts/release/release-index.json
 
       - name: Force-replace nightly release
         shell: bash
@@ -951,4 +997,4 @@ jobs:
           gh release create nightly --prerelease --target "$GITHUB_SHA" \
             --title "Nightly (main @ ${short_sha} · ${today})" \
             --notes "$notes" \
-            artifacts/release/SHA256SUMS artifacts/release/z42-nightly-*
+            artifacts/release/SHA256SUMS artifacts/release/release-index.json artifacts/release/z42-nightly-*
