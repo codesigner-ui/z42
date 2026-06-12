@@ -198,6 +198,51 @@ jobs:
           echo "--- SHA256SUMS ---"
           cat dist/SHA256SUMS
 
+      - name: Generate release-index.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ needs.verify.outputs.version }}"
+          ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          get_sha() { grep " $1$" dist/SHA256SUMS | awk '{print $1}'; }
+          sha_linux_x64="$(get_sha "z42-${v}-linux-x64.tar.gz")"
+          sha_linux_arm64="$(get_sha "z42-${v}-linux-arm64.tar.gz")"
+          sha_macos_arm64="$(get_sha "z42-${v}-macos-arm64.tar.gz")"
+          sha_windows_x64="$(get_sha "z42-${v}-windows-x64.zip")"
+
+          for pair in "linux-x64:$sha_linux_x64" "linux-arm64:$sha_linux_arm64" \
+                      "macos-arm64:$sha_macos_arm64" "windows-x64:$sha_windows_x64"; do
+            rid="${pair%%:*}"; sha="${pair#*:}"
+            [ -n "$sha" ] || { echo "release-index: missing sha256 for $rid" >&2; exit 1; }
+          done
+
+          jq -n \
+            --argjson schema 1 \
+            --arg version "$v" \
+            --arg channel "stable" \
+            --arg tag "v$v" \
+            --arg published "$ts" \
+            --arg sha_linux_x64   "$sha_linux_x64" \
+            --arg sha_linux_arm64 "$sha_linux_arm64" \
+            --arg sha_macos_arm64 "$sha_macos_arm64" \
+            --arg sha_windows_x64 "$sha_windows_x64" \
+            '{
+              schema: $schema,
+              version: $version,
+              channel: $channel,
+              tag: $tag,
+              published: $published,
+              runtimes: {
+                "linux-x64":   { archive: ("z42-" + $version + "-linux-x64.tar.gz"),   sha256: $sha_linux_x64 },
+                "linux-arm64": { archive: ("z42-" + $version + "-linux-arm64.tar.gz"), sha256: $sha_linux_arm64 },
+                "macos-arm64": { archive: ("z42-" + $version + "-macos-arm64.tar.gz"), sha256: $sha_macos_arm64 },
+                "windows-x64": { archive: ("z42-" + $version + "-windows-x64.zip"),    sha256: $sha_windows_x64 }
+              }
+            }' > dist/release-index.json
+          echo "--- release-index.json ---"
+          cat dist/release-index.json
+
       - name: Create GitHub Release
         shell: bash
         env:
@@ -215,4 +260,4 @@ jobs:
           fi
           gh release create "v$v" $prerelease_flag --generate-notes \
             --title "z42 v$v" \
-            dist/SHA256SUMS dist/z42-*
+            dist/SHA256SUMS dist/release-index.json dist/z42-*
