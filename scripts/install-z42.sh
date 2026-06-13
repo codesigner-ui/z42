@@ -192,9 +192,30 @@ _manifest_str() {
     | head -1 | sed -E 's/.*"[^"]*"[[:space:]]*:[[:space:]]*"([^"]*)"/\1/'
 }
 _rid_field() {
-  printf '%s' "$1" | grep "\"$2\"" \
-    | grep -o "\"$3\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
-    | sed -E 's/.*"[^"]*"[[:space:]]*:[[:space:]]*"([^"]*)"/\1/'
+  local json="$1" rid="$2" field="$3"
+  if command -v python3 >/dev/null 2>&1; then
+    printf '%s' "$json" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    r = data.get('runtimes', {}).get('$rid', {})
+    for section in ('sdk', 'launcher', 'runtime'):
+        if section in r and isinstance(r[section], dict) and '$field' in r[section]:
+            print(r[section]['$field']); sys.exit(0)
+    v = r.get('$field')
+    if isinstance(v, str):
+        print(v)
+except Exception:
+    pass
+" 2>/dev/null
+  else
+    # Fallback: old-format manifest only (field directly at rid level, no nesting).
+    printf '%s' "$json" | tr -d ' \n\t' \
+      | grep -o "\"${rid}\":{[^{]*}" \
+      | grep -o "\"${field}\":\"[^\"]*\"" \
+      | head -1 \
+      | sed -E 's/"[^"]*":"([^"]*)"/\1/'
+  fi
 }
 
 MANIFEST_URL="https://github.com/$SLUG/releases/download/$TAG/release-index.json"
