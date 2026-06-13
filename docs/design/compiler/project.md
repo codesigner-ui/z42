@@ -1218,3 +1218,50 @@ members = []
 [workspace.dependencies]
 # name = { path = "...", version = "..." }
 ```
+
+## `[platform.*]` 平台配置段（add-export-command, 2026-06-14）
+
+`z42c` **不读取**这些段；由 `z42 export` 命令消费。注册到 `ProjectManifest.KnownTopLevelKeys` 以避免 WS008 告警。
+
+### `[platform.ios]`
+
+```toml
+[platform.ios]
+bundle_id      = "com.example.myapp"   # required: CFBundleIdentifier
+display_name   = "My App"             # optional: CFBundleDisplayName（默认 = project name）
+version        = "1.0.0"             # optional: CFBundleShortVersionString（默认 = project version）
+min_ios        = "15.0"              # optional: IPHONEOS_DEPLOYMENT_TARGET（默认 "15.0"）
+team_id        = ""                  # optional: CODE_SIGN_TEAM（留空 = Automatic）
+device_families = [1, 2]            # optional: 1=iPhone 2=iPad（默认 [1,2]）
+```
+
+### `[platform.android]`
+
+```toml
+[platform.android]
+app_id       = "com.example.myapp"  # required: Gradle applicationId
+display_name = "My App"             # optional: app_name string resource（默认 = project name）
+version_code = 1                    # optional: versionCode（默认 1）
+version_name = "1.0.0"             # optional: versionName（默认 = project version）
+min_sdk      = 26                   # optional: minSdk（默认 26 = Android 8.0）
+target_sdk   = 34                   # optional: targetSdk（默认 34 = Android 14）
+```
+
+### `[platform.wasm]`
+
+```toml
+[platform.wasm]
+title = "My App"   # optional: HTML &lt;title&gt;（默认 = project name）
+```
+
+### CLI 覆盖
+
+所有 toml 值可通过 CLI 标志覆盖：
+
+```
+z42 export ios     <project.z42.toml> [--bundle-id com.x.y] [--output ./MyApp] [--sdk-ver 0.3.0]
+z42 export android <project.z42.toml> [--app-id  com.x.y] [--output ./MyApp] [--sdk-ver 0.3.0]
+z42 export wasm    <project.z42.toml>                       [--output ./MyApp] [--sdk-ver 0.3.0]
+```
+
+详细设计见 [`docs/design/toolchain/export.md`](../toolchain/export.md)。

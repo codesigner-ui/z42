@@ -20,15 +20,17 @@ using Std.Crypto;
 
 // ── install ───────────────────────────────────────────────────────────────────
 
-// z42 install <version|nightly>
+// z42 install <version|nightly> [--rid <rid>]
+// --rid overrides the host RID, enabling platform SDK download (e.g. --rid ios-arm64).
 void _cmdInstall(ParseResult r) {
     string ver = r.GetPositional(0);
     if (ver.Length == 0) {
-        ConsoleError.WriteLine("usage: z42 install <version|nightly>");
+        ConsoleError.WriteLine("usage: z42 install <version|nightly> [--rid <rid>]");
         Environment.Exit(2);
         return;
     }
-    string rid = _hostRid();
+    string ridOpt = r.GetOption("rid");
+    string rid = (ridOpt.Length > 0) ? ridOpt : _hostRid();
     if (rid.Length == 0) {
         ConsoleError.WriteLine("z42: unsupported host (" + Platform.OS() + "/" + Platform.Arch() + ")");
         Environment.Exit(2);
@@ -71,15 +73,20 @@ void _cmdInstall(ParseResult r) {
 
     string runtimes = _runtimesDir();
     Directory.Create(runtimes);
-    string staging = Path.Join(runtimes, "." + ver + ".stage");
+    // Platform SDK (non-host RID): install into runtimes/<rid>/<ver>/ so multiple
+    // platform SDKs can coexist. Host runtime keeps the legacy runtimes/<ver>/ layout.
+    string hostRid = _hostRid();
+    string targetBase = (rid == hostRid) ? runtimes : Path.Join(runtimes, rid);
+    Directory.Create(targetBase);
+    string staging = Path.Join(targetBase, "." + ver + ".stage");
     if (Directory.Exists(staging)) { Directory.Delete(staging, true); }
     Directory.Create(staging);
     _extractArchive(body, isWindows, staging);
 
-    string target = Path.Join(runtimes, ver);
+    string target = Path.Join(targetBase, ver);
     if (Directory.Exists(target)) { Directory.Delete(target, true); }
     File.Move(staging, target);
-    Console.WriteLine("installed " + ver + " → " + target);
+    Console.WriteLine("installed " + rid + "/" + ver + " → " + target);
 }
 
 // ── self-update ───────────────────────────────────────────────────────────────

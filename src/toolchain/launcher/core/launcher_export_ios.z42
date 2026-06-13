@@ -1,0 +1,204 @@
+// launcher_export_ios.z42 — iOS Xcode project generator (add-export-command, 2026-06-14).
+// Called by _cmdExportIos in launcher_export.z42.
+//
+// Generates a bare .xcodeproj (project.pbxproj with deterministic 24-char hex IDs),
+// a Swift AppDelegate host, and Info.plist. The z42 app bytecode (app.zpkg) is
+// included as a bundle resource; z42vm.xcframework is expected in <outputDir>/
+// (copy from the platform SDK, or install with `z42 install <ver> --rid ios-arm64`).
+namespace Z42Launcher;
+
+using Std.IO;
+
+// Generate the full iOS project tree under outputDir.
+void _generateIosProject(string outputDir, string name, string bundleId,
+                         string displayName, string minIos, string zpkgSrc, string sdkDir) {
+    string projDir  = Path.Join(outputDir, name + ".xcodeproj");
+    string srcDir   = Path.Join(outputDir, name);
+    Directory.Create(projDir);
+    Directory.Create(srcDir);
+
+    // Copy built zpkg into source dir (bundled as a resource)
+    string zpkgDst = Path.Join(srcDir, "app.zpkg");
+    if (zpkgSrc.Length > 0 && File.Exists(zpkgSrc)) {
+        File.Copy(zpkgSrc, zpkgDst);
+        Console.WriteLine("  ✓ copied app.zpkg");
+    } else {
+        Console.WriteLine("  ⚠  app.zpkg not found at " + zpkgSrc);
+        Console.WriteLine("     Build first: z42c build <project.z42.toml>");
+    }
+
+    // Locate xcframework in the platform SDK
+    string xcfwSrc = "";
+    if (sdkDir.Length > 0 && Directory.Exists(sdkDir)) {
+        string cand = Path.Join(sdkDir, "z42vm.xcframework");
+        if (Directory.Exists(cand)) { xcfwSrc = cand; }
+    }
+    if (xcfwSrc.Length > 0) {
+        // Directory.Copy not yet in stdlib — guide the user
+        Console.WriteLine("  note: copy xcframework into the project:");
+        Console.WriteLine("        cp -r \"" + xcfwSrc + "\" \"" + outputDir + "/z42vm.xcframework\"");
+    } else {
+        Console.WriteLine("  ⚠  z42vm.xcframework not found.");
+        Console.WriteLine("     Install iOS SDK: z42 install <ver> --rid ios-arm64");
+        Console.WriteLine("     Then: cp -r ~/.z42/runtimes/ios-arm64/<ver>/z42vm.xcframework " + outputDir + "/");
+    }
+
+    // Write project files
+    File.WriteAllText(Path.Join(projDir, "project.pbxproj"),   _iosPbxproj(name, bundleId, minIos));
+    File.WriteAllText(Path.Join(srcDir,  "main.swift"),         _iosMainSwift(name));
+    File.WriteAllText(Path.Join(srcDir,  "Info.plist"),         _iosInfoPlist(bundleId, displayName));
+
+    string assetsDir = Path.Join(srcDir, "Assets.xcassets");
+    Directory.Create(assetsDir);
+    File.WriteAllText(Path.Join(assetsDir, "Contents.json"),
+        "{\n  \"info\" : { \"author\" : \"xcode\", \"version\" : 1 }\n}\n");
+
+    Console.WriteLine("  ✓ " + name + ".xcodeproj/project.pbxproj");
+    Console.WriteLine("  ✓ " + name + "/main.swift  " + name + "/Info.plist");
+}
+
+// Generate project.pbxproj with fixed deterministic 24-char hex object IDs.
+string _iosPbxproj(string name, string bundleId, string minIos) {
+    // Object IDs (deterministic, fixed — single target, single xcframework)
+    string iBfMain = "A1000000000000000000000A"; string iBfZpkg = "A1000000000000000000000B";
+    string iBfXcfw = "A1000000000000000000000C"; string iFrMain = "A10000000000000000000006";
+    string iFrZpkg = "A10000000000000000000007"; string iFrXcfw = "A10000000000000000000008";
+    string iFrApp  = "A10000000000000000000009"; string iRootGrp= "A10000000000000000000002";
+    string iSrcGrp = "A10000000000000000000003"; string iFwkGrp = "A10000000000000000000004";
+    string iProdGrp= "A10000000000000000000005"; string iPhSrc  = "A1000000000000000000000D";
+    string iPhRes  = "A1000000000000000000000E"; string iPhFwk  = "A1000000000000000000000F";
+    string iTgt    = "A10000000000000000000010"; string iProj   = "A10000000000000000000001";
+    string iCDbgP  = "A10000000000000000000011"; string iCRelP  = "A10000000000000000000012";
+    string iCLProj = "A10000000000000000000013"; string iCDbgT  = "A10000000000000000000014";
+    string iCRelT  = "A10000000000000000000015"; string iCLTgt  = "A10000000000000000000016";
+
+    string b = "// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {};\n\tobjectVersion = 56;\n\tobjects = {\n\n";
+
+    b = b + "/* Begin PBXBuildFile section */\n";
+    b = b + "\t\t" + iBfMain + " = {isa = PBXBuildFile; fileRef = " + iFrMain + "; settings = {}; };\n";
+    b = b + "\t\t" + iBfZpkg + " = {isa = PBXBuildFile; fileRef = " + iFrZpkg + "; settings = {}; };\n";
+    b = b + "\t\t" + iBfXcfw + " = {isa = PBXBuildFile; fileRef = " + iFrXcfw + "; settings = {ATTRIBUTES = (Required,); }; };\n";
+    b = b + "/* End PBXBuildFile section */\n\n";
+
+    b = b + "/* Begin PBXFileReference section */\n";
+    b = b + "\t\t" + iFrMain + " = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = \"<group>\"; };\n";
+    b = b + "\t\t" + iFrZpkg + " = {isa = PBXFileReference; lastKnownFileType = file; path = app.zpkg; sourceTree = \"<group>\"; };\n";
+    b = b + "\t\t" + iFrXcfw + " = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = z42vm.xcframework; sourceTree = \"<group>\"; };\n";
+    b = b + "\t\t" + iFrApp + " = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = " + name + ".app; sourceTree = BUILT_PRODUCTS_DIR; };\n";
+    b = b + "/* End PBXFileReference section */\n\n";
+
+    b = b + "/* Begin PBXFrameworksBuildPhase section */\n";
+    b = b + "\t\t" + iPhFwk + " = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647;\n";
+    b = b + "\t\t\tfiles = (" + iBfXcfw + ",); runOnlyForDeploymentPostprocessing = 0; };\n";
+    b = b + "/* End PBXFrameworksBuildPhase section */\n\n";
+
+    b = b + "/* Begin PBXGroup section */\n";
+    b = b + "\t\t" + iRootGrp + " = {isa = PBXGroup; children = (";
+    b = b + iSrcGrp + "," + iFwkGrp + "," + iProdGrp + ",); sourceTree = \"<group>\"; };\n";
+    b = b + "\t\t" + iSrcGrp + " = {isa = PBXGroup; children = (";
+    b = b + iFrMain + "," + iFrZpkg + ",); path = " + name + "; sourceTree = \"<group>\"; };\n";
+    b = b + "\t\t" + iFwkGrp + " = {isa = PBXGroup; children = (" + iFrXcfw + ",); name = Frameworks; sourceTree = \"<group>\"; };\n";
+    b = b + "\t\t" + iProdGrp + " = {isa = PBXGroup; children = (" + iFrApp + ",); name = Products; sourceTree = \"<group>\"; };\n";
+    b = b + "/* End PBXGroup section */\n\n";
+
+    b = b + "/* Begin PBXNativeTarget section */\n";
+    b = b + "\t\t" + iTgt + " = {isa = PBXNativeTarget;\n";
+    b = b + "\t\t\tbuildConfigurationList = " + iCLTgt + ";\n";
+    b = b + "\t\t\tbuildPhases = (" + iPhSrc + "," + iPhRes + "," + iPhFwk + ",);\n";
+    b = b + "\t\t\tbuildRules = (); dependencies = ();\n";
+    b = b + "\t\t\tname = " + name + "; productName = " + name + ";\n";
+    b = b + "\t\t\tproductReference = " + iFrApp + ";\n";
+    b = b + "\t\t\tproductType = \"com.apple.product-type.application\"; };\n";
+    b = b + "/* End PBXNativeTarget section */\n\n";
+
+    b = b + "/* Begin PBXProject section */\n";
+    b = b + "\t\t" + iProj + " = {isa = PBXProject;\n";
+    b = b + "\t\t\tattributes = {LastSwiftUpdateCheck = 1500; LastUpgradeCheck = 1500;};\n";
+    b = b + "\t\t\tbuildConfigurationList = " + iCLProj + ";\n";
+    b = b + "\t\t\tcompatibilityVersion = \"Xcode 14.0\"; developmentRegion = en;\n";
+    b = b + "\t\t\thasScannedForEncodings = 0; knownRegions = (en,Base,);\n";
+    b = b + "\t\t\tmainGroup = " + iRootGrp + "; productRefGroup = " + iProdGrp + ";\n";
+    b = b + "\t\t\tprojectDirPath = \"\"; projectRoot = \"\";\n";
+    b = b + "\t\t\ttargets = (" + iTgt + ",); };\n";
+    b = b + "/* End PBXProject section */\n\n";
+
+    b = b + "/* Begin PBXResourcesBuildPhase section */\n";
+    b = b + "\t\t" + iPhRes + " = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647;\n";
+    b = b + "\t\t\tfiles = (" + iBfZpkg + ",); runOnlyForDeploymentPostprocessing = 0; };\n";
+    b = b + "/* End PBXResourcesBuildPhase section */\n\n";
+
+    b = b + "/* Begin PBXSourcesBuildPhase section */\n";
+    b = b + "\t\t" + iPhSrc + " = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647;\n";
+    b = b + "\t\t\tfiles = (" + iBfMain + ",); runOnlyForDeploymentPostprocessing = 0; };\n";
+    b = b + "/* End PBXSourcesBuildPhase section */\n\n";
+
+    string dep     = "IPHONEOS_DEPLOYMENT_TARGET = " + minIos + ";";
+    string projCfg = "ALWAYS_SEARCH_USER_PATHS = NO; SWIFT_VERSION = 5.0; " + dep;
+    string tgtCfg  = "BUNDLE_IDENTIFIER = " + bundleId + "; CODE_SIGN_STYLE = Automatic; "
+                   + "INFOPLIST_FILE = " + name + "/Info.plist; "
+                   + "PRODUCT_BUNDLE_IDENTIFIER = " + bundleId + "; "
+                   + "PRODUCT_NAME = \"$(TARGET_NAME)\"; SWIFT_VERSION = 5.0; "
+                   + "TARGETED_DEVICE_FAMILY = \"1,2\"; " + dep;
+
+    b = b + "/* Begin XCBuildConfiguration section */\n";
+    b = b + "\t\t" + iCDbgP + " = {isa = XCBuildConfiguration; buildSettings = {" + projCfg + "}; name = Debug; };\n";
+    b = b + "\t\t" + iCRelP + " = {isa = XCBuildConfiguration; buildSettings = {" + projCfg + "}; name = Release; };\n";
+    b = b + "\t\t" + iCDbgT + " = {isa = XCBuildConfiguration; buildSettings = {" + tgtCfg + "}; name = Debug; };\n";
+    b = b + "\t\t" + iCRelT + " = {isa = XCBuildConfiguration; buildSettings = {" + tgtCfg + "}; name = Release; };\n";
+    b = b + "/* End XCBuildConfiguration section */\n\n";
+
+    b = b + "/* Begin XCConfigurationList section */\n";
+    b = b + "\t\t" + iCLProj + " = {isa = XCConfigurationList;\n";
+    b = b + "\t\t\tbuildConfigurations = (" + iCDbgP + " /* Debug */," + iCRelP + " /* Release */,);\n";
+    b = b + "\t\t\tdefaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };\n";
+    b = b + "\t\t" + iCLTgt + " = {isa = XCConfigurationList;\n";
+    b = b + "\t\t\tbuildConfigurations = (" + iCDbgT + " /* Debug */," + iCRelT + " /* Release */,);\n";
+    b = b + "\t\t\tdefaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };\n";
+    b = b + "/* End XCConfigurationList section */\n\n";
+
+    b = b + "\t};\n\trootObject = " + iProj + " /* Project object */;\n}\n";
+    return b;
+}
+
+string _iosMainSwift(string name) {
+    string c = "import UIKit\n\n";
+    c = c + "// Generated by `z42 export ios`. Wire up z42 runtime calls here.\n\n";
+    c = c + "@UIApplicationMain\n";
+    c = c + "class AppDelegate: UIResponder, UIApplicationDelegate {\n";
+    c = c + "    var window: UIWindow?\n\n";
+    c = c + "    func application(_ application: UIApplication,\n";
+    c = c + "                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {\n";
+    c = c + "        guard let zpkgPath = Bundle.main.path(forResource: \"app\", ofType: \"zpkg\") else {\n";
+    c = c + "            assertionFailure(\"app.zpkg not in bundle — build the z42 project first\")\n";
+    c = c + "            return false\n";
+    c = c + "        }\n";
+    c = c + "        DispatchQueue.global(qos: .userInitiated).async {\n";
+    c = c + "            // TODO: call z42_run_app(zpkgPath) once z42vm.xcframework is linked\n";
+    c = c + "            _ = zpkgPath\n";
+    c = c + "        }\n";
+    c = c + "        window = UIWindow(frame: UIScreen.main.bounds)\n";
+    c = c + "        window?.rootViewController = UIViewController()\n";
+    c = c + "        window?.makeKeyAndVisible()\n";
+    c = c + "        return true\n";
+    c = c + "    }\n}\n";
+    return c;
+}
+
+string _iosInfoPlist(string bundleId, string displayName) {
+    string c = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    c = c + "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n";
+    c = c + "<plist version=\"1.0\">\n<dict>\n";
+    c = c + "\t<key>CFBundleDisplayName</key>\n\t<string>" + displayName + "</string>\n";
+    c = c + "\t<key>CFBundleIdentifier</key>\n\t<string>" + bundleId + "</string>\n";
+    c = c + "\t<key>CFBundleInfoDictionaryVersion</key>\n\t<string>6.0</string>\n";
+    c = c + "\t<key>CFBundleName</key>\n\t<string>" + displayName + "</string>\n";
+    c = c + "\t<key>CFBundlePackageType</key>\n\t<string>APPL</string>\n";
+    c = c + "\t<key>CFBundleShortVersionString</key>\n\t<string>1.0</string>\n";
+    c = c + "\t<key>CFBundleVersion</key>\n\t<string>1</string>\n";
+    c = c + "\t<key>LSRequiresIPhoneOS</key>\n\t<true/>\n";
+    c = c + "\t<key>UIRequiredDeviceCapabilities</key>\n\t<array>\n\t\t<string>arm64</string>\n\t</array>\n";
+    c = c + "\t<key>UISupportedInterfaceOrientations</key>\n\t<array>\n";
+    c = c + "\t\t<string>UIInterfaceOrientationPortrait</string>\n\t</array>\n";
+    c = c + "</dict>\n</plist>\n";
+    return c;
+}

@@ -74,6 +74,7 @@ SubcommandRouter _launcherRoot() {
 
     ArgParser inst = new ArgParser("z42 install", "download a runtime from GitHub Releases");
     inst.AddPositional("version", "version | nightly");
+    inst.AddOption("rid", "", "target RID (default: host, e.g. ios-arm64)", "");
     root.Add("install", "download a runtime from GitHub Releases", inst);
 
     ArgParser uninst = new ArgParser("z42 uninstall", "remove an installed runtime");
@@ -85,8 +86,35 @@ SubcommandRouter _launcherRoot() {
     root.Add("self-update", "update the installed launcher", selfup);
 
     root.AddRouter("apphost", "make a native apphost exe for an app", _apphostRouter());
+    root.AddRouter("export", "generate a native platform project", _exportRouter());
 
     return root;
+}
+
+SubcommandRouter _exportRouter() {
+    SubcommandRouter e = new SubcommandRouter("z42 export", "generate a native platform project from a z42 project");
+
+    ArgParser ios = new ArgParser("z42 export ios", "generate an Xcode project for iOS/iPadOS");
+    ios.AddPositional("project", "<project.z42.toml>");
+    ios.AddOption("bundle-id", "", "CFBundleIdentifier (overrides [platform.ios].bundle_id)", "");
+    ios.AddOption("output", "", "output directory (default: <name>-ios/ beside the toml)", "");
+    ios.AddOption("sdk-ver", "", "platform SDK version to use (default: project version)", "");
+    e.Add("ios", "generate an Xcode project for iOS/iPadOS", ios);
+
+    ArgParser android = new ArgParser("z42 export android", "generate a Gradle project for Android");
+    android.AddPositional("project", "<project.z42.toml>");
+    android.AddOption("app-id", "", "Android application ID (overrides [platform.android].app_id)", "");
+    android.AddOption("output", "", "output directory (default: <name>-android/ beside the toml)", "");
+    android.AddOption("sdk-ver", "", "platform SDK version to use (default: project version)", "");
+    e.Add("android", "generate a Gradle project for Android", android);
+
+    ArgParser wasm = new ArgParser("z42 export wasm", "generate an HTML+JS project for WebAssembly");
+    wasm.AddPositional("project", "<project.z42.toml>");
+    wasm.AddOption("output", "", "output directory (default: <name>-wasm/ beside the toml)", "");
+    wasm.AddOption("sdk-ver", "", "platform SDK version to use (default: project version)", "");
+    e.Add("wasm", "generate an HTML+JS project for WebAssembly", wasm);
+
+    return e;
 }
 
 SubcommandRouter _apphostRouter() {
@@ -116,6 +144,15 @@ void _dispatchLauncher(CommandResolution res) {
     if (top == "apphost") {
         // p = ["apphost", "build"]
         Apphost.BuildOne(r.GetPositional(0), r.GetOption("out"));
+        return;
+    }
+    if (top == "export") {
+        // p = ["export", "ios"|"android"|"wasm"]
+        if (p.Length < 2) { return; }
+        string sub = p[1];
+        if (sub == "ios")     { _cmdExportIos(r);     return; }
+        if (sub == "android") { _cmdExportAndroid(r); return; }
+        if (sub == "wasm")    { _cmdExportWasm(r);    return; }
         return;
     }
 }

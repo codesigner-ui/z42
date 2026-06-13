@@ -1,0 +1,181 @@
+// launcher_export.z42 — `z42 export` entry points + shared helpers (add-export-command, 2026-06-14).
+//
+// Three entry points dispatched by launcher_cli.z42:
+//   _cmdExportIos     → launcher_export_ios.z42 :: _generateIosProject
+//   _cmdExportAndroid → launcher_export_android.z42 :: _generateAndroidProject
+//   _cmdExportWasm    → launcher_export_wasm.z42 :: _generateWasmProject
+//
+// Config is read from the project's z42.toml [platform.ios/android/wasm] section.
+// CLI flags override toml values. The built .zpkg is resolved via the same dist_dir
+// logic as `z42 apphost build`. Platform SDKs live at ~/.z42/runtimes/<rid>/<ver>/.
+namespace Z42Launcher;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+
+// ── entry points ──────────────────────────────────────────────────────────────
+
+void _cmdExportIos(ParseResult r) {
+    string tomlPath = r.GetPositional(0);
+    if (!_expCheckToml("ios", tomlPath)) { return; }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
+    string projName = _expTomlStr(toml, "project", "name", "");
+    if (projName.Length == 0) {
+        ConsoleError.WriteLine("z42 export ios: [project].name missing in " + tomlPath);
+        Environment.Exit(1); return;
+    }
+    string bundleId = r.GetOption("bundle-id");
+    if (bundleId.Length == 0) { bundleId = _platformStr(toml, "ios", "bundle_id", ""); }
+    if (bundleId.Length == 0) {
+        ConsoleError.WriteLine("z42 export ios: bundle_id required — add [platform.ios] bundle_id in "
+            + tomlPath + " or pass --bundle-id");
+        Environment.Exit(2); return;
+    }
+    string displayName = _platformStr(toml, "ios", "display_name", projName);
+    string minIos      = _platformStr(toml, "ios", "min_ios",      "15.0");
+    string sdkVer      = r.GetOption("sdk-ver");
+    if (sdkVer.Length == 0) { sdkVer = _expTomlStr(toml, "project", "version", ""); }
+
+    string outputDir = r.GetOption("output");
+    if (outputDir.Length == 0) { outputDir = _expDefaultOutputDir(tomlPath, projName, "-ios"); }
+    Directory.Create(outputDir);
+
+    string zpkgSrc = _expResolveZpkg(tomlPath, toml, projName);
+    string sdkDir  = _expFindIosSdk(sdkVer);
+
+    Console.WriteLine("z42 export ios → " + outputDir);
+    _generateIosProject(outputDir, projName, bundleId, displayName, minIos, zpkgSrc, sdkDir);
+    Console.WriteLine("✅ iOS project ready. Open " + outputDir + "/" + projName + ".xcodeproj in Xcode.");
+}
+
+void _cmdExportAndroid(ParseResult r) {
+    string tomlPath = r.GetPositional(0);
+    if (!_expCheckToml("android", tomlPath)) { return; }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
+    string projName = _expTomlStr(toml, "project", "name", "");
+    if (projName.Length == 0) {
+        ConsoleError.WriteLine("z42 export android: [project].name missing in " + tomlPath);
+        Environment.Exit(1); return;
+    }
+    string appId = r.GetOption("app-id");
+    if (appId.Length == 0) { appId = _platformStr(toml, "android", "app_id", ""); }
+    if (appId.Length == 0) {
+        ConsoleError.WriteLine("z42 export android: app_id required — add [platform.android] app_id in "
+            + tomlPath + " or pass --app-id");
+        Environment.Exit(2); return;
+    }
+    string ver         = _expTomlStr(toml, "project", "version", "1.0.0");
+    string displayName = _platformStr(toml, "android", "display_name", projName);
+    string versionCode = _platformStr(toml, "android", "version_code", "1");
+    string versionName = _platformStr(toml, "android", "version_name", ver);
+    string minSdk      = _platformStr(toml, "android", "min_sdk",      "26");
+    string targetSdk   = _platformStr(toml, "android", "target_sdk",   "34");
+    string sdkVer      = r.GetOption("sdk-ver");
+    if (sdkVer.Length == 0) { sdkVer = ver; }
+
+    string outputDir = r.GetOption("output");
+    if (outputDir.Length == 0) { outputDir = _expDefaultOutputDir(tomlPath, projName, "-android"); }
+    Directory.Create(outputDir);
+
+    string zpkgSrc = _expResolveZpkg(tomlPath, toml, projName);
+    string sdkDir  = (sdkVer.Length > 0) ? _platformSdkDir("android-arm64", sdkVer) : "";
+
+    Console.WriteLine("z42 export android → " + outputDir);
+    _generateAndroidProject(outputDir, projName, appId, displayName,
+                            versionCode, versionName, minSdk, targetSdk, zpkgSrc, sdkDir);
+    Console.WriteLine("✅ Android project ready. Open " + outputDir + " in Android Studio.");
+}
+
+void _cmdExportWasm(ParseResult r) {
+    string tomlPath = r.GetPositional(0);
+    if (!_expCheckToml("wasm", tomlPath)) { return; }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
+    string projName = _expTomlStr(toml, "project", "name", "");
+    string ver      = _expTomlStr(toml, "project", "version", "");
+    string title    = _platformStr(toml, "wasm", "title", (projName.Length > 0 ? projName : "z42 App"));
+    string sdkVer   = r.GetOption("sdk-ver");
+    if (sdkVer.Length == 0) { sdkVer = ver; }
+
+    string outputDir = r.GetOption("output");
+    if (outputDir.Length == 0) { outputDir = _expDefaultOutputDir(tomlPath, projName, "-wasm"); }
+    Directory.Create(outputDir);
+
+    string zpkgSrc = _expResolveZpkg(tomlPath, toml, projName);
+    string sdkDir  = (sdkVer.Length > 0) ? _platformSdkDir("browser-wasm", sdkVer) : "";
+
+    Console.WriteLine("z42 export wasm → " + outputDir);
+    _generateWasmProject(outputDir, projName, title, zpkgSrc, sdkDir);
+    Console.WriteLine("✅ WASM project ready. Serve " + outputDir + " with any static HTTP server.");
+}
+
+// ── shared helpers ────────────────────────────────────────────────────────────
+
+bool _expCheckToml(string platform, string tomlPath) {
+    if (tomlPath.Length == 0 || !tomlPath.EndsWith(".toml")) {
+        ConsoleError.WriteLine("usage: z42 export " + platform + " <project.z42.toml> [options]");
+        Environment.Exit(2); return false;
+    }
+    if (!File.Exists(tomlPath)) {
+        ConsoleError.WriteLine("z42 export " + platform + ": not found: " + tomlPath);
+        Environment.Exit(1); return false;
+    }
+    return true;
+}
+
+// Read root.[section].[key] as a string (handles string and long TOML values).
+string _expTomlStr(TomlValue root, string section, string key, string dflt) {
+    if (!root.ContainsKey(section)) { return dflt; }
+    TomlValue s = root.Get(section);
+    if (!s.IsTable() || !s.ContainsKey(key)) { return dflt; }
+    TomlValue v = s.Get(key);
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    return dflt;
+}
+
+// Read root.[platform].[name].[key] as a string.
+string _platformStr(TomlValue root, string platform, string key, string dflt) {
+    if (!root.ContainsKey("platform")) { return dflt; }
+    TomlValue pt = root.Get("platform");
+    if (!pt.IsTable() || !pt.ContainsKey(platform)) { return dflt; }
+    TomlValue p = pt.Get(platform);
+    if (!p.IsTable() || !p.ContainsKey(key)) { return dflt; }
+    TomlValue v = p.Get(key);
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    return dflt;
+}
+
+// Platform SDK directory: ~/.z42/runtimes/<rid>/<ver>/
+string _platformSdkDir(string rid, string ver) {
+    return Path.Join(Path.Join(_runtimesDir(), rid), ver);
+}
+
+// Resolve iOS SDK: check ios-arm64 then iossim-arm64.
+string _expFindIosSdk(string ver) {
+    if (ver.Length == 0) { return ""; }
+    string d1 = _platformSdkDir("ios-arm64", ver);
+    if (Directory.Exists(d1)) { return d1; }
+    return _platformSdkDir("iossim-arm64", ver);
+}
+
+// Default output directory: <projectDir>/<name><suffix>/
+string _expDefaultOutputDir(string tomlPath, string name, string suffix) {
+    string dir = Path.GetDirectoryName(tomlPath);
+    string sub = (name.Length > 0 ? name : "output") + suffix;
+    return (dir.Length > 0) ? Path.Join(dir, sub) : sub;
+}
+
+// Find the built zpkg via the same dist_dir logic as `z42 apphost build`.
+string _expResolveZpkg(string tomlPath, TomlValue toml, string name) {
+    string projDir = Path.GetDirectoryName(tomlPath);
+    string outDir  = _expTomlStr(toml, "build", "output_dir", "");
+    string distDir = _expTomlStr(toml, "build", "dist_dir", "");
+    string distRel;
+    if (distDir.Length > 0) { distRel = distDir.Replace("${output_dir}", outDir); }
+    else if (outDir.Length > 0) { distRel = Path.Join(outDir, "dist"); }
+    else { distRel = "dist"; }
+    string base = (projDir.Length > 0) ? Path.Join(projDir, distRel) : distRel;
+    return Path.Join(base, name + ".zpkg");
+}

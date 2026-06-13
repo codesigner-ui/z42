@@ -102,6 +102,19 @@ public sealed class ProjectManifest
         // z42 patcher, not z42c) so a stray key still surfaces as WS008.
         if (model.TryGetValue("apphost", out var apphostRaw) && apphostRaw is TomlTable apphostTbl)
             ScanUnknownKeys(apphostTbl, KnownApphostKeys, "apphost", tomlPath, warnings);
+        // add-export-command (2026-06-14): scan [platform] subsections consumed by
+        // `z42 export ios/android/wasm`; z42c does NOT consume [platform] — registered
+        // only to suppress WS008 unknown-key.
+        if (model.TryGetValue("platform", out var platformRaw) && platformRaw is TomlTable platformTbl)
+        {
+            ScanUnknownKeys(platformTbl, KnownPlatformSubsections, "platform", tomlPath, warnings);
+            if (platformTbl.TryGetValue("ios", out var iosRaw) && iosRaw is TomlTable iosTbl)
+                ScanUnknownKeys(iosTbl, KnownPlatformIosKeys, "platform.ios", tomlPath, warnings);
+            if (platformTbl.TryGetValue("android", out var androidRaw) && androidRaw is TomlTable androidTbl)
+                ScanUnknownKeys(androidTbl, KnownPlatformAndroidKeys, "platform.android", tomlPath, warnings);
+            if (platformTbl.TryGetValue("wasm", out var wasmRaw) && wasmRaw is TomlTable wasmTbl)
+                ScanUnknownKeys(wasmTbl, KnownPlatformWasmKeys, "platform.wasm", tomlPath, warnings);
+        }
 
         var manifest = new ProjectManifest
         {
@@ -137,10 +150,29 @@ public sealed class ProjectManifest
         // patcher reads it); registered here only so the section + its keys
         // don't trip WS008 unknown-key.
         "apphost",
+        // add-export-command (2026-06-14): [platform] groups per-platform config
+        // (ios/android/wasm). Consumed by `z42 export`; z42c does not read it.
+        "platform",
     };
     static readonly HashSet<string> KnownApphostKeys = new(StringComparer.Ordinal)
     {
         "publish_dir",
+    };
+    static readonly HashSet<string> KnownPlatformSubsections = new(StringComparer.Ordinal)
+    {
+        "ios", "android", "wasm",
+    };
+    static readonly HashSet<string> KnownPlatformIosKeys = new(StringComparer.Ordinal)
+    {
+        "bundle_id", "display_name", "version", "min_ios", "team_id", "device_families",
+    };
+    static readonly HashSet<string> KnownPlatformAndroidKeys = new(StringComparer.Ordinal)
+    {
+        "app_id", "display_name", "version_code", "version_name", "min_sdk", "target_sdk",
+    };
+    static readonly HashSet<string> KnownPlatformWasmKeys = new(StringComparer.Ordinal)
+    {
+        "title",
     };
     static readonly HashSet<string> KnownProjectKeys = new(StringComparer.Ordinal)
     {
