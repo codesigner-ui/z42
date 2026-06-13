@@ -186,10 +186,12 @@ public static partial class ZbcWriter
                 w.Write(Opcodes.ArrayNew); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 WriteReg(w, i.Size);
                 w.Write(TypeTagFromIrType(i.ElemType));
+                w.Write((uint)pool.Idx(i.ElementTypeName));  // zbc 1.16: element type FQ name
                 break;
             case ArrayNewLitInstr i:
                 w.Write(Opcodes.ArrayNewLit); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 WriteArgs(w, i.Elems);
+                w.Write((uint)pool.Idx(i.ElementTypeName));  // zbc 1.16
                 break;
             case ArrayGetInstr i:
                 w.Write(Opcodes.ArrayGet); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
@@ -301,6 +303,8 @@ public static partial class ZbcWriter
         switch (instr)
         {
             case CallInstr i:       pool.Intern(i.Func); break;
+            case ArrayNewInstr i:    pool.Intern(i.ElementTypeName); break;  // zbc 1.16
+            case ArrayNewLitInstr i: pool.Intern(i.ElementTypeName); break;
             case LoadFnInstr i:     pool.Intern(i.Func); break;
             case LoadFnCachedInstr i: pool.Intern(i.Func); break;
             case MkClosInstr i:     pool.Intern(i.FuncName); break;

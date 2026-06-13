@@ -10,6 +10,9 @@ use super::{set_exception, vm_ctx_ref};
 pub unsafe extern "C" fn jit_array_new(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, size: u32, elem_tag: u8,
+    // add-reflection-array-element-type: element type FQ name (ptr,len) from the
+    // instruction's module-lifetime String — non-erased array reflection.
+    et_ptr: *const u8, et_len: usize,
 ) -> u8 {
     let n = match &(*frame).regs[size as usize] {
         Value::I64(n) if *n >= 0 => *n as usize,
@@ -19,7 +22,8 @@ pub unsafe extern "C" fn jit_array_new(
         }
     };
     let default = default_value_for_tag(elem_tag);
-    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vec![default; n]);
+    let element_type = std::str::from_utf8(std::slice::from_raw_parts(et_ptr, et_len)).unwrap_or("");
+    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array_typed(element_type, vec![default; n]);
     0
 }
 
@@ -27,10 +31,12 @@ pub unsafe extern "C" fn jit_array_new(
 pub unsafe extern "C" fn jit_array_new_lit(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, elems_ptr: *const u32, elem_cnt: usize,
+    et_ptr: *const u8, et_len: usize,
 ) {
     let elems = std::slice::from_raw_parts(elems_ptr, elem_cnt);
     let vals: Vec<Value> = elems.iter().map(|&r| (*frame).regs[r as usize].clone()).collect();
-    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vals);
+    let element_type = std::str::from_utf8(std::slice::from_raw_parts(et_ptr, et_len)).unwrap_or("");
+    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array_typed(element_type, vals);
 }
 
 #[unsafe(no_mangle)]

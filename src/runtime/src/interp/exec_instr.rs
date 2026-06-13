@@ -180,13 +180,13 @@ pub fn exec_instr(
         }
 
         // ── Arrays ───────────────────────────────────────────────────────────
-        Instruction::ArrayNew    { dst, size, elem_tag } => {
-            if let Some(thrown) = exec_array::array_new(ctx, module, frame, *dst, *size, *elem_tag)? {
+        Instruction::ArrayNew(insn) => {
+            if let Some(thrown) = exec_array::array_new(ctx, module, frame, insn.dst, insn.size, insn.elem_tag, &insn.element_type)? {
                 return Ok(Some(thrown));
             }
         }
-        Instruction::ArrayNewLit { dst, elems } => {
-            if let Some(thrown) = exec_array::array_new_lit(ctx, module, frame, *dst, elems)? {
+        Instruction::ArrayNewLit(insn) => {
+            if let Some(thrown) = exec_array::array_new_lit(ctx, module, frame, insn.dst, &insn.elems, &insn.element_type)? {
                 return Ok(Some(thrown));
             }
         }

@@ -147,17 +147,23 @@ internal sealed partial class FunctionEmitter
         // resolves the name across the main-module + lazy-loaded zpkg type
         // registries (so user-program classes resolve too). Primitives / arrays
         // / unbound generic params degrade to a name-only Std.Type.
+        /// FQ runtime type name for `typeof` / array element emission, resolvable
+        /// by the runtime's `make_type_from_name`. add-reflection-array-element-type:
+        /// arrays render as `<elem>[]` (was bare "Std.Array") so the element type
+        /// survives to the runtime.
+        internal string Z42TypeName(Z42Type t) => t switch
+        {
+            Z42PrimType pt         => pt.Name,
+            Z42ArrayType at        => Z42TypeName(at.Element) + "[]",
+            Z42InstantiatedType it => _e._ctx.QualifyClassName(it.Definition.Name),
+            Z42ClassType ct        => _e._ctx.QualifyClassName(ct.Name),
+            Z42GenericParamType gp => gp.Name,
+            _                      => t.ToString() ?? "Std.Object",
+        };
+
         protected override TypedReg VisitTypeof(BoundTypeof tof)
         {
-            string name = tof.Target switch
-            {
-                Z42PrimType pt         => pt.Name,
-                Z42ArrayType           => "Std.Array",
-                Z42InstantiatedType it => _e._ctx.QualifyClassName(it.Definition.Name),
-                Z42ClassType ct        => _e._ctx.QualifyClassName(ct.Name),
-                Z42GenericParamType gp => gp.Name,
-                _                      => tof.Target.ToString() ?? "Std.Object",
-            };
+            string name = Z42TypeName(tof.Target);
             var nameReg = _e.Alloc(IrType.Str);
             _e.Emit(new ConstStrInstr(nameReg, _e._ctx.Intern(name)));
             var dst = _e.Alloc(IrType.Ref);
@@ -307,7 +313,9 @@ internal sealed partial class FunctionEmitter
             var sizeReg = _e.EmitExpr(ac.Size);
             var dst = _e.Alloc(IrType.Ref);
             var elemIr = ToIrType(ac.ElemType);
-            _e.Emit(new ArrayNewInstr(dst, sizeReg, elemIr));
+            // add-reflection-array-element-type: carry the element type FQ name so
+            // the array is non-erased at runtime.
+            _e.Emit(new ArrayNewInstr(dst, sizeReg, elemIr, Z42TypeName(ac.ElemType)));
             return dst;
         }
 
@@ -315,7 +323,7 @@ internal sealed partial class FunctionEmitter
         {
             var elemRegs = al.Elements.Select(_e.EmitExpr).ToList();
             var dst = _e.Alloc(IrType.Ref);
-            _e.Emit(new ArrayNewLitInstr(dst, elemRegs));
+            _e.Emit(new ArrayNewLitInstr(dst, elemRegs, Z42TypeName(al.ElemType)));
             return dst;
         }
 

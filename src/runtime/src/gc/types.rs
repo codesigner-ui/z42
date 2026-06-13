@@ -13,7 +13,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use super::refs::WeakGcRef;
-use crate::metadata::{ScriptObject, Value};
+use crate::metadata::ScriptObject;
 
 // ── Handles ──────────────────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ pub struct WeakRef {
 #[derive(Debug, Clone)]
 pub(crate) enum WeakRefInner {
     Object(WeakGcRef<ScriptObject>),
-    Array (WeakGcRef<Vec<Value>>),
+    Array (WeakGcRef<crate::metadata::types::ArrayObj>),
 }
 
 // ── GC handle table ──────────────────────────────────────────────────────────

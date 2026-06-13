@@ -322,9 +322,13 @@ public sealed record ShrInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr
 /// to the per-type default value (0 for numeric, false for bool, '\0' for
 /// char, null for ref). Element type tag carried in zbc wire format
 /// (fix-array-default-init, 2026-05-18).
-public sealed record ArrayNewInstr(TypedReg Dst, TypedReg Size, IrType ElemType) : IrInstr;
+/// add-reflection-array-element-type (zbc 1.16): `ElementTypeName` is the element
+/// type's FQ name (e.g. "int" / "geometry.Point"), emitted to the wire so arrays
+/// carry their element type at runtime (`arr.GetType().GetElementType()`). Empty
+/// for legacy callers.
+public sealed record ArrayNewInstr(TypedReg Dst, TypedReg Size, IrType ElemType, string ElementTypeName = "") : IrInstr;
 /// Allocate an array from a list of element registers.
-public sealed record ArrayNewLitInstr(TypedReg Dst, List<TypedReg> Elems)    : IrInstr;
+public sealed record ArrayNewLitInstr(TypedReg Dst, List<TypedReg> Elems, string ElementTypeName = "") : IrInstr;
 /// Load element at index Idx from array Arr into Dst.
 public sealed record ArrayGetInstr(TypedReg Dst, TypedReg Arr, TypedReg Idx) : IrInstr;
 /// Store Val into array Arr at index Idx (no result register).

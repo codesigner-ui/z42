@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 15;  // 2026-06-10 add-parameter-attribute-reflection: each SIGS-section function record appends, after the method-level attr block, a per-parameter attr block — for each of param_count params: u16 count + (type-name, factory) str-idx pairs. Surfaced by ParameterInfo.GetCustomAttributes(). Pre-1.15 not readable.
+    public const ushort VersionMinor = 16;  // 2026-06-11 add-reflection-array-element-type: ArrayNew/ArrayNewLit append the element type FQ name (string-pool idx). Surfaces Type.IsArray / GetElementType (arrays non-erased at runtime). Pre-1.16 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

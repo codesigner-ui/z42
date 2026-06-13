@@ -53,7 +53,10 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // 2026-06-10 add-parameter-attribute-reflection: bumped to 1.15 — each SIGS
 // function record appends, after the method-level attr block, a per-parameter
 // attr-ref block (param_count blocks of u16 count + (type, factory) pairs).
-pub const ZBC_VERSION_MINOR: u16 = 15;
+// 2026-06-11 add-reflection-array-element-type: bumped to 1.16 — ArrayNew /
+// ArrayNewLit append an element-type-name string-pool index (`element_type`),
+// stored on the runtime ArrayObj so arr.GetType().GetElementType() is non-erased.
+pub const ZBC_VERSION_MINOR: u16 = 16;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -84,7 +87,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // zbc 1.14 (per-field attr-ref block).
 // 2026-06-10 add-parameter-attribute-reflection: bumped to 0.17, coupled with
 // inner zbc 1.15 (per-parameter attr-ref block in SIGS).
-pub const ZPKG_VERSION_MINOR: u16 = 17;
+// 2026-06-11 add-reflection-array-element-type: bumped to 0.18, coupled with
+// inner zbc 1.16 (ArrayNew/ArrayNewLit element-type field).
+pub const ZPKG_VERSION_MINOR: u16 = 18;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -1009,9 +1014,17 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
         OP_ARRAY_NEW     => {
             let size = c.read_u16()? as u32;
             let elem_tag = c.read_u8()?;
-            Instruction::ArrayNew { dst, size, elem_tag }
+            // add-reflection-array-element-type (zbc 1.16): element type FQ name.
+            let et_idx = c.read_u32()?;
+            let element_type = c.pool_str(pool, et_idx)?.to_owned();
+            Instruction::ArrayNew(Box::new(crate::metadata::bytecode::ArrayNewInsn { dst, size, elem_tag, element_type }))
         }
-        OP_ARRAY_NEW_LIT => { let elems = read_args(c)?; Instruction::ArrayNewLit { dst, elems } }
+        OP_ARRAY_NEW_LIT => {
+            let elems = read_args(c)?;
+            let et_idx = c.read_u32()?;
+            let element_type = c.pool_str(pool, et_idx)?.to_owned();
+            Instruction::ArrayNewLit(Box::new(crate::metadata::bytecode::ArrayNewLitInsn { dst, elems, element_type }))
+        }
         OP_ARRAY_GET     => {
             let arr = c.read_u16()? as u32;
             let idx = c.read_u16()? as u32;

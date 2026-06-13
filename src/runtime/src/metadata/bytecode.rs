@@ -437,6 +437,26 @@ pub struct CallInsn {
     #[serde(with = "typed_reg_vec_serde")] pub args: Box<[Reg]>,
 }
 
+/// Payload for [`Instruction::ArrayNew`] (add-reflection-array-element-type).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ArrayNewInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    #[serde(with = "typed_reg_serde")] pub size: Reg,
+    #[serde(default)] pub elem_tag: u8,
+    /// Element type's FQ name (e.g. "int" / "geometry.Point"), resolved from the
+    /// string pool at decode. Stored on the array's `ArrayObj` so
+    /// `arr.GetType().GetElementType()` is non-erased. Empty = absent (legacy).
+    #[serde(default)] pub element_type: String,
+}
+
+/// Payload for [`Instruction::ArrayNewLit`] (add-reflection-array-element-type).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ArrayNewLitInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    #[serde(with = "typed_reg_vec_serde")] pub elems: Box<[Reg]>,
+    #[serde(default)] pub element_type: String,
+}
+
 /// Payload for [`Instruction::Builtin`].
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BuiltinInsn {
@@ -771,17 +791,11 @@ pub enum Instruction {
     /// `Value::Bool(false)` for bool, `Value::Char('\0')` for char,
     /// `Value::F64(0.0)` for float/double, `Value::Null` for ref/string/unknown.
     /// fix-array-default-init, 2026-05-18.
-    ArrayNew {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_serde")] size: Reg,
-        #[serde(default)]
-        elem_tag: u8,
-    },
+    /// add-reflection-array-element-type (zbc 1.16): boxed because the
+    /// `element_type` String would blow the 32 B slim-instruction invariant.
+    ArrayNew(Box<ArrayNewInsn>),
     /// Allocate an array from a literal list of element registers.
-    ArrayNewLit {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_vec_serde")] elems: Box<[Reg]>,
-    },
+    ArrayNewLit(Box<ArrayNewLitInsn>),
     /// Load element at `idx` from array `arr` into `dst`. Panics on out-of-bounds.
     ArrayGet {
         #[serde(with = "typed_reg_serde")] dst: Reg,

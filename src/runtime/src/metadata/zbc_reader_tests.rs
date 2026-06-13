@@ -116,13 +116,13 @@ fn zbc_version_constants_pinned() {
     // Sanity: writer's claimed version matches what the reader pins.
     // If this fails, the constants drifted out of sync with C# ZbcWriter.
     assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
-    assert_eq!(ZBC_VERSION_MINOR, 15, "zbc minor at 1.15 (add-parameter-attribute-reflection: per-parameter attr-ref block in SIGS)");
+    assert_eq!(ZBC_VERSION_MINOR, 16, "zbc minor at 1.16 (add-reflection-array-element-type: ArrayNew/ArrayNewLit element-type field)");
 }
 
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 17, "zpkg minor at 0.17 (add-parameter-attribute-reflection: coupled with inner zbc 1.15)");
+    assert_eq!(ZPKG_VERSION_MINOR, 18, "zpkg minor at 0.18 (add-reflection-array-element-type: coupled with inner zbc 1.16)");
 }
 
 #[test]

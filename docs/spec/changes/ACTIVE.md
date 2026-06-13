@@ -8,9 +8,9 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `typeof(T[])` VisitTypeof emit `<elem>[]`（替 `Std.Array`），让运行期可还原元素类型。DRAFT 待审 |
-| `runtime` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `make_type_from_name` 识别 `[]` 后缀 → 建 array Type（`__isArray`/`__elementName`）；`__type_element` builtin；object.rs arr.GetType 标 IsArray。无格式 bump |
-| `stdlib` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `Std.Type` 加 `IsArray` + `GetElementType()`。无格式 bump |
+| `compiler` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（zbc 1.16/zpkg 0.18，ArrayNew/Lit element_type FQ 名 + VisitTypeof `<elem>[]`）|
+| `runtime` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（数组不擦除：`GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()`；`arr.GetType()` 非擦除）|
+| `stdlib` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（`Std.Type` 加 `IsArray` + `__elementName` + `GetElementType()`）|
 | `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
 | `toolchain` | —（空闲）| — | ~~add-export-command~~ ✅ 已归档 2026-06-14（`z42 export ios/android/wasm`；`[platform.*]` toml 配置；`runtimes/<rid>/<ver>/` 平台 SDK；launcher_export*.z42 四文件；commit 0292c3a3）|
 
@@ -66,4 +66,5 @@
 | ~~add-reflection-inherited-static-fields~~ | runtime —— ✅ 已归档 2026-06-11（`Type.GetFields()` 含继承静态字段：`builtin_type_fields` 沿 base 链聚合祖先类 static_fields；对齐 C# 默认含继承公共静态；无格式 bump；dotnet 1559/1559 + inherited_static_fields.z42 e2e + cargo 764+21）|
 | ~~add-reflection-parameter-names~~ | runtime —— ✅ 已归档 2026-06-11（`ParameterInfo.Name` 返真实源参数名：`resolve_func_sig` 读 Function DBUG local-vars（reg==参数索引），无符号回落 `arg{n}`；无格式 bump；dotnet 1560/1560 + parameter_names.z42 e2e + cargo 764+21）|
 | ~~add-collection-contract-phase2~~ | stdlib —— ✅ 已归档 2026-06-11（review.md S2.4 Phase 2：`IBasicCollection<T>.AddOne(T)` + 5 集合委托自然 add；`BasicCollectionContract` add→count→clear 生命周期（distinct 元素普适 SortedSet 去重）；新增 Queue/Stack contract [Test]；无格式 bump；test stdlib z42.collections 5/5 + z42.test 5/5）|
+| ~~add-reflection-array-element-type~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（数组运行期不擦除 `GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()` + 非擦除 `arr.GetType()`；zbc 1.16/zpkg 0.18 ArrayNew/Lit element_type FQ 名；dotnet 1561/1561 + array_element_type.z42 e2e interp+jit + cargo lib 807 + 集成 native/zbc_compat 全绿 + xtask vm 354/cross-zpkg 2/stdlib 272）。**z42c writer 同步延后**（User 决策"先实现，延后 z42c"；当时 z42c 锁被占）→ `xtask test compiler-z42` byte-identical gate 暂红，follow-up 跟踪（见 memory `project_z42c_selfhosting`）|
 | plan-0.3.x-three-streams | docs（不上锁） |

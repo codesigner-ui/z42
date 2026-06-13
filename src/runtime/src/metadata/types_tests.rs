@@ -77,14 +77,14 @@ fn is_heap_ref_true_for_object() {
 
 #[test]
 fn is_heap_ref_true_for_array() {
-    let v = Value::Array(GcRef::new(vec![Value::I64(1), Value::I64(2)]));
+    let v = Value::Array(GcRef::new(crate::metadata::types::ArrayObj::new(vec![Value::I64(1), Value::I64(2)])));
     assert!(v.is_heap_ref());
 }
 
 #[test]
 fn is_heap_ref_true_for_closure() {
     let v = Value::Closure(Box::new(ClosureData {
-        env:     GcRef::new(vec![Value::I64(42)]),
+        env:     GcRef::new(crate::metadata::types::ArrayObj::new(vec![Value::I64(42)])),
         fn_name: "lambda$0".to_string(),
     }));
     assert!(v.is_heap_ref());
@@ -92,7 +92,7 @@ fn is_heap_ref_true_for_closure() {
 
 #[test]
 fn is_heap_ref_true_for_ref_array() {
-    let arr = GcRef::new(vec![Value::I64(0)]);
+    let arr = GcRef::new(crate::metadata::types::ArrayObj::new(vec![Value::I64(0)]));
     let v = Value::Ref(Box::new(RefKind::Array { gc_ref: arr, idx: 0 }));
     assert!(v.is_heap_ref());
 }

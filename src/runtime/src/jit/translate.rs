@@ -70,8 +70,8 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::LoadFieldAddr(insn)       => Some(insn.dst),
                 Instruction::DefaultOf     { dst, .. } => Some(*dst),
                 Instruction::Builtin(insn)          => Some(insn.dst),
-                Instruction::ArrayNew    { dst, .. } => Some(*dst),
-                Instruction::ArrayNewLit { dst, .. } => Some(*dst),
+                Instruction::ArrayNew(insn)          => Some(insn.dst),
+                Instruction::ArrayNewLit(insn)       => Some(insn.dst),
                 Instruction::ArrayGet    { dst, .. } => Some(*dst),
                 Instruction::ArraySet    { .. }      => None,
                 Instruction::ArrayLen    { dst, .. } => Some(*dst),
@@ -834,16 +834,18 @@ pub fn translate_function(
                 }
 
                 // Arrays
-                Instruction::ArrayNew { dst, size, elem_tag } => {
-                    let d = ri!(*dst); let s = ri!(*size);
-                    let t = builder.ins().iconst(types::I8, *elem_tag as i64);
-                    let inst = builder.ins().call(hr_array_new, &[frame_val, ctx_val, d, s, t]);
+                Instruction::ArrayNew(insn) => {
+                    let d = ri!(insn.dst); let s = ri!(insn.size);
+                    let t = builder.ins().iconst(types::I8, insn.elem_tag as i64);
+                    let (etp, etl) = str_val!(insn.element_type);   // add-reflection-array-element-type
+                    let inst = builder.ins().call(hr_array_new, &[frame_val, ctx_val, d, s, t, etp, etl]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::ArrayNewLit { dst, elems } => {
-                    let d = ri!(*dst);
-                    let (ep, el) = regs_val!(elems);
-                    builder.ins().call(hr_array_new_lit, &[frame_val, ctx_val, d, ep, el]);
+                Instruction::ArrayNewLit(insn) => {
+                    let d = ri!(insn.dst);
+                    let (ep, el) = regs_val!(&insn.elems);
+                    let (etp, etl) = str_val!(insn.element_type);
+                    builder.ins().call(hr_array_new_lit, &[frame_val, ctx_val, d, ep, el, etp, etl]);
                 }
                 Instruction::ArrayGet { dst, arr, idx } => {
                     let d = ri!(*dst); let a = ri!(*arr); let i = ri!(*idx);

@@ -65,8 +65,15 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
         native: NativeData,
     ) -> Value;
 
-    /// 分配一个 `Vec<Value>` 数组并以 `Value::Array` 返回。
+    /// 分配一个 `Vec<Value>` 数组并以 `Value::Array` 返回（元素类型未知）。
     fn alloc_array(&self, elems: Vec<Value>) -> Value;
+
+    /// add-reflection-array-element-type: 分配携带元素类型 FQ 名的数组（来自
+    /// `ArrayNew` / `ArrayNewLit`），使 `arr.GetType().GetElementType()` 不擦除。
+    /// 默认丢弃元素类型退化为 `alloc_array`（测试 mock 不反射，无碍）。
+    fn alloc_array_typed(&self, _element_type: &str, elems: Vec<Value>) -> Value {
+        self.alloc_array(elems)
+    }
 
     // ── 2. Roots ─────────────────────────────────────────────────────────────
 

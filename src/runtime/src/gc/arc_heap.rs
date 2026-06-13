@@ -50,6 +50,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
+use crate::metadata::types::ArrayObj;
 
 use super::heap::MagrGC;
 use super::refs::{GcRef, WeakGcRef};
@@ -70,12 +71,12 @@ use super::types::{
 /// atomic values at the `handle_alloc` layer (returns slot 0).
 enum HandleEntry {
     StrongObject(GcRef<ScriptObject>),
-    StrongArray(GcRef<Vec<Value>>),
+    StrongArray(GcRef<ArrayObj>),
     /// Atomic Value clone (I64 / F64 / Str / Bool / Char / FuncRef / ...).
     /// Strong-only — AllocWeak on atomics rejects at the alloc layer.
     StrongAtomic(Value),
     WeakObject(WeakGcRef<ScriptObject>),
-    WeakArray(WeakGcRef<Vec<Value>>),
+    WeakArray(WeakGcRef<ArrayObj>),
 }
 
 impl HandleEntry {
@@ -228,7 +229,7 @@ pub struct ArcMagrGC {
     region_object: Mutex<super::region::Region<ScriptObject>>,
     /// **add-custom-allocator P1 (2026-05-22)**: chunked region for
     /// `Value::Array` storage (heap-allocated `Vec<Value>`).
-    region_array: Mutex<super::region::Region<Vec<Value>>>,
+    region_array: Mutex<super::region::Region<ArrayObj>>,
     /// **add-concurrent-gc P2 (2026-05-22)**: gray-object queue for the
     /// concurrent mark path. Populated by (1) the STW root snapshot at
     /// the start of a concurrent collect, (2) the write-barrier
@@ -395,7 +396,7 @@ impl ArcMagrGC {
     }
 
     #[cfg(test)]
-    pub(crate) fn region_array_for_test(&self) -> &Mutex<super::region::Region<Vec<Value>>> {
+    pub(crate) fn region_array_for_test(&self) -> &Mutex<super::region::Region<ArrayObj>> {
         &self.region_array
     }
 
@@ -1451,6 +1452,40 @@ impl ArcMagrGC {
     }
 }
 
+// ── inherent helpers ─────────────────────────────────────────────────────────
+
+impl ArcMagrGC {
+    /// add-reflection-array-element-type: shared array allocation over an
+    /// `ArrayObj` (element type + elems). Both `alloc_array` (untyped) and
+    /// `alloc_array_typed` funnel through here.
+    fn alloc_array_obj(&self, obj: crate::metadata::types::ArrayObj) -> Value {
+        let elem_count = obj.elems.len();
+        let (entry_ptr, generation, handle) = {
+            let mut region = self.region_array.lock();
+            let handle = region.alloc(obj);
+            let entry: std::ptr::NonNull<super::region::RegionEntry<crate::metadata::types::ArrayObj>> =
+                std::ptr::NonNull::from(region.resolve(handle));
+            (entry, handle.generation, handle)
+        };
+        let gc = unsafe { GcRef::from_region_entry(entry_ptr, generation) };
+        let value = Value::Array(gc);
+
+        let size = self.object_size_bytes(&value);
+        let (would_oom, limit) = self.would_oom_after_alloc(size as u64);
+        if would_oom {
+            self.region_array.lock().tombstone(handle);
+            self.fire_event(GcEvent::OutOfMemory {
+                requested_bytes: size as u64,
+                limit_bytes: limit,
+            });
+            return Value::Null;
+        }
+        self.record_alloc(&value, AllocKind::Array { elem_count }, size);
+        self.maybe_auto_collect();
+        value
+    }
+}
+
 // ── trait impl ───────────────────────────────────────────────────────────────
 
 impl MagrGC for ArcMagrGC {
@@ -1526,30 +1561,11 @@ impl MagrGC for ArcMagrGC {
     }
 
     fn alloc_array(&self, elems: Vec<Value>) -> Value {
-        let elem_count = elems.len();
-        let (entry_ptr, generation, handle) = {
-            let mut region = self.region_array.lock();
-            let handle = region.alloc(elems);
-            let entry: std::ptr::NonNull<super::region::RegionEntry<Vec<Value>>> =
-                std::ptr::NonNull::from(region.resolve(handle));
-            (entry, handle.generation, handle)
-        };
-        let gc = unsafe { GcRef::from_region_entry(entry_ptr, generation) };
-        let value = Value::Array(gc);
+        self.alloc_array_obj(crate::metadata::types::ArrayObj::new(elems))
+    }
 
-        let size = self.object_size_bytes(&value);
-        let (would_oom, limit) = self.would_oom_after_alloc(size as u64);
-        if would_oom {
-            self.region_array.lock().tombstone(handle);
-            self.fire_event(GcEvent::OutOfMemory {
-                requested_bytes: size as u64,
-                limit_bytes: limit,
-            });
-            return Value::Null;
-        }
-        self.record_alloc(&value, AllocKind::Array { elem_count }, size);
-        self.maybe_auto_collect();
-        value
+    fn alloc_array_typed(&self, element_type: &str, elems: Vec<Value>) -> Value {
+        self.alloc_array_obj(crate::metadata::types::ArrayObj::typed(element_type, elems))
     }
 
     // ── 2. Roots ─────────────────────────────────────────────────────────────
@@ -1819,7 +1835,7 @@ impl MagrGC for ArcMagrGC {
             }
             Value::Array(gc) => {
                 let entry_ptr = gc.entry_ptr();
-                let entry: &super::region::RegionEntry<Vec<Value>> = unsafe { entry_ptr.as_ref() };
+                let entry: &super::region::RegionEntry<ArrayObj> = unsafe { entry_ptr.as_ref() };
                 let fin = entry.finalizer.lock().take();
                 let fired = fin.is_some();
                 if let Some(f) = fin { f(); }
@@ -2136,7 +2152,7 @@ impl MagrGC for ArcMagrGC {
                     Value::Object(unsafe { GcRef::from_region_entry(nn, e.generation_snapshot()) })
                 }
                 super::soft_registry::ErasedKind::Array => {
-                    let ptr = key_usize as *mut super::region::RegionEntry<Vec<Value>>;
+                    let ptr = key_usize as *mut super::region::RegionEntry<ArrayObj>;
                     let nn = unsafe { std::ptr::NonNull::new_unchecked(ptr) };
                     Value::Array(unsafe { GcRef::from_region_entry(nn, e.generation_snapshot()) })
                 }
@@ -2166,7 +2182,7 @@ impl MagrGC for ArcMagrGC {
                     unsafe { (*ptr).dec_soft_ref_count(); }
                 }
                 super::soft_registry::ErasedKind::Array => {
-                    let ptr = key_usize as *mut super::region::RegionEntry<Vec<Value>>;
+                    let ptr = key_usize as *mut super::region::RegionEntry<ArrayObj>;
                     unsafe { (*ptr).dec_soft_ref_count(); }
                 }
             }

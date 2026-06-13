@@ -46,6 +46,16 @@ pub fn make_type_object(ctx: &VmContext, td: Arc<TypeDesc>) -> Value {
 /// `FieldType` / `ReturnType` / `ParameterType` and `GetType` on
 /// primitives/arrays.
 pub fn make_type_from_name(ctx: &VmContext, name: &str) -> Value {
+    // add-reflection-array-element-type: an array type name carries a `[]` suffix
+    // (`typeof(int[])` emits "int[]"; array field/param type tags are "int[]").
+    // Build a synthetic array `Type` (Name "Array", FullName "Std.Array" —
+    // consistent with `arr.GetType()`) carrying the element type. `int[][]`
+    // strips one level → element "int[]" (recursively resolvable).
+    if let Some(elem) = name.strip_suffix("[]") {
+        return build_type_ex(
+            ctx, "Array", well_known_names::STD_ARRAY, NativeData::None, true, elem,
+        );
+    }
     // Main module's own types first: the user program's classes live in the
     // main module's `type_registry`; the lazy loader below only covers
     // zpkg / stdlib types. (make-typeof-return-type — lets `typeof(UserClass)`
@@ -104,9 +114,26 @@ fn canonical_type_name(tag: &str) -> String {
 /// `field_index` and attaching `native`. Uses the real `Std.Type` TypeDesc so
 /// the object responds to reflection methods.
 fn build_type(ctx: &VmContext, simple: &str, full: &str, native: NativeData) -> Value {
+    build_type_ex(ctx, simple, full, native, false, "")
+}
+
+/// add-reflection-array-element-type: like `build_type`, but also records whether
+/// this is an array type and (if so) its element type FQ name, written to the
+/// `Std.Type` `IsArray` / `__elementName` slots (VM-written, same mechanism as
+/// `__name` / `__fullName`). `GetElementType()` reads `__elementName` lazily.
+fn build_type_ex(
+    ctx: &VmContext, simple: &str, full: &str, native: NativeData,
+    is_array: bool, element: &str,
+) -> Value {
     match ctx.try_lookup_type(well_known_names::STD_TYPE) {
         Some(type_td) => {
             let mut slots = vec![Value::Null; type_td.fields.len()];
+            if let Some(&i) = type_td.field_index.get("IsArray") {
+                slots[i] = Value::Bool(is_array);
+            }
+            if let Some(&i) = type_td.field_index.get("__elementName") {
+                slots[i] = Value::Str(element.to_string().into());
+            }
             // align-type-memberinfo-hierarchy: `Name` is inherited from
             // `Std.Reflection.MemberInfo` (Type's base) — populate that slot so
             // `typeof(C).Name` / `(MemberInfo)typeof(C)).Name` resolve via the
@@ -191,6 +218,16 @@ fn read_type_str_slot(args: &[Value], field: &str) -> Value {
 /// `__type_full_name(typeObj) -> string` — fully-qualified name (`Type.FullName`).
 pub fn builtin_type_full_name(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(read_type_str_slot(args, "__fullName"))
+}
+
+/// `__type_element(typeObj) -> Type | null` — the element type of an array Type
+/// (`Type.GetElementType()`), or null for a non-array Type. add-reflection-array-
+/// element-type: reads the VM-written `__elementName` slot and resolves it.
+pub fn builtin_type_element(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    match read_type_str_slot(args, "__elementName") {
+        Value::Str(s) if !s.is_empty() => Ok(make_type_from_name(ctx, &s)),
+        _ => Ok(Value::Null),
+    }
 }
 
 // ── Field reflection ────────────────────────────────────────────────────────

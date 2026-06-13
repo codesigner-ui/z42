@@ -24,9 +24,22 @@ public sealed class Type : MemberInfo {
     public string __name;
     public string __fullName;
 
+    // add-reflection-array-element-type (2026-06-11): VM-written. `IsArray` is
+    // true for an array type (`typeof(int[])`, array field/param types, and
+    // `arr.GetType()` — arrays carry their element type at runtime, non-erased).
+    // `__elementName` holds the element type's FQ name ("" for non-arrays);
+    // `GetElementType()` resolves it to a `Type` (null when absent).
+    public bool IsArray;
+    public string __elementName;
+
     // `Name` (unqualified class name, e.g. "Circle") is inherited from
     // `MemberInfo` — the VM writes it into the inherited field slot when it
     // constructs a Type instance (build_type), same as FieldInfo/MethodInfo.
+
+    // Element type of an array type (e.g. `typeof(int[]).GetElementType()` →
+    // `typeof(int)`); null for a non-array type.
+    [Native("__type_element")]
+    public extern Type GetElementType();
 
     // Fully-qualified name including namespace, e.g. "geometry.Circle".
     [Native("__type_full_name")]

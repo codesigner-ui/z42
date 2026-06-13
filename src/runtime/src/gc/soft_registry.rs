@@ -69,7 +69,7 @@ impl ErasedSoftEntry {
         Self { ptr: ptr.cast(), generation, kind: ErasedKind::Object }
     }
 
-    pub(crate) fn from_array(ptr: NonNull<RegionEntry<Vec<crate::metadata::Value>>>, generation: u32) -> Self {
+    pub(crate) fn from_array(ptr: NonNull<RegionEntry<crate::metadata::types::ArrayObj>>, generation: u32) -> Self {
         Self { ptr: ptr.cast(), generation, kind: ErasedKind::Array }
     }
 

@@ -16,8 +16,13 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     use crate::corelib::reflection::{make_type_from_name, make_type_object};
     match args.first() {
         Some(Value::Object(rc)) => Ok(make_type_object(ctx, rc.type_desc_arc().clone())),
-        Some(Value::Array(_)) => {
-            Ok(make_type_from_name(ctx, crate::metadata::well_known_names::STD_ARRAY))
+        Some(Value::Array(rc)) => {
+            // add-reflection-array-element-type: the array value carries its
+            // element type (non-erased). `<elem>[]` routes through
+            // make_type_from_name's `[]` path → array Type with IsArray + element.
+            // Empty element ("") → IsArray true, GetElementType() null.
+            let element = rc.borrow().element_type.to_string();
+            Ok(make_type_from_name(ctx, &format!("{element}[]")))
         }
         Some(Value::Str(_)) => {
             Ok(make_type_from_name(ctx, crate::metadata::well_known_names::STD_STRING))

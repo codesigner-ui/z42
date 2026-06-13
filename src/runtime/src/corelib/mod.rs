@@ -210,6 +210,7 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // align-type-memberinfo-hierarchy: `__type_name` removed — Type.Name inherits
     // from MemberInfo (build_type populates the field), no native getter.
     ("__type_full_name",     reflection::builtin_type_full_name),
+    ("__type_element",       reflection::builtin_type_element),
     ("__type_fields",        reflection::builtin_type_fields),
     ("__type_methods",       reflection::builtin_type_methods),
     ("__type_base",          reflection::builtin_type_base),

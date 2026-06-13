@@ -13,11 +13,13 @@ use super::Frame;
 
 pub(super) fn array_new(
     ctx: &VmContext, module: &Module, frame: &mut Frame,
-    dst: u32, size: u32, elem_tag: u8,
+    dst: u32, size: u32, elem_tag: u8, element_type: &str,
 ) -> Result<Option<Value>> {
     let n = to_usize(frame.get(size)?, "ArrayNew size")?;
     let default = default_value_for_tag(elem_tag);
-    let arr = ctx.heap().alloc_array(vec![default; n]);
+    // add-reflection-array-element-type: carry the element type for non-erased
+    // `arr.GetType().GetElementType()`.
+    let arr = ctx.heap().alloc_array_typed(element_type, vec![default; n]);
     if matches!(arr, Value::Null) {
         ctx.heap().set_strict_oom(false);
         let exc = crate::exception::make_stdlib_exception(
@@ -33,13 +35,13 @@ pub(super) fn array_new(
 
 pub(super) fn array_new_lit(
     ctx: &VmContext, module: &Module, frame: &mut Frame,
-    dst: u32, elems: &[u32],
+    dst: u32, elems: &[u32], element_type: &str,
 ) -> Result<Option<Value>> {
     let vals: Vec<Value> = elems.iter()
         .map(|r| frame.get(*r).map(|v| v.clone()))
         .collect::<Result<_>>()?;
     let n = vals.len();
-    let arr = ctx.heap().alloc_array(vals);
+    let arr = ctx.heap().alloc_array_typed(element_type, vals);
     if matches!(arr, Value::Null) {
         ctx.heap().set_strict_oom(false);
         let exc = crate::exception::make_stdlib_exception(

@@ -206,9 +206,15 @@ public static partial class ZbcReader
             {
                 var size = RU(r.ReadUInt16());
                 var elemTag = r.ReadByte();
-                return new ArrayNewInstr(d, size, IrTypeFromTag(elemTag));
+                var elemName = P(pool, r.ReadUInt32());  // zbc 1.16: element type FQ name
+                return new ArrayNewInstr(d, size, IrTypeFromTag(elemTag), elemName);
             }
-            case Opcodes.ArrayNewLit: return new ArrayNewLitInstr(d, ReadArgs(r));
+            case Opcodes.ArrayNewLit:
+            {
+                var elems = ReadArgs(r);
+                var elemName = P(pool, r.ReadUInt32());  // zbc 1.16
+                return new ArrayNewLitInstr(d, elems, elemName);
+            }
             case Opcodes.ArrayGet:    return new ArrayGetInstr(d, RU(r.ReadUInt16()), RU(r.ReadUInt16()));
             case Opcodes.ArraySet:
             {

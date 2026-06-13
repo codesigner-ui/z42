@@ -374,6 +374,53 @@ impl crate::gc::GcRef<ScriptObject> {
 /// paths — `Frame::ret: Option<Value>` is the sole site and is
 /// touched once per function return. Layout is pinned by
 /// `value_layout_tests.rs`; drift fails CI before bad JIT code emits.
+/// add-reflection-array-element-type (2026-06-11): the heap payload behind
+/// `Value::Array`. Carries the element type's FQ name (written by `ArrayNew` /
+/// `ArrayNewLit` from the compile-time-known element type) so reflection is
+/// non-erased — `arr.GetType().GetElementType()` returns the real element type.
+/// Derefs to the element `Vec<Value>` (plus `Index`/`IndexMut`) so every
+/// existing array operation (len / index / iterate / push) works unchanged.
+#[derive(Debug, Clone)]
+pub struct ArrayObj {
+    /// Element type FQ name (e.g. "int" / "geometry.Point"). Empty = unknown
+    /// (Rust-synthesized arrays like reflection result sets; user arrays from
+    /// `ArrayNew` always carry it).
+    pub element_type: Arc<str>,
+    pub elems: Vec<Value>,
+}
+
+impl ArrayObj {
+    /// Untyped array (element type unknown) — for Rust-synthesized arrays.
+    #[inline]
+    pub fn new(elems: Vec<Value>) -> Self {
+        Self { element_type: Arc::from(""), elems }
+    }
+    /// Array with a known element type (from `ArrayNew` / `ArrayNewLit`).
+    #[inline]
+    pub fn typed(element_type: &str, elems: Vec<Value>) -> Self {
+        Self { element_type: Arc::from(element_type), elems }
+    }
+}
+
+impl std::ops::Deref for ArrayObj {
+    type Target = Vec<Value>;
+    #[inline]
+    fn deref(&self) -> &Vec<Value> { &self.elems }
+}
+impl std::ops::DerefMut for ArrayObj {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Vec<Value> { &mut self.elems }
+}
+impl std::ops::Index<usize> for ArrayObj {
+    type Output = Value;
+    #[inline]
+    fn index(&self, i: usize) -> &Value { &self.elems[i] }
+}
+impl std::ops::IndexMut<usize> for ArrayObj {
+    #[inline]
+    fn index_mut(&mut self, i: usize) -> &mut Value { &mut self.elems[i] }
+}
+
 #[derive(Debug, Clone)]
 #[repr(C, u8)]
 pub enum Value {
@@ -392,7 +439,11 @@ pub enum Value {
     Str(Arc<str>)               = 4,
     Null                        = 5,
     /// Heap-allocated dynamic array with reference semantics.
-    Array(GcRef<Vec<Value>>)    = 6,
+    /// add-reflection-array-element-type (2026-06-11): payload is `ArrayObj`
+    /// (element type name + elems) instead of a bare `Vec<Value>`, so the array
+    /// carries its element type at runtime (non-erased reflection). `ArrayObj`
+    /// derefs to the element `Vec<Value>`, so element access is unchanged.
+    Array(GcRef<ArrayObj>)      = 6,
     /// Heap-allocated managed class instance with reference semantics.
     Object(GcRef<ScriptObject>) = 7,
     /// Spec C4 — borrowed view of a `String` / `Array<u8>` for native FFI.
@@ -456,7 +507,7 @@ pub enum RefKind {
     /// `frame_idx` 是 `VmContext.frame_state_at` 列表索引。
     Stack { frame_idx: u32, slot: u32 },
     /// 指向 caller 数组对象的 `idx` 元素。GcRef 持有数组，让 GC 跟随。
-    Array { gc_ref: GcRef<Vec<Value>>, idx: usize },
+    Array { gc_ref: GcRef<ArrayObj>, idx: usize },
     /// 指向 caller 对象的命名字段。
     Field { gc_ref: GcRef<ScriptObject>, field_name: String },
 }
@@ -497,7 +548,7 @@ pub struct StackClosureData {
 /// `__delegate_eq` and the GC scanner consume.
 #[derive(Debug, Clone)]
 pub struct ClosureData {
-    pub env: GcRef<Vec<Value>>,
+    pub env: GcRef<ArrayObj>,
     pub fn_name: String,
 }
 

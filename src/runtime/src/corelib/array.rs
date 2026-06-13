@@ -16,7 +16,8 @@ pub fn builtin_array_clone(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     }
     match &args[0] {
         Value::Array(rc) => {
-            let copy: Vec<Value> = rc.borrow().clone();
+            // Shallow copy preserves the element type (ArrayObj::clone clones both).
+            let copy = rc.borrow().clone();
             Ok(Value::Array(GcRef::new(copy)))
         }
         Value::Null => bail!("__array_clone: null array reference"),

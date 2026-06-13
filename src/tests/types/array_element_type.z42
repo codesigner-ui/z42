@@ -1,0 +1,44 @@
+// 2026-06-12 add-reflection-array-element-type: arrays are NOT type-erased at
+// runtime. typeof(T[]).IsArray / GetElementType() and arr.GetType() all expose
+// the element type. ArrayNew/ArrayNewLit carry the element FQ name (zbc 1.16).
+
+namespace Demo;
+
+using Std;
+
+class Point {
+    public int X;
+    public int Y;
+}
+
+void Main() {
+    // typeof(int[]): IsArray true, element is int.
+    var ti = typeof(int[]);
+    Assert.True(ti.IsArray);
+    Assert.Equal("int", ti.GetElementType().Name);
+
+    // Non-array type: IsArray false, GetElementType() is null.
+    var tn = typeof(int);
+    Assert.False(tn.IsArray);
+    Assert.Null(tn.GetElementType());
+
+    // User-class element type is preserved (not erased to Object).
+    var tp = typeof(Point[]);
+    Assert.True(tp.IsArray);
+    Assert.Equal("Point", tp.GetElementType().Name);
+
+    // arr.GetType() agrees — runtime value carries its element type.
+    int[] xs = new int[3];
+    var tx = xs.GetType();
+    Assert.True(tx.IsArray);
+    Assert.Equal("int", tx.GetElementType().Name);
+
+    // Array literal path (ArrayNewLit) carries element type too.
+    string[] ys = new string[] { "a", "b" };
+    Assert.True(ys.GetType().IsArray);
+    Assert.Equal("string", ys.GetType().GetElementType().Name);
+
+    // Empty array still carries element type.
+    int[] empty = new int[0];
+    Assert.Equal("int", empty.GetType().GetElementType().Name);
+}
