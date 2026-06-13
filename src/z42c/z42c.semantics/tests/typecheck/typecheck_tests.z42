@@ -515,3 +515,17 @@ void test_array_length() {
                  SemanticDump.DumpBody(src, "C.M"));
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── 静态字段/数组创建（port-z42c-statics-arrays）─────────────────────────────
+[Test]
+void test_static_field_read() {
+    string src = "static class S { public static int X = 5; } class C { int M() { return S.X; } }";
+    Assert.Equal("(block (return (static-get S.X :int)))", SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_array_new() {
+    string src = "class C { int M() { int[] xs = new int[3]; return xs.Length; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}

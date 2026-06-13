@@ -35,6 +35,26 @@ public sealed class ConstF64Instr : IrInstr {
     public override string Dump() { return this.Dst.Dump() + " = const.f64 " + this.Text; }
 }
 
+public sealed class ArrayNewInstr : IrInstr {
+    public TypedReg Dst; public TypedReg Size; public int ElemTag; public string ElemName;   // zbc 1.16：elem FQ 名
+    public ArrayNewInstr(TypedReg dst, TypedReg size, int elemTag, string elemName) {
+        this.Dst = dst; this.Size = size; this.ElemTag = elemTag; this.ElemName = elemName;
+    }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = array_new[%" + this.Size.Id.ToString() + "]"; }
+}
+
+public sealed class StaticGetInstr : IrInstr {
+    public TypedReg Dst; public string Field;    // FQ "Cls.Field"
+    public StaticGetInstr(TypedReg dst, string field) { this.Dst = dst; this.Field = field; }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = static_get " + this.Field; }
+}
+
+public sealed class StaticSetInstr : IrInstr {
+    public string Field; public TypedReg Val;
+    public StaticSetInstr(string field, TypedReg val) { this.Field = field; this.Val = val; }
+    public override string Dump() { return "static_set " + this.Field + ", %" + this.Val.Id.ToString(); }
+}
+
 public sealed class ArrayLenInstr : IrInstr {
     public TypedReg Dst; public TypedReg Arr;
     public ArrayLenInstr(TypedReg dst, TypedReg arr) { this.Dst = dst; this.Arr = arr; }

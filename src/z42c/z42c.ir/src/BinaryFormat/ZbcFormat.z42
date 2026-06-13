@@ -5,13 +5,15 @@ namespace Z42.IR.BinaryFormat;
 // 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 15;   // 2026-06-10 add-parameter-attribute-reflection：SIGS 每函数记录在 attrCount 后加 per-parameter attr-ref 块（param_count 个 u16 count + 对偶）
+    public static int Minor = 16;   // 2026-06-13 add-reflection-array-element-type：ArrayNew 追加 elem FQ 名（string idx）
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
 public static class Op {
     public static int ConstChar = 0x08;
     public static int ArrayLen = 0x84;
+    public static int StaticGet = 0x62; public static int StaticSet = 0x63;
+    public static int ArrayNew = 0x80;
     public static int LoadFn = 0x55; public static int CallIndirect = 0x56; public static int MkClos = 0x57;
     public static int ConstI    = 0x00;
     public static int ConstF    = 0x01;

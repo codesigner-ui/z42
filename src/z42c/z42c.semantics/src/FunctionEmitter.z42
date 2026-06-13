@@ -92,6 +92,38 @@ public sealed class FunctionEmitter {
         return irf;
     }
 
+    // __static_init__ 合成（SA-3；镜像 C#）：每静态字段 init → StaticSet(FQ, init reg)，ret void、0 参。
+    public IrFunction EmitStaticInit(string name, SemanticModel model) {
+        this._ctx = new EmitContext(this._symbols, this._gen);
+        this._ctx.Ns = this._gen.Ns;
+        this._ctx.Deps = this._gen.Deps;
+        this._ctx.ImportedClassNs = this._gen.ImportedClassNs;
+        this._ctx.CurFnName = name;
+        this._expr = new ExprEmitter(this._ctx);
+        this._ctx.NextReg = 0; this._ctx.MaxReg = 0;
+        this._ctx.StartBlock("entry");
+        int i = 0;
+        while (i < model.SiCount) {
+            TypedReg v = this._expr.Emit(model.SiInit[i]);   // C# static_init 无 LineTable（DBUG file 不在此入池——字节实证）
+            string fq = this._ctx.Qualify(model.SiCls[i]) + "." + model.SiField[i];
+            this._ctx.Emit(new StaticSetInstr(fq, v));
+            i = i + 1;
+        }
+        if (!this._ctx.Ended) { this._ctx.EndBlock(new RetTerm(false, null)); }
+        int[] regTypes = new int[this._ctx.RegTagCount];
+        int rt = 0;
+        while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
+        IrLineEntry[] lines = new IrLineEntry[this._ctx.LineCount];
+        int li = 0;
+        while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
+        IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
+        this._gen._mergeUsedNsPub(this._ctx);
+        return new IrFunction(name, 0, "void", false,
+                              this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
+                              "Interp", new string[0], 0, regTypes, this._ctx.RegTagCount,
+                              lines, this._ctx.LineCount, localVars, localVars.Length);
+    }
+
     // lambda lift 发射（port-z42c-closures；镜像 C# EmitLifted/EmitLiftedLambdaWithEnv）。
     // hasEnv：env=reg0、参数 reg1..；否则参数 reg0..。体内 BoundCapturedIdent → array_get env[idx]。
     public IrFunction EmitLambdaLifted(string name, BoundLambda lam) {

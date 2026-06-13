@@ -37,6 +37,7 @@ public sealed class IrGen {
     }
 
     public string Ns;   // 根命名空间（BP-0 名字限定；""=无）
+    public string SourceStem;   // 文件 stem（SA-3：__static_init__ 名前缀，镜像 C# _cuStem）
     public DependencyIndex Deps;       // 跨包索引（CI-4；调用方 Generate 前设置，null=无）
     public StrMap ImportedClassNs;     // imported 短类名 → ns（IC-1）
     public IrFunction[] Lifted; public int LiftedCount;   // lambda lift（port-z42c-closures；模块尾追加）
@@ -86,6 +87,14 @@ public sealed class IrGen {
         if (cu.HasNamespace) { this.Ns = cu.Namespace; }
         IrFunction[] funcs = new IrFunction[8];   int fc = 0;
         IrClassDesc[] classes = new IrClassDesc[8]; int cc = 0;
+        // static_init 首位（SA-3）：有静态字段 init → 合成 `{stem}.__static_init__`（fn0，VM 加载期执行）
+        if (model.SiCount > 0) {
+            string stem = this.SourceStem;
+            if (stem == null) { stem = "main"; }
+            var sfe = new FunctionEmitter(this._symbols, this);
+            funcs = this._pushFunc(funcs, fc, sfe.EmitStaticInit(stem + ".__static_init__", model));
+            fc = fc + 1;
+        }
         // 两遍（byte-identical：module.Functions 序 = 类方法（声明序）→ 自由函数（声明序），SIGS 字节实证）。
         int i = 0;
         while (i < cu.DeclCount) {
@@ -171,23 +180,40 @@ public sealed class IrGen {
         }
         IrFieldDesc[] fields = new IrFieldDesc[4];
         int fcount = 0;
+        IrFieldDesc[] sfields = new IrFieldDesc[4];
+        int sfcount = 0;
+        Z42ClassType ctd = this._symbols.GetClass(c.Name);
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);
             if (mem is FieldDecl) {
                 FieldDecl fd = mem as FieldDecl;
                 string tn = this._symbols.ResolveType(fd.Type).Name();
-                if (fcount == fields.Length) {
-                    IrFieldDesc[] bigger = new IrFieldDesc[fields.Length * 2];
-                    int k = 0; while (k < fcount) { bigger[k] = fields[k]; k = k + 1; }
-                    fields = bigger;
+                FieldSymbol fsy = ctd.Fields.Get(fd.Name) as FieldSymbol;
+                bool isStatic = fsy != null && fsy.IsStatic;
+                if (isStatic) {
+                    if (sfcount == sfields.Length) {
+                        IrFieldDesc[] b2 = new IrFieldDesc[sfields.Length * 2];
+                        int k = 0; while (k < sfcount) { b2[k] = sfields[k]; k = k + 1; }
+                        sfields = b2;
+                    }
+                    sfields[sfcount] = new IrFieldDesc(fd.Name, tn);
+                    sfcount = sfcount + 1;
+                } else {
+                    if (fcount == fields.Length) {
+                        IrFieldDesc[] bigger = new IrFieldDesc[fields.Length * 2];
+                        int k = 0; while (k < fcount) { bigger[k] = fields[k]; k = k + 1; }
+                        fields = bigger;
+                    }
+                    fields[fcount] = new IrFieldDesc(fd.Name, tn);
+                    fcount = fcount + 1;
                 }
-                fields[fcount] = new IrFieldDesc(fd.Name, tn);
-                fcount = fcount + 1;
             }
             j = j + 1;
         }
-        return new IrClassDesc(this._q(c.Name), hasBase, baseName, fields, fcount);
+        IrClassDesc cd2 = new IrClassDesc(this._q(c.Name), hasBase, baseName, fields, fcount);
+        cd2.StaticFields = sfields; cd2.StaticFieldCount = sfcount;
+        return cd2;
     }
 
     private IrFunction[] _pushFunc(IrFunction[] arr, int count, IrFunction irf) {

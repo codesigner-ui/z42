@@ -62,6 +62,8 @@ public static class ZbcWriter {
             if (cd.HasBase) { pool.Intern(cd.BaseName); }
             int f = 0;
             while (f < cd.FieldCount) { pool.Intern(cd.Fields[f].Name); pool.Intern(cd.Fields[f].Type); f = f + 1; }
+            int sf = 0;   // 静态字段名/类型（zbc 1.13；C# InternPoolStrings 实例字段后——字节实证）
+            while (sf < cd.StaticFieldCount) { pool.Intern(cd.StaticFields[sf].Name); pool.Intern(cd.StaticFields[sf].Type); sf = sf + 1; }
             c = c + 1;
         }
         pool.Intern("?");   // SIGS 缺省 param 类型占位
@@ -147,8 +149,16 @@ public static class ZbcWriter {
             }
             w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）
             w.WriteU16(0);    // attrCount（zbc 1.10）
-            w.WriteU8(0);     // class-shape flags（zbc 1.12：bit0 abstract/bit1 sealed/bit2 struct/bit3 record；z42c IrClassDesc 暂无标志 → 0）
-            w.WriteU16(0);    // static-fields count（zbc 1.13；z42c IrClassDesc 暂无静态字段 → 0）
+            w.WriteU8(0);     // class-shape flags（zbc 1.12）
+            w.WriteU16(cd.StaticFieldCount);   // static-fields count（zbc 1.13；SA-3）
+            int sf = 0;
+            while (sf < cd.StaticFieldCount) {
+                w.WriteU32(pool.Idx(cd.StaticFields[sf].Name));
+                w.WriteU8(Tag.FromName(cd.StaticFields[sf].Type));
+                w.WriteU32(pool.Idx(cd.StaticFields[sf].Type));
+                w.WriteU16(0);   // per-field attrCount（zbc 1.14）
+                sf = sf + 1;
+            }
             c = c + 1;
         }
         return w;
@@ -414,6 +424,9 @@ public static class ZbcWriter {
         if (ins is ObjNewInstr) { ObjNewInstr i = ins as ObjNewInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtArgs(rt, i.Args, i.ArgCount); return; }
         if (ins is IsInstanceInstr) { IsInstanceInstr i = ins as IsInstanceInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
         if (ins is AsCastInstr) { AsCastInstr i = ins as AsCastInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
+        if (ins is ArrayNewInstr) { ArrayNewInstr an2 = ins as ArrayNewInstr; ZbcWriter._regtVis(rt, an2.Dst); ZbcWriter._regtVis(rt, an2.Size); return; }
+        if (ins is StaticGetInstr) { ZbcWriter._regtVis(rt, (ins as StaticGetInstr).Dst); return; }
+        if (ins is StaticSetInstr) { ZbcWriter._regtVis(rt, (ins as StaticSetInstr).Val); return; }
         if (ins is ArrayLenInstr) { ArrayLenInstr al2 = ins as ArrayLenInstr; ZbcWriter._regtVis(rt, al2.Dst); ZbcWriter._regtVis(rt, al2.Arr); return; }
         if (ins is LoadFnInstr) { ZbcWriter._regtVis(rt, (ins as LoadFnInstr).Dst); return; }
         if (ins is CallIndirectInstr) { CallIndirectInstr ci2 = ins as CallIndirectInstr; ZbcWriter._regtVis(rt, ci2.Dst); ZbcWriter._regtVis(rt, ci2.Callee); ZbcWriter._regtArgs(rt, ci2.Args, ci2.ArgCount); return; }

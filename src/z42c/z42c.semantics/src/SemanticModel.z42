@@ -5,9 +5,21 @@ namespace Z42.Semantics;
 public sealed class SemanticModel {
     public SymbolTable Symbols;
     public StrMap      Bodies;   // key → BoundStmt（object）
+    public string[]    SiCls; public string[] SiField; public BoundExpr[] SiInit; public int SiCount;   // 静态字段 init（SA-3，声明序）
     public SemanticModel(SymbolTable symbols) {
         this.Symbols = symbols;
         this.Bodies = new StrMap();
+        this.SiCls = new string[4]; this.SiField = new string[4]; this.SiInit = new BoundExpr[4]; this.SiCount = 0;
+    }
+    public void AddStaticInit(string cls, string field, BoundExpr init) {
+        if (this.SiCount == this.SiCls.Length) {
+            string[] a = new string[this.SiCls.Length * 2]; string[] b = new string[this.SiCls.Length * 2];
+            BoundExpr[] e = new BoundExpr[this.SiCls.Length * 2];
+            int k = 0; while (k < this.SiCount) { a[k] = this.SiCls[k]; b[k] = this.SiField[k]; e[k] = this.SiInit[k]; k = k + 1; }
+            this.SiCls = a; this.SiField = b; this.SiInit = e;
+        }
+        this.SiCls[this.SiCount] = cls; this.SiField[this.SiCount] = field; this.SiInit[this.SiCount] = init;
+        this.SiCount = this.SiCount + 1;
     }
     public void      AddBody(string key, BoundStmt body) { this.Bodies.Put(key, body); }
     public bool      HasBody(string key) { return this.Bodies.ContainsKey(key); }

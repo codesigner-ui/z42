@@ -351,6 +351,6 @@ void test_lambda_lift_loadfn() {
 [Test]
 void test_array_len_lowering() {
     string src = "class C { int M(int[] xs) { return xs.Length; } }";
-    Assert.Equal("fn @C.M(2) -> int {\nentry:\n  %2 = array_len %1\n  ret %2\n}",
+    Assert.Equal("fn @C.M(2) -> int {\nentry:\n  %2 = field_get %1.Length\n  ret %2\n}",
                  IrDump.DumpFunc(src, "C.M"));
 }

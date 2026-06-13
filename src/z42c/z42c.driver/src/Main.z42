@@ -106,6 +106,8 @@ int _build(string tomlPath) {
         CompiledModuleZ cm = cms[i];
         if (cm.ErrorCount > 0) {
             ConsoleError.WriteLine("z42c build: " + cm.ErrorCount.ToString() + " error(s) in " + srcs[i]);
+            int di = 0;
+            while (di < cm.DiagCount) { ConsoleError.WriteLine("  " + cm.DiagMsgs[di]); di = di + 1; }
             return 1;
         }
         IrModule irm = cm.Module;

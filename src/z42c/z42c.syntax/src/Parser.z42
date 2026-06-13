@@ -151,6 +151,13 @@ public sealed class Parser {
         if (k == TokenKind.New) {
             this._advance();
             TypeExpr ty = this._parseType();
+            // 数组创建 new T[size]（SA-1）：_parseType 只吃 `[]`，带 size 的 `[` 留此处
+            if (this._peek().Kind == TokenKind.LBracket) {
+                this._advance();
+                Expr size = this._parseExpr(0);
+                this._expect(TokenKind.RBracket, "]");
+                return new ArrayNewExpr(ty, size, t.Span);
+            }
             Expr[] args = new Expr[8];
             int n = 0;
             if (this._peek().Kind == TokenKind.LParen) {

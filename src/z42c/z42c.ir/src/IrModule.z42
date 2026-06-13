@@ -21,9 +21,11 @@ public sealed class IrClassDesc {
     public string        BaseName;
     public IrFieldDesc[] Fields;
     public int           FieldCount;
+    public IrFieldDesc[] StaticFields; public int StaticFieldCount;   // zbc 1.13（SA-3）
     public IrClassDesc(string name, bool hasBase, string baseName, IrFieldDesc[] fields, int fieldCount) {
         this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = fields; this.FieldCount = fieldCount;
+        this.StaticFields = new IrFieldDesc[0]; this.StaticFieldCount = 0;
     }
 }
 

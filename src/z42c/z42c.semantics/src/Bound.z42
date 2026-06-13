@@ -359,6 +359,28 @@ public sealed class BoundContinue : BoundStmt {
     public override string Dump() { return "(continue)"; }
 }
 
+public sealed class BoundArrayNew : BoundExpr {
+    public BoundExpr Size;
+    public string    ElemName;     // 元素类型名（elemTag 映射）
+    private Z42Type _t;            // Z42ArrayType
+    public BoundArrayNew(BoundExpr size, string elemName, Z42Type t, Span span) {
+        this.Span = span; this.Size = size; this.ElemName = elemName; this._t = t;
+    }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(array-new " + this.ElemName + " " + this.Size.Dump() + " :" + this._t.Name() + ")"; }
+}
+
+public sealed class BoundStaticGet : BoundExpr {
+    public string ClassName;       // 短名（Qualify 在 codegen）
+    public string FieldName;
+    private Z42Type _t;
+    public BoundStaticGet(string className, string fieldName, Z42Type t, Span span) {
+        this.Span = span; this.ClassName = className; this.FieldName = fieldName; this._t = t;
+    }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(static-get " + this.ClassName + "." + this.FieldName + " :" + this._t.Name() + ")"; }
+}
+
 // lambda（port-z42c-closures）：参数名/类型 + 体（表达式或块）+ 捕获表 + 函数类型。
 public sealed class BoundCapture {
     public string  Name;

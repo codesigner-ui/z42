@@ -15,6 +15,13 @@ public sealed class IntLitExpr : Expr {
     public override string Dump() { return this.Value; }
 }
 
+public sealed class ArrayNewExpr : Expr {
+    public TypeExpr Elem;
+    public Expr     Size;
+    public ArrayNewExpr(TypeExpr elem, Expr size, Span span) { this.Span = span; this.Elem = elem; this.Size = size; }
+    public override string Dump() { return "(array-new " + this.Elem.Dump() + " " + this.Size.Dump() + ")"; }
+}
+
 public sealed class LambdaParam {
     public Span     Span;
     public bool     HasType;

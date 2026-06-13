@@ -49,7 +49,14 @@ public sealed class TypeChecker {
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);
-            if (mem is MethodDecl) {
+            if (mem is FieldDecl) {                                  // 静态字段 init（SA-3）
+                FieldDecl fd = mem as FieldDecl;
+                FieldSymbol fsym = ct.Fields.Get(fd.Name) as FieldSymbol;
+                if (fd.HasInit && fsym != null && fsym.IsStatic) {
+                    var fenv = TypeEnv.Root(symbols);
+                    model.AddStaticInit(c.Name, fd.Name, this._bindExpr(fd.Init, fenv));
+                }
+            } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 if (!md.IsCtor && md.HasBody) {
                     MethodSymbol ms = ct.Methods.Get(md.Name) as MethodSymbol;
@@ -308,6 +315,12 @@ public sealed class TypeChecker {
             BoundExpr operand = this._bindExpr(ax.E, env);
             return new BoundCast(operand, env.ResolveType(ax.Type), ax.Span);
         }
+        if (e is ArrayNewExpr) {
+            ArrayNewExpr an = e as ArrayNewExpr;
+            BoundExpr size = this._bindExpr(an.Size, env);
+            Z42Type elem = env.ResolveType(an.Elem);
+            return new BoundArrayNew(size, elem.Name(), new Z42ArrayType(elem), an.Span);
+        }
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
         }
@@ -414,6 +427,17 @@ public sealed class TypeChecker {
 
     // ════ 成员字段访问（1C）═══════════════════════════════════════════════════
     private BoundExpr _bindMember(MemberExpr m, TypeEnv env) {
+        // 裸类名静态字段读（SA-2）：Sev.Error——target 是类名（非变量）→ StaticGet
+        if (m.Target is IdentExpr) {
+            IdentExpr tid = m.Target as IdentExpr;
+            if (env.LookupVar(tid.Name) == null && env.Symbols.HasClass(tid.Name)) {
+                Z42ClassType sct = env.Symbols.GetClass(tid.Name);
+                FieldSymbol sfs = sct.Fields.Get(m.Name) as FieldSymbol;
+                if (sfs != null && sfs.IsStatic) {
+                    return new BoundStaticGet(tid.Name, m.Name, sfs.FieldType, m.Span);
+                }
+            }
+        }
         BoundExpr target = this._bindExpr(m.Target, env);
         Z42Type tt = target.Type();
         if (tt is Z42ClassType) {

@@ -62,6 +62,21 @@ public sealed class ExprEmitter {
             this._ctx.Emit(new ArrayGetInstr(dst, new TypedReg(0, IrType.Ref), idxReg));
             return dst;
         }
+        if (e is BoundArrayNew) {
+            BoundArrayNew an = e as BoundArrayNew;
+            TypedReg size = this.Emit(an.Size);
+            TypedReg dst = this._ctx.Alloc(IrType.Ref);
+            // ElemName → IrType（prim 名经 ToIrType 等价物：用 Z42PrimType 包一层）
+            this._ctx.Emit(new ArrayNewInstr(dst, size, this._ctx.ToIrType(new Z42PrimType(an.ElemName)), an.ElemName));
+            return dst;
+        }
+        if (e is BoundStaticGet) {
+            BoundStaticGet sg = e as BoundStaticGet;
+            // StaticGet 结果寄存器 = Unknown（C# REGT 字节实证：静态字段读 IR 层擦除）
+            TypedReg dst = this._ctx.Alloc(IrType.Unknown);
+            this._ctx.Emit(new StaticGetInstr(dst, this._ctx.Qualify(sg.ClassName) + "." + sg.FieldName));
+            return dst;
+        }
         if (e is BoundLambda) { return this._emitLambda(e as BoundLambda); }
         if (e is BoundIndirectCall) {
             BoundIndirectCall ic = e as BoundIndirectCall;
@@ -292,11 +307,11 @@ public sealed class ExprEmitter {
 
     // obj.field 读 → field_get。
     private TypedReg _emitMember(BoundMember m) {
-        // arr.Length（PS-2）：按 target 静态类型判别（防类字段同名误击）
+        // arr.Length（PS-2/SA）：C# 字节实证 = FieldGet obj, "Length"（非 ArrayLen 指令；VM 对数组特判）
         if (m.MemberName == "Length" && (m.Target.Type() is Z42ArrayType)) {
             TypedReg arr0 = this.Emit(m.Target);
             TypedReg dst0 = this._ctx.Alloc(this._ctx.ToIrType(m.Type()));
-            this._ctx.Emit(new ArrayLenInstr(dst0, arr0));
+            this._ctx.Emit(new FieldGetInstr(dst0, arr0, "Length"));
             return dst0;
         }
         TypedReg obj = this.Emit(m.Target);
