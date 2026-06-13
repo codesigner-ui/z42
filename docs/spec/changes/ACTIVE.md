@@ -12,7 +12,7 @@
 | `runtime` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（数组不擦除：`GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()`；`arr.GetType()` 非擦除）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（`Std.Type` 加 `IsArray` + `__elementName` + `GetElementType()`）|
 | `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
-| `toolchain` | —（空闲）| — | ~~add-export-command~~ ✅ 已归档 2026-06-14（`z42 export ios/android/wasm`；`[platform.*]` toml 配置；`runtimes/<rid>/<ver>/` 平台 SDK；launcher_export*.z42 四文件；commit 0292c3a3）|
+| `toolchain` | **split-release-runtime-package（进行中）** | 2026-06-14 | release.yml 追加 `z42-runtime-*` 包；SDK 包当 launcher；release-index.json 升级 runtime/launcher 子键格式 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

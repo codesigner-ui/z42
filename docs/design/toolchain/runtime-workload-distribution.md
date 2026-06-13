@@ -1,6 +1,6 @@
 # runtime & workload 分发：安装 / 更新 / 运行
 
-> ⚠️ **前瞻设计草案（未实施）**。把 GitHub Releases 作为分发后端，设计 launcher 对"不同版本 + 不同平台的 runtime + 相关 workload"的安装/更新/运行。现状 `z42 install <ver|nightly>`（[launcher.md](../runtime/launcher.md) `launcher-future-install` P2）是它的最小子集；本文是完整组织。落地开 spec。
+> **部分已实施（split-release-runtime-package, 2026-06-14）**：manifest schema（`runtimes.<rid>.runtime` + `.launcher`，平台 RID `.runtime` only）、独立 runtime 包、`_fetchManifest` new/old-format 双格式已落地。workload / channel / `z42 update` / 签名等见 Deferred。
 
 ## 现状（起点）
 
