@@ -39,21 +39,28 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
   "tag": "v0.3.5",
   "published": "2026-06-12T00:00:00Z",
   "runtimes": {
-    "macos-arm64": { "archive": "z42-0.3.5-macos-arm64.tar.gz", "sha256": "…" },
-    "linux-x64":   { "archive": "z42-0.3.5-linux-x64.tar.gz",   "sha256": "…" },
-    "linux-arm64": { "archive": "…", "sha256": "…" },
-    "windows-x64": { "archive": "z42-0.3.5-windows-x64.zip",    "sha256": "…" }
+    "macos-arm64": {
+      "sdk":      { "archive": "z42-0.3.5-macos-arm64.tar.gz",          "sha256": "…" },
+      "launcher": { "archive": "z42-launcher-0.3.5-macos-arm64.tar.gz", "sha256": "…" },
+      "runtime":  { "archive": "z42-runtime-0.3.5-macos-arm64.tar.gz",  "sha256": "…" }
+    },
+    "linux-x64":   { "sdk": {…}, "launcher": {…}, "runtime": {…} },
+    "linux-arm64": { "sdk": {…}, "launcher": {…}, "runtime": {…} },
+    "windows-x64": { "sdk": {…}, "launcher": {…}, "runtime": {…} },
+    "ios-arm64":    { "runtime": { "archive": "z42-runtime-0.3.5-ios-arm64.tar.gz",    "sha256": "…" } },
+    "iossim-arm64": { "runtime": { "archive": "z42-runtime-0.3.5-iossim-arm64.tar.gz", "sha256": "…" } },
+    "android-arm64":{ "runtime": { "archive": "z42-runtime-0.3.5-android-arm64.tar.gz","sha256": "…" } },
+    "android-x64":  { "runtime": { "archive": "z42-runtime-0.3.5-android-x64.tar.gz",  "sha256": "…" } },
+    "browser-wasm": { "runtime": { "archive": "z42-runtime-0.3.5-browser-wasm.tar.gz", "sha256": "…" } }
   },
   "workloads": {
     "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"] },
     "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"] },
     "wasm":    { "archive": "z42-0.3.5-browser-wasm.tar.gz", "sha256": "…", "host": ["*"] }
-  },
-  "launcher": {
-    "macos-arm64": { "archive": "z42-launcher-0.3.5-macos-arm64.tar.gz", "sha256": "…" }
   }
 }
 ```
+> **已实施（split-release-runtime-package, 2026-06-14）**：desktop RID 三键（sdk/launcher/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式。workload 段未实施（见 Deferred）。
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。
 - `workloads.<wl>.host` = 哪些 host RID 能用该 workload（ios 仅 macOS）→ launcher 安装前先校验 host，host 不支持直接拒。
