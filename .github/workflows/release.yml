@@ -158,9 +158,10 @@ jobs:
           pkg="z42-${version}-${rid}-release"
           mkdir -p artifacts/release
           if [[ "$rid" == windows-* ]]; then
-            tar -C artifacts/packages -a -cf "artifacts/release/z42-${version}-${rid}.zip" "$pkg"
+            # Archive contents directly (no top-level subdirectory).
+            tar -C "artifacts/packages/$pkg" -a -cf "artifacts/release/z42-${version}-${rid}.zip" .
           else
-            tar -C artifacts/packages -czf "artifacts/release/z42-${version}-${rid}.tar.gz" "$pkg"
+            tar -C "artifacts/packages/$pkg" -czf "artifacts/release/z42-${version}-${rid}.tar.gz" .
           fi
           echo "✓ archived $pkg"
 

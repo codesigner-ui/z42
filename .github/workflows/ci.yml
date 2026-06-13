@@ -892,12 +892,13 @@ jobs:
               cp -R "$src" "$dst"
               if [ "$rid" = "windows-x64" ]; then
                   archive="artifacts/release/z42-nightly-${rid}.zip"
+                  # Archive contents directly (no top-level subdirectory).
                   # Use `zip` (not `tar -a`): GNU tar's zip output is incompatible
                   # with Windows Expand-Archive / Explorer on some tar versions.
-                  (cd artifacts/packages && zip -r "../release/z42-nightly-${rid}.zip" "$new_name")
+                  (cd "artifacts/packages/$new_name" && zip -r "../../release/z42-nightly-${rid}.zip" .)
               else
                   archive="artifacts/release/z42-nightly-${rid}.tar.gz"
-                  tar -C artifacts/packages -czf "$archive" "$new_name"
+                  tar -C "artifacts/packages/$new_name" -czf "$archive" .
               fi
               echo "✓ ${rid} → $(basename "$archive") ($(du -h "$archive" | cut -f1))"
           done

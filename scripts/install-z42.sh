@@ -155,13 +155,11 @@ else
 fi
 
 # ── 7. extract → install ─────────────────────────────────────────────────────
-tar -xzf "$TMP/$ASSET" -C "$TMP"
-INNER="$TMP/z42-$VER-$RID-release"
-[ -d "$INNER" ] || INNER="$(find "$TMP" -maxdepth 1 -type d -name 'z42-*' | head -1)"
-[ -d "$INNER" ] || { echo "install-z42: extracted package dir not found in $TMP" >&2; exit 1; }
+mkdir -p "$TMP/pkg"
+tar -xzf "$TMP/$ASSET" -C "$TMP/pkg"
 
 rm -rf "$DEST"; mkdir -p "$DEST"
-cp -R "$INNER"/. "$DEST"/
+cp -R "$TMP/pkg"/. "$DEST"/
 # GitHub Actions artifact upload/download strips the executable bit; restore it.
 for b in "$DEST/z42" "$DEST/bin/z42" "$DEST/bin/z42vm" "$DEST/bin/z42c"; do
   [ -f "$b" ] && chmod +x "$b" 2>/dev/null || true

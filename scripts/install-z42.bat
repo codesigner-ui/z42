@@ -60,9 +60,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "    $wh=($sums -split \"`n\"|Where-Object{$_ -match [regex]::Escape($asset)+'$'}|Select-Object -First 1).Split(' ')[0];" ^
   "    if($wh){$got=(Get-FileHash $zip -Algorithm SHA256).Hash.ToLower();" ^
   "      if($wh.ToLower() -ne $got){Write-Error 'install-z42: SHA256 mismatch'; exit 1}; Write-Host 'install-z42: SHA256 ok'}}catch{}}" ^
-  "Expand-Archive -Path $zip -DestinationPath $tmp -Force;" ^
-  "$inner=Join-Path $tmp \"z42-$ver-$rid-release\";" ^
-  "if(-not(Test-Path $inner)){$inner=(Get-ChildItem $tmp -Directory -Filter 'z42-*'|Select-Object -First 1).FullName}" ^
+  "$inner=Join-Path $tmp 'pkg'; New-Item -ItemType Directory -Path $inner | Out-Null;" ^
+  "Expand-Archive -Path $zip -DestinationPath $inner -Force;" ^
   "if(Test-Path $dest){Remove-Item $dest -Recurse -Force}; New-Item -ItemType Directory -Path $dest | Out-Null;" ^
   "Copy-Item (Join-Path $inner '*') $dest -Recurse -Force;" ^
   "Set-Content -Path $stamp -Value $want -NoNewline;" ^
