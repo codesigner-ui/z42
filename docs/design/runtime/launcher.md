@@ -88,6 +88,46 @@ z42-<ver>-<rid>-<profile>/
 
 打包步骤见 `z42 xtask.zpkg package` 的 desktop 路径 [2c];`z42 xtask.zpkg test dist` 有 portable `z42 which` smoke。
 
+## 三包发布结构（split-runtime-launcher-packages, 2026-06-13）
+
+`z42 xtask.zpkg package` 对 desktop RID 一次构建三个 artifact，发布时上传到同一 GitHub Release tag：
+
+```
+z42-<ver>-<rid>.tar.gz          # SDK 包（便携/bootstrap 专用，含 z42c）
+z42-launcher-<ver>-<rid>.tar.gz # launcher 包（z42 self-update 下载）
+z42-runtime-<ver>-<rid>.tar.gz  # runtime 包（z42 install <ver> 下载）
+```
+
+**Launcher 包布局**（直接映射 `$Z42_HOME/launcher/`，解压即覆盖）：
+```
+z42vm            # VM 主进程（可直接在 launcher/ 根找到 → portable=false）
+launcher.zpkg    # launcher 核心
+apphost          # apphost stub 模板
+libs/            # stdlib zpkg
+```
+
+**Runtime 包布局**（直接映射 `$Z42_HOME/runtimes/<ver>/`）：
+```
+z42vm            # VM 主进程
+libs/            # stdlib zpkg
+```
+
+**SDK 包**不变（用于 `install-z42.sh` bootstrap 和便携模式），含 z42c + trampoline + launcher.zpkg + native/ + examples/。
+
+`release-index.json` 新格式（CI 待更新，旧格式 `runtimes.<rid>.archive` 保留兼容回退）：
+```json
+{
+  "runtimes": {
+    "macos-arm64": {
+      "launcher": { "archive": "z42-launcher-<ver>-macos-arm64.tar.gz", "sha256": "…" },
+      "runtime":  { "archive": "z42-runtime-<ver>-macos-arm64.tar.gz",  "sha256": "…" }
+    }
+  }
+}
+```
+
+`_fetchManifest(baseUrl, rid, packageType)` 先读 `runtimes.<rid>.<packageType>.{archive,sha256}`，找不到则回退旧格式 `runtimes.<rid>.{archive,sha256}`。
+
 ## 安装模式（installed, model B — install-z42-to-home, 2026-06-03）
 
 `scripts/install-z42.sh --system`（或 `install-z42.bat --system`）从 GitHub Releases 下载 launcher 包并铺进 `$Z42_HOME`（默认 `~/.z42`）：
@@ -213,14 +253,14 @@ z42 apphost build scripts/xtask.z42.toml
 
 ### ~~launcher-future-install~~ ✅ 已实现（add-launcher-install, 2026-06-13）
 
-`z42 install <ver|nightly>` 和 `z42 self-update [--channel <ver>]` 已在 `add-launcher-install` 中实现：manifest-first（`release-index.json`）下载、SHA256 验证、流式 tgz/zip 解压、staged 原子替换。见 `src/toolchain/launcher/core/launcher_network.z42`。
+`z42 install <ver|nightly>` 和 `z42 self-update [--channel <ver>]` 已在 `add-launcher-install` 中实现：manifest-first（`release-index.json`）下载、SHA256 验证、流式 tgz/zip 解压、staged 原子替换。见 `src/toolchain/launcher/core/launcher_network.z42`。`split-runtime-launcher-packages`（2026-06-13）进一步细化：各命令通过 `packageType` 参数请求各自的专属小包而非全量 SDK。
 
 P2 命令：
 
 | 命令 | 行为 |
 |------|------|
-| `z42 install <version\|nightly>` | 从 GitHub Releases 下载并安装指定运行时版本到 `$Z42_HOME/runtimes/<ver>/` |
-| `z42 self-update [--channel <ver>]` | 下载并替换 `$Z42_HOME/launcher/`（portable 模式拒绝）|
+| `z42 install <version\|nightly>` | 请求 `packageType="runtime"` → 下载 `z42-runtime-<ver>-<rid>.tar.gz` 到 `$Z42_HOME/runtimes/<ver>/` |
+| `z42 self-update [--channel <ver>]` | 请求 `packageType="launcher"` → 下载 `z42-launcher-<ver>-<rid>.tar.gz` 替换 `$Z42_HOME/launcher/`（portable 模式拒绝）|
 
 ### launcher-future-self-update-windows: Windows 上 `z42 self-update` 替换失败
 

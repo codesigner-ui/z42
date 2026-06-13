@@ -12,7 +12,7 @@
 | `runtime` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `make_type_from_name` 识别 `[]` 后缀 → 建 array Type（`__isArray`/`__elementName`）；`__type_element` builtin；object.rs arr.GetType 标 IsArray。无格式 bump |
 | `stdlib` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `Std.Type` 加 `IsArray` + `GetElementType()`。无格式 bump |
 | `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
-| `toolchain` | —（空闲） | — | — |
+| `toolchain` | —（空闲）| — | split-runtime-launcher-packages ✅ 已归档 2026-06-13（三包 SDK/launcher/runtime；`_fetchManifest` packageType；xtask_package_desktop.z42 拆分；launcher 4/4 + xtask 23/23 GREEN）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

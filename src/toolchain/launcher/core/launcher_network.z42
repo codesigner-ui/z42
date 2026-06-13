@@ -40,7 +40,7 @@ void _cmdInstall(ParseResult r) {
 
     string asset = "";
     string sha = "";
-    string[] mf = _fetchManifest(baseUrl, rid);
+    string[] mf = _fetchManifest(baseUrl, rid, "runtime");
     asset = mf[0]; sha = mf[1];
     if (asset.Length == 0) {
         asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
@@ -115,7 +115,7 @@ void _cmdSelfUpdate(ParseResult r) {
 
     string asset = "";
     string sha = "";
-    string[] mf = _fetchManifest(baseUrl, rid);
+    string[] mf = _fetchManifest(baseUrl, rid, "launcher");
     asset = mf[0]; sha = mf[1];
     if (asset.Length == 0) {
         asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
@@ -169,9 +169,11 @@ string _hostRid() {
     return "";
 }
 
-// Fetch release-index.json and return [archive, sha256] for rid.
-// Returns ["", ""] when the manifest is absent, malformed, or has no RID entry.
-string[] _fetchManifest(string baseUrl, string rid) {
+// Fetch release-index.json and return [archive, sha256] for (rid, packageType).
+// New format: runtimes.<rid>.<packageType> = { archive, sha256 }.
+// Old format fallback: runtimes.<rid> = { archive, sha256 } (pre-split releases).
+// Returns ["", ""] when the manifest is absent, malformed, or has no matching entry.
+string[] _fetchManifest(string baseUrl, string rid, string packageType) {
     string[] empty = new string[2];
     empty[0] = ""; empty[1] = "";
     HttpClient hc = new HttpClient();
@@ -186,11 +188,26 @@ string[] _fetchManifest(string baseUrl, string rid) {
         if (!ri.IsObject()) { return empty; }
         string archive = "";
         string sha = "";
-        if (ri.ContainsKey("archive")) {
+        // New format: runtimes.<rid>.<packageType> = { archive, sha256 }
+        if (ri.ContainsKey(packageType)) {
+            JsonValue pt = ri.Get(packageType);
+            if (pt.IsObject()) {
+                if (pt.ContainsKey("archive")) {
+                    JsonValue av = pt.Get("archive");
+                    if (av.IsString()) { archive = av.AsString(); }
+                }
+                if (pt.ContainsKey("sha256")) {
+                    JsonValue sv = pt.Get("sha256");
+                    if (sv.IsString()) { sha = sv.AsString(); }
+                }
+            }
+        }
+        // Old format fallback: runtimes.<rid> = { archive, sha256 }
+        if (archive.Length == 0 && ri.ContainsKey("archive")) {
             JsonValue av = ri.Get("archive");
             if (av.IsString()) { archive = av.AsString(); }
         }
-        if (ri.ContainsKey("sha256")) {
+        if (sha.Length == 0 && ri.ContainsKey("sha256")) {
             JsonValue sv = ri.Get("sha256");
             if (sv.IsString()) { sha = sv.AsString(); }
         }
