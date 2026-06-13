@@ -12,7 +12,7 @@
 | `runtime` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（数组不擦除：`GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()`；`arr.GetType()` 非擦除）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（`Std.Type` 加 `IsArray` + `__elementName` + `GetElementType()`）|
 | `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
-| `toolchain` | **split-release-runtime-package（进行中）** | 2026-06-14 | release.yml 追加 `z42-runtime-*` 包；SDK 包当 launcher；release-index.json 升级 runtime/launcher 子键格式 |
+| `toolchain` | —（空闲）| — | ~~split-release-runtime-package~~ ✅ 已归档 2026-06-14（`z42-runtime-*` 独立包；SDK 当 launcher；release-index.json runtime/launcher 子键；9 RID；4bbbd01b）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
@@ -36,6 +36,7 @@
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | ~~add-export-command~~ | toolchain —— ✅ 已归档 2026-06-14（`z42 export ios/android/wasm`；`[platform.*]` toml；`runtimes/<rid>/<ver>/` 平台 SDK；launcher_export*.z42 4 文件；0292c3a3）|
+| ~~split-release-runtime-package~~ | toolchain —— ✅ 已归档 2026-06-14（`z42-runtime-*` 独立包；SDK 当 launcher；release-index.json runtime/launcher 子键；9 RID；4bbbd01b）|
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | ~~add-reflection-mvp~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（feat 30776fae）|
