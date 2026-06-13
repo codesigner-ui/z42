@@ -155,7 +155,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _copyNativeLibs(cargoOut, pkgDir);
     Console.WriteLine("      ✓ native/libz42_compression.*");
 
-    // [2c/7] launcher trampoline (pkg root) + launcher.zpkg + install.sh
+    // [2c/7] launcher trampoline (pkg root) + launcher.zpkg
     Console.WriteLine("[2c/7] z42 launcher (trampoline + launcher.zpkg)");
     c = _cargo(rel, "build", "src/toolchain/launcher/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _copyIfExists(Path.Join(cargoOut, "z42"), Path.Join(pkgDir, "z42"));
@@ -179,9 +179,6 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     if (c != 0) { return c; }
     File.Copy(Path.Join(root, "artifacts/build/toolchain/launcher/z42.launcher.zpkg"), Path.Join(pkgDir, "launcher.zpkg"));
     Console.WriteLine("      ✓ launcher.zpkg");
-    File.Copy(Path.Join(root, "scripts/install.sh"), Path.Join(pkgDir, "install.sh"));
-    File.MakeExecutable(Path.Join(pkgDir, "install.sh"));
-    Console.WriteLine("      ✓ install.sh");
 
     // [3/7] C ABI headers
     Console.WriteLine("[3/7] C ABI headers");

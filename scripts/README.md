@@ -18,8 +18,10 @@ bootstrap」。
 本目录的 `.z42` 全部是 xtask 模块（含 stdlib 构建逻辑 `xtask_stdlib.z42`）。唯一
 的非 xtask 文件是安装引导脚本：
 
-- **`install-z42.{sh,bat,command}` / `install.sh`** —— 下载/解包预编译发行版到
-  `$Z42_HOME`。它们运行在「还没有 z42 工具链」的最前端，故保持 shell。
+- **`install-z42.{sh,bat,command}`** —— 下载预编译发行版并安装。运行在「还没有 z42 工具链」的最前端，故保持 shell。
+  - 无参数：portable 安装到 `<repo>/.z42`（bootstrap，最常用）。
+  - `--system`：managed 安装到 `$Z42_HOME`（默认 `~/.z42`），展开 `bin/launcher/runtimes` 布局，打印 PATH 接入提示。
+  - `--dest <dir>`：安装到指定目录（与 `--system` 组合时用 managed 布局，否则用 portable）。
 
 > **冷启动 bootstrap（鸡生蛋的真正破解点）**：`xtask.zpkg` 依赖 stdlib 才能编译，
 > 所以冷树上先由 **C# 编译器**直接 `dotnet -- build --workspace`（不涉及任何 z42

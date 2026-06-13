@@ -1,79 +1,204 @@
 #!/usr/bin/env bash
-# install-z42.sh — z42-bootstrap (2026-06-12).
+# install-z42.sh — z42 bootstrap / system install (2026-06-13).
+# Copyright (c) codesigner-ui. MIT licence.
 #
-# Download the prebuilt z42 launcher package from GitHub Releases into a
-# PROJECT-LOCAL <repo>/.z42 (isolated; gitignored). This is the ONE native
-# bootstrap that stays — a chicken-and-egg primer: you need a working z42 to
-# run the z42-implemented dev tooling (xtask + migrated scripts), so this
-# fetches it. Everything else is z42.
+# Downloads the prebuilt z42 launcher package from GitHub Releases and installs
+# it. Two install modes:
 #
-# Thin by design: this script only bootstraps; ALL subsequent runtime
-# management (install/update/workload) goes through `z42 install` once z42
-# is running. Do NOT add features here — keep it minimal so migration to
-# a native launcher (NativeAOT, deferred) is cheap.
+#   Portable (default): extract the raw package to a single flat directory.
+#   Managed (--system): structured bin/launcher/runtimes layout + PATH hint.
 #
-# Version comes from versions.toml [toolchain.z42].launcher:
-#   "nightly" (default) → tag `nightly`; re-download when the release changes
-#   "0.1.0"             → tag `v0.1.0`;  download once (immutable)
-#
-# Download strategy (manifest-first, SHA256SUMS fallback):
-#   1. Try release-index.json from the release — provides archive name + sha256
-#      per RID, and a published timestamp for nightly staleness (no GitHub API).
-#   2. If release-index.json absent (older releases), fall back to the
-#      naming convention (z42-<ver>-<rid>.tar.gz) + SHA256SUMS best-effort.
-#   The fallback is a compatibility shim; once all active channels publish
-#   release-index.json it will be removed (install-legacy-sha256sums-fallback).
-#
-# Windows: use install-z42.bat (.zip). macOS Finder: double-click
-# install-z42.command (which execs this).
+# For usage, run:  install-z42.sh --help
 set -euo pipefail
 
+# ── stream setup ─────────────────────────────────────────────────────────────
+# Use stream 3 for user-facing output so say() / say_verbose() don't pollute
+# return values from functions that write to stdout. Pattern from dotnet-install.
+exec 3>&1
+
+# ── color setup ──────────────────────────────────────────────────────────────
+bold="" normal="" red="" green="" yellow="" cyan="" gray=""
+if [ -t 1 ] && command -v tput >/dev/null 2>&1; then
+  ncolors=$(tput colors 2>/dev/null || echo 0)
+  if [ -n "$ncolors" ] && [ "$ncolors" -ge 8 ]; then
+    bold="$(tput bold   || echo)"
+    normal="$(tput sgr0  || echo)"
+    red="$(tput setaf 1  || echo)"
+    green="$(tput setaf 2 || echo)"
+    yellow="$(tput setaf 3 || echo)"
+    cyan="$(tput setaf 6  || echo)"
+    gray="$(tput setaf 8  || echo)"  # dim / dark gray on 256-color terminals
+  fi
+fi
+
+# ── output helpers ────────────────────────────────────────────────────────────
+say()         { printf "%b\n" "${cyan}install-z42:${normal} $1" >&3; }
+say_ok()      { printf "%b\n" "${green}install-z42:${normal} $1" >&3; }
+say_warn()    { printf "%b\n" "${yellow}install-z42: Warning:${normal} $1" >&3; }
+say_err()     { printf "%b\n" "${red}install-z42: Error:${normal} $1" >&2; }
+say_verbose() { if [ "$VERBOSE" = "1" ]; then printf "%b\n" "${gray}  [verbose] $1${normal}" >&3; fi; }
+
+# ── help ──────────────────────────────────────────────────────────────────────
+_help() {
+  cat >&3 <<EOF
+${bold}install-z42.sh${normal} — download and install the z42 language runtime
+
+${bold}USAGE${normal}
+  install-z42.sh [OPTIONS]
+
+${bold}OPTIONS${normal}
+  ${bold}--version${normal} <version>   Version to install.  Default: read from
+                         versions.toml [toolchain.z42].launcher.
+                         Pass "nightly" for the latest nightly build,
+                         or a semver string like "0.3.0" for a stable release.
+
+  ${bold}--dest${normal} <dir>          Directory to install into.
+                         Default (portable): <repo>/.z42
+                         Default (--system): \$Z42_HOME  or  ~/.z42
+
+  ${bold}--system${normal}             Managed install with structured layout:
+                           <dest>/bin/z42            trampoline on PATH
+                           <dest>/launcher/          launcher runtime
+                           <dest>/runtimes/<ver>/    registered version
+                           <dest>/config.toml        default version
+                         Registers the version via \`z42 link\` + \`z42 default\`.
+                         Use \`z42 self-update\` to keep the launcher current.
+
+  ${bold}--dry-run${normal}            Print what would be downloaded and installed,
+                         but do not actually download or write any files.
+
+  ${bold}--no-path${normal}            Suppress the PATH suggestion printed after a
+                         --system install.  Useful for scripted/CI invocations.
+
+  ${bold}--verbose${normal}            Enable verbose diagnostic output.
+
+  ${bold}--help${normal}, ${bold}-h${normal}          Show this help message.
+
+${bold}INSTALL MODES${normal}
+  ${bold}Portable${normal} (default)
+    Extracts the package to a single flat directory.
+    Entry: <dest>/z42  — add <dest> to PATH or invoke directly.
+    Ideal for project-local bootstrap (.z42/ beside the repo).
+
+  ${bold}Managed${normal} (--system)
+    Installs into a Z42_HOME-style root that the launcher understands.
+    Multiple runtime versions can coexist under <dest>/runtimes/.
+    Add <dest>/bin to your shell's PATH; \`z42 run app.zpkg\` then works
+    from any directory.
+
+${bold}EXAMPLES${normal}
+  # Bootstrap the project-local .z42 (most common dev usage):
+  ./scripts/install-z42.sh
+
+  # Bootstrap a specific version:
+  ./scripts/install-z42.sh --version 0.3.0
+
+  # Global managed install, then add to PATH:
+  ./scripts/install-z42.sh --system
+  export PATH="\$HOME/.z42/bin:\$PATH"
+
+  # Managed install to a custom directory:
+  ./scripts/install-z42.sh --dest /opt/z42 --system
+
+  # Portable install to a CI cache directory:
+  ./scripts/install-z42.sh --dest /tmp/z42-ci
+
+  # Preview what nightly would install without writing anything:
+  ./scripts/install-z42.sh --version nightly --dry-run
+
+${bold}NOTES${normal}
+  Version source: versions.toml [toolchain.z42].launcher  (override with --version).
+  SHA256:         verified from release-index.json or SHA256SUMS.
+  Staleness:      nightly re-downloads only when the published timestamp changes.
+  Windows:        use install-z42.bat (supports the same flags).
+  macOS Finder:   double-click install-z42.command (runs this script without args).
+
+EOF
+}
+
+# ── default option values ─────────────────────────────────────────────────────
+SYSTEM_INSTALL=0
+USER_DEST=""
+VERSION_OVERRIDE=""
+DRY_RUN=0
+NO_PATH=0
+VERBOSE=0
+
+# ── parse flags ───────────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --system)             SYSTEM_INSTALL=1; shift ;;
+    --dest)               USER_DEST="${2:-}"; shift 2 ;;
+    --dest=*)             USER_DEST="${1#--dest=}"; shift ;;
+    --version)            VERSION_OVERRIDE="${2:-}"; shift 2 ;;
+    --version=*)          VERSION_OVERRIDE="${1#--version=}"; shift ;;
+    --dry-run)            DRY_RUN=1; shift ;;
+    --no-path)            NO_PATH=1; shift ;;
+    --verbose)            VERBOSE=1; shift ;;
+    --help|-h)            _help; exit 0 ;;
+    *) say_err "unknown flag: $1  (try --help)"; exit 1 ;;
+  esac
+done
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="$REPO/.z42"
 SLUG="codesigner-ui/z42"
+
+if [ $SYSTEM_INSTALL -eq 1 ]; then
+  DEST="${USER_DEST:-${Z42_HOME:-$HOME/.z42}}"
+else
+  DEST="${USER_DEST:-$REPO/.z42}"
+fi
+
 STAMP="$DEST/.bootstrap-stamp"
 
-# ── 1. version from versions.toml [toolchain.z42].launcher ──────────────────
-VER="$(awk '
-  /^\[toolchain\.z42\]/ {inblock=1; next}
-  /^\[/ {inblock=0}
-  inblock && /^launcher/ {split($0, a, "\""); print a[2]; exit}
-' "$REPO/versions.toml" 2>/dev/null)"
-VER="${VER:-nightly}"
+# ── 1. version ────────────────────────────────────────────────────────────────
+if [ -n "$VERSION_OVERRIDE" ]; then
+  VER="$VERSION_OVERRIDE"
+  say_verbose "version: $VER (--version override)"
+else
+  VER="$(awk '
+    /^\[toolchain\.z42\]/ {inblock=1; next}
+    /^\[/ {inblock=0}
+    inblock && /^launcher/ {split($0, a, "\""); print a[2]; exit}
+  ' "$REPO/versions.toml" 2>/dev/null)"
+  VER="${VER:-nightly}"
+  say_verbose "version: $VER (from versions.toml)"
+fi
 if [ "$VER" = "nightly" ]; then TAG="nightly"; else TAG="v$VER"; fi
 
-# ── 2. host RID ─────────────────────────────────────────────────────────────
+# ── 2. host RID ───────────────────────────────────────────────────────────────
 os="$(uname -s)"; arch="$(uname -m)"
 case "$os/$arch" in
   Darwin/arm64)              RID="macos-arm64" ;;
   Linux/x86_64)              RID="linux-x64" ;;
   Linux/aarch64|Linux/arm64) RID="linux-arm64" ;;
-  *) echo "install-z42: unsupported host $os/$arch" >&2
-     echo "  (Windows: use install-z42.bat; supported: macos-arm64 / linux-x64 / linux-arm64)" >&2
-     exit 1 ;;
+  *)
+    say_err "unsupported host $os/$arch"
+    printf "%b\n" "  Windows: use install-z42.bat  |  supported: macos-arm64 / linux-x64 / linux-arm64" >&2
+    exit 1 ;;
 esac
+say_verbose "rid: $RID"
 
-# ── 3. pinned-version fast path: skip if already installed ──────────────────
-# (no network access for pinned versions that are already present)
+# ── 3. pinned-version fast path ───────────────────────────────────────────────
 if [ "$VER" != "nightly" ] && [ -f "$STAMP" ] \
     && grep -q "^$VER:$RID:" "$STAMP" 2>/dev/null; then
-  echo "install-z42: $VER / $RID already installed"
+  say_ok "$VER / $RID already installed  (${DEST})"
   exit 0
 fi
 
-# ── 4. resolve archive + sha256 + staleness id ──────────────────────────────
-# Minimal JSON field extractors (no jq; manifest lines are key: "value" pairs)
-_manifest_str() {   # _manifest_str <json> <key>  → first matching string value
+# ── 4. resolve archive + sha256 + staleness id ────────────────────────────────
+_manifest_str() {
   printf '%s' "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
     | head -1 | sed -E 's/.*"[^"]*"[[:space:]]*:[[:space:]]*"([^"]*)"/\1/'
 }
-_rid_field() {      # _rid_field <json> <rid> <field>
+_rid_field() {
   printf '%s' "$1" | grep "\"$2\"" \
     | grep -o "\"$3\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
     | sed -E 's/.*"[^"]*"[[:space:]]*:[[:space:]]*"([^"]*)"/\1/'
 }
 
 MANIFEST_URL="https://github.com/$SLUG/releases/download/$TAG/release-index.json"
+say_verbose "fetching manifest: $MANIFEST_URL"
 MANIFEST_JSON=""
 MANIFEST_JSON="$(curl -fsSL "$MANIFEST_URL" 2>/dev/null)" || MANIFEST_JSON=""
 
@@ -82,28 +207,27 @@ MANIFEST_SHA=""
 WANT=""
 
 if [ -n "$MANIFEST_JSON" ]; then
-  # ── 4a. manifest path ─────────────────────────────────────────────────────
   MANIFEST_PUBLISHED="$(_manifest_str "$MANIFEST_JSON" "published")"
   ASSET="$(_rid_field "$MANIFEST_JSON" "$RID" "archive")"
   MANIFEST_SHA="$(_rid_field "$MANIFEST_JSON" "$RID" "sha256")"
 
   if [ -z "$ASSET" ]; then
-    echo "install-z42: RID '$RID' not found in release-index.json" >&2
-    echo "  (this RID may not be a supported host runtime)" >&2
+    say_err "RID '$RID' not found in release-index.json"
+    printf "%b\n" "  (this RID may not be supported — see --help for the list)" >&2
     exit 1
   fi
 
-  # Staleness: use manifest published timestamp (no GitHub API call needed)
   WANT="$VER:$RID:${MANIFEST_PUBLISHED:-unknown}"
   if [ -f "$STAMP" ] && [ -n "$MANIFEST_PUBLISHED" ] \
       && [ "$(cat "$STAMP" 2>/dev/null)" = "$WANT" ]; then
-    echo "install-z42: .z42 up to date ($VER / $RID)"
+    say_ok "already up to date  ($VER / $RID,  published ${MANIFEST_PUBLISHED})"
     exit 0
   fi
   DOWNLOAD_NOTE="[manifest]"
+  say_verbose "manifest: asset=$ASSET  published=${MANIFEST_PUBLISHED:-?}"
 
 else
-  # ── 4b. fallback: naming convention + SHA256SUMS (legacy releases) ────────
+  say_verbose "manifest unavailable — using SHA256SUMS fallback"
   ASSET="z42-$VER-$RID.tar.gz"
 
   ID=""
@@ -115,58 +239,135 @@ else
   fi
   WANT="$VER:$RID:${ID:-unknown}"
   if [ -f "$STAMP" ] && [ -n "$ID" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$WANT" ]; then
-    echo "install-z42: .z42 up to date ($VER / $RID)"
+    say_ok "already up to date  ($VER / $RID)"
     exit 0
   fi
   DOWNLOAD_NOTE="[SHA256SUMS fallback]"
 fi
 
-# ── 5. download ──────────────────────────────────────────────────────────────
 URL="https://github.com/$SLUG/releases/download/$TAG/$ASSET"
-echo "install-z42: fetching $ASSET ($TAG) → $DEST  $DOWNLOAD_NOTE"
-TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-curl -fSL "$URL" -o "$TMP/$ASSET" || { echo "install-z42: download failed: $URL" >&2; exit 1; }
 
-# ── 6. verify SHA256 ─────────────────────────────────────────────────────────
+# ── 5. dry-run exit ───────────────────────────────────────────────────────────
+if [ $DRY_RUN -eq 1 ]; then
+  mode="portable"
+  [ $SYSTEM_INSTALL -eq 1 ] && mode="managed (--system)"
+  say "Dry run — no files written."
+  printf "%b\n" "  version:  ${bold}$VER${normal}  ($TAG)" >&3
+  printf "%b\n" "  rid:      $RID" >&3
+  printf "%b\n" "  asset:    $ASSET  $DOWNLOAD_NOTE" >&3
+  printf "%b\n" "  url:      $URL" >&3
+  printf "%b\n" "  dest:     $DEST  ($mode)" >&3
+  exit 0
+fi
+
+# ── 6. download ───────────────────────────────────────────────────────────────
+say "Downloading  ${bold}$ASSET${normal}  (${TAG})  →  $DEST  $DOWNLOAD_NOTE"
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+curl -fSL "$URL" -o "$TMP/$ASSET" \
+  || { say_err "download failed: $URL"; exit 1; }
+
+# ── 7. verify SHA256 ──────────────────────────────────────────────────────────
 _sha256() {
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
   else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
 
 if [ -n "$MANIFEST_SHA" ]; then
-  # Strict: sha256 from manifest
   got="$(_sha256 "$TMP/$ASSET")"
+  say_verbose "sha256: expected=$MANIFEST_SHA  got=$got"
   [ "$MANIFEST_SHA" = "$got" ] \
-    || { echo "install-z42: SHA256 mismatch for $ASSET" >&2; exit 1; }
-  echo "install-z42: SHA256 ok"
+    || { say_err "SHA256 mismatch for $ASSET"; exit 1; }
+  say "  ${green}✓${normal} SHA256 verified"
 else
-  # Best-effort: from SHA256SUMS (may be absent on older releases)
   if curl -fsSL "https://github.com/$SLUG/releases/download/$TAG/SHA256SUMS" \
       -o "$TMP/SHA256SUMS" 2>/dev/null; then
     line="$(grep " $ASSET\$" "$TMP/SHA256SUMS" || grep "  $ASSET\$" "$TMP/SHA256SUMS" || true)"
     if [ -n "$line" ]; then
       want_hash="${line%% *}"
       got="$(_sha256 "$TMP/$ASSET")"
+      say_verbose "sha256 (SHA256SUMS): expected=$want_hash  got=$got"
       [ "$want_hash" = "$got" ] \
-        || { echo "install-z42: SHA256 mismatch for $ASSET" >&2; exit 1; }
-      echo "install-z42: SHA256 ok"
+        || { say_err "SHA256 mismatch for $ASSET"; exit 1; }
+      say "  ${green}✓${normal} SHA256 verified  (SHA256SUMS)"
+    else
+      say_warn "SHA256SUMS found but no entry for $ASSET — skipping integrity check"
     fi
+  else
+    say_warn "SHA256SUMS not available — skipping integrity check"
   fi
 fi
 
-# ── 7. extract → install ─────────────────────────────────────────────────────
+# ── 8. extract + install ──────────────────────────────────────────────────────
+say "Extracting..."
 mkdir -p "$TMP/pkg"
 tar -xzf "$TMP/$ASSET" -C "$TMP/pkg"
 
-rm -rf "$DEST"; mkdir -p "$DEST"
-cp -R "$TMP/pkg"/. "$DEST"/
-# GitHub Actions artifact upload/download strips the executable bit; restore it.
-for b in "$DEST/z42" "$DEST/bin/z42" "$DEST/bin/z42vm" "$DEST/bin/z42c"; do
-  [ -f "$b" ] && chmod +x "$b" 2>/dev/null || true
-done
-echo "$WANT" > "$STAMP"
+_restore_exec() {
+  local b; for b in "$@"; do [ -f "$b" ] && chmod +x "$b" 2>/dev/null || true; done
+}
 
-# Entry: post launcher-at-package-root the trampoline is at .z42/z42.
-ENTRY="$DEST/z42"; [ -f "$ENTRY" ] || ENTRY="$DEST/bin/z42"
-echo "install-z42: installed $VER / $RID → $DEST"
-echo "  entry: $ENTRY   (add '$DEST' to PATH, or run via \$REPO/.z42/z42)"
+if [ $SYSTEM_INSTALL -eq 1 ]; then
+  # ── Managed install ──────────────────────────────────────────────────────
+  vm_name="z42vm"; tramp="z42"; z42c_bin="z42c"; apphost_bin="apphost"
+  [ -f "$TMP/pkg/bin/z42vm.exe" ] \
+    && { vm_name="z42vm.exe"; tramp="z42.exe"; z42c_bin="z42c.exe"; apphost_bin="apphost.exe"; }
+
+  mkdir -p "$DEST/bin" "$DEST/launcher"
+
+  # Trampoline → $DEST/bin/z42 (goes on PATH)
+  cp -f "$TMP/pkg/$tramp" "$DEST/bin/$tramp"
+  _restore_exec "$DEST/bin/$tramp"
+
+  # Compiler (optional)
+  if [ -f "$TMP/pkg/bin/$z42c_bin" ]; then
+    cp -f "$TMP/pkg/bin/$z42c_bin" "$DEST/bin/$z42c_bin"
+    _restore_exec "$DEST/bin/$z42c_bin"
+  fi
+
+  # Launcher runtime: z42vm + launcher.zpkg + libs
+  cp -f "$TMP/pkg/bin/$vm_name" "$DEST/launcher/$vm_name"
+  _restore_exec "$DEST/launcher/$vm_name"
+  cp -f "$TMP/pkg/launcher.zpkg" "$DEST/launcher/launcher.zpkg"
+  rm -rf "$DEST/launcher/libs"; cp -R "$TMP/pkg/libs" "$DEST/launcher/libs"
+
+  # apphost stub template (for `z42 apphost build`)
+  if [ -f "$TMP/pkg/bin/$apphost_bin" ]; then
+    cp -f "$TMP/pkg/bin/$apphost_bin" "$DEST/launcher/$apphost_bin"
+    _restore_exec "$DEST/launcher/$apphost_bin"
+  fi
+
+  # Register version + set default
+  say_verbose "running: z42 link $DEST/launcher --as $VER"
+  Z42_HOME="$DEST" "$DEST/bin/$tramp" link "$DEST/launcher" --as "$VER" >/dev/null
+  Z42_HOME="$DEST" "$DEST/bin/$tramp" default "$VER" >/dev/null
+
+  echo "$WANT" > "$STAMP"
+  say_ok "Installed  ${bold}$VER${normal} / $RID  →  $DEST  (managed)"
+
+  if [ $NO_PATH -eq 0 ]; then
+    case ":$PATH:" in
+      *":$DEST/bin:"*) say "  \$PATH already contains ${bold}$DEST/bin${normal}" ;;
+      *)
+        printf "%b\n" "" >&3
+        printf "%b\n" "  ${bold}To activate z42, add to your shell profile:${normal}" >&3
+        printf "%b\n" "    ${yellow}export PATH=\"$DEST/bin:\$PATH\"${normal}" >&3
+        printf "%b\n" "" >&3
+        printf "%b\n" "  Then restart your shell (or run the export above), and:" >&3
+        printf "%b\n" "    ${bold}z42 run <app.zpkg>${normal}" >&3
+        printf "%b\n" "" >&3
+        printf "%b\n" "  To update later:  ${bold}z42 self-update${normal}" >&3
+    esac
+  fi
+
+else
+  # ── Portable install ─────────────────────────────────────────────────────
+  rm -rf "$DEST"; mkdir -p "$DEST"
+  cp -R "$TMP/pkg"/. "$DEST"/
+  # GitHub Actions artifact upload/download strips the executable bit.
+  _restore_exec "$DEST/z42" "$DEST/bin/z42" "$DEST/bin/z42vm" "$DEST/bin/z42c"
+  echo "$WANT" > "$STAMP"
+
+  ENTRY="$DEST/z42"; [ -f "$ENTRY" ] || ENTRY="$DEST/bin/z42"
+  say_ok "Installed  ${bold}$VER${normal} / $RID  →  $DEST  (portable)"
+  say  "  entry: ${bold}$ENTRY${normal}   (add ${bold}$DEST${normal} to PATH, or run via \$REPO/.z42/z42)"
+fi
