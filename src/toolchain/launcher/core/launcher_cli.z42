@@ -80,6 +80,10 @@ SubcommandRouter _launcherRoot() {
     uninst.AddPositional("version", "installed version");
     root.Add("uninstall", "remove an installed runtime", uninst);
 
+    ArgParser selfup = new ArgParser("z42 self-update", "update the installed launcher");
+    selfup.AddOption("channel", "", "release channel or version (default: nightly)", "");
+    root.Add("self-update", "update the installed launcher", selfup);
+
     root.AddRouter("apphost", "make a native apphost exe for an app", _apphostRouter());
 
     return root;
@@ -106,8 +110,9 @@ void _dispatchLauncher(CommandResolution res) {
     if (top == "default")   { _cmdDefault(r);  return; }
     if (top == "link")      { _cmdLink(r);     return; }
     if (top == "which")     { _cmdWhich(r);    return; }
-    if (top == "install")   { _cmdInstall(r);  return; }
-    if (top == "uninstall") { _cmdUninstall(r); return; }
+    if (top == "install")     { _cmdInstall(r);    return; }
+    if (top == "uninstall")   { _cmdUninstall(r);  return; }
+    if (top == "self-update") { _cmdSelfUpdate(r); return; }
     if (top == "apphost") {
         // p = ["apphost", "build"]
         Apphost.BuildOne(r.GetPositional(0), r.GetOption("out"));

@@ -1,0 +1,230 @@
+// z42 launcher — network commands (add-launcher-install, 2026-06-13).
+//
+// _cmdInstall   — download a runtime from GitHub Releases into runtimes/<ver>/.
+// _cmdSelfUpdate — replace the installed launcher at $Z42_HOME/launcher/ in-place.
+//
+// Both use manifest-first (release-index.json → per-RID archive + sha256) with
+// a SHA256SUMS fallback for older releases that predate the manifest.
+// Windows uses .zip (Zip.ExtractAllTo); everything else uses .tar.gz
+// (streaming Gzip.WrapRead + Tar.ExtractStream — no full-body decompression).
+namespace Z42Launcher;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+using Std.Json;
+using Std.Net.Http;
+using Std.Compression;
+using Std.Archive;
+using Std.Crypto;
+
+// ── install ───────────────────────────────────────────────────────────────────
+
+// z42 install <version|nightly>
+void _cmdInstall(ParseResult r) {
+    string ver = r.GetPositional(0);
+    if (ver.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 install <version|nightly>");
+        Environment.Exit(2);
+        return;
+    }
+    string rid = _hostRid();
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("z42: unsupported host (" + Platform.OS() + "/" + Platform.Arch() + ")");
+        Environment.Exit(2);
+        return;
+    }
+    string tag = (ver == "nightly") ? "nightly" : ("v" + ver);
+    string baseUrl = "https://github.com/codesigner-ui/z42/releases/download/" + tag;
+    bool isWindows = rid.StartsWith("windows");
+
+    string asset = "";
+    string sha = "";
+    string[] mf = _fetchManifest(baseUrl, rid);
+    asset = mf[0]; sha = mf[1];
+    if (asset.Length == 0) {
+        asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
+    }
+    if (sha.Length == 0) {
+        HttpClient hc2 = new HttpClient();
+        HttpResponse sums = hc2.Get(baseUrl + "/SHA256SUMS");
+        if (sums.IsSuccess()) { sha = _findSum(sums.BodyAsString(), asset); }
+    }
+
+    Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
+    HttpClient hc = new HttpClient();
+    HttpResponse resp = hc.Get(baseUrl + "/" + asset);
+    if (!resp.IsSuccess()) {
+        ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
+        Environment.Exit(1);
+        return;
+    }
+    byte[] body = resp.Body;
+    if (sha.Length > 0) {
+        if (Sha256.HashHex(body) != sha) {
+            ConsoleError.WriteLine("z42: checksum mismatch for " + asset);
+            Environment.Exit(1);
+            return;
+        }
+        Console.WriteLine("  ✓ sha256 ok");
+    }
+
+    string runtimes = _runtimesDir();
+    Directory.Create(runtimes);
+    string staging = Path.Join(runtimes, "." + ver + ".stage");
+    if (Directory.Exists(staging)) { Directory.Delete(staging, true); }
+    Directory.Create(staging);
+    _extractArchive(body, isWindows, staging);
+
+    string target = Path.Join(runtimes, ver);
+    if (Directory.Exists(target)) { Directory.Delete(target, true); }
+    File.Move(staging, target);
+    Console.WriteLine("installed " + ver + " → " + target);
+}
+
+// ── self-update ───────────────────────────────────────────────────────────────
+
+// z42 self-update [--channel <ver>]
+// Replaces $Z42_HOME/launcher/ with a freshly downloaded release package.
+// Not supported in portable mode (Z42_PORTABLE_VM set) — update via your
+// distribution channel in that case.
+void _cmdSelfUpdate(ParseResult r) {
+    string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (portableVm.Length > 0) {
+        ConsoleError.WriteLine("z42: portable mode — update the package via your distribution channel.");
+        Environment.Exit(2);
+        return;
+    }
+    string launcherDir = Path.Join(_home(), "launcher");
+    if (!Directory.Exists(launcherDir)) {
+        ConsoleError.WriteLine("z42: launcher not installed at " + launcherDir + "; run install-z42.sh to bootstrap.");
+        Environment.Exit(2);
+        return;
+    }
+    string chanOpt = r.GetOption("channel");
+    string ver = chanOpt.Length > 0 ? chanOpt : "nightly";
+    string rid = _hostRid();
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("z42: unsupported host (" + Platform.OS() + "/" + Platform.Arch() + ")");
+        Environment.Exit(2);
+        return;
+    }
+    string tag = (ver == "nightly") ? "nightly" : ("v" + ver);
+    string baseUrl = "https://github.com/codesigner-ui/z42/releases/download/" + tag;
+    bool isWindows = rid.StartsWith("windows");
+
+    string asset = "";
+    string sha = "";
+    string[] mf = _fetchManifest(baseUrl, rid);
+    asset = mf[0]; sha = mf[1];
+    if (asset.Length == 0) {
+        asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
+    }
+    if (sha.Length == 0) {
+        HttpClient hc2 = new HttpClient();
+        HttpResponse sums = hc2.Get(baseUrl + "/SHA256SUMS");
+        if (sums.IsSuccess()) { sha = _findSum(sums.BodyAsString(), asset); }
+    }
+
+    Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
+    HttpClient hc = new HttpClient();
+    HttpResponse resp = hc.Get(baseUrl + "/" + asset);
+    if (!resp.IsSuccess()) {
+        ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
+        Environment.Exit(1);
+        return;
+    }
+    byte[] body = resp.Body;
+    if (sha.Length > 0) {
+        if (Sha256.HashHex(body) != sha) {
+            ConsoleError.WriteLine("z42: checksum mismatch for " + asset);
+            Environment.Exit(1);
+            return;
+        }
+        Console.WriteLine("  ✓ sha256 ok");
+    }
+
+    string staging = Path.Join(_home(), ".launcher.stage");
+    if (Directory.Exists(staging)) { Directory.Delete(staging, true); }
+    Directory.Create(staging);
+    _extractArchive(body, isWindows, staging);
+
+    Directory.Delete(launcherDir, true);
+    File.Move(staging, launcherDir);
+    Console.WriteLine("launcher updated → " + launcherDir);
+    Console.WriteLine("restart z42 to use the new version.");
+}
+
+// ── shared helpers ────────────────────────────────────────────────────────────
+
+// Std.Platform OS/Arch → release RID (aarch64→arm64, x86_64→x64). "" if unsupported.
+string _hostRid() {
+    string os = Platform.OS();
+    string arch = Platform.Arch();
+    string a = "";
+    if (arch == "aarch64") { a = "arm64"; }
+    else if (arch == "x86_64") { a = "x64"; }
+    else { return ""; }
+    if (os == "macos" || os == "linux" || os == "windows") { return os + "-" + a; }
+    return "";
+}
+
+// Fetch release-index.json and return [archive, sha256] for rid.
+// Returns ["", ""] when the manifest is absent, malformed, or has no RID entry.
+string[] _fetchManifest(string baseUrl, string rid) {
+    string[] empty = new string[2];
+    empty[0] = ""; empty[1] = "";
+    HttpClient hc = new HttpClient();
+    try {
+        HttpResponse resp = hc.Get(baseUrl + "/release-index.json");
+        if (!resp.IsSuccess()) { return empty; }
+        JsonValue m = JsonValue.Parse(resp.BodyAsString());
+        if (!m.IsObject() || !m.ContainsKey("runtimes")) { return empty; }
+        JsonValue rts = m.Get("runtimes");
+        if (!rts.IsObject() || !rts.ContainsKey(rid)) { return empty; }
+        JsonValue ri = rts.Get(rid);
+        if (!ri.IsObject()) { return empty; }
+        string archive = "";
+        string sha = "";
+        if (ri.ContainsKey("archive")) {
+            JsonValue av = ri.Get("archive");
+            if (av.IsString()) { archive = av.AsString(); }
+        }
+        if (ri.ContainsKey("sha256")) {
+            JsonValue sv = ri.Get("sha256");
+            if (sv.IsString()) { sha = sv.AsString(); }
+        }
+        string[] result = new string[2];
+        result[0] = archive; result[1] = sha;
+        return result;
+    } catch (Exception e) { return empty; }
+}
+
+// Extract body into destDir. Windows archives are .zip; others are .tar.gz
+// with streaming decode (Gzip.WrapRead → Tar.ExtractStream, no full decompress).
+void _extractArchive(byte[] body, bool isWindows, string destDir) {
+    if (isWindows) {
+        Zip.ExtractAllTo(body, destDir);
+    } else {
+        var ms = new MemoryStream(body);
+        Stream gz = Gzip.WrapRead(ms);
+        Tar.ExtractStream(gz, destDir);
+    }
+}
+
+// SHA256SUMS body ("<hex>  <filename>" per line) → hex for `asset`, or "".
+string _findSum(string text, string asset) {
+    string rest = text;
+    while (rest.Length > 0) {
+        string ln;
+        int nl = rest.IndexOf("\n");
+        if (nl < 0) { ln = rest; rest = ""; }
+        else { ln = rest.Substring(0, nl); rest = rest.Substring(nl + 1); }
+        ln = ln.Trim();
+        if (ln.Length > 0 && ln.EndsWith(asset)) {
+            int sp = ln.IndexOf(" ");
+            if (sp > 0) { return ln.Substring(0, sp); }
+        }
+    }
+    return "";
+}
