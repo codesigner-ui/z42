@@ -12,7 +12,7 @@
 | `runtime` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `make_type_from_name` 识别 `[]` 后缀 → 建 array Type（`__isArray`/`__elementName`）；`__type_element` builtin；object.rs arr.GetType 标 IsArray。无格式 bump |
 | `stdlib` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `Std.Type` 加 `IsArray` + `GetElementType()`。无格式 bump |
 | `z42c` | **port-z42c-statics-arrays（DRAFT 待审）** | 2026-06-12 | 自举首包临门：G3 静态字段（StaticGet/Set+__static_init__ 首位合成）+ G4 数组创建（ArrayNew 0x80）→ sacheck 对账 7/7 + **z42c.core 自编译冒烟 gate 步** |
-| `toolchain` | **add-launcher-install**（开工中） | 2026-06-13 | launcher P2：`z42 install/uninstall/self-update` + GitHub Releases 下载 + 运行时版本注册 |
+| `toolchain` | —（空闲） | — | — |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
@@ -42,6 +42,7 @@
 | ~~add-attribute-reflection~~ | compiler + runtime + stdlib —— ✅ C3a（class-level）已归档 2026-06-09（feat 56d9cefb + 1377bfdb）|
 | ~~add-attribute-reflection-methods~~ | compiler + runtime + stdlib —— ✅ C3b（method-level）已归档 2026-06-09（SIGS attr refs，zbc 1.11/zpkg 0.13）|
 | ~~add-apphost~~ | toolchain —— ✅ 已归档 2026-06-09（feat a3720a16；per-app 原生 apphost，framework-dependent + 本地优先 + macOS 重签名）|
+| ~~add-launcher-install~~ | toolchain —— ✅ 已归档 2026-06-13（`z42 install/self-update`；manifest-first + SHA256 + tgz/zip 流式解压；install-z42.sh --system/--dest/--dry-run/--verbose；删 install.sh；017c8116）|
 | ~~fix-dist-runner-test-dirs~~ | toolchain —— ✅ 已归档 2026-06-09（dist runner 跳过 [Test]-based lib 测试 dir，修 secp256k1 误失败；镜像 GoldenTests.ContainsTestRunnerAttribute）|
 | ~~fix-fqn-class-resolution~~ | compiler + stdlib —— ✅ 已归档 2026-06-09（ResolveMemberType namespace-aware FQN→类；移除 C3b FindByType workaround；GoldenTests 1545/1545）|
 | ~~add-reflection-properties~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（`Type.GetProperties()` + `PropertyInfo`，纯 runtime 派生自 get_/set_，无 zbc 格式 bump；GoldenTests 1549/1549）|

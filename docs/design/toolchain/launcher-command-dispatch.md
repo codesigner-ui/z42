@@ -96,3 +96,4 @@ $Z42_HOME/tools/                           全局用户工具（类 ~/.cargo/bin
 - workload 包格式（manifest + packs 布局、依赖/版本解析、签名）。
 - 命令版本冲突/多版本共存策略；`z42 commands list` 自省。
 - 与 `z42up`（roadmap 1.0 版本管理工具）的边界。
+- **`launcher-future-self-update-windows`**：Windows 上 `z42 self-update` 时 `Directory.Delete($Z42_HOME/launcher/)` 因 `z42.exe`（父进程等 z42vm）持有文件锁而失败。待 rename-then-copy 策略或 PowerShell 延迟替换实现。当前 workaround：Windows 用户改用 `install-z42.bat --system`。见 `docs/design/runtime/launcher.md` 中的 `launcher-future-self-update-windows` 条目。
