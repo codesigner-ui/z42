@@ -12,7 +12,7 @@
 | `runtime` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `make_type_from_name` 识别 `[]` 后缀 → 建 array Type（`__isArray`/`__elementName`）；`__type_element` builtin；object.rs arr.GetType 标 IsArray。无格式 bump |
 | `stdlib` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `Std.Type` 加 `IsArray` + `GetElementType()`。无格式 bump |
 | `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
-| `toolchain` | **add-export-command（进行中）** | 2026-06-14 | `z42 export ios/android/wasm <project.z42.toml>`；`[platform.ios/android/wasm]` toml 配置；`runtimes/<rid>/<ver>/` 平台 SDK；`--rid` 追加到 install；launcher_export*.z42 新增四文件 |
+| `toolchain` | —（空闲）| — | ~~add-export-command~~ ✅ 已归档 2026-06-14（`z42 export ios/android/wasm`；`[platform.*]` toml 配置；`runtimes/<rid>/<ver>/` 平台 SDK；launcher_export*.z42 四文件；commit 0292c3a3）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
@@ -35,6 +35,7 @@
 | ~~port-z42c-statics-arrays~~ | z42c —— ✅ 已归档 2026-06-13（sacheck byte-identical；zbc 7/7；commit 3774faa4）|
 | inline-jit-safepoint-check | runtime（暂停，不占锁） |
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
+| ~~add-export-command~~ | toolchain —— ✅ 已归档 2026-06-14（`z42 export ios/android/wasm`；`[platform.*]` toml；`runtimes/<rid>/<ver>/` 平台 SDK；launcher_export*.z42 4 文件；0292c3a3）|
 | migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | ~~add-reflection-mvp~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（feat 30776fae）|
