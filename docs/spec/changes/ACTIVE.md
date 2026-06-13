@@ -12,7 +12,7 @@
 | `runtime` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `make_type_from_name` 识别 `[]` 后缀 → 建 array Type（`__isArray`/`__elementName`）；`__type_element` builtin；object.rs arr.GetType 标 IsArray。无格式 bump |
 | `stdlib` | **add-reflection-array-element-type（DRAFT 待审）** | 2026-06-11 | `Std.Type` 加 `IsArray` + `GetElementType()`。无格式 bump |
 | `z42c` | **port-z42c-statics-arrays（DRAFT 待审）** | 2026-06-12 | 自举首包临门：G3 静态字段（StaticGet/Set+__static_init__ 首位合成）+ G4 数组创建（ArrayNew 0x80）→ sacheck 对账 7/7 + **z42c.core 自编译冒烟 gate 步** |
-| `toolchain` | port-z42c-core | 2026-06-07 | xtask test compiler-z42 接入 z42-test-runner（足迹限 `xtask_compiler_z42.z42`，z42c 主线）。（migrate-xtask-launcher-to-std-cli 已归档 2026-06-10 释放协调共占。）|
+| `toolchain` | **add-launcher-install**（开工中） | 2026-06-13 | launcher P2：`z42 install/uninstall/self-update` + GitHub Releases 下载 + 运行时版本注册 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

@@ -1,6 +1,6 @@
 # Tasks: port-z42c-core — z42c.core 真实移植（increment 1：诊断地基）
 
-> 状态：🟡 进行中 | 创建：2026-06-07 | 子系统锁：z42c + toolchain（见 ACTIVE.md）
+> 状态：🟢 已完成 | 创建：2026-06-07 | 归档：2026-06-13 | 子系统锁：z42c + toolchain（已释放）
 > **变更说明：** 把 C# `z42.Core` 的诊断地基用 z42 重写，替换 B0 的 `CoreSkeleton` 占位。
 > **原因：** B 主线自举逐子系统实做的第一步；Lexer（下一子系统）依赖 Span/DiagnosticBag/DiagnosticCodes。
 > **类型：** port（实现既有行为，受限写法；非新语言特性）。架构见 [self-hosting.md](../../../design/compiler/self-hosting.md)。
