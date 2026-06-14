@@ -315,7 +315,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: z42-host-package-${{ matrix.os }}
-          path: artifacts/packages/z42-*-release/
+          path: artifacts/packages/
           retention-days: 14
           if-no-files-found: error
 
@@ -851,22 +851,23 @@ jobs:
         run: |
           echo "--- dist-raw top level ---"
           ls -la dist-raw/ || true
-          echo "--- z42-*-release dirs anywhere under dist-raw/ ---"
-          find dist-raw -type d -name 'z42-*-release' | sort || true
+          echo "--- z42-* dirs under dist-raw/ ---"
+          find dist-raw -maxdepth 1 -type d | sort || true
 
       - name: Layout + archive each RID package
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/packages artifacts/release
-          # Find package dirs regardless of nesting depth (upload-artifact v4
-          # may preserve or strip the source-path prefix depending on the
-          # upstream `path:` shape).
-          mapfile -t pkg_dirs < <(find dist-raw -type d -name 'z42-*-release' | sort -u)
-          [ "${#pkg_dirs[@]}" -gt 0 ] \
+          out="$(pwd)/artifacts/release"
+
+          # Find SDK package dirs (z42-*-release) at top level.
+          mapfile -t sdk_dirs < <(find dist-raw -maxdepth 1 -type d -name 'z42-*-release' | sort -u)
+          [ "${#sdk_dirs[@]}" -gt 0 ] \
               || { echo "error: no z42-*-release dirs under dist-raw/"; find dist-raw -maxdepth 3 -type d; exit 1; }
-          echo "→ Found ${#pkg_dirs[@]} package dirs"
-          for src in "${pkg_dirs[@]}"; do
+          echo "→ Found ${#sdk_dirs[@]} SDK package dirs"
+
+          for src in "${sdk_dirs[@]}"; do
               name=$(basename "$src")          # z42-<v>-<rid>-release
               stripped=${name#z42-}            # <v>-<rid>-release
               stripped=${stripped%-release}    # <v>-<rid>
@@ -878,29 +879,43 @@ jobs:
               for candidate in linux-x64 linux-arm64 macos-arm64 windows-x64 \
                                iossim-arm64 ios-arm64 \
                                android-arm64 android-x64 browser-wasm; do
-                  if [[ "$stripped" == *-"$candidate" ]]; then
-                      rid="$candidate"
-                      break
-                  fi
+                  if [[ "$stripped" == *-"$candidate" ]]; then rid="$candidate"; break; fi
               done
               [ -n "$rid" ] || { echo "error: cannot infer RID from $name"; exit 1; }
-              # Rename to neutral version label so the download URL stays
-              # stable across commits.
+
+              # Rename to neutral version label so the download URL stays stable.
               new_name="z42-nightly-${rid}-release"
               dst="artifacts/packages/$new_name"
-              rm -rf "$dst"
-              cp -R "$src" "$dst"
+              rm -rf "$dst"; cp -R "$src" "$dst"
+
               if [ "$rid" = "windows-x64" ]; then
-                  archive="artifacts/release/z42-nightly-${rid}.zip"
                   # Archive contents directly (no top-level subdirectory).
                   # Use `zip` (not `tar -a`): GNU tar's zip output is incompatible
                   # with Windows Expand-Archive / Explorer on some tar versions.
-                  (cd "artifacts/packages/$new_name" && zip -r "../../release/z42-nightly-${rid}.zip" .)
+                  (cd "$dst" && zip -r "${out}/z42-nightly-${rid}.zip" .)
+                  echo "✓ sdk ${rid} → z42-nightly-${rid}.zip"
+                  for pkg_type in launcher runtime; do
+                      psrc=$(find dist-raw -maxdepth 1 -type d -name "z42-${pkg_type}-*-${rid}" | head -1)
+                      [ -d "$psrc" ] || { echo "error: missing ${pkg_type} package for ${rid}"; exit 1; }
+                      (cd "$psrc" && zip -r "${out}/z42-${pkg_type}-nightly-${rid}.zip" .)
+                      echo "✓ ${pkg_type} ${rid} → z42-${pkg_type}-nightly-${rid}.zip"
+                  done
+              elif [[ "$rid" == linux-* || "$rid" == macos-* ]]; then
+                  tar -C "$dst" -czf "${out}/z42-nightly-${rid}.tar.gz" .
+                  echo "✓ sdk ${rid} → z42-nightly-${rid}.tar.gz"
+                  for pkg_type in launcher runtime; do
+                      psrc=$(find dist-raw -maxdepth 1 -type d -name "z42-${pkg_type}-*-${rid}" | head -1)
+                      [ -d "$psrc" ] || { echo "error: missing ${pkg_type} package for ${rid}"; exit 1; }
+                      tar -C "$psrc" -czf "${out}/z42-${pkg_type}-nightly-${rid}.tar.gz" .
+                      echo "✓ ${pkg_type} ${rid} → z42-${pkg_type}-nightly-${rid}.tar.gz"
+                  done
               else
-                  archive="artifacts/release/z42-nightly-${rid}.tar.gz"
-                  tar -C "artifacts/packages/$new_name" -czf "$archive" .
+                  # Platform RID — main package IS the platform runtime; publish runtime alias.
+                  tar -C "$dst" -czf "${out}/z42-nightly-${rid}.tar.gz" .
+                  echo "✓ sdk ${rid} → z42-nightly-${rid}.tar.gz"
+                  cp "${out}/z42-nightly-${rid}.tar.gz" "${out}/z42-runtime-nightly-${rid}.tar.gz"
+                  echo "✓ runtime alias: z42-runtime-nightly-${rid}"
               fi
-              echo "✓ ${rid} → $(basename "$archive") ($(du -h "$archive" | cut -f1))"
           done
 
       - name: Generate SHA256SUMS
@@ -908,7 +923,7 @@ jobs:
         run: |
           set -euo pipefail
           cd artifacts/release
-          shasum -a 256 z42-nightly-*.tar.gz z42-nightly-*.zip 2>/dev/null | sort -k2 > SHA256SUMS
+          shasum -a 256 z42-*.tar.gz z42-*.zip 2>/dev/null | sort -k2 > SHA256SUMS
           echo "--- SHA256SUMS ---"
           cat SHA256SUMS
 
@@ -919,15 +934,34 @@ jobs:
           ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           get_sha() { grep " $1$" artifacts/release/SHA256SUMS | awk '{print $1}'; }
-          sha_linux_x64="$(get_sha "z42-nightly-linux-x64.tar.gz")"
-          sha_linux_arm64="$(get_sha "z42-nightly-linux-arm64.tar.gz")"
-          sha_macos_arm64="$(get_sha "z42-nightly-macos-arm64.tar.gz")"
-          sha_windows_x64="$(get_sha "z42-nightly-windows-x64.zip")"
 
-          for pair in "linux-x64:$sha_linux_x64" "linux-arm64:$sha_linux_arm64" \
-                      "macos-arm64:$sha_macos_arm64" "windows-x64:$sha_windows_x64"; do
-            rid="${pair%%:*}"; sha="${pair#*:}"
-            [ -n "$sha" ] || { echo "release-index: missing sha256 for $rid" >&2; exit 1; }
+          # Desktop: sdk + launcher + runtime (3 archives each)
+          sha_sdk_lx64="$(get_sha  "z42-nightly-linux-x64.tar.gz")"
+          sha_ln_lx64="$(get_sha   "z42-launcher-nightly-linux-x64.tar.gz")"
+          sha_rt_lx64="$(get_sha   "z42-runtime-nightly-linux-x64.tar.gz")"
+          sha_sdk_la64="$(get_sha  "z42-nightly-linux-arm64.tar.gz")"
+          sha_ln_la64="$(get_sha   "z42-launcher-nightly-linux-arm64.tar.gz")"
+          sha_rt_la64="$(get_sha   "z42-runtime-nightly-linux-arm64.tar.gz")"
+          sha_sdk_mac="$(get_sha   "z42-nightly-macos-arm64.tar.gz")"
+          sha_ln_mac="$(get_sha    "z42-launcher-nightly-macos-arm64.tar.gz")"
+          sha_rt_mac="$(get_sha    "z42-runtime-nightly-macos-arm64.tar.gz")"
+          sha_sdk_win="$(get_sha   "z42-nightly-windows-x64.zip")"
+          sha_ln_win="$(get_sha    "z42-launcher-nightly-windows-x64.zip")"
+          sha_rt_win="$(get_sha    "z42-runtime-nightly-windows-x64.zip")"
+
+          # Platform: runtime alias only (main package = platform SDK = runtime)
+          sha_ios="$(get_sha       "z42-runtime-nightly-ios-arm64.tar.gz")"
+          sha_iossim="$(get_sha    "z42-runtime-nightly-iossim-arm64.tar.gz")"
+          sha_aarm64="$(get_sha    "z42-runtime-nightly-android-arm64.tar.gz")"
+          sha_ax64="$(get_sha      "z42-runtime-nightly-android-x64.tar.gz")"
+          sha_wasm="$(get_sha      "z42-runtime-nightly-browser-wasm.tar.gz")"
+
+          for var in sha_sdk_lx64 sha_ln_lx64 sha_rt_lx64 \
+                     sha_sdk_la64 sha_ln_la64 sha_rt_la64 \
+                     sha_sdk_mac  sha_ln_mac  sha_rt_mac  \
+                     sha_sdk_win  sha_ln_win  sha_rt_win  \
+                     sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm; do
+            [ -n "${!var}" ] || { echo "release-index: missing sha256 for $var" >&2; exit 1; }
           done
 
           jq -n \
@@ -936,10 +970,13 @@ jobs:
             --arg channel "nightly" \
             --arg tag "nightly" \
             --arg published "$ts" \
-            --arg sha_linux_x64   "$sha_linux_x64" \
-            --arg sha_linux_arm64 "$sha_linux_arm64" \
-            --arg sha_macos_arm64 "$sha_macos_arm64" \
-            --arg sha_windows_x64 "$sha_windows_x64" \
+            --arg sha_sdk_lx64  "$sha_sdk_lx64"  --arg sha_ln_lx64  "$sha_ln_lx64"  --arg sha_rt_lx64  "$sha_rt_lx64"  \
+            --arg sha_sdk_la64  "$sha_sdk_la64"  --arg sha_ln_la64  "$sha_ln_la64"  --arg sha_rt_la64  "$sha_rt_la64"  \
+            --arg sha_sdk_mac   "$sha_sdk_mac"   --arg sha_ln_mac   "$sha_ln_mac"   --arg sha_rt_mac   "$sha_rt_mac"   \
+            --arg sha_sdk_win   "$sha_sdk_win"   --arg sha_ln_win   "$sha_ln_win"   --arg sha_rt_win   "$sha_rt_win"   \
+            --arg sha_ios       "$sha_ios"       --arg sha_iossim   "$sha_iossim"   \
+            --arg sha_aarm64    "$sha_aarm64"    --arg sha_ax64     "$sha_ax64"     \
+            --arg sha_wasm      "$sha_wasm"      \
             '{
               schema: $schema,
               version: $version,
@@ -947,10 +984,31 @@ jobs:
               tag: $tag,
               published: $published,
               runtimes: {
-                "linux-x64":   { archive: "z42-nightly-linux-x64.tar.gz",   sha256: $sha_linux_x64 },
-                "linux-arm64": { archive: "z42-nightly-linux-arm64.tar.gz", sha256: $sha_linux_arm64 },
-                "macos-arm64": { archive: "z42-nightly-macos-arm64.tar.gz", sha256: $sha_macos_arm64 },
-                "windows-x64": { archive: "z42-nightly-windows-x64.zip",    sha256: $sha_windows_x64 }
+                "linux-x64":    {
+                  sdk:      { archive: "z42-nightly-linux-x64.tar.gz",           sha256: $sha_sdk_lx64 },
+                  launcher: { archive: "z42-launcher-nightly-linux-x64.tar.gz",  sha256: $sha_ln_lx64 },
+                  runtime:  { archive: "z42-runtime-nightly-linux-x64.tar.gz",   sha256: $sha_rt_lx64 }
+                },
+                "linux-arm64":  {
+                  sdk:      { archive: "z42-nightly-linux-arm64.tar.gz",          sha256: $sha_sdk_la64 },
+                  launcher: { archive: "z42-launcher-nightly-linux-arm64.tar.gz", sha256: $sha_ln_la64 },
+                  runtime:  { archive: "z42-runtime-nightly-linux-arm64.tar.gz",  sha256: $sha_rt_la64 }
+                },
+                "macos-arm64":  {
+                  sdk:      { archive: "z42-nightly-macos-arm64.tar.gz",          sha256: $sha_sdk_mac },
+                  launcher: { archive: "z42-launcher-nightly-macos-arm64.tar.gz", sha256: $sha_ln_mac },
+                  runtime:  { archive: "z42-runtime-nightly-macos-arm64.tar.gz",  sha256: $sha_rt_mac }
+                },
+                "windows-x64":  {
+                  sdk:      { archive: "z42-nightly-windows-x64.zip",             sha256: $sha_sdk_win },
+                  launcher: { archive: "z42-launcher-nightly-windows-x64.zip",    sha256: $sha_ln_win },
+                  runtime:  { archive: "z42-runtime-nightly-windows-x64.zip",     sha256: $sha_rt_win }
+                },
+                "ios-arm64":    { runtime: { archive: "z42-runtime-nightly-ios-arm64.tar.gz",     sha256: $sha_ios    } },
+                "iossim-arm64": { runtime: { archive: "z42-runtime-nightly-iossim-arm64.tar.gz",  sha256: $sha_iossim } },
+                "android-arm64":{ runtime: { archive: "z42-runtime-nightly-android-arm64.tar.gz", sha256: $sha_aarm64 } },
+                "android-x64":  { runtime: { archive: "z42-runtime-nightly-android-x64.tar.gz",  sha256: $sha_ax64   } },
+                "browser-wasm": { runtime: { archive: "z42-runtime-nightly-browser-wasm.tar.gz",  sha256: $sha_wasm  } }
               }
             }' > artifacts/release/release-index.json
           echo "--- release-index.json ---"
@@ -973,24 +1031,24 @@ jobs:
           - **Replaced on every push to main** — URL stays stable, contents change.
           - For tagged releases see [Releases](../../releases?q=v).
 
-          ## Downloads (host RIDs)
+          ## Downloads (host)
 
-          | Platform | Archive |
+          | Platform | SDK | Launcher | Runtime |
+          |----------|-----|----------|---------|
+          | Linux x64 | \`z42-nightly-linux-x64.tar.gz\` | \`z42-launcher-nightly-linux-x64.tar.gz\` | \`z42-runtime-nightly-linux-x64.tar.gz\` |
+          | Linux arm64 | \`z42-nightly-linux-arm64.tar.gz\` | \`z42-launcher-nightly-linux-arm64.tar.gz\` | \`z42-runtime-nightly-linux-arm64.tar.gz\` |
+          | macOS arm64 | \`z42-nightly-macos-arm64.tar.gz\` | \`z42-launcher-nightly-macos-arm64.tar.gz\` | \`z42-runtime-nightly-macos-arm64.tar.gz\` |
+          | Windows x64 | \`z42-nightly-windows-x64.zip\` | \`z42-launcher-nightly-windows-x64.zip\` | \`z42-runtime-nightly-windows-x64.zip\` |
+
+          ## Downloads (mobile + wasm runtime)
+
+          | Platform | Runtime |
           |----------|---------|
-          | Linux x64 | \`z42-nightly-linux-x64.tar.gz\` |
-          | Linux arm64 | \`z42-nightly-linux-arm64.tar.gz\` |
-          | macOS arm64 | \`z42-nightly-macos-arm64.tar.gz\` |
-          | Windows x64 | \`z42-nightly-windows-x64.zip\` |
-
-          ## Downloads (mobile + wasm)
-
-          | Platform | Archive |
-          |----------|---------|
-          | iOS arm64 (device) | \`z42-nightly-ios-arm64.tar.gz\` |
-          | iOS arm64 (simulator) | \`z42-nightly-iossim-arm64.tar.gz\` |
-          | Android arm64 | \`z42-nightly-android-arm64.tar.gz\` |
-          | Android x64 | \`z42-nightly-android-x64.tar.gz\` |
-          | Browser WASM | \`z42-nightly-browser-wasm.tar.gz\` |
+          | iOS arm64 (device) | \`z42-runtime-nightly-ios-arm64.tar.gz\` |
+          | iOS arm64 (simulator) | \`z42-runtime-nightly-iossim-arm64.tar.gz\` |
+          | Android arm64 | \`z42-runtime-nightly-android-arm64.tar.gz\` |
+          | Android x64 | \`z42-runtime-nightly-android-x64.tar.gz\` |
+          | Browser WASM | \`z42-runtime-nightly-browser-wasm.tar.gz\` |
 
           Verify: \`shasum -a 256 -c SHA256SUMS --ignore-missing\`
           EOF
@@ -998,4 +1056,4 @@ jobs:
           gh release create nightly --prerelease --target "$GITHUB_SHA" \
             --title "Nightly (main @ ${short_sha} · ${today})" \
             --notes "$notes" \
-            artifacts/release/SHA256SUMS artifacts/release/release-index.json artifacts/release/z42-nightly-*
+            artifacts/release/SHA256SUMS artifacts/release/release-index.json artifacts/release/z42-*
