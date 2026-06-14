@@ -33,6 +33,16 @@ string _home() {
     // z42 has no flow-narrowing for `string?`; coerce via `??` then check.
     string h = Environment.GetEnvironmentVariable("Z42_HOME") ?? "";
     if (h.Length > 0) { return h; }
+    // Portable install: Z42_PORTABLE_VM = <sdk>/bin/z42vm → home = <sdk>/.
+    string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (portableVm.Length > 0) {
+        string binDir = Path.GetDirectoryName(portableVm);
+        if (binDir.Length > 0) {
+            string pkgRoot = Path.GetDirectoryName(binDir);
+            if (pkgRoot.Length > 0) { return pkgRoot; }
+            return binDir;
+        }
+    }
     string home = Environment.GetEnvironmentVariable("HOME") ?? "";
     if (home.Length > 0) { return Path.Join(home, ".z42"); }
     return ".z42";
