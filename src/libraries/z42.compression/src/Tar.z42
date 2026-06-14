@@ -295,9 +295,10 @@ public static class Tar {
             if (prefix.Length > 0) { fullName = prefix + "/" + name; }
             else { fullName = name; }
 
-            byte zero = 48;  // '0'
-            byte nul  = 0;
-            if (typeflag != zero && typeflag != nul) {
+            byte zero    = 48;  // '0' regular file
+            byte nul     = 0;   // '\0' regular file (old-style)
+            byte dirFlag = 53;  // '5' directory
+            if (typeflag != zero && typeflag != nul && typeflag != dirFlag) {
                 throw new ArchiveException(
                     "tar: unsupported entry typeflag for " + fullName);
             }
@@ -309,36 +310,44 @@ public static class Tar {
                 Directory.Create(parent);
             }
 
-            // Stream the file contents in 512-byte chunks. Skip trailing
-            // padding bytes (tar pads to the next 512 boundary).
-            FileStream outFs = new FileStream(targetPath, FileMode.Write);
-            try {
-                long remaining = size;
-                while (remaining > 0L) {
-                    int chunk = remaining > 512L ? 512 : (int)remaining;
-                    int got = _ReadFull(src, dataBuf, 0, chunk);
-                    if (got < chunk) {
-                        throw new ArchiveException(
-                            "tar: truncated entry '" + fullName + "' (wanted "
-                            + chunk.ToString() + " more bytes, got "
-                            + got.ToString() + ")");
+            if (typeflag == dirFlag) {
+                // Directory entry — create it and consume any payload bytes.
+                Directory.Create(targetPath);
+                long dpads = ((size + 511L) / 512L) * 512L;
+                if (dpads > 0L) { _ReadFull(src, dataBuf, 0, (int)dpads); }
+                written = written + 1;
+            } else {
+                // Stream the file contents in 512-byte chunks. Skip trailing
+                // padding bytes (tar pads to the next 512 boundary).
+                FileStream outFs = new FileStream(targetPath, FileMode.Write);
+                try {
+                    long remaining = size;
+                    while (remaining > 0L) {
+                        int chunk = remaining > 512L ? 512 : (int)remaining;
+                        int got = _ReadFull(src, dataBuf, 0, chunk);
+                        if (got < chunk) {
+                            throw new ArchiveException(
+                                "tar: truncated entry '" + fullName + "' (wanted "
+                                + chunk.ToString() + " more bytes, got "
+                                + got.ToString() + ")");
+                        }
+                        outFs.Write(dataBuf, 0, chunk);
+                        remaining = remaining - (long)chunk;
                     }
-                    outFs.Write(dataBuf, 0, chunk);
-                    remaining = remaining - (long)chunk;
+                    // Consume padding to next 512 boundary.
+                    long padded = ((size + 511L) / 512L) * 512L;
+                    long padBytes = padded - size;
+                    if (padBytes > 0L) {
+                        _ReadFull(src, dataBuf, 0, (int)padBytes);
+                    }
+                } finally {
+                    outFs.Close();
                 }
-                // Consume padding to next 512 boundary.
-                long padded = ((size + 511L) / 512L) * 512L;
-                long padBytes = padded - size;
-                if (padBytes > 0L) {
-                    _ReadFull(src, dataBuf, 0, (int)padBytes);
+                if ((mode & 0x49) != 0) {  // any exec bit
+                    File.MakeExecutable(targetPath);
                 }
-            } finally {
-                outFs.Close();
+                written = written + 1;
             }
-            if ((mode & 0x49) != 0) {  // any exec bit
-                File.MakeExecutable(targetPath);
-            }
-            written = written + 1;
         }
         return written;
     }
