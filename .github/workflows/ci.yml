@@ -906,11 +906,9 @@ jobs:
                   tar -C "$psrc" -czf "${out}/z42-runtime-nightly-${rid}.tar.gz" .
                   echo "✓ runtime ${rid} → z42-runtime-nightly-${rid}.tar.gz"
               else
-                  # Platform RID — main package IS the platform runtime; publish runtime alias.
-                  tar -C "$dst" -czf "${out}/z42-nightly-${rid}.tar.gz" .
-                  echo "✓ sdk ${rid} → z42-nightly-${rid}.tar.gz"
-                  cp "${out}/z42-nightly-${rid}.tar.gz" "${out}/z42-runtime-nightly-${rid}.tar.gz"
-                  echo "✓ runtime alias: z42-runtime-nightly-${rid}"
+                  # Platform RID — archive directly as runtime (no separate sdk upload).
+                  tar -C "$dst" -czf "${out}/z42-runtime-nightly-${rid}.tar.gz" .
+                  echo "✓ runtime ${rid} → z42-runtime-nightly-${rid}.tar.gz"
               fi
           done
 

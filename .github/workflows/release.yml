@@ -166,20 +166,16 @@ jobs:
             fi
           }
 
-          # SDK archive — full developer package (z42c + z42vm + libs + native + examples).
-          _tar "z42-${version}-${rid}-release" "z42-${version}-${rid}"
-          echo "✓ sdk: z42-${version}-${rid}"
-
           if [[ "$rid" == linux-* || "$rid" == macos-* || "$rid" == windows-* ]]; then
-            # Desktop: also archive runtime (z42vm + libs) built by _buildPackageCore in xtask.
-            _tar "z42-runtime-${version}-${rid}"  "z42-runtime-${version}-${rid}"
+            # Desktop: SDK archive (full) + runtime archive (z42vm + libs only).
+            _tar "z42-${version}-${rid}-release" "z42-${version}-${rid}"
+            echo "✓ sdk: z42-${version}-${rid}"
+            _tar "z42-runtime-${version}-${rid}" "z42-runtime-${version}-${rid}"
             echo "✓ runtime: z42-runtime-${version}-${rid}"
           else
-            # Platform RID: main package IS the platform runtime — publish a z42-runtime-* alias
-            # so `z42 install <ver> --rid <plat>` can resolve via release-index.json.
-            cp "artifacts/release/z42-${version}-${rid}.tar.gz" \
-               "artifacts/release/z42-runtime-${version}-${rid}.tar.gz"
-            echo "✓ runtime alias: z42-runtime-${version}-${rid}"
+            # Platform RID: archive directly as runtime (no separate sdk upload).
+            _tar "z42-${version}-${rid}-release" "z42-runtime-${version}-${rid}"
+            echo "✓ runtime: z42-runtime-${version}-${rid}"
           fi
 
       - name: Upload archive
