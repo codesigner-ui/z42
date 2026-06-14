@@ -92,9 +92,9 @@ void _cmdInstall(ParseResult r) {
 // ── self-update ───────────────────────────────────────────────────────────────
 
 // z42 self-update [--channel <ver>]
-// Replaces $Z42_HOME/launcher/ with a freshly downloaded release package.
-// Not supported in portable mode (Z42_PORTABLE_VM set) — update via your
-// distribution channel in that case.
+// Downloads the SDK package and overwrites $Z42_HOME/launcher/ in-place.
+// SDK layout: launcher.zpkg + libs/ at root, z42vm in bin/.
+// Not supported in portable mode (Z42_PORTABLE_VM set).
 void _cmdSelfUpdate(ParseResult r) {
     string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
     if (portableVm.Length > 0) {
@@ -122,7 +122,7 @@ void _cmdSelfUpdate(ParseResult r) {
 
     string asset = "";
     string sha = "";
-    string[] mf = _fetchManifest(baseUrl, rid, "launcher");
+    string[] mf = _fetchManifest(baseUrl, rid, "sdk");
     asset = mf[0]; sha = mf[1];
     if (asset.Length == 0) {
         asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
@@ -151,13 +151,24 @@ void _cmdSelfUpdate(ParseResult r) {
         Console.WriteLine("  ✓ sha256 ok");
     }
 
-    string staging = Path.Join(_home(), ".launcher.stage");
-    if (Directory.Exists(staging)) { Directory.Delete(staging, true); }
-    Directory.Create(staging);
-    _extractArchive(body, isWindows, staging);
+    // Extract SDK to a temp dir, then reassemble into launcher/ layout.
+    // SDK: launcher.zpkg + libs/ at root, z42vm in bin/. launcher/ expects z42vm at root.
+    string extract = Path.Join(_home(), ".selfupdate.extract");
+    if (Directory.Exists(extract)) { Directory.Delete(extract, true); }
+    Directory.Create(extract);
+    _extractArchive(body, isWindows, extract);
+
+    string newStage = Path.Join(_home(), ".launcher.stage");
+    if (Directory.Exists(newStage)) { Directory.Delete(newStage, true); }
+    Directory.Create(newStage);
+    string vmName = isWindows ? "z42vm.exe" : "z42vm";
+    File.Move(Path.Join(extract, "bin", vmName), Path.Join(newStage, vmName));
+    File.Move(Path.Join(extract, "launcher.zpkg"), Path.Join(newStage, "launcher.zpkg"));
+    File.Move(Path.Join(extract, "libs"), Path.Join(newStage, "libs"));
 
     Directory.Delete(launcherDir, true);
-    File.Move(staging, launcherDir);
+    File.Move(newStage, launcherDir);
+    Directory.Delete(extract, true);
     Console.WriteLine("launcher updated → " + launcherDir);
     Console.WriteLine("restart z42 to use the new version.");
 }

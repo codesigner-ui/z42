@@ -1,6 +1,6 @@
 # runtime & workload 分发：安装 / 更新 / 运行
 
-> **部分已实施（split-release-runtime-package, 2026-06-14）**：manifest schema（`runtimes.<rid>.runtime` + `.launcher`，平台 RID `.runtime` only）、独立 runtime 包、`_fetchManifest` new/old-format 双格式已落地。workload / channel / `z42 update` / 签名等见 Deferred。
+> **部分已实施（split-release-runtime-package, 2026-06-14）**：manifest schema（`runtimes.<rid>.sdk` + `.runtime`，平台 RID `.runtime` only）、独立 runtime 包、`_fetchManifest` new/old-format 双格式已落地。workload / channel / `z42 update` / 签名等见 Deferred。
 
 ## 现状（起点）
 
@@ -40,13 +40,12 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
   "published": "2026-06-12T00:00:00Z",
   "runtimes": {
     "macos-arm64": {
-      "sdk":      { "archive": "z42-0.3.5-macos-arm64.tar.gz",          "sha256": "…" },
-      "launcher": { "archive": "z42-launcher-0.3.5-macos-arm64.tar.gz", "sha256": "…" },
-      "runtime":  { "archive": "z42-runtime-0.3.5-macos-arm64.tar.gz",  "sha256": "…" }
+      "sdk":     { "archive": "z42-0.3.5-macos-arm64.tar.gz",         "sha256": "…" },
+      "runtime": { "archive": "z42-runtime-0.3.5-macos-arm64.tar.gz", "sha256": "…" }
     },
-    "linux-x64":   { "sdk": {…}, "launcher": {…}, "runtime": {…} },
-    "linux-arm64": { "sdk": {…}, "launcher": {…}, "runtime": {…} },
-    "windows-x64": { "sdk": {…}, "launcher": {…}, "runtime": {…} },
+    "linux-x64":   { "sdk": {…}, "runtime": {…} },
+    "linux-arm64": { "sdk": {…}, "runtime": {…} },
+    "windows-x64": { "sdk": {…}, "runtime": {…} },
     "ios-arm64":    { "runtime": { "archive": "z42-runtime-0.3.5-ios-arm64.tar.gz",    "sha256": "…" } },
     "iossim-arm64": { "runtime": { "archive": "z42-runtime-0.3.5-iossim-arm64.tar.gz", "sha256": "…" } },
     "android-arm64":{ "runtime": { "archive": "z42-runtime-0.3.5-android-arm64.tar.gz","sha256": "…" } },
@@ -60,7 +59,7 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
   }
 }
 ```
-> **已实施（split-release-runtime-package, 2026-06-14）**：desktop RID 三键（sdk/launcher/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式。workload 段未实施（见 Deferred）。
+> **已实施（split-release-runtime-package, 2026-06-14）**：desktop RID 双键（sdk/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式。workload 段未实施（见 Deferred）。
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。
 - `workloads.<wl>.host` = 哪些 host RID 能用该 workload（ios 仅 macOS）→ launcher 安装前先校验 host，host 不支持直接拒。
@@ -68,36 +67,36 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 ## launcher / runtime 拆分 + 首次 bootstrap
 
-**拆分**：launcher 与 runtime 不再同包、各自独立更新。
-- **launcher bundle** = 原生 trampoline + `launcher.zpkg`，**不带 vm**；trampoline 解析已装 runtime → 用**它的** z42vm 跑 launcher.zpkg。
-  > 现状 launcher 自带一个 z42vm（`$Z42_HOME/launcher/z42vm`）；本设计改为**复用已装 runtime 的 vm** —— 既不必为 launcher 造/最小化 vm，NativeAOT 后还能把 launcher AOT 成原生、彻底无 vm（见 Deferred）。
-- **runtime package** = z42vm + libs + z42c，**不含 launcher**。
+**当前两包格式**：SDK 与 runtime 独立发布；launcher 不单独发包（`z42 self-update` 下 SDK 包即可）。
+- **SDK package** = 原生 trampoline（`bin/z42`）+ `launcher.zpkg` + z42vm + z42c + libs；`install-z42.sh` 和 `z42 self-update` 都下这个。
+- **runtime package** = z42vm + libs；`z42 install <ver>` 下这个。
 
 **第一次执行（`install-z42`，唯一保留的原生 bootstrap；shell/PS + 系统 curl）一次装完即功能完整**：
 
 ```
 1. 探测 host RID（uname/arch）
 2. curl 拉 channel manifest：releases/latest/download/release-index.json（或 nightly tag）
-3. 从 manifest 取两个 archive + sha：launcher bundle、host runtime
-4. 下载两者 → 校验 → 解压：
-     launcher → ~/.z42/bin/z42 + ~/.z42/launcher/launcher.zpkg
-     runtime  → ~/.z42/runtimes/<ver>/；config.toml default=<ver>
+3. 从 manifest 取 sdk archive + sha
+4. 下载 → 校验 → 解压：
+     sdk → ~/.z42/bin/z42 + ~/.z42/launcher/launcher.zpkg + ~/.z42/launcher/z42vm + libs
+           config.toml default=<ver>
 5. ~/.z42/bin 入 PATH（或打印指引）
-6. 完成 —— z42 list / run / build 立即可用（launcher 用刚装 runtime 的 vm 跑）
+6. 完成 —— z42 list / run / build 立即可用
    （项目本地变体：装进 <repo>/.z42，隔离/pin，沿用现状）
 ```
 
 **之后全部 z42 驱动**（跑在已装 runtime 的 vm 上）：`z42 install / update / self update / workload install / …`。
 
-**为何这样**：bootstrap 下载交 shell/系统 curl（install-z42 本就是 shell）→ launcher 无需带 TLS 的 vm；**对齐 dotnet**（shell 装 SDK → 之后托管命令管理）。launcher 逻辑仍是 z42（满足 z42 优先）。
+**为何这样**：bootstrap 下载交 shell/系统 curl（install-z42 本就是 shell）→ **对齐 dotnet**（shell 装 SDK → 之后托管命令管理）。launcher 逻辑仍是 z42（满足 z42 优先）。
 **边角**：`z42 uninstall` 删光最后一个 runtime → launcher 无 vm 可跑 → 挡一下（拒删最后一个 / 提示重跑 install-z42）。dotnet 同性质。
 
 ## `$Z42_HOME` 布局
 
 ```
 ~/.z42/
-  bin/z42                  launcher 原生 trampoline（薄；self update 目标）       ┐ launcher bundle
-  launcher/launcher.zpkg   launcher 逻辑（z42；跑在已装 runtime 的 vm 上，无自带 vm）┘（与 runtime 独立更新）
+  bin/z42                  launcher 原生 trampoline（薄）
+  launcher/launcher.zpkg   launcher 逻辑（z42）
+  launcher/z42vm           （sdk 包里 bin/z42vm 解压重排后放这里）
   config.toml              default = "<ver>"  ·  channel = stable|nightly
   cache/                   下过的归档（校验通过再解压；断点/复用）
   runtimes/

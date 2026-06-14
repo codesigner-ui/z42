@@ -171,10 +171,7 @@ jobs:
           echo "✓ sdk: z42-${version}-${rid}"
 
           if [[ "$rid" == linux-* || "$rid" == macos-* || "$rid" == windows-* ]]; then
-            # Desktop: also archive launcher (z42vm + launcher.zpkg + libs + apphost)
-            # and runtime (z42vm + libs only) — both built by _buildPackageCore in xtask.
-            _tar "z42-launcher-${version}-${rid}" "z42-launcher-${version}-${rid}"
-            echo "✓ launcher: z42-launcher-${version}-${rid}"
+            # Desktop: also archive runtime (z42vm + libs) built by _buildPackageCore in xtask.
             _tar "z42-runtime-${version}-${rid}"  "z42-runtime-${version}-${rid}"
             echo "✓ runtime: z42-runtime-${version}-${rid}"
           else
@@ -228,18 +225,14 @@ jobs:
 
           get_sha() { grep " $1$" dist/SHA256SUMS | awk '{print $1}'; }
 
-          # Desktop: sdk (full, z42c+vm+libs+...) + launcher (vm+zpkg+libs+apphost) + runtime (vm+libs)
+          # Desktop: sdk (z42c+vm+libs+...) + runtime (vm+libs)
           sha_sdk_lx64="$(get_sha  "z42-${v}-linux-x64.tar.gz")"
-          sha_ln_lx64="$(get_sha   "z42-launcher-${v}-linux-x64.tar.gz")"
           sha_rt_lx64="$(get_sha   "z42-runtime-${v}-linux-x64.tar.gz")"
           sha_sdk_la64="$(get_sha  "z42-${v}-linux-arm64.tar.gz")"
-          sha_ln_la64="$(get_sha   "z42-launcher-${v}-linux-arm64.tar.gz")"
           sha_rt_la64="$(get_sha   "z42-runtime-${v}-linux-arm64.tar.gz")"
           sha_sdk_mac="$(get_sha   "z42-${v}-macos-arm64.tar.gz")"
-          sha_ln_mac="$(get_sha    "z42-launcher-${v}-macos-arm64.tar.gz")"
           sha_rt_mac="$(get_sha    "z42-runtime-${v}-macos-arm64.tar.gz")"
           sha_sdk_win="$(get_sha   "z42-${v}-windows-x64.zip")"
-          sha_ln_win="$(get_sha    "z42-launcher-${v}-windows-x64.zip")"
           sha_rt_win="$(get_sha    "z42-runtime-${v}-windows-x64.zip")"
 
           # Platform: runtime only (main package = platform SDK = runtime)
@@ -249,10 +242,10 @@ jobs:
           sha_ax64="$(get_sha   "z42-runtime-${v}-android-x64.tar.gz")"
           sha_wasm="$(get_sha   "z42-runtime-${v}-browser-wasm.tar.gz")"
 
-          for var in sha_sdk_lx64 sha_ln_lx64 sha_rt_lx64 \
-                     sha_sdk_la64 sha_ln_la64 sha_rt_la64 \
-                     sha_sdk_mac  sha_ln_mac  sha_rt_mac  \
-                     sha_sdk_win  sha_ln_win  sha_rt_win  \
+          for var in sha_sdk_lx64 sha_rt_lx64 \
+                     sha_sdk_la64 sha_rt_la64 \
+                     sha_sdk_mac  sha_rt_mac  \
+                     sha_sdk_win  sha_rt_win  \
                      sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm; do
             [ -n "${!var}" ] || { echo "release-index: missing sha256 for $var" >&2; exit 1; }
           done
@@ -260,10 +253,10 @@ jobs:
           jq -n \
             --argjson schema 1 \
             --arg version "$v" --arg tag "v$v" --arg published "$ts" \
-            --arg sha_sdk_lx64  "$sha_sdk_lx64"  --arg sha_ln_lx64  "$sha_ln_lx64"  --arg sha_rt_lx64  "$sha_rt_lx64"  \
-            --arg sha_sdk_la64  "$sha_sdk_la64"  --arg sha_ln_la64  "$sha_ln_la64"  --arg sha_rt_la64  "$sha_rt_la64"  \
-            --arg sha_sdk_mac   "$sha_sdk_mac"   --arg sha_ln_mac   "$sha_ln_mac"   --arg sha_rt_mac   "$sha_rt_mac"   \
-            --arg sha_sdk_win   "$sha_sdk_win"   --arg sha_ln_win   "$sha_ln_win"   --arg sha_rt_win   "$sha_rt_win"   \
+            --arg sha_sdk_lx64  "$sha_sdk_lx64"  --arg sha_rt_lx64  "$sha_rt_lx64"  \
+            --arg sha_sdk_la64  "$sha_sdk_la64"  --arg sha_rt_la64  "$sha_rt_la64"  \
+            --arg sha_sdk_mac   "$sha_sdk_mac"   --arg sha_rt_mac   "$sha_rt_mac"   \
+            --arg sha_sdk_win   "$sha_sdk_win"   --arg sha_rt_win   "$sha_rt_win"   \
             --arg sha_ios      "$sha_ios"      --arg sha_iossim    "$sha_iossim"    \
             --arg sha_aarm64   "$sha_aarm64"   --arg sha_ax64      "$sha_ax64"      \
             --arg sha_wasm     "$sha_wasm"     \
@@ -275,24 +268,20 @@ jobs:
               published: $published,
               runtimes: {
                 "linux-x64": {
-                  sdk:      { archive: ("z42-" + $version + "-linux-x64.tar.gz"),           sha256: $sha_sdk_lx64 },
-                  launcher: { archive: ("z42-launcher-" + $version + "-linux-x64.tar.gz"),   sha256: $sha_ln_lx64 },
-                  runtime:  { archive: ("z42-runtime-" + $version + "-linux-x64.tar.gz"),   sha256: $sha_rt_lx64 }
+                  sdk:     { archive: ("z42-" + $version + "-linux-x64.tar.gz"),         sha256: $sha_sdk_lx64 },
+                  runtime: { archive: ("z42-runtime-" + $version + "-linux-x64.tar.gz"), sha256: $sha_rt_lx64 }
                 },
                 "linux-arm64": {
-                  sdk:      { archive: ("z42-" + $version + "-linux-arm64.tar.gz"),          sha256: $sha_sdk_la64 },
-                  launcher: { archive: ("z42-launcher-" + $version + "-linux-arm64.tar.gz"), sha256: $sha_ln_la64 },
-                  runtime:  { archive: ("z42-runtime-" + $version + "-linux-arm64.tar.gz"), sha256: $sha_rt_la64 }
+                  sdk:     { archive: ("z42-" + $version + "-linux-arm64.tar.gz"),         sha256: $sha_sdk_la64 },
+                  runtime: { archive: ("z42-runtime-" + $version + "-linux-arm64.tar.gz"), sha256: $sha_rt_la64 }
                 },
                 "macos-arm64": {
-                  sdk:      { archive: ("z42-" + $version + "-macos-arm64.tar.gz"),          sha256: $sha_sdk_mac },
-                  launcher: { archive: ("z42-launcher-" + $version + "-macos-arm64.tar.gz"), sha256: $sha_ln_mac },
-                  runtime:  { archive: ("z42-runtime-" + $version + "-macos-arm64.tar.gz"), sha256: $sha_rt_mac }
+                  sdk:     { archive: ("z42-" + $version + "-macos-arm64.tar.gz"),         sha256: $sha_sdk_mac },
+                  runtime: { archive: ("z42-runtime-" + $version + "-macos-arm64.tar.gz"), sha256: $sha_rt_mac }
                 },
                 "windows-x64": {
-                  sdk:      { archive: ("z42-" + $version + "-windows-x64.zip"),             sha256: $sha_sdk_win },
-                  launcher: { archive: ("z42-launcher-" + $version + "-windows-x64.zip"),    sha256: $sha_ln_win },
-                  runtime:  { archive: ("z42-runtime-" + $version + "-windows-x64.zip"),    sha256: $sha_rt_win }
+                  sdk:     { archive: ("z42-" + $version + "-windows-x64.zip"),             sha256: $sha_sdk_win },
+                  runtime: { archive: ("z42-runtime-" + $version + "-windows-x64.zip"),     sha256: $sha_rt_win }
                 },
                 "ios-arm64":    { runtime: { archive: ("z42-runtime-" + $version + "-ios-arm64.tar.gz"),    sha256: $sha_ios    } },
                 "iossim-arm64": { runtime: { archive: ("z42-runtime-" + $version + "-iossim-arm64.tar.gz"), sha256: $sha_iossim } },

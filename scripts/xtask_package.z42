@@ -1,7 +1,7 @@
 // xtask — release packaging (migrate-scripts-to-z42, split-runtime-launcher-packages).
 // Desktop pipeline functions live in xtask_package_desktop.z42 (500-line split).
 // Same Z42Xtask namespace; calls _exec/_root/_buildCompiler from xtask.z42 (cross-file).
-// Desktop builds three artifacts: SDK (z42c+z42vm+libs) + launcher pkg + runtime pkg.
+// Desktop builds two artifacts: SDK (z42c+z42vm+libs) + runtime pkg.
 namespace Z42Xtask;
 
 using Std;
@@ -44,8 +44,6 @@ int _buildPackageCore(string profile, string rid, string variant) {
     int c;
     if (category == "desktop") {
         c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
-        if (c != 0) { return c; }
-        c = _buildLauncherPackage(root, rid, version, profile);
         if (c != 0) { return c; }
         c = _buildRuntimePackage(root, rid, version, profile);
     } else if (category == "ios") {

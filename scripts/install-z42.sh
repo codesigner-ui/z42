@@ -199,7 +199,7 @@ import sys, json
 try:
     data = json.load(sys.stdin)
     r = data.get('runtimes', {}).get('$rid', {})
-    for section in ('sdk', 'launcher', 'runtime'):
+    for section in ('sdk', 'runtime'):
         if section in r and isinstance(r[section], dict) and '$field' in r[section]:
             print(r[section]['$field']); sys.exit(0)
     v = r.get('$field')

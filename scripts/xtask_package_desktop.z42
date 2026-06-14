@@ -2,9 +2,8 @@
 // Extracted from xtask_package.z42 to stay within the 500-line file limit.
 //
 // Functions owned here:
-//   _packageDesktop    — full SDK package ([1/7]–[7/7] pipeline)
-//   _buildLauncherPackage — launcher artifact (layout = launcher/: z2vm+zpkg+libs+apphost)
-//   _buildRuntimePackage  — runtime artifact  (layout = runtimes/<ver>/: z42vm+libs)
+//   _packageDesktop      — full SDK package ([1/7]–[7/7] pipeline)
+//   _buildRuntimePackage — runtime artifact (layout = runtimes/<ver>/: z42vm+libs)
 //   desktop manifest/example/helper functions
 namespace Z42Xtask;
 
@@ -94,42 +93,6 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
 }
 
 // ── launcher artifact ────────────────────────────────────────────────────────
-// Layout matches $Z42_HOME/launcher/ directly — extract-and-move with no
-// path transformation. Contains: z42vm + launcher.zpkg + libs/ + apphost.
-// Does NOT contain the z42 trampoline (trampoline is at bin/z42, managed by
-// install-z42.sh --system only).
-
-int _buildLauncherPackage(string root, string rid, string version, string profile) {
-    string cargoTarget = _ridToCargo(rid);
-    bool rel = (profile == "release");
-    string pkgName = "z42-launcher-" + version + "-" + rid + (profile == "release" ? "" : "-" + profile);
-    string pkgDir = Path.Join(_packagesDir(root), pkgName);
-    Console.WriteLine("Launcher package: " + pkgName);
-    if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
-    Directory.Create(Path.Join(pkgDir, "libs"));
-
-    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
-    // z42vm at root (matches launcher/ layout)
-    _copyIfExists(Path.Join(cargoOut, "z42vm"),     Path.Join(pkgDir, "z42vm"));
-    _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "z42vm.exe"));
-    _makeExe(Path.Join(pkgDir, "z42vm"));
-    // launcher.zpkg
-    string zpkg = Path.Join(root, "artifacts/build/toolchain/launcher/z42.launcher.zpkg");
-    if (!File.Exists(zpkg)) {
-        ConsoleError.WriteLine("error: launcher.zpkg not found at " + zpkg + "; run [2c/7] first");
-        return 1;
-    }
-    File.Copy(zpkg, Path.Join(pkgDir, "launcher.zpkg"));
-    // libs/
-    int c = _pkgCopyLibs(_libsDir(root), pkgDir); if (c != 0) { return c; }
-    // apphost at root (matches launcher/ layout)
-    _copyIfExists(Path.Join(cargoOut, "apphost"),     Path.Join(pkgDir, "apphost"));
-    _copyIfExists(Path.Join(cargoOut, "apphost.exe"), Path.Join(pkgDir, "apphost.exe"));
-    _makeExe(Path.Join(pkgDir, "apphost"));
-    Console.WriteLine("  ✓ launcher package: " + pkgDir);
-    return 0;
-}
-
 // ── runtime artifact ─────────────────────────────────────────────────────────
 // Layout matches $Z42_HOME/runtimes/<ver>/ — extract-and-move with no
 // path transformation. Contains: z42vm + libs/. Used by `z42 install <ver>`.
