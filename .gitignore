@@ -14,7 +14,12 @@ obj/
 bin/
 
 # Rust
-Cargo.lock
+# Cargo.lock IS committed for binary-producing crates (z42vm / launcher / test-runner /
+# host embed + platform shims) so CI builds are reproducible. Without it `cargo build`
+# re-resolves transitive deps on every run; upstream drift (e.g. a new alloc-no-stdlib
+# major) then breaks a previously-green commit with zero source changes.
+# Only the user-facing example/scaffold locks stay ignored.
+**/examples/**/Cargo.lock
 *.rlib
 *.rmeta
 

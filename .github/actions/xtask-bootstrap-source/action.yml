@@ -17,7 +17,7 @@ runs:
       run: |
         set -euo pipefail
         dotnet build src/compiler/z42.slnx --nologo -v quiet
-        cargo build --release --manifest-path src/runtime/Cargo.toml
+        cargo build --locked --release --manifest-path src/runtime/Cargo.toml
         libs="$PWD/artifacts/build/libraries/dist/release"
         # PRIMER (raw, no z42 program — the cold-bootstrap breaker): the C# compiler
         # builds the stdlib workspace from source so xtask can COMPILE (its

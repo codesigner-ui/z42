@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           dotnet build src/compiler/z42.slnx --nologo -v quiet
-          cargo build --release --manifest-path src/runtime/Cargo.toml
+          cargo build --locked --release --manifest-path src/runtime/Cargo.toml
           libs="$PWD/artifacts/build/libraries/dist/release"
           # PRIMER (raw C# compiler, no z42 program): build stdlib from source so
           # xtask can COMPILE its `using Std.*` (z42c reads .zsym; index.json — the
@@ -250,7 +250,7 @@ jobs:
           RUST_MIN_STACK: '8388608'
         run: |
           dotnet test src/compiler/z42.Tests/z42.Tests.csproj --blame-hang-timeout 5m --blame-hang-dump-type mini
-          cargo test --manifest-path src/runtime/Cargo.toml -- --test-threads=1
+          cargo test --locked --manifest-path src/runtime/Cargo.toml -- --test-threads=1
 
       # ── host RID SDK package smoke ──
       # Host-RID package via `z42 xtask.zpkg package` (stdlib already built above).
@@ -501,16 +501,16 @@ jobs:
       # migrate-scripts-to-z42: feature presets are plain cargo feature combos
       # (was `just build-*-feature`) — inlined so this job needs no `just`.
       - name: Build interp-only (no cranelift)
-        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features interp-only
+        run: cargo build --locked --release --manifest-path src/runtime/Cargo.toml --no-default-features --features interp-only
 
       - name: Build wasm preset (host target)
-        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features wasm
+        run: cargo build --locked --release --manifest-path src/runtime/Cargo.toml --no-default-features --features wasm
 
       - name: Build ios preset (host target)
-        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features ios
+        run: cargo build --locked --release --manifest-path src/runtime/Cargo.toml --no-default-features --features ios
 
       - name: Build android preset (host target)
-        run: cargo build --release --manifest-path src/runtime/Cargo.toml --no-default-features --features android
+        run: cargo build --locked --release --manifest-path src/runtime/Cargo.toml --no-default-features --features android
 
       - name: Verify cranelift excluded under interp-only
         run: |
