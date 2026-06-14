@@ -162,7 +162,7 @@ void _cmdSelfUpdate(ParseResult r) {
     if (Directory.Exists(newStage)) { Directory.Delete(newStage, true); }
     Directory.Create(newStage);
     string vmName = isWindows ? "z42vm.exe" : "z42vm";
-    File.Move(Path.Join(extract, "bin", vmName), Path.Join(newStage, vmName));
+    File.Move(Path.Join(Path.Join(extract, "bin"), vmName), Path.Join(newStage, vmName));
     File.Move(Path.Join(extract, "launcher.zpkg"), Path.Join(newStage, "launcher.zpkg"));
     File.Move(Path.Join(extract, "libs"), Path.Join(newStage, "libs"));
 
