@@ -45,7 +45,13 @@ void _cmdInstall(ParseResult r) {
     string[] mf = _fetchManifest(baseUrl, rid, "runtime");
     asset = mf[0]; sha = mf[1];
     if (asset.Length == 0) {
-        asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
+        // Desktop RIDs: sdk archive. Platform RIDs (ios/android/wasm): runtime-only archive.
+        bool isDesktop = rid.StartsWith("linux-") || rid.StartsWith("macos-") || rid.StartsWith("windows-");
+        if (isDesktop) {
+            asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
+        } else {
+            asset = "z42-runtime-" + ver + "-" + rid + ".tar.gz";
+        }
     }
     if (sha.Length == 0) {
         HttpClient hc2 = new HttpClient();
