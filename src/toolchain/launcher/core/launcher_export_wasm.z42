@@ -1,95 +1,131 @@
-// launcher_export_wasm.z42 — WASM HTML+JS project generator (add-export-command, 2026-06-14).
+// launcher_export_wasm.z42 — WASM HTML+JS project generator.
 // Called by _cmdExportWasm in launcher_export.z42.
 //
-// Generates index.html + index.js that load app.zpkg and (when z42vm.js/wasm are
-// present) feed it to the z42 WebAssembly runtime. Serve the output directory with
-// any static HTTP server (e.g. python3 -m http.server 8080).
+// Generated project layout:
+//   <output>/
+//     index.html          entry page (ESM module script)
+//     index.js            generated runner (real SDK API)
+//     app.zbc             compiled app bytecode
+//     z42_wasm.js         from <sdk>/pkg-web/
+//     z42_wasm_bg.wasm    from <sdk>/pkg-web/
+//     stdlib-resolver.js  from <sdk>/js/
+//     libs/               stdlib zpkg files + files.json (for bundleStdlibBrowser)
+//
+// Serve with any static HTTP server, e.g.:
+//   python3 -m http.server 8080 --directory <output>
 namespace Z42Launcher;
 
 using Std.IO;
 
 void _generateWasmProject(string outputDir, string name, string title,
-                          string zpkgSrc, string sdkDir) {
-    // Copy zpkg
-    if (zpkgSrc.Length > 0 && File.Exists(zpkgSrc)) {
-        File.Copy(zpkgSrc, Path.Join(outputDir, "app.zpkg"));
-        Console.WriteLine("  ✓ copied app.zpkg");
+                          string entryPoint, string zbcSrc, string sdkDir) {
+    // [1] app.zbc
+    if (zbcSrc.Length > 0 && File.Exists(zbcSrc)) {
+        File.Copy(zbcSrc, Path.Join(outputDir, "app.zbc"));
+        Console.WriteLine("  ✓ app.zbc");
     } else {
-        Console.WriteLine("  ⚠  app.zpkg not found at " + zpkgSrc);
-        Console.WriteLine("     Build first: z42c build <project.z42.toml>");
+        Console.WriteLine("  ⚠  app.zbc not found at: " + zbcSrc);
+        Console.WriteLine("     Build first: z42c build <name>.z42 --release");
+        Console.WriteLine("     (output goes to [build].output_dir or project directory)");
     }
 
-    // Copy WASM SDK files if available
+    // [2] WASM SDK files from <sdk>/pkg-web/ and <sdk>/js/
     bool hasSdk = false;
     if (sdkDir.Length > 0 && Directory.Exists(sdkDir)) {
-        string jsFile   = Path.Join(sdkDir, "z42vm.js");
-        string wasmFile = Path.Join(sdkDir, "z42vm.wasm");
-        if (File.Exists(jsFile)) {
-            File.Copy(jsFile, Path.Join(outputDir, "z42vm.js"));
-            Console.WriteLine("  ✓ z42vm.js");
+        string pkgWeb = Path.Join(sdkDir, "pkg-web");
+        string jsDir  = Path.Join(sdkDir, "js");
+        string jsFile = Path.Join(pkgWeb, "z42_wasm.js");
+        string wasmFile = Path.Join(pkgWeb, "z42_wasm_bg.wasm");
+        string resolverFile = Path.Join(jsDir, "stdlib-resolver.js");
+
+        if (File.Exists(jsFile) && File.Exists(wasmFile) && File.Exists(resolverFile)) {
+            File.Copy(jsFile,       Path.Join(outputDir, "z42_wasm.js"));
+            File.Copy(wasmFile,     Path.Join(outputDir, "z42_wasm_bg.wasm"));
+            File.Copy(resolverFile, Path.Join(outputDir, "stdlib-resolver.js"));
+            Console.WriteLine("  ✓ z42_wasm.js  z42_wasm_bg.wasm  stdlib-resolver.js");
             hasSdk = true;
+        } else {
+            Console.WriteLine("  ⚠  pkg-web/ or js/ missing in SDK: " + sdkDir);
         }
-        if (File.Exists(wasmFile)) {
-            File.Copy(wasmFile, Path.Join(outputDir, "z42vm.wasm"));
-            Console.WriteLine("  ✓ z42vm.wasm");
+
+        // [3] stdlib libs
+        string libsSrc = Path.Join(sdkDir, "libs");
+        if (hasSdk && Directory.Exists(libsSrc)) {
+            string libsDst = Path.Join(outputDir, "libs");
+            Directory.Create(libsDst);
+            string[] entries = Directory.Enumerate(libsSrc);
+            string filesJson = "[";
+            bool first = true;
+            int i = 0;
+            while (i < entries.Length) {
+                string entry = entries[i];
+                if (entry.EndsWith(".zpkg")) {
+                    File.Copy(Path.Join(libsSrc, entry), Path.Join(libsDst, entry));
+                    if (!first) { filesJson = filesJson + ","; }
+                    filesJson = filesJson + "\"" + entry + "\"";
+                    first = false;
+                }
+                i = i + 1;
+            }
+            filesJson = filesJson + "]";
+            File.WriteAllText(Path.Join(libsDst, "files.json"), filesJson);
+            Console.WriteLine("  ✓ libs/ (stdlib zpkgs + files.json)");
         }
     }
+
     if (!hasSdk) {
-        Console.WriteLine("  ⚠  WASM SDK not found.");
-        Console.WriteLine("     Install: z42 install <ver> --rid browser-wasm");
+        Console.WriteLine("  ⚠  WASM SDK not found at: " + sdkDir);
+        Console.WriteLine("     Install: z42 install nightly --rid browser-wasm");
         Console.WriteLine("     Then rerun: z42 export wasm <project.z42.toml>");
     }
 
-    File.WriteAllText(Path.Join(outputDir, "index.html"), _wasmHtml(title, hasSdk));
-    File.WriteAllText(Path.Join(outputDir, "index.js"),   _wasmJs());
-    Console.WriteLine("  ✓ index.html  index.js");
+    // [4] index.html + index.js
+    File.WriteAllText(Path.Join(outputDir, "index.html"), _wasmHtml(title));
+    File.WriteAllText(Path.Join(outputDir, "index.js"),   _wasmJs(entryPoint));
+    Console.WriteLine("  ✓ index.html  index.js  (entry: " + entryPoint + ")");
 }
 
-string _wasmHtml(string title, bool hasSdk) {
+string _wasmHtml(string title) {
     string c = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n";
     c = c + "  <meta charset=\"UTF-8\">\n";
     c = c + "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n";
     c = c + "  <title>" + title + "</title>\n";
     c = c + "  <style>\n";
-    c = c + "    body { margin: 0; background: #1a1a2e; color: #e0e0e0; font-family: monospace; }\n";
-    c = c + "    #output { padding: 1em; white-space: pre-wrap; }\n";
+    c = c + "    body { margin: 0; background: #1a1a2e; color: #e0e0e0; font-family: monospace; padding: 1em; }\n";
+    c = c + "    h1 { font-size: 1em; color: #7ec8e3; margin: 0 0 0.5em; }\n";
+    c = c + "    #output { white-space: pre-wrap; }\n";
     c = c + "  </style>\n</head>\n<body>\n";
-    c = c + "  <canvas id=\"canvas\" width=\"800\" height=\"600\" style=\"display:block;margin:auto;\"></canvas>\n";
+    c = c + "  <h1>" + title + "</h1>\n";
     c = c + "  <pre id=\"output\"></pre>\n";
-    if (hasSdk) { c = c + "  <script src=\"z42vm.js\"></script>\n"; }
-    c = c + "  <script src=\"index.js\"></script>\n";
+    c = c + "  <script type=\"module\" src=\"./index.js\"></script>\n";
     c = c + "</body>\n</html>\n";
     return c;
 }
 
-string _wasmJs() {
-    string c = "// Generated by `z42 export wasm`.\n";
-    c = c + "// Loads app.zpkg and passes it to the z42 WebAssembly runtime.\n\n";
-    c = c + "(async function main() {\n";
-    c = c + "  const output = document.getElementById('output');\n";
-    c = c + "  const log = s => { output.textContent += s + '\\n'; };\n\n";
-    c = c + "  try {\n";
-    c = c + "    const resp = await fetch('app.zpkg');\n";
-    c = c + "    if (!resp.ok) {\n";
-    c = c + "      log('Error: failed to load app.zpkg (HTTP ' + resp.status + ')');\n";
-    c = c + "      return;\n";
-    c = c + "    }\n";
-    c = c + "    const zpkgBytes = new Uint8Array(await resp.arrayBuffer());\n";
-    c = c + "    log('app.zpkg loaded (' + zpkgBytes.length + ' bytes)');\n\n";
-    c = c + "    if (typeof Z42VM === 'undefined') {\n";
-    c = c + "      log('z42vm.js not loaded — install the WASM SDK and rerun z42 export wasm');\n";
-    c = c + "      return;\n";
-    c = c + "    }\n\n";
-    c = c + "    // Initialize z42 runtime and run the app\n";
-    c = c + "    const vm = await Z42VM.create({\n";
-    c = c + "      zpkg: zpkgBytes,\n";
-    c = c + "      stdout: s => log(s),\n";
-    c = c + "      stderr: s => log('[err] ' + s),\n";
-    c = c + "    });\n";
-    c = c + "    vm.run();\n";
-    c = c + "  } catch (e) {\n";
-    c = c + "    log('Error: ' + e.message);\n";
-    c = c + "  }\n";
-    c = c + "})();\n";
+string _wasmJs(string entryPoint) {
+    string c = "// Generated by `z42 export wasm` — do not edit manually.\n";
+    c = c + "import init, { Z42VM, readNamespaces } from './z42_wasm.js';\n";
+    c = c + "import { bundleStdlibBrowser } from './stdlib-resolver.js';\n\n";
+    c = c + "const output = document.getElementById('output');\n";
+    c = c + "const log = s => { output.textContent += s; };\n\n";
+    c = c + "async function main() {\n";
+    c = c + "  // 1. Initialise the wasm module (required for pkg-web target).\n";
+    c = c + "  await init();\n\n";
+    c = c + "  // 2. Load stdlib zpkgs via bundleStdlibBrowser (reads libs/files.json).\n";
+    c = c + "  const resolver = await bundleStdlibBrowser(\n";
+    c = c + "    new URL('./libs/', import.meta.url), readNamespaces);\n\n";
+    c = c + "  // 3. Wire stdout → page.\n";
+    c = c + "  const stdoutHandler = bytes => log(new TextDecoder().decode(bytes));\n\n";
+    c = c + "  // 4. Create VM, load bytecode, resolve entry, invoke.\n";
+    c = c + "  const vm = new Z42VM({ zpkgResolver: resolver, stdoutHandler });\n";
+    c = c + "  const resp = await fetch('./app.zbc');\n";
+    c = c + "  if (!resp.ok) { log('Error: failed to load app.zbc (HTTP ' + resp.status + ')\\n'); return; }\n";
+    c = c + "  const zbcBytes = new Uint8Array(await resp.arrayBuffer());\n";
+    c = c + "  const mod   = vm.loadZbc(zbcBytes);\n";
+    c = c + "  const entry = vm.resolveEntry(mod, '" + entryPoint + "');\n";
+    c = c + "  vm.invoke(entry);\n";
+    c = c + "  vm.dispose();\n";
+    c = c + "}\n\n";
+    c = c + "main().catch(err => log('[error] ' + (err.stack ?? err) + '\\n'));\n";
     return c;
 }

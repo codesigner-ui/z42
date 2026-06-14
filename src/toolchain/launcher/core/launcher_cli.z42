@@ -111,7 +111,8 @@ SubcommandRouter _exportRouter() {
     ArgParser wasm = new ArgParser("z42 export wasm", "generate an HTML+JS project for WebAssembly");
     wasm.AddPositional("project", "<project.z42.toml>");
     wasm.AddOption("output", "", "output directory (default: <name>-wasm/ beside the toml)", "");
-    wasm.AddOption("sdk-ver", "", "platform SDK version to use (default: project version)", "");
+    wasm.AddOption("sdk-ver", "", "platform SDK version to use (default: nightly)", "");
+    wasm.AddOption("entry", "", "entry point e.g. Hello.Main (default: <name>.Main)", "");
     e.Add("wasm", "generate an HTML+JS project for WebAssembly", wasm);
 
     return e;

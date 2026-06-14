@@ -92,21 +92,35 @@ void _cmdExportWasm(ParseResult r) {
     if (!_expCheckToml("wasm", tomlPath)) { return; }
     TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
     string projName = _expTomlStr(toml, "project", "name", "");
-    string ver      = _expTomlStr(toml, "project", "version", "");
-    string title    = _platformStr(toml, "wasm", "title", (projName.Length > 0 ? projName : "z42 App"));
-    string sdkVer   = r.GetOption("sdk-ver");
-    if (sdkVer.Length == 0) { sdkVer = ver; }
+    if (projName.Length == 0) {
+        ConsoleError.WriteLine("z42 export wasm: [project].name missing in " + tomlPath);
+        Environment.Exit(1); return;
+    }
+    string ver   = _expTomlStr(toml, "project", "version", "");
+    string title = _platformStr(toml, "wasm", "title", projName);
+
+    string sdkVer = r.GetOption("sdk-ver");
+    if (sdkVer.Length == 0) { sdkVer = "nightly"; }
+
+    string entryOpt = r.GetOption("entry");
+    string tomlEntry = _expTomlStr(toml, "project", "entry", "");
+    string entryPoint;
+    if (entryOpt.Length > 0) { entryPoint = entryOpt; }
+    else if (tomlEntry.Length > 0) { entryPoint = tomlEntry; }
+    else { entryPoint = projName + ".Main"; }
 
     string outputDir = r.GetOption("output");
     if (outputDir.Length == 0) { outputDir = _expDefaultOutputDir(tomlPath, projName, "-wasm"); }
     Directory.Create(outputDir);
 
-    string zpkgSrc = _expResolveZpkg(tomlPath, toml, projName);
-    string sdkDir  = (sdkVer.Length > 0) ? _platformSdkDir("browser-wasm", sdkVer) : "";
+    string zbcSrc = _expResolveZbc(tomlPath, toml, projName);
+    string sdkDir = _platformSdkDir("browser-wasm", sdkVer);
 
     Console.WriteLine("z42 export wasm → " + outputDir);
-    _generateWasmProject(outputDir, projName, title, zpkgSrc, sdkDir);
-    Console.WriteLine("✅ WASM project ready. Serve " + outputDir + " with any static HTTP server.");
+    _generateWasmProject(outputDir, projName, title, entryPoint, zbcSrc, sdkDir);
+    Console.WriteLine("✅ WASM project ready.");
+    Console.WriteLine("   Serve with:  python3 -m http.server 8080 --directory " + outputDir);
+    Console.WriteLine("   Then open:   http://localhost:8080/");
 }
 
 // ── shared helpers ────────────────────────────────────────────────────────────
@@ -178,4 +192,22 @@ string _expResolveZpkg(string tomlPath, TomlValue toml, string name) {
     else { distRel = "dist"; }
     string base = (projDir.Length > 0) ? Path.Join(projDir, distRel) : distRel;
     return Path.Join(base, name + ".zpkg");
+}
+
+// Resolve the compiled .zbc for wasm.
+// Search order: [build].output_dir/<name>.zbc → .cache/<name>.zbc → projDir/<name>.zbc
+string _expResolveZbc(string tomlPath, TomlValue toml, string name) {
+    string projDir = Path.GetDirectoryName(tomlPath);
+    string zbcName = name + ".zbc";
+    string outDir  = _expTomlStr(toml, "build", "output_dir", "");
+    if (outDir.Length > 0) {
+        string p = (projDir.Length > 0) ? Path.Join(projDir, outDir) : outDir;
+        return Path.Join(p, zbcName);
+    }
+    // z42c build puts the .zbc in .cache/ beside the toml
+    if (projDir.Length > 0) {
+        string cached = Path.Join(Path.Join(projDir, ".cache"), zbcName);
+        if (File.Exists(cached)) { return cached; }
+    }
+    return Path.Join(projDir.Length > 0 ? projDir : ".", zbcName);
 }
