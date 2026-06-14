@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 18;  // 2026-06-11 add-reflection-array-element-type: coupled with inner zbc 1.16 (ArrayNew element-type field). Pre-0.18 not readable.
+    public const ushort VersionMinor = 19;  // 2026-06-14 add-reflection-get-interfaces: coupled with inner zbc 1.17 (TYPE section per-class interface block). Pre-0.19 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

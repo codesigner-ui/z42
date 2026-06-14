@@ -714,6 +714,37 @@ pub fn builtin_type_generic_args(ctx: &VmContext, args: &[Value]) -> Result<Valu
     Ok(ctx.heap().alloc_array(out))
 }
 
+/// `__type_interfaces(typeObj) -> Type[]` — the interfaces this type implements.
+/// add-reflection-get-interfaces: interfaces are stored per declaring class (the
+/// zbc TYPE section carries each class's directly-declared interface names), so
+/// walk the base chain and aggregate each ancestor's interfaces (most-derived
+/// first), matching C# `GetInterfaces()` which includes inherited interfaces.
+/// Dedup by name (a class re-declaring a base's interface appears once). Each
+/// name becomes a name-only `Std.Type` via `make_type_from_name`. Transitive
+/// interface implementation (interface-extends-interface) is deferred.
+pub fn builtin_type_interfaces(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let td = match type_handle(args) {
+        Some(t) => t,
+        None => return Ok(ctx.heap().alloc_array(Vec::new())),
+    };
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut cur = Some(td);
+    while let Some(c) = cur {
+        for iface in c.interfaces() {
+            if seen.insert(iface.to_string()) {
+                out.push(make_type_from_name(ctx, iface));
+            }
+        }
+        cur = c.base_name.as_ref().and_then(|b| {
+            ctx.module()
+                .and_then(|m| m.type_registry.get(b).cloned())
+                .or_else(|| ctx.try_lookup_type(b))
+        });
+    }
+    Ok(ctx.heap().alloc_array(out))
+}
+
 /// `__type_members(typeObj) -> MemberInfo[]` — fields then methods. Built in
 /// Rust to sidestep z42 array covariance (the mixed array holds FieldInfo +
 /// MethodInfo, both `MemberInfo` subclasses).

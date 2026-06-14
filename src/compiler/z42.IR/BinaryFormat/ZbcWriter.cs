@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 16;  // 2026-06-11 add-reflection-array-element-type: ArrayNew/ArrayNewLit append the element type FQ name (string-pool idx). Surfaces Type.IsArray / GetElementType (arrays non-erased at runtime). Pre-1.16 not readable.
+    public const ushort VersionMinor = 17;  // 2026-06-14 add-reflection-get-interfaces: TYPE section appends a per-class interface block (u16 count + interface_name_idx[] u32) after the static-fields block. Surfaces Type.GetInterfaces(). Pre-1.17 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -251,6 +251,10 @@ public static partial class ZbcWriter
                 // or Idx throws KeyNotFound for any class with static fields.
                 if (cls.StaticFields != null)
                     foreach (var fld in cls.StaticFields) { pool.Intern(fld.Name); pool.Intern(fld.Type); InternAttributeRefs(pool, fld.Attributes); }
+                // add-reflection-get-interfaces (zbc 1.17): BuildTypeSection writes the
+                // interface block via pool.Idx — names must be interned here too.
+                if (cls.Interfaces != null)
+                    foreach (var iface in cls.Interfaces) pool.Intern(iface);
                 if (cls.TypeParams != null)
                     foreach (var tp in cls.TypeParams)
                         pool.Intern(tp);
@@ -428,6 +432,16 @@ public static partial class ZbcWriter
                     w.Write((uint)pool.Idx(fld.Type));
                     WriteAttrRefs(w, pool, fld.Attributes);  // 1.14 field attributes
                 }
+            // add-reflection-get-interfaces (zbc 1.17): interface block — u16
+            // count + interface_name_idx[] u32, after the static-fields block.
+            // The class's directly-declared interface names (bare). Count is
+            // always written (0 when none) for a uniform per-class layout.
+            // Surfaced by Type.GetInterfaces() (which base-walks for inherited).
+            var interfaces = cls.Interfaces;
+            w.Write((ushort)(interfaces?.Count ?? 0));
+            if (interfaces != null)
+                foreach (var iface in interfaces)
+                    w.Write((uint)pool.Idx(iface));
         }
 
         return ms.ToArray();

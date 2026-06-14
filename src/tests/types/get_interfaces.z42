@@ -1,0 +1,67 @@
+// 2026-06-14 add-reflection-get-interfaces: Type.GetInterfaces() reflects the
+// interfaces a class implements — its own declared interfaces plus inherited
+// ones from the base chain (deduped by name). zbc 1.17 TYPE section interface block.
+
+namespace Demo;
+
+using Std;
+
+interface IFoo { void Foo(); }
+interface IBar { void Bar(); }
+
+class OneIface : IFoo {
+    public void Foo() {}
+}
+
+class TwoIface : IFoo, IBar {
+    public void Foo() {}
+    public void Bar() {}
+}
+
+class NoIface {
+    public int X;
+}
+
+class Base : IFoo {
+    public void Foo() {}
+}
+
+class Derived : Base, IBar {
+    public void Bar() {}
+}
+
+// helper: does ifaces[] contain a Type whose Name == n?
+bool Has(Type[] ifaces, string n) {
+    foreach (var t in ifaces) {
+        if (t.Name == n) { return true; }
+    }
+    return false;
+}
+
+void Main() {
+    // Single interface.
+    var one = typeof(OneIface).GetInterfaces();
+    Assert.Equal(1, one.Length);
+    Assert.Equal("IFoo", one[0].Name);
+
+    // Multiple interfaces (declaration order).
+    var two = typeof(TwoIface).GetInterfaces();
+    Assert.Equal(2, two.Length);
+    Assert.True(Has(two, "IFoo"));
+    Assert.True(Has(two, "IBar"));
+
+    // No interfaces → empty (non-null) array.
+    var empty = typeof(NoIface).GetInterfaces();
+    Assert.Equal(0, empty.Length);
+
+    // Inherited interfaces aggregated from the base chain.
+    var derived = typeof(Derived).GetInterfaces();
+    Assert.True(Has(derived, "IBar"));   // own
+    Assert.True(Has(derived, "IFoo"));   // inherited from Base
+
+    // obj.GetType().GetInterfaces() agrees with typeof.
+    OneIface o = new OneIface();
+    var viaObj = o.GetType().GetInterfaces();
+    Assert.Equal(1, viaObj.Length);
+    Assert.Equal("IFoo", viaObj[0].Name);
+}

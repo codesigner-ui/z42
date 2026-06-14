@@ -56,7 +56,10 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // 2026-06-11 add-reflection-array-element-type: bumped to 1.16 — ArrayNew /
 // ArrayNewLit append an element-type-name string-pool index (`element_type`),
 // stored on the runtime ArrayObj so arr.GetType().GetElementType() is non-erased.
-pub const ZBC_VERSION_MINOR: u16 = 16;
+// 2026-06-14 add-reflection-get-interfaces: bumped to 1.17 — TYPE section appends
+// a per-class interface block (u16 count + name str idx[]) after the static-fields
+// block. Loaded into TypeDescCold.interfaces; surfaced by Type.GetInterfaces().
+pub const ZBC_VERSION_MINOR: u16 = 17;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -89,7 +92,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // inner zbc 1.15 (per-parameter attr-ref block in SIGS).
 // 2026-06-11 add-reflection-array-element-type: bumped to 0.18, coupled with
 // inner zbc 1.16 (ArrayNew/ArrayNewLit element-type field).
-pub const ZPKG_VERSION_MINOR: u16 = 18;
+// 2026-06-14 add-reflection-get-interfaces: bumped to 0.19, coupled with inner
+// zbc 1.17 (TYPE section per-class interface block).
+pub const ZPKG_VERSION_MINOR: u16 = 19;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -366,6 +371,14 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             let attributes = read_attr_refs(&mut c, pool)?;  // 1.14 field attrs
             static_fields.push(crate::metadata::bytecode::FieldDesc { name, type_tag, attributes });
         }
+        // add-reflection-get-interfaces (zbc 1.17): per-class interface block —
+        // u16 count + interface_name_idx[] u32. Surfaced by Type.GetInterfaces().
+        let iface_count = c.read_u16()? as usize;
+        let mut interfaces = Vec::with_capacity(iface_count);
+        for _ in 0..iface_count {
+            let idx = c.read_u32()?;
+            interfaces.push(c.pool_str(pool, idx)?.to_owned());
+        }
         classes.push(ClassDesc {
             name,
             base_class,
@@ -375,6 +388,7 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             attributes: attributes.into_boxed_slice(),
             class_flags,
             static_fields: static_fields.into_boxed_slice(),
+            interfaces: interfaces.into_boxed_slice(),
         });
     }
     Ok(classes)

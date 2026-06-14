@@ -429,10 +429,15 @@ public static partial class ZbcReader
                 string sfType = P(pool, r.ReadUInt32());
                 staticFields!.Add(new IrFieldDesc(sfName, sfType, ReadAttrRefs(r, pool)));  // 1.14 field attrs
             }
+            // add-reflection-get-interfaces (zbc 1.17): interface block.
+            ushort ifaceCount = r.ReadUInt16();
+            List<string>? interfaces = ifaceCount > 0 ? new(ifaceCount) : null;
+            for (int it = 0; it < ifaceCount; it++)
+                interfaces!.Add(P(pool, r.ReadUInt32()));
             classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes,
                 IsAbstract: (flags & 1) != 0, IsSealed: (flags & 2) != 0,
                 IsStruct: (flags & 4) != 0, IsRecord: (flags & 8) != 0,
-                StaticFields: staticFields));
+                StaticFields: staticFields, Interfaces: interfaces));
         }
         return classes;
     }

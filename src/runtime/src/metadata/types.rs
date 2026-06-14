@@ -182,6 +182,11 @@ pub struct TypeDescCold {
     /// `__field_custom_attributes` resolves a field's factories here.
     /// Reflection only; empty for classes with no field attributes.
     pub field_attributes: Box<[(Box<str>, Box<[super::bytecode::AttributeRef]>)]>,
+    /// add-reflection-get-interfaces (zbc 1.17): the interface names this class
+    /// directly declares (bare; e.g. "IFoo"). Reflection only — surfaced by
+    /// `Type.GetInterfaces()`, which base-walks the `base_name` chain to also
+    /// include inherited interfaces (dedup by name). Empty = none.
+    pub interfaces: Box<[Box<str>]>,
 }
 
 impl TypeDesc {
@@ -204,6 +209,8 @@ impl TypeDesc {
     #[inline] pub fn static_fields(&self)          -> &[super::bytecode::FieldDesc]             { self.cold_slice(|c| &c.static_fields) }
     /// add-field-attribute-reflection: per-field attr refs (field name → refs).
     #[inline] pub fn field_attributes(&self)       -> &[(Box<str>, Box<[super::bytecode::AttributeRef]>)] { self.cold_slice(|c| &c.field_attributes) }
+    /// add-reflection-get-interfaces: the class's directly-declared interfaces.
+    #[inline] pub fn interfaces(&self)             -> &[Box<str>]                               { self.cold_slice(|c| &c.interfaces) }
 
     /// Lazy-init the cold side-table for mutation.
     #[inline]

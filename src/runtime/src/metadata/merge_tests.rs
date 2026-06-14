@@ -109,6 +109,7 @@ fn merge_deduplicates_classes_by_name() {
 
     let cls = ClassDesc {
         static_fields: vec![].into(),
+        interfaces: vec![].into(),
         class_flags: 0,
         name: "Std.Object".to_string(),
         base_class: None,
@@ -119,6 +120,7 @@ fn merge_deduplicates_classes_by_name() {
     };
     let cls_dup = ClassDesc {
         static_fields: vec![].into(),
+        interfaces: vec![].into(),
         class_flags: 0,
         name: "Std.Object".to_string(),
         base_class: None,

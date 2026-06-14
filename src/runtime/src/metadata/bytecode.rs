@@ -88,6 +88,7 @@ impl Module {
             custom_attributes:      c.custom_attributes.clone(),
             static_fields:          c.static_fields.clone(),
             field_attributes:       c.field_attributes.clone(),
+            interfaces:             c.interfaces.clone(),
         }));
         let rebuilt = Arc::new(TypeDesc {
             name: td.name.clone(),
@@ -149,6 +150,12 @@ pub struct ClassDesc {
     /// `FieldInfo.IsStatic = true`.
     #[serde(default)]
     pub static_fields: Box<[FieldDesc]>,
+    /// add-reflection-get-interfaces (zbc 1.17): the interface names this class
+    /// directly declares (bare; e.g. "IFoo"). Threaded into
+    /// `TypeDescCold::interfaces`; surfaced by `Type.GetInterfaces()` (which
+    /// base-walks for inherited interfaces).
+    #[serde(default)]
+    pub interfaces: Box<[String]>,
 }
 
 /// C3 add-attribute-reflection: one applied attribute — the attribute class's

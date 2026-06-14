@@ -674,6 +674,8 @@ pub fn build_type_registry(module: &mut Module) {
             static_fields:          desc.static_fields.clone(),
             // add-field-attribute-reflection: per-field attr refs by name.
             field_attributes,
+            // add-reflection-get-interfaces: carry the class's declared interfaces.
+            interfaces:             desc.interfaces.iter().map(|s| s.as_str().into()).collect(),
         };
         let cold = if cold_inner.own_fields.is_empty()
             && cold_inner.own_methods.is_empty()
@@ -682,6 +684,7 @@ pub fn build_type_registry(module: &mut Module) {
             && cold_inner.custom_attributes.is_empty()
             && cold_inner.static_fields.is_empty()
             && cold_inner.field_attributes.is_empty()
+            && cold_inner.interfaces.is_empty()
         {
             None
         } else {

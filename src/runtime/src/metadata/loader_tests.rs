@@ -243,6 +243,7 @@ fn type_registry_vec_invariant_after_build() {
         classes: vec![
             ClassDesc {
                 static_fields: vec![].into(),
+                interfaces: vec![].into(),
                 class_flags: 0,
                 name: "Demo.Aaa".to_owned(),
                 base_class: None,
@@ -253,6 +254,7 @@ fn type_registry_vec_invariant_after_build() {
             },
             ClassDesc {
                 static_fields: vec![].into(),
+                interfaces: vec![].into(),
                 class_flags: 0,
                 name: "Demo.Bbb".to_owned(),
                 base_class: Some("Demo.Aaa".to_owned()),
@@ -397,6 +399,7 @@ fn module_with_one_class(
         string_pool: vec![],
         classes: vec![ClassDesc {
             static_fields: vec![].into(),
+            interfaces: vec![].into(),
             class_flags: 0,
             name: name.to_owned(),
             base_class: base.map(str::to_owned),

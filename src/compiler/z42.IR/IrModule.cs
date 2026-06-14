@@ -67,7 +67,13 @@ public sealed record IrClassDesc(
     /// serialized as a separate block after the flags byte. Kept apart from
     /// `Fields` (instance layout) so the runtime hot path stays pure; surfaced
     /// by `Type.GetFields()` with `FieldInfo.IsStatic = true`.
-    List<IrFieldDesc>? StaticFields = null);
+    List<IrFieldDesc>? StaticFields = null,
+    /// add-reflection-get-interfaces (zbc 1.17): the interface names this class
+    /// directly declares (bare names, e.g. "IFoo"). Serialized as a block after
+    /// the static-fields block (u16 count + name str idx[]). Surfaced by
+    /// `Type.GetInterfaces()`, which base-walks to also include inherited
+    /// interfaces. Null/empty = none.
+    List<string>? Interfaces = null);
 
 public sealed record IrFieldDesc(string Name, string Type,
     /// add-field-attribute-reflection (zbc 1.14): user attributes applied to

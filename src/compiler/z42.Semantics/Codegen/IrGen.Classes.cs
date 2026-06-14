@@ -44,6 +44,13 @@ public sealed partial class IrGen
             .ToList();
         if (attrs is { Count: 0 }) attrs = null;
 
+        // add-reflection-get-interfaces (zbc 1.17): the class's directly-declared
+        // interface names (bare; e.g. "IFoo"). Generic interfaces keep just the
+        // base name (drops type args). Surfaced by Type.GetInterfaces().
+        var interfaces = cls.Interfaces.Count > 0
+            ? cls.Interfaces.Select(InterfaceTypeName).ToList()
+            : null;
+
         return new(QualifyName(shortName), baseClass,
             cls.Fields.Where(f => !f.IsStatic).Select(EmitFieldDesc).ToList(),
             cls.TypeParams?.ToList(),
@@ -54,8 +61,20 @@ public sealed partial class IrGen
             IsStruct: cls.IsStruct, IsRecord: cls.IsRecord,
             // add-reflection-static-fields (zbc 1.13): static fields, separate
             // from the instance `Fields` list above.
-            StaticFields: cls.Fields.Where(f => f.IsStatic).Select(EmitFieldDesc).ToList());
+            StaticFields: cls.Fields.Where(f => f.IsStatic).Select(EmitFieldDesc).ToList(),
+            Interfaces: interfaces);
     }
+
+    /// add-reflection-get-interfaces: extract the bare interface name from an
+    /// interface TypeExpr. NamedType → its name; GenericType → base name (drops
+    /// type args, mirroring C# Type.Name for generic interfaces); other forms
+    /// fall back to the type-text helper.
+    private static string InterfaceTypeName(TypeExpr t) => t switch
+    {
+        NamedType n   => n.Name,
+        GenericType g => g.Name,
+        _             => TypeName(t),
+    };
 
     /// add-field-attribute-reflection (zbc 1.14): build an IrFieldDesc carrying
     /// the field's user-attribute refs (each → its synthesized factory func).

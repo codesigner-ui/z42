@@ -212,6 +212,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.16 | 2026-06-10 | [add-field-attribute-reflection](../../spec/changes/add-field-attribute-reflection/) | inner zbc 1.14（TYPE section 每字段记录追加 attr-ref 块）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 | 0.17 | 2026-06-10 | [add-parameter-attribute-reflection](../../spec/changes/add-parameter-attribute-reflection/) | inner zbc 1.15（SIGS section 每函数记录追加每参数 attr-ref 块）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 | 0.18 | 2026-06-12 | [add-reflection-array-element-type](../../spec/changes/add-reflection-array-element-type/) | inner zbc 1.16（`ArrayNew` / `ArrayNewLit` 追加 `element_type: u32` 元素类型 FQ 名；数组运行期不再类型擦除）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
+| 0.19 | 2026-06-14 | [add-reflection-get-interfaces](../../spec/changes/add-reflection-get-interfaces/) | inner zbc 1.17（TYPE section 每 class 追加接口块 `interface_count: u16` + name str idx[]）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 

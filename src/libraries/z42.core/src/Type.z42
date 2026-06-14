@@ -91,6 +91,12 @@ public sealed class Type : MemberInfo {
     [Native("__type_generic_args")]
     public extern Type[] GetGenericArguments();
 
+    // Interfaces this type implements (own declared + inherited from base chain,
+    // deduped by name). Each is a name-only Type. Transitive interface
+    // implementation (interface-extends-interface) is not yet included.
+    [Native("__type_interfaces")]
+    public extern Type[] GetInterfaces();
+
     // ── Custom attributes (C3 add-attribute-reflection) ─────────────────────
 
     // Lazily-built cache of this type's attribute instances. Null until the

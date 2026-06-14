@@ -8,9 +8,9 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（zbc 1.16/zpkg 0.18，ArrayNew/Lit element_type FQ 名 + VisitTypeof `<elem>[]`）|
-| `runtime` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（数组不擦除：`GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()`；`arr.GetType()` 非擦除）|
-| `stdlib` | —（空闲）| — | ~~add-reflection-array-element-type~~ ✅ 已归档 2026-06-14（`Std.Type` 加 `IsArray` + `__elementName` + `GetElementType()`）|
+| `compiler` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（zbc 1.17/zpkg 0.19，TYPE section 类接口块 + IrClassDesc.Interfaces + ZbcReader round-trip）|
+| `runtime` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（`TypeDescCold.interfaces`；`__type_interfaces` base-walk 聚合继承 + dedup → `Type[]`）|
+| `stdlib` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（`Std.Type.GetInterfaces()`）|
 | `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
 | `toolchain` | —（空闲）| — | ~~split-release-runtime-package~~ ✅ 已归档 2026-06-14（`z42-runtime-*` 独立包；SDK 当 launcher；release-index.json runtime/launcher 子键；9 RID；4bbbd01b）|
 
@@ -68,4 +68,5 @@
 | ~~add-reflection-parameter-names~~ | runtime —— ✅ 已归档 2026-06-11（`ParameterInfo.Name` 返真实源参数名：`resolve_func_sig` 读 Function DBUG local-vars（reg==参数索引），无符号回落 `arg{n}`；无格式 bump；dotnet 1560/1560 + parameter_names.z42 e2e + cargo 764+21）|
 | ~~add-collection-contract-phase2~~ | stdlib —— ✅ 已归档 2026-06-11（review.md S2.4 Phase 2：`IBasicCollection<T>.AddOne(T)` + 5 集合委托自然 add；`BasicCollectionContract` add→count→clear 生命周期（distinct 元素普适 SortedSet 去重）；新增 Queue/Stack contract [Test]；无格式 bump；test stdlib z42.collections 5/5 + z42.test 5/5）|
 | ~~add-reflection-array-element-type~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（数组运行期不擦除 `GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()` + 非擦除 `arr.GetType()`；zbc 1.16/zpkg 0.18 ArrayNew/Lit element_type FQ 名；dotnet 1561/1561 + array_element_type.z42 e2e interp+jit + cargo lib 807 + 集成 native/zbc_compat 全绿 + xtask vm 354/cross-zpkg 2/stdlib 272）。**z42c writer 同步延后**（User 决策"先实现，延后 z42c"；当时 z42c 锁被占）→ `xtask test compiler-z42` byte-identical gate 暂红，follow-up 跟踪（见 memory `project_z42c_selfhosting`）|
+| ~~add-reflection-get-interfaces~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（`Type.GetInterfaces()` 含继承接口；zbc 1.17/zpkg 0.19 TYPE section 类接口块；base-walk 聚合 + 按名 dedup；dotnet 1562/1562 + get_interfaces.z42 e2e interp+jit + cargo lib 807 + 集成 zbc_compat/native 全绿 + xtask vm 356/cross-zpkg 2/stdlib 272）。z42c writer 接口块镜像延后（follow-up，同 array-element-type 处理）|
 | plan-0.3.x-three-streams | docs（不上锁） |
