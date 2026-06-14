@@ -54,13 +54,13 @@ void _cmdInstall(ParseResult r) {
         }
     }
     if (sha.Length == 0) {
-        HttpClient hc2 = new HttpClient();
+        HttpClient hc2 = new HttpClient(); hc2.SetMaxRedirects(10);
         HttpResponse sums = hc2.Get(baseUrl + "/SHA256SUMS");
         if (sums.IsSuccess()) { sha = _findSum(sums.BodyAsString(), asset); }
     }
 
     Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
-    HttpClient hc = new HttpClient();
+    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
     HttpResponse resp = hc.Get(baseUrl + "/" + asset);
     if (!resp.IsSuccess()) {
         ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
@@ -134,13 +134,13 @@ void _cmdSelfUpdate(ParseResult r) {
         asset = "z42-" + ver + "-" + rid + (isWindows ? ".zip" : ".tar.gz");
     }
     if (sha.Length == 0) {
-        HttpClient hc2 = new HttpClient();
+        HttpClient hc2 = new HttpClient(); hc2.SetMaxRedirects(10);
         HttpResponse sums = hc2.Get(baseUrl + "/SHA256SUMS");
         if (sums.IsSuccess()) { sha = _findSum(sums.BodyAsString(), asset); }
     }
 
     Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
-    HttpClient hc = new HttpClient();
+    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
     HttpResponse resp = hc.Get(baseUrl + "/" + asset);
     if (!resp.IsSuccess()) {
         ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
@@ -200,7 +200,7 @@ string _hostRid() {
 string[] _fetchManifest(string baseUrl, string rid, string packageType) {
     string[] empty = new string[2];
     empty[0] = ""; empty[1] = "";
-    HttpClient hc = new HttpClient();
+    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
     try {
         HttpResponse resp = hc.Get(baseUrl + "/release-index.json");
         if (!resp.IsSuccess()) { return empty; }
