@@ -17,7 +17,7 @@ interface ZpkgResolver {
 
 /**
  * Default Android resolver. Builds a `namespace → bytes` map by
- * enumerating `<subdir>/*.zpkg` in the app's assets and reading each
+ * enumerating the `*.zpkg` files under `<subdir>` in the app's assets and reading each
  * one's `NSPC` section (via [Z42VM.readNamespaces]) — there is no
  * `index.json`. A single zpkg that ships several namespaces (e.g.
  * `z42.core.zpkg` provides `z42.core` + `Std` + `Std.Exceptions`) maps
@@ -34,7 +34,7 @@ class AssetZpkgResolver(
     override fun resolve(namespace: String): ByteArray? = byNamespace[namespace]
 
     /**
-     * Enumerate `<subdir>/*.zpkg` and read each one's NSPC section to
+     * Enumerate the `*.zpkg` files under `<subdir>` and read each one's NSPC section to
      * assemble the namespace → bytes map. First-wins on duplicates;
      * filenames sorted for deterministic resolution.
      */

@@ -41,9 +41,14 @@ public class IosBackend : IPlatformBackend {
         TomlValue toml = _vparse(root);
         string[] iosTargets = _vgetList(toml, "platform.ios.rust_targets");
         string[] extra      = _vgetList(toml, "build.ios.extra_rust_targets");
+        // Match packaging's _iosRustc: pin the iOS deployment target so the C
+        // deps (zlib-ng in z42-compression) compile for the same min version as
+        // the rlibs — otherwise the device link fails (___chkstk_darwin / 10.0
+        // vs 18.5 mismatch).
+        string iosMin = _vReadOr(root, "platform.ios.min_ios", "16.0");
 
-        int c = this._cargoTargets(manifest, targetDir, iosTargets);  if (c != 0) { return c; }
-        c = this._cargoTargets(manifest, targetDir, extra);           if (c != 0) { return c; }
+        int c = this._cargoTargets(manifest, targetDir, iosTargets, iosMin);  if (c != 0) { return c; }
+        c = this._cargoTargets(manifest, targetDir, extra, iosMin);           if (c != 0) { return c; }
 
         // Assemble xcframework from device + simulator + macOS slices.
         string dev = Path.Join(targetDir, Path.Join("aarch64-apple-ios/release", libName));
@@ -67,13 +72,14 @@ public class IosBackend : IPlatformBackend {
         return _execIn(new Process("swift").Arg("test"), here);
     }
 
-    int _cargoTargets(string manifest, string targetDir, string[] targets) {
+    int _cargoTargets(string manifest, string targetDir, string[] targets, string iosMin) {
         foreach (var t in targets) {
-            Console.WriteLine("  cargo build --release --target " + t);
+            Console.WriteLine("  cargo build --release --target " + t + " (IPHONEOS_DEPLOYMENT_TARGET=" + iosMin + ")");
             int c = _exec(new Process("cargo").Arg("build").Arg("--release")
                 .Arg("--manifest-path").Arg(manifest)
                 .Arg("--target-dir").Arg(targetDir)
-                .Arg("--target").Arg(t));
+                .Arg("--target").Arg(t)
+                .Env("IPHONEOS_DEPLOYMENT_TARGET", iosMin));
             if (c != 0) { return c; }
         }
         return 0;
