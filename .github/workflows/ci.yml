@@ -1043,3 +1043,188 @@ jobs:
             --title "Nightly (main @ ${short_sha} · ${today})" \
             --notes "$notes" \
             artifacts/release/SHA256SUMS artifacts/release/release-index.json artifacts/release/z42-*
+
+  # ── Platform test pipeline → cross-platform CI dashboard ─────────────────
+  # `z42 xtask.zpkg test platform <p>` (add-platform-test-pipeline) on real
+  # runners: wasm (Playwright/Chromium), iOS Simulator (xcodebuild test),
+  # Android emulator (reactivecircus). Each publishes its JUnit as a GitHub
+  # Check via dorny/test-reporter — the 3 checks on the PR ARE the dashboard.
+  # (infra-ci-platform-test-dashboard, 2026-06-16)
+  test-wasm:
+    name: test-wasm (browser)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/artifacts/tools/playwright-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Setup Rust + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: ./.github/actions/xtask-bootstrap-source
+      - name: Prime Playwright (node deps + Chromium + OS libs)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src/toolchain/host/platforms/wasm/tests
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: test platform wasm (build + assets + Playwright R1–R7)
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform wasm
+      - name: Publish wasm test report (GitHub Check)
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: platform-tests / wasm
+          path: artifacts/test-reports/wasm/junit.xml
+          reporter: java-junit
+          fail-on-error: false
+      - name: Upload wasm JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-wasm
+          path: artifacts/test-reports/wasm/junit.xml
+          if-no-files-found: warn
+
+  test-ios:
+    name: test-ios (Simulator)
+    runs-on: macos-15
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Setup Rust + iOS targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
+      - name: Install xcbeautify (xcresult → JUnit)
+        run: brew install xcbeautify
+      - uses: ./.github/actions/xtask-bootstrap-source
+      - name: test platform ios — build xcframework + test assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform ios build
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform ios assets
+      - name: xcodebuild test on iOS Simulator (R1–R7) → JUnit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/test-reports/ios
+          cd src/toolchain/host/platforms/ios
+          # Pick a concrete booted-capable simulator (first available iPhone).
+          dest="platform=iOS Simulator,name=iPhone 16"
+          xcodebuild test \
+            -scheme Z42VM \
+            -destination "$dest" \
+            -resultBundlePath "$GITHUB_WORKSPACE/artifacts/test-reports/ios/ios.xcresult" \
+            2>&1 | xcbeautify --report junit --report-path "$GITHUB_WORKSPACE/artifacts/test-reports/ios"
+      - name: Publish iOS test report (GitHub Check)
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: platform-tests / ios
+          path: artifacts/test-reports/ios/junit.xml
+          reporter: java-junit
+          fail-on-error: false
+      - name: Upload iOS JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-ios
+          path: artifacts/test-reports/ios/**
+          if-no-files-found: warn
+
+  test-android:
+    name: test-android (emulator)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Setup Rust + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Setup Android NDK r26d
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+      - uses: ./.github/actions/xtask-bootstrap-source
+      - name: test platform android — cargo-ndk + AAR + assets
+        shell: bash
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform android build
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform android assets
+      - name: connectedAndroidTest on emulator (R1–R7)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          working-directory: src/toolchain/host/platforms/android
+          script: ./gradlew :z42vm:connectedAndroidTest
+      - name: Publish Android test report (GitHub Check)
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: platform-tests / android
+          path: 'src/toolchain/host/platforms/android/z42vm/build/outputs/androidTest-results/connected/**/*.xml'
+          reporter: java-junit
+          fail-on-error: false
+      - name: Upload Android JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-android
+          path: src/toolchain/host/platforms/android/z42vm/build/outputs/androidTest-results/connected/**
+          if-no-files-found: warn

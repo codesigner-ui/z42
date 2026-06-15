@@ -38,19 +38,24 @@ public class WasmBackend : IPlatformBackend {
             .Arg("--out-dir").Arg("pkg-nodejs").Arg("--out-name").Arg("z42_wasm").Arg("--no-typescript"), wasmDir);
     }
 
-    // ③ Playwright R1–R7 against pkg-web/ via local node (prepended to PATH).
+    // ③ Playwright R1–R7 against pkg-web/. Prefers the hermetic local node
+    // (artifacts/tools/node, dev) and prepends it to PATH; in CI (no local node)
+    // falls back to PATH node/npm/npx from actions/setup-node.
     public int RunTests(string root) {
         string testsDir = Path.Join(root, "src/toolchain/host/platforms/wasm/tests");
         string nodeBin  = Path.Join(root, "artifacts/tools/node/bin");
-        string nodeExe  = Path.Join(nodeBin, "node");
-        if (!File.Exists(nodeExe)) {
-            ConsoleError.WriteLine("error: local node not found at " + nodeExe);
-            ConsoleError.WriteLine("       run ./scripts/install-node-local.sh first");
-            return 1;
+        bool localNode  = File.Exists(Path.Join(nodeBin, "node"));
+        if (!localNode) {
+            if (Process.Which("node") == null) {
+                ConsoleError.WriteLine("error: no node found (local artifacts/tools/node or PATH); "
+                    + "run ./scripts/install-node-local.sh or set up node");
+                return 1;
+            }
+            nodeBin = "";  // use PATH node/npm/npx
         }
         string browsers = Path.Join(root, "artifacts/tools/playwright-browsers");
-        string npm = Path.Join(nodeBin, "npm");
-        string npx = Path.Join(nodeBin, "npx");
+        string npm = localNode ? Path.Join(nodeBin, "npm") : "npm";
+        string npx = localNode ? Path.Join(nodeBin, "npx") : "npx";
 
         if (!Directory.Exists(Path.Join(testsDir, "node_modules"))) {
             Console.WriteLine("  npm install (one-shot)");
@@ -78,9 +83,11 @@ public class WasmBackend : IPlatformBackend {
     // cache redirected in-repo (mirrors test.sh exports). npx/npm shebang
     // (`env node`) resolves node from the modified PATH.
     Process _nodeProc(string program, string nodeBin, string browsers) {
-        string parentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
-        return new Process(program)
-            .Env("PATH", nodeBin + ":" + parentPath)
-            .Env("PLAYWRIGHT_BROWSERS_PATH", browsers);
+        Process p = new Process(program).Env("PLAYWRIGHT_BROWSERS_PATH", browsers);
+        if (nodeBin.Length > 0) {
+            string parentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+            p = p.Env("PATH", nodeBin + ":" + parentPath);
+        }
+        return p;
     }
 }
