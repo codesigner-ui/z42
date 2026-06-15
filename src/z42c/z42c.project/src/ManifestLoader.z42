@@ -32,8 +32,10 @@ public static class ManifestLoader {
         }
 
         // [sources]
-        string[] inc = new string[0];
-        int incCount = 0;
+        // 默认 include = ["src/**/*.z42"]（镜像 C# ProjectManifest.ParseSources：sources 段
+        // 缺失、或存在但无 include 键时回落同一默认），exclude 默认 []。
+        string[] inc = new string[1]; inc[0] = "src/**/*.z42";
+        int incCount = 1;
         string[] exc = new string[0];
         int excCount = 0;
         if (root.ContainsKey("sources")) {

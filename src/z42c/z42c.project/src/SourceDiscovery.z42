@@ -48,9 +48,16 @@ public static class SourceDiscovery {
     }
 
     private static string[] _expand(string projectDir, string pattern) {
-        // `**/` 前缀 → 递归；否则单层（stdlib Path.Glob/GlobRecursive）
+        // `**/` 前缀 → 整个 projectDir 递归；`<prefix>/**/<suffix>` → 在 prefix 子目录下递归
+        // （如默认 `src/**/*.z42`）；否则单层（stdlib Path.Glob/GlobRecursive）。
         if (pattern.StartsWith("**/")) {
             return Path.GlobRecursive(projectDir, pattern.Substring(3, pattern.Length - 3));
+        }
+        int mid = pattern.IndexOf("/**/");
+        if (mid >= 0) {
+            string prefix = pattern.Substring(0, mid);
+            string suffix = pattern.Substring(mid + 4, pattern.Length - (mid + 4));
+            return Path.GlobRecursive(Path.Join(projectDir, prefix), suffix);
         }
         return Path.Glob(projectDir, pattern);
     }

@@ -23,9 +23,24 @@
 G1-G8 后 **`z42c build` 编译 z42c.{core,ir,syntax,project,semantics,pipeline,driver} 全部 7/7 无错**。
 下一级：逐包 byte-identical 对账（z42c 产物 vs C# CLI；workspace 默认 [sources] + 跨包 namespace/版本上下文对齐）。
 
+- [x] G9 默认 `[sources]`：ManifestLoader 在 `[sources]` 段缺失/无 include 时回落 `["src/**/*.z42"]`（镜像 C# ProjectManifest.ParseSources），exclude 默认 `[]`；SourceDiscovery `_expand` 支持中段 `<prefix>/**/<suffix>`（`src/**/*.z42` → `GlobRecursive(projectDir/src, "*.z42")`，覆盖 z42c.ir/src/BinaryFormat/ 嵌套）。**使 `z42c build <member-toml>` 无需显式临时 toml 即可发现源**，逐包对账前置。gate 6/6+7/7 无回归（合成项目用显式 include 不受影响）。
+
+## 🔬 逐包 byte-identical 首测（z42c.core，最简叶子）
+G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防 z42c 写入被 C# 复用污染）：
+**z42c=27942B vs C#=29046B，几乎每段分歧**（非单 bug，是真实包暴露的小合成 corpus 未覆盖构造）：
+| Section | z42c | C# | 诊断 |
+|---|---|---|---|
+| EXPT | 124(24 项) | 144(28 项) | **z42c 少导出 4 个符号** |
+| DEPS | 14(count=1) | 4(count=0) | **z42c 虚假多加 1 依赖**（str idx 25，疑 Std；z42c.core 无 using/无 deps 应为 0）|
+| SIGS | 628 | 770 | +142 |
+| MODS | 7599 | 8348 | **+749（最大，函数体/zbc codegen 分歧）** |
+| TSIG | 9805 | 9941 | +136 |
+| STRS | 9576 | 9643 | 下游（DEPS/EXPT/SIGS 串入池）|
+→ 逐包 byte-identical 是 0.3.x B 退出里程碑（multi-bug，建议独立 change：DEPS→EXPT→SIGS/MODS codegen parity 逐个对账，从 z42c.core 起逐包推进）。
+
 ## 验证
-- [ ] 每清一个缺口：`xtask test compiler-z42` 保持全绿（不回归 byte-compare 7/7 + zpkg 6/6）
-- [ ] 里程碑：z42c 能编译 z42c.core 全部源（无 error）
+- [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）
+- [x] 里程碑：z42c 能编译 z42c.core 全部源（无 error，双路均成功）
 
 ## 备注
 - 占用 z42c 锁（延续自举主线）。byte-identical 对账留各包能编译后再逐包验。
