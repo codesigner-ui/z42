@@ -171,6 +171,46 @@ public static class ZbcInstr {
         return s;
     }
 
+    // 整型字面量文本 → long 值（G4；镜像 C# ParseIntLit）：`0x`→16 / `0b`→2 / 否则 10；
+    // 逐位累加，遇非该进制字符即停（天然剥尾后缀 L/l/u/U），`_` 分隔跳过。
+    public static long _parseIntLit(string text) {
+        if (ZbcInstr._isRadix(text, 'x')) { return ZbcInstr._parseRadix(text, 2, 16); }
+        if (ZbcInstr._isRadix(text, 'b')) { return ZbcInstr._parseRadix(text, 2, 2); }
+        return ZbcInstr._parseRadix(text, 0, 10);
+    }
+    private static bool _isRadix(string t, char lo) {
+        if (t.Length < 2) { return false; }
+        if (t.CharAt(0) != '0') { return false; }
+        char c1 = t.CharAt(1);
+        char up = lo;
+        if (lo == 'x') { up = 'X'; }
+        if (lo == 'b') { up = 'B'; }
+        return c1 == lo || c1 == up;
+    }
+    private static long _parseRadix(string s, int start, int baseN) {
+        long v = 0;
+        int i = start;
+        bool more = i < s.Length;
+        while (more) {
+            char c = s.CharAt(i);
+            if (c == '_') { i = i + 1; more = i < s.Length; }
+            else {
+                int d = ZbcInstr._digitVal(c, baseN);
+                if (d < 0) { more = false; }
+                else { v = v * (long)baseN + (long)d; i = i + 1; more = i < s.Length; }
+            }
+        }
+        return v;
+    }
+    private static int _digitVal(char c, int baseN) {
+        int d = 0 - 1;
+        if (c >= '0' && c <= '9') { d = (int)c - 48; }
+        else if (c >= 'a' && c <= 'f') { d = (int)c - 87; }
+        else if (c >= 'A' && c <= 'F') { d = (int)c - 55; }
+        if (d >= baseN) { d = 0 - 1; }
+        return d;
+    }
+
     private static void _args(ByteWriter w, TypedReg[] args, int argCount) {
         w.WriteU8(argCount);
         int i = 0;
@@ -182,13 +222,13 @@ public static class ZbcInstr {
         if (ins is ConstI32Instr) {
             ConstI32Instr i = ins as ConstI32Instr;
             w.WriteU8(Op.ConstI); w.WriteU8(Tag.I32); w.WriteU16(i.Dst.Id);
-            w.WriteU32(Convert.ToInt32(i.Text));
+            w.WriteU32((int)ZbcInstr._parseIntLit(i.Text));
             return;
         }
         if (ins is ConstI64Instr) {
             ConstI64Instr i = ins as ConstI64Instr;
             w.WriteU8(Op.ConstI); w.WriteU8(Tag.I64); w.WriteU16(i.Dst.Id);
-            w.WriteI64(Convert.ToInt64(i.Text));
+            w.WriteI64(ZbcInstr._parseIntLit(i.Text));
             return;
         }
         if (ins is ConstCharInstr) {
@@ -237,6 +277,7 @@ public static class ZbcInstr {
         if (ins is NegInstr) { NegInstr i = ins as NegInstr; ZbcInstr._un(w, Op.Neg, i.Dst, i.Src); return; }
         if (ins is NotInstr) { NotInstr i = ins as NotInstr; ZbcInstr._un(w, Op.Not, i.Dst, i.Src); return; }
         if (ins is BitNotInstr) { BitNotInstr i = ins as BitNotInstr; ZbcInstr._un(w, Op.BitNot, i.Dst, i.Src); return; }
+        if (ins is ConvertInstr) { ConvertInstr i = ins as ConvertInstr; ZbcInstr._un(w, Op.Convert, i.Dst, i.Src); return; }
         // 未覆盖 opcode（call/field/obj/array/is·as/const-str·f64·char → ZW-1C/1D/1E）：
         // 静默跳过会产出语义错流（e2e div-zero oracle 可截获）；e2e 源须避开未覆盖指令。
     }

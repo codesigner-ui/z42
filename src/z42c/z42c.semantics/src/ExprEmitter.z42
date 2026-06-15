@@ -97,6 +97,7 @@ public sealed class ExprEmitter {
         if (e is BoundIndex) { return this._emitIndex(e as BoundIndex); }
         if (e is BoundIsExpr) { return this._emitIs(e as BoundIsExpr); }
         if (e is BoundCast) { return this._emitCast(e as BoundCast); }
+        if (e is BoundConvert) { return this._emitConvert(e as BoundConvert); }
         if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
         // 其余节点 → 后续增量：占位 const.null（保 dump 良构）
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(e.Type()));
@@ -418,6 +419,19 @@ public sealed class ExprEmitter {
         TypedReg obj = this.Emit(c.E);
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
         this._ctx.Emit(new AsCastInstr(dst, obj, this._ctx.QualifyClass(c.Type().Name())));
+        return dst;
+    }
+
+    // (T)x 数值转换（G3）→ ConvertInstr。镜像 C# VisitCast：identity（fromIr==toIr）no-op；
+    // 目标 Unknown/Ref no-op；源 Unknown/Ref 仍发 Convert（VM 按需 coerce）；否则发 Convert。
+    private TypedReg _emitConvert(BoundConvert c) {
+        TypedReg src = this.Emit(c.E);
+        int toIr = this._ctx.ToIrType(c.Type());
+        int fromIr = this._ctx.ToIrType(c.E.Type());
+        if (fromIr == toIr) { return src; }
+        if (toIr == IrType.Unknown || toIr == IrType.Ref) { return src; }
+        TypedReg dst = this._ctx.Alloc(toIr);
+        this._ctx.Emit(new ConvertInstr(dst, src));
         return dst;
     }
 }

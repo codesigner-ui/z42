@@ -188,6 +188,15 @@ public sealed class BoundCast : BoundExpr {
     public override string  Dump() { return "(cast " + this.E.Dump() + " :" + this._type.Name() + ")"; }
 }
 
+// C 风格数值转换（G3）：(T)x → T。codegen 发 ConvertInstr（identity/Unknown/Ref no-op，镜像 C# VisitCast）。
+public sealed class BoundConvert : BoundExpr {
+    public BoundExpr E;
+    private Z42Type _type;
+    public BoundConvert(BoundExpr e, Z42Type type, Span span) { this.Span = span; this.E = e; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(convert " + this.E.Dump() + " :" + this._type.Name() + ")"; }
+}
+
 // new T(args)（1D）：构造（ctor 签名检查留后续；结果类型 = T）。
 public sealed class BoundNew : BoundExpr {
     public string      TypeName;

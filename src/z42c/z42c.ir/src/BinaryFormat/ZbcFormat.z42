@@ -38,6 +38,7 @@ public static class Op {
     public static int RetVal = 0x43;   // 带值返回
     public static int Throw  = 0x44;
     public static int StrConcat = 0x85;
+    public static int Convert = 0xB1;   // (T)expr 数值转换（spec fix-numeric-cast-lowering；镜像 C# Opcodes.Convert）
 }
 
 // 指令头 type_tag 字节（IrType int 标签 → zbc tag）。

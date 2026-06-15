@@ -142,6 +142,16 @@ public sealed class Parser {
             Expr operand = this._parseExpr(85);
             return new UnaryExpr(t.Text, operand, t.Span);
         }
+        // C 风格强制转换 `(Type)expr`：`( 类型关键字 )` 无歧义（类型关键字不能作值）。
+        // 用户类 cast `(C)x` 留 `as`（避免与 `(expr)` 歧义）。操作数按一元优先级（85）绑定。
+        if (k == TokenKind.LParen && this._isTypeKeyword(this._peekAt(1).Kind)
+            && this._peekAt(2).Kind == TokenKind.RParen) {
+            this._advance();
+            TypeExpr ct = this._parseType();
+            this._expect(TokenKind.RParen, ")");
+            Expr operand = this._parseExpr(85);
+            return new CastExpr(ct, operand, t.Span);
+        }
         if (k == TokenKind.LParen) {
             this._advance();
             Expr inner = this._parseExpr(0);

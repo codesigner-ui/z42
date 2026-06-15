@@ -315,6 +315,11 @@ public sealed class TypeChecker {
             BoundExpr operand = this._bindExpr(ax.E, env);
             return new BoundCast(operand, env.ResolveType(ax.Type), ax.Span);
         }
+        if (e is CastExpr) {                                    // C 风格 (T)x（G3）→ BoundConvert（结果类型 = T）
+            CastExpr cx = e as CastExpr;
+            BoundExpr operand = this._bindExpr(cx.E, env);
+            return new BoundConvert(operand, env.ResolveType(cx.Type), cx.Span);
+        }
         if (e is ArrayNewExpr) {
             ArrayNewExpr an = e as ArrayNewExpr;
             BoundExpr size = this._bindExpr(an.Size, env);

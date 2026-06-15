@@ -354,3 +354,12 @@ void test_array_len_lowering() {
     Assert.Equal("fn @C.M(2) -> int {\nentry:\n  %2 = field_get %1.Length\n  ret %2\n}",
                  IrDump.DumpFunc(src, "C.M"));
 }
+
+// ── C 风格强制转换 (T)x → ConvertInstr（port-z42c-self-compile G3）──────────────
+[Test]
+void test_cstyle_cast_convert() {
+    // (int)v：long→int 跨类型 → convert i32（identity/Unknown/Ref no-op，镜像 C# VisitCast）
+    string src = "int F() { long v = 255; return (int)v; }";
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 255\n  %1 = copy %0\n  %2 = convert i32 %1\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "F"));
+}
