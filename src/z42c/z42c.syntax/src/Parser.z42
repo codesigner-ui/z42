@@ -426,6 +426,11 @@ public sealed class Parser {
         if (k == TokenKind.Var) { return true; }
         if (this._isTypeKeyword(k)) { return true; }
         if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Identifier) { return true; }
+        // 数组类型注解 var-decl：`Name[] name`（用户类数组局部声明；`int[]` 等关键字数组已走 _isTypeKeyword 路径）。
+        // 空括号 `[]` + 紧跟标识符区分类型 `Diagnostic[] x` 与下标表达式 `Diagnostic[i]`（后者括号内非空）。
+        if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.LBracket
+            && this._peekAt(2).Kind == TokenKind.RBracket
+            && this._peekAt(3).Kind == TokenKind.Identifier) { return true; }
         // 泛型类型注解 var-decl：`Name<...> name =`（镜像 C# IsTypeAnnotatedVarDecl 的泛型 lookahead；
         // 修 2B 期挂账 gap：`Box<int> b = ...` 被误判比较表达式）
         if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Lt) {
