@@ -465,7 +465,7 @@ public sealed class TypeChecker {
         // prim receiver 属性访问（镜像 _bindMemberCall 的 prim 处理）：prim 名首字母大写 →
         // stdlib 包装类（"string"→"String"，imported 自 z42.core TSIG）→ 取字段/属性真类型；
         // 查无则松绑 Unknown（codegen 经 DepIndex/VM builtin 真实解析，如 string.Length）。
-        string wrapper = TypeChecker._capFirst(tt.Name());
+        string wrapper = TypeChecker._primWrapper(tt.Name());
         if (env.Symbols.HasClass(wrapper)) {
             Z42ClassType wct = env.Symbols.GetClass(wrapper);
             FieldSymbol wfs = this._findField(env.Symbols, wct, m.Name);
@@ -577,7 +577,7 @@ public sealed class TypeChecker {
         // prim receiver（IC-3，镜像 C#）：prim 名首字母大写 → stdlib 包装类（"string"→"String"，
         // imported 自 z42.core TSIG）→ 取方法 ret 真类型（dst tag 字节实证 Str 非 Unknown）；
         // 查无则松绑定 Unknown（codegen 经 DepIndex 真实解析）。
-        string wrapper = TypeChecker._capFirst(rt.Name());
+        string wrapper = TypeChecker._primWrapper(rt.Name());
         if (env.Symbols.HasClass(wrapper)) {
             Z42ClassType wct = env.Symbols.GetClass(wrapper);
             MethodSymbol wms = this._findMethod(env.Symbols, wct, mem.Name);
@@ -628,7 +628,26 @@ public sealed class TypeChecker {
                                caps, this._lambdaCapCount, expected, lam.Span);
     }
 
-    // prim 名 → stdlib 包装类名（首字母大写，镜像 C# CapitalizeFirst）。
+    // prim 名 → stdlib 包装类 BCL 简名（镜像 C# WellKnownTypes/TypeRegistry：int→Int32 等，
+    // 取代旧 CapitalizeFirst 启发式——`int→Int` 错，真名是 `Int32`；string→String 巧合相同）。
+    private static string _primWrapper(string n) {
+        if (n == "int"    || n == "i32") { return "Int32"; }
+        if (n == "long"   || n == "i64") { return "Int64"; }
+        if (n == "short"  || n == "i16") { return "Int16"; }
+        if (n == "sbyte"  || n == "i8")  { return "SByte"; }
+        if (n == "byte"   || n == "u8")  { return "Byte"; }
+        if (n == "ushort" || n == "u16") { return "UInt16"; }
+        if (n == "uint"   || n == "u32") { return "UInt32"; }
+        if (n == "ulong"  || n == "u64") { return "UInt64"; }
+        if (n == "float"  || n == "f32") { return "Single"; }
+        if (n == "double" || n == "f64") { return "Double"; }
+        if (n == "bool") { return "Boolean"; }
+        if (n == "char") { return "Char"; }
+        if (n == "string") { return "String"; }
+        return TypeChecker._capFirst(n);   // 其它（已是 PascalCase 或未知）→ 首字母大写回退
+    }
+
+    // prim 名 → 首字母大写（_primWrapper 的回退）。
     private static string _capFirst(string name) {
         if (name.Length == 0) { return name; }
         string head = name.Substring(0, 1).ToUpper();

@@ -44,8 +44,9 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 - [x] G11b static_init namespace 限定：IrGen `_q(stem).__static_init__`（镜像 C# `<ns>.<stem>.__static_init__`；无 ns 退化 stem，sacheck 不回归）。**STRS 10000=10000 ✓**。
 - [x] G12 class-shape flags（typeData 0-vs-2）：mod[0] Span 完全一致。
 - [x] G13 形参 REGT/指令 tag 镜像 C# 语法重载 `ToIrType(TypeExpr)=GetIrType(name)`：prim→tag / array→Ref / class·iface·func·泛型→**Unknown**（GetIrType 表只含 prim；体内值才走语义 ToIrType→class=Ref）。FunctionEmitter 形参循环原只特例 interface/Func，扩到所有非-prim·非-array→Unknown。corpus 唯一 class 形参=`IShape`(接口已特例)+`MyErr`(catch 变量另路径)→无回归。**消除 mod[1] Span 形参 Ref-vs-Unknown 差**（首差 211→533）。
-- [ ] G14 mod[1] 剩余（cross-file 成员类型解析）：`this.Span.File`（Span 跨文件）字符串拼接 `+` 结果被标 ref 非 str（typechecker package-build 未解析跨文件成员 File→string）+ ctor DBUG +16。**根=跨文件类成员类型解析 parity**。
-- [ ] G15+ 逐包推进（z42c.ir … driver）。
+- [x] G14 prim→wrapper BCL 名映射（`_primWrapper` 替 `_capFirst`）：`int.ToString()` 的 wrapper 应为 `Int32`（C# WellKnownTypes/TypeRegistry 名）非 `_capFirst("int")="Int"` → 旧版查无 → fallback Unknown → vcall 返回 tag Ref；现 int→Int32/long→Int64/float→Single/bool→Boolean… → ToString 返回解析 string → tag Str。string→String 巧合相同故旧版 string 方法能用；int/long/float 全错。**mod[1] funcData/typeData/regt 全对齐**（跨文件成员解析本就正常，根实为 prim wrapper 名）。corpus 不用 int.ToString() → 无回归。
+- [ ] G15 DBUG line-tracking：Format() 的多行 return 语句——C# 5 条 line 条目（追踪行内子表达式换行），z42c 4 条（per-statement TrackLine 只追语句起始行）。**z42c.core 仅剩此 1 条 DBUG 差（16B）**。需行内 span 换行追踪，但有 corpus DBUG 回归风险须谨慎。
+- [ ] G16+ 逐包推进（z42c.ir … driver）。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）
