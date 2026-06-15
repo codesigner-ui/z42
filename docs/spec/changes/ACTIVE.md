@@ -9,10 +9,10 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（zbc 1.17/zpkg 0.19，TYPE section 类接口块 + IrClassDesc.Interfaces + ZbcReader round-trip）|
-| `runtime` | **add-reflection-generic-predicates（进行中）** | 2026-06-14 | reflection: `__type_is_generic`/`_generic_def`/`_primitive` builtin。（~~tidy-examples-dir~~ ✅ 已归档 2026-06-15，释放 runtime：test_demo 夹具挪入 `src/runtime/tests/data/`）|
+| `runtime` | **add-reflection-generic-predicates（进行中）** + **redirect-golden-zbc-to-artifacts（进行中，仅 `zbc_compat.rs`，User 跨锁授权 2026-06-16）** | 2026-06-14 | reflection: `__type_is_generic`/`_generic_def`/`_primitive` builtin。（~~tidy-examples-dir~~ ✅ 已归档 2026-06-15，释放 runtime：test_demo 夹具挪入 `src/runtime/tests/data/`）|
 | `stdlib` | **add-reflection-generic-predicates（进行中）** | 2026-06-14 | `Std.Type.IsGenericType`/`IsGenericTypeDefinition`/`IsPrimitive` |
-| `z42c` | **sync-z42c-zbc-117-interfaces（进行中）** | 2026-06-15 | get-interfaces 格式 bump 的 z42c writer 同步（zbc 1.17/zpkg 0.19，TYPE 接口块）；清 byte-identical gate 欠债。前序自举主线全归档：…→**port-z42c-statics-arrays✅ 2026-06-13**（sacheck zbc 7/7）|
-| `toolchain` | **infra-ci-platform-test-dashboard（进行中）** | 2026-06-16 | 三平台测试接入 CI(wasm/iOS-sim/Android-emu)+ JUnit→GitHub Checks dashboard;扩 IosBackend 真 Simulator。⚠️ 与 migrate-scripts-to-z42 等并行,User 多次授权。前序：~~add-platform-test-pipeline~~ ✅ 2026-06-16 |
+| `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅（zbc 1.17 接口块 writer）/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅（runtime 死循环根因 needs_fixup 不收敛，User 授权跨锁修）2026-06-16 |
+| `toolchain` | **redirect-golden-zbc-to-artifacts（进行中，xtask regen/test-vm/golden，User 跨锁授权 2026-06-16）** | 2026-06-16 | （~~infra-ci-platform-test-dashboard~~ ✅ 已归档 2026-06-16：三平台 CI 全绿 wasm/iOS-sim/Android-emu + JUnit→GitHub Checks dashboard，run 27561709292 三 job success）。前序：~~add-platform-test-pipeline~~ ✅ 2026-06-16 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

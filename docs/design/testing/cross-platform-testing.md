@@ -465,12 +465,16 @@ public interface IPlatformBackend {
 check runs —— GitHub 即"远程同步层"，**不需自建服务器**。CI job + Checks 接线是独立
 change（见 roadmap `infra-ci-platform-test-dashboard`）。
 
-### 当前落地边界（诚实）
+### 落地状态（2026-06-16，三平台 CI 全绿）
 
-- wasm：①②③ 已端到端验证（本地 z42vm 实跑，7/7 R1–R7 过，产 junit.xml）
-- iOS：①② 忠实移植（cargo+xcframework / fixtures+stdlib）；③=`swift test`（macOS host slice）。Simulator 执行 + JUnit 转换延后
-- Android：①② 忠实移植（cargo-ndk+gradle）；③ 暂桥接现有 `test.sh`（emulator AVD 生命周期复杂、off-CI 不可验证），完整 z42 化 + JUnit 延后
-- 旧 `platforms/*/{build,test}.sh` **全保留**，CI-proven 后另开 change 退场（migrate-scripts-to-z42 节奏）
+infra-ci-platform-test-dashboard（CI run 27561709292 @ 9153fd6c）三平台 job 全 success：
+
+- **wasm**：①②③ 端到端（本地 z42vm 7/7 + CI ubuntu Playwright/Chromium）
+- **iOS**：①② 经 `test platform ios`；③ **CI macos-15 真 iOS Simulator**（`xcodebuild test -destination 'platform=iOS Simulator'`，xcbeautify→JUnit）R1–R7 绿。IosBackend 本地 `RunTests` 仍 `swift test`（host slice）；完整 simulator 化 = roadmap `ios-simulator-test`
+- **Android**：①② 经 `test platform android`；③ **CI ubuntu+KVM 真 emulator**（`reactivecircus/android-emulator-runner` + `gradlew connectedAndroidTest`）R1–R7 绿。AndroidBackend 本地 `RunTests` 桥接 `test.sh`（emulator 自管）；完整 z42 化 = roadmap `port-android-emulator-run-to-z42`
+- **dashboard**：每平台 job = PR 上一个 GitHub Check（success/failure）；dorny/test-reporter 出 R1–R7 明细
+- **CI 部署目标坑（iter1→2 修复）**：iOS cargo build 必须 `IPHONEOS_DEPLOYMENT_TARGET=platform.ios.min_ios`（否则 zlib-ng C 部署目标 10.0 vs rlib 18.5 → `___chkstk_darwin` 链接失败）；Android Kotlin doc 注释禁含字面 `/*`（`<subdir>/*.zpkg` 中 `/*` 触发 Kotlin 嵌套块注释 → unclosed comment）
+- 旧 `platforms/*/{build,test}.sh` **全保留**，CI-proven 已达成 → 退场可另开 change（roadmap `retire-platform-build-test-sh`）
 
 ## 实施分期建议
 
