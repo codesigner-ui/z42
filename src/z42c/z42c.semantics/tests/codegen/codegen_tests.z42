@@ -372,3 +372,12 @@ void test_var_decl_no_init() {
     Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 5\n  ret %0\n}",
                  IrDump.DumpFunc(src, "F"));
 }
+
+// ── 构造器 lowering（port-z42c-self-compile G11）→ `<qualClass>.<Class>` 实例函数 ret void ──
+[Test]
+void test_ctor_lowering() {
+    // ctor 发为实例方法（this=%0, 参数 %1+），ret void，体=字段赋值（镜像 C# EmitMethod ctor）
+    string src = "public sealed class C { public int X; public C(int x) { this.X = x; } }";
+    Assert.Equal("fn @C.C(2) -> void {\nentry:\n  field_set %0.X, %1\n  ret\n}",
+                 IrDump.DumpFunc(src, "C.C"));
+}

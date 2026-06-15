@@ -154,6 +154,9 @@ SubcommandRouter _testRouter() {
 // (build project / build test assets / run tests). Empty step = full pipeline.
 SubcommandRouter _platformRouter() {
     SubcommandRouter pr = new SubcommandRouter("xtask test platform", "platform 3-phase tests");
+    ArgParser desktop = new ArgParser("xtask test platform desktop", "desktop C-ABI pipeline");
+    desktop.AddOptionalPositional("step", "build|assets|run (default: all)");
+    pr.Add("desktop", "desktop 3-phase pipeline (Tier-1 C ABI R1–R7)", desktop);
     ArgParser wasm = new ArgParser("xtask test platform wasm", "wasm pipeline");
     wasm.AddOptionalPositional("step", "build|assets|run (default: all)");
     pr.Add("wasm", "wasm 3-phase pipeline", wasm);

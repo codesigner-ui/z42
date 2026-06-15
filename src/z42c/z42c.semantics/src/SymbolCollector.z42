@@ -154,9 +154,8 @@ public sealed class SymbolCollector {
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, this._hasWord(fd.Mods, "static"), c.Name));
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
-                if (!md.IsCtor) {                          // ctor 延后（1D new）
-                    ct.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, tp, tpc));
-                }
+                // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。
+                ct.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, tp, tpc));
             }
             j = j + 1;
         }
@@ -171,6 +170,7 @@ public sealed class SymbolCollector {
         int k = 0;
         while (k < md.ParamCount) { ps[k] = table.ResolveTypeP(md.Params[k].Type, all, allc); k = k + 1; }
         Z42Type ret = table.ResolveTypeP(md.RetType, all, allc);
+        if (md.IsCtor) { ret = new Z42VoidType(); }   // 构造器返回 void（RetType 是占位空名）
         var sig = new Z42FuncType(ps, md.ParamCount, ret);
         return new MethodSymbol(md.Name, this._vis(md.Mods), sig, this._hasWord(md.Mods, "static"), containing, true, md);
     }

@@ -151,7 +151,7 @@ public static class ZbcWriter {
             }
             w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）
             w.WriteU16(0);    // attrCount（zbc 1.10）
-            w.WriteU8(0);     // class-shape flags（zbc 1.12）
+            w.WriteU8(cd.Flags);   // class-shape flags（zbc 1.12，G12）：abstract/sealed/struct/record
             w.WriteU16(cd.StaticFieldCount);   // static-fields count（zbc 1.13；SA-3）
             int sf = 0;
             while (sf < cd.StaticFieldCount) {

@@ -40,8 +40,10 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 
 ## 🔧 z42c.core byte-identical 逐段攻坚（从 DEPS 起）
 - [x] G10 DEPS 自依赖（z42c.core 虚增 dep=`z42c.core.zpkg` ns=`Z42.Core`——flat libs 含 self → 同包符号经 DepIndex 解析）：`DepScan.Scan(libsDir, excludeName)` 排除 self-zpkg（包不导入自己；C# libs=stdlib only 本无 self，排除是 no-op）。**DEPS 4=4 对齐**。gate 7/7+6/6 无回归。
-- [ ] G11 构造器 lowering（EXPT 少 4 ctor 导出 `<Class>.<Class>` + 部分 SIGS/MODS）：z42c SymbolCollector+IrGen 都 `if(!md.IsCtor)` 跳过；C# 为每 ctor 发 `<qualClass>.<Class>` 实例函数（字段 init 注入 + 体）。
-- [ ] G12+ 剩余 SIGS/MODS/TSIG 逐段对账。
+- [x] G11 构造器 lowering：SymbolCollector 收集 ctor（名=类名，ret void）+ TypeChecker 绑 ctor 体 + IrGen 发 `<qualClass>.<Class>` 实例函数（ret void）+ ExportedTypeExtractor 入 TSIG + EmitFunction ctor ret void。exports 自动来自 irm.Functions。**EXPT 144=144 ✓ / SIGS 770=770 ✓ / TSIG 9941=9941 ✓ / MODS +749→+16**。codegen 单测 test_ctor_lowering。
+- [x] G11b static_init namespace 限定：IrGen `_q(stem).__static_init__`（镜像 C# `<ns>.<stem>.__static_init__`；无 ns 退化 stem，sacheck 不回归）。**STRS 10000=10000 ✓**。
+- [ ] G12 MODS +16 残差（typeData 内一处 0-vs-2 + 16B 在其它模块；TYPE 段 parity）。z42c.core **9 段中 8 段 byte-identical**，只剩 MODS。
+- [ ] G13+ 逐包推进（z42c.ir … driver）。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）

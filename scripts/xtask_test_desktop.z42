@@ -1,0 +1,137 @@
+// xtask — desktop platform backend (add-desktop-platform-backend, 2026-06-16).
+// Implements IPlatformBackend for the host desktop via the Tier-1 C ABI. The
+// desktop peer of wasm/iOS/Android: a real external C consumer (r1_r7.c) links
+// libz42.a and runs the same R1–R7 embedding contract.
+//   ① BuildProject : cargo rustc --crate-type=staticlib → libz42.a
+//   ② Assets       : compile hello/multi_line fixtures (stdlib read from _libsDir at run)
+//   ③ RunTests     : cc r1_r7.c + link libz42.a → run → parse [Rn] PASS/FAIL → JUnit
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+public class DesktopBackend : IPlatformBackend {
+    public string Name() { return "desktop"; }
+
+    public AssetLayout Assets(string root) {
+        // fixtures land in an artifacts scratch dir; stdlib is NOT copied — the
+        // run points search_paths straight at _libsDir (desktop has a filesystem).
+        string[] noStdlib = new string[0];
+        return new AssetLayout(Path.Join(root, "artifacts/build/desktop-test/fixtures"), noStdlib, false);
+    }
+
+    // ① runtime staticlib → artifacts/build/runtime/release/libz42.a
+    public int BuildProject(string root) {
+        if (Process.Which("cargo") == null) {
+            ConsoleError.WriteLine("error: cargo not found (https://rustup.rs)");
+            return 1;
+        }
+        if (Process.Which("cc") == null) {
+            ConsoleError.WriteLine("error: cc not found (C compiler required for desktop embedding test)");
+            return 1;
+        }
+        Console.WriteLine("  cargo rustc --release --lib --crate-type=staticlib (libz42.a)");
+        return _exec(new Process("cargo").Arg("rustc").Arg("--release").Arg("--lib")
+            .Arg("--crate-type=staticlib")
+            .Arg("--manifest-path").Arg(Path.Join(root, "src/runtime/Cargo.toml")));
+    }
+
+    // ③ compile r1_r7.c against libz42.a, run it, parse output → JUnit.
+    public int RunTests(string root) {
+        string libDir  = Path.Join(root, "artifacts/build/runtime/release");
+        string libA    = Path.Join(libDir, "libz42.a");
+        if (!File.Exists(libA)) {
+            ConsoleError.WriteLine("error: libz42.a not found at " + libA + "; run `test platform desktop build` first");
+            return 1;
+        }
+        string outDir  = Path.Join(root, "artifacts/build/desktop-test");
+        Directory.Create(outDir);
+        string bin     = Path.Join(outDir, "r1_r7");
+        string src     = Path.Join(root, "src/toolchain/host/platforms/desktop/tests/r1_r7.c");
+        string include = Path.Join(root, "src/runtime/include");
+
+        // cc r1_r7.c -I include -o bin -L libDir -lz42 <platform native libs>
+        Console.WriteLine("  cc r1_r7.c -lz42");
+        Process cc = new Process("cc").Arg("-O2").Arg("-I").Arg(include)
+            .Arg("-o").Arg(bin).Arg(src)
+            .Arg("-L").Arg(libDir).Arg("-lz42");
+        foreach (var l in this._nativeLibs()) { cc = cc.Arg(l); }
+        int c = _exec(cc);
+        if (c != 0) { ConsoleError.WriteLine("error: cc link failed"); return 1; }
+
+        // run: r1_r7 <hello.zbc> <multi_line.zbc> <libs_dir>
+        string fixtures = Path.Join(outDir, "fixtures");
+        string libs = _libsDir(root);
+        ProcessResult r = new Process(bin)
+            .Arg(Path.Join(fixtures, "hello.zbc"))
+            .Arg(Path.Join(fixtures, "multi_line.zbc"))
+            .Arg(libs)
+            .Run();
+        Console.WriteLine(r.Stdout);
+        if (r.Stderr.Length > 0) { ConsoleError.WriteLine(r.Stderr); }
+
+        this._writeJUnit(root, r.Stdout);
+        return r.ExitCode;
+    }
+
+    // macOS / Linux native libs a Rust staticlib needs at link time (mirrors the
+    // host hello_c README link line; avoids the fragile --print=native-static-libs).
+    string[] _nativeLibs() {
+        if (Platform.IsMacOS()) {
+            string[] m = new string[4]; m[0] = "-liconv"; m[1] = "-lSystem"; m[2] = "-lc"; m[3] = "-lm";
+            return m;
+        }
+        if (Platform.IsLinux()) {
+            string[] l = new string[6];
+            l[0] = "-lc"; l[1] = "-lm"; l[2] = "-lpthread"; l[3] = "-ldl"; l[4] = "-lrt"; l[5] = "-lgcc_s";
+            return l;
+        }
+        return new string[0];
+    }
+
+    // Parse `[Rn] PASS` / `[Rn] FAIL: msg` lines → minimal JUnit at the uniform
+    // report dir, so the future CI desktop job publishes it like the others.
+    void _writeJUnit(string root, string stdout) {
+        string[] lines = this._splitLines(stdout);
+        int tests = 0; int failures = 0;
+        string cases = "";
+        foreach (var line in lines) {
+            string t = line.Trim();
+            if (!t.StartsWith("[R")) { continue; }
+            int rb = t.IndexOf("]");
+            if (rb < 0) { continue; }
+            string name = t.Substring(1, rb - 1);          // "R1".."R7"
+            string rest = t.Substring(rb + 1).Trim();      // "PASS" | "FAIL: msg"
+            tests = tests + 1;
+            if (rest.StartsWith("PASS")) {
+                cases = cases + "  <testcase name=\"" + name + "\" classname=\"desktop.r1_r7\"/>\n";
+            } else {
+                failures = failures + 1;
+                string msg = rest.StartsWith("FAIL:") ? rest.Substring(5).Trim() : rest;
+                cases = cases + "  <testcase name=\"" + name + "\" classname=\"desktop.r1_r7\">\n"
+                      + "    <failure message=\"" + this._xmlEscape(msg) + "\"/>\n  </testcase>\n";
+            }
+        }
+        string xml = "<testsuites tests=\"" + tests + "\" failures=\"" + failures + "\">\n"
+                   + "<testsuite name=\"desktop.r1_r7\" tests=\"" + tests + "\" failures=\"" + failures + "\">\n"
+                   + cases
+                   + "</testsuite>\n</testsuites>\n";
+        string dir = _reportDir(root, "desktop");
+        File.WriteAllText(Path.Join(dir, "junit.xml"), xml);
+        Console.WriteLine("  junit.xml (" + tests + " cases, " + failures + " failed)");
+    }
+
+    string _xmlEscape(string s) {
+        string o = s;
+        o = o.Replace("&", "&amp;");
+        o = o.Replace("<", "&lt;");
+        o = o.Replace(">", "&gt;");
+        o = o.Replace("\"", "&quot;");
+        return o;
+    }
+
+    string[] _splitLines(string s) {
+        string norm = s.Replace("\r\n", "\n");
+        return norm.Split("\n");
+    }
+}

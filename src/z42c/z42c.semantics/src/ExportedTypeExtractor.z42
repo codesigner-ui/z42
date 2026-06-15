@@ -181,7 +181,7 @@ public static class ExportedTypeExtractor {
                 Decl mem = ExportedTypeExtractor._unwrap(c.Members[j]);
                 if (mem is MethodDecl) {
                     MethodDecl md = mem as MethodDecl;
-                    if (!md.IsCtor) {
+                    {                                       // G11：ctor 也入 TSIG（C# ct.Methods 含 ctor）；ctor=实例方法→pass 0
                         bool isStatic = ExportedTypeExtractor._hasWord(md.Mods, "static");
                         bool wantStatic = pass == 1;
                         if (isStatic == wantStatic) {

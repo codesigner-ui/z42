@@ -43,11 +43,12 @@ public class AssetLayout {
 
 // name ∈ wasm|ios|android ; step ∈ ""(=all)|build|assets|run.
 int _platformDispatch(string name, string step, string root) {
+    if (name == "desktop") { return _platformStep(new DesktopBackend(), step, root); }
     if (name == "wasm")    { return _platformStep(new WasmBackend(), step, root); }
     if (name == "ios")     { return _platformStep(new IosBackend(), step, root); }
     if (name == "android") { return _platformStep(new AndroidBackend(), step, root); }
     if (name == "all")     { return _platformAllPlatforms(step, root); }
-    ConsoleError.WriteLine("error: unknown platform '" + name + "' (wasm|ios|android|all)");
+    ConsoleError.WriteLine("error: unknown platform '" + name + "' (desktop|wasm|ios|android|all)");
     return 2;
 }
 
@@ -62,7 +63,8 @@ int _platformStep(IPlatformBackend b, string step, string root) {
 
 // `test platform all <step>` — run the step on every backend; first failure wins.
 int _platformAllPlatforms(string step, string root) {
-    int c = _platformStep(new WasmBackend(), step, root);    if (c != 0) { return c; }
+    int c = _platformStep(new DesktopBackend(), step, root); if (c != 0) { return c; }
+    c = _platformStep(new WasmBackend(), step, root);        if (c != 0) { return c; }
     c = _platformStep(new IosBackend(), step, root);         if (c != 0) { return c; }
     return _platformStep(new AndroidBackend(), step, root);
 }

@@ -69,7 +69,8 @@ public sealed class FunctionEmitter {
             this._emitStmt(body);
         }
         if (!this._ctx.Ended) { this._ctx.EndBlock(new RetTerm(false, null)); }   // 隐式 ret
-        string retName = this._symbols.ResolveTypeP(md.RetType, tp, tpc).Name();
+        string retName = "void";   // G11：ctor 返回 void（RetType 占位空名）
+        if (!md.IsCtor) { retName = this._symbols.ResolveTypeP(md.RetType, tp, tpc).Name(); }
         int[] regTypes = new int[this._ctx.RegTagCount];
         int rt = 0;
         while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }

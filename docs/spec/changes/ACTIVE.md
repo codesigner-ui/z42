@@ -12,7 +12,7 @@
 | `runtime` | **add-reflection-generic-predicates（进行中）** | 2026-06-14 | reflection: `__type_is_generic`/`_generic_def`/`_primitive` builtin。（~~redirect-golden-zbc-to-artifacts~~ ✅ 已归档 2026-06-16：`zbc_compat.rs` golden 发现改读 artifacts 镜像；~~tidy-examples-dir~~ ✅ 已归档 2026-06-15）|
 | `stdlib` | **add-reflection-generic-predicates（进行中）** | 2026-06-14 | `Std.Type.IsGenericType`/`IsGenericTypeDefinition`/`IsPrimitive` |
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅（zbc 1.17 接口块 writer）/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅（runtime 死循环根因 needs_fixup 不收敛，User 授权跨锁修）2026-06-16 |
-| `toolchain` | **add-desktop-platform-backend（进行中，User 授权 2026-06-16）** | 2026-06-16 | desktop 作第 4 平台后端(C-ABI R1–R7 harness + DesktopBackend + 退役 host/examples 死副本)；主动新文件 + 删独立死副本。（~~redirect-golden-zbc-to-artifacts~~ ✅ 已归档 2026-06-16：xtask regen/test-vm golden run-.zbc → `artifacts/build/golden/` 镜像；~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16）|
+| `toolchain` | —（空闲）| — | ~~add-desktop-platform-backend~~ ✅ 已归档 2026-06-16（desktop 第 4 平台后端：Tier-1 C ABI R1–R7 harness + DesktopBackend；`./xtask test platform desktop` 本地 7/7 + junit。host/examples 退役取消=文档化示例非死物）。前序：~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
