@@ -38,6 +38,11 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 | STRS | 9576 | 9643 | 下游（DEPS/EXPT/SIGS 串入池）|
 → 逐包 byte-identical 是 0.3.x B 退出里程碑（multi-bug，建议独立 change：DEPS→EXPT→SIGS/MODS codegen parity 逐个对账，从 z42c.core 起逐包推进）。
 
+## 🔧 z42c.core byte-identical 逐段攻坚（从 DEPS 起）
+- [x] G10 DEPS 自依赖（z42c.core 虚增 dep=`z42c.core.zpkg` ns=`Z42.Core`——flat libs 含 self → 同包符号经 DepIndex 解析）：`DepScan.Scan(libsDir, excludeName)` 排除 self-zpkg（包不导入自己；C# libs=stdlib only 本无 self，排除是 no-op）。**DEPS 4=4 对齐**。gate 7/7+6/6 无回归。
+- [ ] G11 构造器 lowering（EXPT 少 4 ctor 导出 `<Class>.<Class>` + 部分 SIGS/MODS）：z42c SymbolCollector+IrGen 都 `if(!md.IsCtor)` 跳过；C# 为每 ctor 发 `<qualClass>.<Class>` 实例函数（字段 init 注入 + 体）。
+- [ ] G12+ 剩余 SIGS/MODS/TSIG 逐段对账。
+
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）
 - [x] 里程碑：z42c 能编译 z42c.core 全部源（无 error，双路均成功）

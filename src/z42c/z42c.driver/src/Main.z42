@@ -66,7 +66,7 @@ int _build(string tomlPath) {
     ImportedSymbols imported = null;
     DependencyIndex depIndex = null;
     if (libsDir != "") {
-        scan = DepScan.Scan(libsDir);
+        scan = DepScan.Scan(libsDir, pm.Name);   // 排除 self-zpkg（包不导入自己）
         depIndex = scan.Index;
         // 全工程 usings 聚合（镜像 C# LoadExternalImported 的跨文件聚合）
         string[] allUsings = new string[8];

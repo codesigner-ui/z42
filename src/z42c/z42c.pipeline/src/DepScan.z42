@@ -39,7 +39,7 @@ public static class DepScan {
     // prelude 包名单（镜像 C# PreludePackages.Names）。
     public static bool IsPrelude(string pkgName) { return pkgName == "z42.core"; }
 
-    public static DepScanResult Scan(string libsDir) {
+    public static DepScanResult Scan(string libsDir, string excludeName) {
         var index = new DependencyIndex();
         string[] nsNames = new string[8];
         string[] nsFiles = new string[8];
@@ -50,12 +50,15 @@ public static class DepScan {
         if (!Directory.Exists(libsDir)) {
             return new DepScanResult(index, nsNames, nsFiles, 0, exported, exportedPkg, 0);
         }
+        // 包不导入自己：构建某包时把它自己的 .zpkg 排除出扫描（flat libs 含 self 时——
+        // 否则同包符号经 DepIndex 解析 → 自依赖 DEPS + FQ 调用，与 C#[libs 不含 self]不一致）。
+        string excludeZpkg = excludeName + ".zpkg";
         string[] paths = DepScan._sortedZpkgs(libsDir);
         int pi = 0;
         while (pi < paths.Length) {
             ZpkgInfo z = ZpkgReader.Open(File.ReadAllBytes(paths[pi]));
-            if (z != null && !z.IsExe) {                       // lib-kind only（镜像 C# Kind 过滤）
-                string basename = Path.GetFileName(paths[pi]);
+            string basename = Path.GetFileName(paths[pi]);
+            if (z != null && !z.IsExe && basename != excludeZpkg) {  // lib-kind only + 非 self
                 // nsMap：NSPC 全名单 first-wins
                 string[] nss = ZpkgReader.ReadNamespaces(z);
                 int i = 0;
