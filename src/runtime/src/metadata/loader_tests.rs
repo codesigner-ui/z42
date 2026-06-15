@@ -548,6 +548,44 @@ fn fixup_idempotent_when_no_new_resolutions() {
     assert_eq!(pass2, 0, "second pass is no-op");
 }
 
+/// Regression (fix-z42c-load-fixup-loop): a class carrying *duplicate* own
+/// field names must still converge. `merge_with_base` dedups own fields by
+/// name (a merged object can't have two slots of the same name), so the
+/// merged layout has fewer fields than the raw own-field count. If
+/// `needs_fixup` counted own fields with multiplicity it would forever
+/// disagree with the merged length → the loader's fixed-point loop spins at
+/// 100% CPU. Base carries `b` so Sub genuinely needs an inheritance fixup;
+/// Sub declares `dup` twice (3 own, 2 distinct). Pre-fix `needs_fixup`
+/// expected base(1)+own-with-multiplicity(3)=4 but merge produces 3 → never
+/// converges. Post-fix expected base(1)+distinct(2)=3 == 3 → converges.
+#[test]
+fn fixup_converges_with_duplicate_field_names() {
+    let mut mod_a = module_with_one_class("Base", None, vec![("b", "str")]);
+    let mut mod_b = module_with_one_class("Sub", Some("Base"),
+        vec![("dup", "str"), ("dup", "str"), ("x", "i64")]);
+    for m in [&mut mod_a, &mut mod_b] {
+        crate::metadata::loader::build_type_registry(m);
+        m.type_registry_vec.clear();
+    }
+    let mut global: std::collections::HashMap<String, std::sync::Arc<TypeDesc>> =
+        std::collections::HashMap::new();
+    for (n, td) in std::mem::take(&mut mod_a.type_registry) { global.insert(n, td); }
+    for (n, td) in std::mem::take(&mut mod_b.type_registry) { global.insert(n, td); }
+
+    // First pass merges Sub against Base; subsequent passes MUST reach the
+    // fixed point (0) rather than re-fixing `Sub` every round.
+    let pass1 = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert_eq!(pass1, 1, "Sub fixed up once against Base");
+    let pass2 = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert_eq!(pass2, 0, "converged: duplicate field name must not re-trigger fixup");
+
+    let sub = global.get("Sub").unwrap();
+    assert_eq!(sub.fields.len(), 3, "merged layout = base(b) + own deduped (dup, x)");
+    assert_eq!(sub.field_index.get("b"),   Some(&0), "base.b at slot 0");
+    assert_eq!(sub.field_index.get("dup"), Some(&1));
+    assert_eq!(sub.field_index.get("x"),   Some(&2));
+}
+
 // ── aggregate_zpkg_test_index (aggregate-zpkg-tidx, 2026-06-06) ──────────────
 //
 // These exercise the pure aggregation helper. End-to-end loader path

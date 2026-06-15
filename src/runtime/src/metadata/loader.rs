@@ -845,6 +845,15 @@ pub fn try_fixup_inheritance(
     newly_fixed
 }
 
+/// Names of types still reporting `needs_fixup` — used only to make the
+/// loader's non-convergence safety-cap error message actionable.
+pub fn unconverged_type_names(registry: &HashMap<String, Arc<TypeDesc>>) -> Vec<String> {
+    registry.iter()
+        .filter(|(_, td)| needs_fixup(td, registry))
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
 /// True if this TypeDesc's currently-merged view is missing inherited
 /// entries that have since become resolvable in `registry`. We compare
 /// `fields.len()` against `own_fields.len() + base.fields.len()`; a
@@ -857,8 +866,18 @@ pub fn try_fixup_inheritance(
 fn needs_fixup(td: &TypeDesc, registry: &HashMap<String, Arc<TypeDesc>>) -> bool {
     let Some(base_name) = td.base_name.as_deref() else { return false; };
     let Some(base) = registry.get(base_name) else { return false; }; // base still unresolvable
+    // Count *distinct* own field names not already in base — mirroring
+    // `merge_with_base`, which pushes each own field only if its name isn't
+    // already present (dedup against the growing layout). Counting with
+    // multiplicity here would permanently disagree with the merged layout for
+    // a class carrying duplicate field names (e.g. a copy-pasted declaration),
+    // making `needs_fixup` true forever → the caller's fixed-point loop spins.
+    let mut seen_f: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let expected_field_count = base.fields.len()
-        + td.own_fields().iter().filter(|f| !base.fields.iter().any(|b| b.name == f.name)).count();
+        + td.own_fields().iter()
+            .filter(|f| !base.fields.iter().any(|b| b.name == f.name))
+            .filter(|f| seen_f.insert(f.name.as_ref()))
+            .count();
     let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let own_unique_methods = td.own_methods().iter()
         .map(|fq| TypeDesc::derive_simple_method_name(&td.name, fq))

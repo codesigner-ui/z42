@@ -325,9 +325,25 @@ impl LazyLoader {
         // pass to inherit the base's field/vtable layout. The fixed-point
         // loop also retries previously-deferred subclasses (a freshly-loaded
         // dep may unblock subclasses from earlier zpkgs).
-        loop {
+        // Fixed-point: each round resolves one more deferred inheritance level,
+        // so a well-formed registry converges in at most (max base-chain depth)
+        // rounds, bounded by the type count. The `+ 8` slack absorbs interface
+        // / multi-level chains. A correct `needs_fixup` (dedup-aware) makes this
+        // cap unreachable; it's defense-in-depth so a future metadata defect can
+        // never hang the loader at 100% CPU — bail loudly instead.
+        let fixup_cap = self.type_registry.len() + 8;
+        for round in 0.. {
             let n = crate::metadata::loader::try_fixup_inheritance(&mut self.type_registry);
             if n == 0 { break; }
+            if round >= fixup_cap {
+                tracing::error!(
+                    "inheritance fixup did not converge after {fixup_cap} rounds while \
+                     loading `{file_name}` (still fixing {n}/round); likely duplicate \
+                     field names or a base-class cycle. Unconverged: {:?}",
+                    crate::metadata::loader::unconverged_type_names(&self.type_registry)
+                );
+                break;
+            }
         }
 
         // Transitively expand `ZpkgDep` list into the declared set.
