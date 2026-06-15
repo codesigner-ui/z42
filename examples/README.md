@@ -36,10 +36,11 @@ Tier 2 Rust 版本。
 | `string_members.z42` | `string.Length` / `string.IsEmpty`（M7 stdlib 成员演示） | ✅ Phase 1 可跑 |
 | `exceptions.z42` | `try / catch / throw` 异常处理（Phase 2 将替换为 `Result<T, E>` + `?`） | ✅ Phase 1 可跑 |
 | `generics.z42` | 泛型类、Lambda、委托、LINQ 风格 | 🚧 设计目标；泛型基础已落地（L3-G1/G3a/G4h），完整跑通需 L3 收尾 |
-| `async.z42` | `async / await`、`Task<T>`、`CancellationToken` | 📋 L3 设计目标，**当前不可执行** |
 
-> ✅ = 当前编译器/VM 可端到端执行；🚧 = 部分特性可用，整体待完善；📋 = 仅作语法
-> 设计参考，编译器尚未支持。
+> ✅ = 当前编译器/VM 可端到端执行；🚧 = 部分特性可用，整体待完善。
+>
+> 注：另有 `lambda` / `local_fn` / `closure_capture` / `named_args` / `raw_string_basic`
+> 等可跑单文件 demo 未逐一列表，直接看源文件即可。
 
 ### 运行单文件示例
 
