@@ -454,6 +454,16 @@ public sealed class TypeChecker {
         if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
+        // prim receiver 属性访问（镜像 _bindMemberCall 的 prim 处理）：prim 名首字母大写 →
+        // stdlib 包装类（"string"→"String"，imported 自 z42.core TSIG）→ 取字段/属性真类型；
+        // 查无则松绑 Unknown（codegen 经 DepIndex/VM builtin 真实解析，如 string.Length）。
+        string wrapper = TypeChecker._capFirst(tt.Name());
+        if (env.Symbols.HasClass(wrapper)) {
+            Z42ClassType wct = env.Symbols.GetClass(wrapper);
+            FieldSymbol wfs = this._findField(env.Symbols, wct, m.Name);
+            if (wfs != null) { return new BoundMember(target, m.Name, wfs.FieldType, m.Span); }
+            return new BoundMember(target, m.Name, new Z42UnknownType(), m.Span);
+        }
         this._diags.Error(DiagnosticCodes.TypeMismatch,
             "member access on non-class `" + tt.Name() + "`", m.Span);
         return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);

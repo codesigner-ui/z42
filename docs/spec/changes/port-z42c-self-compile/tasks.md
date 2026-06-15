@@ -10,8 +10,10 @@
 缺口 → 在 z42c 实现 → 重建重试。最终目标：z42c byte-identical 编译全部 7 包 = 完整自举。
 
 ## 进度（按发现顺序）
-- [x] G1 `_isVarDeclStart`：识别 `Name[] var`（用户类数组类型局部声明）——`int[]` 走类型关键字路径已 OK，用户类数组漏判。z42c.core/DiagnosticBag.z42 `Diagnostic[] bigger = new Diagnostic[n]` 触发。
-- [ ] G2.. （继续编译 z42c.core 发现的后续缺口）
+- [x] G1 `_isVarDeclStart`：识别 `Name[] var`（用户类数组类型局部声明）。**z42c.core 全包自编译通过**（无错）。
+- [x] G2 `_bindMember`：prim receiver 属性访问（`s.Length`/`s.ByteLength` 等）镜像 `_bindMemberCall` 的 prim→stdlib 包装类映射；查无松绑 Unknown。z42c.ir/ByteWriter.z42 触发。
+- [ ] G3 C 风格强制转换 `(Type)expr`（`(int)`/`(byte)`/`(long)` 等类型关键字 cast；z42c 仅有 `as`）。z42c.ir/ByteWriter.z42 line 45/54/81 触发。
+- [ ] G4.. （继续编译 z42c.ir 后续缺口）
 
 ## 验证
 - [ ] 每清一个缺口：`xtask test compiler-z42` 保持全绿（不回归 byte-compare 7/7 + zpkg 6/6）
