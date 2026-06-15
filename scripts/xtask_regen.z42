@@ -56,7 +56,7 @@ int _regenGolden() {
                     outPath = Path.Join(caseDir, "source.zbc");
                 } else {
                     string mirrorDir = _goldenArtifactDir(root,
-                        Path.Join(Path.Join("src/tests", cat), name));
+                        Path.Join(Path.Join("tests", cat), name));
                     Directory.Create(mirrorDir);
                     outPath = Path.Join(mirrorDir, "source.zbc");
                 }
@@ -90,7 +90,7 @@ int _regenGolden() {
                 if (File.Exists(src)) {
                     // run-golden → artifacts mirror (no zbc-format under libraries).
                     string mirrorDir = _goldenArtifactDir(root,
-                        Path.Join(Path.Join(Path.Join("src/libraries", libs[li]), "tests"), name));
+                        Path.Join(Path.Join(Path.Join("libraries", libs[li]), "tests"), name));
                     Directory.Create(mirrorDir);
                     string outPath = Path.Join(mirrorDir, "source.zbc");
                     caseNames   = _append(caseNames,   caseCount, name);
@@ -117,7 +117,7 @@ int _regenGolden() {
             if (File.Exists(flatPath)) {
                 string name = Path.GetFileNameWithoutExtension(flatPath);
                 // flat run-golden → artifacts mirror (zbc-format is dir-mode only).
-                string mirrorDir = _goldenArtifactDir(root, Path.Join("src/tests", cat));
+                string mirrorDir = _goldenArtifactDir(root, Path.Join("tests", cat));
                 Directory.Create(mirrorDir);
                 string outPath = Path.Join(mirrorDir, name + ".zbc");
                 caseNames   = _append(caseNames,   caseCount, name);

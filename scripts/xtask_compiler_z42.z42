@@ -159,8 +159,15 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
                     totalFailed = totalFailed + 1;
                     continue;
                 }
-                // run each produced test zpkg through the runner
-                string[] zps = Path.Glob(Path.Join(unitDir, "dist"), "*.zpkg");
+                // run each produced test zpkg through the runner. Build output is
+                // redirected to the artifacts mirror by each unit toml's
+                // [build] output_dir (mirror-build-output-per-component, 2026-06-16):
+                //   src/z42c/<member>/tests/<unit> → artifacts/build/z42c/<member>/tests/<unit>
+                // so the produced .zpkg lands in <mirror>/dist/, NOT beside source.
+                string mirrorDist = Path.Join(
+                    Path.Join(root, "artifacts/build/z42c/" + members[i] + "/tests/" + unit),
+                    "dist");
+                string[] zps = Path.Glob(mirrorDist, "*.zpkg");
                 int j = 0;
                 while (j < zps.Length) {
                     int rc = new Process(runner)

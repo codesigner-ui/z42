@@ -8,11 +8,11 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（zbc 1.17/zpkg 0.19，TYPE section 类接口块 + IrClassDesc.Interfaces + ZbcReader round-trip）|
-| `runtime` | —（空闲）| — | ~~add-reflection-generic-predicates~~ ✅ 已归档 2026-06-16（`__type_is_generic`/`__type_is_primitive` builtin，无格式 bump；vm 358/0 + cargo 808/0）。（~~redirect-golden-zbc-to-artifacts~~ ✅ 已归档 2026-06-16；~~tidy-examples-dir~~ ✅ 已归档 2026-06-15）|
-| `stdlib` | —（空闲）| — | ~~add-reflection-generic-predicates~~ ✅ 已归档 2026-06-16（`Std.Type.IsGenericType`/`IsPrimitive`；`IsGenericTypeDefinition` 延后见 reflection.md）|
-| `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅（zbc 1.17 接口块 writer）/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅（runtime 死循环根因 needs_fixup 不收敛，User 授权跨锁修）2026-06-16 |
-| `toolchain` | —（空闲）| — | ~~add-desktop-platform-backend~~ ✅ 已归档 2026-06-16（desktop 第 4 平台后端：Tier-1 C ABI R1–R7 harness + DesktopBackend；`./xtask test platform desktop` 本地 7/7 + junit。host/examples 退役取消=文档化示例非死物）。前序：~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16 |
+| `compiler` | **add-reflection-generic-type-definition（进行中）** | 2026-06-16 | 新 `Typeof` opcode 携结构化 type-args（镜像 ObjNew 编码）；zbc 1.17→1.18 / zpkg 0.19→0.20。（前序 ~~add-reflection-get-interfaces~~ ✅ 2026-06-14）|
+| `runtime` | **add-reflection-generic-type-definition（进行中）** | 2026-06-16 | interp/jit 读 Typeof 结构化 args；构造型 Type 挂 type-args 槽；`IsGenericTypeDefinition`/`GetGenericTypeDefinition` + 修 `GetGenericArguments`。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：`zbc_compat.rs` golden 发现读 artifacts/build/tests+libraries 镜像；前序 ~~add-reflection-generic-predicates~~ ✅ 2026-06-16）|
+| `stdlib` | **add-reflection-generic-type-definition（进行中）** | 2026-06-16 | `Std.Type.IsGenericTypeDefinition` / `GetGenericTypeDefinition()`。（前序 ~~add-reflection-generic-predicates~~ ✅ 2026-06-16）|
+| `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
+| `toolchain` | —（空闲）| — | ~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16（golden/z42c 测试产物按组件镜像 src→artifacts/build/：tests→build/tests、libraries→build/libraries/<lib>/tests、z42c→build/z42c/<member>/tests；细化 redirect-golden 的 golden/ 单根）。前序：~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

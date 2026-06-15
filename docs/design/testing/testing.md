@@ -115,7 +115,7 @@ src/
 | 文件 | 何时存在 | 含义 |
 |------|---------|------|
 | `source.z42` | 必须 | z42 源码 |
-| `source.zbc` | 可执行测试 | 由 `./xtask regen` 生成；**不与 `source.z42` 同处**——run-golden 编译产物落 `artifacts/build/golden/<源相对路径>/source.zbc`（gitignored，不污染 src）。唯一例外 `src/tests/zbc-format/*/source.zbc` 是 check-in 的字节基线，就地重写（`git diff` = 格式漂移） |
+| `source.zbc` | 可执行测试 | 由 `./xtask regen` 生成；**不与 `source.z42` 同处**——run-golden 编译产物按组件镜像 src 布局到 `artifacts/build/`：`src/tests/X`→`artifacts/build/tests/X`，`src/libraries/<lib>/tests/X`→`artifacts/build/libraries/<lib>/tests/X`（gitignored，不污染 src；与 stdlib/z42c 包构建落点一致）。唯一例外 `src/tests/zbc-format/*/source.zbc` 是 check-in 的字节基线，就地重写（`git diff` = 格式漂移） |
 | `source.zasm` | 可选 | 调试用 ZASM 文本 |
 | `expected_output.txt` | run 用例 | stdout 期望（**空文件 = 用 `Assert.*` 自验，删除即可**）|
 | `expected_error.txt` | error 用例 | 编译诊断期望 |

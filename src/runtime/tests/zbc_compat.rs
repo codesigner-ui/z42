@@ -29,12 +29,11 @@ fn project_root() -> PathBuf {
 /// `"classes/class_basic"`) to its compiled `source.zbc` directory.
 ///
 /// run-golden `.zbc` lives in the artifacts mirror, not beside `source.z42`
-/// (redirect-golden-zbc-to-artifacts, 2026-06-16): regen writes
-/// `artifacts/build/golden/src/tests/<category>/<name>/source.zbc`.
+/// (mirror-build-output-per-component, 2026-06-16): regen writes
+/// `artifacts/build/tests/<category>/<name>/source.zbc` (src/ stripped, re-rooted
+/// under artifacts/build/ per component).
 fn golden_dir(rel: &str) -> PathBuf {
-    project_root()
-        .join("artifacts/build/golden/src/tests")
-        .join(rel)
+    project_root().join("artifacts/build/tests").join(rel)
 }
 
 /// Recursively collect `(<parent-dir-name>, <path-to-source.zbc>)` under `dir`.
@@ -59,12 +58,15 @@ fn collect_source_zbc(dir: &std::path::Path, out: &mut Vec<(String, PathBuf)>) {
 }
 
 /// Iterate every test case that ships with a `source.zbc`. Two populations
-/// (redirect-golden-zbc-to-artifacts, 2026-06-16):
+/// (mirror-build-output-per-component, 2026-06-16):
 ///   1. Committed byte-baseline goldens under `src/tests/zbc-format/` — checked
 ///      into git, regen overwrites them in place; still read from src.
-///   2. Run-goldens (`src/tests/<cat>/` minus errors/parse/cross-zpkg, plus
-///      `src/libraries/<lib>/tests/`) — regen-generated, now under the artifacts
-///      mirror `artifacts/build/golden/`. Recurse and collect every `source.zbc`.
+///   2. Run-goldens — regen-generated, now mirrored per component under
+///      `artifacts/build/tests/` (from `src/tests/`) and
+///      `artifacts/build/libraries/<lib>/tests/` (from `src/libraries/`).
+///      Recurse both roots and collect every `source.zbc` (the per-lib stdlib
+///      build cache under artifacts/build/libraries uses other filenames, so the
+///      `source.zbc` filter picks up only golden cases).
 fn each_golden_zbc() -> Vec<(String, PathBuf)> {
     let root = project_root();
     let mut out = Vec::new();
@@ -82,8 +84,9 @@ fn each_golden_zbc() -> Vec<(String, PathBuf)> {
         }
     }
 
-    // (2) Run-goldens from the artifacts mirror (regen-on-demand).
-    collect_source_zbc(&root.join("artifacts/build/golden"), &mut out);
+    // (2) Run-goldens from the per-component artifacts mirror (regen-on-demand).
+    collect_source_zbc(&root.join("artifacts/build/tests"), &mut out);
+    collect_source_zbc(&root.join("artifacts/build/libraries"), &mut out);
 
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out

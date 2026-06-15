@@ -9,3 +9,8 @@ include = ["**/*.z42"]
 
 [dependencies]
 "z42c.ir" = "0.1.0"
+
+[build]
+# Build output → artifacts mirror (mirror-build-output-per-component, 2026-06-16):
+# src/z42c/z42c.ir/tests/depindex → artifacts/build/z42c/z42c.ir/tests/depindex (no src pollution).
+output_dir = "../../../../../artifacts/build/z42c/z42c.ir/tests/depindex"

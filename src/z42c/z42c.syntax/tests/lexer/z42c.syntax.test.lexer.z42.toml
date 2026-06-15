@@ -11,3 +11,8 @@ include = ["**/*.z42"]
 [dependencies]
 "z42c.syntax" = "0.1.0"
 "z42c.core"   = "0.1.0"
+
+[build]
+# Build output → artifacts mirror (mirror-build-output-per-component, 2026-06-16):
+# src/z42c/z42c.syntax/tests/lexer → artifacts/build/z42c/z42c.syntax/tests/lexer (no src pollution).
+output_dir = "../../../../../artifacts/build/z42c/z42c.syntax/tests/lexer"

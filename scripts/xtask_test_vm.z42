@@ -8,11 +8,11 @@
 // (redirect-golden-zbc-to-artifacts, 2026-06-16 — keeps src/ free of build
 // output). Sidecar (src) → artifact (mirror) mapping:
 //   src/tests/<cat>/<name>/source.z42 + expected_output.txt
-//     → artifacts/build/golden/src/tests/<cat>/<name>/source.zbc            (dir)
+//     → artifacts/build/tests/<cat>/<name>/source.zbc                     (dir)
 //   src/libraries/<lib>/tests/<name>/source.z42
-//     → artifacts/build/golden/src/libraries/<lib>/tests/<name>/source.zbc  (dir)
+//     → artifacts/build/libraries/<lib>/tests/<name>/source.zbc           (dir)
 //   src/tests/<cat>/<name>.z42 + <name>.expected_output.txt
-//     → artifacts/build/golden/src/tests/<cat>/<name>.zbc                    (flat)
+//     → artifacts/build/tests/<cat>/<name>.zbc                            (flat)
 //
 // For each case: derive entry name from the .z42 source (mirrors the C#
 // GoldenTests resolution: `<namespace>.Main` > `Main` > `<namespace>.main` >
@@ -229,7 +229,7 @@ _Case[] _enumerateCases(string root, string mode) {
             // (redirect-golden-zbc-to-artifacts). Sidecars (expected_output.txt,
             // interp_only, source.z42 for entry derivation) stay in src `dir`.
             string artifact = Path.Join(
-                _goldenArtifactDir(root, Path.Join(Path.Join("src/tests", cats[ci]), names[ni])),
+                _goldenArtifactDir(root, Path.Join(Path.Join("tests", cats[ci]), names[ni])),
                 "source.zbc");
             if (File.Exists(artifact)) {
                 if (mode == "jit" && File.Exists(Path.Join(dir, "interp_only"))) {
@@ -267,7 +267,7 @@ _Case[] _enumerateCases(string root, string mode) {
                 // run-golden .zbc → artifacts mirror; sidecars stay in src `dir`.
                 string artifact = Path.Join(
                     _goldenArtifactDir(root,
-                        Path.Join(Path.Join(Path.Join("src/libraries", libs[li]), "tests"), names[ni])),
+                        Path.Join(Path.Join(Path.Join("libraries", libs[li]), "tests"), names[ni])),
                     "source.zbc");
                 if (File.Exists(artifact)) {
                     if (mode == "jit" && File.Exists(Path.Join(dir, "interp_only"))) {
@@ -293,7 +293,7 @@ _Case[] _enumerateCases(string root, string mode) {
         string catDir = Path.Join(testsDir, cats[ci]);
         // flat run-golden .zbc → artifacts mirror; sidecars (.interp_only,
         // .expected_output.txt, .z42) stay in src `catDir`.
-        string mirrorCat = _goldenArtifactDir(root, Path.Join("src/tests", cats[ci]));
+        string mirrorCat = _goldenArtifactDir(root, Path.Join("tests", cats[ci]));
         string[] hits = Path.Glob(mirrorCat, "*.zbc");
         int hi = 0;
         while (hi < hits.Length) {
