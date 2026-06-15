@@ -56,6 +56,16 @@ public class WasmBackend : IPlatformBackend {
         string browsers = Path.Join(root, "artifacts/tools/playwright-browsers");
         string npm = localNode ? Path.Join(nodeBin, "npm") : "npm";
         string npx = localNode ? Path.Join(nodeBin, "npx") : "npx";
+        string nodeExe = localNode ? Path.Join(nodeBin, "node") : "node";
+
+        // pkg-nodejs smoke (Node path) before the heavier browser run — the
+        // self-asserting demo loads pkg-nodejs + invokes Hello.Main + checks
+        // stdout=="hello, world". Covers the Node target Playwright (browser)
+        // doesn't. Fail-fast: no chromium download needed.
+        string wasmDir = Path.Join(root, "src/toolchain/host/platforms/wasm");
+        Console.WriteLine("  node demo/node/run.js (pkg-nodejs smoke)");
+        int nc = _execIn(new Process(nodeExe).Arg(Path.Join(wasmDir, "demo/node/run.js")), wasmDir);
+        if (nc != 0) { ConsoleError.WriteLine("error: pkg-nodejs node smoke failed"); return nc; }
 
         if (!Directory.Exists(Path.Join(testsDir, "node_modules"))) {
             Console.WriteLine("  npm install (one-shot)");
