@@ -7,10 +7,10 @@
 ## 统一入口
 
 ```bash
-z42 xtask.zpkg package release --rid <rid>  # 见下表选 RID
-z42 xtask.zpkg package debug --rid <rid>    # debug profile（dev 用）
-z42 xtask.zpkg package release              # 不带 --rid → 自动用 host RID
-z42 xtask.zpkg --help                             # 完整选项
+./xtask package release --rid <rid>  # 见下表选 RID
+./xtask package debug --rid <rid>    # debug profile（dev 用）
+./xtask package release              # 不带 --rid → 自动用 host RID
+./xtask --help                       # 完整选项
 ```
 
 产物落到 `artifacts/packages/z42-<version>-<rid>-<profile>/`。
@@ -46,7 +46,7 @@ z42 xtask.zpkg --help                             # 完整选项
 # 必备（所有 RID）
 dotnet --version              # .NET 10+；编译器 + z42c
 cargo --version               # Rust stable；VM
-z42 xtask.zpkg build stdlib   # stdlib zpkg → artifacts/build/libraries/dist/release/
+./xtask build stdlib          # stdlib zpkg → artifacts/build/libraries/dist/release/
 dotnet build src/compiler/z42.slnx   # z42c.dll → artifacts/build/compiler/...
 
 # iOS RID（macOS only）
@@ -56,7 +56,7 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim
 # Android RID
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
-# NDK + 构建 SDK：z42 xtask.zpkg deps install --os android（装到 artifacts/tools/android-sdk）
+# NDK + 构建 SDK：./xtask deps install --os android（装到 artifacts/tools/android-sdk）
 # 或 export ANDROID_NDK_HOME=<your-ndk-path>
 
 # wasm RID
@@ -133,7 +133,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 
 | 流程 | 入口 | 用途 |
 |------|------|------|
-| **per-arch flat package**（本文）| `z42 xtask.zpkg package --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
+| **per-arch flat package**（本文）| `./xtask package --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
 | **in-repo native build** | `src/toolchain/host/platforms/<x>/build.sh` | 给 `add-<plat>-tests` 跑 in-repo 测试（emulator / simulator / wasm-pack）|
 
 两条流程**共存**：`build.sh` 产物供 in-repo 测试用；`z42 xtask.zpkg package` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
@@ -144,10 +144,10 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 |------|-----------|
 | `rid '<x>' not in supported whitelist` | 你给的 RID 不在 9 个白名单内；见 memory `project_supported_platforms` |
 | `cross-compiling to '<x>' from host '<y>' not supported` | host RID 不能 cross-compile 到目标 RID；换 host 或走 CI |
-| `error: stdlib not built at artifacts/build/libraries/dist/release` | 先 `z42 xtask.zpkg build stdlib` |
+| `error: stdlib not built at artifacts/build/libraries/dist/release` | 先 `./xtask build stdlib` |
 | `error: z42c not built at ...z42c.dll` | 先 `dotnet build src/compiler/z42.slnx` |
 | `cargo-ndk not found` | `cargo install cargo-ndk --locked` |
-| `$ANDROID_NDK_HOME unset and NDK not found locally` | `z42 xtask.zpkg deps install --os android` 或 `export ANDROID_NDK_HOME=<path>` |
+| `$ANDROID_NDK_HOME unset and NDK not found locally` | `./xtask deps install --os android` 或 `export ANDROID_NDK_HOME=<path>` |
 | iOS `xcframework not created` | Xcode 没装或 `xcode-select -p` 指错 |
 | wasm `pkg-web/ missing — run platforms/wasm/build.sh first` | 先 `cd src/toolchain/host/platforms/wasm && ./build.sh` |
 | SHA invariant fail | 通常是 stdlib / native include 中途被改；重建对应源 + 重打包 |

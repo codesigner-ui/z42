@@ -47,14 +47,14 @@ The split is the conventional **intermediate / output / vendored** model
 Each stdlib library builds privately into `build/libraries/<lib>/<profile>/`
 (with `debug`/`release` distinction). **z42vm and packaging must not depend on
 those per-lib subdirs** — they need a single flat directory. So after
-compiling, `z42 xtask.zpkg build stdlib` copies every lib's `.zpkg`/`.zsym`
+compiling, `./xtask build stdlib` copies every lib's `.zpkg`/`.zsym`
 into the aggregate `build/libraries/dist/<profile>/` (no namespace index — the
 VM reads each zpkg's `NSPC` section). That dir
 is:
 - z42vm's dev-mode `Z42_LIBS` fallback
   ([`src/runtime/src/main.rs`](../../../src/runtime/src/main.rs) `resolve_libs_dir`,
   `config.rs` hint, `host_tests.rs`);
-- what `z42 xtask.zpkg package` copies wholesale into a package's `libs/`.
+- what `./xtask package` copies wholesale into a package's `libs/`.
 
 This keeps `build/` fully mirroring `src/` (everything maps to a `src/` path)
 while giving the VM/packaging one stable aggregate to point at. (Replaced the

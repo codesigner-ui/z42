@@ -5,8 +5,8 @@
 ## 命令
 
 ```bash
-z42 xtask.zpkg test lib             # 22 个库全跑
-z42 xtask.zpkg test lib z42.math    # 仅指定库
+./xtask test lib             # 22 个库全跑
+./xtask test lib z42.math    # 仅指定库
 ```
 
 ## 测试发现机制
@@ -21,11 +21,11 @@ z42 xtask.zpkg test lib z42.math    # 仅指定库
 ## Runner 输出格式
 
 ```bash
-z42 xtask.zpkg test lib                            # 默认按 TTY 自动选 pretty / tap
-z42 xtask.zpkg test lib --format pretty            # 人类可读
-z42 xtask.zpkg test lib --format tap               # TAP 13（CI 友好）
-z42 xtask.zpkg test lib --format json              # JSON（custom schema）
-z42 xtask.zpkg test lib --filter <SUBSTR>          # 子串过滤
+./xtask test lib                            # 默认按 TTY 自动选 pretty / tap
+./xtask test lib --format pretty            # 人类可读
+./xtask test lib --format tap               # TAP 13（CI 友好）
+./xtask test lib --format json              # JSON（custom schema）
+./xtask test lib --filter <SUBSTR>          # 子串过滤
 ```
 
 ## 加新测试
@@ -47,7 +47,7 @@ public static void test_throws_on_invalid_input() {
 }
 ```
 
-写完后 `z42 xtask.zpkg test lib <lib>` 即可发现。
+写完后 `./xtask test lib <lib>` 即可发现。
 
 ## 与 C# 单测的区别
 

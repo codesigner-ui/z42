@@ -11,7 +11,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 或经 xtask：
 
 ```bash
-z42 xtask.zpkg test compiler
+./xtask test compiler
 ```
 
 ## 跑单个 / 部分 test

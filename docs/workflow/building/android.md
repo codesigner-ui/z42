@@ -36,10 +36,10 @@ cargo install cargo-ndk
 
 ```bash
 dotnet build src/compiler/z42.slnx
-z42 xtask.zpkg build stdlib
+./xtask build stdlib
 ```
 
-✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `z42 xtask.zpkg build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
+✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
 
 ❗ `dotnet: command not found` → 装 .NET 10+：https://dotnet.microsoft.com/download
 
@@ -92,7 +92,7 @@ Z42VM(zpkgResolver = AssetZpkgResolver(assets)).use { vm ->
 
 **See also**
 
-- **本地打 per-ABI SDK package**（自包含 `kotlin/` + `cpp/` + `native/libz42_platform_android.{a,so}`）：[`../packaging.md`](../packaging.md) — `z42 xtask.zpkg package release --rid android-arm64 / android-x64`
+- **本地打 per-ABI SDK package**（自包含 `kotlin/` + `cpp/` + `native/libz42_platform_android.{a,so}`）：[`../packaging.md`](../packaging.md) — `./xtask package release --rid android-arm64 / android-x64`
 - Kotlin API + 错误码（spec 落地后补）：`platforms/android/README.md`
 - 跨平台契约：[`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)
 - 设计 + 决策：[spec](../../spec/archive/2026-05-12-add-platform-android/)

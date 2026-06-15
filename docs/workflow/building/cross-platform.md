@@ -17,8 +17,8 @@ cargo build --manifest-path src/runtime/Cargo.toml    # VM
 ## 本地打 9 RID per-arch SDK package（已落地，2026-05-13）
 
 ```bash
-z42 xtask.zpkg package release --rid <rid>    # 9 个 RID 之一
-z42 xtask.zpkg --help                               # RID 矩阵 + 选项
+./xtask package release --rid <rid>    # 9 个 RID 之一
+./xtask --help                               # RID 矩阵 + 选项
 ```
 
 完整 RID 矩阵 + cross-host 规则 + 平台前置 + 验证 + 失败排查见 [`../packaging.md`](../packaging.md)。

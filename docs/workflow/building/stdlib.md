@@ -9,13 +9,13 @@
 - zbc / zpkg 格式 bump（compiler 端 minor 升级）
 - 编译器有 codegen / TypeChecker 行为变更
 
-**注**：`z42 xtask.zpkg test vm` 默认会自动重建 stdlib，开发场景**不必手动**跑 `z42 xtask.zpkg build stdlib`。
+**注**：`./xtask test vm` 默认会自动重建 stdlib，开发场景**不必手动**跑 `./xtask build stdlib`。
 
 ## 直接构建
 
 ```bash
-z42 xtask.zpkg build stdlib            # 编译全部 lib + 扁平视图（dev 默认）
-z42 xtask.zpkg test dist               # 用打包发行版 z42c 编译并验证（package 后测试用）
+./xtask build stdlib            # 编译全部 lib + 扁平视图（dev 默认）
+./xtask test dist               # 用打包发行版 z42c 编译并验证（package 后测试用）
 ```
 
 `build stdlib` 的逻辑现已 fold 进 xtask（`scripts/xtask_stdlib.z42`），一条命令做两件事：
@@ -29,7 +29,7 @@ z42 xtask.zpkg test dist               # 用打包发行版 z42c 编译并验证
 
 > **冷启动**：`xtask.zpkg` 本身依赖 stdlib 才能编译，所以冷树上先由 C# 编译器直接跑上面
 > 这条 `build --workspace`（primer，无 z42 程序参与）产出 `.zpkg`/`.zsym` → 编译
-> `xtask.zpkg` → 再 `z42 xtask.zpkg build stdlib` 补扁平视图。z42c 只读 `.zsym`、VM 扫目录
+> `xtask.zpkg` → 再 `./xtask build stdlib` 补扁平视图。z42c 只读 `.zsym`、VM 扫目录
 > （读各 zpkg 的 `NSPC` section），都不需要任何 namespace 索引即可编译/运行 xtask，故此次序无死锁。
 
 ## 增量编译（C5）
@@ -53,17 +53,17 @@ artifacts/build/libraries/
     └── <lib>.zpkg + <lib>.zsym     #   build stdlib hard-link 过来（无 namespace 索引——读 NSPC）
 ```
 
-`z42 xtask.zpkg build stdlib` 同时产每-lib 构建产物 + 扁平视图；
-`z42 xtask.zpkg package` 在分发版打包阶段把扁平视图整份拷进 SDK 的 `libs/`。
+`./xtask build stdlib` 同时产每-lib 构建产物 + 扁平视图；
+`./xtask package` 在分发版打包阶段把扁平视图整份拷进 SDK 的 `libs/`。
 
 ## 分发链端到端
 
 ```bash
-z42 xtask.zpkg package release   # 1. 打 z42c + z42vm 到 artifacts/build/runtime/release/
-z42 xtask.zpkg test dist               # 2. 用分发版 z42c 重编译 stdlib 并跑 goldens（interp + jit）
-z42 xtask.zpkg test dist interp        # 仅 interp 模式
+./xtask package release   # 1. 打 z42c + z42vm 到 artifacts/build/runtime/release/
+./xtask test dist               # 2. 用分发版 z42c 重编译 stdlib 并跑 goldens（interp + jit）
+./xtask test dist interp        # 仅 interp 模式
 ```
 
 ## 与 stdlib 内 `[Test]` 测试的关系
 
-`z42 xtask.zpkg build stdlib` 只编译 lib 本身的源码（不跑测试）；stdlib 内 `[Test]` 测试由 [`../testing/stdlib-tests.md`](../testing/stdlib-tests.md) 描述的 `z42 xtask.zpkg test lib` + z42-test-runner 跑。
+`./xtask build stdlib` 只编译 lib 本身的源码（不跑测试）；stdlib 内 `[Test]` 测试由 [`../testing/stdlib-tests.md`](../testing/stdlib-tests.md) 描述的 `./xtask test lib` + z42-test-runner 跑。

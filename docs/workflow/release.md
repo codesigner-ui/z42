@@ -5,9 +5,9 @@
 ## 本地打 SDK package
 
 ```bash
-z42 xtask.zpkg package release                       # host RID
-z42 xtask.zpkg package release --rid ios-arm64       # 任一 9 RID 之一
-z42 xtask.zpkg package --help                        # RID 矩阵 + 选项
+./xtask package release                       # host RID
+./xtask package release --rid ios-arm64       # 任一 9 RID 之一
+./xtask package --help                        # RID 矩阵 + 选项
 ```
 
 9 RID 矩阵 + 平台前置 + 验证 + 失败排查见 [`packaging.md`](packaging.md)。
@@ -21,13 +21,13 @@ z42 xtask.zpkg package --help                        # RID 矩阵 + 选项
 $EDITOR versions.toml                             # 例：0.1.0 → 0.2.0
 
 # 2. drift-check 提醒同步 Cargo.toml
-z42 xtask.zpkg deps check                 # 应 fail（versions.toml 已改但 Cargo.toml 未改）
+./xtask deps check                 # 应 fail（versions.toml 已改但 Cargo.toml 未改）
 
 # 3. 同步 src/runtime/Cargo.toml [workspace.package].version
 $EDITOR src/runtime/Cargo.toml                    # 同样改成 0.2.0
 
 # 4. 验证（drift-check 通过 + workspace 解析正确）
-z42 xtask.zpkg deps check                 # 应通过
+./xtask deps check                 # 应通过
 cargo metadata --manifest-path src/runtime/Cargo.toml --format-version 1 --no-deps \
     | jq -r '.packages[].version' | sort -u       # 应全部为 0.2.0
 

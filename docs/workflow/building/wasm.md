@@ -39,10 +39,10 @@ cargo install wasm-pack --locked
 
 ```bash
 dotnet build src/compiler/z42.slnx
-z42 xtask.zpkg build stdlib
+./xtask build stdlib
 ```
 
-✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `z42 xtask.zpkg build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
+✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
 
 ❗ `dotnet: command not found` → 装 .NET 10+：https://dotnet.microsoft.com/download
 
@@ -103,7 +103,7 @@ node demo/node/run.js
 
 **See also**
 
-- **本地打 browser-wasm SDK package**（自包含 staticlib + cdylib + wasm-bindgen 双 target + npm `package.json`）：[`../packaging.md`](../packaging.md) — `z42 xtask.zpkg package release --rid browser-wasm`
+- **本地打 browser-wasm SDK package**（自包含 staticlib + cdylib + wasm-bindgen 双 target + npm `package.json`）：[`../packaging.md`](../packaging.md) — `./xtask package release --rid browser-wasm`
 - JS / TS API + 错误码：[`platforms/wasm/README.md`](../../../src/toolchain/host/platforms/wasm/README.md)
 - 跨平台契约：[`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)
 - 设计 + 决策：[spec archive](../../spec/archive/2026-05-12-add-platform-wasm/)

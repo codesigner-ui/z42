@@ -292,7 +292,7 @@ Each path is the **flat dist view**: it contains files named `<module-name>.zbc`
 when both exist as it carries version metadata. No namespace index is written — the
 VM (and embedding hosts) read each zpkg's `NSPC` section to map namespaces.
 
-**Producing the flat dist directory:** run `z42 xtask.zpkg build stdlib` from the project root.
+**Producing the flat dist directory:** run `./xtask build stdlib` from the project root.
 This compiles the stdlib and populates `artifacts/build/libraries/dist/release/` (flat view);
 per-lib intermediate output lives at `artifacts/build/libraries/<lib>/release/dist/`.
 Until M7 (`[Native]` attribute support), the `.zbc`/`.zpkg` files are placeholders.

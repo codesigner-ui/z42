@@ -12,7 +12,7 @@
 | [`ios.md`](ios.md) | 🟢 iOS facade（`Z42VM.xcframework` SwiftPM 包）|
 | [`android.md`](android.md) | 🟢 Android facade（`z42vm.aar` AAR module）|
 
-桌面日常用 **xtask**（编译产物 `artifacts/xtask/xtask.zpkg`，源码 `scripts/xtask*.z42`）：`z42 xtask.zpkg build [all]` / `z42 xtask.zpkg test`。
+桌面日常用 **xtask**（编译产物 `artifacts/xtask/xtask.zpkg`，源码 `scripts/xtask*.z42`）：`./xtask build [all]` / `./xtask test`。
 
 更省事：把 xtask 编成一个**原生 apphost** `./xtask`（仓库根），直接 `./xtask build [all]` / `./xtask test`，免走 `z42 …zpkg` 入口。产出（两条命令，无 wrapper 脚本）：
 

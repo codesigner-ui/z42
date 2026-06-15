@@ -186,7 +186,7 @@ VM trace 已自动显示 `<file>:<line>:<col>` + 局部变量名（DBUG section 
 
 ```bash
 # 产出 sidecar
-z42 xtask.zpkg build stdlib   # release 默认 strip + 产出 .zsym
+./xtask build stdlib   # release 默认 strip + 产出 .zsym
 ```
 
 ## 0.8.7 之后（DAP debugger）

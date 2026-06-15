@@ -37,8 +37,8 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 
 ### 4.（可选）xtask 任务跑跑
 
-- xtask 是编译产物（`artifacts/xtask/xtask.zpkg`），无需额外安装；先 `z42 xtask.zpkg build stdlib` 那一套编出来
-- 然后 `z42 xtask.zpkg build` / `z42 xtask.zpkg test` 在 Git Bash 里跑
+- xtask 是编译产物（`artifacts/xtask/xtask.zpkg` + 原生 apphost `xtask.exe`），无需额外安装；先 `./xtask.exe build stdlib` 那一套编出来
+- 然后 `./xtask.exe build` / `./xtask.exe test` 在 Git Bash 里跑
 
 ### 5.（可选）Android SDK + NDK —— 用 Android Studio
 
@@ -58,7 +58,7 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 - `rustup target add aarch64-linux-android x86_64-linux-android`
 - `cargo install cargo-ndk --locked`
 
-⚠️ `z42 xtask.zpkg deps install --os android` / `deps install android-emulator` 在 Windows 上**会拒绝执行**（只支持 macOS/Linux 自动下载）；走 Android Studio 这条路。
+⚠️ `./xtask.exe deps install --os android` / `deps install android-emulator` 在 Windows 上**会拒绝执行**（只支持 macOS/Linux 自动下载）；走 Android Studio 这条路。
 
 ### 6.（可选）Node.js —— 用官方 MSI
 
@@ -68,7 +68,7 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 - `cargo install wasm-pack --locked`
 - `rustup target add wasm32-unknown-unknown`
 
-⚠️ `z42 xtask.zpkg deps install node` 在 Windows 上也会**拒绝执行**（POSIX .tar.gz 路径）；走 MSI 这条路。
+⚠️ `./xtask.exe deps install node` 在 Windows 上也会**拒绝执行**（POSIX .tar.gz 路径）；走 MSI 这条路。
 
 ## 日常工作流
 
@@ -80,13 +80,13 @@ dotnet build src/compiler/z42.slnx     # z42c
 cargo build --manifest-path src/runtime/Cargo.toml --release   # z42vm + libz42
 
 # stdlib
-z42 xtask.zpkg build stdlib
+./xtask.exe build stdlib
 
 # 全套测试
-z42 xtask.zpkg test
+./xtask.exe test
 
 # 打 host (windows-x64) SDK package
-z42 xtask.zpkg package release --rid windows-x64
+./xtask.exe package release --rid windows-x64
 ```
 
 xtask 调用的 POSIX 子进程都在 Git Bash 直接跑（shebang `#!/usr/bin/env bash` 生效），无需额外 prefix。
@@ -135,7 +135,7 @@ Git Bash 自带 `file`、`ar`、`grep`、`awk`、`sed`、`tr` —— `z42 xtask.
 
 ### `xcrun` / `xcodebuild` —— iOS RID
 
-iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows host 跑 `z42 xtask.zpkg package --rid ios-arm64` 直接被 `validate_rid_supported_on_host` 拒绝。
+iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows host 跑 `./xtask.exe package --rid ios-arm64` 直接被 `validate_rid_supported_on_host` 拒绝。
 
 ## 跑得通的 RID matrix（Windows host）
 
@@ -154,11 +154,11 @@ iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows
 ```bash
 # 1. 装好 .NET + Rust（§2 + §3）
 # 2. 编 stdlib + 编译器
-z42 xtask.zpkg build stdlib
+./xtask.exe build stdlib
 dotnet build src/compiler/z42.slnx
 
 # 3. 打 windows-x64 package
-z42 xtask.zpkg package release --rid windows-x64
+./xtask.exe package release --rid windows-x64
 
 # 4. 验证产物
 ls artifacts/packages/z42-0.1.0-windows-x64-release/
@@ -169,7 +169,7 @@ ls artifacts/packages/z42-0.1.0-windows-x64-release/
 #  manifest.toml
 ```
 
-跑 `z42 xtask.zpkg test` 应该全绿；如果有失败按本文档下方"See also"链表里的 testing/ 文件排查。
+跑 `./xtask.exe test` 应该全绿；如果有失败按本文档下方"See also"链表里的 testing/ 文件排查。
 
 ## See also
 

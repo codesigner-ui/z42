@@ -27,7 +27,7 @@ zpkg 是 zbc 的容器：packed-mode zpkg 把多个 zbc module 的 FUNC + TYPE +
 与 [`zbc.md` "版本兼容性"](zbc.md#版本兼容性) 完全同模式：
 
 - Reader 仅接受 `major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor`
-- 每次 minor bump = 所有现存 `.zpkg` artifacts 必须 regen（`z42 xtask.zpkg build stdlib`）
+- 每次 minor bump = 所有现存 `.zpkg` artifacts 必须 regen（`./xtask build stdlib`）
 - pre-1.0 z42 阶段不为旧 zpkg minor 提供向前 / 向后兼容
 
 ## 文件格式
@@ -183,7 +183,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 
 ## 版本兼容性
 
-**Strict-pin 政策**：reader 仅接受 `major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor`。pre-1.0 z42 阶段不为旧 zpkg minor 提供兼容；每次 minor bump = 所有现存 zpkg artifacts 必须 regen（`z42 xtask.zpkg build stdlib`）。
+**Strict-pin 政策**：reader 仅接受 `major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor`。pre-1.0 z42 阶段不为旧 zpkg minor 提供兼容；每次 minor bump = 所有现存 zpkg artifacts 必须 regen（`./xtask build stdlib`）。
 
 - **当前版本**：`major=0, minor=10`（详见下方 Minor changelog）
 - **触发 minor bump** 的事项：新增 section id / 已定义 section 字段语义变化 / **任意 zbc minor bump（强耦合）**

@@ -311,8 +311,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - dotnet test
-      - z42 xtask.zpkg test vm        # interp + jit
-      - z42 xtask.zpkg test lib
+      - ./xtask test vm        # interp + jit
+      - ./xtask test lib
       - tar artifacts/test-zbcs/*.zbc → upload-artifact
 
   wasm-tests:
@@ -437,7 +437,7 @@ public interface IPlatformBackend {
 可选 files.json"做一遍——这是消除三处重复的关键。新增平台 = 加一个 backend class +
 注册一行。
 
-**CLI**：`z42 xtask.zpkg test platform <wasm|ios|android|all> [build|assets|run]`
+**CLI**：`./xtask test platform <wasm|ios|android|all> [build|assets|run]`
 （无 step = 全流程）。
 
 ### R1–R7 平台冒烟契约（单一真相源）
@@ -482,7 +482,7 @@ infra-ci-platform-test-dashboard（CI run 27561709292 @ 9153fd6c）三平台 job
 
 1. **Phase 1 — test-runner library 化**（基础）
    spec：[rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/) （已 DRAFT）
-   交付：`pub fn run_zbc(...)`，CLI 改成调用库；host 现有 `z42 xtask.zpkg test lib` 不变
+   交付：`pub fn run_zbc(...)`，CLI 改成调用库；host 现有 `./xtask test lib` 不变
 
 2. **Phase 2 — Capability 注册表 + `[SkipPlatform]` attribute**（轻量）
    新 spec（小）：

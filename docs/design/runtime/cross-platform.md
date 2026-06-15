@@ -30,7 +30,7 @@ cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --featu
 cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features android
 ```
 
-`z42 xtask.zpkg build feature-matrix` 一次性跑完 4 个 preset 验证。CI `feature-matrix` job 锁定。
+`./xtask build feature-matrix` 一次性跑完 4 个 preset 验证。CI `feature-matrix` job 锁定。
 
 ## CLI 行为差异
 

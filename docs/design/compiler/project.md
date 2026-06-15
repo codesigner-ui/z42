@@ -635,12 +635,12 @@ artifacts/build/libraries/<lib>/<profile>/
 
 | 命令 | 写入 | 读取 deps |
 |------|------|----------|
-| `z42 xtask.zpkg test stdlib [lib]`  | `<lib>/<profile>/tests/{cache/<unit>,dist}/` | `[dependencies]` + `[tests.dependencies]` |
-| `z42 xtask.zpkg bench stdlib [lib]` | `<lib>/<profile>/bench/{cache/<unit>,dist}/` | `[dependencies]` + `[bench.dependencies]` |
-| `z42 xtask.zpkg clean`              | 删每个 `<lib>/<profile>/{cache,dist}` + 聚合 `libraries/dist/`（**保留** tests/bench） | — |
-| `z42 xtask.zpkg clean tests`        | 删每个 `<lib>/<profile>/tests/` | — |
-| `z42 xtask.zpkg clean bench`        | 删每个 `<lib>/<profile>/bench/` | — |
-| `z42 xtask.zpkg clean all`          | 删整个 `artifacts/build/`（全量重置） | — |
+| `./xtask test stdlib [lib]`  | `<lib>/<profile>/tests/{cache/<unit>,dist}/` | `[dependencies]` + `[tests.dependencies]` |
+| `./xtask bench stdlib [lib]` | `<lib>/<profile>/bench/{cache/<unit>,dist}/` | `[dependencies]` + `[bench.dependencies]` |
+| `./xtask clean`              | 删每个 `<lib>/<profile>/{cache,dist}` + 聚合 `libraries/dist/`（**保留** tests/bench） | — |
+| `./xtask clean tests`        | 删每个 `<lib>/<profile>/tests/` | — |
+| `./xtask clean bench`        | 删每个 `<lib>/<profile>/bench/` | — |
+| `./xtask clean all`          | 删整个 `artifacts/build/`（全量重置） | — |
 
 `bench`（无 `stdlib` 子参）仍是 e2e hyperfine 场景跑器，与 per-lib micro-bench 分流。[Benchmark] 单元由 z42-test-runner 与 [Test] 同调度（zero-arg 调用 + Bencher 采样）。
 

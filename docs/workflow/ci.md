@@ -20,15 +20,15 @@ z42 CI 在 GitHub Actions 运行，配置见 [`.github/workflows/`](../../.githu
 dotnet build src/compiler/z42.slnx                    # 无编译错误
 cargo build --manifest-path src/runtime/Cargo.toml    # 无编译错误
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj   # 100% 通过
-z42 xtask.zpkg test vm                                # 100% 通过（interp + jit 双模）
-z42 xtask.zpkg test stdlib                               # 100% 通过
-z42 xtask.zpkg test cross-zpkg                        # 100% 通过
+./xtask test vm                                       # 100% 通过（interp + jit 双模）
+./xtask test stdlib                                   # 100% 通过
+./xtask test cross-zpkg                               # 100% 通过
 ```
 
 简化入口：
 
 ```bash
-z42 xtask.zpkg test      # build + test 全套
+./xtask test      # build + test 全套
 ```
 
 任何测试失败（含 pre-existing）都不得 commit / push —— 见 workflow.md "禁止行为"。

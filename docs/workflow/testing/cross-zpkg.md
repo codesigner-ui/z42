@@ -5,7 +5,7 @@
 ## 命令
 
 ```bash
-z42 xtask.zpkg test cross-zpkg
+./xtask test cross-zpkg
 ```
 
 ## 用例布局

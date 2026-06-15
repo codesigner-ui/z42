@@ -5,18 +5,18 @@ z42 VM 端到端测试（`src/tests/**/source.z42` + `expected_output.txt`）。
 ## 命令
 
 ```bash
-z42 xtask.zpkg test vm                   # 默认：自动重建 stdlib + golden zbc 后跑（interp + jit）
-z42 xtask.zpkg test vm interp            # 仅 interp
-z42 xtask.zpkg test vm jit               # 仅 JIT
-z42 xtask.zpkg test vm --no-rebuild      # 跳过重建（反复跑同一测试时加速）
+./xtask test vm                   # 默认：自动重建 stdlib + golden zbc 后跑（interp + jit）
+./xtask test vm interp            # 仅 interp
+./xtask test vm jit               # 仅 JIT
+./xtask test vm --no-rebuild      # 跳过重建（反复跑同一测试时加速）
 ```
 
 ## 默认自动重建
 
-`z42 xtask.zpkg test vm` 入口自动按依赖顺序：
+`./xtask test vm` 入口自动按依赖顺序：
 
-1. `z42 xtask.zpkg build stdlib` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libraries/dist/release/`
-2. `z42 xtask.zpkg regen` — 用最新 z42c 把所有 golden `source.z42` → `source.zbc`
+1. `./xtask build stdlib` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libraries/dist/release/`
+2. `./xtask regen` — 用最新 z42c 把所有 golden `source.z42` → `source.zbc`
 3. `cargo build` VM
 4. 逐个跑 golden test
 
@@ -42,8 +42,8 @@ cargo run --manifest-path src/runtime/Cargo.toml -- src/tests/<category>/<name>/
 ## 只重生 zbc（不跑测试）
 
 ```bash
-z42 xtask.zpkg regen                 # 重生 golden（内部先 build stdlib + driver）
-z42 xtask.zpkg regen --no-stdlib     # 跳过 stdlib 重建（已 build 过）
+./xtask regen                 # 重生 golden（内部先 build stdlib + driver）
+./xtask regen --no-stdlib     # 跳过 stdlib 重建（已 build 过）
 ```
 
 ## 测试目录组织
@@ -67,8 +67,8 @@ src/tests/
 ```bash
 # 1. 选好类别：src/tests/<category>/<name>/source.z42
 # 2. 写 expected_output.txt（可选；空 = 用 Assert.* 自验证）
-# 3. z42 xtask.zpkg regen —— 编译 source.zbc
-# 4. z42 xtask.zpkg test vm —— 验证
+# 3. ./xtask regen —— 编译 source.zbc
+# 4. ./xtask test vm —— 验证
 ```
 
 ## stdlib-bound 测试 vs vm-core 测试

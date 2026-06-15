@@ -21,11 +21,11 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → ar
 ## Quick Start
 
 ```bash
-z42 xtask.zpkg build all    # 编译器 + VM + stdlib
-z42 xtask.zpkg test         # 全部测试
+./xtask build all    # 编译器 + VM + stdlib
+./xtask test         # 全部测试
 ```
 
-完整命令：`z42 xtask.zpkg help`（源 = [`scripts/xtask*.z42`](../../scripts/)）。
+完整命令：`./xtask help`（源 = [`scripts/xtask*.z42`](../../scripts/)）。
 
 ## 我要做 ... → 看 ...
 
