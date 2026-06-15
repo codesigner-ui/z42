@@ -146,7 +146,27 @@ SubcommandRouter _testRouter() {
     changed.AddFlag("dry-run", "", "print the plan, don't run");
     changed.AddOptionalPositional("base", "git base ref (default: HEAD)");
     t.Add("changed", "only changed-area tests", changed);
+    t.AddRouter("platform", "platform 3-phase tests (wasm/ios/android)", _platformRouter());
     return t;
+}
+
+// `test platform <wasm|ios|android|all> [build|assets|run]` — three-phase
+// (build project / build test assets / run tests). Empty step = full pipeline.
+SubcommandRouter _platformRouter() {
+    SubcommandRouter pr = new SubcommandRouter("xtask test platform", "platform 3-phase tests");
+    ArgParser wasm = new ArgParser("xtask test platform wasm", "wasm pipeline");
+    wasm.AddOptionalPositional("step", "build|assets|run (default: all)");
+    pr.Add("wasm", "wasm 3-phase pipeline", wasm);
+    ArgParser ios = new ArgParser("xtask test platform ios", "iOS pipeline");
+    ios.AddOptionalPositional("step", "build|assets|run (default: all)");
+    pr.Add("ios", "iOS 3-phase pipeline", ios);
+    ArgParser android = new ArgParser("xtask test platform android", "Android pipeline");
+    android.AddOptionalPositional("step", "build|assets|run (default: all)");
+    pr.Add("android", "Android 3-phase pipeline", android);
+    ArgParser all = new ArgParser("xtask test platform all", "all platforms");
+    all.AddOptionalPositional("step", "build|assets|run (default: all)");
+    pr.Add("all", "all platforms", all);
+    return pr;
 }
 
 SubcommandRouter _depsRouter() {
@@ -248,6 +268,10 @@ int _dispatchTest(string[] p, ParseResult r) {
     if (sub == "compiler")     { return _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj")); }
     if (sub == "compiler-z42") { return _testCompilerZ42(); }
     if (sub == "changed")      { return _testChanged(r); }
+    if (sub == "platform") {
+        string plat = p.Length > 2 ? p[2] : "";
+        return _platformDispatch(plat, r.GetPositional(0), _root());
+    }
     return 2;
 }
 

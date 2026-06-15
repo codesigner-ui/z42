@@ -7,10 +7,11 @@ pkg-web/
 pkg-nodejs/
 pkg-bundler/
 
-# stdlib zpkg bundles + namespace index — copied in by build.sh from
-# artifacts/build/libraries/dist/release/ at build time; not tracked.
+# stdlib zpkg bundles + namespace index/fetch-list — copied/derived at build
+# time (build.sh or `xtask test platform wasm assets`); not tracked.
 js/stdlib/*.zpkg
 js/stdlib/index.json
+js/stdlib/files.json
 
 # Test fixtures compiled by build.sh from examples/embedding/*.z42.
 js/fixtures/*.zbc

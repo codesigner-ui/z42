@@ -407,6 +407,71 @@ jobs:
 
 ---
 
+## xtask 三阶段平台测试管线（已落地：add-platform-test-pipeline, 2026-06-15）
+
+上文（Phase 4/5）原计划三平台各自在自己的 `build.sh` / `test.sh` 里跑测试。实践中
+这导致三套各自为政的 bash，且"编 fixture + 收 stdlib"在三处重复（最易漂移）。
+2026-06-15 统一到**接口驱动的 z42 框架**（`scripts/xtask_test_platform.z42` + 三个
+backend 文件），三步可单独调用、共享逻辑只写一份。
+
+### 三阶段（每步可单独跑，亦可串联）
+
+| 阶段 | 共享（框架一份） | 平台特定（backend） |
+|------|----------------|--------------------|
+| **① build project** | — | wasm→`wasm-pack`；iOS→cargo×targets+`xcframework`；Android→`cargo-ndk`+gradle AAR |
+| **② build test assets** | 编 R1–R7 fixtures→.zbc（z42c）+ 收 stdlib zpkg；落点参数化 | 只是落点不同（+wasm 的 `files.json` 浏览器 fetch-list）|
+| **③ run tests** | 统一 JUnit 报告落点 | runner 不同：wasm→Playwright；iOS→`swift test`；Android→gradle `connectedAndroidTest`(经 test.sh) |
+
+### 接口契约
+
+```
+public interface IPlatformBackend {
+    string      Name();                  // "wasm" | "ios" | "android"
+    int         BuildProject(string root);   // ① 平台原生构建
+    AssetLayout Assets(string root);          // ② 落点声明（fixturesDir / stdlibDirs / wantFilesJson）
+    int         RunTests(string root);        // ③ 平台 runner
+}
+```
+
+`_platformAssets`（框架）用 `backend.Assets()` 的落点把"编 fixture + 收 stdlib +
+可选 files.json"做一遍——这是消除三处重复的关键。新增平台 = 加一个 backend class +
+注册一行。
+
+**CLI**：`z42 xtask.zpkg test platform <wasm|ios|android|all> [build|assets|run]`
+（无 step = 全流程）。
+
+### R1–R7 平台冒烟契约（单一真相源）
+
+三平台跑**同一组 7 个场景**（测试代码因宿主语言不同分 Playwright/XCTest/JUnit 三份，
+但场景 + 期望状态码这份契约统一在此）。注意此 "R1–R7" 是**平台冒烟场景编号**，与
+[testing.md](testing.md) 的需求 "R1" 无关。
+
+| 场景 | 内容 | 期望 |
+|------|------|------|
+| R1 | hello world 冒烟 | stdout 单行 |
+| R2 | 坏 zbc | status 10 (BAD_ZBC) |
+| R3 | 未知入口 | status 20 (ENTRY_NOT_FOUND)，message 含 FQN |
+| R4 | 参数个数错 | status 21 (ARG_MISMATCH) |
+| R5 | resolver miss | 在 load/invoke 浮现（status 10 或 30）|
+| R6 | 生命周期：重复 init 3× | 3 段输出 |
+| R7 | 多行 stdout | 保序（a\nb\nc）|
+
+状态码↔平台异常映射见 [`platforms/README.md`](../../../src/toolchain/host/platforms/README.md) §错误码。
+
+### CI 聚合 dashboard 方向（地基已铺，传输层延后）
+
+每平台 ③ 把 JUnit 落到统一 `artifacts/test-reports/<platform>/junit.xml`。未来 CI change
+让各平台 job 经 **GitHub Checks API**（test-reporter action）把这些报告聚合成 PR 上的
+check runs —— GitHub 即"远程同步层"，**不需自建服务器**。CI job + Checks 接线是独立
+change（见 roadmap `infra-ci-platform-test-dashboard`）。
+
+### 当前落地边界（诚实）
+
+- wasm：①②③ 已端到端验证（本地 z42vm 实跑，7/7 R1–R7 过，产 junit.xml）
+- iOS：①② 忠实移植（cargo+xcframework / fixtures+stdlib）；③=`swift test`（macOS host slice）。Simulator 执行 + JUnit 转换延后
+- Android：①② 忠实移植（cargo-ndk+gradle）；③ 暂桥接现有 `test.sh`（emulator AVD 生命周期复杂、off-CI 不可验证），完整 z42 化 + JUnit 延后
+- 旧 `platforms/*/{build,test}.sh` **全保留**，CI-proven 后另开 change 退场（migrate-scripts-to-z42 节奏）
+
 ## 实施分期建议
 
 按依赖顺序：

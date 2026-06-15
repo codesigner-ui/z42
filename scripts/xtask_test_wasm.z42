@@ -1,0 +1,86 @@
+// xtask — wasm platform backend (add-platform-test-pipeline, 2026-06-15).
+// Implements IPlatformBackend for browser-wasm. Ports the three phases of
+// src/toolchain/host/platforms/wasm/{build.sh,test.sh} into z42:
+//   ① BuildProject : wasm-pack build (web + nodejs)
+//   ② Assets       : declares js/fixtures + js/stdlib + files.json (shared driver fills)
+//   ③ RunTests     : local node + Playwright (R1–R7, Chromium headless)
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+public class WasmBackend : IPlatformBackend {
+    public string Name() { return "wasm"; }
+
+    public AssetLayout Assets(string root) {
+        string wasmDir = Path.Join(root, "src/toolchain/host/platforms/wasm");
+        string[] stdlibDirs = new string[1];
+        stdlibDirs[0] = Path.Join(wasmDir, "js/stdlib");
+        return new AssetLayout(Path.Join(wasmDir, "js/fixtures"), stdlibDirs, true);
+    }
+
+    // ① wasm-pack build → pkg-web/ + pkg-nodejs/ (wasm-bindgen output).
+    public int BuildProject(string root) {
+        string? wp = Process.Which("wasm-pack");
+        if (wp == null) {
+            ConsoleError.WriteLine("error: wasm-pack not on PATH (cargo install wasm-pack --locked)");
+            return 1;
+        }
+        string wasmDir = Path.Join(root, "src/toolchain/host/platforms/wasm");
+
+        Console.WriteLine("  wasm-pack build --target web");
+        int c = _execIn(new Process("wasm-pack").Arg("build").Arg("--target").Arg("web")
+            .Arg("--out-dir").Arg("pkg-web").Arg("--out-name").Arg("z42_wasm").Arg("--no-typescript"), wasmDir);
+        if (c != 0) { return c; }
+
+        Console.WriteLine("  wasm-pack build --target nodejs");
+        return _execIn(new Process("wasm-pack").Arg("build").Arg("--target").Arg("nodejs")
+            .Arg("--out-dir").Arg("pkg-nodejs").Arg("--out-name").Arg("z42_wasm").Arg("--no-typescript"), wasmDir);
+    }
+
+    // ③ Playwright R1–R7 against pkg-web/ via local node (prepended to PATH).
+    public int RunTests(string root) {
+        string testsDir = Path.Join(root, "src/toolchain/host/platforms/wasm/tests");
+        string nodeBin  = Path.Join(root, "artifacts/tools/node/bin");
+        string nodeExe  = Path.Join(nodeBin, "node");
+        if (!File.Exists(nodeExe)) {
+            ConsoleError.WriteLine("error: local node not found at " + nodeExe);
+            ConsoleError.WriteLine("       run ./scripts/install-node-local.sh first");
+            return 1;
+        }
+        string browsers = Path.Join(root, "artifacts/tools/playwright-browsers");
+        string npm = Path.Join(nodeBin, "npm");
+        string npx = Path.Join(nodeBin, "npx");
+
+        if (!Directory.Exists(Path.Join(testsDir, "node_modules"))) {
+            Console.WriteLine("  npm install (one-shot)");
+            int c = _execIn(this._nodeProc(npm, nodeBin, browsers)
+                .Arg("install").Arg("--no-audit").Arg("--no-fund"), testsDir);
+            if (c != 0) { return c; }
+        }
+
+        Console.WriteLine("  playwright install chromium (idempotent)");
+        int c = _execIn(this._nodeProc(npx, nodeBin, browsers)
+            .Arg("playwright").Arg("install").Arg("chromium"), testsDir);
+        if (c != 0) { return c; }
+
+        // Emit JUnit alongside the human reporter → uniform report dir for the
+        // future CI dashboard (GitHub Checks). PLAYWRIGHT_JUNIT_OUTPUT_NAME +
+        // --reporter=list,junit needs no playwright.config.ts edit.
+        string junit = Path.Join(_reportDir(root, "wasm"), "junit.xml");
+        Console.WriteLine("  npx playwright test (--reporter=list,junit → " + junit + ")");
+        return _execIn(this._nodeProc(npx, nodeBin, browsers)
+            .Env("PLAYWRIGHT_JUNIT_OUTPUT_NAME", junit)
+            .Arg("playwright").Arg("test").Arg("--reporter=list,junit"), testsDir);
+    }
+
+    // Build a Process with local node prepended to PATH + Playwright browser
+    // cache redirected in-repo (mirrors test.sh exports). npx/npm shebang
+    // (`env node`) resolves node from the modified PATH.
+    Process _nodeProc(string program, string nodeBin, string browsers) {
+        string parentPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+        return new Process(program)
+            .Env("PATH", nodeBin + ":" + parentPath)
+            .Env("PLAYWRIGHT_BROWSERS_PATH", browsers);
+    }
+}

@@ -1,0 +1,87 @@
+// xtask — Android platform backend (add-platform-test-pipeline, 2026-06-15).
+// Implements IPlatformBackend, porting src/toolchain/host/platforms/android/build.sh:
+//   ① BuildProject : cargo-ndk × ABIs → jniLibs, then gradle :z42vm:assembleRelease (AAR)
+//   ② Assets       : fixtures → androidTest/assets/test-fixtures; stdlib → main/assets/stdlib
+//   ③ RunTests     : delegates to the existing test.sh (emulator boot + connectedAndroidTest)
+//
+// ③ keeps test.sh for now: emulator AVD lifecycle (boot/poll/kill) is elaborate
+// and unvalidatable off-CI; full z42 port + JUnit report → follow-up CI change.
+// Needs cargo-ndk + ANDROID_NDK_HOME + JDK + Android SDK.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+public class AndroidBackend : IPlatformBackend {
+    public string Name() { return "android"; }
+
+    public AssetLayout Assets(string root) {
+        string here = Path.Join(root, "src/toolchain/host/platforms/android");
+        string[] stdlibDirs = new string[1];
+        stdlibDirs[0] = Path.Join(here, "z42vm/src/main/assets/stdlib");
+        return new AssetLayout(Path.Join(here, "z42vm/src/androidTest/assets/test-fixtures"),
+                               stdlibDirs, false);
+    }
+
+    // ① cargo-ndk per ABI → jniLibs, then gradle assembleRelease → AAR.
+    public int BuildProject(string root) {
+        if (Process.Which("cargo") == null) {
+            ConsoleError.WriteLine("error: cargo not found (https://rustup.rs)");
+            return 1;
+        }
+        if (Process.Which("cargo-ndk") == null) {
+            ConsoleError.WriteLine("error: cargo-ndk not found (cargo install cargo-ndk)");
+            return 1;
+        }
+        string here = Path.Join(root, "src/toolchain/host/platforms/android");
+        string rustDir = Path.Join(here, "rust");
+        string jniLibs = Path.Join(here, "z42vm/src/main/jniLibs");
+
+        string ndk = this._resolveNdk(root);
+        if (ndk.Length == 0) { return 1; }
+
+        TomlValue toml = _vparse(root);
+        string[] abis = _vgetList(toml, "platform.android.abis");
+
+        // cargo ndk -t <abi> ... -o <jniLibs> build --release   (run in rust/)
+        Process p = new Process("cargo").Arg("ndk");
+        foreach (var abi in abis) { p = p.Arg("-t").Arg(abi); }
+        p = p.Arg("-o").Arg(jniLibs).Arg("build").Arg("--release").Env("ANDROID_NDK_HOME", ndk);
+        Console.WriteLine("  cargo ndk build --release (ABIs from versions.toml) -> " + jniLibs);
+        int c = _execIn(p, rustDir);
+        if (c != 0) { return c; }
+
+        // gradle assembleRelease → z42vm-release.aar
+        string gradlew = Path.Join(here, "gradlew");
+        if (!File.Exists(gradlew)) {
+            ConsoleError.WriteLine("error: gradlew not present at " + gradlew + " (gradle wrapper needed)");
+            return 1;
+        }
+        Console.WriteLine("  ./gradlew :z42vm:assembleRelease");
+        return _execIn(new Process(gradlew).Arg(":z42vm:assembleRelease").Env("ANDROID_NDK_HOME", ndk), here);
+    }
+
+    // ③ delegate to test.sh (emulator boot + gradle connectedAndroidTest).
+    public int RunTests(string root) {
+        string here = Path.Join(root, "src/toolchain/host/platforms/android");
+        Console.WriteLine("  bash test.sh  (emulator + connectedAndroidTest; full port → CI change)");
+        return _execIn(new Process("bash").Arg("test.sh"), here);
+    }
+
+    // ANDROID_NDK_HOME env, else auto from versions.toml install_root/ndk/<version>.
+    string _resolveNdk(string root) {
+        string env = Environment.GetEnvironmentVariable("ANDROID_NDK_HOME") ?? "";
+        if (env.Length > 0) {
+            if (Directory.Exists(env)) { return env; }
+            ConsoleError.WriteLine("error: ANDROID_NDK_HOME set but not a dir: " + env);
+            return "";
+        }
+        TomlValue toml = _vparse(root);
+        string installRoot = _vget(toml, "build.android.install_root");
+        string ver = _vget(toml, "build.android.ndk.version");
+        string auto = Path.Join(root, Path.Join(installRoot, Path.Join("ndk", ver)));
+        if (Directory.Exists(auto)) { return auto; }
+        ConsoleError.WriteLine("error: NDK not found. Set ANDROID_NDK_HOME or install to " + auto);
+        return "";
+    }
+}

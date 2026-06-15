@@ -1,0 +1,183 @@
+// xtask — cross-platform test framework (add-platform-test-pipeline, 2026-06-15).
+// Same Z42Xtask namespace. Unifies wasm / iOS / Android behind one interface so
+// the three-phase flow (① build project ② build test assets ③ run tests) is
+// expressed once, with only the platform-specific bits delegated to a backend.
+//
+// Phase ② (compile R1–R7 fixtures → .zbc + gather stdlib zpkgs) is SHARED here
+// (_platformAssets); the three former build.sh scripts each duplicated it — the
+// part most prone to drift. Backends only declare WHERE assets land (AssetLayout).
+//
+// Backends live in xtask_test_{wasm,ios,android}.z42; CLI wiring in xtask_cli.z42
+// (`test platform <p> [build|assets|run]`). The legacy platforms/*/build.sh +
+// test.sh stay until this is CI-proven (migrate-scripts-to-z42 retirement model).
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+// ── Backend contract ──────────────────────────────────────────────────────
+
+// One per platform. The shared driver calls these in the three phases.
+public interface IPlatformBackend {
+    string      Name();                 // "wasm" | "ios" | "android"
+    int         BuildProject(string root);  // ① native build (cargo + wasm-pack/xcframework/AAR)
+    AssetLayout Assets(string root);         // ② where fixtures/.zbc + stdlib/.zpkg go
+    int         RunTests(string root);       // ③ platform runner
+}
+
+// Declares phase ② destinations. stdlibDirs may hold >1 (e.g. iOS main + test
+// bundle). wantFilesJson emits a browser fetch-list into stdlibDirs[0] (wasm).
+public class AssetLayout {
+    public string   fixturesDir;
+    public string[] stdlibDirs;
+    public bool     wantFilesJson;
+
+    public AssetLayout(string fixturesDir, string[] stdlibDirs, bool wantFilesJson) {
+        this.fixturesDir   = fixturesDir;
+        this.stdlibDirs    = stdlibDirs;
+        this.wantFilesJson = wantFilesJson;
+    }
+}
+
+// ── Dispatch (called from xtask_cli.z42 _dispatchTest) ─────────────────────
+
+// name ∈ wasm|ios|android ; step ∈ ""(=all)|build|assets|run.
+int _platformDispatch(string name, string step, string root) {
+    if (name == "wasm")    { return _platformStep(new WasmBackend(), step, root); }
+    if (name == "ios")     { return _platformStep(new IosBackend(), step, root); }
+    if (name == "android") { return _platformStep(new AndroidBackend(), step, root); }
+    if (name == "all")     { return _platformAllPlatforms(step, root); }
+    ConsoleError.WriteLine("error: unknown platform '" + name + "' (wasm|ios|android|all)");
+    return 2;
+}
+
+int _platformStep(IPlatformBackend b, string step, string root) {
+    if (step == "" || step == "all") { return _platformAll(b, root); }
+    if (step == "build")  { return _platformBuild(b, root); }
+    if (step == "assets") { return _platformAssets(b, root); }
+    if (step == "run")    { return _platformRun(b, root); }
+    ConsoleError.WriteLine("error: unknown step '" + step + "' (build|assets|run)");
+    return 2;
+}
+
+// `test platform all <step>` — run the step on every backend; first failure wins.
+int _platformAllPlatforms(string step, string root) {
+    int c = _platformStep(new WasmBackend(), step, root);    if (c != 0) { return c; }
+    c = _platformStep(new IosBackend(), step, root);         if (c != 0) { return c; }
+    return _platformStep(new AndroidBackend(), step, root);
+}
+
+// ── Three-phase driver ─────────────────────────────────────────────────────
+
+int _platformAll(IPlatformBackend b, string root) {
+    Console.WriteLine("=== platform " + b.Name() + " ① build project ===");
+    int c = _platformBuild(b, root);  if (c != 0) { return c; }
+    Console.WriteLine("=== platform " + b.Name() + " ② build test assets ===");
+    c = _platformAssets(b, root);     if (c != 0) { return c; }
+    Console.WriteLine("=== platform " + b.Name() + " ③ run tests ===");
+    return _platformRun(b, root);
+}
+
+int _platformBuild(IPlatformBackend b, string root) { return b.BuildProject(root); }
+int _platformRun(IPlatformBackend b, string root)   { return b.RunTests(root); }
+
+// ② SHARED: compile R1–R7 fixtures + gather stdlib zpkgs into the backend's
+// declared destinations. The only platform variance is the destination paths
+// (and the optional browser fetch-list), captured by AssetLayout.
+int _platformAssets(IPlatformBackend b, string root) {
+    string driver = _driverDll(root);
+    if (!File.Exists(driver)) {
+        ConsoleError.WriteLine("error: z42c driver not found at " + driver + "; run build compiler");
+        return 1;
+    }
+    AssetLayout layout = b.Assets(root);
+
+    // (a) fixtures: examples/embedding/{hello,multi_line}.z42 → <fixturesDir>/*.zbc
+    Directory.Create(layout.fixturesDir);
+    int c = _compileFixture(driver, root, "hello", layout.fixturesDir);       if (c != 0) { return c; }
+    c = _compileFixture(driver, root, "multi_line", layout.fixturesDir);      if (c != 0) { return c; }
+
+    // (b) stdlib zpkgs → each declared dir
+    string libs = _libsDir(root);
+    if (!Directory.Exists(libs)) {
+        ConsoleError.WriteLine("error: stdlib not built at " + libs + "; run build stdlib");
+        return 1;
+    }
+    foreach (var dir in layout.stdlibDirs) {
+        c = _copyZpkgsTo(libs, dir);  if (c != 0) { return c; }
+    }
+
+    // (c) browser fetch-list (wasm only)
+    if (layout.wantFilesJson && layout.stdlibDirs.Length > 0) {
+        _writeFilesJson(layout.stdlibDirs[0]);
+    }
+    return 0;
+}
+
+// ── Shared helpers ─────────────────────────────────────────────────────────
+
+// Uniform JUnit report destination per platform, so a future CI change can
+// publish them to GitHub Checks (the aggregated cross-platform dashboard) with
+// no rework. The remote/transport layer (Checks API / test-reporter action) is
+// deferred to that CI change; backends only need to land a junit.xml here.
+string _reportDir(string root, string platform) {
+    string d = Path.Join(root, Path.Join("artifacts/test-reports", platform));
+    Directory.Create(d);
+    return d;
+}
+
+int _compileFixture(string driver, string root, string name, string destDir) {
+    string srcFile = Path.Join(root, "examples/embedding/" + name + ".z42");
+    if (!File.Exists(srcFile)) {
+        ConsoleError.WriteLine("error: fixture source missing: " + srcFile);
+        return 1;
+    }
+    string outFile = Path.Join(destDir, name + ".zbc");
+    Console.WriteLine("  z42c " + name + ".z42 -> " + outFile);
+    return _exec(new Process("dotnet").Arg(driver).Arg(srcFile)
+        .Arg("--emit").Arg("zbc").Arg("-o").Arg(outFile));
+}
+
+// Copy *.zpkg from libsDir into destDir (clearing stale zpkgs first). Unlike
+// _pkgCopyLibs (which hardcodes <pkgDir>/libs/), destDir is arbitrary so each
+// platform's bundle convention works.
+int _copyZpkgsTo(string libsDir, string destDir) {
+    Directory.Create(destDir);
+    foreach (var f in Directory.Enumerate(destDir)) {
+        if (f.EndsWith(".zpkg")) { File.Delete(Path.Join(destDir, f)); }
+    }
+    int n = 0;
+    foreach (var f in Directory.Enumerate(libsDir)) {
+        if (f.EndsWith(".zpkg")) { File.Copy(Path.Join(libsDir, f), Path.Join(destDir, f)); n = n + 1; }
+    }
+    Console.WriteLine("  stdlib: " + n + " zpkgs -> " + destDir);
+    return 0;
+}
+
+// Emit files.json (sorted zpkg filename list) — the browser cannot enumerate a
+// remote dir over HTTP, so it fetches the names listed here. Derived `ls`, never
+// hand-maintained.
+void _writeFilesJson(string stdlibDir) {
+    int n = 0;
+    foreach (var f in Directory.Enumerate(stdlibDir)) {
+        if (f.EndsWith(".zpkg")) { n = n + 1; }
+    }
+    string[] names = new string[n];
+    int i = 0;
+    foreach (var f in Directory.Enumerate(stdlibDir)) {
+        if (f.EndsWith(".zpkg")) { names[i] = f; i = i + 1; }
+    }
+    _sortStrings(names);
+
+    string json = "[\n";
+    int k = 0;
+    while (k < names.Length) {
+        json = json + "  \"" + names[k] + "\"";
+        if (k < names.Length - 1) { json = json + ","; }
+        json = json + "\n";
+        k = k + 1;
+    }
+    json = json + "]\n";
+    File.WriteAllText(Path.Join(stdlibDir, "files.json"), json);
+    Console.WriteLine("  files.json (" + names.Length + " zpkgs)");
+}
