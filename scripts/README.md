@@ -41,7 +41,7 @@ bootstrap」。
 | `z42 xtask.zpkg deps check` | 改 `versions.toml` 后对账 | `versions.toml` + 投影文件 | versions.toml ↔ Cargo.toml / build.gradle.kts / ios/Package.swift 一致性 |
 | `z42 xtask.zpkg build stdlib` | 改了 stdlib `.z42` 源 | `dotnet` + `z42.Driver` | `artifacts/build/libraries/dist/release/<lib>.zpkg`（扁平视图，无 namespace 索引） |
 | `z42 xtask.zpkg build package [release\|debug] [--rid R]` | 准备发行 / 测发行包 | `dotnet` + `cargo` | `artifacts/packages/z42-<version>-<rid>-<config>/{bin,libs,native}`（末尾自动跑 SHA-256 invariant） |
-| `z42 xtask.zpkg regen` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | 更新 `src/tests/**/source.zbc` + `src/libraries/*/tests/**/source.zbc` |
+| `z42 xtask.zpkg regen` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | run-golden → `artifacts/build/golden/<源相对路径>/source.zbc`（gitignored，不污染 src）；committed 字节基线 `src/tests/zbc-format/*/source.zbc` 就地重写 |
 | `z42 xtask.zpkg audit` | 新增 test `source.z42` | `z42.regex` | 自动补缺失的 `using` 声明 |
 | `z42 xtask.zpkg test` | **每次 commit / 归档前必跑** | 下面各 stage | 串联全部 GREEN 验证 |
 | `z42 xtask.zpkg test vm [interp\|jit]` | 跑 VM 端到端 golden（最常用） | `cargo build` + regen 产物 | interp / jit 通过率 |

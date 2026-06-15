@@ -3,10 +3,16 @@
 // helpers it calls (_deriveEntry / _enumDirsSorted / _isNonRunnableCat /
 // _firstLine / _stripTrailingNewlines / ...) live in xtask_golden.z42.
 //
-// Runs VM golden tests in interp / jit mode. Each golden case lives at one of:
-//   src/tests/<cat>/<name>/source.zbc        (dir mode) + expected_output.txt
-//   src/libraries/<lib>/tests/<name>/source.zbc
-//   src/tests/<cat>/<name>.zbc               (flat mode) + <name>.expected_output.txt
+// Runs VM golden tests in interp / jit mode. Each golden case's source +
+// sidecars live in src; the compiled .zbc lives in the artifacts mirror
+// (redirect-golden-zbc-to-artifacts, 2026-06-16 — keeps src/ free of build
+// output). Sidecar (src) → artifact (mirror) mapping:
+//   src/tests/<cat>/<name>/source.z42 + expected_output.txt
+//     → artifacts/build/golden/src/tests/<cat>/<name>/source.zbc            (dir)
+//   src/libraries/<lib>/tests/<name>/source.z42
+//     → artifacts/build/golden/src/libraries/<lib>/tests/<name>/source.zbc  (dir)
+//   src/tests/<cat>/<name>.z42 + <name>.expected_output.txt
+//     → artifacts/build/golden/src/tests/<cat>/<name>.zbc                    (flat)
 //
 // For each case: derive entry name from the .z42 source (mirrors the C#
 // GoldenTests resolution: `<namespace>.Main` > `Main` > `<namespace>.main` >
@@ -219,7 +225,12 @@ _Case[] _enumerateCases(string root, string mode) {
         while (ni < names.Length) {
             string dir = Path.Join(catDir, names[ni]);
             if (_isExcludedDirName(cats[ci], names[ni])) { ni = ni + 1; continue; }
-            string artifact = Path.Join(dir, "source.zbc");
+            // run-golden .zbc lives in the artifacts mirror, not beside source.z42
+            // (redirect-golden-zbc-to-artifacts). Sidecars (expected_output.txt,
+            // interp_only, source.z42 for entry derivation) stay in src `dir`.
+            string artifact = Path.Join(
+                _goldenArtifactDir(root, Path.Join(Path.Join("src/tests", cats[ci]), names[ni])),
+                "source.zbc");
             if (File.Exists(artifact)) {
                 if (mode == "jit" && File.Exists(Path.Join(dir, "interp_only"))) {
                     ni = ni + 1;
@@ -253,7 +264,11 @@ _Case[] _enumerateCases(string root, string mode) {
                 // found"). Mirrors the C# GoldenTests src/libraries [Test]-dir
                 // exclusion (7b2a1b2a) + xtask test-lib discovery (902ce26c).
                 if (_dirHasTestMethods(dir)) { ni = ni + 1; continue; }
-                string artifact = Path.Join(dir, "source.zbc");
+                // run-golden .zbc → artifacts mirror; sidecars stay in src `dir`.
+                string artifact = Path.Join(
+                    _goldenArtifactDir(root,
+                        Path.Join(Path.Join(Path.Join("src/libraries", libs[li]), "tests"), names[ni])),
+                    "source.zbc");
                 if (File.Exists(artifact)) {
                     if (mode == "jit" && File.Exists(Path.Join(dir, "interp_only"))) {
                         ni = ni + 1;
@@ -276,7 +291,10 @@ _Case[] _enumerateCases(string root, string mode) {
     while (ci < cats.Length) {
         if (_isNonRunnableCat(cats[ci])) { ci = ci + 1; continue; }
         string catDir = Path.Join(testsDir, cats[ci]);
-        string[] hits = Path.Glob(catDir, "*.zbc");
+        // flat run-golden .zbc → artifacts mirror; sidecars (.interp_only,
+        // .expected_output.txt, .z42) stay in src `catDir`.
+        string mirrorCat = _goldenArtifactDir(root, Path.Join("src/tests", cats[ci]));
+        string[] hits = Path.Glob(mirrorCat, "*.zbc");
         int hi = 0;
         while (hi < hits.Length) {
             string artifact = hits[hi];

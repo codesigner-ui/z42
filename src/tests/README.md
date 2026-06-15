@@ -50,7 +50,7 @@
 | 文件 | 何时存在 | 含义 |
 |------|---------|------|
 | `source.z42` | 必须 | z42 源码 |
-| `source.zbc` | run / parse | 由 `z42 xtask.zpkg regen` 生成；不入库（gitignored） |
+| `source.zbc` | run / parse | 由 `z42 xtask.zpkg regen` 生成，落 `artifacts/build/golden/<源相对路径>/source.zbc`（**不与源同处**，gitignored，不污染 src）。例外：`zbc-format/*/source.zbc` 是 check-in 字节基线，就地重写 |
 | `source.zasm` | 可选 | ZASM 调试文本 |
 | `expected_output.txt` | run | stdout 期望（**空 = 删除**；缺失 = assert-only 模式：用例靠 `Std.Assert` 抛异常表达失败，期望空 stdout）|
 | `expected_error.txt` | error | 编译诊断期望 |

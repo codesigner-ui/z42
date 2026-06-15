@@ -25,50 +25,66 @@ fn project_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// Resolve a project-root-relative path to a test case directory.
-/// Format: `"<category>/<name>"` (e.g. `"basic/hello"`).
+/// Resolve a project-root-relative test-case path (`"<category>/<name>"`, e.g.
+/// `"classes/class_basic"`) to its compiled `source.zbc` directory.
+///
+/// run-golden `.zbc` lives in the artifacts mirror, not beside `source.z42`
+/// (redirect-golden-zbc-to-artifacts, 2026-06-16): regen writes
+/// `artifacts/build/golden/src/tests/<category>/<name>/source.zbc`.
 fn golden_dir(rel: &str) -> PathBuf {
-    project_root().join("src/tests").join(rel)
+    project_root()
+        .join("artifacts/build/golden/src/tests")
+        .join(rel)
 }
 
-/// Iterate every test directory that ships with a `source.zbc` under
-/// `src/tests/` (excluding errors/parse/cross-zpkg) and `src/libraries/<lib>/tests/`.
+/// Recursively collect `(<parent-dir-name>, <path-to-source.zbc>)` under `dir`.
+fn collect_source_zbc(dir: &std::path::Path, out: &mut Vec<(String, PathBuf)>) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_source_zbc(&path, out);
+        } else if path.file_name().map(|n| n == "source.zbc").unwrap_or(false) {
+            let name = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            out.push((name, path));
+        }
+    }
+}
+
+/// Iterate every test case that ships with a `source.zbc`. Two populations
+/// (redirect-golden-zbc-to-artifacts, 2026-06-16):
+///   1. Committed byte-baseline goldens under `src/tests/zbc-format/` — checked
+///      into git, regen overwrites them in place; still read from src.
+///   2. Run-goldens (`src/tests/<cat>/` minus errors/parse/cross-zpkg, plus
+///      `src/libraries/<lib>/tests/`) — regen-generated, now under the artifacts
+///      mirror `artifacts/build/golden/`. Recurse and collect every `source.zbc`.
 fn each_golden_zbc() -> Vec<(String, PathBuf)> {
     let root = project_root();
     let mut out = Vec::new();
-    let mut roots: Vec<PathBuf> = Vec::new();
 
-    // src/tests/<category>/<name>/  (skip errors/parse/cross-zpkg)
-    let tests_root = root.join("src/tests");
-    if let Ok(entries) = fs::read_dir(&tests_root) {
-        for cat in entries.flatten() {
-            if !cat.path().is_dir() { continue; }
-            let cat_name = cat.file_name().to_string_lossy().into_owned();
-            if matches!(cat_name.as_str(), "errors" | "parse" | "cross-zpkg") { continue; }
-            roots.push(cat.path());
-        }
-    }
-    // src/libraries/<lib>/tests/<name>/
-    if let Ok(libs) = fs::read_dir(root.join("src/libraries")) {
-        for lib in libs.flatten() {
-            let p = lib.path().join("tests");
-            if p.is_dir() { roots.push(p); }
-        }
-    }
-
-    for r in roots {
-        if let Ok(entries) = fs::read_dir(&r) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.is_dir() { continue; }
-                let zbc = path.join("source.zbc");
-                if zbc.is_file() {
-                    let name = path.file_name().unwrap().to_string_lossy().into_owned();
-                    out.push((name, zbc));
-                }
+    // (1) Committed byte-baseline goldens (stay in src).
+    if let Ok(entries) = fs::read_dir(root.join("src/tests/zbc-format")) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() { continue; }
+            let zbc = path.join("source.zbc");
+            if zbc.is_file() {
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                out.push((name, zbc));
             }
         }
     }
+
+    // (2) Run-goldens from the artifacts mirror (regen-on-demand).
+    collect_source_zbc(&root.join("artifacts/build/golden"), &mut out);
+
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
