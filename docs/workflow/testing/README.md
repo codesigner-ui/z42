@@ -17,6 +17,10 @@ z42 测试分四层，各层独立运行：
 
 [`changed-only.md`](changed-only.md) — `z42 xtask.zpkg test changed` 根据 `git diff` 只跑受影响的测试命令集合（dev 内循环加速）。
 
+## 平台测试（wasm / iOS / Android）
+
+[`platform-tests.md`](platform-tests.md) — `z42 xtask.zpkg test platform <p> [build|assets|run]`：嵌入 R1–R7 契约在浏览器 / iOS Simulator / Android emulator 上跑。**不在**主 GREEN gate 内（各需重型工具链，按需单跑）；CI 各平台独立 job。含从零的本地配方 + 无 launcher 跑法。
+
 ## GREEN 门禁
 
 CI 全绿门禁（`dotnet build` + `cargo build` + 上面 4 层全过）的定义见 [`../ci.md`](../ci.md)；规则在 [`.claude/rules/workflow.md`](../../../.claude/rules/workflow.md) 阶段 8。
