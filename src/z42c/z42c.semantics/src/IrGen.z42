@@ -213,6 +213,10 @@ public sealed class IrGen {
         }
         IrClassDesc cd2 = new IrClassDesc(this._q(c.Name), hasBase, baseName, fields, fcount);
         cd2.StaticFields = sfields; cd2.StaticFieldCount = sfcount;
+        if (ctd != null && ctd.InterfaceCount > 0) {   // zbc 1.17：TYPE 接口块（bare 名）
+            cd2.Interfaces = ctd.InterfaceNames;
+            cd2.InterfaceCount = ctd.InterfaceCount;
+        }
         return cd2;
     }
 

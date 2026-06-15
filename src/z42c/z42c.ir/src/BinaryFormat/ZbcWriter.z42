@@ -64,6 +64,8 @@ public static class ZbcWriter {
             while (f < cd.FieldCount) { pool.Intern(cd.Fields[f].Name); pool.Intern(cd.Fields[f].Type); f = f + 1; }
             int sf = 0;   // 静态字段名/类型（zbc 1.13；C# InternPoolStrings 实例字段后——字节实证）
             while (sf < cd.StaticFieldCount) { pool.Intern(cd.StaticFields[sf].Name); pool.Intern(cd.StaticFields[sf].Type); sf = sf + 1; }
+            int ifx = 0;   // 接口名（zbc 1.17；C# 静态字段后 intern）
+            while (ifx < cd.InterfaceCount) { pool.Intern(cd.Interfaces[ifx]); ifx = ifx + 1; }
             c = c + 1;
         }
         pool.Intern("?");   // SIGS 缺省 param 类型占位
@@ -159,6 +161,9 @@ public static class ZbcWriter {
                 w.WriteU16(0);   // per-field attrCount（zbc 1.14）
                 sf = sf + 1;
             }
+            w.WriteU16(cd.InterfaceCount);   // 接口块（zbc 1.17：bare 名 idx[]）
+            int ifx = 0;
+            while (ifx < cd.InterfaceCount) { w.WriteU32(pool.Idx(cd.Interfaces[ifx])); ifx = ifx + 1; }
             c = c + 1;
         }
         return w;

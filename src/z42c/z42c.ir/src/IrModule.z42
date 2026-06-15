@@ -22,10 +22,12 @@ public sealed class IrClassDesc {
     public IrFieldDesc[] Fields;
     public int           FieldCount;
     public IrFieldDesc[] StaticFields; public int StaticFieldCount;   // zbc 1.13（SA-3）
+    public string[] Interfaces; public int InterfaceCount;   // zbc 1.17：TYPE 接口块（bare 名）
     public IrClassDesc(string name, bool hasBase, string baseName, IrFieldDesc[] fields, int fieldCount) {
         this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = fields; this.FieldCount = fieldCount;
         this.StaticFields = new IrFieldDesc[0]; this.StaticFieldCount = 0;
+        this.Interfaces = new string[0]; this.InterfaceCount = 0;
     }
 }
 
