@@ -129,7 +129,7 @@ public sealed class TypeChecker {
                     init = this._bindLambda(v.Init as LambdaExpr, declared as Z42FuncType, env);
                 }
             }
-            if (init == null) { init = this._bindExpr(v.Init, env); }
+            if (init == null && v.Init != null) { init = this._bindExpr(v.Init, env); }   // G8：无 init 则 init 留 null
             Z42Type vt = this._varType(env, v, init);
             env.Define(v.Name, vt);
             if (this._lambdaActive) { this._lambdaLocals.Put(v.Name, vt); }
@@ -221,10 +221,13 @@ public sealed class TypeChecker {
     private Z42Type _varType(TypeEnv env, VarDeclStmt v, BoundExpr init) {
         if (v.Type is NamedType) {
             NamedType nt = v.Type as NamedType;
-            if (nt.Name == "var") { return init.Type(); }
+            if (nt.Name == "var") {
+                if (init != null) { return init.Type(); }
+                return new Z42UnknownType();              // G8：`var` 无 init 不可推断（实践不出现，防崩）
+            }
         }
         Z42Type vt = env.ResolveType(v.Type);
-        if (!this._isAssignable(init.Type(), vt, env.Symbols)) {
+        if (init != null && !this._isAssignable(init.Type(), vt, env.Symbols)) {   // G8：无 init 跳赋值检查
             this._diags.Error(DiagnosticCodes.TypeMismatch,
                 "cannot assign " + init.Type().Name() + " to " + vt.Name(), v.Init.Span);
         }

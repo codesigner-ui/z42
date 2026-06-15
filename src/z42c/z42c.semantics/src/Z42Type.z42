@@ -8,6 +8,24 @@ public class Z42Type {
     public virtual string Name() { return "?type"; }
     public virtual bool   IsAssignableTo(Z42Type other) { return false; }
     public virtual string Dump() { return this.Name(); }
+
+    // 规范化基本类型名用于可赋性比较：剥 nullable `?`（z42 nullable 在类型模型擦除）+
+    // 基本类型别名归一（`byte`≡`u8` 等；imported TSIG 用 keyword 拼写、本地用 canonical，须等价）。
+    public static string Canon(string n) {
+        string s = n;
+        if (s.EndsWith("?")) { s = s.Substring(0, s.Length - 1); }
+        if (s == "byte")   { return "u8"; }
+        if (s == "sbyte")  { return "i8"; }
+        if (s == "short")  { return "i16"; }
+        if (s == "ushort") { return "u16"; }
+        if (s == "int")    { return "i32"; }
+        if (s == "uint")   { return "u32"; }
+        if (s == "long")   { return "i64"; }
+        if (s == "ulong")  { return "u64"; }
+        if (s == "float")  { return "f32"; }
+        if (s == "double") { return "f64"; }
+        return s;
+    }
 }
 
 public sealed class Z42PrimType : Z42Type {
@@ -16,7 +34,7 @@ public sealed class Z42PrimType : Z42Type {
     public override string Name() { return this._name; }
     public override bool IsAssignableTo(Z42Type other) {
         if (other is Z42ErrorType) { return true; }
-        if (this._name == other.Name()) { return true; }
+        if (Z42Type.Canon(this._name) == Z42Type.Canon(other.Name())) { return true; }   // 名等价（剥 ? + 别名）
         return this._canWiden(this._name, other.Name());
     }
     // 数值拓宽（无收窄）：int→long/float/double；long→float/double；float→double；byte·short→int 起。
@@ -152,7 +170,11 @@ public sealed class Z42ArrayType : Z42Type {
         if (other is Z42ErrorType) { return true; }
         if (other is Z42ArrayType) {
             Z42ArrayType o = other as Z42ArrayType;
-            return this.Elem.Name() == o.Elem.Name();
+            // 元素 unknown/error 任一侧吸收（镜像标量；imported 元素类型在字段位未解析时退化为 unknown，
+            // codegen 经 DepIndex 真实解析）。否则元素名规范等价（byte[]≡u8[] 等）。
+            if ((this.Elem is Z42UnknownType) || (this.Elem is Z42ErrorType)) { return true; }
+            if ((o.Elem is Z42UnknownType) || (o.Elem is Z42ErrorType)) { return true; }
+            return Z42Type.Canon(this.Elem.Name()) == Z42Type.Canon(o.Elem.Name());
         }
         return false;
     }

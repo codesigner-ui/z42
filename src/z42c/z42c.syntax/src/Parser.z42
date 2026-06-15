@@ -476,8 +476,12 @@ public sealed class Parser {
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected variable name", this._peek().Span); }
-        this._expect(TokenKind.Eq, "=");
-        Expr init = this._parseExpr(0);
+        // 初始化器可选（G8；`Type name;` = 声明无 init，首次赋值时取默认/绑定，镜像 C#）。
+        Expr init = null;
+        if (this._peek().Kind == TokenKind.Eq) {
+            this._advance();
+            init = this._parseExpr(0);
+        }
         this._expectSemi();
         return new VarDeclStmt(type, name, init, sp);
     }

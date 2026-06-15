@@ -363,3 +363,12 @@ void test_cstyle_cast_convert() {
     Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 255\n  %1 = copy %0\n  %2 = convert i32 %1\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
+
+// ── 无初始化器局部声明（port-z42c-self-compile G8）─────────────────────────────
+[Test]
+void test_var_decl_no_init() {
+    // `int x;` 不发 IR（镜像 C# VisitVarDecl）；`x = 5` 首次赋值绑定寄存器
+    string src = "int F() { int x; x = 5; return x; }";
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 5\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "F"));
+}

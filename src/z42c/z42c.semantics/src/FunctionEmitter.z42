@@ -270,11 +270,14 @@ public sealed class FunctionEmitter {
             while (i < b.Count) { this._emitStmt(b.Stmts[i]); i = i + 1; }
         } else if (s is BoundVarDeclStmt) {
             BoundVarDeclStmt v = s as BoundVarDeclStmt;
-            TypedReg r = this._expr.Emit(v.Init);
-            // 镜像 C#：每局部变量分配专用寄存器 + copy init（byte-identical：FUNC 指令流/REGT/DBUG instrIdx）
-            TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(v.VarType));
-            this._ctx.Emit(new CopyInstr(dst, r));
-            this._ctx.Locals.Put(v.Name, dst);
+            // 有 init：专用寄存器 + copy（byte-identical：FUNC 指令流/REGT/DBUG instrIdx）。
+            // 无 init（G8）：不发 IR——变量首次赋值时 _emitAssign 绑定寄存器（镜像 C# VisitVarDecl）。
+            if (v.Init != null) {
+                TypedReg r = this._expr.Emit(v.Init);
+                TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(v.VarType));
+                this._ctx.Emit(new CopyInstr(dst, r));
+                this._ctx.Locals.Put(v.Name, dst);
+            }
         } else if (s is BoundReturn) {
             BoundReturn ret = s as BoundReturn;
             if (ret.HasValue) { TypedReg r = this._expr.Emit(ret.Value); this._ctx.EndBlock(new RetTerm(true, r)); }
