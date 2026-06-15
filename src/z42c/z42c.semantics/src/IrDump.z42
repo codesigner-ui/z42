@@ -212,7 +212,9 @@ public static class IrDump {
         var symbols = new SymbolCollector().Collect(cu);
         var diags = new DiagnosticBag();
         var model = new TypeChecker(diags).Infer(cu, symbols);
-        return new IrGen().Generate(cu, model);
+        var gen = new IrGen();
+        gen.SourceStem = IrDump._stem(cu);   // SA-3：__static_init__ 名前缀须用文件 stem（镜像 _compileCu / C# _cuStem），否则回落 "main" → 与 C# `<stem>.__static_init__` 字节不一致
+        return gen.Generate(cu, model);
     }
 }
 
@@ -220,7 +222,6 @@ public static class IrDump {
 public sealed class CompiledModuleZ {
     public IrModule Module;
     public ExportedModuleZ Exported;   // PS-1：包级提取（全包函数泄漏镜像）
-    public string[] DiagMsgs; public int DiagCount;   // 诊断详情（driver 打印）
     public string[] DiagMsgs; public int DiagCount;   // 诊断详情（driver 打印）
     public string   Namespace;  // cu 真实 ns（""=无——C# ZbcFile.Namespace 语义；≠ IrModule.Name 的 "main" 缺省）
     public string[] Usings;     public int UsingCount;
