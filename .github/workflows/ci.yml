@@ -13,6 +13,10 @@ on:
   # republishes a compatible nightly so the next run self-heals. Run via the
   # Actions "Run workflow" button or: gh workflow run CI --ref main
   workflow_dispatch:
+  # Nightly full platform-test sweep — covers commits the per-push paths filter
+  # skipped (z42c-only, stdlib-only, etc.). 07:00 UTC daily.
+  schedule:
+    - cron: '0 7 * * *'
 
 # Cancel in-progress runs on the same ref when a new one starts
 concurrency:
@@ -20,6 +24,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Detect whether platform-relevant files changed, to gate the heavy
+  # wasm/iOS/Android/desktop test jobs (15-25 min each). On schedule /
+  # workflow_dispatch they always run (full sweep); on push/PR only when
+  # platform-relevant paths change — stops the per-commit churn + the
+  # cancel-in-progress storm from frequent unrelated pushes.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      platform: ${{ steps.filter.outputs.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            platform:
+              - 'src/runtime/**'
+              - 'src/toolchain/host/**'
+              - 'examples/embedding/**'
+              - 'scripts/xtask_test_platform.z42'
+              - 'scripts/xtask_test_wasm.z42'
+              - 'scripts/xtask_test_ios.z42'
+              - 'scripts/xtask_test_android.z42'
+              - 'scripts/xtask_test_desktop.z42'
+              - '.github/workflows/ci.yml'
+
   build-and-test:
     name: build-and-test (${{ matrix.os }})
     strategy:
@@ -1052,6 +1083,8 @@ jobs:
   # (infra-ci-platform-test-dashboard, 2026-06-16)
   test-wasm:
     name: test-wasm (browser)
+    needs: changes
+    if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1106,6 +1139,8 @@ jobs:
 
   test-ios:
     name: test-ios (Simulator)
+    needs: changes
+    if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-15
     permissions:
       contents: read
@@ -1162,6 +1197,8 @@ jobs:
 
   test-android:
     name: test-android (emulator)
+    needs: changes
+    if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1227,4 +1264,44 @@ jobs:
         with:
           name: junit-android
           path: src/toolchain/host/platforms/android/z42vm/build/outputs/androidTest-results/connected/**
+          if-no-files-found: warn
+
+  test-desktop:
+    name: test-desktop (C ABI)
+    needs: changes
+    if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/xtask-bootstrap-source
+      - name: test platform desktop (Tier-1 C ABI R1–R7)
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform desktop
+      - name: Publish desktop test report (GitHub Check)
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: platform-tests / desktop
+          path: artifacts/test-reports/desktop/junit.xml
+          reporter: java-junit
+          fail-on-error: false
+      - name: Upload desktop JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-desktop
+          path: artifacts/test-reports/desktop/junit.xml
           if-no-files-found: warn
