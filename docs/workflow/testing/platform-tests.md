@@ -4,10 +4,10 @@
 [`docs/design/testing/cross-platform-testing.md`](../../design/testing/cross-platform-testing.md)；
 CI 接线见 [`../ci.md`](../ci.md)。
 
-统一入口（接口驱动框架，add-platform-test-pipeline）：
+统一入口（接口驱动框架，add-platform-test-pipeline）。xtask 是原生 apphost，**直接跑**：
 
 ```bash
-z42 xtask.zpkg test platform <wasm|ios|android|all> [build|assets|run]
+./xtask test platform <wasm|ios|android|all> [build|assets|run]
 ```
 
 三阶段，省略 step = 全跑 `build → assets → run`：
@@ -20,41 +20,39 @@ z42 xtask.zpkg test platform <wasm|ios|android|all> [build|assets|run]
 
 ---
 
-## Step 0 — 基础工具链（一次性，所有平台共用）
+## Step 0 — 基础工具链 + apphost（一次性，所有平台共用）
 
-平台测试依赖**已构建的 z42 工具链**（编译器 + VM + stdlib + xtask）。从零：
+平台测试依赖**已构建的 z42 工具链**（编译器 + VM + stdlib），并把 xtask 编成原生
+apphost `./xtask`。从零：
 
 ```bash
 # 1. C# 编译器 + Rust VM（release）
 dotnet build src/compiler/z42.slnx
 cargo build --release --manifest-path src/runtime/Cargo.toml
 
-# 2. stdlib dist + xtask.zpkg
-#    有 z42 launcher 在 PATH：
-z42 xtask.zpkg build stdlib
-#    没有 launcher：见下方「不带 launcher 怎么跑」一节先把 stdlib + xtask 备好
+# 2. xtask.zpkg + 原生 apphost ./xtask
+dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
+z42 apphost build scripts/xtask.z42.toml      # 读 [apphost] → 仓库根 ./xtask
+
+# 3. stdlib dist（index.json 等）
+./xtask build stdlib
 ```
 
-> 基础 build 配方详见 [`../building/`](../building/)。
+> apphost 机制 + 完整 build 配方见 [`../building/README.md`](../building/README.md)。
+> `./xtask` 已 gitignore（原生、平台相关、重生不提交）。
 
-### 不带 launcher 怎么跑（`z42` 不在 PATH）
+### 冷启动（连 `z42` launcher 都没有）
 
-直接用构建出的 `z42vm` 执行 `xtask.zpkg`，并指好 stdlib：
+apphost 由 `z42 apphost build` 产出，需要 launcher。若完全没有 z42，用构建出的
+`z42vm` 直跑 `xtask.zpkg`，指好 stdlib，先把 stdlib + apphost 备出来：
 
 ```bash
 vm="$PWD/artifacts/build/runtime/release/z42vm"
 libs="$PWD/artifacts/build/libraries/dist/release"
-run() { Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- "$@"; }
-
-# 首次需先备 stdlib + xtask.zpkg（primer）：
 Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
-run build stdlib
-
-# 之后即可：
-run test platform wasm
+Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
+# 此后即可 z42 apphost build → ./xtask，或继续用 "$vm" artifacts/xtask/xtask.zpkg -- <cmd> 形式
 ```
-
-下文命令凡写 `z42 xtask.zpkg <…>` 的，无 launcher 时等价于 `run <…>`。
 
 ---
 
@@ -63,19 +61,19 @@ run test platform wasm
 **额外前置**：`wasm-pack` + wasm32 target + 本地 node（Playwright 用）。一次性：
 
 ```bash
-z42 xtask.zpkg deps install --os wasm   # wasm-pack + wasm32-unknown-unknown
-z42 xtask.zpkg deps install node        # 本地 Node LTS → artifacts/tools/node（原 install-node-local.sh）
+./xtask deps install --os wasm   # wasm-pack + wasm32-unknown-unknown
+./xtask deps install node        # 本地 Node LTS → artifacts/tools/node
 ```
 
 跑：
 
 ```bash
-z42 xtask.zpkg test platform wasm
+./xtask test platform wasm
 # ① wasm-pack build web+nodejs → ② fixtures+stdlib+files.json
 # → ③ npm install + playwright install chromium（首次下载 ~280MB）+ R1–R7
 ```
 
-> 没装本地 node 也行：框架会回退到 PATH 上的 `node`（`actions/setup-node` 风格）。
+> 没装本地 node 也行：框架会回退到 PATH 上的 `node`。
 > JUnit 输出：`artifacts/test-reports/wasm/junit.xml`。
 
 ---
@@ -85,13 +83,13 @@ z42 xtask.zpkg test platform wasm
 **额外前置**：Xcode（`xcodebuild`，自行安装）+ Rust iOS + host slice target。
 
 ```bash
-z42 xtask.zpkg deps install --os ios    # aarch64-apple-ios{,-sim} + aarch64-apple-darwin
+./xtask deps install --os ios    # aarch64-apple-ios{,-sim} + aarch64-apple-darwin
 ```
 
 跑（本地默认 ③ = `swift test`，跑在 macOS host slice）：
 
 ```bash
-z42 xtask.zpkg test platform ios
+./xtask test platform ios
 # ① cargo×targets + xcframework（含 ios-device/sim/macos slice）
 # → ② fixtures+stdlib 进 Tests bundle → ③ swift test（R1–R7）
 ```
@@ -99,8 +97,8 @@ z42 xtask.zpkg test platform ios
 **真 iOS Simulator**（CI 用法，本地复刻）——`build`/`assets` 走 xtask，`run` 用 xcodebuild：
 
 ```bash
-z42 xtask.zpkg test platform ios build
-z42 xtask.zpkg test platform ios assets
+./xtask test platform ios build
+./xtask test platform ios assets
 cd src/toolchain/host/platforms/ios
 xcodebuild test -scheme Z42VM \
   -destination 'platform=iOS Simulator,name=iPhone 16'
@@ -116,15 +114,15 @@ xcodebuild test -scheme Z42VM \
 **额外前置**：`cargo-ndk` + NDK + android target + JDK 17 + emulator AVD。一次性：
 
 ```bash
-z42 xtask.zpkg deps install --os android       # cargo-ndk + NDK + rust android targets
-z42 xtask.zpkg deps install android-emulator   # emulator + system-image + AVD + Gradle（~4 GB / 10-15 min；原 install-android-toolchain-local.sh）
+./xtask deps install --os android       # cargo-ndk + NDK + rust android targets
+./xtask deps install android-emulator   # emulator + system-image + AVD + Gradle（~4 GB / 10-15 min）
 ```
 
 跑（③ 桥接 `platforms/android/test.sh`，自动起 emulator）：
 
 ```bash
-eval "$(z42 xtask.zpkg deps install --os android --print-env)"   # 设 ANDROID_NDK_HOME / ANDROID_HOME 等
-z42 xtask.zpkg test platform android
+eval "$(./xtask deps install --os android --print-env)"   # 设 ANDROID_NDK_HOME / ANDROID_HOME 等
+./xtask test platform android
 # ① cargo-ndk×ABIs + gradle AAR → ② fixtures+stdlib 进 assets
 # → ③ test.sh：起 emulator + gradlew :z42vm:connectedAndroidTest（R1–R7）
 ```
@@ -134,12 +132,12 @@ z42 xtask.zpkg test platform android
 ## 三平台一把跑
 
 ```bash
-z42 xtask.zpkg test platform all     # wasm → ios → android（首失败即停）
+./xtask test platform all     # wasm → ios → android（首失败即停）
 ```
 
 > 仅当本机三套工具链齐备时有意义；缺哪个平台先单独跑。
 
 ## 与主 GREEN gate 的关系
 
-平台测试**不在** `z42 xtask.zpkg test`（host 6 stages）内——它们需各自的重型工具链，
+平台测试**不在** `./xtask test`（host 6 stages）内——它们需各自的重型工具链，
 按需单独跑。CI 各平台独立 job 跑（见 [`../ci.md`](../ci.md)），结果以 GitHub Check 呈现。

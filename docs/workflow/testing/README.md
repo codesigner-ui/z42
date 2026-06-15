@@ -19,7 +19,7 @@ z42 测试分四层，各层独立运行：
 
 ## 平台测试（wasm / iOS / Android）
 
-[`platform-tests.md`](platform-tests.md) — `z42 xtask.zpkg test platform <p> [build|assets|run]`：嵌入 R1–R7 契约在浏览器 / iOS Simulator / Android emulator 上跑。**不在**主 GREEN gate 内（各需重型工具链，按需单跑）；CI 各平台独立 job。含从零的本地配方 + 无 launcher 跑法。
+[`platform-tests.md`](platform-tests.md) — `./xtask test platform <p> [build|assets|run]`：嵌入 R1–R7 契约在浏览器 / iOS Simulator / Android emulator 上跑。**不在**主 GREEN gate 内（各需重型工具链，按需单跑）；CI 各平台独立 job。含从零的本地配方（含 apphost 构建）。
 
 ## GREEN 门禁
 
