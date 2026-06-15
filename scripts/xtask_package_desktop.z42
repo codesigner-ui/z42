@@ -122,7 +122,7 @@ int _pkgEmitHelloC(string root, string pkgDir) {
     string dst = Path.Join(pkgDir, "examples/hello_c");
     Directory.Create(dst);
     File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md.host"), Path.Join(dst, "README.md"));
+    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md"), Path.Join(dst, "README.md"));
     string driver = _driverDll(root);
     if (!File.Exists(driver)) {
         ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler");

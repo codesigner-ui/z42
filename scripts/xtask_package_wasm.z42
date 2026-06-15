@@ -78,9 +78,7 @@ int _packageWasm(string root, string pkgDir, string rid, string version, string 
     string dst = Path.Join(pkgDir, "examples/hello_c");
     Directory.Create(dst);
     File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
-    string readmeSrc = Path.Join(root, "examples/embedding/hello_c/README.md.wasm");
-    if (!File.Exists(readmeSrc)) { readmeSrc = Path.Join(root, "examples/embedding/hello_c/README.md.host"); }
-    File.Copy(readmeSrc, Path.Join(dst, "README.md"));
+    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md"), Path.Join(dst, "README.md"));
     string driver = _driverDll(root);
     if (!File.Exists(driver)) { ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler"); return 1; }
     c = _exec(new Process("dotnet").Arg(driver).Arg(Path.Join(root, "examples/embedding/hello.z42"))
