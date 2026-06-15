@@ -45,7 +45,7 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 - [x] G12 class-shape flags（typeData 0-vs-2）：mod[0] Span 完全一致。
 - [x] G13 形参 REGT/指令 tag 镜像 C# 语法重载 `ToIrType(TypeExpr)=GetIrType(name)`：prim→tag / array→Ref / class·iface·func·泛型→**Unknown**（GetIrType 表只含 prim；体内值才走语义 ToIrType→class=Ref）。FunctionEmitter 形参循环原只特例 interface/Func，扩到所有非-prim·非-array→Unknown。corpus 唯一 class 形参=`IShape`(接口已特例)+`MyErr`(catch 变量另路径)→无回归。**消除 mod[1] Span 形参 Ref-vs-Unknown 差**（首差 211→533）。
 - [x] G14 prim→wrapper BCL 名映射（`_primWrapper` 替 `_capFirst`）：`int.ToString()` 的 wrapper 应为 `Int32`（C# WellKnownTypes/TypeRegistry 名）非 `_capFirst("int")="Int"` → 旧版查无 → fallback Unknown → vcall 返回 tag Ref；现 int→Int32/long→Int64/float→Single/bool→Boolean… → ToString 返回解析 string → tag Str。string→String 巧合相同故旧版 string 方法能用；int/long/float 全错。**mod[1] funcData/typeData/regt 全对齐**（跨文件成员解析本就正常，根实为 prim wrapper 名）。corpus 不用 int.ToString() → 无回归。
-- [ ] G15 DBUG line-tracking：Format() 的多行 return 语句——C# 5 条 line 条目（追踪行内子表达式换行），z42c 4 条（per-statement TrackLine 只追语句起始行）。**z42c.core 仅剩此 1 条 DBUG 差（16B）**。需行内 span 换行追踪，但有 corpus DBUG 回归风险须谨慎。
+- [ ] G15 DBUG line-tracking（z42c.core 仅剩此 1 条差，16B；mod[1] Format 多行 return）：C# `EmitExpr` 每表达式入口 `TrackLine(expr.Span)`（LastLine dedup）→ 多行表达式续行各记一条。z42c 只在 _emitStmt 入口 TrackLine。**试加 ExprEmitter.Emit 入口 TrackLine → 过头（MODS +912，多 ~57 条）**：z42c 的 `Emit` 调用次数 ≠ C# `EmitExpr`（z42c 对 receiver/lvalue/中间值也 Emit，C# 不全走 EmitExpr）。需先对齐 z42c Emit 与 C# EmitExpr 的 1:1 调用面，才能精确镜像。**已回退**，z42c.core 维持 8/9 段 byte-identical + funcData 全等，DBUG 差 1 条。
 - [ ] G16+ 逐包推进（z42c.ir … driver）。
 
 ## 验证
