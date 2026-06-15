@@ -42,8 +42,10 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 - [x] G10 DEPS 自依赖（z42c.core 虚增 dep=`z42c.core.zpkg` ns=`Z42.Core`——flat libs 含 self → 同包符号经 DepIndex 解析）：`DepScan.Scan(libsDir, excludeName)` 排除 self-zpkg（包不导入自己；C# libs=stdlib only 本无 self，排除是 no-op）。**DEPS 4=4 对齐**。gate 7/7+6/6 无回归。
 - [x] G11 构造器 lowering：SymbolCollector 收集 ctor（名=类名，ret void）+ TypeChecker 绑 ctor 体 + IrGen 发 `<qualClass>.<Class>` 实例函数（ret void）+ ExportedTypeExtractor 入 TSIG + EmitFunction ctor ret void。exports 自动来自 irm.Functions。**EXPT 144=144 ✓ / SIGS 770=770 ✓ / TSIG 9941=9941 ✓ / MODS +749→+16**。codegen 单测 test_ctor_lowering。
 - [x] G11b static_init namespace 限定：IrGen `_q(stem).__static_init__`（镜像 C# `<ns>.<stem>.__static_init__`；无 ns 退化 stem，sacheck 不回归）。**STRS 10000=10000 ✓**。
-- [ ] G12 MODS +16 残差（typeData 内一处 0-vs-2 + 16B 在其它模块；TYPE 段 parity）。z42c.core **9 段中 8 段 byte-identical**，只剩 MODS。
-- [ ] G13+ 逐包推进（z42c.ir … driver）。
+- [x] G12 class-shape flags（typeData 0-vs-2）：mod[0] Span 完全一致。
+- [x] G13 形参 REGT/指令 tag 镜像 C# 语法重载 `ToIrType(TypeExpr)=GetIrType(name)`：prim→tag / array→Ref / class·iface·func·泛型→**Unknown**（GetIrType 表只含 prim；体内值才走语义 ToIrType→class=Ref）。FunctionEmitter 形参循环原只特例 interface/Func，扩到所有非-prim·非-array→Unknown。corpus 唯一 class 形参=`IShape`(接口已特例)+`MyErr`(catch 变量另路径)→无回归。**消除 mod[1] Span 形参 Ref-vs-Unknown 差**（首差 211→533）。
+- [ ] G14 mod[1] 剩余（cross-file 成员类型解析）：`this.Span.File`（Span 跨文件）字符串拼接 `+` 结果被标 ref 非 str（typechecker package-build 未解析跨文件成员 File→string）+ ctor DBUG +16。**根=跨文件类成员类型解析 parity**。
+- [ ] G15+ 逐包推进（z42c.ir … driver）。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）

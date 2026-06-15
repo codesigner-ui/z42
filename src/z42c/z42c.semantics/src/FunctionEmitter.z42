@@ -46,11 +46,12 @@ public sealed class FunctionEmitter {
         int p = 0;
         while (p < md.ParamCount) {
             Z42Type pt = this._symbols.ResolveTypeP(md.Params[p].Type, tp, tpc);
-            int ptag = this._ctx.ToIrType(pt);
-            // 接口/Func 形参寄存器 = Unknown（C# 签名解析序怪癖：REGT 字节实证——体内局部是 Ref，
-            // 签名形参是 Unknown；port-z42c-interface + closures 同款）
-            if (pt is Z42InterfaceType) { ptag = IrType.Unknown; }
-            if (pt is Z42FuncType) { ptag = IrType.Unknown; }
+            // 形参 REGT tag 镜像 C# 语法重载 ToIrType(TypeExpr)=TypeRegistry.GetIrType(name)：
+            // prim 名→prim tag / array→Ref / 其它非基本 NamedType（class·interface·func·泛型）→Unknown
+            // （GetIrType 表只含 prim；体内局部值才走语义 ToIrType→class=Ref。REGT 字节实证两形态）。
+            int ptag = IrType.Unknown;
+            if (pt is Z42PrimType) { ptag = this._ctx.PrimTag(pt.Name()); }
+            else if (pt is Z42ArrayType) { ptag = IrType.Ref; }
             this._ctx.Locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, ptag));
             this._ctx.RecordReg(p + paramOffset, ptag);
             paramTypes[p + paramOffset] = pt.Name();
