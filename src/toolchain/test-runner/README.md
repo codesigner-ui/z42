@@ -1,15 +1,22 @@
 # z42-test-runner
 
-z42 测试运行器（R3 minimal 实施）。读取 .zbc 中的 TIDX section（spec R1
+z42 测试运行器。读取 .zbc 中的 TIDX section（spec R1
 [`add-test-metadata-section`](../../../spec/archive/2026-04-30-add-test-metadata-section/)），调度
 `[Test]` 函数执行，分类输出结果。
 
-## 当前能力（R3 minimal + A2 + A3 + R3a）
+## 当前能力
 
 - ✅ 加载单个 .zbc，读 TIDX section
-- ✅ subprocess fork z42vm per [Test]（每个测试 fresh VM 状态）
+- ✅ **默认 in-process 执行**（R3b）：共享 `VmContext`、per-test 重置静态字段，
+  调用 `interp::run_outcome` 直跑，无 fork 开销
+- ✅ `[Setup]` / `[Teardown]` hook 真生效（in-process 模式下；按 TIDX kind 顺序执行）
+- ✅ `--jobs N`（N>1）并行执行：worker pool 跑 subprocess（`VmContext` 是 `!Send`，
+  故并行强制走 subprocess；**此模式下 Setup/Teardown 不生效**）
+- ✅ `--legacy-subprocess`：回退到 fork z42vm per [Test]（兼容/排障用）
+- ✅ `--bench` 基准模式：`Bencher` 测量 + `BenchStats` 汇报
 - ✅ `[Skip(reason: ...)]` 编译时跳过 + `Std.Test.Assert.Skip(...)` 运行时跳过
 - ✅ `[Ignore]` 静默忽略
+- ✅ stdout 捕获（`TestIO.captureStdout`）+ PASS 输出默认隐藏
 - ✅ 异常分类：`TestFailure` / `SkipSignal` / 其他 Exception → 失败
 - ✅ `[ShouldThrow<E>]` runtime 比对（A2）+ inheritance-aware（A3 编译期 chain）
 - ✅ `--format <pretty|tap|json>` 输出（默认 TTY-aware）
@@ -20,13 +27,9 @@ z42 测试运行器（R3 minimal 实施）。读取 .zbc 中的 TIDX section（s
 
 | 功能 | 阻塞原因 | 落地 spec |
 |------|---------|----------|
-| in-process 执行（去 fork） | 需 z42-runtime 拆 lib + LazyLoader 集成 | R3b |
-| `[Setup]` / `[Teardown]` 真生效 | 跨 subprocess 无法共享状态 | R3b（与 in-process 同) |
-| `--bench` 模式 | `Bencher.iter(closure)` 需 closure | R2.C |
+| 多 .zbc 单次同时跑 | 需要 .zbc 路径递归 + 命名空间合并（当前由 xtask per-zpkg 调度） | R3b 残留 |
+| 并行 + Setup/Teardown 共存 | `VmContext` `!Send`，并行只能 subprocess；需 thread-safe Interpreter | R6 / v0.2 |
 | `[TestCase(args)]` 参数化 | parser 需 typed args | R4+ |
-| 并行执行 | 需要 thread-safe Interpreter | R6 / v0.2 |
-| 多 .zbc 同时跑 | 需要 .zbc 路径递归 + 命名空间合并 | R3b |
-| stdout 捕获（默认隐藏 PASS 输出） | `TestIO.captureStdout(closure)` 需 closure | R2.B |
 | `--tag` filter | 需 z42 attribute 加 tag 字段 | 独立 spec |
 | regex filter | 当前 substring 够用 | 真有需求时升级 |
 | 增量测试（`z42 xtask.zpkg test changed`） | git diff → 反向依赖图 | R3c |
@@ -72,6 +75,9 @@ result: ok.  1 passed; 0 failed; 5 skipped
 
 ## 实施记录
 
-| Phase | Commit | 范围 |
-|-------|--------|------|
-| R3 minimal | (本次) | 单 .zbc CLI + discovery + Setup/Teardown 调度 + 异常分类 + pretty 输出 |
+| Phase | 范围 |
+|-------|------|
+| R3 minimal | 单 .zbc CLI + discovery + 异常分类 + pretty 输出（subprocess fork per test） |
+| R3a + A2/A3 | `[ShouldThrow<E>]` runtime 比对 + inheritance-aware；TAP/JSON 格式 |
+| R3b（默认 in-process） | `interp::run_outcome` 直跑，去 fork；`[Setup]`/`[Teardown]` 真生效；stdout 捕获 |
+| add-test-runner-parallel | `--jobs N`（N>1）subprocess worker pool；`--legacy-subprocess` 回退 |
