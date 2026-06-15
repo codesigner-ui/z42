@@ -35,7 +35,7 @@ z42 测试运行器（R3 minimal 实施）。读取 .zbc 中的 TIDX section（s
 
 ```bash
 # 编译 .zbc（含 [Test] 函数）
-dotnet run --project src/compiler/z42.Driver -- examples/test_demo.z42 --emit zbc -o /tmp/test_demo.zbc
+dotnet run --project src/compiler/z42.Driver -- src/runtime/tests/data/test_demo/source.z42 --emit zbc -o /tmp/test_demo.zbc
 
 # 跑测试（默认 pretty）
 cargo run -p z42-test-runner --release -- /tmp/test_demo.zbc

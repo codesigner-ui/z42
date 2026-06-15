@@ -196,7 +196,7 @@ fn class_basic_zbc_has_classes() {
 // R1 — TIDX section cross-language contract.
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Compile examples/test_demo.z42 fresh and verify Rust read_test_index_section
+/// Compile tests/data/test_demo/source.z42 fresh and verify Rust read_test_index_section
 /// extracts the same 8 TestEntry records the C# compiler wrote. Skips when
 /// dotnet isn't available (e.g. minimal CI runners), matching the spirit of the
 /// rest of the cross-language tests.
@@ -209,9 +209,10 @@ fn test_demo_tidx_round_trips() {
     let runtime_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo_root = runtime_dir.parent().and_then(|p| p.parent()).unwrap();
 
-    let demo_src = repo_root.join("examples").join("test_demo.z42");
+    let demo_src = runtime_dir
+        .join("tests").join("data").join("test_demo").join("source.z42");
     if !demo_src.exists() {
-        eprintln!("skip: examples/test_demo.z42 not found at {}", demo_src.display());
+        eprintln!("skip: test_demo source not found at {}", demo_src.display());
         return;
     }
 
