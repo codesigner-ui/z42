@@ -1,0 +1,38 @@
+// 2026-06-14 add-reflection-generic-predicates: Type.IsGenericType /
+// IsGenericTypeDefinition / IsPrimitive — derived at runtime from already-loaded
+// type-param/type-arg metadata + the type name. No format bump.
+
+namespace Demo;
+
+using Std;
+
+class Box<T> {
+    public T Value;
+}
+
+class Plain {
+    public int X;
+}
+
+void Main() {
+    // Generic type: IsGenericType true (the type has type parameters).
+    var bi = typeof(Box<int>);
+    Assert.True(bi.IsGenericType);
+
+    // Non-generic class: false.
+    var p = typeof(Plain);
+    Assert.False(p.IsGenericType);
+
+    // Primitives.
+    Assert.True(typeof(int).IsPrimitive);
+    Assert.True(typeof(bool).IsPrimitive);
+    Assert.True(typeof(char).IsPrimitive);
+    Assert.True(typeof(double).IsPrimitive);
+
+    // Non-primitives: string and user class.
+    Assert.False(typeof(string).IsPrimitive);
+    Assert.False(typeof(Plain).IsPrimitive);
+
+    // Primitives aren't generic.
+    Assert.False(typeof(int).IsGenericType);
+}

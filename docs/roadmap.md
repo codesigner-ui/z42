@@ -330,6 +330,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 自定义 body / init-only / expression-bodied property | properties 未支持子集 | [language/properties.md](design/language/properties.md) |
 | `Type : MemberInfo` 层级对齐 | 统一 Type 不拆 TypeInfo（2026-06-09 已定）；但 Type 当前非 MemberInfo 子类、不在 Std.Reflection——对齐留待嵌套类型反射 / 自举镜像时 | [language/reflection.md](design/language/reflection.md#deferred--future-work) |
 | 继承的静态字段反射 | `GetFields()` 含静态已落地（2026-06-10）但仅声明类自身；继承静态需沿 base 链聚合 `static_fields` | [language/reflection.md](design/language/reflection.md#deferred--future-work) |
+| `Type.IsGenericTypeDefinition` / `GetGenericTypeDefinition` | `IsGenericType`/`IsPrimitive` 已落地（2026-06-16）；开放定义 vs 实例化不可区分（typeof 丢实例化 type args）需编译期保留 + wire 持久化或 0.5.x generic instantiation | [language/reflection.md](design/language/reflection.md#deferred--future-work) |
+| `Type.IsClass` / `IsInterface` / `IsEnum` 类别谓词 | 需 TYPE section flags 扩位（class-vs-interface-vs-enum 区分，format bump）；沿 type-flags 已验证的 flags-bit 模式 | [language/reflection.md](design/language/reflection.md#deferred--future-work) |
 | Tier 2/3 完整 interop | manifest reader / 源生成 / symbol resolution | [language/interop.md](design/language/interop.md) |
 | 整体 L3 concurrency | async/await / Future / Send-Sync / 调度器 | [runtime/concurrency.md](design/runtime/concurrency.md) |
 | hot-reload 签名变更 + 跨模块 | 签名变更检测 / 跨模块 reload 故事 | [runtime/hot-reload.md](design/runtime/hot-reload.md) |

@@ -797,6 +797,48 @@ pub fn builtin_type_is_record(_ctx: &VmContext, args: &[Value]) -> Result<Value>
     )))
 }
 
+/// add-reflection-generic-predicates: true if the type name is a primitive
+/// (keyword form like `int`/`bool`/`char`, or its BCL `Std.*` struct name).
+/// `string` is NOT primitive (matches C# `typeof(string).IsPrimitive == false`).
+fn is_primitive_type_name(name: &str) -> bool {
+    matches!(
+        name,
+        // source-keyword forms (reflection normalizes i32→int etc.)
+        "int" | "long" | "short" | "byte" | "sbyte"
+            | "uint" | "ulong" | "ushort"
+            | "float" | "double" | "bool" | "char"
+            // BCL PascalCase struct names (well_known_names)
+            | "Std.Int32" | "Std.Int64" | "Std.Int16" | "Std.SByte" | "Std.Byte"
+            | "Std.UInt16" | "Std.UInt32" | "Std.UInt64"
+            | "Std.Single" | "Std.Double" | "Std.Boolean" | "Std.Char"
+    )
+}
+
+/// `__type_is_generic(typeObj) -> bool` — true if the type has type parameters
+/// (`Box<T>`). Mirrors C# `Type.IsGenericType`. Derived from already-loaded
+/// metadata; no wire change. NB: z42 `typeof(Box<int>)` currently resolves to
+/// the definition `TypeDesc` (the compiler drops instantiation args), so the
+/// open-definition-vs-instantiation distinction (`IsGenericTypeDefinition`) is
+/// not yet expressible and is deferred — see reflection.md.
+pub fn builtin_type_is_generic(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let v = type_handle(args)
+        .map(|td| !td.type_params().is_empty() || !td.type_args().is_empty())
+        .unwrap_or(false);
+    Ok(Value::Bool(v))
+}
+
+/// `__type_is_primitive(typeObj) -> bool` — true if the reflected type is a
+/// primitive (see `is_primitive_type_name`). Primitive Types are name-only (no
+/// `TypeDesc` handle), so read the `Name` / `__fullName` slots written by
+/// `build_type` rather than going through a handle.
+pub fn builtin_type_is_primitive(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let is_prim = matches!(read_type_str_slot(args, "Name"),
+                           Value::Str(ref s) if is_primitive_type_name(s))
+        || matches!(read_type_str_slot(args, "__fullName"),
+                    Value::Str(ref s) if is_primitive_type_name(s));
+    Ok(Value::Bool(is_prim))
+}
+
 /// Is the given class-flag bit set on the reflected Type's `TypeDesc`?
 /// Handle-less Types (primitive / array, `NativeData::None`) → false (lenient).
 fn class_flag_set(args: &[Value], bit: u8) -> bool {

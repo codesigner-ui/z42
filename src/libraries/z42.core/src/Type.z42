@@ -67,6 +67,18 @@ public sealed class Type : MemberInfo {
     [Native("__type_is_record")]
     public extern bool IsRecord { get; }
 
+    // True for a generic type (has type parameters, e.g. `Box<T>`).
+    // (add-reflection-generic-predicates) Note: typeof(Box<int>) currently
+    // reflects the definition (instantiation args dropped by the compiler), so
+    // IsGenericTypeDefinition is deferred until typeof carries type args.
+    [Native("__type_is_generic")]
+    public extern bool IsGenericType { get; }
+
+    // True if the type is a primitive (int/long/bool/char/float/double/...).
+    // `string` is not a primitive.
+    [Native("__type_is_primitive")]
+    public extern bool IsPrimitive { get; }
+
     // Public instance fields (including inherited; base-first). Empty for
     // primitives / arrays.
     [Native("__type_fields")]
