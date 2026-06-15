@@ -395,6 +395,15 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | `src/runtime/tests/cross_thread_smoke.rs::concurrent_gc_mode_stress_no_race_no_leak` 在 **windows `#[ignore]`**（并发 GC stale-mark race；windows-only、本地不可复现）| [spec/changes/investigate-concurrent-gc-stale-mark-race](spec/changes/investigate-concurrent-gc-stale-mark-race/) 阶段 3：loom/shuttle 验证 + 协议修复 | ⏳ 待排期 |
 | ~~`src/libraries/z42.crypto/tests/ecdsa_secp256k1_vectors.z42` 的 `[Timeout]` 600s stopgap~~ | ✅ 已修复 2026-06-05 by [spec/archive/2026-06-05-optimize-ecdsa-jacobian-coords](spec/archive/2026-06-05-optimize-ecdsa-jacobian-coords/)：secp256k1 + P-256 都迁到 Jacobian 坐标（一次 ModInverse / scalar mult），round-trip 本地 ~60s → ~5.5s。`[Timeout]` 收紧到 60s | ✅ 完成 |
 
+### 仓库结构 / 维护方向（infra，未排期）
+
+> 战略展望（非 feature，无 design doc 条目，按 philosophy.md 归 roadmap）。来源：User 2026-06-15「这个仓库只做测试流程的」。
+
+| 方向 | 描述 | 触发条件 |
+|------|------|---------|
+| `infra-slim-git-history` | **真正的克隆成本在历史**：`.git` ≈ 604 MB 而 HEAD 跟踪内容仅 ~25 MB → 历史含曾提交又删的大二进制（旧 zpkg/artifacts blob）。用 `git filter-repo` 清历史大 blob（预计降到几十 MB）+ 收紧 `.gitignore`（已发现 `src/toolchain/host/examples/**/target/` cargo 构建目录、`examples/*.zbc/.zlib/.zmod` 等混入树）。**与拆库正交，收益最大。** | clone 成本成痛点时 |
+| `infra-extract-user-docs` | 本仓收敛为「核心（编译器/VM）+ 测试流程」仓；**仅外迁纯用户面 docs**（语言教程/指南/官网内容）到独立 `z42-docs`/官网仓。**留仓不外迁**（它们是开发/测试流程本体）：`examples/`（216 KB，被 C# 测试 + 打包 + zbc_compat 载重消费）、`docs/spec/`（spec-first 工作流本体）、`docs/design/`（@-included 进 CLAUDE.md）、`docs/workflow/`（build/test 命令真相源）。注意：拆当前文件到新仓**不会**缩小本仓 `.git`，须配合 `infra-slim-git-history`。 | 用户面文档成规模时 |
+
 ### Backlog 项实施流程
 
 每条 deferred 项被实施时：

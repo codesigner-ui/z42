@@ -9,10 +9,10 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（zbc 1.17/zpkg 0.19，TYPE section 类接口块 + IrClassDesc.Interfaces + ZbcReader round-trip）|
-| `runtime` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（`TypeDescCold.interfaces`；`__type_interfaces` base-walk 聚合继承 + dedup → `Type[]`）|
-| `stdlib` | —（空闲）| — | ~~add-reflection-get-interfaces~~ ✅ 已归档 2026-06-14（`Std.Type.GetInterfaces()`）|
-| `z42c` | —（空闲）| — | 自举主线全归档：…→package-symbols✅→**port-z42c-statics-arrays✅ 已归档 2026-06-13**（静态字段/常量 __static_init__ + 数组创建 ArrayNew + arr.Length=FieldGet；sacheck zbc 7/7）。自举首包剩跨类静态方法调用等新缺口 → 下一轮 gap-batch。⚠ gate test-runner 受陈年 UE 僵尸阻塞（环境，非代码） |
-| `toolchain` | —（空闲）| — | ~~split-release-runtime-package~~ ✅ 已归档 2026-06-14（`z42-runtime-*` 独立包；SDK 当 launcher；release-index.json runtime/launcher 子键；9 RID；4bbbd01b）|
+| `runtime` | **add-reflection-generic-predicates（进行中）** | 2026-06-14 | reflection: `__type_is_generic`/`_generic_def`/`_primitive` builtin。（~~tidy-examples-dir~~ ✅ 已归档 2026-06-15，释放 runtime：test_demo 夹具挪入 `src/runtime/tests/data/`）|
+| `stdlib` | **add-reflection-generic-predicates（进行中）** | 2026-06-14 | `Std.Type.IsGenericType`/`IsGenericTypeDefinition`/`IsPrimitive` |
+| `z42c` | **sync-z42c-zbc-117-interfaces（进行中）** | 2026-06-15 | get-interfaces 格式 bump 的 z42c writer 同步（zbc 1.17/zpkg 0.19，TYPE 接口块）；清 byte-identical gate 欠债。前序自举主线全归档：…→**port-z42c-statics-arrays✅ 2026-06-13**（sacheck zbc 7/7）|
+| `toolchain` | —（空闲）| — | ~~tidy-examples-dir~~ ✅ 已归档 2026-06-15（hello_c 四平台 README 合并 → 单一 `README.md` + 3 个 `xtask_package_*.z42` 改 `_pkgEmitHelloC`；与 migrate-scripts-to-z42 并行 User 授权）。前序：~~split-release-runtime-package~~ ✅ 2026-06-14 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

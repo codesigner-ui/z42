@@ -2,8 +2,28 @@
 
 ## 职责
 
-z42 语言示例集合：单文件演示 + 工程化 workspace 模板。新接手者用来快速理解
-语法面貌；维护者用来回归常见组合场景。
+z42 示例集合，分三类职责：
+
+1. **语言 showcase**（单文件 `.z42`）— 新接手者快速理解语法面貌
+2. **工程化模板**（`workspace-*/`）— 用户学多 member / 跨包依赖布局；同时被 C# 测试回归校验，保证 shipped 模板不腐烂
+3. **SDK 嵌入示例**（`embedding/`）— 随 SDK 包分发给用户的全平台 hello world + 嵌入 API 用例
+
+> 注：纯测试夹具不放这里。例如 TIDX round-trip 用的 test_demo 已挪到
+> `src/runtime/tests/data/test_demo/`（只被 `zbc_compat.rs` 消费，不是给人读的示例）。
+
+## ⭐ 全平台 hello world（embedding/）
+
+[`embedding/hello_c/`](embedding/hello_c/) 是 z42 的招牌：**一份 byte-identical 的
+`main.c`，链不同平台的 lib 就能跑在 desktop / wasm / iOS / Android**。
+[`embedding/hello_c/README.md`](embedding/hello_c/README.md) 一份覆盖全部四个平台的编 + 链命令；
+打包脚本把它注入每个平台的 SDK 包。[`embedding/hello_rust/`](embedding/hello_rust/) 是同流程的
+Tier 2 Rust 版本。
+
+| 目录 | 演示主题 |
+|------|---------|
+| `embedding/hello_c/` | Tier 1 C ABI 嵌入：全平台 byte-identical `main.c` + `hello.z42` |
+| `embedding/hello_rust/` | Tier 2 Rust 嵌入：同一 hello-world 流程，宿主更 ergonomic |
+| `embedding/multi_line.z42` | 多行字符串嵌入演示 |
 
 ## 单文件示例
 
@@ -29,9 +49,7 @@ dotnet run --project src/compiler/z42.Driver -- examples/hello.z42 --emit zbc -o
 cargo run --manifest-path src/runtime/Cargo.toml -- /tmp/hello.zbc
 ```
 
-> `examples/hello.z42.toml` 是单文件项目清单的演示（z42.toml 格式参考）；
-> `examples/hello.z42ir.json` 是早期 debug IR 的 legacy 产物（formats.rs 注释
-> 仍提及，但 VM loader 现仅接 `.zbc` / `.zpkg`）。
+> `examples/hello.z42.toml` 是单文件项目清单的演示（z42.toml 格式参考）。
 
 ## Workspace 模板
 
