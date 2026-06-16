@@ -46,11 +46,10 @@ dotnet build src/compiler/z42.slnx
 ## Step 3 — Build the Android facade
 
 ```bash
-cd src/toolchain/host/platforms/android
-./build.sh
+./xtask test platform android build
 ```
 
-`build.sh` 内部串接：`cargo ndk -t arm64-v8a -t x86_64 build --release` + `./gradlew :z42vm:assembleRelease`。
+`test platform android build`（AndroidBackend）内部串接：`cargo ndk -t arm64-v8a -t x86_64 build --release` + `./gradlew :z42vm:assembleRelease`。
 
 ✅ 产物：
 - `z42vm/build/outputs/aar/z42vm-release.aar`

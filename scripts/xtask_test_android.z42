@@ -1,5 +1,6 @@
 // xtask — Android platform backend (add-platform-test-pipeline, 2026-06-15).
-// Implements IPlatformBackend, porting src/toolchain/host/platforms/android/build.sh:
+// Implements IPlatformBackend (logic ported from the former
+// src/toolchain/host/platforms/android/build.sh, now removed):
 //   ① BuildProject : cargo-ndk × ABIs → jniLibs, then gradle :z42vm:assembleRelease (AAR)
 //   ② Assets       : fixtures → androidTest/assets/test-fixtures; stdlib → main/assets/stdlib
 //   ③ RunTests     : delegates to the existing test.sh (emulator boot + connectedAndroidTest)

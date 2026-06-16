@@ -134,11 +134,15 @@ jobs:
 
       - uses: ./.github/actions/xtask-bootstrap-source
 
-      # wasm-only: pre-build pkg-web/ + pkg-nodejs/ via wasm-pack
+      # wasm-only: pre-build pkg-web/ + pkg-nodejs/ via wasm-pack (WasmBackend)
       - name: Build wasm platform
         if: matrix.rid == 'browser-wasm'
-        run: ./build.sh
-        working-directory: src/toolchain/host/platforms/wasm
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- test platform wasm build
 
       - name: Package ${{ matrix.rid }} (z42 xtask.zpkg package)
         shell: bash

@@ -134,9 +134,9 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 | 流程 | 入口 | 用途 |
 |------|------|------|
 | **per-arch flat package**（本文）| `./xtask package --rid <rid>` | 给开发者 / Tester / CI 一个独立 SDK ZIP |
-| **in-repo native build** | `src/toolchain/host/platforms/<x>/build.sh` | 给 `add-<plat>-tests` 跑 in-repo 测试（emulator / simulator / wasm-pack）|
+| **in-repo native build** | `./xtask test platform <p> build` | 跑 in-repo 平台测试（emulator / simulator / wasm-pack / desktop）|
 
-两条流程**共存**：`build.sh` 产物供 in-repo 测试用；`z42 xtask.zpkg package` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
+两条流程**共存**：`test platform <p> build` 产物供 in-repo 测试用；`./xtask package` 把那些产物 + 共享资源 cp 进一个 self-contained SDK 包。
 
 ## 失败排查
 

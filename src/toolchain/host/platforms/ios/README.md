@@ -17,20 +17,21 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin
 
 # 2. 编 compiler + stdlib
 dotnet build src/compiler/z42.slnx
-z42 xtask.zpkg build stdlib
+./xtask build stdlib
 
-# 3. 编 iOS facade（含 macOS arm64 slice 给 swift test 用）
-./build.sh
+# 3. 编 iOS facade（含 macOS arm64 slice）+ test 资产
+./xtask test platform ios build
+./xtask test platform ios assets
 ```
 
 产物：`Z42VM.xcframework/` (ios-arm64 + ios-arm64_x86_64-simulator + macos-arm64) + `Resources/stdlib/*.zpkg`（无 index——`BundleZpkgResolver` 读各 zpkg 的 NSPC）。详见 [`docs/workflow/building/ios.md`](../../../../docs/workflow/building/ios.md)。
 
 ## Run tests
 
-`./build.sh` 顺手把 fixture 编进 `Tests/Z42VMTests/Resources/`，跑 `swift test` 即触发 7 个 XCTest：
+`test platform ios` 全流程：build xcframework + 编 fixture 进 `Tests/Z42VMTests/Resources/` + 在 **iOS Simulator** 上 `xcodebuild test` 跑 7 个 XCTest（R1–R7），产 `artifacts/test-reports/ios/junit.xml`：
 
 ```bash
-./build.sh && swift test
+./xtask test platform ios
 ```
 
 测试覆盖 `add-ios-tests` spec 落地的 R1–R7 facade 契约（smoke / 错误码映射 / resolver / lifecycle / 多行 stdout），见 [`docs/spec/archive/2026-05-12-add-ios-tests/`](../../../../docs/spec/archive/2026-05-12-add-ios-tests/)。

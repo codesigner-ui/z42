@@ -26,8 +26,8 @@ export ANDROID_HOME="$PWD/artifacts/tools/android-sdk"
 export ANDROID_NDK_HOME="$PWD/artifacts/tools/android-ndk"
 export GRADLE_USER_HOME="$PWD/artifacts/tools/gradle-user-home"
 export JAVA_HOME=$(/usr/libexec/java_home -v 17+)
-cd src/toolchain/host/platforms/android
-./build.sh
+./xtask test platform android build      # cargo-ndk × ABIs + gradle AAR
+./xtask test platform android assets     # fixtures + stdlib 进 assets
 ```
 
 产物：`z42vm/build/outputs/aar/z42vm-release.aar` + `jniLibs/{arm64-v8a,x86_64}/libz42_platform_android.so` + `assets/stdlib/*.zpkg`（无 index——`AssetZpkgResolver` 读各 zpkg 的 NSPC）+ `androidTest/assets/test-fixtures/*.zbc`（32-bit ABI 已退场；见 memory project_supported_platforms）。
@@ -35,10 +35,10 @@ cd src/toolchain/host/platforms/android
 ## Run tests
 
 ```bash
-./test.sh
+./xtask test platform android
 ```
 
-`test.sh` 自启 headless emulator `@z42_pixel6_api34`（installer 预创建的 AVD）+ adb 等 boot 完成 + 跑 `./gradlew :z42vm:connectedAndroidTest`，退出时 `adb emu kill`。期望尾部：
+全流程(build + assets + run)。③ run 由 `AndroidBackend.RunTests` 桥接 `test.sh`：自启 headless emulator `@z42_pixel6_api34`（installer 预创建的 AVD）+ adb 等 boot 完成 + 跑 `./gradlew :z42vm:connectedAndroidTest`，退出时 `adb emu kill`。期望尾部：
 
 ```
 Starting 7 tests on z42_pixel6_api34(AVD) - 14
@@ -120,7 +120,7 @@ src/runtime/  (interp + aot feature; no JIT inside Android sandbox)
 ## 限制（v0.1）
 
 - **仅 interp 模式**：JIT 与 Android ART 互斥
-- ~~**无 `native-interop`**~~ → **已启用**：libffi 5.1 / libffi-sys 4.1 的 bundled libffi 3.4.7 修复了旧 2.3 与 NDK 工具链不兼容的 CFI advance_loc 问题；`android` feature preset 现含 `native-interop`（首次 cross-compile 时通过 `cargo ndk` + NDK r25+ 验证，详见 `build.sh`）
+- ~~**无 `native-interop`**~~ → **已启用**：libffi 5.1 / libffi-sys 4.1 的 bundled libffi 3.4.7 修复了旧 2.3 与 NDK 工具链不兼容的 CFI advance_loc 问题；`android` feature preset 现含 `native-interop`（首次 cross-compile 时通过 `cargo ndk` + NDK r25+ 验证；构建经 `AndroidBackend.BuildProject`）
 - **单实例**
 - **同步 invoke**：UI 上请用 `Dispatchers.Default` 异步包装
 - **Demo / CI**：推迟到独立 spec（`add-android-demo` / `-ci`）；JUnit instrumented test 已在 `add-android-tests` (2026-05-12) 落地，跑 `./test.sh` 即可

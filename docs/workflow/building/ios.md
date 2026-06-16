@@ -33,11 +33,10 @@ dotnet build src/compiler/z42.slnx
 ## Step 3 — Build the iOS facade
 
 ```bash
-cd src/toolchain/host/platforms/ios
-./build.sh
+./xtask test platform ios build
 ```
 
-`build.sh` 内部串接：cargo build × 3 target + `lipo -create` 合并 simulator + `xcodebuild -create-xcframework`。
+`test platform ios build`（IosBackend）内部串接：cargo build × 3 target + `xcodebuild -create-xcframework`（含 ios-device/sim/macos slice）。
 
 ✅ 产物：`Z42VM.xcframework/` 含 `ios-arm64/` + `ios-arm64_x86_64-simulator/`；`Resources/stdlib/*.zpkg`（22 个，从 `artifacts/build/libraries/dist/release/` 拷入）。
 

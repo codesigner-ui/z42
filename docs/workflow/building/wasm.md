@@ -49,8 +49,8 @@ dotnet build src/compiler/z42.slnx
 ## Step 3 — Build the WASM facade
 
 ```bash
-cd src/toolchain/host/platforms/wasm
-./build.sh
+./xtask test platform wasm build     # wasm-pack web+nodejs → pkg-web/ pkg-nodejs/
+./xtask test platform wasm assets    # fixtures + stdlib + files.json
 ```
 
 ✅ 末尾应看到：
