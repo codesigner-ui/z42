@@ -65,11 +65,90 @@ public class IosBackend : IPlatformBackend {
             .Arg("-output").Arg(xcf));
     }
 
-    // ③ swift test on the macOS host slice. (Simulator + JUnit report → CI change.)
+    // ③ xcodebuild test on a real iOS Simulator (R1–R7), JUnit derived from the
+    // xcodebuild "Test Case ... passed/failed" lines. Z42_IOS_DEST overrides the
+    // destination; default = first available iPhone simulator (xcrun simctl).
     public int RunTests(string root) {
         string here = Path.Join(root, "src/toolchain/host/platforms/ios");
-        Console.WriteLine("  swift test  (XCTest R1–R7, macOS host slice)");
-        return _execIn(new Process("swift").Arg("test"), here);
+        string dest = Environment.GetEnvironmentVariable("Z42_IOS_DEST") ?? "";
+        if (dest.Length == 0) {
+            string udid = this._firstSimulatorUdid();
+            if (udid.Length == 0) {
+                ConsoleError.WriteLine("error: no iOS Simulator available (xcrun simctl list devices available)");
+                return 1;
+            }
+            dest = "id=" + udid;
+        }
+        Console.WriteLine("  xcodebuild test -scheme Z42VM -destination '" + dest + "' (iOS Simulator R1–R7)");
+        ProcessResult r = new Process("xcodebuild").Arg("test")
+            .Arg("-scheme").Arg("Z42VM")
+            .Arg("-destination").Arg(dest)
+            .WorkingDirectory(here).Run();
+        this._writeJUnit(root, r.Stdout);
+        if (r.ExitCode != 0) {
+            // Surface the failing test-case lines (xcodebuild is verbose).
+            foreach (var line in this._splitLines(r.Stdout)) {
+                if (line.IndexOf("' failed") >= 0 || line.IndexOf(" error:") >= 0) { ConsoleError.WriteLine(line.Trim()); }
+            }
+        }
+        return r.ExitCode;
+    }
+
+    // First available iPhone simulator UDID (first parenthesised group on the line).
+    string _firstSimulatorUdid() {
+        ProcessResult r = new Process("xcrun").Arg("simctl").Arg("list").Arg("devices").Arg("available").Run();
+        foreach (var line in this._splitLines(r.Stdout)) {
+            string t = line.Trim();
+            if (!t.StartsWith("iPhone")) { continue; }
+            int lp = t.IndexOf("(");
+            if (lp < 0) { continue; }
+            int rp = t.IndexOf(")");
+            if (rp <= lp) { continue; }
+            return t.Substring(lp + 1, rp - lp - 1);
+        }
+        return "";
+    }
+
+    // Parse xcodebuild `Test Case '-[Z42VMTests testX]' passed/failed` lines → JUnit
+    // at the uniform report dir (artifacts/test-reports/ios/junit.xml).
+    void _writeJUnit(string root, string stdout) {
+        int tests = 0; int failures = 0; string cases = "";
+        foreach (var line in this._splitLines(stdout)) {
+            string t = line.Trim();
+            if (t.IndexOf("Test Case '") < 0) { continue; }
+            bool passed = t.IndexOf("' passed") >= 0;
+            bool failed = t.IndexOf("' failed") >= 0;
+            if (!passed && !failed) { continue; }
+            string name = this._xcCaseName(t);
+            tests = tests + 1;
+            if (passed) {
+                cases = cases + "  <testcase name=\"" + name + "\" classname=\"ios.Z42VMTests\"/>\n";
+            } else {
+                failures = failures + 1;
+                cases = cases + "  <testcase name=\"" + name + "\" classname=\"ios.Z42VMTests\">\n"
+                      + "    <failure message=\"failed\"/>\n  </testcase>\n";
+            }
+        }
+        string xml = "<testsuites tests=\"" + tests + "\" failures=\"" + failures + "\">\n"
+                   + "<testsuite name=\"ios.Z42VMTests\" tests=\"" + tests + "\" failures=\"" + failures + "\">\n"
+                   + cases + "</testsuite>\n</testsuites>\n";
+        File.WriteAllText(Path.Join(_reportDir(root, "ios"), "junit.xml"), xml);
+        Console.WriteLine("  junit.xml (" + tests + " cases, " + failures + " failed)");
+    }
+
+    // Extract the test method name from `... '-[Z42VMTests testFoo]' ...`.
+    string _xcCaseName(string line) {
+        int b = line.IndexOf("-[");
+        int e = line.IndexOf("]");
+        if (b < 0 || e <= b) { return "case"; }
+        string inner = line.Substring(b + 2, e - b - 2);   // "Z42VMTests testFoo"
+        int sp = inner.IndexOf(" ");
+        if (sp >= 0) { return inner.Substring(sp + 1); }
+        return inner;
+    }
+
+    string[] _splitLines(string s) {
+        return s.Replace("\r\n", "\n").Split("\n");
     }
 
     int _cargoTargets(string manifest, string targetDir, string[] targets, string iosMin) {

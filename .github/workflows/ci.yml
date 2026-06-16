@@ -1159,30 +1159,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
-      - name: Install xcbeautify (xcresult → JUnit)
-        run: brew install xcbeautify
       - uses: ./.github/actions/xtask-bootstrap-source
-      - name: test platform ios — build xcframework + test assets
+      - name: test platform ios (xcframework + assets + iOS Simulator R1–R7)
         shell: bash
         run: |
           set -euo pipefail
           vm="$PWD/artifacts/build/runtime/release/z42vm"
           libs="$PWD/artifacts/build/libraries/dist/release"
-          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform ios build
-          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform ios assets
-      - name: xcodebuild test on iOS Simulator (R1–R7) → JUnit
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/test-reports/ios
-          cd src/toolchain/host/platforms/ios
-          # Pick a concrete booted-capable simulator (first available iPhone).
-          dest="platform=iOS Simulator,name=iPhone 16"
-          xcodebuild test \
-            -scheme Z42VM \
-            -destination "$dest" \
-            -resultBundlePath "$GITHUB_WORKSPACE/artifacts/test-reports/ios/ios.xcresult" \
-            2>&1 | xcbeautify --report junit --report-path "$GITHUB_WORKSPACE/artifacts/test-reports/ios"
+          # IosBackend.RunTests now drives xcodebuild on a simctl-discovered
+          # iOS Simulator and writes JUnit itself (no xcbeautify needed).
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test platform ios
       - name: Publish iOS test report (GitHub Check)
         uses: dorny/test-reporter@v1
         if: always()

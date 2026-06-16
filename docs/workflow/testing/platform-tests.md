@@ -86,24 +86,18 @@ Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- build
 ./xtask deps install --os ios    # aarch64-apple-ios{,-sim} + aarch64-apple-darwin
 ```
 
-跑（本地默认 ③ = `swift test`，跑在 macOS host slice）：
+跑（③ = **真 iOS Simulator** via `xcodebuild test`）：
 
 ```bash
 ./xtask test platform ios
 # ① cargo×targets + xcframework（含 ios-device/sim/macos slice）
-# → ② fixtures+stdlib 进 Tests bundle → ③ swift test（R1–R7）
+# → ② fixtures+stdlib 进 Tests bundle
+# → ③ xcodebuild test 在 iOS Simulator 跑 R1–R7（IosBackend 自动选 simctl 第一个可用 iPhone）
 ```
 
-**真 iOS Simulator**（CI 用法，本地复刻）——`build`/`assets` 走 xtask，`run` 用 xcodebuild：
-
-```bash
-./xtask test platform ios build
-./xtask test platform ios assets
-cd src/toolchain/host/platforms/ios
-xcodebuild test -scheme Z42VM \
-  -destination 'platform=iOS Simulator,name=iPhone 16'
-```
-
+> 指定模拟器：`Z42_IOS_DEST='id=<udid>'`（或 `platform=iOS Simulator,name=...`）覆盖默认。
+> JUnit（解析 xcodebuild 的 Test Case 行）→ `artifacts/test-reports/ios/junit.xml`，无需 xcbeautify。
+>
 > iOS cargo build 自动带 `IPHONEOS_DEPLOYMENT_TARGET=platform.ios.min_ios`
 > （否则 zlib-ng C 部署目标与 rlib 不匹配 → `___chkstk_darwin` 链接失败）。
 
