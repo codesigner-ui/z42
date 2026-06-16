@@ -98,9 +98,12 @@ int _depsInstallAndroidSdk(bool force, string tier) {
     string sdkRoot = "--sdk_root=" + sdkDir;
     // sdkmanager/avdmanager need JAVA_HOME in the child env.
 
-    // ── (2) accept licenses (pipe "y" repeatedly; idempotent) ────────────
+    // ── (2) accept licenses (yes | sdkmanager --licenses; idempotent) ────
+    // A finite StdinBytes blob is NOT enough — sdkmanager scrolls multiple
+    // multi-page T&Cs and needs an unbounded "y" stream, so use coreutils
+    // `yes` via bash (z42 Process has no infinite-stdin primitive).
     Console.WriteLine("[2/6] accepting SDK licenses");
-    _runWithStdin(sdkmanager, new string[]{ sdkRoot, "--licenses" }, javaHome, _repeat("y\n", 100));
+    _runJavaYes(sdkmanager, new string[]{ sdkRoot, "--licenses" }, javaHome);
 
     // ── (3) SDK packages ─────────────────────────────────────────────────
     // build tier: platforms + build-tools + platform-tools. emulator tier adds
@@ -112,12 +115,14 @@ int _depsInstallAndroidSdk(bool force, string tier) {
     } else {
         pkgs = new string[]{ sdkRoot, "--install", "platforms;" + platformVer, "build-tools;" + buildToolsVer, "platform-tools" };
     }
-    int pc = _runJava(sdkmanager, pkgs, javaHome);
+    // `yes |` through install too: a package's per-install license prompt
+    // (e.g. NDK) still appears even after step 2 and needs the unbounded stream.
+    int pc = _runJavaYes(sdkmanager, pkgs, javaHome);
     if (pc != 0) { return pc; }
 
     // ── (4) NDK + stable symlink ─────────────────────────────────────────
     Console.WriteLine("[4/6] installing NDK " + ndkVer);
-    int nc = _runJava(sdkmanager, new string[]{ sdkRoot, "--install", "ndk;" + ndkVer }, javaHome);
+    int nc = _runJavaYes(sdkmanager, new string[]{ sdkRoot, "--install", "ndk;" + ndkVer }, javaHome);
     if (nc != 0) { return nc; }
     string ndkInstall = Path.Join(sdkDir, "ndk/" + ndkVer);
     if (!Directory.Exists(ndkInstall)) { ConsoleError.WriteLine("error: NDK install dir " + ndkInstall + " missing"); return 1; }
@@ -174,6 +179,16 @@ int _depsInstallAndroidSdk(bool force, string tier) {
 // run a JDK-backed tool (sdkmanager/avdmanager) with JAVA_HOME set, stdio inherited.
 int _runJava(string bin, string[] args, string javaHome) {
     return new Process(bin).Args(args).WorkingDirectory(_root())
+        .Env("JAVA_HOME", javaHome)
+        .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+}
+
+// run a JDK-backed tool with an unbounded `yes` on stdin (sdkmanager license
+// acceptance) via bash — coreutils `yes` has no z42 Process equivalent.
+int _runJavaYes(string bin, string[] args, string javaHome) {
+    string cmd = "yes | '" + bin + "'";
+    foreach (var a in args) { cmd = cmd + " '" + a + "'"; }
+    return new Process("bash").Arg("-c").Arg(cmd).WorkingDirectory(_root())
         .Env("JAVA_HOME", javaHome)
         .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
 }
