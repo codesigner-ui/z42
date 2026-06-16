@@ -70,5 +70,7 @@
 | ~~add-reflection-array-element-type~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（数组运行期不擦除 `GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()` + 非擦除 `arr.GetType()`；zbc 1.16/zpkg 0.18 ArrayNew/Lit element_type FQ 名；dotnet 1561/1561 + array_element_type.z42 e2e interp+jit + cargo lib 807 + 集成 native/zbc_compat 全绿 + xtask vm 354/cross-zpkg 2/stdlib 272）。**z42c writer 同步延后**（User 决策"先实现，延后 z42c"；当时 z42c 锁被占）→ `xtask test compiler-z42` byte-identical gate 暂红，follow-up 跟踪（见 memory `project_z42c_selfhosting`）|
 | ~~add-reflection-get-interfaces~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（`Type.GetInterfaces()` 含继承接口；zbc 1.17/zpkg 0.19 TYPE section 类接口块；base-walk 聚合 + 按名 dedup；dotnet 1562/1562 + get_interfaces.z42 e2e interp+jit + cargo lib 807 + 集成 zbc_compat/native 全绿 + xtask vm 356/cross-zpkg 2/stdlib 272）。z42c writer 接口块镜像延后（follow-up，同 array-element-type 处理）|
 | plan-0.3.x-three-streams | docs（不上锁） |
-| consolidate-platform-into-workload | docs（S0 设计落地，不上锁）；S1 ✅/S3' ✅ 已归档；S2/S4/S5 待 B |
-| build-workload-subsystem | docs（B 程序级立项 DRAFT，不上锁）；实施待 User 确认 + 各 phase spec-first（B1 命令发现→B2 打包→B3=S2 apphost→B4=S4 测试→B5 export/publish）|
+| consolidate-platform-into-workload | docs（S0–S5 机械整合弧 ✅ 完成；B 子系统余下）|
+| build-workload-subsystem | docs（B 程序级立项）；B3=S2 ✅(add-desktop-export)/命令模型 ✅(rework-desktop-publish-run)。**排序重排为 B2→B1**（User 2026-06-17：B1 单独空转，B2 产命令来源）|
+| impl-workload-install | docs（B2 DRAFT，待 gate）；workload 包 + `z42 workload install --from` + 按需拉 runtime；本地闭环验证（B2-1 产包→B2-2 装→B2-3 CI）|
+| impl-command-discovery | docs（B1 DRAFT，待 B2 后）；命令发现机制（spawn-leaf 进 Std.Cli 树，跨 stdlib 锁）|

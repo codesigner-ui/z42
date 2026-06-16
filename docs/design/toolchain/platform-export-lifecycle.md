@@ -118,6 +118,20 @@ z42 test    <plat> [--device sim|emulator|hw]   # host + 平台上两面跑 [Tes
 > - **AOT 在 publish 层**（可选 `--aot`，产平台原生机器码，类比 dotnet NativeAOT 是 publish 选项）；build 默认产字节码。
 > `[platform.desktop]` 键表见 [project.md](../compiler/project.md)；命令分发分层见 [launcher-command-dispatch.md](launcher-command-dispatch.md)。
 
+### `export` vs `publish`：共享逻辑，不同交付物（2026-06-17 裁决）
+
+`publish` 内部会**复用 `export` 的工程生成逻辑**（产 .ipa 需先生成 Xcode 工程再 build），但两命令**交付物不同**，都保留、不合并（对标 expo `prebuild` vs `eas build`）：
+
+| | `export <plat>` | `publish <plat>` |
+|---|---|---|
+| 交付物 | **原生工程**（Xcode/gradle 目录）| **可分发件**（.ipa/.aab/apphost）|
+| build? | 否（只生成，快）| 是（内部生成工程 + build）|
+| 给谁 | 人 / IDE / 第三方 CI / eject 接手 | 分发渠道 |
+
+- **工程生成器是共享内部原语**：`export` 只暴露"生成"、`run <plat>`/`publish <plat>` 内部"生成 + build/deploy"。
+- **保留 `export` 的关键价值 = "只要工程、不 build"**：eject / 在 Xcode 配签名 / 第三方 CI 接手时，要快速拿工程而非等一次完整 build（还可能因签名失败）。合进 `publish --export` 会丢这条快速路径，故不合并。
+- `publish` 默认不留中间工程；`--keep-project` 可留下供排查。
+
 ### `publish` 的语义与边界（≈ `dotnet publish`，不是上架）
 
 `publish` = **产出可分发件就停**；语义对齐 `dotnet publish`（产部署件，不部署到服务器/商店）。**上架差异性极大（签名/provisioning/审核/2FA/各家 CI），交给用户**。
