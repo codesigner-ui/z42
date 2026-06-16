@@ -24,7 +24,11 @@
 | **SDK** | new / build / export / publish / test / fmt | 随 runtime/SDK 装 | **目录发现**（版本作用域）| 与编译器同版本、可独立发布 |
 | **Workload** | 平台 publish/export/工程生成 + 模板 + **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（drop-in 即注册）| 平台按需、host 无关平台不强塞 |
 
-> **apphost 归属（2026-06-17 consolidate-platform-into-workload 裁决）**：apphost 不再是 Core 命令，而是 **desktop workload 的 publish 产物**——`z42 publish`（host 桌面）须先 `z42 workload install desktop`。理由：apphost 是平台相关发布件，应与 ios/android/wasm 的 `.ipa`/`.aab`/wasm bundle 同层（均 workload 门控），保持"默认 build/run 零 workload、publish/export 才下载对应平台 workload"的对称模型。desktop 因此也是一个 workload（仅 publish/export 维度；host runtime 仍经 `z42 install`）。详见 [runtime-workload-distribution.md](runtime-workload-distribution.md) + `docs/spec/changes/consolidate-platform-into-workload/`。
+> **apphost 不是命令，是配置驱动的 desktop 产物（2026-06-17 consolidate-platform-into-workload 裁决，apphost-as-config 细化）**：
+> - **取消 `z42 apphost` 命令**。apphost 是"配置了桌面平台输出"后的**发布产物**——与 ios `.ipa` / android `.aab` / wasm bundle 同层，由 `[platform.desktop]` toml 段声明，经 `z42 export desktop` / `z42 publish desktop` 产出（对称于现有 `z42 export ios/android/wasm`）。
+> - 现有 `apphost.z42` 的 stub-patch 逻辑成为 **desktop 平台 export/publish 的实现**，不再作为独立 verb 暴露。
+> - 门控不变：默认 `build`/`run` 零 workload；`export`/`publish` 才下载对应平台 workload（desktop 亦 workload，仅 publish/export 维度；host runtime 仍经 `z42 install`）。
+> 详见 [platform-export-lifecycle.md](platform-export-lifecycle.md)（`[platform.desktop]`）+ [runtime-workload-distribution.md](runtime-workload-distribution.md) + `docs/spec/changes/consolidate-platform-into-workload/`。
 
 判据：**Core 必须 baked**（鸡生蛋）；**SDK + workload 必须目录发现**（否则每加平台重编 launcher、无法按版本/平台隔离）。
 

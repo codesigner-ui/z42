@@ -23,7 +23,7 @@ consolidate-platform-into-workload 的机械搬迁已完成（S0 设计 / S1 Tie
 |-------|------|------|------|
 | **B1** | **命令发现机制**：launcher 扫命令目录 + 读 manifest → 把 SDK/workload 命令注册进 Std.Cli 树（与代码注册 core 同形）| — | launcher-command-dispatch.md |
 | **B2** | **workload 包格式 + `z42 workload install/list/remove`**：manifest `workloads` 段实现、版本作用域 `runtimes/<ver>/workloads/<wl>/`、host 校验 | B1 | runtime-workload-distribution.md |
-| **B3 (=S2)** | **apphost → desktop workload**：`apphost.z42` 迁出 launcher core，`z42 publish`（桌面）经 desktop workload 派发；建 workload 脚手架骨架 | B1,B2 | launcher-command-dispatch.md §三层 |
+| **B3 (=S2)** | **desktop 平台 export（apphost-as-config）**：加 `[platform.desktop]` 段 + `z42 export/publish desktop` 产 apphost（对称 ios/android/wasm）；**取消 `z42 apphost` 命令**，apphost.z42 stub-patch 逻辑成为 desktop export 实现。**复用现有 `launcher_export*.z42` 框架，不需先做 B1** | —（独立于 B1）| platform-export-lifecycle.md `[platform.desktop]` |
 | **B4 (=S4)** | **R1–R7 改 workload 驱动**：平台一致性测试 = workload 生成/驱动的工程（test 流程 ≡ 用户建 app）；删 `workload/platforms/*/tests` 手维护脚手架 | B3 | platform-export-lifecycle.md §test 双面 |
 | **B5** | **导出/发布生命周期**：`z42 new/platform add/export/publish/test`、managed+eject | B1–B4 | platform-export-lifecycle.md |
 | **S5** | host/ 顶层移除 + 文档收口（B4 后 host/ 真空）| B4 | consolidate design.md |
@@ -41,13 +41,17 @@ consolidate-platform-into-workload 的机械搬迁已完成（S0 设计 / S1 Tie
 - 已搬迁内容（S1/S3' 已完成）。
 - 重新设计分发/生命周期（三份草案为准，B 只实现 + 细化）。
 
-## Open Questions（需 User 定，再开 B1 spec）
+## Open Questions — User 已裁决（2026-06-17）
 
-- [ ] B 是否现在就排期实施，还是仅立项、待其他优先级（如 0.3.x 自举线）让路？
-- [ ] 命令发现的 MVP 边界：先只支撑 apphost（B3）所需最小集，还是一次做全（B5 export/publish）？
-- [ ] apphost 迁移期间 `z42 apphost build` 的过渡兼容（pre-1.0 可直接切，无兼容路径——待确认）。
-- [ ] workload 包与 `add-export-command` 的 `runtimes/<rid>/` 产物如何统一。
+- [x] **现在就实施**（Q1）。
+- [x] **apphost = 项目配置，非命令**（Q2/Q3）：`[platform.desktop]` 声明桌面输出 → `z42 export/publish desktop` 产 apphost；取消 `z42 apphost` 命令。apphost.z42 stub-patch 逻辑成为 desktop export 实现。pre-1.0 直接切，无兼容路径。已落 launcher-command-dispatch.md / platform-export-lifecycle.md。
+- [x] **workload 按需自动下载缺失 runtime**（Q4）：用到某平台、对应 runtime pack 未装 → manifest 驱动自动拉取 + sha 校验（对齐 dotnet）。已落 runtime-workload-distribution.md Decision 10。
 
-## 当前不实施
+## 实施切入点（重排：先做能复用现有框架的 B3）
 
-本 change 仅立项。B1 实施前需：本 proposal User 确认 → B1 自己的 proposal/spec/design → 阶段 6.5 gate。
+`z42 export ios/android/wasm` 已存在（`launcher_export*.z42`，baked launcher core），由 `[platform.<plat>]` 驱动。**desktop export（apphost-as-config）是它的对称扩展，不依赖 B1 命令发现** → 作为 B 的**第一个实施 change**：
+
+1. **B3-first `add-desktop-export`**（feat，先做）：`[platform.desktop]` schema + `launcher_export_desktop.z42`（复用 apphost.z42 stub-patch）+ 取消 `z42 apphost` 命令 + 测试 + 文档。解锁 S2 语义。
+2. B1（命令发现）/B2（workload 打包 + 自动拉 runtime）/B4（测试改 workload 驱动）/B5（完整 export/publish 生命周期）随后各自 spec-first。
+
+> B1 从"地基"降级为"后续重构"：现有 export/publish 是 baked launcher core，能跑；把它们改成目录发现是隔离优化，不阻塞 desktop-export。

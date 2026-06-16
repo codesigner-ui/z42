@@ -167,6 +167,7 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 | 7 | 首次 `install-z42` 一次装 launcher + host runtime（manifest 驱动），之后全 z42 驱动 | "第一次执行完成安装"；下载交 shell（无需带 TLS 的 launcher vm），对齐 dotnet |
 | 8 | `runtime` 为 per-RID 名词/组件，但 `install` 只装 host；target runtime 仅经 workload 组合进 | 命名诚实 + 用户面无冗余直装路径 |
 | 9 | desktop 亦 workload（仅 publish/export 维度，不含 runtime）；apphost = desktop workload 的 publish 产物 | 四平台 publish/export 对称门控；"默认 build/run 零 workload"立柱；apphost 与 .ipa/.aab/wasm 同层（consolidate-platform-into-workload, 2026-06-17）|
+| 10 | workload 按需自动拉取其依赖的 target runtime：用到某平台而对应 runtime pack 未装 → 自动下载（manifest 驱动 + sha 校验），无需用户先手动 `install` | 对齐 dotnet workload（装 workload 自动带 runtime pack）；用户心智 = "要哪个平台就声明，工具补齐依赖"。desktop workload 例外：不含 runtime（复用已装 host runtime）（apphost-as-config, 2026-06-17）|
 
 ## Deferred / 待 spec 细化
 

@@ -106,6 +106,8 @@ z42 publish <plat>     # → 可分发件（.ipa/.aab/.apk/wasm bundle/desktop a
 z42 test    <plat> [--device sim|emulator|hw]   # host + 平台上两面跑 [Test]
 ```
 
+> **desktop 是对称的第四个平台目标（apphost-as-config, 2026-06-17）**：`<plat>` ∈ {ios, android, wasm, **desktop**}。配置 `[platform.desktop]` 即声明桌面输出 → `z42 export desktop` / `z42 publish desktop` 产 **apphost**（per-app 原生可执行）。**取消独立 `z42 apphost` 命令**：apphost 与 `.ipa`/`.aab`/wasm bundle 同层，是 desktop 平台的发布产物，不是单独 verb。现有 `apphost.z42` 的 stub-patch 逻辑成为 desktop export/publish 的实现。`[platform.desktop]` 键表见 [project.md](../compiler/project.md)。
+
 ### `publish` 的语义与边界（≈ `dotnet publish`，不是上架）
 
 `publish` = **产出可分发件就停**；语义对齐 `dotnet publish`（产部署件，不部署到服务器/商店）。**上架差异性极大（签名/provisioning/审核/2FA/各家 CI），交给用户**。
