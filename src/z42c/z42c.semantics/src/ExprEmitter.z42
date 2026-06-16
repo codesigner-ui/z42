@@ -85,7 +85,9 @@ public sealed class ExprEmitter {
             BoundStaticGet sg = e as BoundStaticGet;
             // StaticGet 结果寄存器 = Unknown（C# REGT 字节实证：静态字段读 IR 层擦除）
             TypedReg dst = this._ctx.Alloc(IrType.Unknown);
-            this._ctx.Emit(new StaticGetInstr(dst, this._ctx.Qualify(sg.ClassName) + "." + sg.FieldName));
+            // G17b：用 QualifyClass（非 Qualify）→ 同包跨-ns 类（如 IrType@Z42.IR 从
+            // Z42.IR.BinaryFormat 引用）静态字段限定到声明 ns（镜像 C# fix-static-field-access 用 QualifyClassName）。
+            this._ctx.Emit(new StaticGetInstr(dst, this._ctx.QualifyClass(sg.ClassName) + "." + sg.FieldName));
             return dst;
         }
         if (e is BoundLambda) { return this._emitLambda(e as BoundLambda); }

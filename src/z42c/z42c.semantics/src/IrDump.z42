@@ -59,6 +59,9 @@ public static class IrDump {
             i = i + 1;
         }
         SymbolTable symbols = new SymbolCollector().CollectAll(cus, count, imported);
+        // G17b：同包跨-ns 类名解析图（跨-zpkg imported + 包内每个有 ns 的类 短名→声明 ns）。
+        // is/as/static-get/ObjNew 引用兄弟 ns 的本地类时限定到声明 ns（镜像 C# ImportedClassNamespaces 含 using 引入的同包类）。
+        StrMap classNs = IrDump._pkgClassNs(cus, count, imported);
         // 全包自由函数聚合（文件序+声明序）——每模块 TSIG functions 全包（C# sem.Funcs 兄弟泄漏镜像）
         ExportedFuncZ[] allFuncs = new ExportedFuncZ[4];
         int afc = 0;
@@ -81,13 +84,41 @@ public static class IrDump {
         CompiledModuleZ[] r = new CompiledModuleZ[count];
         i = 0;
         while (i < count) {
-            r[i] = IrDump._compileCu(cus[i], symbols, deps, imported);
+            r[i] = IrDump._compileCu(cus[i], symbols, deps, imported, classNs);
             string ns2 = "main";                                 // no-ns build 路径缺省（C# 字节实证）
             if (cus[i].HasNamespace) { ns2 = cus[i].Namespace; }
             r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc);
             i = i + 1;
         }
         return r;
+    }
+
+    // G17b：构建「短类名 → 声明 ns」图（跨-zpkg imported + 包内每个有 ns 的类/接口）。
+    // 镜像 C# QualifyClassName 经 ImportedClassNamespaces 把 using 引入的同包跨-ns 类限定到
+    // 其声明 ns；同 ns 类 declNs==currentNs，QualifyClass 结果与 Qualify(currentNs) 一致（无回归）。
+    // 全包共用一张图（类 FQ 名恒为 declNs.name，与引用方 CU 无关，无需按 CU using 过滤）。
+    private static StrMap _pkgClassNs(CompilationUnit[] cus, int count, ImportedSymbols imported) {
+        StrMap m = new StrMap();
+        if (imported != null && imported.ClassNamespaces != null) {
+            string[] ks = imported.ClassNamespaces.Keys();
+            int j = 0;
+            while (j < ks.Length) { m.Put(ks[j], imported.ClassNamespaces.Get(ks[j])); j = j + 1; }
+        }
+        int i = 0;
+        while (i < count) {
+            CompilationUnit cu = cus[i];
+            if (cu.HasNamespace && cu.Namespace != "") {
+                int d = 0;
+                while (d < cu.DeclCount) {
+                    Decl dd = cu.Decls[d];
+                    if (dd is AttributedDecl) { dd = (dd as AttributedDecl).Inner; }
+                    if (dd is ClassDecl) { m.Put((dd as ClassDecl).Name, new StrBox(cu.Namespace)); }
+                    d = d + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return m;
     }
 
     // 文件 stem（SA-3 镜像 C# GetFileNameWithoutExtension）：cu 源文件 basename 去 .z42。
@@ -106,13 +137,13 @@ public static class IrDump {
         return base2;
     }
 
-    private static CompiledModuleZ _compileCu(CompilationUnit cu, SymbolTable symbols, DependencyIndex deps, ImportedSymbols imported) {
+    private static CompiledModuleZ _compileCu(CompilationUnit cu, SymbolTable symbols, DependencyIndex deps, ImportedSymbols imported, StrMap classNs) {
         var diags = new DiagnosticBag();
         var model = new TypeChecker(diags).Infer(cu, symbols);
         var gen = new IrGen();
         gen.Deps = deps;
         gen.SourceStem = IrDump._stem(cu);
-        if (imported != null) { gen.ImportedClassNs = imported.ClassNamespaces; }   // QualifyClass（漏则 ObjNew 短名，运行期 vtable miss）
+        gen.ImportedClassNs = classNs;   // 跨-zpkg imported + 同包跨-ns 类（G17b）；QualifyClass 用
         IrModule irm = gen.Generate(cu, model);
         string[] usings = new string[8];
         int uc = 0;
