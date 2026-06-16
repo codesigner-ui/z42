@@ -226,6 +226,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__type_is_primitive",  reflection::builtin_type_is_primitive),
     ("__type_is_generic_definition", reflection::builtin_type_is_generic_definition),
     ("__type_generic_definition",    reflection::builtin_type_generic_definition),
+    ("__type_is_interface",  reflection::builtin_type_is_interface),
+    ("__type_is_class",      reflection::builtin_type_is_class),
     ("__type_custom_attributes", reflection::builtin_type_custom_attributes),
     ("__method_custom_attributes", reflection::builtin_method_custom_attributes),
     ("__field_custom_attributes", reflection::builtin_field_custom_attributes),

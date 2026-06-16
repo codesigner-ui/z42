@@ -63,7 +63,10 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // opcode (0x73) carries structured generic instantiation args (TypeName str idx +
 // u8 count + str idx[]), replacing the __typeof builtin. Surfaces
 // Type.IsGenericTypeDefinition / GetGenericTypeDefinition + fixes GetGenericArguments.
-pub const ZBC_VERSION_MINOR: u16 = 18;
+// 2026-06-16 add-reflection-interface-class-predicates: bumped to 1.19 —
+// interfaces now emit a (minimal) TYPE entry; class_flags byte gains bit4 =
+// interface. Surfaces Type.IsInterface + excludes interfaces from Type.IsClass.
+pub const ZBC_VERSION_MINOR: u16 = 19;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -100,7 +103,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // zbc 1.17 (TYPE section per-class interface block).
 // 2026-06-16 add-reflection-generic-type-definition: bumped to 0.20, coupled with
 // inner zbc 1.18 (new Typeof opcode w/ structured generic args).
-pub const ZPKG_VERSION_MINOR: u16 = 20;
+// 2026-06-16 add-reflection-interface-class-predicates: bumped to 0.21, coupled
+// with inner zbc 1.19 (interfaces emit minimal TYPE entry; class_flags bit4).
+pub const ZPKG_VERSION_MINOR: u16 = 21;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 

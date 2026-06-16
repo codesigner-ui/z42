@@ -157,6 +157,11 @@ internal sealed partial class FunctionEmitter
             Z42ArrayType at        => Z42TypeName(at.Element) + "[]",
             Z42InstantiatedType it => _e._ctx.QualifyClassName(it.Definition.Name),
             Z42ClassType ct        => _e._ctx.QualifyClassName(ct.Name),
+            // add-reflection-interface-class-predicates: interfaces now emit a
+            // TYPE entry under their qualified name (QualifyName), so typeof(IFoo)
+            // must qualify too — else make_type_from_name misses the handle and
+            // IsInterface degrades to false.
+            Z42InterfaceType it    => _e._ctx.QualifyClassName(it.Name),
             Z42GenericParamType gp => gp.Name,
             _                      => t.ToString() ?? "Std.Object",
         };

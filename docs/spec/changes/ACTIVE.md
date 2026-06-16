@@ -8,9 +8,9 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | ~~add-reflection-generic-type-definition~~ ✅ 已归档 2026-06-16（新 `Typeof` opcode 0x73 携结构化 type-args；zbc 1.18 / zpkg 0.20）。（前序 ~~add-reflection-get-interfaces~~ ✅ 2026-06-14）|
-| `runtime` | —（空闲）| — | ~~add-reflection-generic-type-definition~~ ✅ 已归档 2026-06-16（interp/jit Typeof + 构造型 type-args 槽 + jit_builtin 异常包装根因修；dotnet 1564/0 + vm 360/0 + cargo 809/0）。（~~mirror-build-output-per-component~~ ✅ 2026-06-16）|
-| `stdlib` | —（空闲）| — | ~~add-reflection-generic-type-definition~~ ✅ 已归档 2026-06-16（`Std.Type.IsGenericTypeDefinition` / `GetGenericTypeDefinition()` + `__typeArgs` 槽）。（前序 ~~add-reflection-generic-predicates~~ ✅ 2026-06-16）|
+| `compiler` | —（空闲）| — | ~~add-reflection-interface-class-predicates~~ ✅ 已归档 2026-06-16（接口 emit 最小 ClassDesc + flags bit4 + Z42TypeName 限定接口名根因修；zbc 1.19 / zpkg 0.21）。（前序 ~~add-reflection-generic-type-definition~~ ✅ 2026-06-16）|
+| `runtime` | —（空闲）| — | ~~add-reflection-interface-class-predicates~~ ✅ 已归档 2026-06-16（`Type.IsClass` / `IsInterface` 读 class_flags bit4；dotnet 1565/0 + vm 362/0 + cargo 809/0）。（前序 ~~add-reflection-generic-type-definition~~ ✅ 2026-06-16）|
+| `stdlib` | —（空闲）| — | ~~add-reflection-interface-class-predicates~~ ✅ 已归档 2026-06-16（`Std.Type.IsClass` / `IsInterface` extern）。（前序 ~~add-reflection-generic-type-definition~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
 | `toolchain` | —（空闲）| — | ~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16（golden/z42c 测试产物按组件镜像 src→artifacts/build/：tests→build/tests、libraries→build/libraries/<lib>/tests、z42c→build/z42c/<member>/tests；细化 redirect-golden 的 golden/ 单根）。前序：~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16 |
 

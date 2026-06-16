@@ -116,13 +116,13 @@ fn zbc_version_constants_pinned() {
     // Sanity: writer's claimed version matches what the reader pins.
     // If this fails, the constants drifted out of sync with C# ZbcWriter.
     assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
-    assert_eq!(ZBC_VERSION_MINOR, 18, "zbc minor at 1.18 (add-reflection-generic-type-definition: new Typeof opcode w/ structured generic args)");
+    assert_eq!(ZBC_VERSION_MINOR, 19, "zbc minor at 1.19 (add-reflection-interface-class-predicates: interfaces emit minimal TYPE entry; class_flags bit4 interface)");
 }
 
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 20, "zpkg minor at 0.20 (add-reflection-generic-type-definition: coupled with inner zbc 1.18)");
+    assert_eq!(ZPKG_VERSION_MINOR, 21, "zpkg minor at 0.21 (add-reflection-interface-class-predicates: coupled with inner zbc 1.19)");
 }
 
 #[test]

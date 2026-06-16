@@ -115,7 +115,10 @@ public sealed partial class IrGen
 
         // ── Emit ──────────────────────────────────────────────────────────────
 
-        var classes   = cu.Classes.Select(EmitClassDesc).ToList();
+        // add-reflection-interface-class-predicates: interfaces now also emit a
+        // (minimal) TYPE entry so typeof(IFoo) has a real handle + IsInterface.
+        var classes   = cu.Classes.Select(EmitClassDesc)
+                          .Concat(cu.Interfaces.Select(EmitInterfaceDesc)).ToList();
         var functions = new List<IrFunction>();
 
         if (cu.Classes.Any(cls => cls.Fields.Any(f => f.IsStatic)))

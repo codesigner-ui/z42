@@ -848,6 +848,30 @@ pub fn builtin_type_is_record(_ctx: &VmContext, args: &[Value]) -> Result<Value>
     )))
 }
 
+/// `__type_is_interface(typeObj) -> bool` — true if the reflected type is an
+/// `interface` (its minimal TYPE entry carries the interface flag). Handle-less
+/// Types (primitive / array) → false. add-reflection-interface-class-predicates.
+pub fn builtin_type_is_interface(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    Ok(Value::Bool(class_flag_set(
+        args,
+        crate::metadata::bytecode::CLASS_FLAG_INTERFACE,
+    )))
+}
+
+/// `__type_is_class(typeObj) -> bool` — true for a reference class type
+/// (incl. `record`). Mirrors C# `Type.IsClass`: a type with a real handle that
+/// is neither a value type (`struct`) nor an interface. Handle-less Types
+/// (primitive / array / enum) → false (z42 arrays are name-only synthetic, so
+/// — unlike C# — `typeof(int[]).IsClass == false`; see reflection.md Deferred).
+pub fn builtin_type_is_class(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use crate::metadata::bytecode::{CLASS_FLAG_INTERFACE, CLASS_FLAG_STRUCT};
+    let v = type_handle(args)
+        .map(|td| td.class_flags & CLASS_FLAG_STRUCT == 0
+                  && td.class_flags & CLASS_FLAG_INTERFACE == 0)
+        .unwrap_or(false);
+    Ok(Value::Bool(v))
+}
+
 /// add-reflection-generic-predicates: true if the type name is a primitive
 /// (keyword form like `int`/`bool`/`char`, or its BCL `Std.*` struct name).
 /// `string` is NOT primitive (matches C# `typeof(string).IsPrimitive == false`).

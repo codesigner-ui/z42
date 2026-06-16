@@ -63,6 +63,12 @@ public sealed record IrClassDesc(
     bool IsSealed = false,
     bool IsStruct = false,
     bool IsRecord = false,
+    /// add-reflection-interface-class-predicates (zbc 1.19): true for an
+    /// `interface` declaration. Interfaces now emit a minimal TYPE entry
+    /// (this flag set, IsAbstract=true, no base/fields) so `typeof(IFoo)`
+    /// resolves to a real handle. Serialized as class_flags bit4. Backs
+    /// `Type.IsInterface` and excludes interfaces from `Type.IsClass`.
+    bool IsInterface = false,
     /// add-reflection-static-fields (zbc 1.13): the class's static fields,
     /// serialized as a separate block after the flags byte. Kept apart from
     /// `Fields` (instance layout) so the runtime hot path stays pure; surfaced

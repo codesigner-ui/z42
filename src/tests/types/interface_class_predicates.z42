@@ -1,0 +1,60 @@
+// 2026-06-16 add-reflection-interface-class-predicates: Type.IsClass /
+// Type.IsInterface. Interfaces now emit a minimal TYPE entry, so typeof(IFoo)
+// resolves to a real handle (IsInterface / IsAbstract / Name).
+
+namespace Demo;
+
+using Std;
+
+interface IShape { int Area(); }
+
+class Circle : IShape {
+    public int R;
+    public int Area() { return this.R * this.R * 3; }
+}
+
+record Person(string Name, int Age);
+
+struct Pt {
+    public int X;
+    public int Y;
+}
+
+void Main() {
+    // ── Interface ──────────────────────────────────────────────────────────
+    Type i = typeof(IShape);
+    Assert.True(i.IsInterface);
+    Assert.False(i.IsClass);
+    Assert.True(i.IsAbstract);          // interfaces are implicitly abstract
+    Assert.False(i.IsValueType);
+    Assert.True(i.Name == "IShape");    // real handle now (was name-only before)
+
+    // ── Class ──────────────────────────────────────────────────────────────
+    Type c = typeof(Circle);
+    Assert.True(c.IsClass);
+    Assert.False(c.IsInterface);
+    Assert.False(c.IsValueType);
+
+    // ── Record (reference type → IsClass true) ─────────────────────────────
+    Type r = typeof(Person);
+    Assert.True(r.IsClass);
+    Assert.True(r.IsRecord);
+    Assert.False(r.IsInterface);
+
+    // ── Struct (value type → IsClass false) ────────────────────────────────
+    Type s = typeof(Pt);
+    Assert.False(s.IsClass);
+    Assert.True(s.IsValueType);
+    Assert.False(s.IsInterface);
+
+    // ── Primitive: neither class nor interface ─────────────────────────────
+    Type p = typeof(int);
+    Assert.False(p.IsClass);
+    Assert.False(p.IsInterface);
+
+    // ── Class implementing interface still reflects its interfaces ─────────
+    Type[] ifaces = c.GetInterfaces();
+    Assert.True(ifaces.Length == 1);
+    Type if0 = ifaces[0];
+    Assert.True(if0.Name == "IShape");
+}

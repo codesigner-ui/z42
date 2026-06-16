@@ -75,6 +75,17 @@ public sealed class Type : MemberInfo {
     [Native("__type_is_record")]
     public extern bool IsRecord { get; }
 
+    // True if the reflected type is an `interface`. False for class/struct/record/
+    // enum/primitive/array. (add-reflection-interface-class-predicates)
+    [Native("__type_is_interface")]
+    public extern bool IsInterface { get; }
+
+    // True for a reference class type (incl. `record`). Mirrors C# Type.IsClass:
+    // a real type that is neither a value type (`struct`) nor an interface.
+    // Primitives / arrays / enums → false. (add-reflection-interface-class-predicates)
+    [Native("__type_is_class")]
+    public extern bool IsClass { get; }
+
     // True for a generic type (has type parameters, e.g. `Box<T>`).
     // (add-reflection-generic-predicates)
     [Native("__type_is_generic")]

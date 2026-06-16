@@ -65,6 +65,26 @@ public sealed partial class IrGen
             Interfaces: interfaces);
     }
 
+    /// add-reflection-interface-class-predicates (zbc 1.19): emit a *minimal*
+    /// TYPE entry for an `interface` declaration so `typeof(IFoo)` resolves to a
+    /// real handle (Name / IsAbstract / IsGenericType / IsInterface). Interfaces
+    /// have no instance fields / base class and (in this MVP) no member table —
+    /// only identity + the interface category flag. Generic interfaces keep
+    /// their type params (so `typeof(IFoo<int>)` reports IsGenericType).
+    private IrClassDesc EmitInterfaceDesc(InterfaceDecl iface)
+    {
+        return new(QualifyName(iface.Name), BaseClass: null,
+            Fields: new List<IrFieldDesc>(),
+            iface.TypeParams?.ToList(),
+            TypeParamConstraints: null,
+            Attributes: null,
+            // Interfaces are implicitly abstract (C# typeof(IFoo).IsAbstract == true).
+            IsAbstract: true, IsSealed: false, IsStruct: false, IsRecord: false,
+            IsInterface: true,
+            StaticFields: new List<IrFieldDesc>(),
+            Interfaces: null);
+    }
+
     /// add-reflection-get-interfaces: extract the bare interface name from an
     /// interface TypeExpr. NamedType → its name; GenericType → base name (drops
     /// type args, mirroring C# Type.Name for generic interfaces); other forms

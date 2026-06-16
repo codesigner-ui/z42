@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 18;  // 2026-06-16 add-reflection-generic-type-definition: new Typeof opcode (0x73) carries structured generic instantiation args (str idx TypeName + u8 count + str idx[]), replacing the __typeof builtin. Surfaces Type.IsGenericTypeDefinition / GetGenericTypeDefinition + fixes GetGenericArguments on typeof. Pre-1.18 not readable.
+    public const ushort VersionMinor = 19;  // 2026-06-16 add-reflection-interface-class-predicates: interfaces now emit a (minimal) TYPE entry; class_flags byte gains bit4 = interface. Surfaces Type.IsInterface + excludes interfaces from Type.IsClass; typeof(IFoo) now resolves to a real handle. Pre-1.19 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -415,8 +415,10 @@ public static partial class ZbcWriter
             // add-reflection-type-flags (zbc 1.12): class-shape flags byte at
             // the end of each class record — bit0 abstract / bit1 sealed /
             // bit2 struct / bit3 record. Loads into TypeDesc.class_flags.
+            // add-reflection-interface-class-predicates (zbc 1.19): bit4 interface.
             byte flags = (byte)((cls.IsAbstract ? 1 : 0) | (cls.IsSealed ? 2 : 0)
-                              | (cls.IsStruct ? 4 : 0) | (cls.IsRecord ? 8 : 0));
+                              | (cls.IsStruct ? 4 : 0) | (cls.IsRecord ? 8 : 0)
+                              | (cls.IsInterface ? 16 : 0));
             w.Write(flags);
             // add-reflection-static-fields (zbc 1.13): static fields block —
             // u16 count + (name str idx, type_tag u8, type str idx) per field,

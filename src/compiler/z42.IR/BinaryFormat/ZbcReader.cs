@@ -437,6 +437,7 @@ public static partial class ZbcReader
             classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints, attributes,
                 IsAbstract: (flags & 1) != 0, IsSealed: (flags & 2) != 0,
                 IsStruct: (flags & 4) != 0, IsRecord: (flags & 8) != 0,
+                IsInterface: (flags & 16) != 0,  // zbc 1.19
                 StaticFields: staticFields, Interfaces: interfaces));
         }
         return classes;
