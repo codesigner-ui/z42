@@ -12,7 +12,7 @@
 | `runtime` | —（空闲）| — | ~~add-reflection-transitive-interfaces~~ ✅ 已归档 2026-06-17（`__type_interfaces` 传递 BFS + interp/JIT `is` 传递查接口；dotnet 1568/0 + vm interp 188+jit 180 + cargo 809/0）。（前序 ~~add-reflection-instance-generic-args~~ ✅ 2026-06-16）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（`Std.Type.IsAssignableFrom(Type)` + `GetInterface(string)`）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
-| `toolchain` | —（空闲）| — | **consolidate-platform-into-workload S0** ✅ docs-only 设计落地（host 解散 → 平台相关全入 workload，runtime 留最小核，launcher 留 SDK，apphost→desktop workload）；物理迁移 S1–S5 各自开独立 change 时再占锁。（前序 ~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16。~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16）|
+| `toolchain` | —（空闲）| — | **~~migrate-tier2-to-workload S1~~** ✅ 已归档 2026-06-17（Tier2 `z42-host` embed→`workload/host-api` + 3 facade path 改向；host-api+hello_rust 经新路径构建✓，lock 0.2→0.3 刷新）。前序 **consolidate-platform-into-workload S0** ✅（host 解散设计）/ ~~mirror-build-output-per-component~~ ✅ 2026-06-16 / ~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ 2026-06-16 |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

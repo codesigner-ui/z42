@@ -68,7 +68,7 @@
 |------|------|
 | `src/runtime/include/z42_host.h` | Tier 1 C 头文件（与 `z42_abi.h` 平行） |
 | `src/runtime/src/host/` | C ABI 在 VM 内的实现（Rust `extern "C"`） |
-| `src/toolchain/host/embed/` | Tier 2 Rust crate（`z42-host`） |
+| `src/toolchain/workload/host-api/` | Tier 2 Rust crate（`z42-host`）—— consolidate-platform-into-workload S1 迁此 |
 | `examples/embedding/` | hello-world 示例（C / Rust，规范源，亦随 SDK 分发） |
 | `src/toolchain/host/platforms/{ios,android,wasm}/` | Tier 3 facade（与 P4.x spec 协同） |
 
@@ -186,7 +186,7 @@ Z42HostStatus z42_host_shutdown(Z42HostRef host);
 
 ---
 
-## §5 Tier 2 Rust API（`src/toolchain/host/embed/`）
+## §5 Tier 2 Rust API（`src/toolchain/workload/host-api/`）
 
 最小 surface（v0.1）：
 

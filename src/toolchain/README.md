@@ -9,7 +9,7 @@
 | 目录 | 职责 | 状态 |
 |------|------|:----:|
 | [launcher/](launcher/) | `z42` launcher（muxer）：原生 trampoline + `launcher.zpkg`（run/link/list/install/apphost…）+ per-app 原生 apphost（`apphost.z42`）。类比 `dotnet` muxer + `rustup` | ✅ 已实装 |
-| [host/](host/) | 将 z42 VM 嵌入外部宿主（IDE、GUI、其他进程）的集成层：Rust `z42-host` crate（`host/embed/`）+ C 嵌入示例 | ✅ 已实装 |
+| [host/](host/) | 将 z42 VM 嵌入外部宿主（IDE、GUI、其他进程）的集成层：C 嵌入示例 + 平台 facade（Tier 2 `z42-host` crate 已迁 `workload/host-api/`，见 consolidate-platform-into-workload）。**解散迁移中** → `workload/` | 🚧 迁移中 |
 | [test-runner/](test-runner/) | `z42-test-runner`：跑 stdlib / 工程的 `[Test]` / `[Benchmark]`，输出 TAP（`xtask test` 内嵌调用） | ✅ 已实装 |
 | [debugger/](debugger/) | z42 程序调试器（断点、单步、变量查看） | 占位 |
 | [packager/](packager/) | 应用打包与发行（将 z42 程序 + 运行时打成独立可分发产物） | 占位 |

@@ -836,7 +836,7 @@ dependencies = [
 
 [[package]]
 name = "z42"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -862,7 +862,7 @@ dependencies = [
 
 [[package]]
 name = "z42-abi"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "z42-host"

@@ -17,7 +17,7 @@
 
 把 z42 VM 包装成各**目标平台原生形态**的依赖包，让 native 应用（iOS / Android / 浏览器 / Node.js / wasm runtime）一行 `import` 就能跑 `.zbc`。
 
-所有平台 facade **统一架在 [Tier 2 `z42-host` crate](../embed/) 之上**；没有任何 facade 直接调 `z42_runtime::interp::*` 或 `z42::host::*` extern C 函数 —— 那是 host 模块自己内部的事。
+所有平台 facade **统一架在 [Tier 2 `z42-host` crate](../../workload/host-api/) 之上**（consolidate-platform-into-workload S1 已从 `host/embed/` 迁至 `workload/host-api/`）；没有任何 facade 直接调 `z42_runtime::interp::*` 或 `z42::host::*` extern C 函数 —— 那是 host 模块自己内部的事。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -34,7 +34,7 @@
          │ extern "C"       │ extern "system" (JNI)  │ #[wasm_bindgen]
          ▼                  ▼                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│            src/toolchain/host/embed/  (Tier 2)              │
+│         src/toolchain/workload/host-api/  (Tier 2)         │
 │              z42-host crate — single source of truth        │
 └─────────────────────────────────────────────────────────────┘
                               ↓
