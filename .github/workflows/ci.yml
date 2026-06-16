@@ -750,8 +750,8 @@ jobs:
   # ── wasm packaging ──────────────────────────────────────────────────────
   # Packages browser-wasm via wasm-pack (no Node.js needed — wasm-pack build
   # only generates JS glue, it doesn't execute it).
-  # platforms/wasm/build.sh produces pkg-web/ + pkg-nodejs/ (required by
-  # before `xtask package` can assemble the wasm SDK package).
+  # `xtask test platform wasm build` (WasmBackend) produces pkg-web/ +
+  # pkg-nodejs/ before `xtask package` can assemble the wasm SDK package.
   package-wasm:
     name: package-wasm
     runs-on: ubuntu-latest
@@ -794,9 +794,13 @@ jobs:
 
       - uses: ./.github/actions/xtask-bootstrap-source
 
-      - name: Build wasm platform (pkg-web/ + pkg-nodejs/ via wasm-pack)
-        run: ./build.sh
-        working-directory: src/toolchain/host/platforms/wasm
+      - name: Build wasm platform (pkg-web/ + pkg-nodejs/ via test platform wasm build)
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- test platform wasm build
 
       - name: Package browser-wasm (z42 xtask.zpkg package)
         shell: bash

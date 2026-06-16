@@ -63,7 +63,7 @@ cargo install cargo-ndk --locked
 rustup target add wasm32-unknown-unknown
 cargo install wasm-pack --locked
 # 然后跑一遍 in-repo wasm build 产 pkg-web/ + pkg-nodejs/：
-cd src/toolchain/host/platforms/wasm && ./build.sh && cd -
+./xtask test platform wasm build
 ```
 
 ## 验证产物（每个 RID 都做）
@@ -149,7 +149,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 | `cargo-ndk not found` | `cargo install cargo-ndk --locked` |
 | `$ANDROID_NDK_HOME unset and NDK not found locally` | `./xtask deps install --os android` 或 `export ANDROID_NDK_HOME=<path>` |
 | iOS `xcframework not created` | Xcode 没装或 `xcode-select -p` 指错 |
-| wasm `pkg-web/ missing — run platforms/wasm/build.sh first` | 先 `cd src/toolchain/host/platforms/wasm && ./build.sh` |
+| wasm `pkg-web/ or pkg-nodejs missing — run the wasm-pack build first` | 先 `./xtask test platform wasm build` |
 | SHA invariant fail | 通常是 stdlib / native include 中途被改；重建对应源 + 重打包 |
 
 ## See also

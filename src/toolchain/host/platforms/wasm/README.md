@@ -24,18 +24,18 @@ dotnet build src/compiler/z42.slnx
 ### 构建 + 跑 demo
 
 ```bash
+# 一站式构建（pkg-web/pkg-nodejs via wasm-pack）+ 测试资产（fixture .zbc + stdlib）：
+./xtask test platform wasm build      # ① wasm-pack web/node 两 target
+./xtask test platform wasm assets     # ② 编 fixtures + 拷 stdlib + files.json
+
 cd src/toolchain/host/platforms/wasm
-
-# build.sh 一站式：编 fixture .zbc + 拷 stdlib + wasm-pack web/node 两 target
-./build.sh
-
 # 跑浏览器 demo（无需 Node；任选一个静态服务器）：
 miniserve --index demo/web/index.html .        # 然后开 http://127.0.0.1:8080/
 # 或：dotnet serve -p 8000                      # 开 http://127.0.0.1:8000/demo/web/index.html
 # 或：python3 -m http.server 8000               # 同上 URL
 
 # 或跑 Node demo（需要本地 Node — 走 artifacts/tools/node）
-z42 xtask.zpkg deps install node             # 一次性，装到 artifacts/tools/node
+./xtask deps install node                     # 一次性，装到 artifacts/tools/node
 PATH="$PWD/../../../../artifacts/tools/node/bin:$PATH" node demo/node/run.js
 # 期望输出：[host] hello, world
 ```
@@ -48,10 +48,10 @@ PATH="$PWD/../../../../artifacts/tools/node/bin:$PATH" node demo/node/run.js
 
 ```bash
 # 一次性：本地 Node + chromium 落 artifacts/tools/，不动系统
-z42 xtask.zpkg deps install node
+./xtask deps install node
 
-# 每次（自动 npm install + playwright install chromium）：
-./build.sh && ./test.sh
+# 每次（自动 build + assets + pkg-nodejs Node smoke + Playwright R1–R7）：
+./xtask test platform wasm
 ```
 
 期望尾部输出：
@@ -117,19 +117,20 @@ wasm/
 │   ├── package.json         @z42/wasm
 │   ├── index.{js,d.ts}      入口 + TS 类型
 │   ├── stdlib-resolver.js   bundleStdlibNode / bundleStdlibBrowser
-│   ├── stdlib/*.zpkg        ← build.sh 从 artifacts/z42/libs/ 复制
+│   ├── stdlib/*.zpkg        ← `test platform wasm assets` 从 stdlib dist 复制
 │   ├── pkg-web/             ← wasm-pack --target web 产物
 │   └── pkg-nodejs/          ← wasm-pack --target nodejs 产物
 ├── demo/
-│   ├── fixtures/hello.z42   demo 源代码（build.sh 编 → hello.zbc）
-│   ├── node/run.js          Node hello-world demo
+│   ├── fixtures/hello.z42   demo 源代码（assets 编 → js/fixtures/hello.zbc）
+│   ├── node/run.js          Node hello-world demo（pkg-nodejs smoke）
 │   └── web/                 浏览器版 hello-world demo（无 Node，配静态服务器）
 │       ├── index.html
 │       └── run.js
-└── build.sh                 一站式构建脚本
+└── tests/                   Playwright R1–R7（`test platform wasm run`）
 ```
 
-`pkg-*/` 和 `stdlib/` 由 `build.sh` 重新生成；都在 `.gitignore` 内。
+`pkg-*/` 和 `stdlib/` 由 `./xtask test platform wasm build` / `assets` 重新生成；都在 `.gitignore` 内。
+（构建逻辑已从 `build.sh`/`test.sh` 迁入 `WasmBackend`，见 [`scripts/xtask_test_wasm.z42`](../../../../scripts/xtask_test_wasm.z42)。）
 
 ## 限制（v0.1）
 
@@ -145,8 +146,8 @@ wasm/
 |------|----------|------|
 | `wasm-pack not found` | 工具链未装 | `cargo install wasm-pack --locked` |
 | `wasm32-unknown-unknown target not installed` | rust target 缺 | `rustup target add wasm32-unknown-unknown` |
-| `fixture missing: hello.zbc` | `dotnet build` 没跑过 | 先执行 `dotnet build src/compiler/z42.slnx` 再 `./build.sh` |
-| `Z42VMError: undefined function Std.IO.Console.WriteLine` | stdlib zpkg 没载入 | 检查 `js/stdlib/*.zpkg` 是否生成；build.sh 末尾应列出复制的文件 |
+| `fixture missing: hello.zbc` | 编译器/stdlib 没构建 | 先 `dotnet build src/compiler/z42.slnx` + `./xtask build stdlib`，再 `./xtask test platform wasm assets` |
+| `Z42VMError: undefined function Std.IO.Console.WriteLine` | stdlib zpkg 没载入 | 检查 `js/stdlib/*.zpkg` 是否生成（`test platform wasm assets` 末尾列出复制数）|
 | Node demo 报 `command not found: node` | Node 未装 | `brew install node`（或任何 Node ≥ 18 发行版）|
 
 ## 与跨平台契约的对齐
