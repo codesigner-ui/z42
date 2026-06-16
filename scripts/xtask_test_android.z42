@@ -10,7 +10,6 @@
 // Needs cargo-ndk + ANDROID_NDK_HOME + JDK + Android SDK.
 namespace Z42Xtask;
 
-using Std;
 using Std.IO;
 
 public class AndroidBackend : IPlatformBackend {
@@ -47,7 +46,17 @@ public class AndroidBackend : IPlatformBackend {
         // cargo ndk -t <abi> ... -o <jniLibs> build --release   (run in rust/)
         Process p = new Process("cargo").Arg("ndk");
         foreach (var abi in abis) { p = p.Arg("-t").Arg(abi); }
-        p = p.Arg("-o").Arg(jniLibs).Arg("build").Arg("--release").Env("ANDROID_NDK_HOME", ndk);
+        p = p.Arg("-o").Arg(jniLibs).Arg("build").Arg("--release");
+        // cargo-ndk's C-dep CMake cross-builds (zlib-ng via z42-compression) use
+        // CMake's *built-in* Android toolchain, which locates the NDK via the
+        // ANDROID_NDK / ANDROID_NDK_ROOT env vars — NOT ANDROID_NDK_HOME (which
+        // only cargo-ndk + gradle read). Without these, cmake aborts with
+        // "Neither the NDK nor a standalone toolchain was found", which cascades
+        // into a misleading "unable to find a build program corresponding to
+        // Ninja". Set all three so cmake finds the NDK; the default Unix Makefiles
+        // generator (make from Xcode CLT / build-essential) then works — no Ninja
+        // needed on any platform.
+        p = p.Env("ANDROID_NDK_HOME", ndk).Env("ANDROID_NDK", ndk).Env("ANDROID_NDK_ROOT", ndk);
         Console.WriteLine("  cargo ndk build --release (ABIs from versions.toml) -> " + jniLibs);
         int c = _execIn(p, rustDir);
         if (c != 0) { return c; }
@@ -58,8 +67,16 @@ public class AndroidBackend : IPlatformBackend {
             ConsoleError.WriteLine("error: gradlew not present at " + gradlew + " (gradle wrapper needed)");
             return 1;
         }
+        // AGP locates the SDK via ANDROID_HOME / ANDROID_SDK_ROOT (or sdk.dir in
+        // local.properties). CI's setup-android action exports these; locally they
+        // are unset, so point gradle at the hermetic SDK (deps install --os
+        // android → artifacts/tools/android-sdk). Without this gradle aborts with
+        // "SDK location not found".
+        string sdk = this._resolveSdk(root);
+        if (sdk.Length == 0) { return 1; }
         Console.WriteLine("  ./gradlew :z42vm:assembleRelease");
-        return _execIn(new Process(gradlew).Arg(":z42vm:assembleRelease").Env("ANDROID_NDK_HOME", ndk), here);
+        return _execIn(new Process(gradlew).Arg(":z42vm:assembleRelease")
+            .Env("ANDROID_NDK_HOME", ndk).Env("ANDROID_HOME", sdk).Env("ANDROID_SDK_ROOT", sdk), here);
     }
 
     // ③ delegate to test.sh (emulator boot + gradle connectedAndroidTest).
@@ -83,6 +100,23 @@ public class AndroidBackend : IPlatformBackend {
         string auto = Path.Join(root, Path.Join(installRoot, Path.Join("ndk", ver)));
         if (Directory.Exists(auto)) { return auto; }
         ConsoleError.WriteLine("error: NDK not found. Set ANDROID_NDK_HOME or install to " + auto);
+        return "";
+    }
+
+    // ANDROID_HOME / ANDROID_SDK_ROOT env, else auto from versions.toml install_root.
+    string _resolveSdk(string root) {
+        string env = Environment.GetEnvironmentVariable("ANDROID_HOME") ?? "";
+        if (env.Length == 0) { env = Environment.GetEnvironmentVariable("ANDROID_SDK_ROOT") ?? ""; }
+        if (env.Length > 0) {
+            if (Directory.Exists(env)) { return env; }
+            ConsoleError.WriteLine("error: ANDROID_HOME/ANDROID_SDK_ROOT set but not a dir: " + env);
+            return "";
+        }
+        TomlValue toml = _vparse(root);
+        string installRoot = _vget(toml, "build.android.install_root");
+        string auto = Path.Join(root, installRoot);
+        if (Directory.Exists(auto)) { return auto; }
+        ConsoleError.WriteLine("error: Android SDK not found. Set ANDROID_HOME or run deps install --os android (-> " + auto + ")");
         return "";
     }
 }

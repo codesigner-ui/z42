@@ -11,26 +11,33 @@
 brew install --cask temurin              # macOS；其他平台用 SDKMAN / apt
 java -version                            # 验证
 
-# Android Studio（自带 SDK + NDK + Gradle）
-# https://developer.android.com/studio
-# 启动后在 SDK Manager 装：
-#   - Android SDK Platform 34
-#   - Android NDK (Side by side) 26.x
-#   - Android SDK Build-Tools 34.x
-
-# 环境变量（加 ~/.zshrc 或 ~/.bashrc）
-export ANDROID_HOME="$HOME/Library/Android/sdk"        # macOS 默认
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"   # 替换为实际版本
-export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
-
 # Rust android targets + cargo-ndk
 # 32-bit ABI (armv7 / x86) 已退场；见 memory project_supported_platforms。
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk
 ```
 
-❗ `ANDROID_NDK_HOME` 未设 → cargo-ndk 链接失败。先 `echo $ANDROID_NDK_HOME` 确认。
+SDK + NDK（含 cmdline-tools / build-tools / platform-34）二选一：
+
+**(推荐) 仓库内一键装** —— 版本由 [`versions.toml`](../../../versions.toml) `[build.android]` pin，落到 `artifacts/tools/android-sdk`，**不污染系统**：
+
+```bash
+./xtask deps install --os android        # SDK + NDK（build tier；加 --emulator 连模拟器一并装）
+```
+
+装好后**无需任何环境变量**：`test platform android build` 自动从 `artifacts/tools/android-sdk` 解析 SDK + NDK（`AndroidBackend._resolveSdk` / `_resolveNdk` 给 cargo-ndk + gradle 注入 `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `ANDROID_NDK_HOME` / `ANDROID_NDK` / `ANDROID_NDK_ROOT`）。
+
+**(替代) 用现成的 Android Studio SDK** —— 显式指向你的安装（这些 env 优先于仓库内的）：
+
+```bash
+export ANDROID_HOME="$HOME/Library/Android/sdk"             # macOS 默认；含 SDK Platform 34 + Build-Tools 34
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.3.11579264"   # 替换为实际 r26+ 版本
+export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
+```
+
+❗ 两种都没配 → gradle 报 `SDK location not found`、cargo-ndk 链接失败。
 ❗ NDK 版本与 cargo-ndk 不匹配 → 升级 NDK 到 r26+。
+ℹ️ cargo-ndk 的 C 依赖（zlib-ng 经 z42.compression）走 CMake 内建 Android 工具链 + 默认 Unix Makefiles 生成器（`make`，Xcode CLT / build-essential 自带）——**不需要 Ninja**。关键是 cmake 靠 `ANDROID_NDK` / `ANDROID_NDK_ROOT`（非 `ANDROID_NDK_HOME`）定位 NDK，backend 已一并注入。
 
 ## Step 2 — Build compiler + stdlib（一次性 / 改 stdlib 后重跑）
 
