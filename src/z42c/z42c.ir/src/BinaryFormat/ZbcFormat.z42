@@ -5,7 +5,7 @@ namespace Z42.IR.BinaryFormat;
 // 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 19;   // 2026-06-16 add-reflection-interface-class-predicates：接口产最小 TYPE 条目 + class_flags bit4=interface
+    public static int Minor = 20;   // 2026-06-16 add-reflection-assignable-from：TYPE 段接口块存 FQ 名（原 bare）。结构不变（u16 count + str idx[]），字段语义 bare→FQ。
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。

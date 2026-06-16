@@ -10,7 +10,7 @@ using Z42.IR.BinaryFormat;
 public static class ZpkgWriterZ {
     // 版本（须与 C# ZpkgWriter.VersionMajor/Minor 一致；strict-pin。bump 同步见 version-bumping.md 第 5 步）。
     public static int Major = 0;
-    public static int Minor = 21;   // 2026-06-16 add-reflection-interface-class-predicates：随内嵌 zbc 1.19 联动（接口最小 TYPE 条目 + class_flags bit4）
+    public static int Minor = 22;   // 2026-06-16 add-reflection-assignable-from：随内嵌 zbc 1.20 联动（接口块存 FQ 名）
 
     public static ByteWriter WritePacked(ZpkgFileZ zpkg) {
         var pool = new ZbcStringPool();
