@@ -49,6 +49,7 @@ jobs:
               - 'scripts/xtask_test_ios.z42'
               - 'scripts/xtask_test_android.z42'
               - 'scripts/xtask_test_desktop.z42'
+              - 'versions.toml'
               - '.github/workflows/ci.yml'
 
   build-and-test:
