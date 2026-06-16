@@ -5,7 +5,7 @@ namespace Z42.IR.BinaryFormat;
 // 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 18;   // 2026-06-16 add-reflection-generic-type-definition：新 Typeof opcode(0x73) 携结构化泛型实例化 args（z42c 暂不 emit typeof，仅版本同步）
+    public static int Minor = 19;   // 2026-06-16 add-reflection-interface-class-predicates：接口产最小 TYPE 条目 + class_flags bit4=interface
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。

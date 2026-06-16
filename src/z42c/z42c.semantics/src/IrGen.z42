@@ -129,6 +129,20 @@ public sealed class IrGen {
             }
             i = i + 1;
         }
+        // zbc 1.19（add-reflection-interface-class-predicates）：接口 emit 最小 TYPE 条目
+        // （Flags=abstract|interface，无 base/字段/方法），镜像 C# cu.Interfaces.Select(EmitInterfaceDesc)
+        // Concat 在 classes 之后 → typeof(IFoo) 解析真句柄 + IsInterface。
+        i = 0;
+        while (i < cu.DeclCount) {
+            Decl di = this._unwrap(cu.Decls[i]);
+            if (di is ClassDecl) {
+                ClassDecl ic = di as ClassDecl;
+                if (ic.Kind == "interface") {
+                    classes = this._pushClass(classes, cc, this._interfaceDesc(ic)); cc = cc + 1;
+                }
+            }
+            i = i + 1;
+        }
         i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
@@ -226,6 +240,16 @@ public sealed class IrGen {
         if (c.Kind == "record")  { flags = flags + 8; }                 // bit3
         cd2.Flags = flags;
         return cd2;
+    }
+
+    // 接口 → 最小 IrClassDesc（zbc 1.19，add-reflection-interface-class-predicates）：
+    // 无 base/字段/静态/接口块，Flags = abstract(1)|interface(16) = 17（镜像 C# EmitInterfaceDesc：
+    // 接口隐式 abstract，typeof(IFoo).IsAbstract==true）。typeparam（泛型接口）暂随 BuildType tpCount=0。
+    private IrClassDesc _interfaceDesc(ClassDecl c) {
+        IrFieldDesc[] empty = new IrFieldDesc[0];
+        IrClassDesc cd = new IrClassDesc(this._q(c.Name), false, "", empty, 0);
+        cd.Flags = 17;
+        return cd;
     }
 
     private IrFunction[] _pushFunc(IrFunction[] arr, int count, IrFunction irf) {
