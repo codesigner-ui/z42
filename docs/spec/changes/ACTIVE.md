@@ -70,4 +70,5 @@
 | ~~add-reflection-array-element-type~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（数组运行期不擦除 `GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()` + 非擦除 `arr.GetType()`；zbc 1.16/zpkg 0.18 ArrayNew/Lit element_type FQ 名；dotnet 1561/1561 + array_element_type.z42 e2e interp+jit + cargo lib 807 + 集成 native/zbc_compat 全绿 + xtask vm 354/cross-zpkg 2/stdlib 272）。**z42c writer 同步延后**（User 决策"先实现，延后 z42c"；当时 z42c 锁被占）→ `xtask test compiler-z42` byte-identical gate 暂红，follow-up 跟踪（见 memory `project_z42c_selfhosting`）|
 | ~~add-reflection-get-interfaces~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（`Type.GetInterfaces()` 含继承接口；zbc 1.17/zpkg 0.19 TYPE section 类接口块；base-walk 聚合 + 按名 dedup；dotnet 1562/1562 + get_interfaces.z42 e2e interp+jit + cargo lib 807 + 集成 zbc_compat/native 全绿 + xtask vm 356/cross-zpkg 2/stdlib 272）。z42c writer 接口块镜像延后（follow-up，同 array-element-type 处理）|
 | plan-0.3.x-three-streams | docs（不上锁） |
-| consolidate-platform-into-workload | docs（S0 设计落地，不上锁）；迁移 S1–S5 各自 runtime/toolchain |
+| consolidate-platform-into-workload | docs（S0 设计落地，不上锁）；S1 ✅/S3' ✅ 已归档；S2/S4/S5 待 B |
+| build-workload-subsystem | docs（B 程序级立项 DRAFT，不上锁）；实施待 User 确认 + 各 phase spec-first（B1 命令发现→B2 打包→B3=S2 apphost→B4=S4 测试→B5 export/publish）|
