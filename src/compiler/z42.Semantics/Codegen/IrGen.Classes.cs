@@ -85,16 +85,26 @@ public sealed partial class IrGen
             Interfaces: null);
     }
 
-    /// add-reflection-get-interfaces: extract the bare interface name from an
+    /// add-reflection-get-interfaces: extract the interface name from an
     /// interface TypeExpr. NamedType → its name; GenericType → base name (drops
     /// type args, mirroring C# Type.Name for generic interfaces); other forms
     /// fall back to the type-text helper.
-    private static string InterfaceTypeName(TypeExpr t) => t switch
+    ///
+    /// add-reflection-assignable-from (zbc 1.20): the bare name is `QualifyClassName`-d
+    /// to its FQ form (`Demo.IShape`) so the runtime interface block carries real
+    /// type identity — `GetInterfaces()` resolves to true interface handles and
+    /// `is`/`as`/`IsAssignableFrom` compare interfaces by canonical FQ name (no
+    /// cross-namespace same-name ambiguity).
+    private string InterfaceTypeName(TypeExpr t)
     {
-        NamedType n   => n.Name,
-        GenericType g => g.Name,
-        _             => TypeName(t),
-    };
+        string bare = t switch
+        {
+            NamedType n   => n.Name,
+            GenericType g => g.Name,
+            _             => TypeName(t),
+        };
+        return ((IEmitterContext)this).QualifyClassName(bare);
+    }
 
     /// add-field-attribute-reflection (zbc 1.14): build an IrFieldDesc carrying
     /// the field's user-attribute refs (each → its synthesized factory func).

@@ -66,7 +66,11 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // 2026-06-16 add-reflection-interface-class-predicates: bumped to 1.19 —
 // interfaces now emit a (minimal) TYPE entry; class_flags byte gains bit4 =
 // interface. Surfaces Type.IsInterface + excludes interfaces from Type.IsClass.
-pub const ZBC_VERSION_MINOR: u16 = 19;
+// 2026-06-16 add-reflection-assignable-from: bumped to 1.20 — TYPE-section
+// interface block now stores fully-qualified interface names (was bare).
+// Real interface handles from GetInterfaces() + robust interface identity for
+// is/as/IsAssignableFrom. Structure unchanged; field semantics bare→FQ.
+pub const ZBC_VERSION_MINOR: u16 = 20;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -105,7 +109,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // inner zbc 1.18 (new Typeof opcode w/ structured generic args).
 // 2026-06-16 add-reflection-interface-class-predicates: bumped to 0.21, coupled
 // with inner zbc 1.19 (interfaces emit minimal TYPE entry; class_flags bit4).
-pub const ZPKG_VERSION_MINOR: u16 = 21;
+// 2026-06-16 add-reflection-assignable-from: bumped to 0.22, coupled with inner
+// zbc 1.20 (TYPE-section interface block stores FQ names).
+pub const ZPKG_VERSION_MINOR: u16 = 22;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 

@@ -858,6 +858,40 @@ pub fn builtin_type_is_interface(_ctx: &VmContext, args: &[Value]) -> Result<Val
     )))
 }
 
+/// `__type_is_assignable_from(this, c) -> bool` — true if an instance of `c`
+/// can be assigned to a variable of `this` type (mirrors C#
+/// `Type.IsAssignableFrom`): `c` is `this`, derives from `this`, or implements
+/// interface `this`. Reuses the VM's canonical `is_subclass_or_eq_td` (real
+/// TypeDesc FQ-name comparison over `c`'s base chain + interfaces) — no string
+/// matching on synthesized Type objects. Handle-less operands (primitive / array
+/// synthetic Types) fall back to FullName equality. `null` source → false.
+/// add-reflection-assignable-from.
+pub fn builtin_type_is_assignable_from(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    // args[0] = this (target type), args[1] = c (source type).
+    match args.get(1) {
+        Some(v) if !matches!(v, Value::Null) => {}
+        _ => return Ok(Value::Bool(false)),
+    }
+    let this_slot = args;          // .first() == this
+    let c_slot = &args[1..];       // .first() == c
+    let result = match (type_handle(this_slot), type_handle(c_slot)) {
+        (Some(this_td), Some(c_td)) => match ctx.module() {
+            Some(m) => crate::interp::dispatch::is_subclass_or_eq_td(
+                ctx, &m.type_registry, &c_td.name, &this_td.name,
+            ),
+            None => c_td.name == this_td.name,
+        },
+        // Handle-less (primitive / array synthetic): no base chain — same
+        // identity only, compared by the __fullName slot.
+        _ => {
+            let a = read_type_str_slot(this_slot, "__fullName");
+            let b = read_type_str_slot(c_slot, "__fullName");
+            matches!((&a, &b), (Value::Str(x), Value::Str(y)) if x == y)
+        }
+    };
+    Ok(Value::Bool(result))
+}
+
 /// `__type_is_class(typeObj) -> bool` — true for a reference class type
 /// (incl. `record`). Mirrors C# `Type.IsClass`: a type with a real handle that
 /// is neither a value type (`struct`) nor an interface. Handle-less Types

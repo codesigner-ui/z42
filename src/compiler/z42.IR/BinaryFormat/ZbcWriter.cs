@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 19;  // 2026-06-16 add-reflection-interface-class-predicates: interfaces now emit a (minimal) TYPE entry; class_flags byte gains bit4 = interface. Surfaces Type.IsInterface + excludes interfaces from Type.IsClass; typeof(IFoo) now resolves to a real handle. Pre-1.19 not readable.
+    public const ushort VersionMinor = 20;  // 2026-06-16 add-reflection-assignable-from: TYPE-section interface block now stores fully-qualified interface names (was bare). Surfaces real interface handles from GetInterfaces() + robust interface identity for is/as/IsAssignableFrom. Structure unchanged (u16 count + str idx[]); field semantics bare→FQ. Pre-1.20 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

@@ -1,0 +1,60 @@
+// 2026-06-16 add-reflection-assignable-from: Type.IsAssignableFrom / GetInterface
+// + FQ interface identity. IsAssignableFrom compares real type identity in the VM
+// (TypeDesc base chain + interfaces), interfaces now carry FQ names so GetInterfaces
+// returns real handles and `is`/`as` work for interfaces.
+
+namespace Demo;
+
+using Std;
+
+interface IShape { int Area(); }
+
+class Circle : IShape {
+    public int R;
+    public int Area() { return this.R * this.R * 3; }
+}
+
+class Animal { public int Legs; }
+class Dog : Animal { public int Bark() { return 1; } }
+class Unrelated { public int X; }
+
+void Main() {
+    Type tCircle = typeof(Circle);
+    Type tShape  = typeof(IShape);
+    Type tAnimal = typeof(Animal);
+    Type tDog    = typeof(Dog);
+    Type tUnrel  = typeof(Unrelated);
+
+    // ── IsAssignableFrom ───────────────────────────────────────────────────
+    Assert.True(tCircle.IsAssignableFrom(tCircle));    // reflexive
+    Assert.True(tAnimal.IsAssignableFrom(tDog));       // base ← derived
+    Assert.False(tDog.IsAssignableFrom(tAnimal));      // reversed
+    Assert.True(tShape.IsAssignableFrom(tCircle));     // interface ← implementer
+    Assert.False(tCircle.IsAssignableFrom(tShape));    // an IShape is not necessarily a Circle
+    Assert.False(tUnrel.IsAssignableFrom(tDog));       // unrelated
+    Assert.False(tCircle.IsAssignableFrom(null));      // null source
+
+    // ── GetInterface ───────────────────────────────────────────────────────
+    Type got = tCircle.GetInterface("IShape");
+    Assert.True(got != null);
+    Type gname = got;
+    Assert.True(gname.Name == "IShape");
+    Type miss = tCircle.GetInterface("INope");
+    Assert.True(miss == null);
+
+    // ── GetInterfaces returns a real interface handle (FQ names → handle) ────
+    Type[] ifaces = tCircle.GetInterfaces();
+    Assert.True(ifaces.Length == 1);
+    Type if0 = ifaces[0];
+    Assert.True(if0.IsInterface);                      // real handle now (was name-only)
+    Assert.True(if0.Name == "IShape");
+
+    // ── `is` / `as` now work for interfaces ──────────────────────────────────
+    Circle c = new Circle();
+    Assert.True(c is IShape);                          // was false before this change
+    IShape s = c as IShape;
+    Assert.True(s != null);
+    Animal a = new Dog();
+    Assert.True(a is Animal);                          // class chain unchanged
+    Assert.False(c is Animal);                         // unrelated
+}

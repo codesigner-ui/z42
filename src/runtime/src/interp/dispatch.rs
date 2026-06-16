@@ -12,7 +12,8 @@ pub use crate::corelib::convert::value_to_str;
 
 // ── Subclass check ───────────────────────────────────────────────────────────
 
-/// Returns true if `derived` equals `target` or is a subclass via the TypeDesc registry.
+/// Returns true if `derived` equals `target`, is a subclass, or (when `target`
+/// is an interface) implements it — checked against the TypeDesc registry.
 ///
 /// Walks the base-class chain via the main module's `type_registry` first;
 /// when a link is missing there falls back to `ctx.try_lookup_type` so
@@ -20,6 +21,12 @@ pub use crate::corelib::convert::value_to_str;
 /// z42.test) participate in cross-zpkg subclass checks. Without the
 /// fallback `catch (Exception e)` failed to match a `TestFailure` thrown
 /// across the z42.core → z42.test boundary.
+///
+/// add-reflection-assignable-from: at each level the type's declared interfaces
+/// (now FQ-named, zbc 1.20) are compared against `target` — so `circle is IShape`
+/// / `as IShape` / `IsAssignableFrom` work for interfaces (previously the chain
+/// only followed `base_name`, so interface targets never matched). Transitive
+/// interfaces (interface-extends-interface) are not yet covered.
 pub fn is_subclass_or_eq_td(
     ctx: &VmContext,
     registry: &HashMap<String, std::sync::Arc<TypeDesc>>,
@@ -31,7 +38,9 @@ pub fn is_subclass_or_eq_td(
         if cur == target { return true; }
         let td = registry.get(cur.as_str()).cloned()
             .or_else(|| ctx.try_lookup_type(cur.as_str()));
-        match td.and_then(|t| t.base_name.clone()) {
+        let Some(td) = td else { return false; };
+        if td.interfaces().iter().any(|i| &**i == target) { return true; }
+        match td.base_name.clone() {
             Some(base) => cur = base,
             None => return false,
         }

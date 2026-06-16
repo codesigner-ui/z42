@@ -136,10 +136,34 @@ public sealed class Type : MemberInfo {
     public extern Type GetGenericTypeDefinition();
 
     // Interfaces this type implements (own declared + inherited from base chain,
-    // deduped by name). Each is a name-only Type. Transitive interface
-    // implementation (interface-extends-interface) is not yet included.
+    // deduped by name). add-reflection-assignable-from: the interface block now
+    // stores FQ names, so each returned Type is a real interface handle
+    // (IsInterface / FullName usable). Transitive interface implementation
+    // (interface-extends-interface) is not yet included.
     [Native("__type_interfaces")]
     public extern Type[] GetInterfaces();
+
+    // The interface implemented by this type with the given (simple) name, or
+    // null if none. Convenience over GetInterfaces(). (add-reflection-assignable-from)
+    public Type GetInterface(string name) {
+        Type[] ifaces = this.GetInterfaces();
+        int i = 0;
+        while (i < ifaces.Length) {
+            Type t = ifaces[i];
+            if (t.Name == name) {
+                return t;
+            }
+            i = i + 1;
+        }
+        return null;
+    }
+
+    // True if an instance of `c` is assignable to a variable of this type:
+    // `c` is this, derives from this, or implements interface `this`. Reflection
+    // form of `is`. Compares real type identity in the VM (not strings).
+    // null → false. (add-reflection-assignable-from)
+    [Native("__type_is_assignable_from")]
+    public extern bool IsAssignableFrom(Type c);
 
     // ── Custom attributes (C3 add-attribute-reflection) ─────────────────────
 

@@ -279,7 +279,14 @@ pub(super) fn is_subclass_or_eq(module: &crate::metadata::Module, derived: &str,
     let mut cur = derived;
     loop {
         if cur == target { return true; }
-        match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {
+        let cls = module.classes.iter().find(|c| c.name == cur);
+        // add-reflection-assignable-from: mirror interp `is_subclass_or_eq_td` —
+        // check declared interfaces (FQ-named, zbc 1.20) at each level so
+        // `x is IShape` / `as IShape` work for interfaces in JIT too.
+        if let Some(c) = cls {
+            if c.interfaces.iter().any(|i| i.as_str() == target) { return true; }
+        }
+        match cls.and_then(|c| c.base_class.as_deref()) {
             Some(base) => cur = base,
             None       => return false,
         }
