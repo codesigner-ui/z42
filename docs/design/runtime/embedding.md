@@ -70,7 +70,7 @@
 | `src/runtime/src/host/` | C ABI 在 VM 内的实现（Rust `extern "C"`） |
 | `src/toolchain/workload/host-api/` | Tier 2 Rust crate（`z42-host`）—— consolidate-platform-into-workload S1 迁此 |
 | `examples/embedding/` | hello-world 示例（C / Rust，规范源，亦随 SDK 分发） |
-| `src/toolchain/host/platforms/{ios,android,wasm}/` | Tier 3 facade（与 P4.x spec 协同） |
+| `src/toolchain/workload/platforms/{ios,android,wasm}/` | Tier 3 facade（与 P4.x spec 协同） |
 
 ---
 

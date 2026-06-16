@@ -14,7 +14,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
     string cargoTarget = _ridToCargo(rid);
     string abi = _ridToAndroidAbi(rid);
     bool rel = (profile == "release");
-    string androidCrate = Path.Join(root, "src/toolchain/host/platforms/android/rust");
+    string androidCrate = Path.Join(root, "src/toolchain/workload/platforms/android/rust");
     string nativeOut = Path.Join(pkgDir, "native");
     Directory.Create(nativeOut);
 
@@ -117,7 +117,7 @@ string _ridToAndroidAbi(string rid) {
 }
 
 void _pkgEmitKotlinSources(string root, string pkgDir) {
-    string src = Path.Join(root, "src/toolchain/host/platforms/android/z42vm/src/main/java/io/z42/vm");
+    string src = Path.Join(root, "src/toolchain/workload/platforms/android/z42vm/src/main/java/io/z42/vm");
     string dst = Path.Join(pkgDir, "kotlin/io/z42/vm");
     Directory.Create(dst);
     foreach (var f in Directory.Enumerate(src)) {
@@ -126,7 +126,7 @@ void _pkgEmitKotlinSources(string root, string pkgDir) {
 }
 
 void _pkgEmitJniBridge(string root, string pkgDir) {
-    string src = Path.Join(root, "src/toolchain/host/platforms/android/z42vm/src/main/cpp");
+    string src = Path.Join(root, "src/toolchain/workload/platforms/android/z42vm/src/main/cpp");
     string dst = Path.Join(pkgDir, "cpp");
     Directory.Create(dst);
     File.Copy(Path.Join(src, "z42vm_jni.c"), Path.Join(dst, "z42vm_jni.c"));

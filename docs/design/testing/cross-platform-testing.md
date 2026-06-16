@@ -458,7 +458,7 @@ public interface IPlatformBackend {
 | R6 | 生命周期：重复 init 3× | 3 段输出 |
 | R7 | 多行 stdout | 保序（a\nb\nc）|
 
-状态码↔平台异常映射见 [`platforms/README.md`](../../../src/toolchain/host/platforms/README.md) §错误码。
+状态码↔平台异常映射见 [`platforms/README.md`](../../../src/toolchain/workload/platforms/README.md) §错误码。
 
 ### CI 聚合 dashboard 方向（地基已铺，传输层延后）
 

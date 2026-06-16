@@ -23,4 +23,4 @@ z42 apphost build scripts/xtask.z42.toml                                        
 
 `./xtask` 原生 + 平台相关 + 已 gitignore（重生不提交）；机制与 `[apphost].publish_dir` 配置见 [`runtime/launcher.md`](../../design/runtime/launcher.md#z42toml-配置apphost-publishapphost-out-path-2026-06-10)。
 
-平台 facade 的源码 + 跨平台契约见 [`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)；设计与决策见 [`docs/spec/`](../../spec/)。
+平台 facade 的源码 + 跨平台契约见 [`platforms/README.md`](../../../src/toolchain/workload/platforms/README.md)；设计与决策见 [`docs/spec/`](../../spec/)。

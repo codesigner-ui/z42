@@ -1,6 +1,6 @@
 # WASM facade — build & run
 
-> 🟢 已落地 · facade [`platforms/wasm/`](../../../src/toolchain/host/platforms/wasm/) · spec [`2026-05-12-add-platform-wasm/`](../../spec/archive/2026-05-12-add-platform-wasm/)
+> 🟢 已落地 · facade [`platforms/wasm/`](../../../src/toolchain/workload/platforms/wasm/) · spec [`2026-05-12-add-platform-wasm/`](../../spec/archive/2026-05-12-add-platform-wasm/)
 
 把 z42 VM 编进 WebAssembly，让 JS / TS 宿主 `import` 跑 `.zbc`。**从零开始按下面 5 步走**（Step 4 / Step 5 二选一即可）。
 
@@ -67,12 +67,12 @@ built:
 
 ## Step 4 — Run the browser demo（可选 · 无需 Node）
 
-在 `src/toolchain/host/platforms/wasm/` 起一个静态服务器，把同目录的
+在 `src/toolchain/workload/platforms/wasm/` 起一个静态服务器，把同目录的
 `pkg-web/`、`js/stdlib/`、`demo/` 整个目录暴露出去，浏览器打开
 `demo/web/index.html`。
 
 ```bash
-cd src/toolchain/host/platforms/wasm
+cd src/toolchain/workload/platforms/wasm
 miniserve --index demo/web/index.html .          # 默认 8080，根路径直接落 index
 # 或：dotnet serve -p 8000                        # 路径 /demo/web/index.html
 # 或：python3 -m http.server 8000                 # 路径 /demo/web/index.html
@@ -104,6 +104,6 @@ node demo/node/run.js
 **See also**
 
 - **本地打 browser-wasm SDK package**（自包含 staticlib + cdylib + wasm-bindgen 双 target + npm `package.json`）：[`../packaging.md`](../packaging.md) — `./xtask package release --rid browser-wasm`
-- JS / TS API + 错误码：[`platforms/wasm/README.md`](../../../src/toolchain/host/platforms/wasm/README.md)
-- 跨平台契约：[`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)
+- JS / TS API + 错误码：[`platforms/wasm/README.md`](../../../src/toolchain/workload/platforms/wasm/README.md)
+- 跨平台契约：[`platforms/README.md`](../../../src/toolchain/workload/platforms/README.md)
 - 设计 + 决策：[spec archive](../../spec/archive/2026-05-12-add-platform-wasm/)

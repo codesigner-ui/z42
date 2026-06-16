@@ -1,6 +1,6 @@
 # Android facade — build & run
 
-> 🟢 已落地 · facade [`platforms/android/`](../../../src/toolchain/host/platforms/android/) · spec [`2026-05-12-add-platform-android/`](../../spec/archive/2026-05-12-add-platform-android/)
+> 🟢 已落地 · facade [`platforms/android/`](../../../src/toolchain/workload/platforms/android/) · spec [`2026-05-12-add-platform-android/`](../../spec/archive/2026-05-12-add-platform-android/)
 
 把 z42 VM 编进 `z42vm.aar`，让 Kotlin / Compose app 引入后 `import io.z42.vm.Z42VM` 跑 `.zbc`。**从零开始按下面 4 步走**。
 
@@ -102,6 +102,6 @@ Z42VM(zpkgResolver = AssetZpkgResolver(assets)).use { vm ->
 
 - **本地打 per-ABI SDK package**（自包含 `kotlin/` + `cpp/` + `native/libz42_platform_android.{a,so}`）：[`../packaging.md`](../packaging.md) — `./xtask package release --rid android-arm64 / android-x64`
 - Kotlin API + 错误码（spec 落地后补）：`platforms/android/README.md`
-- 跨平台契约：[`platforms/README.md`](../../../src/toolchain/host/platforms/README.md)
+- 跨平台契约：[`platforms/README.md`](../../../src/toolchain/workload/platforms/README.md)
 - 设计 + 决策：[spec](../../spec/archive/2026-05-12-add-platform-android/)
 - Demo / JUnit / CI 推迟到独立 spec（`add-platform-android-demo` / `-tests` / `-ci`）。

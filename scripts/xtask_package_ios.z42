@@ -70,7 +70,7 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
 
     // [5/7] Sources/ + Package.swift (.iOS/.macOS versions from versions.toml)
     Console.WriteLine("[5/7] Sources/Z42VM + Package.swift");
-    string iosSrc = Path.Join(root, "src/toolchain/host/platforms/ios");
+    string iosSrc = Path.Join(root, "src/toolchain/workload/platforms/ios");
     Directory.Create(Path.Join(pkgDir, "Sources/Z42VM"));
     Directory.Create(Path.Join(pkgDir, "Sources/Z42VMC/include"));
     foreach (var f in Directory.Enumerate(Path.Join(iosSrc, "Sources/Z42VM"))) {

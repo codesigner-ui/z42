@@ -2,7 +2,7 @@
 // of scripts/_lib/package_wasm.sh. Assembles a wasm SDK package: native/(libz42.a
 // + z42_wasm_bg.wasm) + pkg-web/ + pkg-nodejs/ + js/ + package.json + libs/ +
 // examples/hello_c. REQUIRES the wasm-bindgen output (pkg-web/ + pkg-nodejs/)
-// pre-built under src/toolchain/host/platforms/wasm/ (CI builds it via wasm-pack
+// pre-built under src/toolchain/workload/platforms/wasm/ (CI builds it via wasm-pack
 // before packaging). Same Z42Xtask namespace; reuses _exec/_root/_ridToCargo/
 // _pkgCopyLibs/_pkgEmitBinReadmePlaceholder/_quotedDirList/_utcNow.
 namespace Z42Xtask;
@@ -13,7 +13,7 @@ using Std.IO;
 int _packageWasm(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
     string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
-    string wasmRoot = Path.Join(root, "src/toolchain/host/platforms/wasm");
+    string wasmRoot = Path.Join(root, "src/toolchain/workload/platforms/wasm");
     string nativeOut = Path.Join(pkgDir, "native");
     Directory.Create(Path.Join(pkgDir, "native/include"));
 

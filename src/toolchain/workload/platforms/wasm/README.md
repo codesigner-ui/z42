@@ -28,7 +28,7 @@ dotnet build src/compiler/z42.slnx
 ./xtask test platform wasm build      # ① wasm-pack web/node 两 target
 ./xtask test platform wasm assets     # ② 编 fixtures + 拷 stdlib + files.json
 
-cd src/toolchain/host/platforms/wasm
+cd src/toolchain/workload/platforms/wasm
 # 跑浏览器 demo（无需 Node；任选一个静态服务器）：
 miniserve --index demo/web/index.html .        # 然后开 http://127.0.0.1:8080/
 # 或：dotnet serve -p 8000                      # 开 http://127.0.0.1:8000/demo/web/index.html
