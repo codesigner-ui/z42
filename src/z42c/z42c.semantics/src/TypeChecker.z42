@@ -456,7 +456,12 @@ public sealed class TypeChecker {
                 "no field `" + m.Name + "` on `" + ct.Name() + "`", m.Span);
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
-        if ((tt is Z42ArrayType) && m.Name == "Length") {           // arr.Length（PS-2）
+        // Length on array OR string → int；Count → int（镜像 C# TypeChecker.Exprs.Members 行 161-164：
+        // `m.Member is "Length" && (target.Type is Z42ArrayType || target.Type == Z42Type.String)`）。
+        if (m.Name == "Length" && ((tt is Z42ArrayType) || (tt is Z42PrimType && tt.Name() == "string"))) {
+            return new BoundMember(target, m.Name, new Z42PrimType("int"), m.Span);
+        }
+        if (m.Name == "Count") {
             return new BoundMember(target, m.Name, new Z42PrimType("int"), m.Span);
         }
         if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {

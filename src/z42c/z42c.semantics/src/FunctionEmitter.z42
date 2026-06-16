@@ -277,9 +277,17 @@ public sealed class FunctionEmitter {
             // 无 init（G8）：不发 IR——变量首次赋值时 _emitAssign 绑定寄存器（镜像 C# VisitVarDecl）。
             if (v.Init != null) {
                 TypedReg r = this._expr.Emit(v.Init);
-                TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(v.VarType));
-                this._ctx.Emit(new CopyInstr(dst, r));
-                this._ctx.Locals.Put(v.Name, dst);
+                // 镜像 C# WriteBackName：locals 是函数级平表，同名变量（兄弟作用域重声明，
+                // 如大 if-else 各分支 `XxxInstr i = ins as ...`）复用首次分配的寄存器，不新分配
+                // → 寄存器数不随分支膨胀（否则 REGT 多出大量条目，z42c.ir WriteInstr 实证 +73B）。
+                TypedReg dst;
+                if (this._ctx.Locals.ContainsKey(v.Name)) {
+                    dst = this._ctx.Locals.Get(v.Name) as TypedReg;
+                } else {
+                    dst = this._ctx.Alloc(this._ctx.ToIrType(v.VarType));
+                    this._ctx.Locals.Put(v.Name, dst);
+                }
+                if (dst.Id != r.Id) { this._ctx.Emit(new CopyInstr(dst, r)); }
             }
         } else if (s is BoundReturn) {
             BoundReturn ret = s as BoundReturn;
