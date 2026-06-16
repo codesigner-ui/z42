@@ -55,13 +55,14 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
     "browser-wasm": { "runtime": { "archive": "z42-runtime-0.3.5-browser-wasm.tar.gz", "sha256": "…" } }
   },
   "workloads": {
-    "desktop": { "archive": "z42-0.3.5-workload-desktop.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"] },
-    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"] },
-    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"] },
-    "wasm":    { "archive": "z42-0.3.5-browser-wasm.tar.gz", "sha256": "…", "host": ["*"] }
+    "desktop": { "archive": "z42-0.3.5-workload-desktop.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": [] },
+    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
+    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
+    "wasm":    { "archive": "z42-0.3.5-browser-wasm.tar.gz", "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] }
   }
 }
 ```
+> **一个 workload → 多 target RID（apphost-as-config 后续, 2026-06-17）**：`workloads.<wl>.runtimes` 列出该 workload 安装时需一并拉的 target runtime pack RID。`z42 workload install android` 读 `["android-arm64","android-x64"]` → 拉全部 ABI 的 runtime + workload tooling 包（一个 workload 统一多 ABI，对齐 `dotnet workload install android` 带全 ABI）。ios 的 `["ios-arm64","iossim-arm64"]` = 真机 + 模拟器。**desktop 的 `runtimes: []`**——它复用已装的 **host runtime**（`z42 install <ver>`），不拉平台专属 runtime（Decision 9）。
 > **已实施（split-release-runtime-package, 2026-06-14）**：desktop RID 双键（sdk/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式。workload 段未实施（见 Deferred）。
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。
