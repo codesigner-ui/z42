@@ -40,7 +40,7 @@ public sealed class ArrayNewInstr : IrInstr {
     public ArrayNewInstr(TypedReg dst, TypedReg size, int elemTag, string elemName) {
         this.Dst = dst; this.Size = size; this.ElemTag = elemTag; this.ElemName = elemName;
     }
-    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = array_new[%" + this.Size.Id.ToString() + "]"; }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = array_new " + this.ElemName + "[%" + this.Size.Id.ToString() + "]"; }
 }
 
 public sealed class StaticGetInstr : IrInstr {

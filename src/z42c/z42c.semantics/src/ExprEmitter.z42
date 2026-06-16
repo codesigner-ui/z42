@@ -11,6 +11,10 @@ public sealed class ExprEmitter {
     public ExprEmitter(EmitContext ctx) { this._ctx = ctx; }
 
     public TypedReg Emit(BoundExpr e) {
+        // 每表达式入口记源码行（镜像 C# EmitExpr 入口 TrackLine；同行去重在 ctx）。
+        // 配合 _emitStmt 的语句级 TrackLine，覆盖跨多行的表达式（如多行 return 拼接）。
+        // 合成 __static_init__ 走 EmitStaticInit 丢弃行表，不受此影响（镜像 C#）。
+        this._ctx.TrackLine(e.Span);
         if (e is BoundLitInt) {
             BoundLitInt li = e as BoundLitInt;
             int tag = this._ctx.ToIrType(li.Type());
@@ -66,8 +70,15 @@ public sealed class ExprEmitter {
             BoundArrayNew an = e as BoundArrayNew;
             TypedReg size = this.Emit(an.Size);
             TypedReg dst = this._ctx.Alloc(IrType.Ref);
+            // 元素类型名须与 C# Z42TypeName 一致：prim / 泛型形参保留短名；类·实例化用 FQ
+            // （镜像 add-reflection-array-element-type：数组运行期非擦除，elem 名须可解析）。
+            string elemName = an.ElemName;
+            Z42ArrayType at = an.Type() as Z42ArrayType;
+            if (at != null && !(at.Elem is Z42PrimType) && !(at.Elem is Z42GenericParamType)) {
+                elemName = this._ctx.QualifyClass(an.ElemName);
+            }
             // ElemName → IrType（prim 名经 ToIrType 等价物：用 Z42PrimType 包一层）
-            this._ctx.Emit(new ArrayNewInstr(dst, size, this._ctx.ToIrType(new Z42PrimType(an.ElemName)), an.ElemName));
+            this._ctx.Emit(new ArrayNewInstr(dst, size, this._ctx.ToIrType(new Z42PrimType(an.ElemName)), elemName));
             return dst;
         }
         if (e is BoundStaticGet) {

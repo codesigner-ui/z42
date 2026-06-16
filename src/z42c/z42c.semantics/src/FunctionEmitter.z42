@@ -115,15 +115,16 @@ public sealed class FunctionEmitter {
         int[] regTypes = new int[this._ctx.RegTagCount];
         int rt = 0;
         while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
-        IrLineEntry[] lines = new IrLineEntry[this._ctx.LineCount];
-        int li = 0;
-        while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
-        IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
+        // 合成 __static_init__ 不带 DBUG 行表/局部表（镜像 C# EmitStaticInit：返回的
+        // IrFunction 用省略 lineTable 的构造重载，丢弃 EmitExpr 期 TrackLine 累积的行——
+        // 否则每个静态字段 init 表达式各记一条行，与 C# 字节漂移）。
+        IrLineEntry[] lines = new IrLineEntry[0];
+        IrLocalVarEntry[] localVars = new IrLocalVarEntry[0];
         this._gen._mergeUsedNsPub(this._ctx);
         return new IrFunction(name, 0, "void", false,
                               this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
                               "Interp", new string[0], 0, regTypes, this._ctx.RegTagCount,
-                              lines, this._ctx.LineCount, localVars, localVars.Length);
+                              lines, 0, localVars, 0);
     }
 
     // lambda lift 发射（port-z42c-closures；镜像 C# EmitLifted/EmitLiftedLambdaWithEnv）。

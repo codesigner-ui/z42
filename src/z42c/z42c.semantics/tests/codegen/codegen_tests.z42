@@ -381,3 +381,20 @@ void test_ctor_lowering() {
     Assert.Equal("fn @C.C(2) -> void {\nentry:\n  field_set %0.X, %1\n  ret\n}",
                  IrDump.DumpFunc(src, "C.C"));
 }
+
+// ── new T[n] 元素类型名 FQ 化（port-z42c-self-compile G16）─────────────────────────
+// 用户类元素名须经 QualifyClass → FQ（镜像 C# Z42TypeName）；prim 元素名保留短名。
+// 默认 gate 语料只含 prim 数组（new int[n]），故此处显式覆盖用户类数组回归。
+[Test]
+void test_array_new_user_class_fq() {
+    string src = "namespace Foo; class C { } class D { C[] Make(int n) { return new C[n]; } }";
+    Assert.Equal("fn @Foo.D.Make(2) -> C[] {\nentry:\n  %2 = array_new Foo.C[%1]\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "Foo.D.Make"));
+}
+
+[Test]
+void test_array_new_prim_short() {
+    string src = "class C { int[] Make(int n) { return new int[n]; } }";
+    Assert.Equal("fn @C.Make(2) -> int[] {\nentry:\n  %2 = array_new int[%1]\n  ret %2\n}",
+                 IrDump.DumpFunc(src, "C.Make"));
+}
