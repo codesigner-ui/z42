@@ -76,17 +76,23 @@ jdk_min      = "17"
 install_root = "artifacts/tools/android-sdk"
 
 [build.android.ndk]
+# 实际安装走 sdkmanager（`--install ndk;<version>`），sdkmanager 对照 Google
+# repository manifest 自校验下载——无需仓库层 sha256。下面 url/sha256 仅供未来
+# 直接下载的 setup-tools.sh 使用（当前 install 路径不读）。
 version = "26.3.11579264"
 release = "r26d"                        # Google release 别名（URL 用它）
 url     = "https://dl.google.com/android/repository/android-ndk-r26d-{os}.zip"
-sha256  = ""                            # TODO: setup-tools.sh 首次下载后回填
+sha256  = ""                            # 保留给 setup-tools.sh（in-repo install 用 sdkmanager 自校验）
 
 [build.android.sdk]
 platform           = "android-34"       # compileSdk
 build_tools        = "34.0.0"
 cmdline_tools_url  = "https://dl.google.com/android/repository/commandlinetools-{os}-11076708_latest.zip"
-cmdline_tools_sha256 = ""               # TODO
+# cmdline-tools 每 OS 一个 zip → 每 OS 一个 sha256（build 11076708；{os}=mac/linux）。
+cmdline_tools_sha256_mac   = "7bc5c72ba0275c80a8f19684fb92793b83a6b5c94d4d179fc5988930282d7e64"
+cmdline_tools_sha256_linux = "2d2d50857e4eb553af5a6dc3ad507a17adf43d115264b1afc116f95c92e5e258"
 gradle             = "8.7"              # AGP 8.6 compatible; `deps install android-sdk` 下载
+gradle_sha256      = "544c35d6bd849ae8a5ed0bcea39ba677dc40f49df7d1835561582da2009b961d"   # OS 无关 zip（services.gradle.org 官方 .sha256）
 system_image_tag   = "google_apis_playstore;arm64-v8a"   # AVD system image (Apple silicon)
 avd_name           = "z42_pixel6_api34"
 avd_device         = "pixel_6"

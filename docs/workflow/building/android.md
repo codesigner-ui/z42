@@ -25,6 +25,8 @@ SDK + NDK（含 cmdline-tools / build-tools / platform-34）二选一：
 ./xtask deps install --os android        # SDK + NDK（build tier；加 --emulator 连模拟器一并装）
 ```
 
+直接下载的产物（cmdline-tools / gradle）下载后按 versions.toml 的 `sha256` pin 校验，不符即中止安装；NDK + system-image 走 sdkmanager（对 Google repository manifest 自校验）。
+
 装好后**无需任何环境变量**：`test platform android build` 自动从 `artifacts/tools/android-sdk` 解析 SDK + NDK（`AndroidBackend._resolveSdk` / `_resolveNdk` 给 cargo-ndk + gradle 注入 `ANDROID_HOME` / `ANDROID_SDK_ROOT` / `ANDROID_NDK_HOME` / `ANDROID_NDK` / `ANDROID_NDK_ROOT`）。
 
 **(替代) 用现成的 Android Studio SDK** —— 显式指向你的安装（这些 env 优先于仓库内的）：
