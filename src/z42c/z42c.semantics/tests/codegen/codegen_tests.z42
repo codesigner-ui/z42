@@ -261,7 +261,7 @@ void test_loop_with_comparison() {
 void test_ternary() {
     // c ? a : b → 结果寄存器两分支各 copy
     string src = "int F(bool c, int a, int b) { return c ? a : b; }";
-    Assert.Equal("fn @F(3) -> int {\nentry:\n  br.cond %0, cond_then_0, cond_else_1\ncond_then_0:\n  %3 = copy %1\n  br cond_end_2\ncond_else_1:\n  %3 = copy %2\n  br cond_end_2\ncond_end_2:\n  ret %3\n}",
+    Assert.Equal("fn @F(3) -> int {\nentry:\n  br.cond %0, tern_then_0, tern_else_1\ntern_then_0:\n  %3 = copy %1\n  br tern_end_2\ntern_else_1:\n  %3 = copy %2\n  br tern_end_2\ntern_end_2:\n  ret %3\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -269,7 +269,7 @@ void test_ternary() {
 void test_logical_and() {
     // a && b：a 假 → false（不求 b）
     string src = "bool F(bool a, bool b) { return a && b; }";
-    Assert.Equal("fn @F(2) -> bool {\nentry:\n  br.cond %0, and_rhs_0, and_false_1\nand_rhs_0:\n  %2 = copy %1\n  br and_end_2\nand_false_1:\n  %2 = const.bool false\n  br and_end_2\nand_end_2:\n  ret %2\n}",
+    Assert.Equal("fn @F(2) -> bool {\nentry:\n  br.cond %0, and_rhs_0, and_short_1\nand_rhs_0:\n  %2 = copy %1\n  br and_end_2\nand_short_1:\n  %3 = const.bool false\n  %2 = copy %3\n  br and_end_2\nand_end_2:\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -277,7 +277,7 @@ void test_logical_and() {
 void test_logical_or() {
     // a || b：a 真 → true（不求 b）
     string src = "bool F(bool a, bool b) { return a || b; }";
-    Assert.Equal("fn @F(2) -> bool {\nentry:\n  br.cond %0, or_true_0, or_rhs_1\nor_true_0:\n  %2 = const.bool true\n  br or_end_2\nor_rhs_1:\n  %2 = copy %1\n  br or_end_2\nor_end_2:\n  ret %2\n}",
+    Assert.Equal("fn @F(2) -> bool {\nentry:\n  br.cond %0, or_short_1, or_rhs_0\nor_rhs_0:\n  %2 = copy %1\n  br or_end_2\nor_short_1:\n  %3 = const.bool true\n  %2 = copy %3\n  br or_end_2\nor_end_2:\n  ret %2\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 
@@ -285,7 +285,7 @@ void test_logical_or() {
 void test_null_coalesce() {
     // a ?? b：a==null → b，否则 a
     string src = "string F(string a, string b) { return a ?? b; }";
-    Assert.Equal("fn @F(2) -> string {\nentry:\n  %3 = const.null\n  %4 = eq str %0, %3\n  br.cond %4, coalesce_rhs_0, coalesce_lhs_1\ncoalesce_rhs_0:\n  %2 = copy %1\n  br coalesce_end_2\ncoalesce_lhs_1:\n  %2 = copy %0\n  br coalesce_end_2\ncoalesce_end_2:\n  ret %2\n}",
+    Assert.Equal("fn @F(2) -> string {\nentry:\n  %2 = const.null\n  %3 = eq str %0, %2\n  br.cond %3, nc_null_0, nc_end_1\nnc_end_1:\n  %4 = copy %0\n  br nc_after_2\nnc_null_0:\n  %4 = copy %1\n  br nc_after_2\nnc_after_2:\n  ret %4\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 

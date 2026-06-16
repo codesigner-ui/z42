@@ -155,8 +155,8 @@ public sealed class ExprEmitter {
     // 否则算术 + − × ÷ % / 比较 / 位 / 字符串拼接。
     private TypedReg _emitBinary(BoundBinary b) {
         string sop = b.Op;
-        if (sop == "&&") { return this._emitLogicalAnd(b); }
-        if (sop == "||") { return this._emitLogicalOr(b); }
+        if (sop == "&&") { return this._emitShortCircuit(b, true); }
+        if (sop == "||") { return this._emitShortCircuit(b, false); }
         if (sop == "??") { return this._emitNullCoalesce(b); }
         TypedReg a = this.Emit(b.Left);
         TypedReg c = this.Emit(b.Right);
@@ -208,79 +208,78 @@ public sealed class ExprEmitter {
     }
 
     // ════ 块化表达式（CG-1E-2）：中途分块 + 结果寄存器经 copy/const 汇合 ════════════════
-    // 三目 cond ? then : else → 结果寄存器在两分支各赋值。
+    // 三目 cond ? then : else → 结果寄存器在两分支各赋值（镜像 C# EmitBoundTernary：
+    // cond 先求 → 3 标签 tern_then/else/end → result 在标签后 alloc）。
     private TypedReg _emitConditional(BoundConditional c) {
         TypedReg cond = this.Emit(c.Cond);
+        string thenL = this._ctx.Fresh("tern_then");
+        string elseL = this._ctx.Fresh("tern_else");
+        string endL = this._ctx.Fresh("tern_end");
         TypedReg result = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
-        string thenL = this._ctx.Fresh("cond_then");
-        string elseL = this._ctx.Fresh("cond_else");
-        string endL = this._ctx.Fresh("cond_end");
         this._ctx.EndBlock(new BrCondTerm(cond, thenL, elseL));
         this._ctx.StartBlock(thenL);
-        this._ctx.Emit(new CopyInstr(result, this.Emit(c.Then)));
+        TypedReg thenR = this.Emit(c.Then);
+        this._ctx.Emit(new CopyInstr(result, thenR));
         this._ctx.EndBlock(new BrTerm(endL));
         this._ctx.StartBlock(elseL);
-        this._ctx.Emit(new CopyInstr(result, this.Emit(c.Else)));
+        TypedReg elseR = this.Emit(c.Else);
+        this._ctx.Emit(new CopyInstr(result, elseR));
         this._ctx.EndBlock(new BrTerm(endL));
         this._ctx.StartBlock(endL);
         return result;
     }
 
-    // a && b：a 假 → false（不求 b）；a 真 → b。
-    private TypedReg _emitLogicalAnd(BoundBinary b) {
-        TypedReg a = this.Emit(b.Left);
+    // a && b / a || b → BrCond 块（镜像 C# EmitShortCircuit，统一 and/or 路径）。
+    // 标签序 {tag}_rhs/{tag}_short/{tag}_end → result alloc → left 求值 → BrCond。
+    // and：真→rhs（求 b）/假→short（const false）；or：真→short（const true）/假→rhs。
+    private TypedReg _emitShortCircuit(BoundBinary b, bool isAnd) {
+        string tag = "or";
+        if (isAnd) { tag = "and"; }
+        string rhsL = this._ctx.Fresh(tag + "_rhs");
+        string shortL = this._ctx.Fresh(tag + "_short");
+        string endL = this._ctx.Fresh(tag + "_end");
         TypedReg result = this._ctx.Alloc(IrType.Bool);
-        string rhsL = this._ctx.Fresh("and_rhs");
-        string falseL = this._ctx.Fresh("and_false");
-        string endL = this._ctx.Fresh("and_end");
-        this._ctx.EndBlock(new BrCondTerm(a, rhsL, falseL));
+        TypedReg left = this.Emit(b.Left);
+        if (isAnd) {
+            this._ctx.EndBlock(new BrCondTerm(left, rhsL, shortL));
+        } else {
+            this._ctx.EndBlock(new BrCondTerm(left, shortL, rhsL));
+        }
         this._ctx.StartBlock(rhsL);
-        this._ctx.Emit(new CopyInstr(result, this.Emit(b.Right)));
+        TypedReg rightR = this.Emit(b.Right);
+        this._ctx.Emit(new CopyInstr(result, rightR));
         this._ctx.EndBlock(new BrTerm(endL));
-        this._ctx.StartBlock(falseL);
-        this._ctx.Emit(new ConstBoolInstr(result, false));
+        this._ctx.StartBlock(shortL);
+        TypedReg constR = this._ctx.Alloc(IrType.Bool);
+        this._ctx.Emit(new ConstBoolInstr(constR, !isAnd));
+        this._ctx.Emit(new CopyInstr(result, constR));
         this._ctx.EndBlock(new BrTerm(endL));
         this._ctx.StartBlock(endL);
         return result;
     }
 
-    // a || b：a 真 → true（不求 b）；a 假 → b。
-    private TypedReg _emitLogicalOr(BoundBinary b) {
-        TypedReg a = this.Emit(b.Left);
-        TypedReg result = this._ctx.Alloc(IrType.Bool);
-        string trueL = this._ctx.Fresh("or_true");
-        string rhsL = this._ctx.Fresh("or_rhs");
-        string endL = this._ctx.Fresh("or_end");
-        this._ctx.EndBlock(new BrCondTerm(a, trueL, rhsL));
-        this._ctx.StartBlock(trueL);
-        this._ctx.Emit(new ConstBoolInstr(result, true));
-        this._ctx.EndBlock(new BrTerm(endL));
-        this._ctx.StartBlock(rhsL);
-        this._ctx.Emit(new CopyInstr(result, this.Emit(b.Right)));
-        this._ctx.EndBlock(new BrTerm(endL));
-        this._ctx.StartBlock(endL);
-        return result;
-    }
-
-    // a ?? b：a 非 null → a；a == null → b。
+    // a ?? b（镜像 C# EmitBoundNullCoalesce）：alloc 序 left/null/cmp/result →
+    // ConstNull+Eq → 标签 nc_null/nc_end，BrCond(cmp, nc_null, nc_end)；
+    // nc_end 块=非空路径 copy left + 中途 Fresh(nc_after)；nc_null 块求 b；汇合 nc_after。
     private TypedReg _emitNullCoalesce(BoundBinary b) {
-        TypedReg a = this.Emit(b.Left);
-        TypedReg result = this._ctx.Alloc(this._ctx.ToIrType(b.Type()));
+        TypedReg left = this.Emit(b.Left);
         TypedReg nullReg = this._ctx.Alloc(IrType.Ref);
+        TypedReg cmpReg = this._ctx.Alloc(IrType.Bool);
+        TypedReg result = this._ctx.Alloc(this._ctx.ToIrType(b.Type()));
         this._ctx.Emit(new ConstNullInstr(nullReg));
-        TypedReg isNull = this._ctx.Alloc(IrType.Bool);
-        this._ctx.Emit(new EqInstr(isNull, a, nullReg));
-        string rhsL = this._ctx.Fresh("coalesce_rhs");
-        string lhsL = this._ctx.Fresh("coalesce_lhs");
-        string endL = this._ctx.Fresh("coalesce_end");
-        this._ctx.EndBlock(new BrCondTerm(isNull, rhsL, lhsL));
-        this._ctx.StartBlock(rhsL);
-        this._ctx.Emit(new CopyInstr(result, this.Emit(b.Right)));
-        this._ctx.EndBlock(new BrTerm(endL));
-        this._ctx.StartBlock(lhsL);
-        this._ctx.Emit(new CopyInstr(result, a));
-        this._ctx.EndBlock(new BrTerm(endL));
+        this._ctx.Emit(new EqInstr(cmpReg, left, nullReg));
+        string nullL = this._ctx.Fresh("nc_null");
+        string endL = this._ctx.Fresh("nc_end");
+        this._ctx.EndBlock(new BrCondTerm(cmpReg, nullL, endL));
         this._ctx.StartBlock(endL);
+        this._ctx.Emit(new CopyInstr(result, left));
+        string afterL = this._ctx.Fresh("nc_after");
+        this._ctx.EndBlock(new BrTerm(afterL));
+        this._ctx.StartBlock(nullL);
+        TypedReg rightR = this.Emit(b.Right);
+        this._ctx.Emit(new CopyInstr(result, rightR));
+        this._ctx.EndBlock(new BrTerm(afterL));
+        this._ctx.StartBlock(afterL);
         return result;
     }
 
