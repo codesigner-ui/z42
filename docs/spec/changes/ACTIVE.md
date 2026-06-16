@@ -9,7 +9,7 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（接口块 bare→FQ 名；zbc 1.20 / zpkg 0.22）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
-| `runtime` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（`is_subclass_or_eq_td`/`is_subclass_or_eq` 查接口修接口 `is` + `__type_is_assignable_from` builtin 真实 TypeDesc 比较；dotnet 1566/0 + vm 364/0 + cargo 809/0）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
+| `runtime` | —（空闲）| — | ~~add-reflection-instance-generic-args~~ ✅ 已归档 2026-06-16（`obj.GetType().GetGenericArguments()` 实例侧；纯运行期无 bump；vm 366/0 + cargo 809/0）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（`Std.Type.IsAssignableFrom(Type)` + `GetInterface(string)`）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
 | `toolchain` | —（空闲）| — | ~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16（golden/z42c 测试产物按组件镜像 src→artifacts/build/：tests→build/tests、libraries→build/libraries/<lib>/tests、z42c→build/z42c/<member>/tests；细化 redirect-golden 的 golden/ 单根）。前序：~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16 |

@@ -1,0 +1,49 @@
+// 2026-06-16 add-reflection-instance-generic-args: new Box<int>() instance's
+// obj.GetType().GetGenericArguments() now returns [int] (was empty) — the
+// construction type-args (ScriptObject.type_args) are surfaced via the same
+// constructed-Type path as typeof(Box<int>).
+
+namespace Demo;
+
+using Std;
+
+class Box<T> {
+    public T Value;
+}
+
+class Plain {
+    public int X;
+}
+
+void Main() {
+    // ── Generic instance: obj.GetType() surfaces construction args ──────────
+    Box<int> b = new Box<int>();
+    Type t = b.GetType();
+    Assert.True(t.IsGenericType);
+    Assert.False(t.IsGenericTypeDefinition);     // constructed
+
+    Type[] args = t.GetGenericArguments();
+    Assert.True(args.Length == 1);               // was empty before this change
+    Type a0 = args[0];
+    Assert.True(a0.Name == "int");
+
+    // Consistent with typeof(Box<int>).
+    Type tof = typeof(Box<int>);
+    Type[] targs = tof.GetGenericArguments();
+    Assert.True(targs.Length == 1);
+    Type t0 = targs[0];
+    Assert.True(t0.Name == a0.Name);
+
+    // Definition recovered from the instance's Type.
+    Type def = t.GetGenericTypeDefinition();
+    Assert.True(def.IsGenericTypeDefinition);
+    Type[] defArgs = def.GetGenericArguments();
+    Assert.True(defArgs.Length == 0);
+
+    // ── Non-generic instance: unchanged (empty) ────────────────────────────
+    Plain p = new Plain();
+    Type pt = p.GetType();
+    Assert.False(pt.IsGenericType);
+    Type[] pArgs = pt.GetGenericArguments();
+    Assert.True(pArgs.Length == 0);
+}

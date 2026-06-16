@@ -13,9 +13,24 @@ use std::sync::Arc;
 /// Primitives / arrays / strings get a handle-less `Std.Type` (member queries
 /// reflect empty) — element-typed array reflection deferred (reflection.md).
 pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    use crate::corelib::reflection::{make_type_from_name, make_type_object};
+    use crate::corelib::reflection::{make_constructed_type, make_type_from_name, make_type_object};
     match args.first() {
-        Some(Value::Object(rc)) => Ok(make_type_object(ctx, rc.type_desc_arc().clone())),
+        Some(Value::Object(rc)) => {
+            let td = rc.type_desc_arc().clone();
+            // add-reflection-instance-generic-args: a generic instance
+            // (`new Box<int>()`) carries its construction type-args on the
+            // ScriptObject. Surface them via the same constructed-Type path as
+            // `typeof(Box<int>)` (make_constructed_type → __typeArgs slot) so
+            // `obj.GetType().GetGenericArguments()` returns [int], consistent
+            // with typeof. Non-generic instances keep the bare definition Type.
+            let type_args = rc.type_args();
+            if type_args.is_empty() {
+                Ok(make_type_object(ctx, td))
+            } else {
+                let args_owned: Vec<String> = type_args.to_vec();
+                Ok(make_constructed_type(ctx, &td.name, &args_owned))
+            }
+        }
         Some(Value::Array(rc)) => {
             // add-reflection-array-element-type: the array value carries its
             // element type (non-erased). `<elem>[]` routes through
