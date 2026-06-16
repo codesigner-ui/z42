@@ -1,7 +1,20 @@
 # Tasks: consolidate-platform-into-workload
 
-> 状态：🟡 S0 进行中 | 创建：2026-06-17
-> 类型：refactor（结构整合）+ docs。S0 docs-only；物理迁移 S1–S5 各独立 change。
+> 状态：🟢 机械整合弧完成（S0/S1/S2/S3/S5）；净新增 workload 子系统（B）余下 | 创建：2026-06-17
+> 类型：refactor（结构整合）+ docs。S0 docs-only；物理迁移各独立 change。
+
+## 进度（2026-06-17）
+
+| 步 | change | 状态 |
+|----|--------|------|
+| S0 设计落地 + 冲突修复 | consolidate-platform-into-workload | ✅ 12015219 |
+| S1 Tier2 embed→host-api | ~~migrate-tier2-to-workload~~ | ✅ 87e7cce4 |
+| S2 apphost（重构为 apphost-as-config）| ~~add-desktop-export~~ | ✅ 77a5acba（apphost=`[platform.desktop]` 配置，非命令；非"desktop workload 脚手架"）|
+| S3 facade→workload/platforms | ~~migrate-facades-to-workload~~ | ✅ 45da148a |
+| S5 host/ 移除 | ~~remove-host-toplevel~~ | ✅ 本 change |
+| **B 子系统**（B1 命令发现 / B2 打包+auto-runtime / B4 测试改 workload 驱动 / B5 export 生命周期）| build-workload-subsystem | 📋 立项 29380849，待实施 |
+
+> S4（测试改 workload 驱动）并入 B4（依赖 workload 脚手架）。下方原始大纲保留作历史。
 
 ## S0 — 设计落地 + 冲突修复（docs-only，本 change）
 

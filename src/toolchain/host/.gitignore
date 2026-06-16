@@ -1,5 +1,0 @@
-# Cargo build artifacts produced by embed/ and examples/*/ when run
-# outside the runtime workspace (the global .cargo/config.toml target
-# redirect doesn't apply to standalone Cargo projects living under
-# src/toolchain/).
-target/

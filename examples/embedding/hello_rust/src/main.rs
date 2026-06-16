@@ -14,7 +14,7 @@
 //!     --emit zbc -o /tmp/embedding_hello.zbc
 //!
 //! # 3. Run the host demo, pointing at the libs dir for corelib.
-//! cargo run --manifest-path src/toolchain/host/examples/hello_rust/Cargo.toml -- \
+//! cargo run --manifest-path examples/embedding/hello_rust/Cargo.toml -- \
 //!     /tmp/embedding_hello.zbc artifacts/z42/libs
 //! ```
 //!
