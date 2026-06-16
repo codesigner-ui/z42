@@ -36,6 +36,13 @@ public static class ZbcInstr {
             ZbcInstr._args(w, i.Args, i.ArgCount);
             return;
         }
+        if (ins is BuiltinInstr) {
+            BuiltinInstr i = ins as BuiltinInstr;
+            w.WriteU8(Op.Builtin); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32(pool.Idx(i.Name));   // builtin 名直接 pool idx（非 method token）
+            ZbcInstr._args(w, i.Args, i.ArgCount);
+            return;
+        }
         if (ins is VCallInstr) {
             VCallInstr i = ins as VCallInstr;
             w.WriteU8(Op.VCall); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
@@ -340,6 +347,7 @@ public static class ZbcInstr {
         if (ins is StaticGetInstr) { pool.Intern((ins as StaticGetInstr).Field); return; }
         if (ins is StaticSetInstr) { pool.Intern((ins as StaticSetInstr).Field); return; }
         if (ins is MkClosInstr) { pool.Intern((ins as MkClosInstr).Func); return; }
+        if (ins is BuiltinInstr) { pool.Intern((ins as BuiltinInstr).Name); return; }   // 镜像 C# InternInstrStrings
         if (ins is VCallInstr) { VCallInstr i = ins as VCallInstr; pool.Intern(i.Method); return; }
         if (ins is FieldGetInstr) { FieldGetInstr i = ins as FieldGetInstr; pool.Intern(i.Field); return; }
         if (ins is FieldSetInstr) { FieldSetInstr i = ins as FieldSetInstr; pool.Intern(i.Field); return; }

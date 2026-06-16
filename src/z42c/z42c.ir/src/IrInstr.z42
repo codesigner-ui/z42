@@ -213,6 +213,23 @@ public sealed class CallInstr : IrInstr {
     }
 }
 
+// builtin 调用（legacy `[Native("__name")]` extern 桩函数体；镜像 C# BuiltinInstr，opcode 0x51）。
+public sealed class BuiltinInstr : IrInstr {
+    public TypedReg   Dst;
+    public string     Name;
+    public TypedReg[] Args;
+    public int        ArgCount;
+    public BuiltinInstr(TypedReg dst, string name, TypedReg[] args, int argCount) {
+        this.Dst = dst; this.Name = name; this.Args = args; this.ArgCount = argCount;
+    }
+    public override string Dump() {
+        string s = this.Dst.Dump() + " = builtin " + this.Name + "(";
+        int i = 0;
+        while (i < this.ArgCount) { if (i > 0) { s = s + ", "; } s = s + this.Args[i].Dump(); i = i + 1; }
+        return s + ")";
+    }
+}
+
 // 虚分派（实例方法，经 receiver 的 vtable）。
 public sealed class VCallInstr : IrInstr {
     public TypedReg   Dst;
