@@ -75,7 +75,7 @@ public sealed class SymbolTable {
                 i = i + 1;
             }
             if (n == "void") { return new Z42VoidType(); }
-            if (this._isPrim(n)) { return new Z42PrimType(n); }
+            if (this._isPrim(n)) { return new Z42PrimType(this._canonPrim(n)); }
             // Func/Action/Predicate → 结构 Z42FuncType（port-z42c-closures D1；C# 经委托注册表但产物同构）
             if (n == "Func" && nt.ArgCount > 0) {
                 Z42Type[] fps = new Z42Type[nt.ArgCount - 1];
@@ -116,6 +116,19 @@ public sealed class SymbolTable {
             return this.ResolveTypeP(nt.Inner, paramNames, paramCount);   // nullable → inner（Option 延后）
         }
         return new Z42UnknownType();
+    }
+
+    // prim 源名 → C# TypeRegistry 规范名（IR 侧用：byte→u8 等次要名归一；int/long/float/
+    // double/bool/char/string/object 保留源名——见 TypeRegistry.cs 各 TypeEntry 首字段）。
+    // G17c-2：编译 IR（SIGS/TYPE/FUNC）用规范名；TSIG 仍用原始 AST 拼写（见 ExportedTypeExtractor）。
+    private string _canonPrim(string n) {
+        if (n == "byte")   { return "u8"; }
+        if (n == "sbyte")  { return "i8"; }
+        if (n == "short")  { return "i16"; }
+        if (n == "ushort") { return "u16"; }
+        if (n == "uint")   { return "u32"; }
+        if (n == "ulong")  { return "u64"; }
+        return n;
     }
 
     private bool _isPrim(string n) {
