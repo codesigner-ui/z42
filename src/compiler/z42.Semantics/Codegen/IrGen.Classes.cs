@@ -73,6 +73,13 @@ public sealed partial class IrGen
     /// their type params (so `typeof(IFoo<int>)` reports IsGenericType).
     private IrClassDesc EmitInterfaceDesc(InterfaceDecl iface)
     {
+        // add-reflection-transitive-interfaces: an interface's own base interfaces
+        // (`interface IBar : IFoo`) go into its interface block (FQ names, mirroring
+        // the class interface block) so the runtime can compute the transitive
+        // closure for GetInterfaces / is / IsAssignableFrom.
+        var baseIfaces = iface.BaseInterfaces is { Count: > 0 }
+            ? iface.BaseInterfaces.Select(n => ((IEmitterContext)this).QualifyClassName(n)).ToList()
+            : null;
         return new(QualifyName(iface.Name), BaseClass: null,
             Fields: new List<IrFieldDesc>(),
             iface.TypeParams?.ToList(),
@@ -82,7 +89,7 @@ public sealed partial class IrGen
             IsAbstract: true, IsSealed: false, IsStruct: false, IsRecord: false,
             IsInterface: true,
             StaticFields: new List<IrFieldDesc>(),
-            Interfaces: null);
+            Interfaces: baseIfaces);
     }
 
     /// add-reflection-get-interfaces: extract the interface name from an

@@ -283,14 +283,32 @@ pub(super) fn is_subclass_or_eq(module: &crate::metadata::Module, derived: &str,
         // add-reflection-assignable-from: mirror interp `is_subclass_or_eq_td` —
         // check declared interfaces (FQ-named, zbc 1.20) at each level so
         // `x is IShape` / `as IShape` work for interfaces in JIT too.
+        // add-reflection-transitive-interfaces: match directly OR transitively.
         if let Some(c) = cls {
-            if c.interfaces.iter().any(|i| i.as_str() == target) { return true; }
+            if c.interfaces.iter().any(|i| iface_reaches_mod(module, i, target)) { return true; }
         }
         match cls.and_then(|c| c.base_class.as_deref()) {
             Some(base) => cur = base,
             None       => return false,
         }
     }
+}
+
+/// add-reflection-transitive-interfaces: JIT mirror of `iface_reaches_td` —
+/// true if `iface` equals `target` or reaches it via its transitive base
+/// interfaces (interface entries live in `module.classes` since interfaces
+/// emit a TYPE entry). Intra-module only, like the rest of the JIT path.
+fn iface_reaches_mod(module: &crate::metadata::Module, iface: &str, target: &str) -> bool {
+    let mut queue: Vec<String> = vec![iface.to_string()];
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    while let Some(name) = queue.pop() {
+        if name == target { return true; }
+        if !seen.insert(name.clone()) { continue; }
+        if let Some(c) = module.classes.iter().find(|c| c.name == name) {
+            for bi in c.interfaces.iter() { queue.push(bi.to_string()); }
+        }
+    }
+    false
 }
 
 // 2026-05-07 add-array-base-class: T[] is-a Std.Array is-a Std.Object.

@@ -19,7 +19,7 @@
 use crate::metadata::{well_known_names, NativeData, TypeDesc, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
 const STD_OBJECT: &str = "Std.Object";
@@ -778,20 +778,35 @@ pub fn builtin_type_interfaces(ctx: &VmContext, args: &[Value]) -> Result<Value>
         Some(t) => t,
         None => return Ok(ctx.heap().alloc_array(Vec::new())),
     };
-    let mut out = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let resolve = |name: &str| {
+        ctx.module()
+            .and_then(|m| m.type_registry.get(name).cloned())
+            .or_else(|| ctx.try_lookup_type(name))
+    };
+    // Seed the queue with the interfaces declared along the class base chain
+    // (most-derived first), then BFS-expand each interface's own base interfaces
+    // (add-reflection-transitive-interfaces) so the result is the transitive
+    // closure. Dedup by FQ name.
+    let mut queue: VecDeque<String> = VecDeque::new();
     let mut cur = Some(td);
     while let Some(c) = cur {
         for iface in c.interfaces() {
-            if seen.insert(iface.to_string()) {
-                out.push(make_type_from_name(ctx, iface));
+            queue.push_back(iface.to_string());
+        }
+        cur = c.base_name.as_ref().and_then(|b| resolve(b));
+    }
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    while let Some(name) = queue.pop_front() {
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        out.push(make_type_from_name(ctx, &name));
+        if let Some(itd) = resolve(&name) {
+            for bi in itd.interfaces() {
+                queue.push_back(bi.to_string());
             }
         }
-        cur = c.base_name.as_ref().and_then(|b| {
-            ctx.module()
-                .and_then(|m| m.type_registry.get(b).cloned())
-                .or_else(|| ctx.try_lookup_type(b))
-        });
     }
     Ok(ctx.heap().alloc_array(out))
 }

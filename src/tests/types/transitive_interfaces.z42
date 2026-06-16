@@ -1,0 +1,46 @@
+// 2026-06-17 add-reflection-transitive-interfaces: interface-extends-interface
+// (`IB : IA`) now contributes to the transitive closure — GetInterfaces / is /
+// IsAssignableFrom include indirectly-inherited interfaces.
+
+namespace Demo;
+
+using Std;
+
+interface IA { int A(); }
+interface IB : IA { int B(); }
+interface IC { int C(); }
+
+class Widget : IB {
+    public int A() { return 1; }
+    public int B() { return 2; }
+}
+
+void Main() {
+    Type tW = typeof(Widget);
+    Type tA = typeof(IA);
+    Type tB = typeof(IB);
+    Type tC = typeof(IC);
+
+    // ── GetInterfaces transitive ────────────────────────────────────────────
+    Type[] wIfaces = tW.GetInterfaces();
+    // Widget : IB, IB : IA  →  {IB, IA}
+    Assert.True(tW.GetInterface("IB") != null);
+    Assert.True(tW.GetInterface("IA") != null);   // transitive (was missing)
+    Assert.True(tW.GetInterface("IC") == null);
+
+    // Interface's own transitive bases.
+    Assert.True(tB.GetInterface("IA") != null);    // typeof(IB).GetInterfaces() contains IA
+
+    // ── is / as transitive ──────────────────────────────────────────────────
+    Widget w = new Widget();
+    Assert.True(w is IB);                          // direct
+    Assert.True(w is IA);                          // transitive (was false)
+    Assert.False(w is IC);                         // unrelated
+    IA asA = w as IA;
+    Assert.True(asA != null);                      // transitive cast
+
+    // ── IsAssignableFrom transitive ─────────────────────────────────────────
+    Assert.True(tA.IsAssignableFrom(tW));          // IA ← Widget (via IB)
+    Assert.True(tB.IsAssignableFrom(tW));          // IB ← Widget (direct)
+    Assert.False(tC.IsAssignableFrom(tW));         // unrelated
+}

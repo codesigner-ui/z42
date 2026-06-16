@@ -39,12 +39,41 @@ pub fn is_subclass_or_eq_td(
         let td = registry.get(cur.as_str()).cloned()
             .or_else(|| ctx.try_lookup_type(cur.as_str()));
         let Some(td) = td else { return false; };
-        if td.interfaces().iter().any(|i| &**i == target) { return true; }
+        // add-reflection-transitive-interfaces: a declared interface matches `target`
+        // directly OR transitively (interface-extends-interface).
+        if td.interfaces().iter().any(|i| iface_reaches_td(ctx, registry, i, target)) {
+            return true;
+        }
         match td.base_name.clone() {
             Some(base) => cur = base,
             None => return false,
         }
     }
+}
+
+/// add-reflection-transitive-interfaces: true if `iface` equals `target` or
+/// reaches it through its transitive base-interface chain (BFS over each
+/// interface's own `interfaces()`). Used by `is`/`as`/`IsAssignableFrom` so an
+/// indirectly-inherited interface (`class C : IB`, `interface IB : IA` → `c is IA`)
+/// matches.
+fn iface_reaches_td(
+    ctx: &VmContext,
+    registry: &HashMap<String, std::sync::Arc<TypeDesc>>,
+    iface: &str,
+    target: &str,
+) -> bool {
+    let mut queue: Vec<String> = vec![iface.to_string()];
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    while let Some(name) = queue.pop() {
+        if name == target { return true; }
+        if !seen.insert(name.clone()) { continue; }
+        let td = registry.get(name.as_str()).cloned()
+            .or_else(|| ctx.try_lookup_type(name.as_str()));
+        if let Some(t) = td {
+            for bi in t.interfaces() { queue.push(bi.to_string()); }
+        }
+    }
+    false
 }
 
 // ── ToString protocol ────────────────────────────────────────────────────────

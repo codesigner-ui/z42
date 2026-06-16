@@ -116,16 +116,21 @@ internal static partial class TopLevelParser
         // Generic params: interface IFoo<T>
         var typeParams = ParseTypeParams(ref cursor);
 
-        // Skip base interfaces: interface IFoo : IBar, IBaz
+        // Base interfaces: interface IFoo : IBar, IBaz
+        // add-reflection-transitive-interfaces: capture (was discarded) so the
+        // interface's TYPE entry carries its base interfaces — surfaces transitive
+        // GetInterfaces / is / IsAssignableFrom. Generic args are dropped
+        // (SkipGenericParams), mirroring class interface-name handling.
+        List<string>? baseInterfaces = null;
         if (cursor.Current.Kind == TokenKind.Colon)
         {
             cursor = cursor.Advance();
-            ParseQualifiedName(ref cursor);
+            baseInterfaces = new List<string> { ParseQualifiedName(ref cursor) };
             SkipGenericParams(ref cursor);
             while (cursor.Current.Kind == TokenKind.Comma)
             {
                 cursor = cursor.Advance();
-                ParseQualifiedName(ref cursor);
+                baseInterfaces.Add(ParseQualifiedName(ref cursor));
                 SkipGenericParams(ref cursor);
             }
         }
@@ -214,7 +219,7 @@ internal static partial class TopLevelParser
             methods.Add(new MethodSignature(mName, parms, mType, mSpan, isStatic, isVirtual, body));
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
-        return new InterfaceDecl(name, vis, methods, start, typeParams, whereClause);
+        return new InterfaceDecl(name, vis, methods, start, typeParams, whereClause, baseInterfaces);
     }
 
     // ── Class / struct / record ───────────────────────────────────────────────

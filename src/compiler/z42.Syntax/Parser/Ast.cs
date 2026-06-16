@@ -88,7 +88,12 @@ public sealed record InterfaceDecl(
     List<MethodSignature> Methods,
     Span Span,
     List<string>? TypeParams = null,
-    WhereClause? Where = null);
+    WhereClause? Where = null,
+    // add-reflection-transitive-interfaces: bare names of the interfaces this
+    // interface extends (`interface IBar : IFoo` → ["IFoo"]). Persisted into the
+    // interface's TYPE-entry interface block so GetInterfaces / is / IsAssignableFrom
+    // include transitively-inherited interfaces. Previously parsed-and-discarded.
+    List<string>? BaseInterfaces = null);
 
 /// A method signature for use in interface declarations.
 ///
