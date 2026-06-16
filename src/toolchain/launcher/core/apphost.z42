@@ -5,7 +5,7 @@
 // stub template (../src/apphost.rs, shipped next to z42vm) and patching its
 // embedded target placeholder with the app's zpkg path. This is the **desktop
 // platform's publish artifact** — driven by `[platform.desktop]` config via
-// `z42 export desktop` (launcher_export.z42 :: _cmdExportDesktop). There is no
+// `z42 publish desktop` (launcher_export.z42 :: _cmdExportDesktop). There is no
 // standalone `z42 apphost` command (apphost-as-config, 2026-06-17): apphost is
 // the desktop output, symmetric with ios `.ipa` / android `.aab` / wasm bundle.
 //
@@ -30,13 +30,13 @@ public static class Apphost {
     // (_cmdExportDesktop). Exits the process on error.
     public static void Produce(string app, string outPath) {
         if (!File.Exists(app)) {
-            ConsoleError.WriteLine("z42 export desktop: app zpkg not found: " + app);
+            ConsoleError.WriteLine("z42 publish desktop: app zpkg not found: " + app);
             Environment.Exit(1);
             return;
         }
         string tmpl = _templatePath();
         if (tmpl.Length == 0 || !File.Exists(tmpl)) {
-            ConsoleError.WriteLine("z42 export desktop: apphost stub template not found (set Z42_APPHOST_TEMPLATE, or use a packaged z42).");
+            ConsoleError.WriteLine("z42 publish desktop: apphost stub template not found (set Z42_APPHOST_TEMPLATE, or use a packaged z42).");
             Environment.Exit(1);
             return;
         }
@@ -49,7 +49,7 @@ public static class Apphost {
         byte[] template = File.ReadAllBytes(tmpl);
         byte[] patched = PatchBytes(template, embed);
         if (patched.Length == 0) {     // empty = failure sentinel (a real patch is never empty)
-            ConsoleError.WriteLine("z42 export desktop: cannot patch template (placeholder MAGIC missing, or app name > 991 bytes).");
+            ConsoleError.WriteLine("z42 publish desktop: cannot patch template (placeholder MAGIC missing, or app name > 991 bytes).");
             Environment.Exit(1);
             return;
         }
@@ -66,7 +66,7 @@ public static class Apphost {
                 .Stderr(Stdio.Inherit())
                 .Run();
             if (cs.ExitCode != 0) {
-                ConsoleError.WriteLine("z42 export desktop: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + "); the apphost will not run on macOS.");
+                ConsoleError.WriteLine("z42 publish desktop: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + "); the apphost will not run on macOS.");
                 Environment.Exit(1);
                 return;
             }

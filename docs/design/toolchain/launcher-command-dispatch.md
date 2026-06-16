@@ -24,11 +24,12 @@
 | **SDK** | new / build / export / publish / test / fmt | 随 runtime/SDK 装 | **目录发现**（版本作用域）| 与编译器同版本、可独立发布 |
 | **Workload** | 平台 publish/export/工程生成 + 模板 + **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（drop-in 即注册）| 平台按需、host 无关平台不强塞 |
 
-> **apphost 不是命令，是配置驱动的 desktop 产物（2026-06-17 consolidate-platform-into-workload 裁决，apphost-as-config 细化）**：
-> - **取消 `z42 apphost` 命令**。apphost 是"配置了桌面平台输出"后的**发布产物**——与 ios `.ipa` / android `.aab` / wasm bundle 同层，由 `[platform.desktop]` toml 段声明，经 `z42 export desktop` / `z42 publish desktop` 产出（对称于现有 `z42 export ios/android/wasm`）。
-> - 现有 `apphost.z42` 的 stub-patch 逻辑成为 **desktop 平台 export/publish 的实现**，不再作为独立 verb 暴露。
-> - 门控不变：默认 `build`/`run` 零 workload；`export`/`publish` 才下载对应平台 workload（desktop 亦 workload，仅 publish/export 维度；host runtime 仍经 `z42 install`）。
-> 详见 [platform-export-lifecycle.md](platform-export-lifecycle.md)（`[platform.desktop]`）+ [runtime-workload-distribution.md](runtime-workload-distribution.md) + `docs/spec/changes/consolidate-platform-into-workload/`。
+> **命令模型 + apphost 归属（define-cli-command-model, 2026-06-17）**：完整动词语义（字节码模型 / build-zpkg / run 双形态 / publish-deployable / export-IDE工程）见 [platform-export-lifecycle.md](platform-export-lifecycle.md)。要点：
+> - **取消 `z42 apphost` 命令**。apphost 是 `[platform.desktop]` 配置驱动的 desktop **publish 部署件**，经 **`z42 publish desktop`**（release，留存）产出；**`z42 run desktop`** 产 debug apphost 临时跑（预演部署启动）。`apphost.z42` 的 stub-patch 逻辑是这两者的实现，不再是独立 verb。
+> - **`export` 仅 ios/android**（生成 Xcode/gradle 原生工程）；desktop 无 IDE 工程可导出 → 没有 `export desktop`。
+> - **`run` 双形态**：`run`（无参）跑 zpkg 字节码于 host vm；`run <plat>` 以平台部署形态跑（desktop=apphost / mobile=on-device / wasm=浏览器）。
+> - 门控不变：默认 `build`/`run`（无参）零 workload；`publish`/`export`/`run <plat>` 才下载对应平台 workload（desktop 亦 workload，仅 publish/run 维度；host runtime 仍经 `z42 install`）。
+> 详见 [runtime-workload-distribution.md](runtime-workload-distribution.md) + `docs/spec/changes/consolidate-platform-into-workload/`。
 
 判据：**Core 必须 baked**（鸡生蛋）；**SDK + workload 必须目录发现**（否则每加平台重编 launcher、无法按版本/平台隔离）。
 

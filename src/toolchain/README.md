@@ -8,7 +8,7 @@
 
 | 目录 | 职责 | 状态 |
 |------|------|:----:|
-| [launcher/](launcher/) | `z42` launcher（muxer）：原生 trampoline + `launcher.zpkg`（run/link/list/install/export…）+ per-app 原生 apphost（`apphost.z42` patch 库，经 `z42 export desktop`）。类比 `dotnet` muxer + `rustup` | ✅ 已实装 |
+| [launcher/](launcher/) | `z42` launcher（muxer）：原生 trampoline + `launcher.zpkg`（run/link/list/install/export…）+ per-app 原生 apphost（`apphost.z42` patch 库，经 `z42 publish desktop`）。类比 `dotnet` muxer + `rustup` | ✅ 已实装 |
 | [test-runner/](test-runner/) | `z42-test-runner`：跑 stdlib / 工程的 `[Test]` / `[Benchmark]`，输出 TAP（`xtask test` 内嵌调用） | ✅ 已实装 |
 | [debugger/](debugger/) | z42 程序调试器（断点、单步、变量查看） | 占位 |
 | [packager/](packager/) | 应用打包与发行（将 z42 程序 + 运行时打成独立可分发产物） | 占位 |

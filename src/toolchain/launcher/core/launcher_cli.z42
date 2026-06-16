@@ -3,7 +3,7 @@
 // Builds the Std.Cli nested SubcommandRouter for the `z42` launcher and
 // dispatches a resolved command. Replaces the hand-written if-else chain in
 // launcher.z42's Main. Each leaf declares its flags/positionals via ArgParser,
-// so `-h` works at every level (z42 run -h / z42 link -h / z42 export desktop -h)
+// so `-h` works at every level (z42 run -h / z42 link -h / z42 publish desktop -h)
 // and help is generated (no hand-written _help()).
 //
 // Two commands bypass Resolve (handled in _runLauncher before routing):
@@ -24,7 +24,12 @@ void _runLauncher(string[] argv) {
     // apphost shorthand: `z42 app.zpkg [-- args]` runs the app directly.
     if (c0.EndsWith(".zpkg") || c0.EndsWith(".zbc")) { _cmdRun(argv); return; }
     // `run` is a raw passthrough (forwards `<app> [-- args]` verbatim).
-    if (c0 == "run") { _cmdRun(_tail(argv, 1)); return; }
+    // `run desktop <toml>` previews the apphost deploy form (rework-desktop-publish-run).
+    if (c0 == "run") {
+        string[] rest = _tail(argv, 1);
+        if (rest.Length > 0 && rest[0] == "desktop") { _cmdRunDesktop(_tail(rest, 1)); return; }
+        _cmdRun(rest); return;
+    }
 
     SubcommandRouter root = _launcherRoot();
     CommandResolution res;
@@ -85,7 +90,8 @@ SubcommandRouter _launcherRoot() {
     selfup.AddOption("channel", "", "release channel or version (default: nightly)", "");
     root.Add("self-update", "update the installed launcher", selfup);
 
-    root.AddRouter("export", "generate a native platform project / desktop apphost", _exportRouter());
+    root.AddRouter("export", "generate a native IDE project (ios/android)", _exportRouter());
+    root.AddRouter("publish", "produce a release deployable for a platform", _publishRouter());
 
     return root;
 }
@@ -114,12 +120,18 @@ SubcommandRouter _exportRouter() {
     wasm.AddOption("entry", "", "entry point e.g. Hello.Main (default: <name>.Main)", "");
     e.Add("wasm", "generate an HTML+JS project for WebAssembly", wasm);
 
-    ArgParser desktop = new ArgParser("z42 export desktop", "produce a native apphost exe for desktop");
+    return e;
+}
+
+SubcommandRouter _publishRouter() {
+    SubcommandRouter p = new SubcommandRouter("z42 publish", "produce a release deployable for a platform");
+
+    ArgParser desktop = new ArgParser("z42 publish desktop", "produce a release native apphost exe");
     desktop.AddPositional("project", "<project.z42.toml>");
     desktop.AddOption("output", "", "publish dir for the exe (overrides [platform.desktop].publish_dir)", "");
-    e.Add("desktop", "produce a native apphost exe for desktop", desktop);
+    p.Add("desktop", "produce a release native apphost exe", desktop);
 
-    return e;
+    return p;
 }
 
 // ── dispatch ──────────────────────────────────────────────────────────────
@@ -138,13 +150,18 @@ void _dispatchLauncher(CommandResolution res) {
     if (top == "uninstall")   { _cmdUninstall(r);  return; }
     if (top == "self-update") { _cmdSelfUpdate(r); return; }
     if (top == "export") {
-        // p = ["export", "ios"|"android"|"wasm"|"desktop"]
+        // p = ["export", "ios"|"android"|"wasm"]
         if (p.Length < 2) { return; }
         string sub = p[1];
         if (sub == "ios")     { _cmdExportIos(r);     return; }
         if (sub == "android") { _cmdExportAndroid(r); return; }
         if (sub == "wasm")    { _cmdExportWasm(r);    return; }
-        if (sub == "desktop") { _cmdExportDesktop(r); return; }
+        return;
+    }
+    if (top == "publish") {
+        // p = ["publish", "desktop"]
+        if (p.Length < 2) { return; }
+        if (p[1] == "desktop") { _cmdPublishDesktop(r); return; }
         return;
     }
 }

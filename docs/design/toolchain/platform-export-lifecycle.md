@@ -99,14 +99,24 @@ permissions = ["CAMERA"]
 
 ## 全平台生命周期动词
 
+z42 编译产物是**平台无关字节码 `app.zpkg`**（跑在 z42vm 上，跨平台字节一致）。平台差异纯在"启动器/包装"——所以 `build` 永远平台无关，平台分叉只在 run（部署形态）/ publish（可分发件）/ export（IDE 工程）发生。
+
 ```
-z42 build              # host → app.zpkg（平台无关，产一次）
-z42 export  <plat>     # platforms/<plat>/ 原生工程（managed）
-z42 publish <plat>     # → 可分发件（.ipa/.aab/.apk/wasm bundle/desktop apphost），到此为止
+z42 build              # src → app.zpkg（字节码，平台无关，产一次）
+z42 run                # 跑 zpkg（host vm，最快内循环）
+z42 run <plat>         # 以 <plat> 部署形态跑：desktop=apphost(本机) / ios·android=on-device / wasm=浏览器
+z42 publish <plat>     # → release 可分发件（desktop apphost / .ipa / .aab / wasm bundle），到此为止
+z42 export <plat>      # 原生 IDE 工程（仅 ios / android；desktop·wasm 无 IDE 工程）
 z42 test    <plat> [--device sim|emulator|hw]   # host + 平台上两面跑 [Test]
 ```
 
-> **desktop 是对称的第四个平台目标（apphost-as-config, 2026-06-17）**：`<plat>` ∈ {ios, android, wasm, **desktop**}。配置 `[platform.desktop]` 即声明桌面输出 → `z42 export desktop` / `z42 publish desktop` 产 **apphost**（per-app 原生可执行）。**取消独立 `z42 apphost` 命令**：apphost 与 `.ipa`/`.aab`/wasm bundle 同层，是 desktop 平台的发布产物，不是单独 verb。现有 `apphost.z42` 的 stub-patch 逻辑成为 desktop export/publish 的实现。`[platform.desktop]` 键表见 [project.md](../compiler/project.md)。
+> **命令模型（define-cli-command-model, 2026-06-17）**：
+> - **build 永远产平台无关 zpkg**（字节码语言，类比 `javac`→jar / `dotnet build`→dll）；不产平台件。
+> - **run 双形态**：`z42 run`（无参）跑 zpkg 字节码于 host vm（走 launcher 解析，含 runtimeconfig/版本 pin）；`z42 run <plat>` 以该平台**部署形态**跑——`run desktop` 跑 **apphost**（走 apphost 自解析，预演真实部署启动路径；产物 temp、ephemeral）、`run ios/android` 部署 debug 到 sim/真机、`run wasm` serve+open。`run <plat>` = debug/临时；`publish <plat>` = release/留存——同管线两点（对标 `flutter run` vs `flutter build`、`dotnet run` vs `dotnet publish`）。
+> - **publish 的 desktop 形态 = apphost**（取消 `export desktop`：desktop 无 IDE 工程可"导出"，apphost 是 publish 部署件）。配置 `[platform.desktop]` 即声明桌面输出；`apphost.z42` 的 stub-patch 逻辑是 desktop publish/run 的实现。**无独立 `z42 apphost` 命令**。
+> - **export 仅 ios/android**（生成 Xcode/gradle 原生工程供深度定制）；desktop·wasm 无此概念。
+> - **AOT 在 publish 层**（可选 `--aot`，产平台原生机器码，类比 dotnet NativeAOT 是 publish 选项）；build 默认产字节码。
+> `[platform.desktop]` 键表见 [project.md](../compiler/project.md)；命令分发分层见 [launcher-command-dispatch.md](launcher-command-dispatch.md)。
 
 ### `publish` 的语义与边界（≈ `dotnet publish`，不是上架）
 
