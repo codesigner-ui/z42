@@ -63,7 +63,10 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
     - **G17c-4b `ToIrType(Unknown/Error)`→0x00**（`EmitContext.ToIrType`）：原非-prim/void/interface 一律 `return Ref`，把 Unknown/Error/泛型形参/func 也落 Ref；C# `_ => IrType.Unknown`。拆出 class/instantiated/array→Ref，余 →Unknown(0x00)（如 `string.ByteLength` 松绑 Unknown → REGT 0x00 非 Ref）。interface→Ref 保留（z42c 既有 byte-identical 偏离不动）。
     - **G17c-4c var-decl 寄存器复用（真 −73 根因）**（`FunctionEmitter` BoundVarDeclStmt）：原**恒 `Alloc` 新寄存器**；C# `WriteBackName` 用函数级**平表 locals**——同名变量（兄弟分支重声明）复用首次寄存器。WriteInstr 每分支 `i` 重声明 → z42c 寄存器数随分支膨胀（max 346 vs C# 267）→ REGT +73B。修：locals 已含该名→复用其寄存器（copy if 不同），否则 Alloc+Put（镜像 WriteBackName）。codegen 单测 `test_var_decl_reuses_register_across_branches`（if/else 双分支 `int x` 复用 %3）。
     - **效果**：z42c.ir dual-build **MODS 0 / SIGS 0 / TSIG 0 / EXPT 0 / 全段 0，仅 STRS −1（① env-artifact）**。z42c.core 仍 FULL byte-identical（三修零回归）。gate 全绿（[Test] 16/16 含新 codegen 50 cases + zbc 7/7 + zpkg 6/6）。
-- [ ] G18+ 逐包推进（z42c.project … syntax/semantics/pipeline/driver；cmp 逐字节，复用 G10-G17 经验）。
+- [ ] **G18 z42c.syntax 逐包对账（首测已诊断，进行中）**：dual-build@1.20/0.22 → **MODS 0**（G17c-4 codegen 修复全carry-over）、SIGS/EXPT/DEPS-结构/NSPC/META/IMPL 0；**剩 2 残差**：
+  - **① STRS −1 = DEPS provider env-artifact**（同 z42c.ir，z42.core vs z42.cli，不追）。
+  - **② TSIG +598（z42c 缺）+ imported-class field REGT 偏离**：z42c.syntax 的 `_diags` 字段（类型 `DiagnosticBag`，从 **sibling z42c 包 z42c.core** import）→ z42c `field.get @_diags` 结果 tag = **Unknown(0x00)**（×25），C# = **ref**。根因：z42c 把 **sibling-z42c-package imported 类的字段类型**未解析为 Z42ClassType（留 Unknown）→ ToIrType→0x00。**G17c-4b（Unknown→0x00）正确且未回归 corpus**（textapp 的 stdlib StringBuilder 仍 byte-identical 6/6——stdlib import 解析 OK；缺口在 sibling-z42c-package import 的**字段类型**解析，疑 ImportedSymbolLoader 对兄弟包类的字段/类型注册不全）。TSIG +598 同源（imported 类 TSIG 条目缺失）。**G18 核心 = 修 sibling-package imported 类型解析（字段类型→Z42ClassType + TSIG 条目）**。
+- [ ] G19+ 逐包推进（z42c.semantics/pipeline/driver/project；cmp 逐字节）。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）
