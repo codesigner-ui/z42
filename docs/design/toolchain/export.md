@@ -12,6 +12,7 @@
 | iOS / iPadOS | `z42 export ios` | 裸 `.xcodeproj` + Swift AppDelegate |
 | Android | `z42 export android` | Kotlin + Gradle 工程 |
 | WebAssembly | `z42 export wasm` | `index.html` + `index.js` |
+| Desktop | `z42 export desktop` | per-app 原生 apphost exe（patch stub；读 `[platform.desktop].publish_dir`，apphost-as-config 2026-06-17）|
 
 ## 工作流
 

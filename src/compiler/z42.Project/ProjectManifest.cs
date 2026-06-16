@@ -98,13 +98,10 @@ public sealed class ProjectManifest
             ScanDepsForTestOnlyLeaks(deps, tomlPath, warnings);
         ScanForRedundantStdlibDeps(project.Name, deps, tests, bench, tomlPath, warnings);
         ScanTopLevelKeys(model, tomlPath, warnings);
-        // apphost-out-path (2026-06-10): scan [apphost] keys (consumed by the
-        // z42 patcher, not z42c) so a stray key still surfaces as WS008.
-        if (model.TryGetValue("apphost", out var apphostRaw) && apphostRaw is TomlTable apphostTbl)
-            ScanUnknownKeys(apphostTbl, KnownApphostKeys, "apphost", tomlPath, warnings);
         // add-export-command (2026-06-14): scan [platform] subsections consumed by
-        // `z42 export ios/android/wasm`; z42c does NOT consume [platform] — registered
-        // only to suppress WS008 unknown-key.
+        // `z42 export ios/android/wasm/desktop`; z42c does NOT consume [platform] —
+        // registered only to suppress WS008 unknown-key. apphost-as-config
+        // (2026-06-17): [platform.desktop] replaces the retired [apphost] section.
         if (model.TryGetValue("platform", out var platformRaw) && platformRaw is TomlTable platformTbl)
         {
             ScanUnknownKeys(platformTbl, KnownPlatformSubsections, "platform", tomlPath, warnings);
@@ -114,6 +111,8 @@ public sealed class ProjectManifest
                 ScanUnknownKeys(androidTbl, KnownPlatformAndroidKeys, "platform.android", tomlPath, warnings);
             if (platformTbl.TryGetValue("wasm", out var wasmRaw) && wasmRaw is TomlTable wasmTbl)
                 ScanUnknownKeys(wasmTbl, KnownPlatformWasmKeys, "platform.wasm", tomlPath, warnings);
+            if (platformTbl.TryGetValue("desktop", out var desktopRaw) && desktopRaw is TomlTable desktopTbl)
+                ScanUnknownKeys(desktopTbl, KnownPlatformDesktopKeys, "platform.desktop", tomlPath, warnings);
         }
 
         var manifest = new ProjectManifest
@@ -145,22 +144,15 @@ public sealed class ProjectManifest
         // add-tests-bench-manifest-config (2026-06-06):
         // [tests] / [bench] tables + [[test]] / [[bench]] arrays
         "tests", "bench", "test", "benchmark",
-        // apphost-out-path (2026-06-10): [apphost] declares native-apphost
-        // publish. z42c does NOT consume it (the `z42 apphost build <toml>`
-        // patcher reads it); registered here only so the section + its keys
-        // don't trip WS008 unknown-key.
-        "apphost",
         // add-export-command (2026-06-14): [platform] groups per-platform config
-        // (ios/android/wasm). Consumed by `z42 export`; z42c does not read it.
+        // (ios/android/wasm/desktop). Consumed by `z42 export`; z42c does not
+        // read it. apphost-as-config (2026-06-17): [platform.desktop] replaces the
+        // retired [apphost] section (desktop apphost = a publish target).
         "platform",
-    };
-    static readonly HashSet<string> KnownApphostKeys = new(StringComparer.Ordinal)
-    {
-        "publish_dir",
     };
     static readonly HashSet<string> KnownPlatformSubsections = new(StringComparer.Ordinal)
     {
-        "ios", "android", "wasm",
+        "ios", "android", "wasm", "desktop",
     };
     static readonly HashSet<string> KnownPlatformIosKeys = new(StringComparer.Ordinal)
     {
@@ -173,6 +165,11 @@ public sealed class ProjectManifest
     static readonly HashSet<string> KnownPlatformWasmKeys = new(StringComparer.Ordinal)
     {
         "title",
+    };
+    // apphost-as-config (2026-06-17): desktop apphost publish (replaces [apphost]).
+    static readonly HashSet<string> KnownPlatformDesktopKeys = new(StringComparer.Ordinal)
+    {
+        "publish_dir",
     };
     static readonly HashSet<string> KnownProjectKeys = new(StringComparer.Ordinal)
     {

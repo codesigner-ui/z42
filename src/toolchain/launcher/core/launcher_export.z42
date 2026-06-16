@@ -7,7 +7,7 @@
 //
 // Config is read from the project's z42.toml [platform.ios/android/wasm] section.
 // CLI flags override toml values. The built .zpkg is resolved via the same dist_dir
-// logic as `z42 apphost build`. Platform SDKs live at ~/.z42/runtimes/<rid>/<ver>/.
+// logic as `z42 export desktop`. Platform SDKs live at ~/.z42/runtimes/<rid>/<ver>/.
 namespace Z42Launcher;
 
 using Std;
@@ -123,6 +123,43 @@ void _cmdExportWasm(ParseResult r) {
     Console.WriteLine("   Then open:   http://localhost:8080/");
 }
 
+// desktop: produce a per-app native apphost exe (the desktop platform's publish
+// artifact). Reads [platform.desktop].publish_dir; the exe embeds the built
+// zpkg path relative to itself (relocatable). Reuses the apphost stub-patch
+// library (apphost.z42). apphost-as-config / add-desktop-export, 2026-06-17.
+void _cmdExportDesktop(ParseResult r) {
+    string tomlPath = r.GetPositional(0);
+    if (!_expCheckToml("desktop", tomlPath)) { return; }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
+    string projName = _expTomlStr(toml, "project", "name", "");
+    if (projName.Length == 0) {
+        ConsoleError.WriteLine("z42 export desktop: [project].name missing in " + tomlPath);
+        Environment.Exit(1); return;
+    }
+    string publishDir = r.GetOption("output");
+    if (publishDir.Length == 0) { publishDir = _platformStr(toml, "desktop", "publish_dir", ""); }
+    if (publishDir.Length == 0) {
+        ConsoleError.WriteLine("z42 export desktop: publish_dir required — add [platform.desktop] publish_dir in "
+            + tomlPath + " or pass --output");
+        Environment.Exit(2); return;
+    }
+
+    string zpkgSrc = _expResolveZpkg(tomlPath, toml, projName);
+    if (!File.Exists(zpkgSrc)) {
+        ConsoleError.WriteLine("z42 export desktop: built zpkg not found: " + zpkgSrc
+            + "  (build it first: z42c build " + tomlPath + ")");
+        Environment.Exit(1); return;
+    }
+
+    string projDir = Path.GetDirectoryName(tomlPath);
+    string outPath = (projDir.Length > 0) ? Path.Join(Path.Join(projDir, publishDir), projName)
+                                          : Path.Join(publishDir, projName);
+
+    Console.WriteLine("z42 export desktop → " + outPath);
+    Apphost.Produce(zpkgSrc, outPath);
+    Console.WriteLine("✅ desktop apphost ready: " + outPath);
+}
+
 // ── shared helpers ────────────────────────────────────────────────────────────
 
 bool _expCheckToml(string platform, string tomlPath) {
@@ -181,7 +218,7 @@ string _expDefaultOutputDir(string tomlPath, string name, string suffix) {
     return (dir.Length > 0) ? Path.Join(dir, sub) : sub;
 }
 
-// Find the built zpkg via the same dist_dir logic as `z42 apphost build`.
+// Find the built zpkg via the same dist_dir logic as `z42 export desktop`.
 string _expResolveZpkg(string tomlPath, TomlValue toml, string name) {
     string projDir = Path.GetDirectoryName(tomlPath);
     string outDir  = _expTomlStr(toml, "build", "output_dir", "");

@@ -351,7 +351,7 @@ if [ $SYSTEM_INSTALL -eq 1 ]; then
   cp -f "$TMP/pkg/launcher.zpkg" "$DEST/launcher/launcher.zpkg"
   rm -rf "$DEST/launcher/libs"; cp -R "$TMP/pkg/libs" "$DEST/launcher/libs"
 
-  # apphost stub template (for `z42 apphost build`)
+  # apphost stub template (for `z42 export desktop`)
   if [ -f "$TMP/pkg/bin/$apphost_bin" ]; then
     cp -f "$TMP/pkg/bin/$apphost_bin" "$DEST/launcher/$apphost_bin"
     _restore_exec "$DEST/launcher/$apphost_bin"

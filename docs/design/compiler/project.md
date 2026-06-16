@@ -1254,6 +1254,16 @@ target_sdk   = 34                   # optional: targetSdk（默认 34 = Android 
 title = "My App"   # optional: HTML &lt;title&gt;（默认 = project name）
 ```
 
+### `[platform.desktop]`（apphost-as-config, 2026-06-17）
+
+```toml
+[platform.desktop]
+publish_dir = ".."   # apphost exe 输出目录（相对 toml 所在目录，同 [build].output_dir 基准）
+                     # exe 名 = [project].name；--output 可覆盖
+```
+
+桌面平台的输出是 **apphost**（per-app 原生可执行）：`z42 export desktop <toml>` 读 `publish_dir` + 从 `[build]`/`[project]` 推出已编译 zpkg，patch 原生 apphost stub 产出 exe。与 ios/android/wasm export 对称——apphost 不是独立命令。机制详见 [launcher.md](../runtime/launcher.md) apphost 段。
+
 ### CLI 覆盖
 
 所有 toml 值可通过 CLI 标志覆盖：
@@ -1262,6 +1272,7 @@ title = "My App"   # optional: HTML &lt;title&gt;（默认 = project name）
 z42 export ios     <project.z42.toml> [--bundle-id com.x.y] [--output ./MyApp] [--sdk-ver 0.3.0]
 z42 export android <project.z42.toml> [--app-id  com.x.y] [--output ./MyApp] [--sdk-ver 0.3.0]
 z42 export wasm    <project.z42.toml>                       [--output ./MyApp] [--sdk-ver 0.3.0]
+z42 export desktop <project.z42.toml>                       [--output <publish_dir>]
 ```
 
 详细设计见 [`docs/design/toolchain/export.md`](../toolchain/export.md)。

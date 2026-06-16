@@ -68,7 +68,7 @@ int _testDistRun(string modeArg) {
     overallPass = overallPass + smoke[0];
     overallFail = overallFail + smoke[1];
 
-    // ── apphost smoke (build app → apphost build → run produced exe) ──────
+    // ── desktop-export smoke (build app → export desktop → run produced exe) ──────
     int[] ah = _apphostSmoke(distDir, work);
     overallPass = overallPass + ah[0];
     overallFail = overallFail + ah[1];
@@ -217,8 +217,8 @@ int[] _launcherSmoke(string distDir, string work) {
     int[] res = new int[2]; res[0] = pass; res[1] = fail; return res;
 }
 
-// ── apphost smoke: returns [pass, fail] ────────────────────────────────────
-// Build a tiny app.zpkg with the packaged z42c, `z42 apphost build` it (the
+// ── desktop-export smoke: returns [pass, fail] ────────────────────────────────────
+// Build a tiny app.zpkg with the packaged z42c, `z42 export desktop` it (the
 // portable trampoline finds the stub template in bin/apphost), then run the
 // produced native exe against a Z42_HOME pointing at the package and assert it
 // runs the app. Exercises patch + macOS re-sign + local-first resolution.
@@ -230,11 +230,11 @@ int[] _apphostSmoke(string distDir, string work) {
     string tmpl = Path.Join(distDir, "bin/apphost");
     string libs = Path.Join(distDir, "libs");
     if (!File.Exists(launcher) || !File.Exists(z42c) || !File.Exists(tmpl)) {
-        Console.WriteLine("apphost smoke: SKIP (z42 / bin/z42c / bin/apphost not in package)");
+        Console.WriteLine("desktop-export smoke: SKIP (z42 / bin/z42c / bin/apphost not in package)");
         Console.WriteLine("");
         int[] r0 = new int[2]; r0[0] = 0; r0[1] = 0; return r0;
     }
-    Console.WriteLine("apphost smoke: " + tmpl);
+    Console.WriteLine("desktop-export smoke: " + tmpl);
 
     string appSrc =
         "namespace AhSmoke;\n" +
@@ -246,6 +246,7 @@ int[] _apphostSmoke(string distDir, string work) {
         "}\n";
     string appToml =
         "[project]\n" +
+        "name = \"app\"\n" +
         "version = \"0.1.0\"\n" +
         "kind = \"exe\"\n" +
         "entry = \"AhSmoke.Main\"\n" +
@@ -256,6 +257,8 @@ int[] _apphostSmoke(string distDir, string work) {
         "\"z42.io\" = \"0.1.0\"\n" +
         "[build]\n" +
         "dist_dir = \".\"\n" +
+        "[platform.desktop]\n" +
+        "publish_dir = \".\"\n" +
         "[profile.release]\n" +
         "mode = \"interp\"\n";
 
@@ -275,17 +278,19 @@ int[] _apphostSmoke(string distDir, string work) {
             Console.WriteLine("");
             int[] rf = new int[2]; rf[0] = pass; rf[1] = fail + 1; return rf;
         }
-        // 2. z42 apphost build — portable trampoline (drop Z42_HOME / Z42_PORTABLE_VM
+        // 2. z42 export desktop — portable trampoline (drop Z42_HOME / Z42_PORTABLE_VM
         //    so it resolves the package itself and finds bin/apphost as template).
-        int pc = new Process(launcher).Arg("apphost").Arg("build").Arg(appZpkg)
+        //    apphost-as-config: desktop publish is `export desktop <toml>` reading
+        //    [platform.desktop].publish_dir (= "." → exe beside the built zpkg).
+        int pc = new Process(launcher).Arg("export").Arg("desktop").Arg(Path.Join(ad, "app.z42.toml"))
             .EnvRemove("Z42_HOME").EnvRemove("Z42_PORTABLE_VM")
             .Stdout(Stdio.Null()).Stderr(Stdio.Pipe()).Run().ExitCode;
         if (pc != 0 || !File.Exists(producedExe)) {
-            Console.WriteLine("  FAIL: z42 apphost build (rc=" + pc.ToString() + ")");
+            Console.WriteLine("  FAIL: z42 export desktop (rc=" + pc.ToString() + ")");
             Console.WriteLine("");
             int[] rf = new int[2]; rf[0] = pass; rf[1] = fail + 1; return rf;
         }
-        Console.WriteLine("  ✓ z42 apphost build → " + producedExe);
+        Console.WriteLine("  ✓ z42 export desktop → " + producedExe);
 
         // 3. run the produced exe with Z42_HOME → a symlink at <ahome>/launcher
         //    pointing at the package (portable-style: launcher.zpkg + bin/z42vm).
@@ -304,7 +309,7 @@ int[] _apphostSmoke(string distDir, string work) {
             fail = fail + 1;
         }
     } catch (Exception e) {
-        Console.WriteLine("  FAIL: apphost smoke: " + e.Message);
+        Console.WriteLine("  FAIL: desktop-export smoke: " + e.Message);
         fail = fail + 1;
     }
     Console.WriteLine("");

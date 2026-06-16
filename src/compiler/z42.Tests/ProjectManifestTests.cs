@@ -263,26 +263,26 @@ public sealed class ProjectManifestTests : IDisposable
     }
 
     [Fact]
-    public void Apphost_KnownSection_NoWarning()
+    public void DesktopPlatform_KnownSection_NoWarning()
     {
-        // apphost-out-path (2026-06-10): [apphost] + publish_dir are a known
-        // section/key (consumed by the `z42 apphost build <toml>` patcher, not
-        // z42c) → no WS008.
+        // apphost-as-config (2026-06-17): [platform.desktop] + publish_dir are a
+        // known section/key (consumed by `z42 export desktop`, not z42c) → no
+        // WS008. Replaces the retired [apphost] section.
         var result = LoadWithWarnings("xtask.z42.toml", """
             [project]
             name = "xtask"
             kind = "exe"
             entry = "Xtask.Main"
 
-            [apphost]
+            [platform.desktop]
             publish_dir = ".."
             """);
-        result.Warnings.Should().NotContain(w => w.Message.Contains("apphost"));
+        result.Warnings.Should().NotContain(w => w.Message.Contains("desktop"));
         result.Warnings.Should().NotContain(w => w.Message.Contains("publish_dir"));
     }
 
     [Fact]
-    public void Apphost_StrayKey_TriggersWS008()
+    public void DesktopPlatform_StrayKey_TriggersWS008()
     {
         var result = LoadWithWarnings("xtask.z42.toml", """
             [project]
@@ -290,12 +290,12 @@ public sealed class ProjectManifestTests : IDisposable
             kind = "exe"
             entry = "Xtask.Main"
 
-            [apphost]
+            [platform.desktop]
             publish_dir = ".."
             bogus_key = 1
             """);
         result.Warnings.Should().Contain(w =>
-            w.Message.Contains("bogus_key") && w.Message.Contains("apphost"));
+            w.Message.Contains("bogus_key") && w.Message.Contains("platform.desktop"));
     }
 
     // ── unknown fields ignored ────────────────────────────────────────────────

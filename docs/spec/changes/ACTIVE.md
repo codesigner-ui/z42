@@ -8,11 +8,11 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | ~~add-reflection-transitive-interfaces~~ ✅ 已归档 2026-06-17（捕获接口基接口 + EmitInterfaceDesc 填接口块，无格式 bump）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
+| `compiler` | —（空闲）| — | **~~add-desktop-export~~** ✅ 已归档 2026-06-17（WS008 注册 `[platform.desktop].publish_dir` + 删退役 `[apphost]` 段；43 ProjectManifest 测试绿）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
 | `runtime` | —（空闲）| — | ~~add-reflection-transitive-interfaces~~ ✅ 已归档 2026-06-17（`__type_interfaces` 传递 BFS + interp/JIT `is` 传递查接口；dotnet 1568/0 + vm interp 188+jit 180 + cargo 809/0）。（前序 ~~add-reflection-instance-generic-args~~ ✅ 2026-06-16）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（`Std.Type.IsAssignableFrom(Type)` + `GetInterface(string)`）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
-| `toolchain` | —（空闲）| — | **~~migrate-facades-to-workload S3'~~** ✅ 已归档 2026-06-17（`host/platforms`→`workload/platforms` + 19 文件路径引用 + ci paths-filter；facade Cargo.toml 路径因 host/workload 同层免改；外来 lock mods 未吞）。前序 **~~migrate-tier2-to-workload S1~~** ✅（embed→host-api）/ **consolidate-platform-into-workload S0** ✅（host 解散设计）。S2/S4 待 B（workload 子系统）立项。~~mirror-build-output-per-component~~ ✅ 2026-06-16 |
+| `toolchain` | —（空闲）| — | **~~add-desktop-export~~** ✅ 已归档 2026-06-17（B 第一步：`z42 export desktop` 读 `[platform.desktop]` 产 apphost + 取消 `z42 apphost` 命令；xtask 自身迁 `[platform.desktop]`；GREEN 含 ./xtask 重建实跑）。前序 **~~migrate-facades-to-workload S3'~~** ✅ / **~~migrate-tier2-to-workload S1~~** ✅ / **consolidate-platform-into-workload S0** ✅。**B 余下：B1 命令发现 / B2 打包+auto-runtime / B4 测试改 workload 驱动 / B5 export 生命周期 / S5 host 移除** |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 

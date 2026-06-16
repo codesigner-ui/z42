@@ -32,7 +32,7 @@ cargo build --release --manifest-path src/runtime/Cargo.toml
 
 # 2. xtask.zpkg + 原生 apphost ./xtask
 dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
-z42 apphost build scripts/xtask.z42.toml      # 读 [apphost] → 仓库根 ./xtask
+z42 export desktop scripts/xtask.z42.toml      # 读 [platform.desktop] → 仓库根 ./xtask
 
 # 3. stdlib dist（index.json 等）
 ./xtask build stdlib
@@ -43,7 +43,7 @@ z42 apphost build scripts/xtask.z42.toml      # 读 [apphost] → 仓库根 ./xt
 
 ### 冷启动（连 `z42` launcher 都没有）
 
-apphost 由 `z42 apphost build` 产出，需要 launcher。若完全没有 z42，用构建出的
+apphost 由 `z42 export desktop` 产出，需要 launcher。若完全没有 z42，用构建出的
 `z42vm` 直跑 `xtask.zpkg`，指好 stdlib，先把 stdlib + apphost 备出来：
 
 ```bash
@@ -51,7 +51,7 @@ vm="$PWD/artifacts/build/runtime/release/z42vm"
 libs="$PWD/artifacts/build/libraries/dist/release"
 Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
 Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
-# 此后即可 z42 apphost build → ./xtask，或继续用 "$vm" artifacts/xtask/xtask.zpkg -- <cmd> 形式
+# 此后即可 z42 export desktop → ./xtask，或继续用 "$vm" artifacts/xtask/xtask.zpkg -- <cmd> 形式
 ```
 
 ---
