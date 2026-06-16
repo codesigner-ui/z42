@@ -5,7 +5,7 @@ namespace Z42.IR.BinaryFormat;
 // 文件版本（须与 C# ZbcWriter.VersionMajor/Minor 一致；strict-pin。bump 同步规则见 version-bumping.md 第 5 步）。
 public static class ZbcVersion {
     public static int Major = 1;
-    public static int Minor = 17;   // 2026-06-14 add-reflection-get-interfaces：TYPE 段每类追加接口块（u16 count + idx[]）
+    public static int Minor = 18;   // 2026-06-16 add-reflection-generic-type-definition：新 Typeof opcode(0x73) 携结构化泛型实例化 args（z42c 暂不 emit typeof，仅版本同步）
 }
 
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
@@ -29,6 +29,7 @@ public static class Op {
     public static int Call = 0x50; public static int VCall = 0x52;
     public static int FieldGet = 0x60; public static int FieldSet = 0x61;
     public static int ObjNew = 0x70; public static int IsInstance = 0x71; public static int AsCast = 0x72;
+    public static int Typeof = 0x73;   // dst, TypeName(str idx), arg_count(u8), TypeArg(str idx)[]（zbc 1.18；z42c 暂不 emit）
     public static int ArrayGet = 0x82; public static int ArraySet = 0x83;
     public static int Eq = 0x30; public static int Ne = 0x31; public static int Lt = 0x32;
     public static int Le = 0x33; public static int Gt = 0x34; public static int Ge = 0x35;
