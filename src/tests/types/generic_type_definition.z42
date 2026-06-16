@@ -1,0 +1,71 @@
+// 2026-06-16 add-reflection-generic-type-definition: typeof(Box<int>) now carries
+// the instantiation type args (new Typeof opcode), so GetGenericArguments() is
+// non-empty, IsGenericTypeDefinition distinguishes constructed vs open, and
+// GetGenericTypeDefinition() recovers the open definition.
+
+namespace Demo;
+
+using Std;
+
+class Box<T> {
+    public T Value;
+}
+
+class Pair<K, V> {
+    public K Key;
+    public V Val;
+}
+
+class Plain {
+    public int X;
+}
+
+void Main() {
+    // ── Constructed generic: typeof(Box<int>) ──────────────────────────────
+    Type bi = typeof(Box<int>);
+    Assert.True(bi.IsGenericType);
+    Assert.False(bi.IsGenericTypeDefinition);   // constructed, not a definition
+
+    // GetGenericArguments() now returns [int] (was empty before this change).
+    Type[] args = bi.GetGenericArguments();
+    Assert.True(args.Length == 1);
+    Type a0 = args[0];
+    Assert.True(a0.Name == "int");
+
+    // GetGenericTypeDefinition() recovers the open definition Box<>.
+    Type def = bi.GetGenericTypeDefinition();
+    Assert.True(def.IsGenericType);
+    Assert.True(def.IsGenericTypeDefinition);    // the definition IS a definition
+    Assert.True(def.Name == "Box");
+    Type[] defArgs = def.GetGenericArguments();
+    Assert.True(defArgs.Length == 0);            // open definition has no args
+
+    // ── Multi-parameter: typeof(Pair<int, string>) ─────────────────────────
+    Type pis = typeof(Pair<int, string>);
+    Assert.False(pis.IsGenericTypeDefinition);
+    Type[] pargs = pis.GetGenericArguments();
+    Assert.True(pargs.Length == 2);
+    Type p0 = pargs[0];
+    Type p1 = pargs[1];
+    Assert.True(p0.Name == "int");
+    Assert.True(p1.Name == "string");
+
+    // ── Non-generic: typeof(Plain) ─────────────────────────────────────────
+    Type pl = typeof(Plain);
+    Assert.False(pl.IsGenericType);
+    Assert.False(pl.IsGenericTypeDefinition);
+    Type[] plArgs = pl.GetGenericArguments();
+    Assert.True(plArgs.Length == 0);
+
+    // GetGenericTypeDefinition() on a non-generic type throws.
+    bool threw = false;
+    try {
+        Type bad = pl.GetGenericTypeDefinition();
+    } catch (Exception e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    // ── Primitives are not generic definitions ─────────────────────────────
+    Assert.False(typeof(int).IsGenericTypeDefinition);
+}

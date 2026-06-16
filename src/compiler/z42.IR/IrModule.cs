@@ -365,6 +365,16 @@ public sealed record VCallInstr(TypedReg Dst, TypedReg Obj, string Method, List<
 public sealed record IsInstanceInstr(TypedReg Dst, TypedReg Obj, string ClassName) : IrInstr;
 /// `expr as ClassName` — returns the object if it is an instance of ClassName (or subclass), else null.
 public sealed record AsCastInstr(TypedReg Dst, TypedReg Obj, string ClassName) : IrInstr;
+/// `typeof(T)` → a reflection `Std.Type` object into Dst. `TypeName` is the FQ
+/// runtime type name (definition name for a generic; `make_type_from_name`-resolvable).
+/// `TypeArgs` are the FQ names of the instantiation type arguments
+/// (`typeof(Box<int>)` → ["int"]; empty for non-generic / open). A non-empty
+/// list marks a *constructed* generic type (IsGenericTypeDefinition==false);
+/// the runtime attaches them so GetGenericArguments / GetGenericTypeDefinition
+/// work. add-reflection-generic-type-definition (zbc 1.18); replaces the former
+/// `__typeof` builtin so all typeof flows through one structured instruction.
+public sealed record TypeofInstr(
+    TypedReg Dst, string TypeName, IReadOnlyList<string> TypeArgs) : IrInstr;
 /// Load the module-level static field named Field into Dst.
 public sealed record StaticGetInstr(TypedReg Dst, string Field) : IrInstr;
 /// Store Val into the module-level static field named Field.

@@ -8,7 +8,8 @@
 use crate::metadata::{Function, Instruction, Terminator};
 use crate::metadata::{
     AsCastInsn, BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, IsInstanceInsn,
-    LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn, StaticSetInsn, VCallInsn,
+    LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn, StaticSetInsn, TypeofInsn,
+    VCallInsn,
 };
 use anyhow::{bail, Result};
 use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlags};
@@ -76,6 +77,7 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::ArraySet    { .. }      => None,
                 Instruction::ArrayLen    { dst, .. } => Some(*dst),
                 Instruction::ObjNew(insn)           => Some(insn.dst),
+                Instruction::Typeof(insn)           => Some(insn.dst),
                 Instruction::FieldGet(insn)         => Some(insn.dst),
                 Instruction::FieldSet(_)            => None,
                 Instruction::VCall(insn)            => Some(insn.dst),
@@ -285,6 +287,7 @@ pub fn translate_function(
     let hr_array_set     = imp!(helper_ids.array_set);
     let hr_array_len     = imp!(helper_ids.array_len);
     let hr_obj_new       = imp!(helper_ids.obj_new);
+    let hr_typeof        = imp!(helper_ids.typeof_op);
     let hr_field_get     = imp!(helper_ids.field_get);
     let hr_field_set     = imp!(helper_ids.field_set);
     let hr_vcall         = imp!(helper_ids.vcall);
@@ -879,6 +882,17 @@ pub fn translate_function(
                     let inst = builder.ins().call(hr_obj_new,
                         &[frame_val, ctx_val, d, cp, cl, kp, kl, ap, al, tap, tac]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
+                }
+                Instruction::Typeof(insn) => {
+                    // add-reflection-generic-type-definition: marshal type_name +
+                    // the IR `type_args: Box<[String]>` storage as `*const String`
+                    // + count (mirrors ObjNew type_args). Helper can't throw.
+                    let TypeofInsn { dst, type_name, type_args } = &**insn;
+                    let d = ri!(*dst);
+                    let (np, nl) = str_val!(type_name);
+                    let tap = builder.ins().iconst(ptr, type_args.as_ptr() as i64);
+                    let tac = builder.ins().iconst(types::I64, type_args.len() as i64);
+                    builder.ins().call(hr_typeof, &[frame_val, ctx_val, d, np, nl, tap, tac]);
                 }
                 // formalize-jit-method-token Phase 2.E (2026-05-08): emit
                 // FieldIC pointer as i64 const so helper can take IC fast

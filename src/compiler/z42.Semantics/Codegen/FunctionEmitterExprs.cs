@@ -163,11 +163,20 @@ internal sealed partial class FunctionEmitter
 
         protected override TypedReg VisitTypeof(BoundTypeof tof)
         {
+            // add-reflection-generic-type-definition: emit a structured Typeof
+            // instruction carrying the definition name + the instantiation type
+            // args (FQ names) separately, instead of the former
+            // `ConstStr + __typeof builtin`. The args let the runtime build a
+            // *constructed* generic Type (GetGenericArguments /
+            // IsGenericTypeDefinition / GetGenericTypeDefinition). For a generic
+            // instantiation `Box<int>`, TypeName = "…Box" (definition, args NOT
+            // folded into the name) and TypeArgs = ["int"].
             string name = Z42TypeName(tof.Target);
-            var nameReg = _e.Alloc(IrType.Str);
-            _e.Emit(new ConstStrInstr(nameReg, _e._ctx.Intern(name)));
+            IReadOnlyList<string> typeArgs = tof.Target is Z42InstantiatedType it
+                ? it.TypeArgs.Select(Z42TypeName).ToList()
+                : System.Array.Empty<string>();
             var dst = _e.Alloc(IrType.Ref);
-            _e.Emit(new BuiltinInstr(dst, "__typeof", new List<TypedReg> { nameReg }));
+            _e.Emit(new TypeofInstr(dst, name, typeArgs));
             return dst;
         }
 

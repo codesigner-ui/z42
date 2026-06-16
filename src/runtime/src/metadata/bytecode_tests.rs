@@ -4,7 +4,7 @@
 //! (`Variant(Box<XxxInsn>)`) so the enum stays ≤32 B. These tests pin both the
 //! size invariant and the (unchanged) JSON wire format.
 
-use super::{CallInsn, Instruction, ObjNewInsn, StaticSetInsn};
+use super::{CallInsn, Instruction, ObjNewInsn, StaticSetInsn, TypeofInsn};
 
 #[test]
 fn instruction_size_is_slim() {
@@ -51,6 +51,25 @@ fn objnew_typeargs_roundtrip() {
     let json = serde_json::to_value(&obj).unwrap();
     assert_eq!(json["op"], "obj_new");
     assert_eq!(json["class_name"], "Std.Collections.List");
+    assert_eq!(json["type_args"], serde_json::json!(["int"]));
+
+    let back: Instruction = serde_json::from_value(json.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&back).unwrap(), json);
+}
+
+/// add-reflection-generic-type-definition: `Typeof` carries `Box<[String]>
+/// type_args` (`#[serde(default)]`); confirm the boxed payload round-trips,
+/// including a non-empty constructed-generic arg list.
+#[test]
+fn typeof_typeargs_roundtrip() {
+    let tof = Instruction::Typeof(Box::new(TypeofInsn {
+        dst: 3,
+        type_name: "Demo.Box".into(),
+        type_args: vec!["int".to_string()].into(),
+    }));
+    let json = serde_json::to_value(&tof).unwrap();
+    assert_eq!(json["op"], "typeof");
+    assert_eq!(json["type_name"], "Demo.Box");
     assert_eq!(json["type_args"], serde_json::json!(["int"]));
 
     let back: Instruction = serde_json::from_value(json.clone()).unwrap();

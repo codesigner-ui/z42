@@ -67,7 +67,7 @@ pub use bytecode::{BasicBlock, ClassDesc, ExceptionEntry, FieldDesc, Function, I
 pub use bytecode::{
     AsCastInsn, BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, IsInstanceInsn,
     LoadFieldAddrInsn, LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn,
-    StaticSetInsn, VCallInsn,
+    StaticSetInsn, TypeofInsn, VCallInsn,
 };
 
 // Re-exports: package format types and artifact loading

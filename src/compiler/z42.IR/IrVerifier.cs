@@ -187,6 +187,7 @@ public static class IrVerifier
         ArrayGetInstr   i => i.Dst,
         ArrayLenInstr   i => i.Dst,
         ObjNewInstr     i => i.Dst,
+        TypeofInstr     i => i.Dst,
         FieldGetInstr   i => i.Dst,
         VCallInstr      i => i.Dst,
         IsInstanceInstr i => i.Dst,

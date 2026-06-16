@@ -66,6 +66,7 @@ public static class Opcodes
     public const byte ObjNew     = 0x70;
     public const byte IsInstance = 0x71;
     public const byte AsCast     = 0x72;
+    public const byte Typeof     = 0x73;  // dst, TypeName(str idx), arg_count(u8), TypeArg(str idx)[] — reflection Type object w/ structured generic instantiation args (replaces __typeof builtin, zbc 1.18)
 
     // ── Arrays & Strings (0x80–0x8F) ──────────────────────────────────────────
     public const byte ArrayNew    = 0x80;

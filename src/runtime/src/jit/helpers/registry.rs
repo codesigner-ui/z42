@@ -91,6 +91,7 @@ pub struct HelperIds {
     pub array_len:      FuncId,
     // object
     pub obj_new:        FuncId,
+    pub typeof_op:      FuncId,
     pub field_get:      FuncId,
     pub field_set:      FuncId,
     pub is_instance:    FuncId,
@@ -173,6 +174,7 @@ pub fn register_symbols(builder: &mut JITBuilder) {
     reg!("jit_array_len",     array::jit_array_len);
     // object
     reg!("jit_obj_new",       object::jit_obj_new);
+    reg!("jit_typeof",        object::jit_typeof);
     reg!("jit_default_of",    object::jit_default_of);
     reg!("jit_convert",       object::jit_convert);
     reg!("jit_field_get",     object::jit_field_get);
@@ -263,6 +265,10 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc,
         //             type_args_ptr, type_args_count) -> u8
         obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
+        // jit_typeof(frame, ctx, dst, type_name_ptr, type_name_len, type_args_ptr, type_args_count)
+        // add-reflection-generic-type-definition: type_args_ptr is `*const String`
+        // into the IR `Instruction::Typeof { type_args }` storage (module lifetime).
+        typeof_op:     decl!("jit_typeof",     [ptr, ptr, i32t, ptr, i64t, ptr, i64t], []),
         // formalize-jit-method-token Phase 2.E (2026-05-08): trailing `ptr`
         // arg = `*const FieldIC` (stable into Function.resolved.field_ic).
         field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t, ptr],    [i8t]),

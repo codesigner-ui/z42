@@ -32,6 +32,14 @@ public sealed class Type : MemberInfo {
     public bool IsArray;
     public string __elementName;
 
+    // add-reflection-generic-type-definition (2026-06-16): VM-written. For a
+    // *constructed* generic type (`typeof(Box<int>)`) this holds the resolved
+    // instantiation arguments as `Type`s (`[typeof(int)]`); null for the open
+    // definition and non-generic types. A non-null value marks the type as
+    // constructed, so `IsGenericTypeDefinition` is false and
+    // `GetGenericArguments()` returns these.
+    public Type[] __typeArgs;
+
     // `Name` (unqualified class name, e.g. "Circle") is inherited from
     // `MemberInfo` — the VM writes it into the inherited field slot when it
     // constructs a Type instance (build_type), same as FieldInfo/MethodInfo.
@@ -68,11 +76,16 @@ public sealed class Type : MemberInfo {
     public extern bool IsRecord { get; }
 
     // True for a generic type (has type parameters, e.g. `Box<T>`).
-    // (add-reflection-generic-predicates) Note: typeof(Box<int>) currently
-    // reflects the definition (instantiation args dropped by the compiler), so
-    // IsGenericTypeDefinition is deferred until typeof carries type args.
+    // (add-reflection-generic-predicates)
     [Native("__type_is_generic")]
     public extern bool IsGenericType { get; }
+
+    // True iff this is a generic *type definition* (open `Box<>`) rather than a
+    // constructed instantiation (`Box<int>`). `typeof(Box<int>)` → false; its
+    // `GetGenericTypeDefinition()` → true. False for non-generic types.
+    // (add-reflection-generic-type-definition)
+    [Native("__type_is_generic_definition")]
+    public extern bool IsGenericTypeDefinition { get; }
 
     // True if the type is a primitive (int/long/bool/char/float/double/...).
     // `string` is not a primitive.
@@ -99,9 +112,17 @@ public sealed class Type : MemberInfo {
     [Native("__type_properties")]
     public extern Std.Reflection.PropertyInfo[] GetProperties();
 
-    // Generic type arguments of an instantiated generic (`Box<int>` -> [int]).
+    // Generic type arguments of a constructed generic (`typeof(Box<int>)` -> [int]).
+    // Empty for the open definition and non-generic types.
     [Native("__type_generic_args")]
     public extern Type[] GetGenericArguments();
+
+    // The open generic definition of a constructed type
+    // (`typeof(Box<int>).GetGenericTypeDefinition()` -> `Box<>`). Throws for a
+    // non-generic type (mirrors C# InvalidOperationException).
+    // (add-reflection-generic-type-definition)
+    [Native("__type_generic_definition")]
+    public extern Type GetGenericTypeDefinition();
 
     // Interfaces this type implements (own declared + inherited from base chain,
     // deduped by name). Each is a name-only Type. Transitive interface

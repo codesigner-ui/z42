@@ -224,11 +224,14 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__type_is_record",     reflection::builtin_type_is_record),
     ("__type_is_generic",    reflection::builtin_type_is_generic),
     ("__type_is_primitive",  reflection::builtin_type_is_primitive),
+    ("__type_is_generic_definition", reflection::builtin_type_is_generic_definition),
+    ("__type_generic_definition",    reflection::builtin_type_generic_definition),
     ("__type_custom_attributes", reflection::builtin_type_custom_attributes),
     ("__method_custom_attributes", reflection::builtin_method_custom_attributes),
     ("__field_custom_attributes", reflection::builtin_field_custom_attributes),
     ("__param_custom_attributes", reflection::builtin_param_custom_attributes),
-    ("__typeof",             reflection::builtin_typeof),
+    // add-reflection-generic-type-definition: `typeof` now lowers to the Typeof
+    // opcode (interp/jit), not a builtin — the former `__typeof` is removed.
 
     // ── Array protocol（add-array-base-class，2026-05-07）─────────────────────
     ("__array_clone", array::builtin_array_clone),

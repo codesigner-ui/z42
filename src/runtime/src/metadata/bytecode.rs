@@ -508,6 +508,20 @@ pub struct ObjNewInsn {
     #[serde(default)] pub type_args: Box<[String]>,
 }
 
+/// Payload for [`Instruction::Typeof`].
+///
+/// `typeof(T)` reflection. `type_name` is the FQ definition name
+/// (`make_type_from_name`-resolvable); `type_args` are the FQ names of the
+/// instantiation type arguments (`typeof(Box<int>)` → `["int"]`; empty for
+/// non-generic / open). A non-empty list marks a *constructed* generic type.
+/// add-reflection-generic-type-definition (zbc 1.18).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TypeofInsn {
+    #[serde(with = "typed_reg_serde")] pub dst: Reg,
+    pub type_name: String,
+    #[serde(default)] pub type_args: Box<[String]>,
+}
+
 /// Payload for [`Instruction::FieldGet`].
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FieldGetInsn {
@@ -825,6 +839,9 @@ pub enum Instruction {
     /// ctor `ctor_name` (FQ, 含 `$N` suffix 如有) with `args`. VM 不再做
     /// `${class}.${simple}` 名字推断 — 直查 `func_index[ctor_name]`.
     ObjNew(Box<ObjNewInsn>),
+    /// `typeof(T)` → a reflection `Std.Type` into `dst`, carrying structured
+    /// generic instantiation args. add-reflection-generic-type-definition.
+    Typeof(Box<TypeofInsn>),
     /// Load field `field_name` of object `obj` into `dst`.
     FieldGet(Box<FieldGetInsn>),
     /// Store `val` into field `field_name` of object `obj`.

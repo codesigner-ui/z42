@@ -18,7 +18,7 @@ use super::bytecode::{
 use super::bytecode::{
     AsCastInsn, BuiltinInsn, CallInsn, CallNativeInsn, FieldGetInsn, FieldSetInsn, IsInstanceInsn,
     LoadFieldAddrInsn, LoadFnCachedInsn, LoadFnInsn, MkClosInsn, ObjNewInsn, StaticGetInsn,
-    StaticSetInsn, VCallInsn,
+    StaticSetInsn, TypeofInsn, VCallInsn,
 };
 use super::formats::{ZpkgDep, ZPKG_MAGIC, ZBC_MAGIC};
 use super::types::ExecMode;
@@ -59,7 +59,11 @@ pub const ZBC_VERSION_MAJOR: u16 = 1;
 // 2026-06-14 add-reflection-get-interfaces: bumped to 1.17 — TYPE section appends
 // a per-class interface block (u16 count + name str idx[]) after the static-fields
 // block. Loaded into TypeDescCold.interfaces; surfaced by Type.GetInterfaces().
-pub const ZBC_VERSION_MINOR: u16 = 17;
+// 2026-06-16 add-reflection-generic-type-definition: bumped to 1.18 — new Typeof
+// opcode (0x73) carries structured generic instantiation args (TypeName str idx +
+// u8 count + str idx[]), replacing the __typeof builtin. Surfaces
+// Type.IsGenericTypeDefinition / GetGenericTypeDefinition + fixes GetGenericArguments.
+pub const ZBC_VERSION_MINOR: u16 = 18;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -94,7 +98,9 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // inner zbc 1.16 (ArrayNew/ArrayNewLit element-type field).
 // 2026-06-14 add-reflection-get-interfaces: bumped to 0.19, coupled with inner
 // zbc 1.17 (TYPE section per-class interface block).
-pub const ZPKG_VERSION_MINOR: u16 = 19;
+// 2026-06-16 add-reflection-generic-type-definition: bumped to 0.20, coupled with
+// inner zbc 1.18 (new Typeof opcode w/ structured generic args).
+pub const ZPKG_VERSION_MINOR: u16 = 20;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -154,6 +160,7 @@ const OP_STATIC_SET: u8  = 0x63;
 const OP_OBJ_NEW: u8     = 0x70;
 const OP_IS_INSTANCE: u8 = 0x71;
 const OP_AS_CAST: u8     = 0x72;
+const OP_TYPEOF: u8      = 0x73;
 
 const OP_ARRAY_NEW: u8     = 0x80;
 const OP_ARRAY_NEW_LIT: u8 = 0x81;
@@ -1014,6 +1021,17 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
                 type_args.push(pool_str_owned(pool, c.read_u32()?)?);
             }
             Instruction::ObjNew(Box::new(ObjNewInsn { dst, class_name, ctor_name, args, type_args: type_args.into_boxed_slice() }))
+        }
+        OP_TYPEOF => {
+            // add-reflection-generic-type-definition: type_name + structured
+            // generic args (mirrors ObjNew type_args encoding).
+            let type_name = pool_str_owned(pool, c.read_u32()?)?;
+            let t_count = c.read_u8()? as usize;
+            let mut type_args = Vec::with_capacity(t_count);
+            for _ in 0..t_count {
+                type_args.push(pool_str_owned(pool, c.read_u32()?)?);
+            }
+            Instruction::Typeof(Box::new(TypeofInsn { dst, type_name, type_args: type_args.into_boxed_slice() }))
         }
         OP_IS_INSTANCE => {
             let obj        = c.read_u16()? as u32;

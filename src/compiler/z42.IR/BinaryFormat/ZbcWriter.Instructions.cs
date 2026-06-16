@@ -173,6 +173,14 @@ public static partial class ZbcWriter
                     foreach (var ta in tArgs) w.Write((uint)pool.Idx(ta));
                 }
                 break;
+            case TypeofInstr i:
+                w.Write(Opcodes.Typeof); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                w.Write((uint)pool.Idx(i.TypeName));
+                // add-reflection-generic-type-definition: structured generic args
+                // (mirrors ObjNew type_args encoding — u8 count + str idx[]).
+                w.Write((byte)i.TypeArgs.Count);
+                foreach (var ta in i.TypeArgs) w.Write((uint)pool.Idx(ta));
+                break;
             case IsInstanceInstr i:
                 w.Write(Opcodes.IsInstance); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 WriteReg(w, i.Obj); w.Write(allocator.ResolveType(i.ClassName, pool));
@@ -316,6 +324,10 @@ public static partial class ZbcWriter
                 pool.Intern(i.ClassName); pool.Intern(i.CtorName);
                 if (i.TypeArgs is { } tas) foreach (var ta in tas) pool.Intern(ta);
                 break;
+            case TypeofInstr i:
+                pool.Intern(i.TypeName);
+                foreach (var ta in i.TypeArgs) pool.Intern(ta);
+                break;
             case IsInstanceInstr i: pool.Intern(i.ClassName); break;
             case AsCastInstr i:     pool.Intern(i.ClassName); break;
             case StaticGetInstr i:  pool.Intern(i.Field); break;
@@ -389,6 +401,7 @@ public static partial class ZbcWriter
             case StaticGetInstr i: v(i.Dst); break;
             case StaticSetInstr i: v(i.Val); break;
             case ObjNewInstr i:    v(i.Dst); foreach (var a in i.Args) v(a); break;
+            case TypeofInstr i:    v(i.Dst); break;
             case IsInstanceInstr i: v(i.Dst); v(i.Obj); break;
             case AsCastInstr i:    v(i.Dst); v(i.Obj); break;
             case ArrayNewInstr i:    v(i.Dst); v(i.Size); break;

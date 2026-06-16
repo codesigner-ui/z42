@@ -190,6 +190,15 @@ public static partial class ZbcReader
                 }
                 return new ObjNewInstr(d, cls, ctor, args, typeArgs);
             }
+            case Opcodes.Typeof:
+            {
+                var typeName = P(pool, r.ReadUInt32());
+                // add-reflection-generic-type-definition: structured generic args
+                int tCount = r.ReadByte();
+                var typeArgs = new List<string>(tCount);
+                for (int k = 0; k < tCount; k++) typeArgs.Add(P(pool, r.ReadUInt32()));
+                return new TypeofInstr(d, typeName, typeArgs);
+            }
             case Opcodes.IsInstance:
             {
                 var obj = RU(r.ReadUInt16());

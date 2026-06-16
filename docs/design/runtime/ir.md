@@ -289,6 +289,7 @@ JSON wire format:
 ```
 %r = obj_new  <ClassName> ctor=<CtorName>(%arg0, %arg1, ...)
                                                 # allocate + call overload-resolved ctor
+%r = typeof   <TypeName><TypeArg0, ...>         # reflection Std.Type (generic args 可选)
 %r = field_get %obj, <field>                    # load a field
      field_set %obj, <field>, %value            # store a field
 ```
@@ -296,12 +297,21 @@ JSON wire format:
 JSON wire format (tag = `"op"`):
 ```json
 {"op": "obj_new",     "dst": 5, "class_name": "Demo.Point", "ctor_name": "Demo.Point.Point$2", "args": [1, 2]}
+{"op": "typeof",      "dst": 5, "type_name": "Demo.Box", "type_args": ["int"]}
 {"op": "field_get",   "dst": 6, "obj": 5, "field_name": "X"}
 {"op": "field_set",             "obj": 5, "field_name": "X", "val": 3}
 {"op": "v_call",      "dst": 7, "obj": 5, "method": "Area", "args": []}
 {"op": "is_instance", "dst": 8, "obj": 5, "class_name": "Demo.Shape"}
 {"op": "as_cast",     "dst": 9, "obj": 5, "class_name": "Demo.Shape"}
 ```
+
+`typeof`（opcode `0x73`，zbc 1.18，add-reflection-generic-type-definition）求值为一个
+`Std.Type` 反射对象。`type_name` 是反射类型的 FQ 名（泛型取**定义**名）；`type_args`
+是实例化 arg 的 FQ 名列表（`typeof(Box<int>)` → `["int"]`，非泛型为空），结构化编码
+（镜像 `obj_new` 的 type_args）。非空 args 标记为**构造型**泛型——运行期把解析后的
+`Std.Type[]` 挂到结果对象的 `__typeArgs` 槽，背书 `GetGenericArguments()` /
+`IsGenericTypeDefinition` / `GetGenericTypeDefinition()`。统一所有 `typeof(...)`，取代旧
+`__typeof` builtin（type args 是编译期类型元数据，不 materialize 成运行期 `const_str` 值）。
 
 `obj_new` 调用 **TypeChecker 编译期 overload-resolve 选定的具体 ctor 函数**
 （`ctor_name` 字段直查），与 `call` 指令对齐 — VM 不做名字推断。命名约定：
@@ -459,8 +469,8 @@ VM 的 `metadata::Instruction` 是一个枚举，`Function.body` 是其 `Box<[In
 `<Variant>Insn` struct，变体改为 newtype `Variant(Box<XxxInsn>)`；纯寄存器/小标量的
 **热变体保持 inline**，dispatch 热路径不增一次指针解引用。
 
-- **装箱的 15 个冷变体**：`Call` `Builtin` `LoadFn` `LoadFnCached` `MkClos` `ObjNew`
-  `FieldGet` `FieldSet` `VCall` `IsInstance` `AsCast` `StaticGet` `StaticSet`
+- **装箱的 16 个冷变体**：`Call` `Builtin` `LoadFn` `LoadFnCached` `MkClos` `ObjNew`
+  `Typeof` `FieldGet` `FieldSet` `VCall` `IsInstance` `AsCast` `StaticGet` `StaticSet`
   `CallNative` `LoadFieldAddr`（payload struct 见 `bytecode.rs`）。
 - **保持 inline**：所有算术/比较/位运算/常量/数组存取/地址加载（`LoadLocalAddr` 等）
   /`Convert`/`DefaultOf`/`PinPtr`/`UnpinPtr`，以及无 `String` 的 call 类

@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 17;  // 2026-06-14 add-reflection-get-interfaces: TYPE section appends a per-class interface block (u16 count + interface_name_idx[] u32) after the static-fields block. Surfaces Type.GetInterfaces(). Pre-1.17 not readable.
+    public const ushort VersionMinor = 18;  // 2026-06-16 add-reflection-generic-type-definition: new Typeof opcode (0x73) carries structured generic instantiation args (str idx TypeName + u8 count + str idx[]), replacing the __typeof builtin. Surfaces Type.IsGenericTypeDefinition / GetGenericTypeDefinition + fixes GetGenericArguments on typeof. Pre-1.18 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

@@ -82,6 +82,25 @@ pub unsafe extern "C" fn jit_obj_new(
     0
 }
 
+/// add-reflection-generic-type-definition: JIT helper for the `Typeof` opcode.
+/// Mirrors the interp `Instruction::Typeof` handler — builds a `Std.Type` from
+/// the FQ name + structured generic instantiation args. `type_args_ptr` is a
+/// `*const String` into the IR `Instruction::Typeof { type_args }` storage
+/// (valid for module lifetime; count = 0 for non-generic typeof).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn jit_typeof(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32,
+    type_name_ptr: *const u8, type_name_len: usize,
+    type_args_ptr: *const String, type_args_count: usize,
+) {
+    let type_name = std::str::from_utf8(std::slice::from_raw_parts(type_name_ptr, type_name_len))
+        .unwrap_or("<invalid>");
+    let type_args = std::slice::from_raw_parts(type_args_ptr, type_args_count);
+    let v = crate::corelib::reflection::make_constructed_type(vm_ctx_ref(ctx), type_name, type_args);
+    (*frame).regs[dst as usize] = v;
+}
+
 // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): JIT helper for
 // `default(T)` runtime resolution. Mirrors interp `Instruction::DefaultOf`
 // dispatch — reads `frame.regs[0]` (this) → `ScriptObject.type_args[param_index]`

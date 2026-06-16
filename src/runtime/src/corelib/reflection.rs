@@ -18,7 +18,7 @@
 
 use crate::metadata::{well_known_names, NativeData, TypeDesc, Value};
 use crate::vm_context::VmContext;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -77,17 +77,32 @@ pub fn make_type_from_name(ctx: &VmContext, name: &str) -> Value {
     build_type(ctx, &simple, &canon, NativeData::None)
 }
 
-/// `__typeof(name) -> Std.Type` — backs `typeof(T)` (make-typeof-return-type,
-/// C2). The compiler emits the reflected type's fully-qualified name; this
-/// resolves it to a `Std.Type` (real handle when the type is loaded —
-/// user-program classes via the main module, stdlib via the lazy loader —
-/// else a name-only synthetic Type for primitives / arrays / unbound generics).
-pub fn builtin_typeof(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    match args.first() {
-        Some(Value::Str(s)) => Ok(make_type_from_name(ctx, s)),
-        // Compiler always emits a string arg; be lenient otherwise.
-        _ => Ok(Value::Null),
+/// Backs the `Typeof` opcode (add-reflection-generic-type-definition; replaces
+/// the former `__typeof` builtin). `type_name` is the reflected type's FQ name
+/// (definition name for a generic); resolved to a `Std.Type` (real handle when
+/// loaded — user classes via the main module, stdlib via the lazy loader — else
+/// a name-only synthetic for primitives / arrays / unbound generics).
+///
+/// `type_args` are the FQ names of the instantiation arguments (`typeof(Box<int>)`
+/// → `["int"]`). When non-empty this is a *constructed* generic type: the
+/// resolved arg `Std.Type`s are attached to the `__typeArgs` slot so
+/// `GetGenericArguments()` returns them and `IsGenericTypeDefinition` is false.
+/// Empty `type_args` → the plain definition / non-generic Type.
+pub fn make_constructed_type(ctx: &VmContext, type_name: &str, type_args: &[String]) -> Value {
+    if type_args.is_empty() {
+        return make_type_from_name(ctx, type_name);
     }
+    // Resolve args first and keep them rooted in the Vec while `base` allocates
+    // (same alloc ordering as `builtin_type_generic_args`).
+    let arg_types: Vec<Value> = type_args.iter().map(|a| make_type_from_name(ctx, a)).collect();
+    let args_array = ctx.heap().alloc_array(arg_types);
+    let base = make_type_from_name(ctx, type_name);
+    if let Value::Object(rc) = &base {
+        if let Some(i) = rc.type_desc().field_index.get("__typeArgs").copied() {
+            rc.borrow_mut().slots[i] = args_array;
+        }
+    }
+    base
 }
 
 /// Normalize a VM primitive type tag to its C#-style alias. User/class names
@@ -702,6 +717,17 @@ pub fn builtin_type_base(ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// `__type_generic_args(typeObj) -> Type[]` — instantiated generic type args
 /// (`Box<int>` → `[typeof(int)]`); empty for non-generic / open types.
 pub fn builtin_type_generic_args(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    // add-reflection-generic-type-definition: a *constructed* type built from
+    // `typeof(Box<int>)` carries the resolved arg `Std.Type`s in its `__typeArgs`
+    // slot — return them directly. (Fixes `typeof(Box<int>).GetGenericArguments()`
+    // which previously returned empty because the typeof resolves to the
+    // definition TypeDesc whose `type_args` is empty.)
+    let slot = read_type_str_slot(args, "__typeArgs");
+    if matches!(slot, Value::Array(_)) {
+        return Ok(slot);
+    }
+    // Fallback: `TypeDesc.type_args` — the `new Box<int>()` instance path
+    // (`obj.GetType().GetGenericArguments()`), unchanged.
     let td = match type_handle(args) {
         Some(t) => t,
         None => return Ok(ctx.heap().alloc_array(Vec::new())),
@@ -712,6 +738,31 @@ pub fn builtin_type_generic_args(ctx: &VmContext, args: &[Value]) -> Result<Valu
         .map(|tag| make_type_from_name(ctx, tag))
         .collect();
     Ok(ctx.heap().alloc_array(out))
+}
+
+/// `__type_is_generic_definition(typeObj) -> bool` — true iff the type is a
+/// generic type (has type params) AND is not a constructed instantiation (no
+/// attached `__typeArgs`). Mirrors C# `Type.IsGenericTypeDefinition`:
+/// `typeof(Box<int>)` → false; its `GetGenericTypeDefinition()` → true.
+pub fn builtin_type_is_generic_definition(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let is_generic = type_handle(args)
+        .map(|td| !td.type_params().is_empty() || !td.type_args().is_empty())
+        .unwrap_or(false);
+    let constructed = matches!(read_type_str_slot(args, "__typeArgs"), Value::Array(_));
+    Ok(Value::Bool(is_generic && !constructed))
+}
+
+/// `__type_generic_definition(typeObj) -> Std.Type` — the open generic definition
+/// of a constructed type (`typeof(Box<int>)` → `Box<>`). Mirrors C#
+/// `Type.GetGenericTypeDefinition()`. The handle already points at the definition
+/// TypeDesc (the compiler emits the definition name), so a fresh handle-backed
+/// Type without `__typeArgs` IS the open definition. Throws (catchable
+/// `Std.Exception`) for non-generic types, matching C#'s `InvalidOperationException`.
+pub fn builtin_type_generic_definition(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    match type_handle(args) {
+        Some(td) if !td.type_params().is_empty() => Ok(make_type_object(ctx, td)),
+        _ => bail!("GetGenericTypeDefinition: type is not a generic type"),
+    }
 }
 
 /// `__type_interfaces(typeObj) -> Type[]` — the interfaces this type implements.

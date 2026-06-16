@@ -211,6 +211,14 @@ pub fn exec_instr(
                 return Ok(Some(thrown));
             }
         }
+        Instruction::Typeof(insn) => {
+            // add-reflection-generic-type-definition: build a Std.Type from the
+            // FQ type name + structured generic instantiation args.
+            let v = crate::corelib::reflection::make_constructed_type(
+                ctx, &insn.type_name, &insn.type_args,
+            );
+            frame.set(insn.dst, v);
+        }
         Instruction::FieldGet(insn) => {
             let FieldGetInsn { dst, obj, field_name } = &**insn;
             let field_ic = resolved

@@ -189,6 +189,7 @@ public static class ZasmWriter
             StaticSetInstr i => $"static.set  @{i.Field}  {Reg(i.Val)}",
 
             ObjNewInstr     i => FormatObjNew(i),
+            TypeofInstr     i => $"{Reg(i.Dst)} = typeof  @{i.TypeName}{(i.TypeArgs.Count == 0 ? "" : "<" + string.Join(", ", i.TypeArgs) + ">")}",
             IsInstanceInstr i => $"{Reg(i.Dst)} = is_instance  {Reg(i.Obj)}  @{i.ClassName}",
             AsCastInstr     i => $"{Reg(i.Dst)} = as_cast  {Reg(i.Obj)}  @{i.ClassName}",
 

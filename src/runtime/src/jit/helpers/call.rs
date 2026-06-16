@@ -96,8 +96,24 @@ pub unsafe extern "C" fn jit_builtin(
     let args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
 
     let id = crate::metadata::tokens::BuiltinId(builtin_id);
-    match crate::corelib::exec_builtin_by_id(vm_ctx_ref(ctx), id, &args) {
+    let vm = vm_ctx_ref(ctx);
+    match crate::corelib::exec_builtin_by_id(vm, id, &args) {
         Ok(v)  => { frame_ref.regs[dst as usize] = v; 0 }
-        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); 1 }
+        Err(e) => {
+            // make-corelib-errors-catchable parity (this path was interp-only;
+            // jit_builtin previously set a raw `Value::Str`). Wrap the builtin
+            // error in a `Std.Exception` so JIT-compiled code can catch it with
+            // `catch (Exception e)` — a raw string never matches the catch type.
+            // Falls back to the raw string if `Std.Exception` isn't loaded.
+            let module = &*(*ctx).module;
+            let exc = match crate::exception::make_stdlib_exception(
+                vm, module, "Std.Exception", e.to_string(),
+            ) {
+                Ok(exc) => exc,
+                Err(_)  => Value::Str(e.to_string().into()),
+            };
+            set_exception(vm, exc);
+            1
+        }
     }
 }
