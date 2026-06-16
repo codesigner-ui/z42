@@ -20,9 +20,11 @@
 
 | 层 | 例子 | 提供者 | 注册方式 | 为何 |
 |----|------|--------|---------|------|
-| **Core** | run / install / link / list / which / uninstall / info / apphost | launcher 自带 | **代码注册**（Std.Cli router，已有）| 引导关键——得先有 install/run 才能装 SDK |
+| **Core** | run / install / link / list / which / uninstall / info | launcher 自带 | **代码注册**（Std.Cli router，已有）| 引导关键——得先有 install/run 才能装 SDK |
 | **SDK** | new / build / export / publish / test / fmt | 随 runtime/SDK 装 | **目录发现**（版本作用域）| 与编译器同版本、可独立发布 |
-| **Workload** | 平台打包/工程生成（ios/android/wasm）、模板 | 按需 `z42 workload install` | **目录发现**（drop-in 即注册）| 平台按需、host 无关平台不强塞 |
+| **Workload** | 平台 publish/export/工程生成 + 模板 + **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（drop-in 即注册）| 平台按需、host 无关平台不强塞 |
+
+> **apphost 归属（2026-06-17 consolidate-platform-into-workload 裁决）**：apphost 不再是 Core 命令，而是 **desktop workload 的 publish 产物**——`z42 publish`（host 桌面）须先 `z42 workload install desktop`。理由：apphost 是平台相关发布件，应与 ios/android/wasm 的 `.ipa`/`.aab`/wasm bundle 同层（均 workload 门控），保持"默认 build/run 零 workload、publish/export 才下载对应平台 workload"的对称模型。desktop 因此也是一个 workload（仅 publish/export 维度；host runtime 仍经 `z42 install`）。详见 [runtime-workload-distribution.md](runtime-workload-distribution.md) + `docs/spec/changes/consolidate-platform-into-workload/`。
 
 判据：**Core 必须 baked**（鸡生蛋）；**SDK + workload 必须目录发现**（否则每加平台重编 launcher、无法按版本/平台隔离）。
 

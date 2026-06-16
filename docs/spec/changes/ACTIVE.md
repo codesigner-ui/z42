@@ -12,7 +12,7 @@
 | `runtime` | —（空闲）| — | ~~add-reflection-transitive-interfaces~~ ✅ 已归档 2026-06-17（`__type_interfaces` 传递 BFS + interp/JIT `is` 传递查接口；dotnet 1568/0 + vm interp 188+jit 180 + cargo 809/0）。（前序 ~~add-reflection-instance-generic-args~~ ✅ 2026-06-16）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（`Std.Type.IsAssignableFrom(Type)` + `GetInterface(string)`）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
-| `toolchain` | **restructure-host-roles（DRAFT）** | 2026-06-17 | host 职责拆 ①SDK / ②conformance，③app-packaging 划归 packager/workload；P1=文档反框定+wasm demo 清理，P2=platforms→sdk/+conformance/ 物理重组（待结构轴确认）。（前序 ~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：golden/z42c 测试产物按组件镜像 src→artifacts/build/。~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16）|
+| `toolchain` | —（空闲）| — | **consolidate-platform-into-workload S0** ✅ docs-only 设计落地（host 解散 → 平台相关全入 workload，runtime 留最小核，launcher 留 SDK，apphost→desktop workload）；物理迁移 S1–S5 各自开独立 change 时再占锁。（前序 ~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16。~~add-desktop-platform-backend~~ ✅ / ~~redirect-golden-zbc-to-artifacts~~ ✅ / ~~infra-ci-platform-test-dashboard~~ ✅ 2026-06-16）|
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
@@ -70,3 +70,4 @@
 | ~~add-reflection-array-element-type~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（数组运行期不擦除 `GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()` + 非擦除 `arr.GetType()`；zbc 1.16/zpkg 0.18 ArrayNew/Lit element_type FQ 名；dotnet 1561/1561 + array_element_type.z42 e2e interp+jit + cargo lib 807 + 集成 native/zbc_compat 全绿 + xtask vm 354/cross-zpkg 2/stdlib 272）。**z42c writer 同步延后**（User 决策"先实现，延后 z42c"；当时 z42c 锁被占）→ `xtask test compiler-z42` byte-identical gate 暂红，follow-up 跟踪（见 memory `project_z42c_selfhosting`）|
 | ~~add-reflection-get-interfaces~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（`Type.GetInterfaces()` 含继承接口；zbc 1.17/zpkg 0.19 TYPE section 类接口块；base-walk 聚合 + 按名 dedup；dotnet 1562/1562 + get_interfaces.z42 e2e interp+jit + cargo lib 807 + 集成 zbc_compat/native 全绿 + xtask vm 356/cross-zpkg 2/stdlib 272）。z42c writer 接口块镜像延后（follow-up，同 array-element-type 处理）|
 | plan-0.3.x-three-streams | docs（不上锁） |
+| consolidate-platform-into-workload | docs（S0 设计落地，不上锁）；迁移 S1–S5 各自 runtime/toolchain |

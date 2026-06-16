@@ -21,6 +21,8 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 9 RID：4 桌面 RID 的 runtime 经 `z42 install`；ios/android/wasm 的 runtime pack 经对应 workload 拉入。
 
+> **desktop 也是 workload（2026-06-17 consolidate-platform-into-workload 裁决）**：上面"两个安装入口"针对 **runtime**——这条不变（桌面 runtime 仍只经 `z42 install`，不开第二条直装）。但 **publish/export 维度，desktop 与 ios/android/wasm 对称，也是一个 workload**：默认 `z42 build`/`run` 用 host runtime、零 workload；要 **`z42 publish`（产 desktop apphost）或 `z42 export`（导出桌面工程）** 才 `z42 workload install desktop`。即 `workloads.desktop` 装的是"桌面 publish/export 能力束（apphost 模板 + 桌面 native glue），**不含** runtime（runtime 已在 host）"——故 `workloads.desktop` 无 `target runtime pack`，区别于 ios/android/wasm（它们的 workload 含 target runtime pack，因设备侧无 host runtime）。apphost 因此归 desktop workload，不再是 launcher Core 命令（见 [launcher-command-dispatch.md](launcher-command-dispatch.md)）。
+
 ## 供给契约：每 release 发 manifest 资产（`release-index.json`）
 
 不裸爬 GitHub API（rate-limit / 契约不稳 / 难离线 / 难签名）。每个 release 上传一个 `release-index.json` 资产作**稳定契约**（对标 rustup channel manifest / dotnet release-index）。channel 解析借 GitHub 现成的稳定 URL：
@@ -53,6 +55,7 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
     "browser-wasm": { "runtime": { "archive": "z42-runtime-0.3.5-browser-wasm.tar.gz", "sha256": "…" } }
   },
   "workloads": {
+    "desktop": { "archive": "z42-0.3.5-workload-desktop.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"] },
     "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"] },
     "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"] },
     "wasm":    { "archive": "z42-0.3.5-browser-wasm.tar.gz", "sha256": "…", "host": ["*"] }
@@ -163,6 +166,7 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 | 6 | launcher 与 runtime 拆分；**launcher 不带 vm，复用已装 runtime 的 vm** | 不必为 launcher 造/最小化 vm；NativeAOT 后转原生 |
 | 7 | 首次 `install-z42` 一次装 launcher + host runtime（manifest 驱动），之后全 z42 驱动 | "第一次执行完成安装"；下载交 shell（无需带 TLS 的 launcher vm），对齐 dotnet |
 | 8 | `runtime` 为 per-RID 名词/组件，但 `install` 只装 host；target runtime 仅经 workload 组合进 | 命名诚实 + 用户面无冗余直装路径 |
+| 9 | desktop 亦 workload（仅 publish/export 维度，不含 runtime）；apphost = desktop workload 的 publish 产物 | 四平台 publish/export 对称门控；"默认 build/run 零 workload"立柱；apphost 与 .ipa/.aab/wasm 同层（consolidate-platform-into-workload, 2026-06-17）|
 
 ## Deferred / 待 spec 细化
 
