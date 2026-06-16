@@ -42,8 +42,26 @@ z42 workload install ios
 - e2e：xtask 产 workload 包（local）→ `z42 workload install <wl> --from <pkg>` → 断言 `runtimes/<ver>/workloads/<wl>/` 内容 + `export ios` 能解析到 SDK。
 - `workload list` / `remove` 的 [Test]/e2e。
 
-## 分期（B2 内部）
-- **B2-1**：workload 包格式 + xtask 产包（本地可产可查）。
-- **B2-2**：`z42 workload install --from`（本地装）+ list/remove + 按需拉 runtime（复用下载层）。
-- **B2-3**：CI release.yml 上传 workload 包 + `workload install` 走 manifest（联网）。
-> B2-1/B2-2 本地闭环可验；B2-3 依赖 release，可后续。
+## 分离的又一好处：local runtime override（✅ User, 2026-06-17）
+runtime 独立成包后，**可独立指向本地构建的 runtime**（dev：`z42 link <local-runtime-dir> --as <ver>` 式），workload tooling 不变。版本管理 + 本地替换两个好处都来自这条分离。
+
+## B2-1 实现图（iOS 已深读 xtask_package_ios.z42，完全摸清）
+
+现 `_packageIos` 产**一个合并包**：`native/Z42VM.xcframework`(VM 库)+ `native/include/*.h` + `Sources/`+`Package.swift`(binaryTarget `path:"native/Z42VM.xcframework"`)+ `libs/` + examples。拆成：
+
+| 拆出 | 内容 | 对标 desktop |
+|---|---|---|
+| **runtime pack** `z42-runtime-<ver>-<rid>/` | `native/Z42VM.xcframework`(该 rid slice)+ `include/*.h` + `libs/`（stdlib）| `_buildRuntimePackage`（desktop 已有，照搬结构）|
+| **workload tooling** `z42-<ver>-ios/` | `Sources/Z42VM` + `Sources/Z42VMC` + `Package.swift`（binaryTarget 改引独立 runtime）+ examples + manifest | — |
+
+**纠缠点（B2-1 与 B2-2 必须一起想）**：
+1. **Package.swift 的 binaryTarget path** 现指 `native/Z42VM.xcframework`（包内）。拆后 xcframework 在独立 runtime pack（装到 `runtimes/<rid>/<ver>/`），tooling 在 `runtimes/<ver>/workloads/ios/`。→ Package.swift 需**install 时把 path 改写成已装 runtime 的 xcframework 绝对路径**（或 export 生成工程时填）。即 **tooling 的 Package.swift 是模板，路径在 install/export 时解析**——这必然牵连 B2-2 的 install 逻辑。
+2. **iOS xcframework 是多 slice 单容器**（device+sim 一个 .xcframework），不是每 RID 一个 .a。→ ios 的 runtime pack 用**一个多-slice xcframework**；manifest `runtimes` 对 ios 实为"一个容器覆盖多 slice"，对 android 才是"多 ABI 多 .so"。两平台模型不同，install 逻辑要分别处理。
+3. **orchestration**（xtask_package.z42）现对 ios 只调 `_packageIos` 产一个包；要像 desktop 那样**调两次**（tooling + runtime pack）。
+
+→ **结论：B2-1（拆包）与 B2-2（install 解析 Package.swift 路径 + 组合 tooling+runtime）耦合,应合并为一个"iOS 端到端拆分 + install"实现单元**，不宜先只产包（产了的 Package.swift 路径悬空、无法 swift build 验证）。
+
+## 分期（B2 内部，按上述纠缠修正）
+- **B2-1+2（iOS 端到端）**：拆 iOS 打包（runtime pack + tooling）+ `workload install --from`（装 tooling + runtime + 解析 Package.swift 路径）+ swift build 验证（iOS 工具链本地可跑：Xcode 16.4 + ios targets 已装）。
+- **B2-3（android/wasm）**：照 iOS 模式拆（android 多 .so/gradle、wasm module/npm；NDK/wasm-pack 多归 CI）。
+- **B2-4（CI release）**：release.yml 上传 workload + runtime packs + manifest 联网装。
