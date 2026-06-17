@@ -194,14 +194,18 @@ int _pkgSha256Check(string root, string pkgDir) {
             }
         }
     }
-    // 2. native/include/*.h vs src/runtime/include/
-    if (!_filesEqual(Path.Join(pkgDir, "native/include/z42_abi.h"), Path.Join(root, "src/runtime/include/z42_abi.h"))) {
+    // 2. native/include/*.h vs src/runtime/include/ — only when present. Split
+    //    (workload-tooling) packages carry no native/include; the headers live in
+    //    the separate runtime pack (ios Sources/Z42VMC/include, android z42vm cpp/include).
+    if (File.Exists(Path.Join(pkgDir, "native/include/z42_abi.h"))
+        && !_filesEqual(Path.Join(pkgDir, "native/include/z42_abi.h"), Path.Join(root, "src/runtime/include/z42_abi.h"))) {
         ConsoleError.WriteLine("  ✗ native/include/z42_abi.h differs"); fail = true;
     }
-    if (!_filesEqual(Path.Join(pkgDir, "native/include/z42_host.h"), Path.Join(root, "src/runtime/include/z42_host.h"))) {
+    if (File.Exists(Path.Join(pkgDir, "native/include/z42_host.h"))
+        && !_filesEqual(Path.Join(pkgDir, "native/include/z42_host.h"), Path.Join(root, "src/runtime/include/z42_host.h"))) {
         ConsoleError.WriteLine("  ✗ native/include/z42_host.h differs"); fail = true;
     }
-    // 3. examples/hello_c/main.c vs source
+    // 3. examples/hello_c/main.c vs source (every shape ships hello_c)
     if (!_filesEqual(Path.Join(pkgDir, "examples/hello_c/main.c"), Path.Join(root, "examples/embedding/hello_c/main.c"))) {
         ConsoleError.WriteLine("  ✗ examples/hello_c/main.c differs"); fail = true;
     }

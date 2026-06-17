@@ -5,7 +5,7 @@
 // a SEPARATE runtime pack installed under runtimes/<rid>/<ver>/ (split for
 // independent version management — see runtime-workload-distribution.md).
 //
-//   z42 workload install <wl> --from <tooling-dir> [--runtime <runtime-dir>]
+//   z42 workload install <wl> [--from <tooling-dir>] [--runtime <runtime-dir>]
 //                              [--version <ver>] [--rid <rid>]
 //   z42 workload list
 //   z42 workload remove <wl> [--version <ver>]
@@ -13,6 +13,12 @@
 // `--from` / `--runtime` take a LOCAL package dir (produced by `xtask package`)
 // — the no-release local path (B2-2). The manifest-driven download path (B2-3)
 // reuses launcher_network's _extractArchive; not wired here yet.
+//
+// `--from` (re)installs the workload tooling; omit it (give only --runtime/--rid)
+// to add a runtime slice ADDITIVELY to an already-installed workload. android has
+// ONE workload tooling fed by MULTIPLE runtime packs (android-arm64 + android-x64,
+// one jniLibs/<abi> + assets/stdlib slice each) — install tooling once, then add
+// each RID's runtime without clobbering the prior slice.
 //
 // On install the tooling's Package.swift `__Z42_RUNTIME_XCFRAMEWORK__`
 // placeholder is rewritten to the installed runtime's xcframework absolute path,
@@ -31,31 +37,37 @@ string _workloadsDir(string ver) {
 void _cmdWorkloadInstall(ParseResult r) {
     string wl = r.GetPositional(0);
     if (wl.Length == 0) {
-        ConsoleError.WriteLine("usage: z42 workload install <wl> --from <tooling-dir> [--runtime <dir>] [--version <ver>] [--rid <rid>]");
+        ConsoleError.WriteLine("usage: z42 workload install <wl> [--from <tooling-dir>] [--runtime <dir>] [--version <ver>] [--rid <rid>]");
         Environment.Exit(2); return;
     }
     string from = r.GetOption("from");
-    if (from.Length == 0) {
-        ConsoleError.WriteLine("z42 workload install: --from <tooling-dir> required (manifest download = B2-3, not yet wired)");
-        Environment.Exit(2); return;
-    }
-    if (!Directory.Exists(from)) {
+    if (from.Length > 0 && !Directory.Exists(from)) {
         ConsoleError.WriteLine("z42 workload install: --from not found: " + from);
         Environment.Exit(1); return;
     }
     string ver = r.GetOption("version");
-    if (ver.Length == 0) { ver = _workloadVersionFromManifest(from); }
+    if (ver.Length == 0 && from.Length > 0) { ver = _workloadVersionFromManifest(from); }
     if (ver.Length == 0) {
         ConsoleError.WriteLine("z42 workload install: --version <ver> required (or a manifest.toml in --from)");
         Environment.Exit(2); return;
     }
 
     // 1. tooling → runtimes/<ver>/workloads/<wl>/
+    //    --from (re)installs the tooling (wipe + copy). Omit --from to install
+    //    only a runtime slice ADDITIVELY into an already-installed workload —
+    //    this is how android's second RID is added (one workload, jniLibs/<abi>
+    //    + assets/stdlib per RID) without clobbering the first RID's slice.
     string wlDest = Path.Join(_workloadsDir(ver), wl);
-    if (Directory.Exists(wlDest)) { Directory.Delete(wlDest, true); }
-    Directory.Create(wlDest);
-    _copyTree(from, wlDest);
-    Console.WriteLine("workload " + wl + " (" + ver + ") → " + wlDest);
+    if (from.Length > 0) {
+        if (Directory.Exists(wlDest)) { Directory.Delete(wlDest, true); }
+        Directory.Create(wlDest);
+        _copyTree(from, wlDest);
+        Console.WriteLine("workload " + wl + " (" + ver + ") → " + wlDest);
+    } else if (!Directory.Exists(wlDest)) {
+        ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' (" + ver + ") not installed;");
+        ConsoleError.WriteLine("       first install tooling: z42 workload install " + wl + " --from <tooling-dir>");
+        Environment.Exit(1); return;
+    }
 
     // 2. runtime pack → runtimes/<rid>/<ver>/  (if provided)
     string runtimeFrom = r.GetOption("runtime");
@@ -91,6 +103,33 @@ void _cmdWorkloadInstall(ParseResult r) {
                 File.SymLink(Path.Join(rtDest, sub), link);
             }
             Console.WriteLine("      ✓ pkg-web/pkg-nodejs symlinked from runtime");
+        } else if (File.Exists(Path.Join(Path.Join(rtDest, "native"), "libz42_platform_android.so"))) {
+            // android: the runtime pack feeds the tooling gradle module two places
+            // gradle bakes into the AAR — jniLibs (per-ABI .so) + assets/stdlib (zpkgs).
+            string abi = _androidAbi(rid);
+            if (abi.Length == 0) {
+                ConsoleError.WriteLine("z42 workload install: cannot map rid '" + rid + "' to an Android ABI");
+                Environment.Exit(2); return;
+            }
+            // 1. per-ABI .so → z42vm/src/main/jniLibs/<abi>/ (jniLibs.srcDirs + CMake pick it up)
+            string jni = Path.Join(Path.Join(Path.Join(wlDest, "z42vm/src/main/jniLibs"), abi), "");
+            Directory.Create(jni);
+            File.Copy(Path.Join(Path.Join(rtDest, "native"), "libz42_platform_android.so"),
+                      Path.Join(jni, "libz42_platform_android.so"));
+            string compSo = Path.Join(Path.Join(rtDest, "native"), "libz42_compression.so");
+            if (File.Exists(compSo)) { File.Copy(compSo, Path.Join(jni, "libz42_compression.so")); }
+            Console.WriteLine("      ✓ libz42_platform_android.so → jniLibs/" + abi + "/");
+            // 2. stdlib zpkgs → z42vm/src/main/assets/stdlib/ (assets.srcDirs bakes them in).
+            //    Version-locked to the runtime, so they ride the runtime pack — not tooling.
+            string assets = Path.Join(wlDest, "z42vm/src/main/assets/stdlib");
+            Directory.Create(assets);
+            string rtLibs = Path.Join(rtDest, "libs");
+            if (Directory.Exists(rtLibs)) {
+                foreach (var f in Directory.Enumerate(rtLibs)) {
+                    if (f.EndsWith(".zpkg")) { File.Copy(Path.Join(rtLibs, f), Path.Join(assets, f)); }
+                }
+                Console.WriteLine("      ✓ stdlib zpkgs → assets/stdlib/");
+            }
         }
     }
 
@@ -190,6 +229,13 @@ string _ridFromRuntimeDir(string dir) {
     if (dot1 < 0) { return ""; }
     // skip the version (which itself has no '-' in x.y.z); rid is after the first '-'.
     return rest.Substring(dot1 + 1, rest.Length - dot1 - 1);
+}
+
+// Map an android runtime RID to its gradle/NDK ABI dir name.
+string _androidAbi(string rid) {
+    if (rid == "android-arm64") { return "arm64-v8a"; }
+    if (rid == "android-x64")   { return "x86_64"; }
+    return "";
 }
 
 string[] _single(string s) {

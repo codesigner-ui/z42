@@ -111,6 +111,38 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 三类可安装物：**① runtime 版本（side-by-side）· ② launcher 自身（trampoline + launcher.zpkg，无 vm）· ③ workload（挂某 runtime 版本下）**。
 
+## 本地 install 机制（B2 已实现：runtime/workload 分包 + 平台铺设策略）
+
+`z42 workload install <wl> [--from <tooling>] [--runtime <pack>] [--rid <rid>]`
+（launcher_workload.z42）。runtime pack 与 workload tooling **分两个包**（独立版本管理——
+runtime ABI 配 z42vm 版本，tooling 是工程模板）：
+
+```
+runtimes/<rid>/<ver>/         ← runtime pack（z42-runtime-<ver>-<rid>）：native/ + libs/ + headers
+runtimes/<ver>/workloads/<wl>/ ← workload tooling（gradle 工程 / SwiftPM / npm 包）
+```
+
+**安装两步**（解耦，支持一 workload 多 RID）：
+
+1. `--from <tooling>` →（重）装 workload tooling（先 `Delete(wlDest)` 再 `_copyTree`）。
+2. `--runtime <pack> --rid <rid>` → 把 runtime pack 拷进 `runtimes/<rid>/<ver>/`，再按平台把其内容
+   **铺进 tooling**（铺设策略由 runtime pack 内容探测）：
+
+| 平台 | 探测 | 铺设策略 |
+|------|------|---------|
+| ios | `native/Z42VM.xcframework` | 改写 tooling `Package.swift` 的 `__Z42_RUNTIME_XCFRAMEWORK__` 占位 → **相对路径** `../../../<rid>/<ver>/native/Z42VM.xcframework`（SwiftPM binaryTarget 要求相对 package root） |
+| wasm | `pkg-web/` | 把 runtime 的 `pkg-web`/`pkg-nodejs` **symlink** 进 tooling 根（package.json `exports` root-相对原样解析，免改写） |
+| android | `native/libz42_platform_android.so` | per-ABI `.so` → `z42vm/src/main/jniLibs/<abi>/`（jniLibs.srcDirs+CMake 拾取）；stdlib zpkgs → `z42vm/src/main/assets/stdlib/`（assets.srcDirs 烘入 AAR） |
+
+**一 workload 多 RID（android 真机要全 ABI）**：tooling 装一次（带 `--from`），之后每个 RID 的 runtime
+**只带 `--runtime`/`--rid`（不带 `--from`）增量叠加**——避免 tooling 重拷 `Delete(wlDest)` 抹掉前一个
+RID 已铺的 jniLibs slice。android `build.gradle abiFilters=[arm64-v8a, x86_64]` → AAR 需两 ABI 的 `.so`
+同时在场 → 必须先装 android-arm64 再增量装 android-x64，`gradlew :z42vm:assembleDebug` 才出全 ABI 的 AAR。
+
+**自包含头约束**：ios `Z42VMC` / android JNI bridge 的 C 头必须是**真实 runtime 头的拷贝**（不是源码树
+`#include "../../../runtime/include/.."` 转发桩——桩的相对路径只在 repo 内解析，打包后失效）。`xtask package`
+落包时直接拷 `src/runtime/include/{z42_abi,z42_host}.h` 进 tooling 的 include 目录。
+
 ## 运行解析顺序（多版本选择）
 
 ```

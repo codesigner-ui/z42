@@ -1,4 +1,4 @@
-# Tasks: impl-workload-install (B2) — 🟡 B2-1 iOS 端到端 ✅
+# Tasks: impl-workload-install (B2) — 🟡 B2-1 iOS + B2-3 wasm + android 端到端 ✅
 
 **变更说明：** runtime 与 workload tooling 分包（版本管理）+ `z42 workload install/list/remove`。
 **锁：** `toolchain`。设计/决策见 proposal.md + design.md。
@@ -22,7 +22,20 @@
 - [x] GREEN 端到端：`workload install wasm` → symlink 建立 → **`node import pkg-nodejs/z42_wasm.js` 加载成功**（exports: Z42VM/Z42VMEntry/...）
 - install 平台分支：runtime 有 `native/Z42VM.xcframework` → ios(改写 Package.swift)；有 `pkg-web/` → wasm(symlink)
 
-## B2-3 android 实装方案（已精确摸清；工具链本地已装齐）
+## B2-3 android（✅ 完成 + 本地 gradle AAR 端到端验证）
+- [x] xtask_package_android 拆分：`_buildRuntimePackageAndroid`（runtime pack：per-ABI `libz42_platform_android.{so,a}` + `libz42_compression.{so,a}` + headers + libs）+ `_packageAndroid`（tooling = **gradle 工程**：gradlew + settings + z42vm 模块 Kotlin facade + JNI bridge）
+- [x] JNI headers **自包含**：`z42vm/src/main/cpp/include/{z42_abi,z42_host}.h` 拷真实 runtime 头（非源码树 `#include "../../.."` 转发桩，打包后失效——与 iOS Z42VMC 同根因）
+- [x] launcher_workload install **android 分支**：runtime 的 per-ABI `.so` → `jniLibs/<abi>/`（jniLibs.srcDirs + CMake 拾取）+ stdlib zpkgs → `assets/stdlib/`（assets.srcDirs 烘入 AAR）
+- [x] **多 RID 单 workload**：`--from` 改为可选——给 `--from` 则（重）装 tooling；仅 `--runtime`/`--rid` 则**增量**装 runtime slice 进已装 workload，不抹掉前一个 RID 的 jniLibs/assets。android-arm64 + android-x64 两 slice 共存
+- [x] GREEN 端到端：`xtask package release --rid android-{arm64,x64}` → runtime pack + gradle tooling；`workload install android --from <tooling> --runtime <arm64>` 再 `--runtime <x64>`（增量）→ `gradlew :z42vm:assembleDebug` **BUILD SUCCESSFUL → z42vm-debug.aar**（4.3M，含 jni/{arm64-v8a,x86_64}/libz42_{platform_android,vm_jni}.so + assets/stdlib/*.zpkg）
+
+### 关键实现发现（android）
+- **android tooling = gradle 工程**（≠ ios/wasm 的扁平/单文件可构建单元）：CMake 用 `jniLibs.srcDirs` 链 prebuilt `.so`，build.gradle `abiFilters` 列全部 ABI → **AAR 需所有 ABI 的 .so 同时在场** → 一 workload 多 runtime pack。
+- **多 RID install 必须增量**：tooling 拷贝会 `Delete(wlDest, true)`，第二个 RID 若再带 `--from` 会抹掉第一个 RID 的 jniLibs slice → `--from` 改可选，runtime-only install 增量叠加。
+- stdlib zpkgs **版本锁定于 runtime** → 入 runtime pack `libs/`，install 时铺进 `assets/stdlib/`（不随 tooling 走）。
+- `_pkgSha256Check` 对缺失 `native/include/*.h` 容忍（split tooling 包头文件在 runtime pack，不在 tooling pkgDir）。
+
+## （历史）B2-3 android 实装方案（已精确摸清；工具链本地已装齐）
 
 **工具链可用**：`artifacts/tools/{android-ndk,android-sdk,gradle}` + cargo-ndk + `.so`（aarch64-linux-android/release）均已装/已建——经 `z42 xtask.zpkg deps install --os android`（本地/CI 同径）。**android 不 blocked**。
 
@@ -50,7 +63,7 @@
 **android**（需 gradle，本地无 → 归 CI）：照 iOS 模式拆 runtime pack（per-ABI `libz42.so`：android-arm64 + android-x64，多 RID）+ tooling（z42vm AAR facade + gradle 模板）；gradle 引独立 .so。多-ABI 多 RID（≠ ios 单容器 xcframework）。
 
 ## 余下（后续 change）
-- [ ] B2-3 wasm（本地验）+ android（CI 验）——方案如上。
+- [x] ~~B2-3 wasm（本地验）+ android（CI 验）~~——三平台均本地端到端验证完成。
 - [ ] B2-4 CI release.yml 上传 workload + runtime packs + `workload install` 走 manifest 联网。
 - [ ] 真实 iOS device/sim 多-slice xcframework 合并（本次用 macos 单 slice 验机制；真机包归 CI）。
 - [ ] B1 命令发现（workload 命令进 `z42 -h` 树）。
