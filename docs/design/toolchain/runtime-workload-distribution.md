@@ -204,6 +204,19 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 
 ## Deferred / 待 spec 细化
 
+> **workload install 现状（2026-06-17，impl-workload-install B2 已归档）**：三平台 LOCAL
+> produce + `z42 workload install --from <tooling> --runtime <pack>` + list/remove 端到端落地
+> （机制见上「本地 install 机制」节）。下列为该 change proposal 明确的 Out-of-Scope 后续 change：
+
+- **B2-4 CI release + manifest 联网装**：`release.yml` 上传 runtime/workload packs；`workload install`
+  无 `--from` 时读 `release-index.json` manifest 联网下载（复用 launcher_network `_extractArchive`）。
+  依赖 manifest schema 定稿（见下）。
+- **B1 命令发现（discovery-based dispatch）**：现 `workload`/`export`/`publish` 命令 baked 进
+  launcher_cli.z42；B1 改为从已装 workload 动态发现命令（对齐 dotnet workload）。属 CLI dispatch
+  机制变更，需独立 spec。
+- **B4 测试经 workload**：`z42 test` 的平台侧（on-device / 模拟器）测试改走已装 workload tooling。
+- **B5 mobile publish/run 生命周期**：`z42 publish ios/android` 产 .ipa/.aab + `z42 run <plat>` 设备侧部署。
+- **真实 iOS 多-slice xcframework**：B2 用 macos 单 slice 验机制；device+sim 多 slice 合并归 CI。
 - **launcher 最小 vm → 由 NativeAOT 原生 launcher 取代**：本设计 launcher 已不带 vm（复用 runtime vm），故现在无需最小化 vm；NativeAOT 落地后把 launcher AOT 成原生二进制（rustup 式），vm 问题永久消失。届时 `install-z42` 可只下原生 launcher，bootstrap 更轻。
 - manifest schema 定稿（多 archive 类型、可选 z42c-less 精简 runtime、依赖/兼容区间）。
 - self update 的原子替换 + 回滚（Windows 文件占用、权限）。

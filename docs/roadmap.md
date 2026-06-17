@@ -344,6 +344,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | apphost single-file | 链 `libz42_vm` + 内嵌 zpkg/libs，经 embedding C ABI 内存加载；依赖 C ABI + 碰 runtime | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | apphost Windows checksum/Authenticode + 跨平台交叉签名 | Windows PE checksum / 在 Linux 上签 macOS apphost（需内建 Mach-O 签名器；P1 用 host codesign）| [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | apphost cwd 上行 / 富搜索配置 | P1 本地搜索仅 exe 目录上行 | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
+| workload install 后续（B2-4 CI manifest 联网装 / B1 命令发现 / B4 平台测试 / B5 mobile publish-run / 真机多-slice xcframework）| impl-workload-install B2 已落地三平台 LOCAL produce+install（2026-06-17 归档）；proposal Out-of-Scope 的后续 change | [toolchain/runtime-workload-distribution.md](design/toolchain/runtime-workload-distribution.md#deferred--待-spec-细化) |
 | stdlib 剩余缺失包 | **async** 仍延后（依赖 L3 async/await 语法）；~~fs~~ ✅ / ~~os~~ ✅（合入 z42.io）/ ~~threading~~ ✅ 2026-05-20 / ~~net~~ ✅ K1-K4 2026-05-24~05-25 / ~~crypto~~ ✅ SHA-1/256+HMAC 2026-05-24~05-25。详 `docs/design/stdlib/roadmap.md` | [stdlib/roadmap.md](design/stdlib/roadmap.md) |
 | split-debug-symbols 退化 trace ip+build_id | line==0 时帧追加 `+0x<ip> [build:<8hex>]`；需 VmFrame 追踪 PC | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | `z42c symbolicate` 离线工具 | 把 `.zsym` 应用到 crash trace 还原 file:line:col | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |

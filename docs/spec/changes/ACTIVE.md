@@ -12,7 +12,7 @@
 | `runtime` | —（空闲）| — | ~~add-reflection-transitive-interfaces~~ ✅ 已归档 2026-06-17（`__type_interfaces` 传递 BFS + interp/JIT `is` 传递查接口；dotnet 1568/0 + vm interp 188+jit 180 + cargo 809/0）。（前序 ~~add-reflection-instance-generic-args~~ ✅ 2026-06-16）|
 | `stdlib` | —（空闲）| — | ~~add-reflection-assignable-from~~ ✅ 已归档 2026-06-16（`Std.Type.IsAssignableFrom(Type)` + `GetInterface(string)`）。（前序 ~~add-reflection-interface-class-predicates~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
-| `toolchain` | —（空闲）| — | **impl-workload-install B2-1 iOS + B2-3 wasm + B2-3 android** ✅（runtime/workload 分包 + `z42 workload install/list/remove`；三平台端到端：iOS `swift build` ✓ / wasm `node import` ✓ / **android `gradlew :z42vm:assembleDebug` → z42vm-debug.aar（双 ABI .so + stdlib 烘入）✓**；install 平台分支：ios 改写 Package.swift / wasm symlink pkg-* / android jniLibs+assets；`--from` 可选 → 一 workload 多 RID 增量装）。前序 **~~rework-desktop-publish-run~~** ✅（命令模型定稿）/ **~~remove-host-toplevel S5~~** ✅ / **~~add-desktop-export~~** ✅ / **~~migrate-facades-to-workload S3'~~** ✅ / **~~migrate-tier2-to-workload S1~~** ✅ / **consolidate S0** ✅。**B 余下：B2-4 CI manifest / B1 命令发现 / B4 测试改 workload / B5 mobile 生命周期** |
+| `toolchain` | —（空闲）| — | **~~impl-workload-install B2~~ ✅ 已归档 2026-06-17**（三平台 LOCAL produce + install：runtime/workload 分包 + `z42 workload install/list/remove`；iOS `swift build` ✓ / wasm `node import` ✓ / **android `gradlew :z42vm:assembleDebug` → z42vm-debug.aar（双 ABI .so + stdlib 烘入）✓**；install 平台分支：ios 改写 Package.swift / wasm symlink pkg-* / android jniLibs+assets；`--from` 可选 → 一 workload 多 RID 增量装。后续 B2-4 CI / B1 命令发现 / B4 / B5 入 roadmap Deferred）。前序 **~~rework-desktop-publish-run~~** ✅（命令模型定稿）/ **~~remove-host-toplevel S5~~** ✅ / **~~add-desktop-export~~** ✅ / **~~migrate-facades-to-workload S3'~~** ✅ / **~~migrate-tier2-to-workload S1~~** ✅ / **consolidate S0** ✅。**B 余下：B2-4 CI manifest / B1 命令发现 / B4 测试改 workload / B5 mobile 生命周期** |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
@@ -72,5 +72,5 @@
 | plan-0.3.x-three-streams | docs（不上锁） |
 | consolidate-platform-into-workload | docs（S0–S5 机械整合弧 ✅ 完成；B 子系统余下）|
 | build-workload-subsystem | docs（B 程序级立项）；B3=S2 ✅(add-desktop-export)/命令模型 ✅(rework-desktop-publish-run)。**排序重排为 B2→B1**（User 2026-06-17：B1 单独空转，B2 产命令来源）|
-| impl-workload-install | docs（B2 DRAFT，待 gate）；workload 包 + `z42 workload install --from` + 按需拉 runtime；本地闭环验证（B2-1 产包→B2-2 装→B2-3 CI）|
+| ~~impl-workload-install~~ | toolchain —— ✅ 已归档 2026-06-17（三平台 runtime/workload 分包 + `z42 workload install/list/remove`；本地 produce+install 端到端 iOS/wasm/android；多 RID 增量装；后续 B2-4 CI/B1/B4/B5 入 roadmap Deferred）|
 | impl-command-discovery | docs（B1 DRAFT，待 B2 后）；命令发现机制（spawn-leaf 进 Std.Cli 树，跨 stdlib 锁）|

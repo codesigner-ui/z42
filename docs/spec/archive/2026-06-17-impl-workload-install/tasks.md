@@ -1,7 +1,11 @@
-# Tasks: impl-workload-install (B2) — 🟡 B2-1 iOS + B2-3 wasm + android 端到端 ✅
+# Tasks: impl-workload-install (B2) — 🟢 已完成（三平台本地 produce + install 端到端 ✅）
 
 **变更说明：** runtime 与 workload tooling 分包（版本管理）+ `z42 workload install/list/remove`。
-**锁：** `toolchain`。设计/决策见 proposal.md + design.md。
+**锁：** `toolchain`（归档时释放）。设计/决策见 proposal.md + design.md。
+**完成：** 2026-06-17。proposal Scope = "本次 local 产包 + 本地 install 验证"——iOS/wasm/android 三平台
+全部 produce（runtime pack + workload tooling 分包）+ install（平台铺设：ios 改写 Package.swift /
+wasm symlink / android jniLibs+assets，多 RID 增量）+ list/remove 端到端验证完成。下列「余下」均为
+proposal 明确的 Out-of-Scope 后续 change，索引入 docs/roadmap.md Deferred Backlog Index。
 
 ## B2-1 iOS 端到端（✅ 完成 + 本地 swift build 验证）
 - [x] 1.1 xtask_package_ios 拆分：`_buildRuntimePackageIos`（z42-runtime-<ver>-<rid>：xcframework+headers+libs）+ `_packageIos`（workload tooling：Sources+Package.swift+examples+manifest）
