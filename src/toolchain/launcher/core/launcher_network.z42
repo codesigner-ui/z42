@@ -234,39 +234,56 @@ byte[] _downloadVerified(string baseUrl, string asset, string sha) {
     return body;
 }
 
-// Fetch release-index.json → [archive, sha256, rid0, rid1, …] for workloads.<wl>.
-// The first two elements are the tooling archive + its sha256; the rest are the
-// runtime-pack RIDs this workload depends on (android = two ABIs, ios = device +
-// sim). Returns a zero-length array when the manifest / workload entry is absent.
-string[] _fetchWorkloadEntry(string baseUrl, string wl) {
-    string[] empty = new string[0];
+// Fetch release-index.json → the `workloads.<wl>` JSON object (archive / sha256 /
+// host / runtimes), or an invalid JsonValue (IsObject()==false) when the manifest
+// or workload entry is absent. Caller extracts fields with _jsonStr/_jsonStrArray.
+JsonValue _fetchWorkloadEntry(string baseUrl, string wl) {
+    JsonValue nullVal = JsonValue.Parse("null");
     HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
     try {
         HttpResponse resp = hc.Get(baseUrl + "/release-index.json");
-        if (!resp.IsSuccess()) { return empty; }
+        if (!resp.IsSuccess()) { return nullVal; }
         JsonValue m = JsonValue.Parse(resp.BodyAsString());
-        if (!m.IsObject() || !m.ContainsKey("workloads")) { return empty; }
+        if (!m.IsObject() || !m.ContainsKey("workloads")) { return nullVal; }
         JsonValue wls = m.Get("workloads");
-        if (!wls.IsObject() || !wls.ContainsKey(wl)) { return empty; }
+        if (!wls.IsObject() || !wls.ContainsKey(wl)) { return nullVal; }
         JsonValue we = wls.Get(wl);
-        if (!we.IsObject()) { return empty; }
-        string archive = "";
-        string sha = "";
-        if (we.ContainsKey("archive")) { JsonValue av = we.Get("archive"); if (av.IsString()) { archive = av.AsString(); } }
-        if (we.ContainsKey("sha256"))  { JsonValue sv = we.Get("sha256");  if (sv.IsString()) { sha = sv.AsString(); } }
-        if (archive.Length == 0) { return empty; }
-        int rn = 0;
-        JsonValue rtsArr = JsonValue.Parse("[]");
-        if (we.ContainsKey("runtimes")) {
-            JsonValue cand = we.Get("runtimes");
-            if (cand.IsArray()) { rtsArr = cand; rn = cand.Count(); }
-        }
-        string[] result = new string[2 + rn];
-        result[0] = archive; result[1] = sha;
-        int i = 0;
-        while (i < rn) { result[2 + i] = rtsArr.At(i).AsString(); i = i + 1; }
-        return result;
-    } catch (Exception e) { return empty; }
+        if (!we.IsObject()) { return nullVal; }
+        return we;
+    } catch (Exception e) { return nullVal; }
+}
+
+// obj.<key> as a plain string ("" if absent / not a string).
+string _jsonStr(JsonValue obj, string key) {
+    if (!obj.ContainsKey(key)) { return ""; }
+    JsonValue v = obj.Get(key);
+    if (!v.IsString()) { return ""; }
+    return v.AsString();
+}
+
+// obj.<key> as a string[] (empty if absent / not a JSON array of strings).
+string[] _jsonStrArray(JsonValue obj, string key) {
+    if (!obj.ContainsKey(key)) { return new string[0]; }
+    JsonValue a = obj.Get(key);
+    if (!a.IsArray()) { return new string[0]; }
+    int n = a.Count();
+    string[] r = new string[n];
+    int i = 0;
+    while (i < n) { r[i] = a.At(i).AsString(); i = i + 1; }
+    return r;
+}
+
+// host gate: empty list = unrestricted (allow); otherwise allow when the list
+// holds the wildcard "*" or the current host RID.
+bool _hostAllowed(string[] hosts) {
+    if (hosts.Length == 0) { return true; }
+    string h = _hostRid();
+    int i = 0;
+    while (i < hosts.Length) {
+        if (hosts[i] == "*" || hosts[i] == h) { return true; }
+        i = i + 1;
+    }
+    return false;
 }
 
 // Extract body into destDir. Windows archives are .zip; others are .tar.gz

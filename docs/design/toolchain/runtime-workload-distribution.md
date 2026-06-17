@@ -55,9 +55,9 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
     "browser-wasm": { "runtime": { "archive": "z42-runtime-0.3.5-browser-wasm.tar.gz", "sha256": "…" } }
   },
   "workloads": {
-    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "runtimes": ["ios-arm64","iossim-arm64"] },
-    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "runtimes": ["android-arm64","android-x64"] },
-    "wasm":    { "archive": "z42-0.3.5-wasm.tar.gz",    "sha256": "…", "runtimes": ["browser-wasm"] }
+    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
+    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
+    "wasm":    { "archive": "z42-0.3.5-wasm.tar.gz",    "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] }
   }
 }
 ```
@@ -66,7 +66,9 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。
 - `sha256` 内置 → 校验不再单独读 SHA256SUMS（SHA256SUMS 可作并行 legacy 资产保留）。
-- **`workloads.<wl>.host`（保留字段，未实施）**：哪些 host RID 能用该 workload（ios 仅 macOS）→ install 前 host 校验。B2-4 暂不 gate（见 Deferred「workload host 校验」）；当前任何 host 都可装任何 workload。
+- **`workloads.<wl>.host`（已实施，add-workload-host-gate, 2026-06-17）**：哪些 host RID 能装该 workload
+  （ios=`["macos-arm64"]`、android=全桌面 RID、wasm=`["*"]` 通配）。**联网装**前 launcher `_hostAllowed` 校验
+  `_hostRid()` ∈ host（或 `"*"`），不通过即拒、不下载。`host` 缺失 = 不限制（向后兼容）。本地 `--from` 装不 gate。
 
 ## launcher / runtime 拆分 + 首次 bootstrap
 
@@ -117,7 +119,8 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 - **本地（B2，`--from`/`--runtime` 指本地产包目录）** —— 见下「本地两步」。
 - **联网（B2-4，无 `--from`/`--runtime`）** —— 读 `release-index.json`（GitHub release tag，或 `--base-url`
-  指镜像/本地）→ `_fetchWorkloadEntry` 取 `workloads.<wl>.{archive, sha256, runtimes}` → 下载+校验+解压
+  指镜像/本地）→ `_fetchWorkloadEntry` 取 `workloads.<wl>.{archive, sha256, host, runtimes}` → **host gate**
+  （`_hostAllowed`：`_hostRid()` ∈ `host` 或 `"*"`；不通过即拒、不下载）→ 下载+校验+解压
   tooling 到 `runtimes/<ver>/workloads/<wl>/`（staging `.stage` + 原子 `File.Move`）→ **遍历 `runtimes` 列表**：
   每个 rid 读 `runtimes.<rid>.runtime` → 下载+校验+解压到 `runtimes/<rid>/<ver>/` → 立即跑同一平台铺设。
   即「按需自动拉 runtime」（Decision 10）；android 双 ABI / ios 真机+模拟器都由 `runtimes` 列表逐个拉+铺。
@@ -218,8 +221,6 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 > `workloads.<wl>` + 平台 runtime pack 双归档；`workload install <wl>`（无 `--from`，可 `--base-url`）联网拉。
 > 机制见上「install 机制」节。下列为后续 change：
 
-- **workload host 校验**：`workloads.<wl>.host`（保留字段）→ install 前校验 host RID（ios 仅 macOS）。
-  B2-4 暂不 gate（任何 host 可装任何 workload）；CI 暂不 emit `host`。
 - **B1 命令发现（discovery-based dispatch）**：现 `workload`/`export`/`publish` 命令 baked 进
   launcher_cli.z42；B1 改为从已装 workload 动态发现命令（对齐 dotnet workload）。属 CLI dispatch
   机制变更，需独立 spec。

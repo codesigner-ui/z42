@@ -28,6 +28,7 @@ namespace Z42Launcher;
 using Std;
 using Std.IO;
 using Std.Cli;
+using Std.Json;
 
 string _workloadsDir(string ver) {
     return Path.Join(Path.Join(_runtimesDir(), ver), "workloads");
@@ -112,15 +113,29 @@ void _workloadInstallNetwork(ParseResult r, string wl, string baseUrlOpt) {
     string baseUrl = (baseUrlOpt.Length > 0) ? baseUrlOpt
         : ("https://github.com/codesigner-ui/z42/releases/download/" + tag);
 
-    string[] we = _fetchWorkloadEntry(baseUrl, wl);
-    if (we.Length < 2 || we[0].Length == 0) {
+    JsonValue we = _fetchWorkloadEntry(baseUrl, wl);
+    if (!we.IsObject()) {
         ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not found in manifest at " + baseUrl + "/release-index.json");
         Environment.Exit(1); return;
     }
+    string toolingArchive = _jsonStr(we, "archive");
+    string toolingSha = _jsonStr(we, "sha256");
+    if (toolingArchive.Length == 0) {
+        ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' has no archive in manifest");
+        Environment.Exit(1); return;
+    }
+    // host gate (BEFORE any download): refuse workloads this host can't build.
+    string[] hosts = _jsonStrArray(we, "host");
+    if (!_hostAllowed(hosts)) {
+        ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not supported on this host ("
+            + _hostRid() + "); requires one of: " + _joinComma(hosts));
+        Environment.Exit(2); return;
+    }
+    string[] rids = _jsonStrArray(we, "runtimes");
 
     // 1. tooling → runtimes/<ver>/workloads/<wl>/ (download + verify + atomic move)
-    Console.WriteLine("downloading " + we[0] + " (" + tag + ") ...");
-    byte[] tbody = _downloadVerified(baseUrl, we[0], we[1]);
+    Console.WriteLine("downloading " + toolingArchive + " (" + tag + ") ...");
+    byte[] tbody = _downloadVerified(baseUrl, toolingArchive, toolingSha);
     string wlDest = Path.Join(_workloadsDir(ver), wl);
     Directory.Create(_workloadsDir(ver));
     string wlStage = Path.Join(_workloadsDir(ver), "." + wl + ".stage");
@@ -132,9 +147,9 @@ void _workloadInstallNetwork(ParseResult r, string wl, string baseUrlOpt) {
     Console.WriteLine("workload " + wl + " (" + ver + ") → " + wlDest);
 
     // 2. each runtime RID it depends on (android = 2 ABIs, ios = device + sim)
-    int i = 2;
-    while (i < we.Length) {
-        string rid = we[i];
+    int i = 0;
+    while (i < rids.Length) {
+        string rid = rids[i];
         string[] mf = _fetchManifest(baseUrl, rid, "runtime");
         if (mf[0].Length == 0) {
             ConsoleError.WriteLine("z42 workload install: no runtime pack for rid '" + rid + "' in manifest");
@@ -307,4 +322,13 @@ string[] _single(string s) {
     string[] a = new string[1];
     a[0] = s;
     return a;
+}
+
+// Join a string[] with ", " (for the host-gate error message). "(none)" if empty.
+string _joinComma(string[] xs) {
+    if (xs.Length == 0) { return "(none)"; }
+    string s = xs[0];
+    int i = 1;
+    while (i < xs.Length) { s = s + ", " + xs[i]; i = i + 1; }
+    return s;
 }
