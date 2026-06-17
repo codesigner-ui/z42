@@ -22,9 +22,22 @@
 - [x] GREEN 端到端：`workload install wasm` → symlink 建立 → **`node import pkg-nodejs/z42_wasm.js` 加载成功**（exports: Z42VM/Z42VMEntry/...）
 - install 平台分支：runtime 有 `native/Z42VM.xcframework` → ios(改写 Package.swift)；有 `pkg-web/` → wasm(symlink)
 
-## B2-3 android 实装方案（已摸清；需 gradle，归 CI）
+## B2-3 android 实装方案（已精确摸清；工具链本地已装齐）
 
-**android**（需 gradle，本地无 → 归 CI）：照 iOS 模式拆 runtime pack（per-ABI `libz42.so`：android-arm64 + android-x64，多 RID）+ tooling（z42vm AAR facade + gradle 模板）；gradle 引独立 .so。多-ABI 多 RID（≠ ios 单容器 xcframework）。
+**工具链可用**：`artifacts/tools/{android-ndk,android-sdk,gradle}` + cargo-ndk + `.so`（aarch64-linux-android/release）均已装/已建——经 `z42 xtask.zpkg deps install --os android`（本地/CI 同径）。**android 不 blocked**。
+
+**真实结构差异（比 ios/wasm 更重）**：
+- ios/wasm 的包**即可构建单元**（Package.swift / package.json）。
+- android 当前包是**扁平组件**（`kotlin/` + `cpp/` + `native/`），给 `z42 export android` **组装**成 gradle 工程用。
+- 可构建单元是 **gradle 工程**：`src/toolchain/workload/platforms/android/`（gradlew + settings + `z42vm/` 模块；`z42vm/build.gradle.kts` 用 `jniLibs.srcDirs("src/main/jniLibs")` 引 `.so`，CMake 链它建 JNI bridge）。
+
+**拆分方案**：
+- runtime pack `z42-runtime-<ver>-android-<abi>`：`libz42_platform_android.so`（per-ABI；arm64-v8a + x86_64，多 RID）+ headers。
+- workload tooling：**gradle 工程**（z42vm 模块 build.gradle + src/main/{java,cpp} + gradlew + settings）——即可构建单元（≠ 现扁平包）。
+- install android 分支：把 runtime 的 `.so` 放到 tooling 的 `z42vm/src/main/jniLibs/<abi>/libz42_platform_android.so`（gradle `jniLibs.srcDirs` 自动拾取）。
+- 验证：`gradlew :z42vm:assembleRelease`（ANDROID_HOME/NDK env 见 memory `reference_cmake_android_ndk_env`）→ AAR 链接独立安装的 .so。**重 + env 敏感**（CMake/NDK/gradle）。
+
+> **android = 比 ios/wasm 更大的重构**（包结构从扁平改为 gradle 工程 + 牵连 export-assembly）+ 重 env-敏感 gradle 验证。机制本身已由 ios+wasm 两平台两策略验证。建议作为专注单元实装。
 
 ## （历史）wasm 方案（已实现，下方留作设计记录）
 
