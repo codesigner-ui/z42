@@ -16,8 +16,28 @@
 - **Z42VMC 转发头源码树耦合**（合并包当年也只在 repo 内 build）→ 包内放自包含真实头，SwiftPM 自动生成 module map。
 - z42 stdlib **无 `Array.Sort`、无 `Directory.Copy`、`IndexOf` 无 startIndex 重载** → 自写递归拷贝、手动 quote 解析。
 
+## B2-3 wasm（✅ 完成 + 本地 node 验证）
+- [x] xtask_package_wasm 拆分：`_buildRuntimePackageWasm`（runtime pack：native + pkg-web + pkg-nodejs + libs）+ `_packageWasm`（tooling：js + package.json，**原样**）
+- [x] launcher_workload install **wasm 分支**：runtime 有 `pkg-web/` → `File.SymLink` 把 pkg-web/pkg-nodejs 链进 tooling 根（package.json `exports` root-相对原样解析，免改写）
+- [x] GREEN 端到端：`workload install wasm` → symlink 建立 → **`node import pkg-nodejs/z42_wasm.js` 加载成功**（exports: Z42VM/Z42VMEntry/...）
+- install 平台分支：runtime 有 `native/Z42VM.xcframework` → ios(改写 Package.swift)；有 `pkg-web/` → wasm(symlink)
+
+## B2-3 android 实装方案（已摸清；需 gradle，归 CI）
+
+**android**（需 gradle，本地无 → 归 CI）：照 iOS 模式拆 runtime pack（per-ABI `libz42.so`：android-arm64 + android-x64，多 RID）+ tooling（z42vm AAR facade + gradle 模板）；gradle 引独立 .so。多-ABI 多 RID（≠ ios 单容器 xcframework）。
+
+## （历史）wasm 方案（已实现，下方留作设计记录）
+
+**wasm**（本地可验：repo node + wasm-pack + pkg-* 产物已存在）：
+- 拆：runtime pack `z42-runtime-<ver>-browser-wasm`（native/{libz42.a,z42_wasm_bg.wasm,include} + pkg-web/ + pkg-nodejs/ + libs/）；tooling（js/ + package.json，**原样不改**）。
+- **install 用 symlink 而非改写**：wasm 的 `package.json` `exports` map + `js/index.js` 多处引 pkg-*（且 index.js 有 js-相对 quirk）；install 把 runtime 的 `pkg-web`/`pkg-nodejs` **symlink 进 tooling 根**（z42 有 `File.SymLink`），则 package.json exports（root-相对 `./pkg-nodejs/`）原样解析，免多文件改写。
+- 验证：install → `node --input-type=module -e "await import('<workloads/wasm>/pkg-nodejs/z42_wasm.js')"` 加载即证。
+- install 平台分支：runtime 有 `native/Z42VM.xcframework` → ios（改写 Package.swift）；有 `pkg-web/` → wasm（symlink）。
+
+**android**（需 gradle，本地无 → 归 CI）：照 iOS 模式拆 runtime pack（per-ABI `libz42.so`：android-arm64 + android-x64，多 RID）+ tooling（z42vm AAR facade + gradle 模板）；gradle 引独立 .so。多-ABI 多 RID（≠ ios 单容器 xcframework）。
+
 ## 余下（后续 change）
-- [ ] B2-3 android/wasm 照 iOS 模式拆（NDK/wasm-pack 多归 CI）；多-ABI .so（android）vs 单容器 xcframework（ios）模型不同。
+- [ ] B2-3 wasm（本地验）+ android（CI 验）——方案如上。
 - [ ] B2-4 CI release.yml 上传 workload + runtime packs + `workload install` 走 manifest 联网。
 - [ ] 真实 iOS device/sim 多-slice xcframework 合并（本次用 macos 单 slice 验机制；真机包归 CI）。
 - [ ] B1 命令发现（workload 命令进 `z42 -h` 树）。

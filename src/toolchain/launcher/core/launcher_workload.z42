@@ -76,14 +76,25 @@ void _cmdWorkloadInstall(ParseResult r) {
         Directory.Create(rtDest);
         _copyTree(runtimeFrom, rtDest);
         Console.WriteLine("runtime " + rid + " (" + ver + ") → " + rtDest);
-        // SwiftPM binaryTarget paths must be RELATIVE to the package root. The
-        // workload tooling lives at runtimes/<ver>/workloads/<wl>/ (3 levels under
-        // runtimes/), the runtime at runtimes/<rid>/<ver>/ — so the relative path
-        // up to runtimes/ then back down is fixed: ../../../<rid>/<ver>/native/...
-        xcfPath = "../../../" + rid + "/" + ver + "/native/Z42VM.xcframework";
+        // Platform-specific tooling → runtime wiring (detected by runtime content):
+        if (File.Exists(Path.Join(Path.Join(rtDest, "native"), "Z42VM.xcframework"))
+            || Directory.Exists(Path.Join(Path.Join(rtDest, "native"), "Z42VM.xcframework"))) {
+            // iOS: SwiftPM binaryTarget paths must be RELATIVE to the package root.
+            // workloads/<wl>/ is 3 levels under runtimes/, runtime at runtimes/<rid>/<ver>/.
+            xcfPath = "../../../" + rid + "/" + ver + "/native/Z42VM.xcframework";
+        } else if (Directory.Exists(Path.Join(rtDest, "pkg-web"))) {
+            // wasm: symlink the runtime's pkg-web/pkg-nodejs into the tooling root so the
+            // package.json `exports` map (root-relative `./pkg-nodejs/`) resolves — no rewrite.
+            foreach (var sub in new string[]{ "pkg-web", "pkg-nodejs" }) {
+                string link = Path.Join(wlDest, sub);
+                if (File.Exists(link) || Directory.Exists(link)) { Directory.Delete(link, true); }
+                File.SymLink(Path.Join(rtDest, sub), link);
+            }
+            Console.WriteLine("      ✓ pkg-web/pkg-nodejs symlinked from runtime");
+        }
     }
 
-    // 3. resolve the tooling Package.swift placeholder → installed xcframework
+    // 3. iOS: resolve the tooling Package.swift placeholder → installed xcframework
     //    (relative path, per SwiftPM binaryTarget requirement).
     string pkgSwift = Path.Join(wlDest, "Package.swift");
     if (File.Exists(pkgSwift) && xcfPath.Length > 0) {
