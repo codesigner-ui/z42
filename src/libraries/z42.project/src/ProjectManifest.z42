@@ -2,14 +2,29 @@ namespace Z42.Project;
 
 /// `z42.toml` 的完整类型化模型（单项目）。z42c 与 z42.build 共同依赖的唯一真相。
 ///
-/// 各段随 schema 增长在对应记录里补字段；本根记录只做聚合。
-/// workspace 清单（`[workspace]`）单独解析，见 `Workspace`。
-public record ProjectManifest(
-    ProjectInfo  Project,         // [project]
-    Sources      Sources,         // [sources]
-    BuildConfig  Build,           // [build]
-    Profile[]    Profiles,        // [profile.*]（按 Name 索引：debug / release）
-    Dependency[] Dependencies,    // [dependencies]
-    ExeTarget[]  Exes,            // [[exe]]（单 exe 时为空）
-    IConfigTable Platforms        // [platform] 整表；按 family 取子表 .Table("ios")
-);
+/// 受限自举子集写法：sealed class + 构造函数、bool HasX 替 nullable、array+count 替泛型。
+/// 各段随 schema 增长在对应记录补字段；本根只做聚合。
+/// workspace 清单（`[workspace]`）单独解析，见 `WorkspaceManifest`。
+public sealed class ProjectManifest {
+    public ProjectInfo Project;        // [project]
+    public Sources     Sources;        // [sources]
+    public BuildConfig Build;          // [build]
+    public Profile[]   Profiles;       // [profile.*]
+    public int         ProfileCount;
+    public DepEntry[]  Deps;           // [dependencies]
+    public int         DepCount;
+    public ExeTarget[] Exes;           // [[exe]]（单 exe 时 ExeCount == 0）
+    public int         ExeCount;
+    public PlatformSet Platform;       // [platform.*]
+    public ProjectManifest(ProjectInfo project, Sources sources, BuildConfig build,
+                           Profile[] profiles, int profileCount,
+                           DepEntry[] deps, int depCount,
+                           ExeTarget[] exes, int exeCount,
+                           PlatformSet platform) {
+        this.Project = project; this.Sources = sources; this.Build = build;
+        this.Profiles = profiles; this.ProfileCount = profileCount;
+        this.Deps = deps; this.DepCount = depCount;
+        this.Exes = exes; this.ExeCount = exeCount;
+        this.Platform = platform;
+    }
+}

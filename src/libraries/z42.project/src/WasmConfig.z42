@@ -1,0 +1,11 @@
+namespace Z42.Project;
+
+/// `[platform.wasm]` 段。固定字段。
+public sealed class WasmConfig {
+    public bool   HasTitle;
+    public string Title;        // 缺省 = [project].name
+    public WasmConfig(bool hasTitle, string title) {
+        this.HasTitle = hasTitle;
+        this.Title = title;
+    }
+}

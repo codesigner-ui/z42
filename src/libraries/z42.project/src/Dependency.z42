@@ -1,5 +1,0 @@
-namespace Z42.Project;
-
-/// `[dependencies]` 的一项。Version 用 "*" 表示任意（在 libs/ 目录解析 <Name>.zpkg）。
-/// z42.* stdlib 自动可用，无需声明。
-public record Dependency(string Name, string Version);

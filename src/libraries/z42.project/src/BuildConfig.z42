@@ -1,10 +1,19 @@
 namespace Z42.Project;
 
-/// `[build]` 段。目录默认：OutputDir = toml 所在目录；CacheDir = ${OutputDir}/.cache；
-/// DistDir = ${OutputDir}/dist。
-public record BuildConfig(
-    string OutputDir,
-    string CacheDir,
-    string DistDir,
-    bool   Incremental
-);
+/// `[build]` 段。目录默认见 docs/design/compiler/project.md。HasX 标志区分「显式设置」与「缺省」。
+public sealed class BuildConfig {
+    public bool   HasOutputDir;
+    public string OutputDir;
+    public bool   HasCacheDir;
+    public string CacheDir;
+    public bool   HasDistDir;
+    public string DistDir;
+    public bool   Incremental;
+    public BuildConfig(bool hasOut, string outDir, bool hasCache, string cacheDir,
+                       bool hasDist, string distDir, bool incremental) {
+        this.HasOutputDir = hasOut; this.OutputDir = outDir;
+        this.HasCacheDir = hasCache; this.CacheDir = cacheDir;
+        this.HasDistDir = hasDist; this.DistDir = distDir;
+        this.Incremental = incremental;
+    }
+}

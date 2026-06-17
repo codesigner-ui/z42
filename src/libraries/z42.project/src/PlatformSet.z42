@@ -1,0 +1,21 @@
+namespace Z42.Project;
+
+/// `[platform.*]` 各平台配置集合。HasX 标志区分「声明了该平台」与「缺省」。
+/// 平台配置也是项目配置的一部分（z42c 解析、忽略；z42.build / workload 消费）。
+public sealed class PlatformSet {
+    public bool          HasIOS;
+    public iOSConfig     IOS;
+    public bool          HasAndroid;
+    public AndroidConfig Android;
+    public bool          HasDesktop;
+    public DesktopConfig Desktop;
+    public bool          HasWasm;
+    public WasmConfig    Wasm;
+    public PlatformSet(bool hasIOS, iOSConfig ios, bool hasAndroid, AndroidConfig android,
+                       bool hasDesktop, DesktopConfig desktop, bool hasWasm, WasmConfig wasm) {
+        this.HasIOS = hasIOS; this.IOS = ios;
+        this.HasAndroid = hasAndroid; this.Android = android;
+        this.HasDesktop = hasDesktop; this.Desktop = desktop;
+        this.HasWasm = hasWasm; this.Wasm = wasm;
+    }
+}

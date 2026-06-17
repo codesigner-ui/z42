@@ -1,10 +1,18 @@
 namespace Z42.Project;
 
-/// `[project]` 段。
-public record ProjectInfo(
-    string Name,        // kebab-case；.zpkg 文件名 + 依赖引用名
-    string Version,     // SemVer
-    string Kind,        // "exe" | "lib"
-    string Entry,       // 可为 ""（自动探测）
-    bool   Pack         // [project].pack 全局默认（[profile.*].pack 最低优先级回退）
-);
+/// `[project]` 段。工程配置确定，字段固定、不开放任意键。
+public sealed class ProjectInfo {
+    public string Name;        // kebab-case；.zpkg 文件名 + 依赖引用名
+    public string Version;     // SemVer
+    public string Kind;        // "exe" | "lib"
+    public bool   HasEntry;
+    public string Entry;       // 仅 HasEntry 有效（否则自动探测）
+    public bool   HasPack;
+    public bool   Pack;        // 仅 HasPack 有效（[profile.*].pack 最低优先级回退）
+    public ProjectInfo(string name, string version, string kind,
+                       bool hasEntry, string entry, bool hasPack, bool pack) {
+        this.Name = name; this.Version = version; this.Kind = kind;
+        this.HasEntry = hasEntry; this.Entry = entry;
+        this.HasPack = hasPack; this.Pack = pack;
+    }
+}

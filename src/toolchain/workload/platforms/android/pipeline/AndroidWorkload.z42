@@ -1,6 +1,7 @@
 namespace Z42.Workload;
 
 using Z42.Build;
+using Z42.Project;
 
 /// Android 平台 workload —— 接管 `configure → package` 尾相位。host 任意（跨平台）；
 /// runtime pack：android-arm64 / android-x64（per-ABI libz42_*.so）。
@@ -17,10 +18,10 @@ public class AndroidWorkload : WorkloadBase {
 
     /// 从 [platform.android] 应用身份与权限。
     public override void Configure(IPipelineContext ctx) {
-        // 1. 渲染 AndroidManifest.xml（app_id / version_code / version_name / 权限）
-        ctx.RenderTemplate(ctx.Template("AndroidManifest.xml.tmpl"),
-                           ctx.Dirs.Intermediate + "/AndroidManifest.xml", ctx.Platform);
-        // 2. gradle props（min_sdk / target_sdk）—— 实现期写 gradle.properties
+        AndroidConfig a = ctx.Manifest.Platform.Android;  // typed [platform.android]
+        // 1. 渲染 AndroidManifest.xml：由 a.AppId / a.VersionCode / a.VersionName / a.Permissions
+        //    构造 KV，ctx.RenderTemplate(ctx.Template("AndroidManifest.xml.tmpl"), <dest>, keys, values)
+        // 2. gradle props（a.MinSdk / a.TargetSdk）—— 实现期写 gradle.properties
     }
 
     /// 生成 gradle 工程。export 模式跑到此后停。

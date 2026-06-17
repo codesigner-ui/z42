@@ -1,0 +1,16 @@
+namespace Z42.Project;
+
+/// `[platform.desktop]` 段。固定字段。
+public sealed class DesktopConfig {
+    public string PublishDir;
+    public bool   HasIcon;
+    public string Icon;
+    public bool   HasBundleId;
+    public string BundleId;     // macOS .app
+    public DesktopConfig(string publishDir, bool hasIcon, string icon,
+                         bool hasBundleId, string bundleId) {
+        this.PublishDir = publishDir;
+        this.HasIcon = hasIcon; this.Icon = icon;
+        this.HasBundleId = hasBundleId; this.BundleId = bundleId;
+    }
+}

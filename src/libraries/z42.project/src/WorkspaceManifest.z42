@@ -1,0 +1,29 @@
+namespace Z42.Project;
+
+/// `[workspace]` 段（monorepo）。与单项目 `ProjectManifest` 分开解析。
+/// 镜像 z42c.project WorkspaceManifest 核心子集（便于日后 z42c 引用本库）。
+public sealed class WorkspaceManifest {
+    public string[]   Members;
+    public int        MemberCount;
+    public string[]   Exclude;
+    public int        ExcludeCount;
+    public string[]   DefaultMembers;
+    public int        DefaultCount;
+    public bool       HasOutputDir;
+    public string     OutputDir;       // 路径模板（${member_name} 等）原样保留
+    public bool       HasCacheDir;
+    public string     CacheDir;
+    public DepEntry[] WorkspaceDeps;
+    public int        WorkspaceDepCount;
+    public WorkspaceManifest(string[] members, int memberCount, string[] exclude, int excludeCount,
+                             string[] defMembers, int defCount,
+                             bool hasOut, string outDir, bool hasCache, string cacheDir,
+                             DepEntry[] wdeps, int wdepCount) {
+        this.Members = members; this.MemberCount = memberCount;
+        this.Exclude = exclude; this.ExcludeCount = excludeCount;
+        this.DefaultMembers = defMembers; this.DefaultCount = defCount;
+        this.HasOutputDir = hasOut; this.OutputDir = outDir;
+        this.HasCacheDir = hasCache; this.CacheDir = cacheDir;
+        this.WorkspaceDeps = wdeps; this.WorkspaceDepCount = wdepCount;
+    }
+}

@@ -12,8 +12,7 @@ public interface IPipelineContext {
 
     // —— 只读数据（项目模型来自 z42.project）——
     ProjectInfo     Project     { get; }   // [project] 核心字段（便捷）
-    IConfigTable    Platform    { get; }   // 当前 Target.Family 的 [platform.<family>] 段
-    ProjectManifest Manifest    { get; }   // 完整清单（deps / profiles / sources / [[exe]]）
+    ProjectManifest Manifest    { get; }   // 完整清单；平台配置经 Manifest.Platform.<family>（typed）
     Target          Target      { get; }
     Dirs            Dirs        { get; }
     Inputs          Inputs      { get; }
@@ -39,10 +38,10 @@ public interface IPipelineContext {
     void         AddOutput(string kind, string path);
     List<Output> Outputs();
 
-    // —— 平台编写原语 ——
+    // —— 平台编写原语（KV 用并行 keys/values 数组，受限子集：无泛型 map）——
     string Template(string name);                                   // 解析 workload 模板路径
-    void   RenderTemplate(string tmpl, string dest, IConfigTable vars);
-    void   WritePlist(string dest, IConfigTable cfg);
+    void   RenderTemplate(string tmpl, string dest, string[] keys, string[] values);
+    void   WritePlist(string dest, string[] keys, string[] values);
     void   WriteEntitlements(string dest, string[] capabilities);
     void   Archive(string srcDir, string dest, string format);     // format: "zip" | "tar.gz"
     void   Sign(string artifact, string identity);                 // 按 Target.Family 分发

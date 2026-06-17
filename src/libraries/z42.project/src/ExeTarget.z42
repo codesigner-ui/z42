@@ -1,4 +1,12 @@
 namespace Z42.Project;
 
-/// `[[exe]]` 的一项（多 exe 目标）。Src 为空表示沿用 `[sources]`。
-public record ExeTarget(string Name, string Entry, string[] Src);
+/// `[[exe]]` 的一项（多 exe 目标）。SrcCount == 0 表示沿用 `[sources]`。
+public sealed class ExeTarget {
+    public string   Name;
+    public string   Entry;
+    public string[] Src;
+    public int      SrcCount;
+    public ExeTarget(string name, string entry, string[] src, int srcCount) {
+        this.Name = name; this.Entry = entry; this.Src = src; this.SrcCount = srcCount;
+    }
+}

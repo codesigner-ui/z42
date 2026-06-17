@@ -1,4 +1,13 @@
 namespace Z42.Project;
 
-/// `[sources]` 段。glob 模式（缺省 Include = ["src/**/*.z42"]）。
-public record Sources(string[] Include, string[] Exclude);
+/// `[sources]` 段。glob 模式（缺省 Include = ["src/**/*.z42"]）。array + count（无泛型）。
+public sealed class Sources {
+    public string[] Include;
+    public int      IncludeCount;
+    public string[] Exclude;
+    public int      ExcludeCount;
+    public Sources(string[] include, int includeCount, string[] exclude, int excludeCount) {
+        this.Include = include; this.IncludeCount = includeCount;
+        this.Exclude = exclude; this.ExcludeCount = excludeCount;
+    }
+}

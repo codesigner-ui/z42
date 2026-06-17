@@ -1,0 +1,20 @@
+namespace Z42.Project;
+
+/// `[platform.android]` 段。固定字段。
+public sealed class AndroidConfig {
+    public string   AppId;
+    public string   DisplayName;
+    public int      VersionCode;
+    public string   VersionName;
+    public int      MinSdk;
+    public int      TargetSdk;
+    public string[] Permissions;
+    public int      PermissionCount;
+    public AndroidConfig(string appId, string displayName, int versionCode, string versionName,
+                         int minSdk, int targetSdk, string[] permissions, int permissionCount) {
+        this.AppId = appId; this.DisplayName = displayName;
+        this.VersionCode = versionCode; this.VersionName = versionName;
+        this.MinSdk = minSdk; this.TargetSdk = targetSdk;
+        this.Permissions = permissions; this.PermissionCount = permissionCount;
+    }
+}

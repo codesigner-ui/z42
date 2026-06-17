@@ -1,6 +1,7 @@
 namespace Z42.Workload;
 
 using Z42.Build;
+using Z42.Project;
 
 /// iOS 平台 workload —— 接管 `configure → package` 尾相位。host 限 macos；
 /// runtime pack：ios-arm64 / iossim-arm64（Z42VM.xcframework）。
@@ -18,13 +19,12 @@ public class iOSWorkload : WorkloadBase {
 
     /// 从 [platform.ios] 应用身份与能力。
     public override void Configure(IPipelineContext ctx) {
-        // 1. 渲染 Info.plist（bundle_id / display_name / version / min_ios / device_families）
-        ctx.RenderTemplate(ctx.Template("Info.plist.tmpl"),
-                           ctx.Dirs.Intermediate + "/Info.plist", ctx.Platform);
-        // 2. 写 Entitlements（app 能力）
-        ctx.WriteEntitlements(ctx.Dirs.Intermediate + "/App.entitlements",
-                              ctx.Platform.List("capabilities"));
-        // 3. 配置签名：team_id = ctx.Platform.Str("team_id") —— 实现期接 xcodebuild 设置
+        iOSConfig ios = ctx.Manifest.Platform.IOS;       // typed [platform.ios]
+        // 1. 渲染 Info.plist：由 ios.BundleId / ios.DisplayName / ios.MinIOS / ios.DeviceFamilies
+        //    构造 KV，ctx.RenderTemplate(ctx.Template("Info.plist.tmpl"), <dest>, keys, values)
+        // 2. 写 Entitlements（app 能力，typed 数组直传）
+        ctx.WriteEntitlements(ctx.Dirs.Intermediate + "/App.entitlements", ios.Capabilities);
+        // 3. 配置签名：ios.TeamId（HasTeamId 时）—— 实现期接 xcodebuild 设置
     }
 
     /// 生成 Xcode 工程。export 模式跑到此后停（交用户在 Xcode 继续）。

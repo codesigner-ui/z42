@@ -1,0 +1,26 @@
+namespace Z42.Project;
+
+/// `[platform.ios]` 段。固定字段 —— 工程配置确定，不开放任意键。
+public sealed class iOSConfig {
+    public string   BundleId;
+    public string   DisplayName;
+    public bool     HasVersion;
+    public string   Version;          // 缺省 = [project].version
+    public string   MinIOS;
+    public bool     HasTeamId;
+    public string   TeamId;
+    public int[]    DeviceFamilies;   // 1=iPhone 2=iPad
+    public int      DeviceFamilyCount;
+    public string[] Capabilities;
+    public int      CapabilityCount;
+    public iOSConfig(string bundleId, string displayName, bool hasVersion, string version,
+                     string minIOS, bool hasTeamId, string teamId,
+                     int[] deviceFamilies, int deviceFamilyCount,
+                     string[] capabilities, int capabilityCount) {
+        this.BundleId = bundleId; this.DisplayName = displayName;
+        this.HasVersion = hasVersion; this.Version = version; this.MinIOS = minIOS;
+        this.HasTeamId = hasTeamId; this.TeamId = teamId;
+        this.DeviceFamilies = deviceFamilies; this.DeviceFamilyCount = deviceFamilyCount;
+        this.Capabilities = capabilities; this.CapabilityCount = capabilityCount;
+    }
+}

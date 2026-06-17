@@ -1,12 +1,15 @@
 namespace Z42.Project;
 
 /// `[profile.<name>]` 段。Name ∈ "debug" | "release"；Mode ∈ "interp" | "jit" | "aot"。
-/// debug 默认：pack=false / strip=false / mode=interp。release：pack=true / strip=true。
-public record Profile(
-    string Name,
-    bool   Pack,
-    bool   Strip,
-    string Mode,
-    int    Optimize,    // 0–3
-    bool   Debug
-);
+public sealed class Profile {
+    public string Name;
+    public bool   Pack;
+    public bool   Strip;
+    public string Mode;
+    public int    Optimize;   // 0–3
+    public bool   Debug;
+    public Profile(string name, bool pack, bool strip, string mode, int optimize, bool debug) {
+        this.Name = name; this.Pack = pack; this.Strip = strip;
+        this.Mode = mode; this.Optimize = optimize; this.Debug = debug;
+    }
+}

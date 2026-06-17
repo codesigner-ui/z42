@@ -1,0 +1,14 @@
+namespace Z42.Project;
+
+// 受限自举子集写法：sealed class + 构造函数；无 record / 无泛型 / 无 nullable。
+// 类型名对齐 z42c.project（DepEntry / WorkspaceManifest），便于日后 z42c 直接引用本库。
+
+/// `[dependencies]` / `[workspace.dependencies]` 的一项。Version "*" = 任意。
+public sealed class DepEntry {
+    public string Name;
+    public string Version;
+    public DepEntry(string name, string version) {
+        this.Name = name;
+        this.Version = version;
+    }
+}
