@@ -1,0 +1,15 @@
+namespace Std.Build;
+
+/// `[platform.<family>]` 等 TOML 子表的只读访问契约。
+///
+/// 无泛型 map（L1 约束）→ typed getter。缺失键返回空值（"" / 0 / false / 空数组），
+/// 用 Has 区分「缺失」与「空」。实现由 SDK 注入（背后是解析 z42.toml 得到的值）。
+public interface IConfigTable {
+    bool         Has(string key);
+    string       Str(string key);
+    string       StrOr(string key, string fallback);
+    int          Int(string key);
+    bool         Bool(string key);
+    string[]     List(string key);
+    IConfigTable Table(string key);
+}

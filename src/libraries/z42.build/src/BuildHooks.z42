@@ -1,0 +1,14 @@
+namespace Std.Build;
+
+/// 平台无关头相位的 hook 扩展点。项目定义 `class ProjectHooks : BuildHooks`
+/// 并 override 需要的钩子；默认 no-op。SDK（Pipeline）在对应头相位前后调用。
+///
+/// 跨平台 hook 放这里（与具体 workload 解耦）；平台专属逻辑放 WorkloadBase 子类。
+public class BuildHooks {
+    public virtual void BeforeCompile(IPipelineContext ctx) { }
+    public virtual void AfterCompile(IPipelineContext ctx)  { }
+    public virtual void BeforeTrim(IPipelineContext ctx)    { }
+    public virtual void AfterTrim(IPipelineContext ctx)     { }
+    public virtual void BeforeAssets(IPipelineContext ctx)  { }
+    public virtual void AfterAssets(IPipelineContext ctx)   { }
+}

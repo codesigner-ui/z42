@@ -1,0 +1,24 @@
+namespace Std.Build;
+
+/// 平台尾相位扩展点（基类）。workload 子类（如 `iOSWorkload`）override 平台逻辑；
+/// 项目可再 `class iOSBuild : iOSWorkload` 继承扩展，用 `base.X(ctx)` 调上一层
+/// （= 继承 / 包裹 / 重载统一到 override + base）。
+///
+/// 默认 no-op：作为「无平台 workload」时的兜底。各相位的默认契约见方法注释。
+public class WorkloadBase {
+
+    /// 工具 / 依赖检查与下载（fail-fast，在 compile 前跑）。
+    public virtual void Preflight(IPipelineContext ctx) { }
+
+    /// 应用平台身份：包名 / 签名 / 能力 → 配置文件。
+    public virtual void Configure(IPipelineContext ctx) { }
+
+    /// 生成原生工程（xcodeproj / gradle / npm / apphost 布局）。export 停于此后。
+    public virtual void GenerateProject(IPipelineContext ctx) { }
+
+    /// 调宿主工具链构建（xcodebuild / gradle / wasm-pack）；desktop 为 patch stub。
+    public virtual void NativeBuild(IPipelineContext ctx) { }
+
+    /// 产出最终交付物。默认契约：原样拷 Intermediate → Dist（实现期填）。
+    public virtual void Package(IPipelineContext ctx) { }
+}

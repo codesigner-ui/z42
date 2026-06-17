@@ -1,0 +1,52 @@
+namespace Std.Build;
+
+using Std.Collections;
+
+/// 传给每个相位的上下文契约：相位实现只通过本接口与外界交互。
+/// 具体实现由 SDK 注入（本库只定义接口，不含实现逻辑）。
+///
+/// 能力边界：写操作仅允许落在 Dirs.Intermediate / Dirs.Dist 之下，越界应抛异常
+/// （确定性 + 安全护栏）；Dirs.Source 只读。`Exec` 标记本相位永久脏，不进缓存。
+public interface IPipelineContext {
+
+    // —— 只读数据 ——
+    Project Project     { get; }
+    Target  Target      { get; }
+    Dirs    Dirs        { get; }
+    Inputs  Inputs      { get; }
+    string  WorkloadDir { get; }
+
+    // —— 日志 ——
+    void Log(string msg);
+    void Warn(string msg);
+
+    // —— 能力受限 fs ——
+    bool   Exists(string path);
+    string ReadText(string path);
+    void   WriteText(string path, string content);
+    void   Copy(string from, string to);
+    void   CopyTree(string from, string to);
+    void   Mkdir(string path);
+    string Hash(string path);
+
+    // —— 子进程（永久脏）——
+    ExecResult Exec(string cmd, string[] args);
+
+    // —— 产物登记 ——
+    void         AddOutput(string kind, string path);
+    List<Output> Outputs();
+
+    // —— 平台编写原语 ——
+    string Template(string name);                                   // 解析 workload 模板路径
+    void   RenderTemplate(string tmpl, string dest, IConfigTable vars);
+    void   WritePlist(string dest, IConfigTable cfg);
+    void   WriteEntitlements(string dest, string[] capabilities);
+    void   Archive(string srcDir, string dest, string format);     // format: "zip" | "tar.gz"
+    void   Sign(string artifact, string identity);                 // 按 Target.Family 分发
+
+    // —— preflight 原语 ——
+    void   RequireTool(string name, string range);                 // 缺则抛带指引异常
+    void   EnsureRuntimePack(string rid);                          // 缺则下载并 bed
+    string ProbeVersion(string probeCmd);
+    void   Download(string url, string sha256, string dest);
+}

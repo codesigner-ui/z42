@@ -1,0 +1,22 @@
+namespace Std.Build;
+
+// z42.build 数据记录。纯数据载体，无方法（需要判定的字段用「空值 + 调用方检查」
+// 的 L1 idiom，如 Inputs.Zsym == "" 表示无 sidecar）。
+
+/// 项目元数据（来自 z42.toml 的 [project] + [platform.<family>]）。
+public record Project(string Name, string Version, string Kind, string Entry, IConfigTable Config);
+
+/// 构建目标。Family ∈ TargetFamily.*；Mode ∈ BuildMode.*。
+public record Target(string Rid, string Family, string Profile, string Mode);
+
+/// 目录布局。Source 只读；写操作仅允许落在 Intermediate / Dist 之下。
+public record Dirs(string Source, string Cache, string Intermediate, string Dist);
+
+/// compile 阶段产物。Zsym 为 "" 表示无 split-debug sidecar。
+public record Inputs(string Zpkg, string Zsym, string[] Deps);
+
+/// 一个交付物产物。Kind 如 "ipa" / "aab" / "exe" / "zip" / "apphost"。
+public record Output(string Kind, string Path);
+
+/// 子进程执行结果。
+public record ExecResult(int ExitCode, string Stdout, string Stderr);

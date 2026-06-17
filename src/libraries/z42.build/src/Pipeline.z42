@@ -1,0 +1,49 @@
+namespace Std.Build;
+
+/// 管线驱动 —— 定义整条「编译 → 发布」的**流程**。
+///
+/// 固定八相位、线性顺序（封闭，不得新增 / 改序）：
+///   head（z42.build 拥有，平台无关）：Resolve → Preflight → Compile → Trim → Assets
+///   tail（workload 拥有，虚分发沿继承链）：Configure → GenerateProject → NativeBuild → Package
+///
+/// head 围绕 Compile/Trim/Assets 调 Hooks 的 Before/After；tail 委托 Workload。
+/// export 模式跑到 GenerateProject 后停；publish 一路到 Package。
+///
+/// 由 publish 时生成的一次性 driver 程序构造（注入 Hooks / Workload）并调 Run。
+public class Pipeline {
+    public BuildHooks   Hooks    { get; set; }
+    public WorkloadBase Workload { get; set; }
+
+    public Pipeline() {
+        Hooks    = new BuildHooks();      // 默认空 hook
+        Workload = new WorkloadBase();    // 默认 no-op workload（无平台时兜底）
+    }
+
+    /// 执行整条管线，返回进程退出码。
+    public int Run(IPipelineContext ctx) {
+        string mode = ctx.Target.Mode;
+
+        // —— head：z42.build 拥有，平台无关 ——
+        Resolve(ctx);
+        Workload.Preflight(ctx);                              // 早跑，fail-fast
+
+        Hooks.BeforeCompile(ctx);  Compile(ctx);  Hooks.AfterCompile(ctx);
+        Hooks.BeforeTrim(ctx);     Trim(ctx);     Hooks.AfterTrim(ctx);
+        Hooks.BeforeAssets(ctx);   Assets(ctx);   Hooks.AfterAssets(ctx);
+
+        // —— tail：workload 拥有，虚分发沿 项目→workload→基类 继承链 ——
+        Workload.Configure(ctx);
+        Workload.GenerateProject(ctx);
+        if (mode == BuildMode.Export) { return 0; }           // export 停点
+
+        Workload.NativeBuild(ctx);
+        Workload.Package(ctx);
+        return 0;
+    }
+
+    // —— head 相位（z42.build 拥有；接口 / 流程占位，实现逻辑留待深加工）——
+    private void Resolve(IPipelineContext ctx) { }   // 解析 z42 依赖 + 按 RID 激活 workload
+    private void Compile(IPipelineContext ctx) { }   // 调 z42c：源码 → app.zpkg (+zsym)
+    private void Trim(IPipelineContext ctx)    { }   // 从 entry 可达性裁剪 zpkg（profile 门控）
+    private void Assets(IPipelineContext ctx)  { }   // 收集 zpkg + stdlib + runtime 到暂存
+}
