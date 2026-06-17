@@ -42,7 +42,7 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
   "published": "2026-06-12T00:00:00Z",
   "runtimes": {
     "macos-arm64": {
-      "sdk":     { "archive": "z42-0.3.5-macos-arm64.tar.gz",         "sha256": "…" },
+      "sdk":     { "archive": "z42-sdk-0.3.5-macos-arm64.tar.gz",     "sha256": "…" },
       "runtime": { "archive": "z42-runtime-0.3.5-macos-arm64.tar.gz", "sha256": "…" }
     },
     "linux-x64":   { "sdk": {…}, "runtime": {…} },
@@ -55,9 +55,9 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
     "browser-wasm": { "runtime": { "archive": "z42-runtime-0.3.5-browser-wasm.tar.gz", "sha256": "…" } }
   },
   "workloads": {
-    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
-    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
-    "wasm":    { "archive": "z42-0.3.5-wasm.tar.gz",    "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] }
+    "ios":     { "archive": "z42-workload-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
+    "android": { "archive": "z42-workload-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
+    "wasm":    { "archive": "z42-workload-0.3.5-wasm.tar.gz",    "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] }
   }
 }
 ```

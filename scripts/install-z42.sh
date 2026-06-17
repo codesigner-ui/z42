@@ -249,7 +249,7 @@ if [ -n "$MANIFEST_JSON" ]; then
 
 else
   say_verbose "manifest unavailable — using SHA256SUMS fallback"
-  ASSET="z42-$VER-$RID.tar.gz"
+  ASSET="z42-sdk-$VER-$RID.tar.gz"
 
   ID=""
   if [ "$VER" = "nightly" ]; then

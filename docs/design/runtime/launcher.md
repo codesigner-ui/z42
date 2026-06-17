@@ -93,9 +93,10 @@ z42-<ver>-<rid>-<profile>/
 `./xtask package` 对 desktop RID 一次构建三个 artifact，发布时上传到同一 GitHub Release tag：
 
 ```
-z42-<ver>-<rid>.tar.gz          # SDK 包（便携/bootstrap 专用，含 z42c）
+z42-sdk-<ver>-<rid>.tar.gz      # SDK 包（便携/bootstrap 专用，含 z42c）
 z42-launcher-<ver>-<rid>.tar.gz # launcher 包（z42 self-update 下载）
 z42-runtime-<ver>-<rid>.tar.gz  # runtime 包（z42 install <ver> 下载）
+z42-workload-<ver>-<wl>.tar.gz  # workload tooling（z42 workload install <wl> 下载）
 ```
 
 **Launcher 包布局**（直接映射 `$Z42_HOME/launcher/`，解压即覆盖）：
@@ -144,7 +145,7 @@ libs/            # stdlib zpkg
 为了用 z42 自己实现的仓库构建工具(`xtask.zpkg` + 迁移后的脚本),仓库需要先有一个可用的 z42 launcher —— 鸡生蛋。`scripts/install-z42.{sh,bat,command}` 是**唯一保留的原生引导脚本**:从 GitHub Releases 下载预编译 launcher 包,装到**项目本地** `<repo>/.z42`(隔离、gitignore、不碰系统 `~/.z42`)。
 
 - **版本**:`versions.toml [toolchain.z42].launcher`,默认 `nightly`(也可 pin `0.1.0`)。
-- **按 RID 下载**:`z42-<ver>-<rid>.{tar.gz|zip}` ← `releases/download/<tag>/`;对 `SHA256SUMS` 校验。
+- **按 RID 下载**:`z42-sdk-<ver>-<rid>.{tar.gz|zip}` ← `releases/download/<tag>/`;对 `SHA256SUMS` 校验。
 - **版本检查(每次跑)**:nightly 比对 release `published_at`(存于 `.z42/.bootstrap-stamp`),变了才重下;pin 版装一次即跳过。
 - **入口**:装完即 `.z42/z42`(launcher-at-package-root 后在根)。
 - **`.bat`** 走 PowerShell(下载/解压/Get-FileHash);**`.command`** 是 macOS Finder 双击 → exec `.sh`。

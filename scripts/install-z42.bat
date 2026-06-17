@@ -67,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "    {Write-Host \"install-z42: already up to date ($ver / $rid)\"; exit 0}" ^
   "  Write-Host \"install-z42: fetching $asset ($tag) -> $dest  [manifest]\"" ^
   "}else{" ^
-  "  $asset=\"z42-$ver-$rid.zip\"; $manifestSha=$null;" ^
+  "  $asset=\"z42-sdk-$ver-$rid.zip\"; $manifestSha=$null;" ^
   "  $id=if($ver -eq 'nightly'){try{(Invoke-RestMethod \"https://api.github.com/repos/$slug/releases/tags/nightly\").published_at}catch{''}}else{$tag};" ^
   "  $want=\"$ver`:$rid`:$id\";" ^
   "  if((Test-Path $stamp) -and $id -and ((Get-Content $stamp -Raw).Trim() -eq $want))" ^
