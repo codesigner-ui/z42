@@ -189,14 +189,15 @@ RID 已铺的 jniLibs slice。android `build.gradle abiFilters=[arm64-v8a, x86_6
 
 ```
 z42 install <ver|latest|nightly>        # host runtime
-z42 update [--channel stable|nightly]   # 升级 host runtime
-z42 self update                         # 升级 launcher trampoline 自身
+z42 update [--channel stable|nightly]   # (planned) 升级 host runtime — 需 channel→latest 解析（未建）
+z42 self update                         # 升级 launcher trampoline 自身（已有）
 z42 default <ver>                       # 全局默认（已有）
-z42 use <ver|stable|nightly>            # 项目 pin（写 z42.toml [project].runtime）
-z42 list [--workloads]                  # 已装版本 + workload
-z42 uninstall <ver>
-z42 workload install <wl> [--from <dir>] [--runtime <dir>] [--base-url <url>] [--version <ver>]
-z42 workload list | update | uninstall <wl>   # uninstall（与 runtime 的 z42 uninstall 一致；was remove）
+z42 use <ver|stable|nightly>            # (planned) 项目 pin（写 + 解析 z42.toml [project].runtime；解析侧未建）
+z42 list [--workloads]                  # 已装版本（+ --workloads 列 workload）（已有）
+z42 uninstall <ver>                     # 已有
+z42 workload install <wl> [--from <dir>] [--runtime <dir>] [--base-url <url>] [--version <ver>]   # 已有
+z42 workload list | uninstall <wl>      # 已有（uninstall 与 runtime 的 z42 uninstall 一致；was remove）
+z42 workload update <wl>                # (planned) 重拉已装 workload 至新版 — 需版本解析（未建）
 z42 publish <toml> --rid <rid>                # 平台部署件（desktop=apphost；rid 的 category 选平台）
 z42 export  <toml> --rid <rid>                # 原生 IDE 工程（ios/android/wasm）
 z42 run     <toml> --rid <rid>                # 部署形态预览（vs `z42 run <app.zpkg>` 跑字节码）

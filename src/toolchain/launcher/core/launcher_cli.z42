@@ -55,8 +55,9 @@ SubcommandRouter _launcherRoot() {
 
     root.Add("info", "show Z42_HOME / default / counts",
         new ArgParser("z42 info", "show Z42_HOME / default / counts"));
-    root.Add("list", "list installed runtimes",
-        new ArgParser("z42 list", "list installed runtimes"));
+    ArgParser listP = new ArgParser("z42 list", "list installed runtimes (and, with --workloads, workloads)");
+    listP.AddFlag("workloads", "", "also list installed platform workloads");
+    root.Add("list", "list installed runtimes", listP);
 
     ArgParser def = new ArgParser("z42 default", "show or set the default runtime");
     def.AddOptionalPositional("version", "runtime version to set (omit to show)");
@@ -145,7 +146,7 @@ void _dispatchLauncher(CommandResolution res) {
     ParseResult r = res.Result();
     string top = p[0];
     if (top == "info")      { _cmdInfo();      return; }
-    if (top == "list")      { _cmdList();      return; }
+    if (top == "list")      { _cmdList(r);     return; }
     if (top == "default")   { _cmdDefault(r);  return; }
     if (top == "link")      { _cmdLink(r);     return; }
     if (top == "which")     { _cmdWhich(r);    return; }

@@ -154,15 +154,23 @@ void _cmdInfo() {
     }
 }
 
-void _cmdList() {
+void _cmdList(ParseResult r) {
     string[] vs = _installedVersions();
-    if (vs.Length == 0) { Console.WriteLine("(no runtimes installed)"); return; }
-    string def = _defaultVersion() ?? "";
-    int i = 0;
-    while (i < vs.Length) {
-        string mark = (def == vs[i]) ? " (default)" : "";
-        Console.WriteLine(vs[i] + mark);
-        i = i + 1;
+    if (vs.Length == 0) { Console.WriteLine("(no runtimes installed)"); }
+    else {
+        string def = _defaultVersion() ?? "";
+        int i = 0;
+        while (i < vs.Length) {
+            string mark = (def == vs[i]) ? " (default)" : "";
+            Console.WriteLine(vs[i] + mark);
+            i = i + 1;
+        }
+    }
+    // --workloads: also list installed platform workloads (shared with `workload list`).
+    if (r.GetFlag("workloads")) {
+        Console.WriteLine("");
+        Console.WriteLine("workloads:");
+        if (!_listInstalledWorkloads()) { Console.WriteLine("(no workloads installed)"); }
     }
 }
 

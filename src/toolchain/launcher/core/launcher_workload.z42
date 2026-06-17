@@ -226,7 +226,9 @@ void _bedRuntimeIntoWorkload(string wlDest, string rtDest, string rid, string ve
     }
 }
 
-void _cmdWorkloadList(ParseResult r) {
+// Print installed workloads (one `<wl>  (<ver>)` line each). Returns true if any
+// were printed. Shared by `z42 workload list` and `z42 list --workloads`.
+bool _listInstalledWorkloads() {
     string[] vers = _installedVersions();
     bool any = false;
     int i = 0;
@@ -242,7 +244,11 @@ void _cmdWorkloadList(ParseResult r) {
         }
         i = i + 1;
     }
-    if (!any) { Console.WriteLine("(no workloads installed)"); }
+    return any;
+}
+
+void _cmdWorkloadList(ParseResult r) {
+    if (!_listInstalledWorkloads()) { Console.WriteLine("(no workloads installed)"); }
 }
 
 void _cmdWorkloadUninstall(ParseResult r) {
