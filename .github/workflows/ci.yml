@@ -611,28 +611,34 @@ jobs:
       - name: Verify iOS packages
         run: |
           set -euo pipefail
+          # runtime/workload split (B2-1): tooling pkg = SwiftPM sources + placeholder
+          # Package.swift; native libs + Z42VM.xcframework live in the separate runtime pack.
           for rid in ios-arm64 iossim-arm64; do
             pkg_dir=$(ls -d artifacts/packages/z42-*-${rid}-release | head -1)
-            [ -d "$pkg_dir" ] || { echo "error: no $rid package"; exit 1; }
-            echo "Package: $pkg_dir"
-            test -f "$pkg_dir/manifest.toml"              || { echo "missing manifest.toml"; exit 1; }
-            test -d "$pkg_dir/libs"                       || { echo "missing libs/"; exit 1; }
-            test -f "$pkg_dir/native/libz42.a"            || { echo "missing native/libz42.a"; exit 1; }
-            test -d "$pkg_dir/native/Z42VM.xcframework"   || { echo "missing Z42VM.xcframework/"; exit 1; }
-            test -d "$pkg_dir/native/include"             || { echo "missing native/include/"; exit 1; }
-            test -d "$pkg_dir/Sources/Z42VM"              || { echo "missing Sources/Z42VM/"; exit 1; }
-            test -f "$pkg_dir/Package.swift"              || { echo "missing Package.swift"; exit 1; }
-            test -f "$pkg_dir/examples/hello_c/hello.zbc" || { echo "missing hello.zbc"; exit 1; }
-            # lipo: verify xcframework contains an arm64 Mach-O static archive
-            xcfw_lib=$(find "$pkg_dir/native/Z42VM.xcframework" -name "libz42.a" | head -1)
+            rt_dir=$(ls -d artifacts/packages/z42-runtime-*-${rid} 2>/dev/null | head -1)
+            [ -d "$pkg_dir" ] || { echo "error: no $rid tooling package"; exit 1; }
+            [ -d "$rt_dir" ]  || { echo "error: no $rid runtime pack (z42-runtime-*-$rid)"; exit 1; }
+            echo "Tooling: $pkg_dir   Runtime: $rt_dir"
+            # tooling (workload): SwiftPM sources + self-contained Z42VMC header + placeholder Package.swift
+            test -f "$pkg_dir/manifest.toml"                     || { echo "missing manifest.toml"; exit 1; }
+            test -d "$pkg_dir/Sources/Z42VM"                     || { echo "missing Sources/Z42VM/"; exit 1; }
+            test -f "$pkg_dir/Sources/Z42VMC/include/z42_host.h" || { echo "missing self-contained Z42VMC header"; exit 1; }
+            test -f "$pkg_dir/Package.swift"                     || { echo "missing Package.swift"; exit 1; }
+            grep -q "__Z42_RUNTIME_XCFRAMEWORK__" "$pkg_dir/Package.swift" \
+              || { echo "Package.swift not an install-resolved placeholder template"; exit 1; }
+            test -f "$pkg_dir/examples/hello_c/hello.zbc"        || { echo "missing hello.zbc"; exit 1; }
+            # runtime pack: native static lib + xcframework + headers + stdlib libs
+            test -f "$rt_dir/native/libz42.a"            || { echo "missing runtime native/libz42.a"; exit 1; }
+            test -d "$rt_dir/native/Z42VM.xcframework"   || { echo "missing runtime Z42VM.xcframework/"; exit 1; }
+            test -d "$rt_dir/native/include"             || { echo "missing runtime native/include/"; exit 1; }
+            test -d "$rt_dir/libs"                       || { echo "missing runtime libs/"; exit 1; }
+            # lipo: xcframework contains an arm64 Mach-O static archive
+            xcfw_lib=$(find "$rt_dir/native/Z42VM.xcframework" -name "libz42.a" | head -1)
             [ -f "$xcfw_lib" ] || { echo "error: libz42.a missing inside xcframework"; exit 1; }
             lipo_out=$(lipo -info "$xcfw_lib")
             echo "$lipo_out" | grep -q "arm64" \
               || { echo "error: $rid xcframework wrong arch: $lipo_out"; exit 1; }
             echo "✓ $rid lipo: $lipo_out"
-            # swift package describe: parse Package.swift without building
-            swift package --package-path "$pkg_dir" describe > /dev/null
-            echo "✓ $rid Package.swift valid"
           done
 
       - name: Upload iOS packages
@@ -713,20 +719,29 @@ jobs:
       - name: Verify Android packages
         run: |
           set -euo pipefail
+          # runtime/workload split (B2-3): tooling pkg = gradle project; per-ABI .so/.a
+          # + headers + stdlib libs live in the separate runtime pack.
           for rid in android-arm64 android-x64; do
             pkg_dir=$(ls -d artifacts/packages/z42-*-${rid}-release | head -1)
-            [ -d "$pkg_dir" ] || { echo "error: no $rid package"; exit 1; }
-            echo "Package: $pkg_dir"
-            test -f "$pkg_dir/manifest.toml"                           || { echo "missing manifest.toml"; exit 1; }
-            test -d "$pkg_dir/libs"                                    || { echo "missing libs/"; exit 1; }
-            test -f "$pkg_dir/native/libz42_platform_android.so"       || { echo "missing .so"; exit 1; }
-            test -f "$pkg_dir/native/libz42_platform_android.a"        || { echo "missing .a"; exit 1; }
-            test -d "$pkg_dir/native/include"                          || { echo "missing native/include/"; exit 1; }
-            test -d "$pkg_dir/kotlin/io/z42/vm"                        || { echo "missing kotlin/io/z42/vm/"; exit 1; }
-            test -f "$pkg_dir/cpp/z42vm_jni.c"                         || { echo "missing cpp/z42vm_jni.c"; exit 1; }
-            test -f "$pkg_dir/examples/hello_c/hello.zbc"              || { echo "missing hello.zbc"; exit 1; }
-            # Verify ELF architecture of the shared library
-            so="$pkg_dir/native/libz42_platform_android.so"
+            rt_dir=$(ls -d artifacts/packages/z42-runtime-*-${rid} 2>/dev/null | head -1)
+            [ -d "$pkg_dir" ] || { echo "error: no $rid tooling package"; exit 1; }
+            [ -d "$rt_dir" ]  || { echo "error: no $rid runtime pack (z42-runtime-*-$rid)"; exit 1; }
+            echo "Tooling: $pkg_dir   Runtime: $rt_dir"
+            # tooling (workload): the buildable gradle project + self-contained JNI header
+            test -f "$pkg_dir/manifest.toml"                          || { echo "missing manifest.toml"; exit 1; }
+            test -f "$pkg_dir/gradlew"                                || { echo "missing gradlew"; exit 1; }
+            test -f "$pkg_dir/settings.gradle.kts"                    || { echo "missing settings.gradle.kts"; exit 1; }
+            test -d "$pkg_dir/z42vm/src/main/java/io/z42/vm"          || { echo "missing kotlin facade"; exit 1; }
+            test -f "$pkg_dir/z42vm/src/main/cpp/z42vm_jni.c"         || { echo "missing JNI bridge"; exit 1; }
+            test -f "$pkg_dir/z42vm/src/main/cpp/include/z42_host.h"  || { echo "missing self-contained JNI header"; exit 1; }
+            test -f "$pkg_dir/examples/hello_c/hello.zbc"             || { echo "missing hello.zbc"; exit 1; }
+            # runtime pack: per-ABI .so + .a + headers + stdlib libs
+            test -f "$rt_dir/native/libz42_platform_android.so"      || { echo "missing runtime .so"; exit 1; }
+            test -f "$rt_dir/native/libz42_platform_android.a"       || { echo "missing runtime .a"; exit 1; }
+            test -d "$rt_dir/native/include"                         || { echo "missing runtime native/include/"; exit 1; }
+            test -d "$rt_dir/libs"                                   || { echo "missing runtime libs/"; exit 1; }
+            # ELF architecture of the runtime .so
+            so="$rt_dir/native/libz42_platform_android.so"
             file_out=$(file "$so")
             case "$rid" in
               android-arm64)
@@ -814,21 +829,28 @@ jobs:
       - name: Verify wasm package + WebAssembly validation
         run: |
           set -euo pipefail
+          # runtime/workload split (B2-3): tooling pkg = js facade + package.json; the
+          # wasm module + libz42.a + pkg-web/pkg-nodejs + stdlib libs live in the runtime pack.
           pkg_dir=$(ls -d artifacts/packages/z42-*-browser-wasm-release | head -1)
-          [ -d "$pkg_dir" ] || { echo "error: no browser-wasm package"; exit 1; }
-          echo "Package: $pkg_dir"
-          test -f "$pkg_dir/manifest.toml"                  || { echo "missing manifest.toml"; exit 1; }
-          test -d "$pkg_dir/libs"                           || { echo "missing libs/"; exit 1; }
-          test -f "$pkg_dir/native/z42_wasm_bg.wasm"        || { echo "missing z42_wasm_bg.wasm"; exit 1; }
-          test -f "$pkg_dir/native/libz42.a"                || { echo "missing native/libz42.a"; exit 1; }
-          test -d "$pkg_dir/pkg-web"                        || { echo "missing pkg-web/"; exit 1; }
-          test -d "$pkg_dir/pkg-nodejs"                     || { echo "missing pkg-nodejs/"; exit 1; }
-          test -f "$pkg_dir/package.json"                   || { echo "missing package.json"; exit 1; }
-          test -f "$pkg_dir/examples/hello_c/hello.zbc"     || { echo "missing hello.zbc"; exit 1; }
-          echo "✓ browser-wasm manifest OK"
+          rt_dir=$(ls -d artifacts/packages/z42-runtime-*-browser-wasm 2>/dev/null | head -1)
+          [ -d "$pkg_dir" ] || { echo "error: no browser-wasm tooling package"; exit 1; }
+          [ -d "$rt_dir" ]  || { echo "error: no browser-wasm runtime pack (z42-runtime-*-browser-wasm)"; exit 1; }
+          echo "Tooling: $pkg_dir   Runtime: $rt_dir"
+          # tooling (workload): js facade + package.json
+          test -f "$pkg_dir/manifest.toml"               || { echo "missing manifest.toml"; exit 1; }
+          test -f "$pkg_dir/package.json"                || { echo "missing package.json"; exit 1; }
+          test -d "$pkg_dir/js"                          || { echo "missing js/"; exit 1; }
+          test -f "$pkg_dir/examples/hello_c/hello.zbc"  || { echo "missing hello.zbc"; exit 1; }
+          # runtime pack: wasm module + static lib + wasm-bindgen output + stdlib libs
+          test -f "$rt_dir/native/z42_wasm_bg.wasm"      || { echo "missing z42_wasm_bg.wasm"; exit 1; }
+          test -f "$rt_dir/native/libz42.a"              || { echo "missing native/libz42.a"; exit 1; }
+          test -d "$rt_dir/pkg-web"                      || { echo "missing pkg-web/"; exit 1; }
+          test -d "$rt_dir/pkg-nodejs"                   || { echo "missing pkg-nodejs/"; exit 1; }
+          test -d "$rt_dir/libs"                         || { echo "missing runtime libs/"; exit 1; }
+          echo "✓ browser-wasm layout OK"
           # WebAssembly spec validation via wasm-tools (Bytecode Alliance).
           # Validates binary encoding + all active wasm proposals; no JS runtime needed.
-          wasm="$pkg_dir/native/z42_wasm_bg.wasm"
+          wasm="$rt_dir/native/z42_wasm_bg.wasm"
           wasm-tools validate "$wasm"
           export_count=$(wasm-tools print "$wasm" | grep -c '(export' || true)
           [ "$export_count" -gt 0 ] || { echo "error: no exports in wasm module"; exit 1; }
@@ -942,9 +964,22 @@ jobs:
                   tar -C "$psrc" -czf "${out}/z42-runtime-nightly-${rid}.tar.gz" .
                   echo "✓ runtime ${rid} → z42-runtime-nightly-${rid}.tar.gz"
               else
-                  # Platform RID — archive directly as runtime (no separate sdk upload).
-                  tar -C "$dst" -czf "${out}/z42-runtime-nightly-${rid}.tar.gz" .
+                  # Platform RID (runtime/workload split): runtime pack (per RID) +
+                  # workload tooling (primary RID only — identical across ABIs/slices).
+                  psrc=$(find dist-raw -maxdepth 1 -type d -name "z42-runtime-*-${rid}" | head -1)
+                  [ -d "$psrc" ] || { echo "error: missing runtime pack for ${rid}"; exit 1; }
+                  tar -C "$psrc" -czf "${out}/z42-runtime-nightly-${rid}.tar.gz" .
                   echo "✓ runtime ${rid} → z42-runtime-nightly-${rid}.tar.gz"
+                  case "$rid" in
+                    ios-arm64)     wl=ios ;;
+                    android-arm64) wl=android ;;
+                    browser-wasm)  wl=wasm ;;
+                    *)             wl="" ;;
+                  esac
+                  if [ -n "$wl" ]; then
+                      tar -C "$dst" -czf "${out}/z42-nightly-${wl}.tar.gz" .
+                      echo "✓ workload ${wl} → z42-nightly-${wl}.tar.gz"
+                  fi
               fi
           done
 
@@ -975,18 +1010,24 @@ jobs:
           sha_sdk_win="$(get_sha   "z42-nightly-windows-x64.zip")"
           sha_rt_win="$(get_sha    "z42-runtime-nightly-windows-x64.zip")"
 
-          # Platform: runtime alias only (main package = platform SDK = runtime)
+          # Platform runtime packs (per RID).
           sha_ios="$(get_sha       "z42-runtime-nightly-ios-arm64.tar.gz")"
           sha_iossim="$(get_sha    "z42-runtime-nightly-iossim-arm64.tar.gz")"
           sha_aarm64="$(get_sha    "z42-runtime-nightly-android-arm64.tar.gz")"
           sha_ax64="$(get_sha      "z42-runtime-nightly-android-x64.tar.gz")"
           sha_wasm="$(get_sha      "z42-runtime-nightly-browser-wasm.tar.gz")"
 
+          # Workload tooling archives (one per platform; bundle their per-RID runtime packs).
+          sha_wl_ios="$(get_sha     "z42-nightly-ios.tar.gz")"
+          sha_wl_android="$(get_sha "z42-nightly-android.tar.gz")"
+          sha_wl_wasm="$(get_sha    "z42-nightly-wasm.tar.gz")"
+
           for var in sha_sdk_lx64 sha_rt_lx64 \
                      sha_sdk_la64 sha_rt_la64 \
                      sha_sdk_mac  sha_rt_mac  \
                      sha_sdk_win  sha_rt_win  \
-                     sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm; do
+                     sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm \
+                     sha_wl_ios sha_wl_android sha_wl_wasm; do
             [ -n "${!var}" ] || { echo "release-index: missing sha256 for $var" >&2; exit 1; }
           done
 
@@ -1003,6 +1044,8 @@ jobs:
             --arg sha_ios       "$sha_ios"       --arg sha_iossim   "$sha_iossim"   \
             --arg sha_aarm64    "$sha_aarm64"    --arg sha_ax64     "$sha_ax64"     \
             --arg sha_wasm      "$sha_wasm"      \
+            --arg sha_wl_ios    "$sha_wl_ios"    --arg sha_wl_android "$sha_wl_android" \
+            --arg sha_wl_wasm   "$sha_wl_wasm"   \
             '{
               schema: $schema,
               version: $version,
@@ -1031,6 +1074,11 @@ jobs:
                 "android-arm64":{ runtime: { archive: "z42-runtime-nightly-android-arm64.tar.gz", sha256: $sha_aarm64 } },
                 "android-x64":  { runtime: { archive: "z42-runtime-nightly-android-x64.tar.gz",  sha256: $sha_ax64   } },
                 "browser-wasm": { runtime: { archive: "z42-runtime-nightly-browser-wasm.tar.gz",  sha256: $sha_wasm  } }
+              },
+              workloads: {
+                "ios":     { archive: "z42-nightly-ios.tar.gz",     sha256: $sha_wl_ios,     host: ["macos-arm64"], runtimes: ["ios-arm64","iossim-arm64"] },
+                "android": { archive: "z42-nightly-android.tar.gz", sha256: $sha_wl_android, host: ["macos-arm64","linux-x64","linux-arm64","windows-x64"], runtimes: ["android-arm64","android-x64"] },
+                "wasm":    { archive: "z42-nightly-wasm.tar.gz",    sha256: $sha_wl_wasm,    host: ["*"], runtimes: ["browser-wasm"] }
               }
             }' > artifacts/release/release-index.json
           echo "--- release-index.json ---"
@@ -1071,6 +1119,14 @@ jobs:
           | Android arm64 | \`z42-runtime-nightly-android-arm64.tar.gz\` |
           | Android x64 | \`z42-runtime-nightly-android-x64.tar.gz\` |
           | Browser WASM | \`z42-runtime-nightly-browser-wasm.tar.gz\` |
+
+          ## Workloads (\`z42 workload install <wl>\` tooling — bundles the runtime packs above)
+
+          | Workload | Tooling archive |
+          |----------|-----------------|
+          | iOS (SwiftPM) | \`z42-nightly-ios.tar.gz\` |
+          | Android (Gradle) | \`z42-nightly-android.tar.gz\` |
+          | WASM (npm) | \`z42-nightly-wasm.tar.gz\` |
 
           Verify: \`shasum -a 256 -c SHA256SUMS --ignore-missing\`
           EOF
