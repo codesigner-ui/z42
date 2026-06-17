@@ -328,7 +328,12 @@ public sealed class ExprEmitter {
             return dst0;
         }
         TypedReg obj = this.Emit(m.Target);
-        TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(m.Type()));
+        // G18i：receiver 是 `as`-cast 到**跨-ns** 类时，字段读结果 tag → Unknown（镜像 C#：cast-to-
+        // cross-ns-class 不加载目标类字段 → 字段类型 codegen 期 Unknown）。param/var/this（非 cast）
+        // 或同-ns cast 正常 ToIrType。
+        int ftag = this._ctx.ToIrType(m.Type());
+        if ((m.Target is BoundCast) && this._ctx.IsCrossNs(m.Target.Type().Name())) { ftag = IrType.Unknown; }
+        TypedReg dst = this._ctx.Alloc(ftag);
         this._ctx.Emit(new FieldGetInstr(dst, obj, m.MemberName));
         return dst;
     }

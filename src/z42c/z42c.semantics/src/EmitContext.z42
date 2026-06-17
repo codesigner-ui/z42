@@ -103,6 +103,15 @@ public sealed class EmitContext {
         return false;
     }
 
+    // 类的声明 ns 是否异于当前模块 ns（跨-ns，含 imported）。G18i：`as`-cast 到跨-ns 类后字段读
+    // 结果 tag → Unknown（镜像 C#：cast-to-cross-ns-class 不加载目标类字段；param/var 已声明类型则加载）。
+    public bool IsCrossNs(string clsName) {
+        if (this.ImportedClassNs == null || !this.ImportedClassNs.ContainsKey(clsName)) { return false; }
+        StrBox b = this.ImportedClassNs.Get(clsName) as StrBox;
+        if (b == null) { return false; }
+        return b.Value != this.Ns;
+    }
+
     // imported receiver 的依赖 ns 追踪（IC-1 镜像 C# VCall fallback 行 198-200）。
     public void TrackImportedClass(string clsName) {
         if (this.ImportedClassNs != null && this.ImportedClassNs.ContainsKey(clsName)) {
