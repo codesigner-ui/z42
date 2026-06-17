@@ -62,6 +62,7 @@ public static class IrDump {
         // G17b：同包跨-ns 类名解析图（跨-zpkg imported + 包内每个有 ns 的类 短名→声明 ns）。
         // is/as/static-get/ObjNew 引用兄弟 ns 的本地类时限定到声明 ns（镜像 C# ImportedClassNamespaces 含 using 引入的同包类）。
         StrMap classNs = IrDump._pkgClassNs(cus, count, imported);
+        StrMap localClasses = IrDump._pkgLocalClasses(cus, count);   // G18：反劫持守卫仅认本地类
         // 全包自由函数聚合（文件序+声明序）——每模块 TSIG functions 全包（C# sem.Funcs 兄弟泄漏镜像）
         ExportedFuncZ[] allFuncs = new ExportedFuncZ[4];
         int afc = 0;
@@ -84,7 +85,7 @@ public static class IrDump {
         CompiledModuleZ[] r = new CompiledModuleZ[count];
         i = 0;
         while (i < count) {
-            r[i] = IrDump._compileCu(cus[i], symbols, deps, imported, classNs);
+            r[i] = IrDump._compileCu(cus[i], symbols, deps, imported, classNs, localClasses);
             string ns2 = "main";                                 // no-ns build 路径缺省（C# 字节实证）
             if (cus[i].HasNamespace) { ns2 = cus[i].Namespace; }
             r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc);
@@ -121,6 +122,28 @@ public static class IrDump {
         return m;
     }
 
+    // 本包**自有声明**类名集（G18：ChainHasMethod 反劫持守卫仅认本地类，镜像 C# ClassRegistry 仅本地）。
+    // 含所有 ns / 无 ns 的本包 class·struct（不含 imported）。值=占位 StrBox（仅用 ContainsKey）。
+    private static StrMap _pkgLocalClasses(CompilationUnit[] cus, int count) {
+        StrMap m = new StrMap();
+        int i = 0;
+        while (i < count) {
+            CompilationUnit cu = cus[i];
+            int d = 0;
+            while (d < cu.DeclCount) {
+                Decl dd = cu.Decls[d];
+                if (dd is AttributedDecl) { dd = (dd as AttributedDecl).Inner; }
+                if (dd is ClassDecl) {
+                    ClassDecl cd = dd as ClassDecl;
+                    if (cd.Kind == "class" || cd.Kind == "struct") { m.Put(cd.Name, new StrBox(cd.Name)); }
+                }
+                d = d + 1;
+            }
+            i = i + 1;
+        }
+        return m;
+    }
+
     // 文件 stem（SA-3 镜像 C# GetFileNameWithoutExtension）：cu 源文件 basename 去 .z42。
     private static string _stem(CompilationUnit cu) {
         string path = cu.Span.File;
@@ -137,13 +160,14 @@ public static class IrDump {
         return base2;
     }
 
-    private static CompiledModuleZ _compileCu(CompilationUnit cu, SymbolTable symbols, DependencyIndex deps, ImportedSymbols imported, StrMap classNs) {
+    private static CompiledModuleZ _compileCu(CompilationUnit cu, SymbolTable symbols, DependencyIndex deps, ImportedSymbols imported, StrMap classNs, StrMap localClasses) {
         var diags = new DiagnosticBag();
         var model = new TypeChecker(diags).Infer(cu, symbols);
         var gen = new IrGen();
         gen.Deps = deps;
         gen.SourceStem = IrDump._stem(cu);
         gen.ImportedClassNs = classNs;   // 跨-zpkg imported + 同包跨-ns 类（G17b）；QualifyClass 用
+        gen.LocalClasses = localClasses; // G18：ChainHasMethod 反劫持守卫仅认本地类
         IrModule irm = gen.Generate(cu, model);
         string[] usings = new string[8];
         int uc = 0;
@@ -177,6 +201,8 @@ public static class IrDump {
         gen.Deps = deps;
         gen.SourceStem = IrDump._stem(cu);
         if (imported != null) { gen.ImportedClassNs = imported.ClassNamespaces; }
+        CompilationUnit[] one = new CompilationUnit[1]; one[0] = cu;
+        gen.LocalClasses = IrDump._pkgLocalClasses(one, 1);   // G18：反劫持守卫仅认本地类
         IrModule irm = gen.Generate(cu, model);
         // usings 抽取（DEPS 用）
         string[] usings = new string[4];
@@ -245,6 +271,8 @@ public static class IrDump {
         var model = new TypeChecker(diags).Infer(cu, symbols);
         var gen = new IrGen();
         gen.SourceStem = IrDump._stem(cu);   // SA-3：__static_init__ 名前缀须用文件 stem（镜像 _compileCu / C# _cuStem），否则回落 "main" → 与 C# `<stem>.__static_init__` 字节不一致
+        CompilationUnit[] one = new CompilationUnit[1]; one[0] = cu;
+        gen.LocalClasses = IrDump._pkgLocalClasses(one, 1);   // G18：反劫持守卫仅认本地类
         return gen.Generate(cu, model);
     }
 }

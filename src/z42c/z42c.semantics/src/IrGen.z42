@@ -39,7 +39,8 @@ public sealed class IrGen {
     public string Ns;   // 根命名空间（BP-0 名字限定；""=无）
     public string SourceStem;   // 文件 stem（SA-3：__static_init__ 名前缀，镜像 C# _cuStem）
     public DependencyIndex Deps;       // 跨包索引（CI-4；调用方 Generate 前设置，null=无）
-    public StrMap ImportedClassNs;     // imported 短类名 → ns（IC-1）
+    public StrMap ImportedClassNs;     // imported 短类名 → ns（IC-1；含本包跨-ns 自有类，G17b）
+    public StrMap LocalClasses;        // 本包自有声明类名集（G18：ChainHasMethod 反劫持守卫仅认本地类）
     public IrFunction[] Lifted; public int LiftedCount;   // lambda lift（port-z42c-closures；模块尾追加）
 
     public void AddLifted(IrFunction f) {

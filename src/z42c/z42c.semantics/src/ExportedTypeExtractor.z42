@@ -125,9 +125,9 @@ public static class ExportedTypeExtractor {
                     Z42FuncType sig = sym.Signature;
                     string[] pts = new string[sig.ParamCount];
                     int x = 0;
-                    while (x < sig.ParamCount) { pts[x] = md.Params[x].Type.Dump(); x = x + 1; }   // G17c-2：原始 AST 拼写
+                    while (x < sig.ParamCount) { pts[x] = ExportedTypeExtractor._tsigTypeName(md.Params[x].Type); x = x + 1; }   // G18d：签名类型规范名
                     string iret = sig.Ret.Name();
-                    if (!md.IsCtor) { iret = md.RetType.Dump(); }
+                    if (!md.IsCtor) { iret = ExportedTypeExtractor._tsigTypeName(md.RetType); }
                     ms[mc] = ExportedTypeExtractor._im(md.Name, iret, pts, sig.ParamCount);
                     mc = mc + 1;
                 }
@@ -291,7 +291,7 @@ public static class ExportedTypeExtractor {
         ExportedParamZ[] ps = new ExportedParamZ[sig.ParamCount];
         int i = 0;
         while (i < sig.ParamCount) {
-            ps[i] = new ExportedParamZ("p" + i.ToString(), md.Params[i].Type.Dump());
+            ps[i] = new ExportedParamZ("p" + i.ToString(), ExportedTypeExtractor._tsigTypeName(md.Params[i].Type));   // G18d：签名类型规范名
             i = i + 1;
         }
         // G18：override → flags 0（镜像 C# FuncToMethod：仅 FunctionModifiers.Virtual 置 isVirtual；
@@ -299,7 +299,7 @@ public static class ExportedTypeExtractor {
         bool isVirtual = ExportedTypeExtractor._hasWord(md.Mods, "virtual");
         bool isAbstract = ExportedTypeExtractor._hasWord(md.Mods, "abstract");
         string ret = sig.Ret.Name();
-        if (!md.IsCtor) { ret = md.RetType.Dump(); }
+        if (!md.IsCtor) { ret = ExportedTypeExtractor._tsigTypeName(md.RetType); }   // G18d：签名类型规范名（byte[]→u8[]）
         return new ExportedMethodZ(ms.Name, ret, ms.Visibility,
                                    isStatic, isVirtual, isAbstract, sig.ParamCount, ps, sig.ParamCount);
     }
@@ -315,12 +315,36 @@ public static class ExportedTypeExtractor {
             ps = new ExportedParamZ[pc];
             int i = 0;
             while (i < pc) {
-                ps[i] = new ExportedParamZ("p" + i.ToString(), md.Params[i].Type.Dump());   // G17c-2：原始 AST 拼写
+                ps[i] = new ExportedParamZ("p" + i.ToString(), ExportedTypeExtractor._tsigTypeName(md.Params[i].Type));   // G18d：签名类型规范名
                 i = i + 1;
             }
-            ret = md.RetType.Dump();   // 自由函数非 ctor
+            ret = ExportedTypeExtractor._tsigTypeName(md.RetType);   // 自由函数非 ctor；G18d 签名规范名
         }
         return new ExportedFuncZ(md.Name, ret, pc, ps, pc);
+    }
+
+    // 方法/函数**签名**类型名（ret + param）：规范化 prim 名（byte→u8 等）+ 保留数组/nullable 结构。
+    // 镜像 C# FuncToMethod 用 `TypeToString(resolved)`——C# 自 G17c-2 后漂移：方法签名类型走规范名
+    // （ByteWriter.ToBytes 返回 byte[] → TSIG=u8[]，与 SIGS 一致），区别于**字段**仍用源拼写（byte[]，
+    // 见 _extractClass static-field 段用 fd.Type.Dump()）。泛型实参暂回落 Dump（z42c.ir 无泛型签名）。G18d。
+    private static string _tsigTypeName(TypeExpr te) {
+        if (te is ArrayType) { return ExportedTypeExtractor._tsigTypeName((te as ArrayType).Elem) + "[]"; }
+        if (te is NullableType) { return ExportedTypeExtractor._tsigTypeName((te as NullableType).Inner) + "?"; }
+        if (te is NamedType) {
+            NamedType nt = te as NamedType;
+            if (nt.ArgCount == 0) { return ExportedTypeExtractor._canonName(nt.Name); }
+        }
+        return te.Dump();
+    }
+    // prim 源名 → IR 规范名（镜像 SymbolTable._canonPrim / C# TypeRegistry：仅次要别名归一）。
+    private static string _canonName(string n) {
+        if (n == "byte")   { return "u8"; }
+        if (n == "sbyte")  { return "i8"; }
+        if (n == "short")  { return "i16"; }
+        if (n == "ushort") { return "u16"; }
+        if (n == "uint")   { return "u32"; }
+        if (n == "ulong")  { return "u64"; }
+        return n;
     }
 
     // 名→位线性查找（方法合并：seenName/seenAt 平行表；方法数小，线性足够）。G18。

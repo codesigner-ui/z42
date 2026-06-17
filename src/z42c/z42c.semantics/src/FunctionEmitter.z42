@@ -25,6 +25,7 @@ public sealed class FunctionEmitter {
         this._ctx.Ns = this._gen.Ns;   // BP-0：emitter 侧名字限定（ObjNew/is/as 类引用）
         this._ctx.Deps = this._gen.Deps;   // CI-4：跨包调用索引
         this._ctx.ImportedClassNs = this._gen.ImportedClassNs;   // IC-1
+        this._ctx.LocalClasses = this._gen.LocalClasses;
         this._ctx.CurFnName = name;                               // lift 命名（port-z42c-closures）
         this._expr = new ExprEmitter(this._ctx);
         string[] tp = this._mergeTp(classTp, classTpCount, md.TypeParams.Names, md.TypeParams.Count);
@@ -100,6 +101,7 @@ public sealed class FunctionEmitter {
         this._ctx.Ns = this._gen.Ns;
         this._ctx.Deps = this._gen.Deps;
         this._ctx.ImportedClassNs = this._gen.ImportedClassNs;
+        this._ctx.LocalClasses = this._gen.LocalClasses;
         this._ctx.CurFnName = name;
         this._expr = new ExprEmitter(this._ctx);
         this._ctx.NextReg = 0; this._ctx.MaxReg = 0;
@@ -135,6 +137,7 @@ public sealed class FunctionEmitter {
         this._ctx.Ns = this._gen.Ns;
         this._ctx.Deps = this._gen.Deps;
         this._ctx.ImportedClassNs = this._gen.ImportedClassNs;
+        this._ctx.LocalClasses = this._gen.LocalClasses;
         this._ctx.CurFnName = name;
         this._expr = new ExprEmitter(this._ctx);
         bool hasEnv = lam.CaptureCount > 0;

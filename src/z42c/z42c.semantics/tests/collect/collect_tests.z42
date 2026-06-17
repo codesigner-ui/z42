@@ -70,6 +70,23 @@ void test_tsig_inherited_fields_and_method_merge() {
         SemanticDump.DumpExports(src));
 }
 
+// G18d 回归：方法签名类型规范化（byte→u8 等），镜像 C# FuncToMethod TypeToString(resolved)；
+// 字段仍用源拼写（byte[]）。`u8[]` 来自 byte[] 数组规范名，验证结构保留（数组）+ prim 规范。
+[Test]
+void test_tsig_method_signature_canonical_field_source() {
+    string src = "class W { public byte[] data; public byte[] ToBytes(short n) { return data; } }";
+    // 方法返回/参数 → 规范名（byte[]→u8[]，short→i16）；字段 → 源拼写（byte[]）。
+    Assert.Equal("u8[]", SemanticDump.ExportMethodRet(src, "W", "ToBytes"));
+    Assert.Equal("byte[]", SemanticDump.ExportFieldType(src, "W", "data"));
+}
+
+// G18d 回归：nullable 在方法签名规范名下结构保留（string? 不被 sig.Name() 擦除为 string）。
+[Test]
+void test_tsig_method_nullable_return_preserved() {
+    string src = "class N { public string? Find(int k) { return null; } }";
+    Assert.Equal("string?", SemanticDump.ExportMethodRet(src, "N", "Find"));
+}
+
 // G18 回归：多级继承字段链（topmost 祖先字段最前）+ static 字段不参与继承合并。
 [Test]
 void test_tsig_multilevel_inheritance_and_static_field() {
