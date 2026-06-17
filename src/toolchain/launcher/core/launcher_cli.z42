@@ -102,9 +102,10 @@ SubcommandRouter _workloadRouter() {
 
     ArgParser inst = new ArgParser("z42 workload install", "install a platform workload (tooling + runtime)");
     inst.AddPositional("workload", "<ios|android|wasm|desktop>");
-    inst.AddOption("from", "", "local tooling package dir (B2-2; manifest download = B2-3)", "");
+    inst.AddOption("from", "", "local tooling package dir (omit for manifest network install)", "");
     inst.AddOption("runtime", "", "local runtime pack dir", "");
-    inst.AddOption("version", "", "version (default: from package manifest)", "");
+    inst.AddOption("base-url", "", "manifest root for network install (default: GitHub releases)", "");
+    inst.AddOption("version", "", "version (default: from package manifest; required for network)", "");
     inst.AddOption("rid", "", "runtime RID (default: from runtime dir name)", "");
     w.Add("install", "install a platform workload", inst);
 

@@ -60,22 +60,7 @@ void _cmdInstall(ParseResult r) {
     }
 
     Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
-    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
-    HttpResponse resp = hc.Get(baseUrl + "/" + asset);
-    if (!resp.IsSuccess()) {
-        ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
-        Environment.Exit(1);
-        return;
-    }
-    byte[] body = resp.Body;
-    if (sha.Length > 0) {
-        if (Sha256.HashHex(body) != sha) {
-            ConsoleError.WriteLine("z42: checksum mismatch for " + asset);
-            Environment.Exit(1);
-            return;
-        }
-        Console.WriteLine("  ✓ sha256 ok");
-    }
+    byte[] body = _downloadVerified(baseUrl, asset, sha);
 
     string runtimes = _runtimesDir();
     Directory.Create(runtimes);
@@ -140,22 +125,7 @@ void _cmdSelfUpdate(ParseResult r) {
     }
 
     Console.WriteLine("downloading " + asset + " (" + tag + ") ...");
-    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
-    HttpResponse resp = hc.Get(baseUrl + "/" + asset);
-    if (!resp.IsSuccess()) {
-        ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
-        Environment.Exit(1);
-        return;
-    }
-    byte[] body = resp.Body;
-    if (sha.Length > 0) {
-        if (Sha256.HashHex(body) != sha) {
-            ConsoleError.WriteLine("z42: checksum mismatch for " + asset);
-            Environment.Exit(1);
-            return;
-        }
-        Console.WriteLine("  ✓ sha256 ok");
-    }
+    byte[] body = _downloadVerified(baseUrl, asset, sha);
 
     // Extract SDK to a temp dir, then reassemble into launcher/ layout.
     // SDK: launcher.zpkg + libs/ at root, z42vm in bin/. launcher/ expects z42vm at root.
@@ -237,6 +207,64 @@ string[] _fetchManifest(string baseUrl, string rid, string packageType) {
         }
         string[] result = new string[2];
         result[0] = archive; result[1] = sha;
+        return result;
+    } catch (Exception e) { return empty; }
+}
+
+// Download baseUrl/asset and verify its sha256 (when non-empty). Returns the body
+// bytes, or exits the process (non-zero) on HTTP failure / checksum mismatch.
+// Shared by _cmdInstall / _cmdSelfUpdate / workload network install.
+byte[] _downloadVerified(string baseUrl, string asset, string sha) {
+    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
+    HttpResponse resp = hc.Get(baseUrl + "/" + asset);
+    if (!resp.IsSuccess()) {
+        ConsoleError.WriteLine("z42: download failed (HTTP " + resp.StatusCode.ToString() + ") for " + asset);
+        Environment.Exit(1);
+        return new byte[0];
+    }
+    byte[] body = resp.Body;
+    if (sha.Length > 0) {
+        if (Sha256.HashHex(body) != sha) {
+            ConsoleError.WriteLine("z42: checksum mismatch for " + asset);
+            Environment.Exit(1);
+            return new byte[0];
+        }
+        Console.WriteLine("  ✓ sha256 ok");
+    }
+    return body;
+}
+
+// Fetch release-index.json → [archive, sha256, rid0, rid1, …] for workloads.<wl>.
+// The first two elements are the tooling archive + its sha256; the rest are the
+// runtime-pack RIDs this workload depends on (android = two ABIs, ios = device +
+// sim). Returns a zero-length array when the manifest / workload entry is absent.
+string[] _fetchWorkloadEntry(string baseUrl, string wl) {
+    string[] empty = new string[0];
+    HttpClient hc = new HttpClient(); hc.SetMaxRedirects(10);
+    try {
+        HttpResponse resp = hc.Get(baseUrl + "/release-index.json");
+        if (!resp.IsSuccess()) { return empty; }
+        JsonValue m = JsonValue.Parse(resp.BodyAsString());
+        if (!m.IsObject() || !m.ContainsKey("workloads")) { return empty; }
+        JsonValue wls = m.Get("workloads");
+        if (!wls.IsObject() || !wls.ContainsKey(wl)) { return empty; }
+        JsonValue we = wls.Get(wl);
+        if (!we.IsObject()) { return empty; }
+        string archive = "";
+        string sha = "";
+        if (we.ContainsKey("archive")) { JsonValue av = we.Get("archive"); if (av.IsString()) { archive = av.AsString(); } }
+        if (we.ContainsKey("sha256"))  { JsonValue sv = we.Get("sha256");  if (sv.IsString()) { sha = sv.AsString(); } }
+        if (archive.Length == 0) { return empty; }
+        int rn = 0;
+        JsonValue rtsArr = JsonValue.Parse("[]");
+        if (we.ContainsKey("runtimes")) {
+            JsonValue cand = we.Get("runtimes");
+            if (cand.IsArray()) { rtsArr = cand; rn = cand.Count(); }
+        }
+        string[] result = new string[2 + rn];
+        result[0] = archive; result[1] = sha;
+        int i = 0;
+        while (i < rn) { result[2 + i] = rtsArr.At(i).AsString(); i = i + 1; }
         return result;
     } catch (Exception e) { return empty; }
 }

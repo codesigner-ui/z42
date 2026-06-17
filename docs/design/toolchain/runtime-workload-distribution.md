@@ -55,19 +55,18 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
     "browser-wasm": { "runtime": { "archive": "z42-runtime-0.3.5-browser-wasm.tar.gz", "sha256": "…" } }
   },
   "workloads": {
-    "desktop": { "archive": "z42-0.3.5-workload-desktop.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": [] },
-    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
-    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
-    "wasm":    { "archive": "z42-0.3.5-browser-wasm.tar.gz", "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] }
+    "ios":     { "archive": "z42-0.3.5-ios.tar.gz",     "sha256": "…", "runtimes": ["ios-arm64","iossim-arm64"] },
+    "android": { "archive": "z42-0.3.5-android.tar.gz", "sha256": "…", "runtimes": ["android-arm64","android-x64"] },
+    "wasm":    { "archive": "z42-0.3.5-wasm.tar.gz",    "sha256": "…", "runtimes": ["browser-wasm"] }
   }
 }
 ```
-> **一个 workload → 多 target RID（apphost-as-config 后续, 2026-06-17）**：`workloads.<wl>.runtimes` 列出该 workload 安装时需一并拉的 target runtime pack RID。`z42 workload install android` 读 `["android-arm64","android-x64"]` → 拉全部 ABI 的 runtime + workload tooling 包（一个 workload 统一多 ABI，对齐 `dotnet workload install android` 带全 ABI）。ios 的 `["ios-arm64","iossim-arm64"]` = 真机 + 模拟器。**desktop 的 `runtimes: []`**——它复用已装的 **host runtime**（`z42 install <ver>`），不拉平台专属 runtime（Decision 9）。
-> **已实施（split-release-runtime-package, 2026-06-14）**：desktop RID 双键（sdk/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式。workload 段未实施（见 Deferred）。
+> **一个 workload → 多 target RID（apphost-as-config 后续, 2026-06-17）**：`workloads.<wl>.runtimes` 列出该 workload 安装时需一并拉的 target runtime pack RID。`z42 workload install android` 读 `["android-arm64","android-x64"]` → 拉全部 ABI 的 runtime + workload tooling 包（一个 workload 统一多 ABI，对齐 `dotnet workload install android` 带全 ABI）。ios 的 `["ios-arm64","iossim-arm64"]` = 真机 + 模拟器。**desktop 不在 `workloads`**——它复用已装的 **host runtime**（`z42 install <ver>`），无 target runtime pack（Decision 9）。
+> **已实施**：① desktop RID 双键（sdk/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式（split-release-runtime-package, 2026-06-14）。② **`workloads` 段（add-workload-manifest-install, 2026-06-17, B2-4）**：CI release.yml emit `workloads.<wl>.{archive, sha256, runtimes}`；launcher `_fetchWorkloadEntry` 解析 → 联网装。
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。
-- `workloads.<wl>.host` = 哪些 host RID 能用该 workload（ios 仅 macOS）→ launcher 安装前先校验 host，host 不支持直接拒。
 - `sha256` 内置 → 校验不再单独读 SHA256SUMS（SHA256SUMS 可作并行 legacy 资产保留）。
+- **`workloads.<wl>.host`（保留字段，未实施）**：哪些 host RID 能用该 workload（ios 仅 macOS）→ install 前 host 校验。B2-4 暂不 gate（见 Deferred「workload host 校验」）；当前任何 host 都可装任何 workload。
 
 ## launcher / runtime 拆分 + 首次 bootstrap
 
@@ -111,11 +110,21 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 三类可安装物：**① runtime 版本（side-by-side）· ② launcher 自身（trampoline + launcher.zpkg，无 vm）· ③ workload（挂某 runtime 版本下）**。
 
-## 本地 install 机制（B2 已实现：runtime/workload 分包 + 平台铺设策略）
+## install 机制（runtime/workload 分包 + 平台铺设策略 + 联网/本地两源）
 
-`z42 workload install <wl> [--from <tooling>] [--runtime <pack>] [--rid <rid>]`
-（launcher_workload.z42）。runtime pack 与 workload tooling **分两个包**（独立版本管理——
-runtime ABI 配 z42vm 版本，tooling 是工程模板）：
+`z42 workload install <wl> [--from <tooling>] [--runtime <pack>] [--base-url <url>] [--version <ver>] [--rid <rid>]`
+（launcher_workload.z42）。**两种来源、同一铺设**（`_bedRuntimeIntoWorkload`）：
+
+- **本地（B2，`--from`/`--runtime` 指本地产包目录）** —— 见下「本地两步」。
+- **联网（B2-4，无 `--from`/`--runtime`）** —— 读 `release-index.json`（GitHub release tag，或 `--base-url`
+  指镜像/本地）→ `_fetchWorkloadEntry` 取 `workloads.<wl>.{archive, sha256, runtimes}` → 下载+校验+解压
+  tooling 到 `runtimes/<ver>/workloads/<wl>/`（staging `.stage` + 原子 `File.Move`）→ **遍历 `runtimes` 列表**：
+  每个 rid 读 `runtimes.<rid>.runtime` → 下载+校验+解压到 `runtimes/<rid>/<ver>/` → 立即跑同一平台铺设。
+  即「按需自动拉 runtime」（Decision 10）；android 双 ABI / ios 真机+模拟器都由 `runtimes` 列表逐个拉+铺。
+  `--base-url <root>` 时取 `<root>/release-index.json` 与 `<root>/<archive>`（对齐 GitHub 资产布局，故本地
+  `python3 -m http.server` 起 `<root>/<tag>/` 即可验证）。校验失败（checksum mismatch）即中止，不留半装态。
+
+runtime pack 与 workload tooling **分两个包**（独立版本管理——runtime ABI 配 z42vm 版本，tooling 是工程模板）：
 
 ```
 runtimes/<rid>/<ver>/         ← runtime pack（z42-runtime-<ver>-<rid>）：native/ + libs/ + headers
@@ -175,7 +184,7 @@ z42 default <ver>                       # 全局默认（已有）
 z42 use <ver|stable|nightly>            # 项目 pin（写 z42.toml [project].runtime）
 z42 list [--workloads]                  # 已装版本 + workload
 z42 uninstall <ver>
-z42 workload install <wl> [--runtime <ver>]
+z42 workload install <wl> [--from <dir>] [--runtime <dir>] [--base-url <url>] [--version <ver>]
 z42 workload list | update | remove <wl>
 z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 ```
@@ -204,13 +213,13 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 
 ## Deferred / 待 spec 细化
 
-> **workload install 现状（2026-06-17，impl-workload-install B2 已归档）**：三平台 LOCAL
-> produce + `z42 workload install --from <tooling> --runtime <pack>` + list/remove 端到端落地
-> （机制见上「本地 install 机制」节）。下列为该 change proposal 明确的 Out-of-Scope 后续 change：
+> **workload install 现状（2026-06-17）**：①三平台 LOCAL produce + `--from`/`--runtime` 装（impl-workload-install
+> B2 已归档）。②**联网装 + CI workloads 段（add-workload-manifest-install B2-4 已落地）**：`release.yml` emit
+> `workloads.<wl>` + 平台 runtime pack 双归档；`workload install <wl>`（无 `--from`，可 `--base-url`）联网拉。
+> 机制见上「install 机制」节。下列为后续 change：
 
-- **B2-4 CI release + manifest 联网装**：`release.yml` 上传 runtime/workload packs；`workload install`
-  无 `--from` 时读 `release-index.json` manifest 联网下载（复用 launcher_network `_extractArchive`）。
-  依赖 manifest schema 定稿（见下）。
+- **workload host 校验**：`workloads.<wl>.host`（保留字段）→ install 前校验 host RID（ios 仅 macOS）。
+  B2-4 暂不 gate（任何 host 可装任何 workload）；CI 暂不 emit `host`。
 - **B1 命令发现（discovery-based dispatch）**：现 `workload`/`export`/`publish` 命令 baked 进
   launcher_cli.z42；B1 改为从已装 workload 动态发现命令（对齐 dotnet workload）。属 CLI dispatch
   机制变更，需独立 spec。

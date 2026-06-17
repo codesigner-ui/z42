@@ -33,14 +33,30 @@ string _workloadsDir(string ver) {
     return Path.Join(Path.Join(_runtimesDir(), ver), "workloads");
 }
 
-// z42 workload install <wl> --from <tooling-dir> [--runtime <dir>] [--version <ver>] [--rid <rid>]
+// z42 workload install <wl> [--from <tooling>] [--runtime <pack>] [--base-url <url>] [--version <ver>] [--rid <rid>]
+//
+// Two install sources, same bedding (`_bedRuntimeIntoWorkload`):
+//   - LOCAL : --from (and/or --runtime) point at xtask-produced dirs (B2).
+//   - NETWORK: neither --from nor --runtime → read release-index.json (GitHub or
+//     --base-url), download the workload tooling + each runtime pack it lists.
 void _cmdWorkloadInstall(ParseResult r) {
     string wl = r.GetPositional(0);
     if (wl.Length == 0) {
-        ConsoleError.WriteLine("usage: z42 workload install <wl> [--from <tooling-dir>] [--runtime <dir>] [--version <ver>] [--rid <rid>]");
+        ConsoleError.WriteLine("usage: z42 workload install <wl> [--from <tooling>] [--runtime <pack>] [--base-url <url>] [--version <ver>] [--rid <rid>]");
         Environment.Exit(2); return;
     }
     string from = r.GetOption("from");
+    string runtimeFrom = r.GetOption("runtime");
+    if (from.Length > 0 || runtimeFrom.Length > 0) {
+        _workloadInstallLocal(r, wl, from, runtimeFrom);
+    } else {
+        _workloadInstallNetwork(r, wl, r.GetOption("base-url"));
+    }
+}
+
+// LOCAL install (B2): --from (re)installs tooling; --runtime adds a RID slice
+// ADDITIVELY (omit --from for android's 2nd ABI — don't clobber the 1st slice).
+void _workloadInstallLocal(ParseResult r, string wl, string from, string runtimeFrom) {
     if (from.Length > 0 && !Directory.Exists(from)) {
         ConsoleError.WriteLine("z42 workload install: --from not found: " + from);
         Environment.Exit(1); return;
@@ -51,12 +67,6 @@ void _cmdWorkloadInstall(ParseResult r) {
         ConsoleError.WriteLine("z42 workload install: --version <ver> required (or a manifest.toml in --from)");
         Environment.Exit(2); return;
     }
-
-    // 1. tooling → runtimes/<ver>/workloads/<wl>/
-    //    --from (re)installs the tooling (wipe + copy). Omit --from to install
-    //    only a runtime slice ADDITIVELY into an already-installed workload —
-    //    this is how android's second RID is added (one workload, jniLibs/<abi>
-    //    + assets/stdlib per RID) without clobbering the first RID's slice.
     string wlDest = Path.Join(_workloadsDir(ver), wl);
     if (from.Length > 0) {
         if (Directory.Exists(wlDest)) { Directory.Delete(wlDest, true); }
@@ -68,10 +78,6 @@ void _cmdWorkloadInstall(ParseResult r) {
         ConsoleError.WriteLine("       first install tooling: z42 workload install " + wl + " --from <tooling-dir>");
         Environment.Exit(1); return;
     }
-
-    // 2. runtime pack → runtimes/<rid>/<ver>/  (if provided)
-    string runtimeFrom = r.GetOption("runtime");
-    string xcfPath = "";
     if (runtimeFrom.Length > 0) {
         if (!Directory.Exists(runtimeFrom)) {
             ConsoleError.WriteLine("z42 workload install: --runtime not found: " + runtimeFrom);
@@ -88,61 +94,120 @@ void _cmdWorkloadInstall(ParseResult r) {
         Directory.Create(rtDest);
         _copyTree(runtimeFrom, rtDest);
         Console.WriteLine("runtime " + rid + " (" + ver + ") → " + rtDest);
-        // Platform-specific tooling → runtime wiring (detected by runtime content):
-        if (File.Exists(Path.Join(Path.Join(rtDest, "native"), "Z42VM.xcframework"))
-            || Directory.Exists(Path.Join(Path.Join(rtDest, "native"), "Z42VM.xcframework"))) {
-            // iOS: SwiftPM binaryTarget paths must be RELATIVE to the package root.
-            // workloads/<wl>/ is 3 levels under runtimes/, runtime at runtimes/<rid>/<ver>/.
-            xcfPath = "../../../" + rid + "/" + ver + "/native/Z42VM.xcframework";
-        } else if (Directory.Exists(Path.Join(rtDest, "pkg-web"))) {
-            // wasm: symlink the runtime's pkg-web/pkg-nodejs into the tooling root so the
-            // package.json `exports` map (root-relative `./pkg-nodejs/`) resolves — no rewrite.
-            foreach (var sub in new string[]{ "pkg-web", "pkg-nodejs" }) {
-                string link = Path.Join(wlDest, sub);
-                if (File.Exists(link) || Directory.Exists(link)) { Directory.Delete(link, true); }
-                File.SymLink(Path.Join(rtDest, sub), link);
-            }
-            Console.WriteLine("      ✓ pkg-web/pkg-nodejs symlinked from runtime");
-        } else if (File.Exists(Path.Join(Path.Join(rtDest, "native"), "libz42_platform_android.so"))) {
-            // android: the runtime pack feeds the tooling gradle module two places
-            // gradle bakes into the AAR — jniLibs (per-ABI .so) + assets/stdlib (zpkgs).
-            string abi = _androidAbi(rid);
-            if (abi.Length == 0) {
-                ConsoleError.WriteLine("z42 workload install: cannot map rid '" + rid + "' to an Android ABI");
-                Environment.Exit(2); return;
-            }
-            // 1. per-ABI .so → z42vm/src/main/jniLibs/<abi>/ (jniLibs.srcDirs + CMake pick it up)
-            string jni = Path.Join(Path.Join(Path.Join(wlDest, "z42vm/src/main/jniLibs"), abi), "");
-            Directory.Create(jni);
-            File.Copy(Path.Join(Path.Join(rtDest, "native"), "libz42_platform_android.so"),
-                      Path.Join(jni, "libz42_platform_android.so"));
-            string compSo = Path.Join(Path.Join(rtDest, "native"), "libz42_compression.so");
-            if (File.Exists(compSo)) { File.Copy(compSo, Path.Join(jni, "libz42_compression.so")); }
-            Console.WriteLine("      ✓ libz42_platform_android.so → jniLibs/" + abi + "/");
-            // 2. stdlib zpkgs → z42vm/src/main/assets/stdlib/ (assets.srcDirs bakes them in).
-            //    Version-locked to the runtime, so they ride the runtime pack — not tooling.
-            string assets = Path.Join(wlDest, "z42vm/src/main/assets/stdlib");
-            Directory.Create(assets);
-            string rtLibs = Path.Join(rtDest, "libs");
-            if (Directory.Exists(rtLibs)) {
-                foreach (var f in Directory.Enumerate(rtLibs)) {
-                    if (f.EndsWith(".zpkg")) { File.Copy(Path.Join(rtLibs, f), Path.Join(assets, f)); }
-                }
-                Console.WriteLine("      ✓ stdlib zpkgs → assets/stdlib/");
-            }
-        }
-    }
-
-    // 3. iOS: resolve the tooling Package.swift placeholder → installed xcframework
-    //    (relative path, per SwiftPM binaryTarget requirement).
-    string pkgSwift = Path.Join(wlDest, "Package.swift");
-    if (File.Exists(pkgSwift) && xcfPath.Length > 0) {
-        string body = File.ReadAllText(pkgSwift);
-        body = body.Replace("__Z42_RUNTIME_XCFRAMEWORK__", xcfPath);
-        File.WriteAllText(pkgSwift, body);
-        Console.WriteLine("      ✓ Package.swift → " + xcfPath);
+        _bedRuntimeIntoWorkload(wlDest, rtDest, rid, ver);
     }
     Console.WriteLine("✅ workload install " + wl + " done");
+}
+
+// NETWORK install: resolve release-index.json (GitHub release tag, or --base-url
+// for mirrors / local testing), download + verify the workload tooling, then each
+// runtime pack it depends on (workloads.<wl>.runtimes), bedding each into tooling.
+void _workloadInstallNetwork(ParseResult r, string wl, string baseUrlOpt) {
+    string ver = r.GetOption("version");
+    if (ver.Length == 0) {
+        ConsoleError.WriteLine("z42 workload install: --version <ver> required for network install (or use --from <dir>)");
+        Environment.Exit(2); return;
+    }
+    string tag = (ver == "nightly") ? "nightly" : ("v" + ver);
+    string baseUrl = (baseUrlOpt.Length > 0) ? baseUrlOpt
+        : ("https://github.com/codesigner-ui/z42/releases/download/" + tag);
+
+    string[] we = _fetchWorkloadEntry(baseUrl, wl);
+    if (we.Length < 2 || we[0].Length == 0) {
+        ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not found in manifest at " + baseUrl + "/release-index.json");
+        Environment.Exit(1); return;
+    }
+
+    // 1. tooling → runtimes/<ver>/workloads/<wl>/ (download + verify + atomic move)
+    Console.WriteLine("downloading " + we[0] + " (" + tag + ") ...");
+    byte[] tbody = _downloadVerified(baseUrl, we[0], we[1]);
+    string wlDest = Path.Join(_workloadsDir(ver), wl);
+    Directory.Create(_workloadsDir(ver));
+    string wlStage = Path.Join(_workloadsDir(ver), "." + wl + ".stage");
+    if (Directory.Exists(wlStage)) { Directory.Delete(wlStage, true); }
+    Directory.Create(wlStage);
+    _extractArchive(tbody, false, wlStage);
+    if (Directory.Exists(wlDest)) { Directory.Delete(wlDest, true); }
+    File.Move(wlStage, wlDest);
+    Console.WriteLine("workload " + wl + " (" + ver + ") → " + wlDest);
+
+    // 2. each runtime RID it depends on (android = 2 ABIs, ios = device + sim)
+    int i = 2;
+    while (i < we.Length) {
+        string rid = we[i];
+        string[] mf = _fetchManifest(baseUrl, rid, "runtime");
+        if (mf[0].Length == 0) {
+            ConsoleError.WriteLine("z42 workload install: no runtime pack for rid '" + rid + "' in manifest");
+            Environment.Exit(1); return;
+        }
+        Console.WriteLine("downloading " + mf[0] + " (" + rid + ") ...");
+        byte[] rbody = _downloadVerified(baseUrl, mf[0], mf[1]);
+        string rtDest = Path.Join(Path.Join(_runtimesDir(), rid), ver);
+        Directory.Create(Path.Join(_runtimesDir(), rid));
+        string rtStage = Path.Join(Path.Join(_runtimesDir(), rid), "." + ver + ".stage");
+        if (Directory.Exists(rtStage)) { Directory.Delete(rtStage, true); }
+        Directory.Create(rtStage);
+        _extractArchive(rbody, false, rtStage);
+        if (Directory.Exists(rtDest)) { Directory.Delete(rtDest, true); }
+        File.Move(rtStage, rtDest);
+        Console.WriteLine("runtime " + rid + " (" + ver + ") → " + rtDest);
+        _bedRuntimeIntoWorkload(wlDest, rtDest, rid, ver);
+        i = i + 1;
+    }
+    Console.WriteLine("✅ workload install " + wl + " done");
+}
+
+// Bed a runtime pack (rtDest) into the workload tooling (wlDest) for `rid`. The
+// strategy is detected from the runtime pack's content (shared by LOCAL + NETWORK):
+//   - ios   : rewrite Package.swift binaryTarget → RELATIVE installed xcframework path
+//   - wasm  : symlink pkg-web/pkg-nodejs into the tooling root (package.json exports)
+//   - android: per-ABI .so → jniLibs/<abi>/, stdlib zpkgs → assets/stdlib/ (gradle bakes both)
+void _bedRuntimeIntoWorkload(string wlDest, string rtDest, string rid, string ver) {
+    string nativeDir = Path.Join(rtDest, "native");
+    string xcf = Path.Join(nativeDir, "Z42VM.xcframework");
+    if (File.Exists(xcf) || Directory.Exists(xcf)) {
+        // iOS: SwiftPM binaryTarget paths must be RELATIVE to the package root.
+        // workloads/<wl>/ is 3 levels under runtimes/; runtime at runtimes/<rid>/<ver>/.
+        string xcfPath = "../../../" + rid + "/" + ver + "/native/Z42VM.xcframework";
+        string pkgSwift = Path.Join(wlDest, "Package.swift");
+        if (File.Exists(pkgSwift)) {
+            string body = File.ReadAllText(pkgSwift);
+            body = body.Replace("__Z42_RUNTIME_XCFRAMEWORK__", xcfPath);
+            File.WriteAllText(pkgSwift, body);
+            Console.WriteLine("      ✓ Package.swift → " + xcfPath);
+        }
+    } else if (Directory.Exists(Path.Join(rtDest, "pkg-web"))) {
+        // wasm: symlink runtime pkg-web/pkg-nodejs into tooling root (exports resolve, no rewrite).
+        foreach (var sub in new string[]{ "pkg-web", "pkg-nodejs" }) {
+            string link = Path.Join(wlDest, sub);
+            if (File.Exists(link) || Directory.Exists(link)) { Directory.Delete(link, true); }
+            File.SymLink(Path.Join(rtDest, sub), link);
+        }
+        Console.WriteLine("      ✓ pkg-web/pkg-nodejs symlinked from runtime");
+    } else if (File.Exists(Path.Join(nativeDir, "libz42_platform_android.so"))) {
+        // android: gradle bakes the AAR from jniLibs (per-ABI .so) + assets/stdlib (zpkgs).
+        string abi = _androidAbi(rid);
+        if (abi.Length == 0) {
+            ConsoleError.WriteLine("z42 workload install: cannot map rid '" + rid + "' to an Android ABI");
+            Environment.Exit(2); return;
+        }
+        string jni = Path.Join(Path.Join(Path.Join(wlDest, "z42vm/src/main/jniLibs"), abi), "");
+        Directory.Create(jni);
+        File.Copy(Path.Join(nativeDir, "libz42_platform_android.so"), Path.Join(jni, "libz42_platform_android.so"));
+        string compSo = Path.Join(nativeDir, "libz42_compression.so");
+        if (File.Exists(compSo)) { File.Copy(compSo, Path.Join(jni, "libz42_compression.so")); }
+        Console.WriteLine("      ✓ libz42_platform_android.so → jniLibs/" + abi + "/");
+        // stdlib zpkgs are version-locked to the runtime → ride the runtime pack, not tooling.
+        string assets = Path.Join(wlDest, "z42vm/src/main/assets/stdlib");
+        Directory.Create(assets);
+        string rtLibs = Path.Join(rtDest, "libs");
+        if (Directory.Exists(rtLibs)) {
+            foreach (var f in Directory.Enumerate(rtLibs)) {
+                if (f.EndsWith(".zpkg")) { File.Copy(Path.Join(rtLibs, f), Path.Join(assets, f)); }
+            }
+            Console.WriteLine("      ✓ stdlib zpkgs → assets/stdlib/");
+        }
+    }
 }
 
 void _cmdWorkloadList(ParseResult r) {

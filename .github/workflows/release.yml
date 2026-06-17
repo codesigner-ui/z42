@@ -169,6 +169,18 @@ jobs:
               tar -C "artifacts/packages/$src" -czf "artifacts/release/${dst}.tar.gz" .
             fi
           }
+          # rid → workload name (ios/android/wasm); "" for desktop.
+          _wl_of() {
+            case "$1" in
+              ios-*|iossim-*) echo ios ;;
+              android-*)      echo android ;;
+              browser-wasm)   echo wasm ;;
+              *)              echo "" ;;
+            esac
+          }
+          # The single RID per platform that ships the (identical across ABIs/slices)
+          # workload tooling archive — avoids same-name artifact collisions at merge.
+          _is_primary() { case "$1" in ios-arm64|android-arm64|browser-wasm) return 0 ;; *) return 1 ;; esac; }
 
           if [[ "$rid" == linux-* || "$rid" == macos-* || "$rid" == windows-* ]]; then
             # Desktop: SDK archive (full) + runtime archive (z42vm + libs only).
@@ -177,9 +189,17 @@ jobs:
             _tar "z42-runtime-${version}-${rid}" "z42-runtime-${version}-${rid}"
             echo "✓ runtime: z42-runtime-${version}-${rid}"
           else
-            # Platform RID: archive directly as runtime (no separate sdk upload).
-            _tar "z42-${version}-${rid}-release" "z42-runtime-${version}-${rid}"
+            # Platform RID (ios/android/wasm) — runtime/workload split (B2-3/B2-4):
+            #   runtime pack (per RID): z42-runtime-<v>-<rid>/  → z42-runtime-<v>-<rid>
+            #   workload tooling (primary RID only, identical across ABIs/slices):
+            #     z42-<v>-<rid>-release/ → z42-<v>-<wl>
+            _tar "z42-runtime-${version}-${rid}" "z42-runtime-${version}-${rid}"
             echo "✓ runtime: z42-runtime-${version}-${rid}"
+            if _is_primary "$rid"; then
+              wl="$(_wl_of "$rid")"
+              _tar "z42-${version}-${rid}-release" "z42-${version}-${wl}"
+              echo "✓ workload: z42-${version}-${wl}"
+            fi
           fi
 
       - name: Upload archive
@@ -235,18 +255,24 @@ jobs:
           sha_sdk_win="$(get_sha   "z42-${v}-windows-x64.zip")"
           sha_rt_win="$(get_sha    "z42-runtime-${v}-windows-x64.zip")"
 
-          # Platform: runtime only (main package = platform SDK = runtime)
+          # Platform runtime packs (per RID).
           sha_ios="$(get_sha    "z42-runtime-${v}-ios-arm64.tar.gz")"
           sha_iossim="$(get_sha "z42-runtime-${v}-iossim-arm64.tar.gz")"
           sha_aarm64="$(get_sha "z42-runtime-${v}-android-arm64.tar.gz")"
           sha_ax64="$(get_sha   "z42-runtime-${v}-android-x64.tar.gz")"
           sha_wasm="$(get_sha   "z42-runtime-${v}-browser-wasm.tar.gz")"
 
+          # Workload tooling archives (one per platform; bundle the per-RID runtime packs).
+          sha_wl_ios="$(get_sha     "z42-${v}-ios.tar.gz")"
+          sha_wl_android="$(get_sha "z42-${v}-android.tar.gz")"
+          sha_wl_wasm="$(get_sha    "z42-${v}-wasm.tar.gz")"
+
           for var in sha_sdk_lx64 sha_rt_lx64 \
                      sha_sdk_la64 sha_rt_la64 \
                      sha_sdk_mac  sha_rt_mac  \
                      sha_sdk_win  sha_rt_win  \
-                     sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm; do
+                     sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm \
+                     sha_wl_ios sha_wl_android sha_wl_wasm; do
             [ -n "${!var}" ] || { echo "release-index: missing sha256 for $var" >&2; exit 1; }
           done
 
@@ -260,6 +286,8 @@ jobs:
             --arg sha_ios      "$sha_ios"      --arg sha_iossim    "$sha_iossim"    \
             --arg sha_aarm64   "$sha_aarm64"   --arg sha_ax64      "$sha_ax64"      \
             --arg sha_wasm     "$sha_wasm"     \
+            --arg sha_wl_ios   "$sha_wl_ios"   --arg sha_wl_android "$sha_wl_android" \
+            --arg sha_wl_wasm  "$sha_wl_wasm"  \
             '{
               schema: $schema,
               version: $version,
@@ -288,6 +316,11 @@ jobs:
                 "android-arm64":{ runtime: { archive: ("z42-runtime-" + $version + "-android-arm64.tar.gz"),sha256: $sha_aarm64 } },
                 "android-x64":  { runtime: { archive: ("z42-runtime-" + $version + "-android-x64.tar.gz"), sha256: $sha_ax64   } },
                 "browser-wasm": { runtime: { archive: ("z42-runtime-" + $version + "-browser-wasm.tar.gz"), sha256: $sha_wasm  } }
+              },
+              workloads: {
+                "ios":     { archive: ("z42-" + $version + "-ios.tar.gz"),     sha256: $sha_wl_ios,     runtimes: ["ios-arm64","iossim-arm64"] },
+                "android": { archive: ("z42-" + $version + "-android.tar.gz"), sha256: $sha_wl_android, runtimes: ["android-arm64","android-x64"] },
+                "wasm":    { archive: ("z42-" + $version + "-wasm.tar.gz"),    sha256: $sha_wl_wasm,    runtimes: ["browser-wasm"] }
               }
             }' > dist/release-index.json
           echo "--- release-index.json ---"
