@@ -55,7 +55,7 @@ public sealed class FunctionEmitter {
             else if (pt is Z42ArrayType) { ptag = IrType.Ref; }
             this._ctx.Locals.Put(md.Params[p].Name, new TypedReg(p + paramOffset, ptag));
             this._ctx.RecordReg(p + paramOffset, ptag);
-            paramTypes[p + paramOffset] = pt.Name();
+            paramTypes[p + paramOffset] = this._sigTypeName(md.Params[p].Type, tp, tpc);   // G18f：SIGS 用源拼写（byte[]）
             p = p + 1;
         }
         this._ctx.NextReg = totalParams;
@@ -72,7 +72,7 @@ public sealed class FunctionEmitter {
         }
         if (!this._ctx.Ended) { this._ctx.EndBlock(new RetTerm(false, null)); }   // 隐式 ret
         string retName = "void";   // G11：ctor 返回 void（RetType 占位空名）
-        if (!md.IsCtor) { retName = this._symbols.ResolveTypeP(md.RetType, tp, tpc).Name(); }
+        if (!md.IsCtor) { retName = this._sigTypeName(md.RetType, tp, tpc); }   // G18f：SIGS 用源拼写（byte[]，非 u8[]）
         int[] regTypes = new int[this._ctx.RegTagCount];
         int rt = 0;
         while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
@@ -93,6 +93,23 @@ public sealed class FunctionEmitter {
             irf.ExcCount = this._ctx.ExcCount;
         }
         return irf;
+    }
+
+    // SIGS 签名类型名（ret + param）：**源拼写**（byte[]，非规范 u8[]）——whichsec 实证 C# 顶层 SIGS
+    // type_str 用源拼写，区别于 TSIG/MODS 用规范名（G18d）。仅会被规范化的次要 prim 别名
+    // （byte/sbyte/short/ushort/uint/ulong）走源名；其余（含 nullable 剥 ?、class/泛型/delegate）
+    // 委托 ResolveTypeP().Name() 保正确解析。数组递归保结构。G18f。
+    private string _sigTypeName(TypeExpr te, string[] tp, int tpc) {
+        if (te is ArrayType) { return this._sigTypeName((te as ArrayType).Elem, tp, tpc) + "[]"; }
+        if (te is NullableType) { return this._sigTypeName((te as NullableType).Inner, tp, tpc); }   // 剥 ?（镜像 ResolveTypeP）
+        if (te is NamedType) {
+            NamedType nt = te as NamedType;
+            if (nt.ArgCount == 0 && this._isAliasPrim(nt.Name)) { return nt.Name; }
+        }
+        return this._symbols.ResolveTypeP(te, tp, tpc).Name();
+    }
+    private bool _isAliasPrim(string n) {
+        return n == "byte" || n == "sbyte" || n == "short" || n == "ushort" || n == "uint" || n == "ulong";
     }
 
     // __static_init__ 合成（SA-3；镜像 C#）：每静态字段 init → StaticSet(FQ, init reg)，ret void、0 参。
