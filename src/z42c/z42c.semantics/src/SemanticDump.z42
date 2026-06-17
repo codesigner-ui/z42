@@ -80,6 +80,24 @@ public static class SemanticDump {
         return "?";
     }
 
+    // 指定类的 TYPE 段（IrClassDesc）字段类型名（G18g 守护：TYPE 字段源拼写 byte[]，非规范 u8[]）。
+    public static string TypeFieldName(string src, string className, string fieldName) {
+        IrModule irm = IrDump.BuildModule(src, "t.z42");
+        int i = 0;
+        while (i < irm.ClassCount) {
+            IrClassDesc c = irm.Classes[i];
+            if (c.Name == className || (className.Length > 0 && c.Name.EndsWith("." + className))) {
+                int f = 0;
+                while (f < c.FieldCount) {
+                    if (c.Fields[f].Name == fieldName) { return c.Fields[f].Type; }
+                    f = f + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return "?";
+    }
+
     // 指定 key（"Class.Method" / 顶层函数名）的方法体 bound s-expr。
     public static string DumpBody(string src, string key) {
         var p = new Parser(src, "<input>");

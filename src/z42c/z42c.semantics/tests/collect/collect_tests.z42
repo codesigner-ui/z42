@@ -87,6 +87,15 @@ void test_tsig_method_nullable_return_preserved() {
     Assert.Equal("string?", SemanticDump.ExportMethodRet(src, "N", "Find"));
 }
 
+// G18g 回归：TYPE 段（IrClassDesc）字段类型源拼写（byte[]，非规范 u8[]）——同顶层 SIGS，
+// 区别于 TSIG 方法签名规范名（G18d）。int[]（非次要别名）不变。
+[Test]
+void test_type_section_field_source_spelling() {
+    string src = "class W { public byte[] data; public int[] nums; }";
+    Assert.Equal("byte[]", SemanticDump.TypeFieldName(src, "W", "data"));
+    Assert.Equal("int[]", SemanticDump.TypeFieldName(src, "W", "nums"));
+}
+
 // G18 回归：多级继承字段链（topmost 祖先字段最前）+ static 字段不参与继承合并。
 [Test]
 void test_tsig_multilevel_inheritance_and_static_field() {

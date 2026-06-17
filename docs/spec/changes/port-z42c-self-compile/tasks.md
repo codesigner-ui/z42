@@ -76,7 +76,9 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
   - **i32-vs-i64（4 处）**：`int t = 0;` → z42c 寄存器 tag 取 **init 表达式类型**（const.i64 0 → i64）；C# 取**声明类型**（int → i32）。修法：FunctionEmitter BoundVarDeclStmt 用声明类型 tag。
   - **field.get 结果 tag（6 str + 12 ref = 18 处）**：跨-ns 本地类字段读（`i.Func`/`.ElemName`/`.Name`，i=`ins as CallInstr`，CallInstr@Z42.IR 从 BinaryFormat 段读）→ z42c 取字段声明类型 tag（str/ref）；C# 留 **Unknown(0x00)**。疑跨-ns 字段类型 codegen 期未解析。修法：跨-ns 类字段读结果 tag → Unknown（镜像 C#）。
   - **诊断法（已验证，今后逐包首选）**：`dotnet driver disasm <zpkg> -o x.zasm`（C# CLI 可 disasm zpkg）→ diff 两路 ZASM 直接看寄存器 tag/指令分歧，比段尺寸/池索引解码精准。
-- [ ] G19+ 逐包推进（z42c.semantics/pipeline/driver/project；cmp 逐字节）。注意：① DEPS provider env-artifact 在含全 7 包的 flat 验证目录下放大（同名跨-ns/跨包类靠 G18e 已大幅消解，剩 Std 多 provider 残项）；② TSIG/SIGS 源拼写 vs 规范名分裂（G18d + SIGS follow-up）须各包逐一过。
+- [x] **G18g TYPE 段字段类型源拼写**：z42c.project 暴露——`IrGen._classDesc` 字段类型用 `ResolveType().Name()`=规范（u8[]）；disasm 实证 C# TYPE 段 `.field Data: byte[]`=源拼写（同顶层 SIGS）。修：`_typeFieldName`（同 G18f `_sigTypeName`：次要别名源名 + nullable 剥 + 数组递归 + class/泛型委托 ResolveType）。回归测试 `test_type_section_field_source_spelling`（byte[] 源 / int[] 不变）+ `SemanticDump.TypeFieldName`。core/syntax 无回归 + gate 全绿。**z42c.project disasm 仅剩 1 残差**（下条）。
+- [ ] 🔴 **DepScan 应按声明依赖过滤（多-dep 包共性，z42c.project 暴露）**：z42c.project `pool.Intern()`（pool=imported ZbcStringPool@z42c.ir）→ z42c emit **bare v_call**（`Intern` 在含全 7 包 flat 目录里**歧义**：z42c.ir `ZbcStringPool.Intern` ∧ z42c.semantics `IrGen.Intern` 同 instance 键 → DependencyIndex.Seal 剔除 → GetInstance 返 null → VCall fallback）；C# emit **FQ call** `Z42.IR.BinaryFormat.ZbcStringPool.Intern`（C# DepIndex **只索引声明依赖** core+ir，无 semantics → 无歧义）。**根因**：z42c `DepScan.Scan` 扫**整个** Z42_LIBS flat 目录；C# 只索引 manifest 声明依赖（+ 传递 + prelude）。**修法**：DepScan 按 `pm.Deps`（+ 传递闭包 + prelude stdlib）过滤索引的 zpkg。⚠ 这是所有多-dep 自身包逐包对账的共性 env-pollution 根；core/syntax/ir 仅用 stdlib+单 dep 故未触发。**优先级高**（解锁 project/semantics/pipeline/driver）。
+- [ ] G19+ 逐包推进（z42c.semantics/pipeline/driver；cmp 逐字节）。诊断首选 `dotnet driver disasm`；预期残差类型：TSIG/SIGS/TYPE 拼写（G18d/f/g 已建机制）+ DepScan 声明依赖过滤 + REGT tag。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）
