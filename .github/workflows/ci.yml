@@ -1175,10 +1175,11 @@ jobs:
           | Android x64 | \`z42-runtime-nightly-android-x64.tar.gz\` |
           | Browser WASM | \`z42-runtime-nightly-browser-wasm.tar.gz\` |
 
-          ## Workloads (\`z42 workload install <wl>\` tooling — bundles the runtime packs above)
+          ## Workloads (\`z42 workload install <wl>\`; ios/android/wasm bundle the runtime packs above — desktop carries the per-RID apphost stubs and reuses the host runtime)
 
           | Workload | Tooling archive |
           |----------|-----------------|
+          | Desktop (apphost) | \`z42-workload-nightly-desktop.tar.gz\` |
           | iOS (SwiftPM) | \`z42-workload-nightly-ios.tar.gz\` |
           | Android (Gradle) | \`z42-workload-nightly-android.tar.gz\` |
           | WASM (npm) | \`z42-workload-nightly-wasm.tar.gz\` |
