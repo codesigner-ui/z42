@@ -1,0 +1,5 @@
+namespace Std.Project;
+
+/// `[workspace]` 段（monorepo）。与单项目 `ProjectManifest` 分开解析：
+/// workspace 根清单只有 [workspace]（+ 可选 [workspace.build] 共享默认）。
+public record Workspace(string[] Members, string[] DefaultMembers);

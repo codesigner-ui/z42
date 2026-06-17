@@ -1,0 +1,16 @@
+namespace Std.Project;
+
+/// `[platform.<family>]` 等**开放段** TOML 子表的只读访问契约。
+///
+/// 这些段的键随平台 / 工具演进，不适合钉成固定字段，故用通用句柄 + typed getter。
+/// 无泛型 map（L1 约束）。缺失键返回空值（"" / 0 / false / 空数组），用 Has 区分
+/// 「缺失」与「空」。实现由 SDK / 解析器注入。
+public interface IConfigTable {
+    bool         Has(string key);
+    string       Str(string key);
+    string       StrOr(string key, string fallback);
+    int          Int(string key);
+    bool         Bool(string key);
+    string[]     List(string key);
+    IConfigTable Table(string key);
+}

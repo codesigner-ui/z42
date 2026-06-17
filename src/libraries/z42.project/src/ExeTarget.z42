@@ -1,0 +1,4 @@
+namespace Std.Project;
+
+/// `[[exe]]` 的一项（多 exe 目标）。Src 为空表示沿用 `[sources]`。
+public record ExeTarget(string Name, string Entry, string[] Src);

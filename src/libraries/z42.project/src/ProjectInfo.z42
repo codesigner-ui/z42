@@ -1,0 +1,10 @@
+namespace Std.Project;
+
+/// `[project]` 段。
+public record ProjectInfo(
+    string Name,        // kebab-case；.zpkg 文件名 + 依赖引用名
+    string Version,     // SemVer
+    string Kind,        // "exe" | "lib"
+    string Entry,       // 可为 ""（自动探测）
+    bool   Pack         // [project].pack 全局默认（[profile.*].pack 最低优先级回退）
+);

@@ -1,0 +1,15 @@
+namespace Std.Project;
+
+/// `z42.toml` 的完整类型化模型（单项目）。z42c 与 z42.build 共同依赖的唯一真相。
+///
+/// 各段随 schema 增长在对应记录里补字段；本根记录只做聚合。
+/// workspace 清单（`[workspace]`）单独解析，见 `Workspace`。
+public record ProjectManifest(
+    ProjectInfo  Project,         // [project]
+    Sources      Sources,         // [sources]
+    BuildConfig  Build,           // [build]
+    Profile[]    Profiles,        // [profile.*]（按 Name 索引：debug / release）
+    Dependency[] Dependencies,    // [dependencies]
+    ExeTarget[]  Exes,            // [[exe]]（单 exe 时为空）
+    IConfigTable Platforms        // [platform] 整表；按 family 取子表 .Table("ios")
+);

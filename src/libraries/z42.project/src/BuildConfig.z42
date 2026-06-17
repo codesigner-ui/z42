@@ -1,0 +1,10 @@
+namespace Std.Project;
+
+/// `[build]` 段。目录默认：OutputDir = toml 所在目录；CacheDir = ${OutputDir}/.cache；
+/// DistDir = ${OutputDir}/dist。
+public record BuildConfig(
+    string OutputDir,
+    string CacheDir,
+    string DistDir,
+    bool   Incremental
+);
