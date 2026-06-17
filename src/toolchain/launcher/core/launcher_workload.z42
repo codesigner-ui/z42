@@ -1,0 +1,188 @@
+// z42 launcher — workload commands (impl-workload-install B2, 2026-06-17).
+//
+// A workload = a platform's tooling (facade Sources + Package.swift + 模板)
+// installed under runtimes/<ver>/workloads/<wl>/; the platform's VM library is
+// a SEPARATE runtime pack installed under runtimes/<rid>/<ver>/ (split for
+// independent version management — see runtime-workload-distribution.md).
+//
+//   z42 workload install <wl> --from <tooling-dir> [--runtime <runtime-dir>]
+//                              [--version <ver>] [--rid <rid>]
+//   z42 workload list
+//   z42 workload remove <wl> [--version <ver>]
+//
+// `--from` / `--runtime` take a LOCAL package dir (produced by `xtask package`)
+// — the no-release local path (B2-2). The manifest-driven download path (B2-3)
+// reuses launcher_network's _extractArchive; not wired here yet.
+//
+// On install the tooling's Package.swift `__Z42_RUNTIME_XCFRAMEWORK__`
+// placeholder is rewritten to the installed runtime's xcframework absolute path,
+// so `swift build` / `z42 export ios` resolves the separately-installed runtime.
+namespace Z42Launcher;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+
+string _workloadsDir(string ver) {
+    return Path.Join(Path.Join(_runtimesDir(), ver), "workloads");
+}
+
+// z42 workload install <wl> --from <tooling-dir> [--runtime <dir>] [--version <ver>] [--rid <rid>]
+void _cmdWorkloadInstall(ParseResult r) {
+    string wl = r.GetPositional(0);
+    if (wl.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 workload install <wl> --from <tooling-dir> [--runtime <dir>] [--version <ver>] [--rid <rid>]");
+        Environment.Exit(2); return;
+    }
+    string from = r.GetOption("from");
+    if (from.Length == 0) {
+        ConsoleError.WriteLine("z42 workload install: --from <tooling-dir> required (manifest download = B2-3, not yet wired)");
+        Environment.Exit(2); return;
+    }
+    if (!Directory.Exists(from)) {
+        ConsoleError.WriteLine("z42 workload install: --from not found: " + from);
+        Environment.Exit(1); return;
+    }
+    string ver = r.GetOption("version");
+    if (ver.Length == 0) { ver = _workloadVersionFromManifest(from); }
+    if (ver.Length == 0) {
+        ConsoleError.WriteLine("z42 workload install: --version <ver> required (or a manifest.toml in --from)");
+        Environment.Exit(2); return;
+    }
+
+    // 1. tooling → runtimes/<ver>/workloads/<wl>/
+    string wlDest = Path.Join(_workloadsDir(ver), wl);
+    if (Directory.Exists(wlDest)) { Directory.Delete(wlDest, true); }
+    Directory.Create(wlDest);
+    _copyTree(from, wlDest);
+    Console.WriteLine("workload " + wl + " (" + ver + ") → " + wlDest);
+
+    // 2. runtime pack → runtimes/<rid>/<ver>/  (if provided)
+    string runtimeFrom = r.GetOption("runtime");
+    string xcfPath = "";
+    if (runtimeFrom.Length > 0) {
+        if (!Directory.Exists(runtimeFrom)) {
+            ConsoleError.WriteLine("z42 workload install: --runtime not found: " + runtimeFrom);
+            Environment.Exit(1); return;
+        }
+        string rid = r.GetOption("rid");
+        if (rid.Length == 0) { rid = _ridFromRuntimeDir(runtimeFrom); }
+        if (rid.Length == 0) {
+            ConsoleError.WriteLine("z42 workload install: --rid <rid> required when --runtime given (or name the dir z42-runtime-<ver>-<rid>)");
+            Environment.Exit(2); return;
+        }
+        string rtDest = Path.Join(Path.Join(_runtimesDir(), rid), ver);
+        if (Directory.Exists(rtDest)) { Directory.Delete(rtDest, true); }
+        Directory.Create(rtDest);
+        _copyTree(runtimeFrom, rtDest);
+        Console.WriteLine("runtime " + rid + " (" + ver + ") → " + rtDest);
+        // SwiftPM binaryTarget paths must be RELATIVE to the package root. The
+        // workload tooling lives at runtimes/<ver>/workloads/<wl>/ (3 levels under
+        // runtimes/), the runtime at runtimes/<rid>/<ver>/ — so the relative path
+        // up to runtimes/ then back down is fixed: ../../../<rid>/<ver>/native/...
+        xcfPath = "../../../" + rid + "/" + ver + "/native/Z42VM.xcframework";
+    }
+
+    // 3. resolve the tooling Package.swift placeholder → installed xcframework
+    //    (relative path, per SwiftPM binaryTarget requirement).
+    string pkgSwift = Path.Join(wlDest, "Package.swift");
+    if (File.Exists(pkgSwift) && xcfPath.Length > 0) {
+        string body = File.ReadAllText(pkgSwift);
+        body = body.Replace("__Z42_RUNTIME_XCFRAMEWORK__", xcfPath);
+        File.WriteAllText(pkgSwift, body);
+        Console.WriteLine("      ✓ Package.swift → " + xcfPath);
+    }
+    Console.WriteLine("✅ workload install " + wl + " done");
+}
+
+void _cmdWorkloadList(ParseResult r) {
+    string[] vers = _installedVersions();
+    bool any = false;
+    int i = 0;
+    while (i < vers.Length) {
+        string wd = _workloadsDir(vers[i]);
+        if (Directory.Exists(wd)) {
+            foreach (var w in Directory.Enumerate(wd)) {
+                if (Directory.Exists(Path.Join(wd, w))) {
+                    Console.WriteLine(w + "  (" + vers[i] + ")");
+                    any = true;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    if (!any) { Console.WriteLine("(no workloads installed)"); }
+}
+
+void _cmdWorkloadRemove(ParseResult r) {
+    string wl = r.GetPositional(0);
+    if (wl.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 workload remove <wl> [--version <ver>]");
+        Environment.Exit(2); return;
+    }
+    string ver = r.GetOption("version");
+    string[] vers = (ver.Length > 0) ? _single(ver) : _installedVersions();
+    bool removed = false;
+    int i = 0;
+    while (i < vers.Length) {
+        string wlDir = Path.Join(_workloadsDir(vers[i]), wl);
+        if (Directory.Exists(wlDir)) {
+            Directory.Delete(wlDir, true);
+            Console.WriteLine("removed workload " + wl + " (" + vers[i] + ")");
+            removed = true;
+        }
+        i = i + 1;
+    }
+    if (!removed) { ConsoleError.WriteLine("z42 workload remove: not installed: " + wl); Environment.Exit(1); }
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+// Recursive directory copy (stdlib has no Directory.Copy yet). Copy order is
+// irrelevant for correctness (every entry is copied — not a first-wins register,
+// so common-pitfalls §1 sort-before-iterate doesn't apply).
+void _copyTree(string src, string dst) {
+    Directory.Create(dst);
+    foreach (var name in Directory.Enumerate(src)) {
+        string s = Path.Join(src, name);
+        string d = Path.Join(dst, name);
+        if (Directory.Exists(s)) { _copyTree(s, d); }
+        else { File.Copy(s, d); }
+    }
+}
+
+// Read [package].version from a package manifest.toml, or "" if absent.
+string _workloadVersionFromManifest(string dir) {
+    string m = Path.Join(dir, "manifest.toml");
+    if (!File.Exists(m)) { return ""; }
+    foreach (var line in File.ReadAllText(m).Split("\n")) {
+        string t = line.Trim();
+        if (t.StartsWith("version") && t.IndexOf("=") >= 0) {
+            int q1 = t.IndexOf("\"");
+            if (q1 >= 0) {
+                string after = t.Substring(q1 + 1, t.Length - q1 - 1);
+                int rel = after.IndexOf("\"");
+                if (rel >= 0) { return after.Substring(0, rel); }
+            }
+        }
+    }
+    return "";
+}
+
+// Derive <rid> from a runtime pack dir named z42-runtime-<ver>-<rid>.
+string _ridFromRuntimeDir(string dir) {
+    string name = Path.GetFileName(dir);
+    string pre = "z42-runtime-";
+    if (!name.StartsWith(pre)) { return ""; }
+    string rest = name.Substring(pre.Length, name.Length - pre.Length);  // <ver>-<rid>
+    int dot1 = rest.IndexOf("-");
+    if (dot1 < 0) { return ""; }
+    // skip the version (which itself has no '-' in x.y.z); rid is after the first '-'.
+    return rest.Substring(dot1 + 1, rest.Length - dot1 - 1);
+}
+
+string[] _single(string s) {
+    string[] a = new string[1];
+    a[0] = s;
+    return a;
+}

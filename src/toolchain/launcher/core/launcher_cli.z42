@@ -92,8 +92,30 @@ SubcommandRouter _launcherRoot() {
 
     root.AddRouter("export", "generate a native IDE project (ios/android)", _exportRouter());
     root.AddRouter("publish", "produce a release deployable for a platform", _publishRouter());
+    root.AddRouter("workload", "install / list / remove platform workloads", _workloadRouter());
 
     return root;
+}
+
+SubcommandRouter _workloadRouter() {
+    SubcommandRouter w = new SubcommandRouter("z42 workload", "install / list / remove platform workloads");
+
+    ArgParser inst = new ArgParser("z42 workload install", "install a platform workload (tooling + runtime)");
+    inst.AddPositional("workload", "<ios|android|wasm|desktop>");
+    inst.AddOption("from", "", "local tooling package dir (B2-2; manifest download = B2-3)", "");
+    inst.AddOption("runtime", "", "local runtime pack dir", "");
+    inst.AddOption("version", "", "version (default: from package manifest)", "");
+    inst.AddOption("rid", "", "runtime RID (default: from runtime dir name)", "");
+    w.Add("install", "install a platform workload", inst);
+
+    w.Add("list", "list installed workloads", new ArgParser("z42 workload list", "list installed workloads"));
+
+    ArgParser rm = new ArgParser("z42 workload remove", "remove an installed workload");
+    rm.AddPositional("workload", "<wl>");
+    rm.AddOption("version", "", "version (default: all)", "");
+    w.Add("remove", "remove an installed workload", rm);
+
+    return w;
 }
 
 SubcommandRouter _exportRouter() {
@@ -162,6 +184,15 @@ void _dispatchLauncher(CommandResolution res) {
         // p = ["publish", "desktop"]
         if (p.Length < 2) { return; }
         if (p[1] == "desktop") { _cmdPublishDesktop(r); return; }
+        return;
+    }
+    if (top == "workload") {
+        // p = ["workload", "install"|"list"|"remove"]
+        if (p.Length < 2) { return; }
+        string sub = p[1];
+        if (sub == "install") { _cmdWorkloadInstall(r); return; }
+        if (sub == "list")    { _cmdWorkloadList(r);    return; }
+        if (sub == "remove")  { _cmdWorkloadRemove(r);  return; }
         return;
     }
 }

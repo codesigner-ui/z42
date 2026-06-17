@@ -1,43 +1,44 @@
-// xtask — ios release packaging (migrate-scripts-to-z42). Native port of
-// scripts/_lib/package_ios.sh. Builds an iOS SDK package: native/(libz42.a +
-// libz42_compression.a + Z42VM.xcframework) + Sources/ + Package.swift +
-// libs/ + examples/hello_c. Same Z42Xtask namespace; reuses _exec/_root/
-// _ridToCargo/_quotedDirList/_utcNow etc. from xtask_package.z42 / xtask.z42.
+// xtask — ios packaging (migrate-scripts-to-z42; runtime/workload split for
+// version management — impl-workload-install B2, 2026-06-17).
+//
+// Splits into TWO artifacts (mirrors desktop's SDK + runtime split):
+//   _buildRuntimePackageIos → z42-runtime-<ver>-<rid>/  (native libs + Z42VM.xcframework
+//                              + headers + libs/) — the platform VM runtime, version-managed
+//                              independently; installed under runtimes/<rid>/<ver>/.
+//   _packageIos             → workload tooling (Sources/ + Package.swift + examples + manifest);
+//                              Package.swift binaryTarget = __Z42_RUNTIME_XCFRAMEWORK__ placeholder,
+//                              resolved by `z42 workload install` to the installed runtime's xcframework.
 //
 // Package.swift .iOS/.macOS deployment versions are read from versions.toml
-// [platform.ios] (SoT) — not hardcoded (also resolves the repo's .iOS(.v14) drift).
+// [platform.ios] (SoT). Same Z42Xtask namespace; reuses _exec/_root/_ridToCargo/...
 namespace Z42Xtask;
 
 using Std;
 using Std.IO;
 
-int _packageIos(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
+// ── runtime pack (z42-runtime-<ver>-<rid>): native VM lib + xcframework + libs ──
+int _buildRuntimePackageIos(string root, string rid, string version, string profile) {
     string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
     string iosMin = _vReadOr(root, "platform.ios.min_ios", "16.0");
-    string macMin = _vReadOr(root, "platform.ios.min_macos", "13.0");
-    string iosMajor = _nthDot(iosMin, 0);
-    string macMajor = _nthDot(macMin, 0);
+    string pkgName = "z42-runtime-" + version + "-" + rid + (rel ? "" : "-" + profile);
+    string pkgDir = Path.Join(_packagesDir(root), pkgName);
+    Console.WriteLine("Runtime package: " + pkgName);
+    if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
+    Directory.Create(Path.Join(pkgDir, "native/include"));
+    Directory.Create(Path.Join(pkgDir, "libs"));
 
-    // [1/7] bin/ placeholder (mobile packages don't ship z42c)
-    Console.WriteLine("[1/7] bin/ placeholder");
-    File.WriteAllText(Path.Join(pkgDir, "bin/README.md"),
-        "# bin/\n\nReserved for future iOS cross tools (z42-aotcross-ios). Mobile packages\n"
-        + "do NOT ship the host compiler (z42c); embed prebuilt .zbc from your host\n"
-        + "build pipeline. See memory: project_mobile_no_compiler.\n");
-
-    // [2/7] libz42.a (iOS slice staticlib)
-    Console.WriteLine("[2/7] libz42.a (cargo " + cargoTarget + ", " + profile + ")");
+    // libz42.a (iOS slice staticlib)
+    Console.WriteLine("  [1/4] libz42.a (cargo " + cargoTarget + ", " + profile + ")");
     int c = _exec(_iosRustc(root, rel, cargoTarget, "staticlib", iosMin));
     if (c != 0) { ConsoleError.WriteLine("error: cargo rustc staticlib for " + cargoTarget + " failed"); return 1; }
     string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
     string lib = Path.Join(cargoOut, "libz42.a");
     if (!File.Exists(lib)) { ConsoleError.WriteLine("error: " + lib + " not produced"); return 1; }
     File.Copy(lib, Path.Join(pkgDir, "native/libz42.a"));
-    Console.WriteLine("      ✓ native/libz42.a");
 
-    // [2b/7] libz42_compression.a (iOS staticlib)
-    Console.WriteLine("[2b/7] libz42_compression.a (cargo " + cargoTarget + ", " + profile + ")");
+    // libz42_compression.a
+    Console.WriteLine("  [2/4] libz42_compression.a");
     Process pc = new Process("cargo").Arg("build");
     if (rel) { pc = pc.Arg("--release"); }
     pc = pc.Arg("-p").Arg("z42-compression").Arg("--manifest-path").Arg(Path.Join(root, _runtimeManifest()))
@@ -45,18 +46,14 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
     c = _exec(pc);
     if (c != 0) { return c; }
     string compLib = Path.Join(cargoOut, "libz42_compression.a");
-    if (File.Exists(compLib)) {
-        File.Copy(compLib, Path.Join(pkgDir, "native/libz42_compression.a"));
-        Console.WriteLine("      ✓ native/libz42_compression.a");
-    }
+    if (File.Exists(compLib)) { File.Copy(compLib, Path.Join(pkgDir, "native/libz42_compression.a")); }
 
-    // [3/7] C ABI headers
-    Console.WriteLine("[3/7] C ABI headers");
+    // C ABI headers
     File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
     File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
 
-    // [4/7] Z42VM.xcframework (single slice wrapping libz42.a)
-    Console.WriteLine("[4/7] Z42VM.xcframework (single slice)");
+    // Z42VM.xcframework (single slice wrapping libz42.a)
+    Console.WriteLine("  [3/4] Z42VM.xcframework");
     string xcf = Path.Join(pkgDir, "native/Z42VM.xcframework");
     if (Directory.Exists(xcf)) { Directory.Delete(xcf, true); }
     c = _exec(new Process("xcodebuild").Arg("-create-xcframework")
@@ -66,10 +63,35 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
         .Stdout(Stdio.Null()).Stderr(Stdio.Null()));
     if (c != 0) { ConsoleError.WriteLine("error: xcodebuild -create-xcframework failed"); return 1; }
     if (!Directory.Exists(xcf)) { ConsoleError.WriteLine("error: xcframework not created at " + xcf); return 1; }
-    Console.WriteLine("      ✓ native/Z42VM.xcframework");
 
-    // [5/7] Sources/ + Package.swift (.iOS/.macOS versions from versions.toml)
-    Console.WriteLine("[5/7] Sources/Z42VM + Package.swift");
+    // stdlib libs (loaded by the embedded VM at runtime)
+    Console.WriteLine("  [4/4] libs/");
+    c = _pkgCopyLibs(_libsDir(root), pkgDir); if (c != 0) { return c; }
+    Console.WriteLine("  ✓ runtime package: " + pkgDir);
+    return 0;
+}
+
+// ── workload tooling: Sources/ + Package.swift (placeholder) + examples + manifest ──
+int _packageIos(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
+    bool rel = (profile == "release");
+    string iosMin = _vReadOr(root, "platform.ios.min_ios", "16.0");
+    string macMin = _vReadOr(root, "platform.ios.min_macos", "13.0");
+    string iosMajor = _nthDot(iosMin, 0);
+    string macMajor = _nthDot(macMin, 0);
+
+    // [1/4] build the separate runtime pack first (native VM lib lives there, not here).
+    int c = _buildRuntimePackageIos(root, rid, version, profile);
+    if (c != 0) { return c; }
+
+    // [2/4] bin/ placeholder
+    Console.WriteLine("[1/3] bin/ placeholder");
+    File.WriteAllText(Path.Join(pkgDir, "bin/README.md"),
+        "# bin/\n\nReserved for future iOS cross tools. Mobile workloads do NOT ship the\n"
+        + "host compiler (z42c). The VM runtime is a separate runtime pack\n"
+        + "(z42-runtime-<ver>-<rid>); install via `z42 workload install ios`.\n");
+
+    // [2/3] Sources/ + Package.swift (binaryTarget = install-resolved placeholder)
+    Console.WriteLine("[2/3] Sources/Z42VM + Package.swift (tooling)");
     string iosSrc = Path.Join(root, "src/toolchain/workload/platforms/ios");
     Directory.Create(Path.Join(pkgDir, "Sources/Z42VM"));
     Directory.Create(Path.Join(pkgDir, "Sources/Z42VMC/include"));
@@ -77,10 +99,17 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
         if (f.EndsWith(".swift")) { File.Copy(Path.Join(iosSrc, "Sources/Z42VM/" + f), Path.Join(pkgDir, "Sources/Z42VM/" + f)); }
     }
     File.Copy(Path.Join(iosSrc, "Sources/Z42VMC/dummy.c"), Path.Join(pkgDir, "Sources/Z42VMC/dummy.c"));
-    foreach (var h in Directory.Enumerate(Path.Join(iosSrc, "Sources/Z42VMC/include"))) {
-        if (h.EndsWith(".h")) { File.Copy(Path.Join(iosSrc, "Sources/Z42VMC/include/" + h), Path.Join(pkgDir, "Sources/Z42VMC/include/" + h)); }
-    }
-    string pkg = "// swift-tools-version: 5.9\n// Generated by `z42 xtask.zpkg build package --rid " + rid + "`; do not edit.\n\n"
+    // Z42VMC headers must be SELF-CONTAINED in the package: copy the real runtime
+    // headers (not the source-tree forwarding stubs, whose `#include "../../.."`
+    // relative path only resolves inside the repo). SwiftPM auto-generates the
+    // clang module map from publicHeadersPath. (impl-workload-install B2: verified
+    // by `swift build` on the installed workload.)
+    File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "Sources/Z42VMC/include/z42_abi.h"));
+    File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "Sources/Z42VMC/include/z42_host.h"));
+    // binaryTarget path is a placeholder; `z42 workload install` rewrites it to the
+    // installed runtime pack's Z42VM.xcframework absolute path (runtime/workload split).
+    string pkg = "// swift-tools-version: 5.9\n// Generated by `z42 xtask.zpkg build package --rid " + rid + "`; do not edit.\n"
+        + "// binaryTarget path is resolved by `z42 workload install ios` (runtime pack is separate).\n\n"
         + "import PackageDescription\n\n"
         + "let package = Package(\n"
         + "    name: \"Z42VM\",\n"
@@ -94,15 +123,13 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
         + "    targets: [\n"
         + "        .target(name: \"Z42VM\", dependencies: [\"Z42VMC\", \"Z42VMBinary\"], path: \"Sources/Z42VM\"),\n"
         + "        .target(name: \"Z42VMC\", path: \"Sources/Z42VMC\", sources: [\"dummy.c\"], publicHeadersPath: \"include\"),\n"
-        + "        .binaryTarget(name: \"Z42VMBinary\", path: \"native/Z42VM.xcframework\"),\n"
+        + "        .binaryTarget(name: \"Z42VMBinary\", path: \"__Z42_RUNTIME_XCFRAMEWORK__\"),\n"
         + "    ]\n"
         + ")\n";
     File.WriteAllText(Path.Join(pkgDir, "Package.swift"), pkg);
-    Console.WriteLine("      ✓ Sources/ + Package.swift (.iOS(.v" + iosMajor + "))");
+    Console.WriteLine("      ✓ Sources/ + Package.swift (placeholder binaryTarget)");
 
-    // [6/7] stdlib libs + examples/hello_c
-    Console.WriteLine("[6/7] stdlib + examples/hello_c");
-    c = _pkgCopyLibs(_libsDir(root), pkgDir); if (c != 0) { return c; }
+    // examples/hello_c
     string dst = Path.Join(pkgDir, "examples/hello_c");
     Directory.Create(dst);
     File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
@@ -112,16 +139,13 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
     c = _exec(new Process("dotnet").Arg(driver).Arg(Path.Join(root, "examples/embedding/hello.z42"))
         .Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));
     if (c != 0) { return c; }
-    Console.WriteLine("      ✓ libs/ + examples/hello_c/");
 
-    // [7/7] manifest.toml
-    Console.WriteLine("[7/7] manifest.toml");
-    string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
-    string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
+    // [3/3] manifest.toml (tooling — references the separate runtime pack)
+    Console.WriteLine("[3/3] manifest.toml");
     string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
-    string containersList = _quotedExisting(Path.Join(pkgDir, "native"), "Z42VM.xcframework", "");
     string m = "[package]\n";
-    m = m + "name        = \"z42-" + rid + "\"\n";
+    m = m + "name        = \"z42-workload-ios\"\n";
+    m = m + "kind        = \"workload-tooling\"\n";
     m = m + "version     = \"" + version + "\"\n";
     m = m + "abi-version = 1\n";
     m = m + "rid         = \"" + rid + "\"\n";
@@ -129,22 +153,16 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
     m = m + "build-date  = \"" + _utcNow() + "\"\n";
     m = m + "build-host  = \"" + hostRid + "\"\n\n";
     m = m + "[contents]\n";
-    m = m + "bin         = [" + binList + "]\n";
-    m = m + "libs        = [" + libsList + "]\n";
     m = m + "examples    = [" + examplesList + "]\n\n";
-    m = m + "[contents.native]\n";
-    m = m + "static      = []\n";
-    m = m + "dynamic     = []\n";
-    m = m + "containers  = [" + containersList + "]\n";
-    m = m + "includes    = [\"z42_abi.h\", \"z42_host.h\"]\n\n";
     m = m + "[contents.platform]\n";
     m = m + "swiftpm-manifest = \"Package.swift\"\n";
-    m = m + "swift-sources    = \"Sources/Z42VM\"\n\n";
+    m = m + "swift-sources    = \"Sources/Z42VM\"\n";
+    m = m + "runtime-pack     = \"z42-runtime-" + version + "-" + rid + "\"  # separate; install resolves binaryTarget\n\n";
     m = m + "[compat]\n";
     m = m + "host-min-version      = \"" + version + "\"\n";
     m = m + "ios-deployment-target = \"" + iosMin + "\"\n";
     File.WriteAllText(Path.Join(pkgDir, "manifest.toml"), m);
-    Console.WriteLine("      ✓ manifest.toml");
+    Console.WriteLine("      ✓ manifest.toml (workload tooling)");
     return 0;
 }
 
