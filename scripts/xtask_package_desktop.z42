@@ -91,17 +91,20 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     return 0;
 }
 
-// ── desktop workload (z42-workload-<v>-desktop-<rid>): apphost stub + manifest ──
-// Decision 9 full gating: the per-host-RID apphost stub is delivered by this
-// workload (NO target runtime pack — desktop reuses the host runtime installed
-// by `z42 install <ver>`). `z42 publish desktop` requires it; Apphost._templatePath
-// resolves the stub under runtimes/<ver>/workloads/desktop/. The apphost binary is
-// still cargo-built by _packageDesktop's launcher build; here it just lands in the
-// workload package instead of the SDK bin/.
+// ── desktop workload (apphost stub, per-rid file: apphost-<rid>) ──────────────
+// Decision 9 full gating + single RID-agnostic workload: the apphost stub for
+// each desktop RID is a small native binary named `apphost-<rid>`. This per-RID
+// build job emits its own `apphost-<rid>` into z42-workload-<v>-desktop-<rid>/;
+// CI then COLLECTS all RIDs' stubs into ONE z42-workload-<v>-desktop package so
+// any host can `publish --rid <target>` (cross-platform apphost output). No target
+// runtime pack — desktop reuses the host runtime (`z42 install <ver>`). The apphost
+// binary is cargo-built by _packageDesktop's launcher build; it lands here, not in SDK bin/.
 int _buildDesktopWorkload(string root, string rid, string version, string profile) {
     string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
-    string exe = rid.StartsWith("windows-") ? "apphost.exe" : "apphost";
+    bool isWin = rid.StartsWith("windows-");
+    string srcExe = isWin ? "apphost.exe" : "apphost";
+    string dstExe = isWin ? ("apphost-" + rid + ".exe") : ("apphost-" + rid);
     string pkgName = "z42-workload-" + version + "-desktop-" + rid + (rel ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Desktop workload: " + pkgName);
@@ -109,30 +112,32 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
     Directory.Create(pkgDir);
 
     string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
-    string stub = Path.Join(cargoOut, exe);
+    string stub = Path.Join(cargoOut, srcExe);
     if (!File.Exists(stub)) {
         ConsoleError.WriteLine("error: apphost stub not built at " + stub + "; run launcher cargo build first");
         return 1;
     }
-    File.Copy(stub, Path.Join(pkgDir, exe));
-    _makeExe(Path.Join(pkgDir, exe));
-    Console.WriteLine("      ✓ " + exe + " (apphost stub)");
+    File.Copy(stub, Path.Join(pkgDir, dstExe));
+    _makeExe(Path.Join(pkgDir, dstExe));
+    Console.WriteLine("      ✓ " + dstExe + " (apphost stub)");
 
+    // RID-agnostic manifest (any host; no runtime pack). The single CI-merged
+    // package carries every RID's apphost-<rid>; this per-RID piece carries one.
     string m = "[package]\n";
     m = m + "name        = \"z42-workload-desktop\"\n";
     m = m + "kind        = \"workload-tooling\"\n";
     m = m + "version     = \"" + version + "\"\n";
     m = m + "abi-version = 1\n";
-    m = m + "rid         = \"" + rid + "\"\n";
     m = m + "profile     = \"" + profile + "\"\n";
     m = m + "build-date  = \"" + _utcNow() + "\"\n\n";
     m = m + "[contents.platform]\n";
-    m = m + "apphost      = \"" + exe + "\"\n";
-    m = m + "runtime-pack = \"\"  # none — desktop reuses the host runtime (z42 install <ver>)\n\n";
+    m = m + "apphost-prefix = \"apphost-\"  # apphost-<rid> per target; cross-platform output\n";
+    m = m + "host           = [\"*\"]\n";
+    m = m + "runtime-pack   = \"\"  # none — desktop reuses the host runtime (z42 install <ver>)\n\n";
     m = m + "[compat]\n";
     m = m + "host-min-version = \"" + version + "\"\n";
     File.WriteAllText(Path.Join(pkgDir, "manifest.toml"), m);
-    Console.WriteLine("      ✓ manifest.toml (workload tooling — desktop)");
+    Console.WriteLine("      ✓ manifest.toml (workload tooling — desktop, RID-agnostic)");
     return 0;
 }
 

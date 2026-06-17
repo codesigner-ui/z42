@@ -29,44 +29,51 @@ public static class Apphost {
     // caller resolves it via _desktopApphostStub and gates on its presence).
     // The embedded target is `app` RELATIVE to the exe's dir (relocatable), so
     // `<exe_dir>/<embed>` finds the zpkg. Exits the process on error.
-    public static void Produce(string app, string outPath, string tmpl) {
+    public static void Produce(string app, string outPath, string tmpl, string targetRid) {
         if (!File.Exists(app)) {
-            ConsoleError.WriteLine("z42 publish desktop: app zpkg not found: " + app);
+            ConsoleError.WriteLine("z42 publish: app zpkg not found: " + app);
             Environment.Exit(1);
             return;
         }
         if (tmpl.Length == 0 || !File.Exists(tmpl)) {
-            ConsoleError.WriteLine("z42 publish desktop: apphost stub not found: " + tmpl);
+            ConsoleError.WriteLine("z42 publish: apphost stub not found: " + tmpl);
             Environment.Exit(1);
             return;
         }
         string embed = _relPath(Path.GetDirectoryName(outPath), app);
-        _emit(tmpl, outPath, embed);
+        _emit(tmpl, outPath, embed, targetRid);
     }
 
-    // Patch the template → write the exe → set +x → (macOS) ad-hoc re-sign.
-    private static void _emit(string tmpl, string outPath, string embed) {
+    // Patch the template → write the exe → set +x → (macOS target) ad-hoc re-sign.
+    private static void _emit(string tmpl, string outPath, string embed, string targetRid) {
         byte[] template = File.ReadAllBytes(tmpl);
         byte[] patched = PatchBytes(template, embed);
         if (patched.Length == 0) {     // empty = failure sentinel (a real patch is never empty)
-            ConsoleError.WriteLine("z42 publish desktop: cannot patch template (placeholder MAGIC missing, or app name > 991 bytes).");
+            ConsoleError.WriteLine("z42 publish: cannot patch template (placeholder MAGIC missing, or app name > 991 bytes).");
             Environment.Exit(1);
             return;
         }
         File.WriteAllBytes(outPath, patched);
         File.MakeExecutable(outPath);
 
-        // macOS (esp. Apple Silicon) enforces code signatures: patching the
-        // stub's bytes invalidates its signature → the kernel refuses to run
-        // it. Re-sign ad-hoc, exactly as .NET's apphost does. (Linux has no
-        // signing; Windows runs unsigned exes, so no re-sign needed there.)
-        if (Platform.OS() == "macos") {
+        // A macOS apphost (esp. Apple Silicon) MUST be re-signed after patching —
+        // patching invalidates the signature and the kernel refuses to run it. This
+        // keys on the TARGET rid (not the host): a macOS-target apphost can only be
+        // produced on a macOS host (codesign is macOS-only). linux/windows targets
+        // need no signing → cross-output from any host works.
+        if (targetRid.StartsWith("macos-")) {
+            if (Platform.OS() != "macos") {
+                ConsoleError.WriteLine("z42 publish: a macOS apphost (" + targetRid
+                    + ") must be produced on a macOS host — ad-hoc codesign is unavailable here.");
+                Environment.Exit(1);
+                return;
+            }
             ProcessResult cs = new Process("codesign")
                 .Arg("-s").Arg("-").Arg("-f").Arg(outPath)
                 .Stderr(Stdio.Inherit())
                 .Run();
             if (cs.ExitCode != 0) {
-                ConsoleError.WriteLine("z42 publish desktop: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + "); the apphost will not run on macOS.");
+                ConsoleError.WriteLine("z42 publish: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + "); the apphost will not run on macOS.");
                 Environment.Exit(1);
                 return;
             }

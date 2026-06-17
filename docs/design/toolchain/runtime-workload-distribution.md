@@ -58,16 +58,18 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
     "ios":     { "archive": "z42-workload-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
     "android": { "archive": "z42-workload-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
     "wasm":    { "archive": "z42-workload-0.3.5-wasm.tar.gz",    "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] },
-    "desktop": { "hosts": { "macos-arm64": { "archive": "z42-workload-0.3.5-desktop-macos-arm64.tar.gz", "sha256": "…" }, "linux-x64": {…}, "linux-arm64": {…}, "windows-x64": {…} }, "runtimes": [] }
+    "desktop": { "archive": "z42-workload-0.3.5-desktop.tar.gz", "sha256": "…", "host": ["*"], "runtimes": [] }
   }
 }
 ```
 > **一个 workload → 多 target RID（apphost-as-config 后续, 2026-06-17）**：`workloads.<wl>.runtimes` 列出该 workload 安装时需一并拉的 target runtime pack RID。`z42 workload install android` 读 `["android-arm64","android-x64"]` → 拉全部 ABI 的 runtime + workload tooling 包（一个 workload 统一多 ABI，对齐 `dotnet workload install android` 带全 ABI）。ios 的 `["ios-arm64","iossim-arm64"]` = 真机 + 模拟器。
-> **desktop = per-host workload（add-desktop-workload, 2026-06-17）**：desktop 的 tooling 是 **per-host-RID**（携带
-> per-host apphost stub），且**无 target runtime pack**（`runtimes:[]`，复用 `z42 install <ver>` 的 host runtime）→
-> schema 用 `workloads.desktop.hosts.<rid>={archive,sha256}` 而非单 `archive`。launcher 按 `_hostRid()` 取
-> `hosts.<rid>`，跳过 runtime loop。apphost 从此**经 desktop workload 交付**，不再 baked 进 SDK/launcher
-> （Decision 9 完全门控：`z42 publish desktop` 需先 `z42 workload install desktop`）。
+> **desktop = 单 RID-agnostic workload + 跨平台输出（unify-platform-deploy-rid, 2026-06-17）**：desktop workload
+> 是**一个包** `z42-workload-<v>-desktop`，携带**每个桌面 RID 的** apphost stub `apphost-<rid>`（CI 把 4 RID
+> 的 stub 合并成一个包）；**无 target runtime pack**（`runtimes:[]`，复用 host runtime）→ schema 单 `archive` +
+> `host:["*"]`（任意 host 可装）。`publish <toml> --rid <rid>` 取目标 RID 的 `apphost-<rid>` → **任意 host 产其它
+> 平台 apphost**（patch 跨平台可行）。apphost **经 desktop workload 交付**，不 baked（Decision 9 完全门控）。
+> **限制**：macos 目标 apphost 须 ad-hoc codesign（codesign 仅 macos）→ 跨产 macos apphost 仍需 macos host；
+> linux/windows 任意 host 可产（见 Deferred）。
 > **已实施**：① desktop RID 双键（sdk/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式（split-release-runtime-package, 2026-06-14）。② **`workloads` 段（add-workload-manifest-install, 2026-06-17, B2-4）**：CI release.yml emit `workloads.<wl>.{archive, sha256, runtimes}`；launcher `_fetchWorkloadEntry` 解析 → 联网装。
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。
@@ -194,11 +196,15 @@ z42 use <ver|stable|nightly>            # 项目 pin（写 z42.toml [project].ru
 z42 list [--workloads]                  # 已装版本 + workload
 z42 uninstall <ver>
 z42 workload install <wl> [--from <dir>] [--runtime <dir>] [--base-url <url>] [--version <ver>]
-z42 workload list | update | remove <wl>
+z42 workload list | update | uninstall <wl>   # uninstall（与 runtime 的 z42 uninstall 一致；was remove）
+z42 publish <toml> --rid <rid>                # 平台部署件（desktop=apphost；rid 的 category 选平台）
+z42 export  <toml> --rid <rid>                # 原生 IDE 工程（ios/android/wasm）
+z42 run     <toml> --rid <rid>                # 部署形态预览（vs `z42 run <app.zpkg>` 跑字节码）
 z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 ```
 
-`workload *` 与平台打包命令（`z42 publish ios` 等）由 workload 自身提供（见 [launcher-command-dispatch.md](launcher-command-dispatch.md)）；`install/update/self/default/use/list/uninstall` 属 launcher core（运行时自管理，baked-in）。
+平台部署命令统一为 `publish/export/run <toml> --rid <rid>`（rid 的 category 选平台，全平台一条命令，不增子命令）；
+所依赖的 workload/SDK 由 `workload install` 提供；`install/update/self/default/use/list/uninstall` 属 launcher core（baked-in）。
 
 ## 完整性 / 信任
 
@@ -231,7 +237,8 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
   launcher_cli.z42；B1 改为从已装 workload 动态发现命令（对齐 dotnet workload）。属 CLI dispatch
   机制变更，需独立 spec。
 - **B4 测试经 workload**：`z42 test` 的平台侧（on-device / 模拟器）测试改走已装 workload tooling。
-- **B5 mobile publish/run 生命周期**：`z42 publish ios/android` 产 .ipa/.aab + `z42 run <plat>` 设备侧部署。
+- **B5 mobile publish/run 生命周期**：`z42 publish <toml> --rid ios-arm64` 产 .ipa/.aab + `z42 run … --rid` 设备侧部署（现 `publish/run --rid` 对 mobile 报 B5 未实装）。
+- **跨产 macos apphost 的 codesign**：`publish --rid macos-*` 在非 macos host 上 patch 成功但无法 ad-hoc codesign（macos-only）→ 现报清晰错误。待远程签名 / 在 linux 上签 Mach-O（参 apphost cross-sign 延后）。
 - **真实 iOS 多-slice xcframework**：B2 用 macos 单 slice 验机制；device+sim 多 slice 合并归 CI。
 - **launcher 最小 vm → 由 NativeAOT 原生 launcher 取代**：本设计 launcher 已不带 vm（复用 runtime vm），故现在无需最小化 vm；NativeAOT 落地后把 launcher AOT 成原生二进制（rustup 式），vm 问题永久消失。届时 `install-z42` 可只下原生 launcher，bootstrap 更轻。
 - manifest schema 定稿（多 archive 类型、可选 z42c-less 精简 runtime、依赖/兼容区间）。

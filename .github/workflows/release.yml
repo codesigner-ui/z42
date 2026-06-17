@@ -231,6 +231,42 @@ jobs:
       - name: List archives
         run: ls -la dist/
 
+      # Merge the 4 per-RID desktop-workload pieces (each carries its apphost-<rid>)
+      # into ONE RID-agnostic z42-workload-<v>-desktop.tar.gz so any host can
+      # `publish --rid <target>` (cross-platform apphost output). Removes the
+      # per-RID intermediates so only the merged archive ships in the release.
+      - name: Assemble single desktop workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ needs.verify.outputs.version }}"
+          merged="merged/z42-workload-${v}-desktop"
+          rm -rf merged; mkdir -p "$merged"
+          for rid in linux-x64 linux-arm64 macos-arm64 windows-x64; do
+            ar="dist/z42-workload-${v}-desktop-${rid}.tar.gz"
+            [ -f "$ar" ] || ar="dist/z42-workload-${v}-desktop-${rid}.zip"
+            [ -f "$ar" ] || { echo "error: missing desktop workload piece for ${rid}"; exit 1; }
+            tmp="$(mktemp -d)"
+            if [[ "$ar" == *.zip ]]; then unzip -q "$ar" -d "$tmp"; else tar -xzf "$ar" -C "$tmp"; fi
+            cp "$tmp"/apphost-"${rid}"* "$merged"/
+          done
+          cat > "$merged/manifest.toml" <<TOML
+          [package]
+          name        = "z42-workload-desktop"
+          kind        = "workload-tooling"
+          version     = "${v}"
+          abi-version = 1
+          [contents.platform]
+          apphost-prefix = "apphost-"
+          host           = ["*"]
+          runtime-pack   = ""
+          [compat]
+          host-min-version = "${v}"
+          TOML
+          rm -f dist/z42-workload-${v}-desktop-*.tar.gz dist/z42-workload-${v}-desktop-*.zip
+          tar -C "$merged" -czf "dist/z42-workload-${v}-desktop.tar.gz" .
+          echo "✓ merged desktop workload → z42-workload-${v}-desktop.tar.gz ($(ls "$merged" | tr '\n' ' '))"
+
       - name: Generate SHA256SUMS
         shell: bash
         run: |
@@ -270,19 +306,15 @@ jobs:
           sha_wl_android="$(get_sha "z42-workload-${v}-android.tar.gz")"
           sha_wl_wasm="$(get_sha    "z42-workload-${v}-wasm.tar.gz")"
 
-          # Desktop workload (apphost stub, per-host RID — Decision 9 full gating).
-          sha_wl_dt_lx64="$(get_sha "z42-workload-${v}-desktop-linux-x64.tar.gz")"
-          sha_wl_dt_la64="$(get_sha "z42-workload-${v}-desktop-linux-arm64.tar.gz")"
-          sha_wl_dt_mac="$(get_sha  "z42-workload-${v}-desktop-macos-arm64.tar.gz")"
-          sha_wl_dt_win="$(get_sha  "z42-workload-${v}-desktop-windows-x64.zip")"
+          # Desktop workload (single RID-agnostic package; carries every RID's apphost-<rid>).
+          sha_wl_dt="$(get_sha "z42-workload-${v}-desktop.tar.gz")"
 
           for var in sha_sdk_lx64 sha_rt_lx64 \
                      sha_sdk_la64 sha_rt_la64 \
                      sha_sdk_mac  sha_rt_mac  \
                      sha_sdk_win  sha_rt_win  \
                      sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm \
-                     sha_wl_ios sha_wl_android sha_wl_wasm \
-                     sha_wl_dt_lx64 sha_wl_dt_la64 sha_wl_dt_mac sha_wl_dt_win; do
+                     sha_wl_ios sha_wl_android sha_wl_wasm sha_wl_dt; do
             [ -n "${!var}" ] || { echo "release-index: missing sha256 for $var" >&2; exit 1; }
           done
 
@@ -298,8 +330,7 @@ jobs:
             --arg sha_wasm     "$sha_wasm"     \
             --arg sha_wl_ios   "$sha_wl_ios"   --arg sha_wl_android "$sha_wl_android" \
             --arg sha_wl_wasm  "$sha_wl_wasm"  \
-            --arg sha_wl_dt_lx64 "$sha_wl_dt_lx64" --arg sha_wl_dt_la64 "$sha_wl_dt_la64" \
-            --arg sha_wl_dt_mac  "$sha_wl_dt_mac"  --arg sha_wl_dt_win  "$sha_wl_dt_win"  \
+            --arg sha_wl_dt "$sha_wl_dt" \
             '{
               schema: $schema,
               version: $version,
@@ -333,15 +364,7 @@ jobs:
                 "ios":     { archive: ("z42-workload-" + $version + "-ios.tar.gz"),     sha256: $sha_wl_ios,     host: ["macos-arm64"], runtimes: ["ios-arm64","iossim-arm64"] },
                 "android": { archive: ("z42-workload-" + $version + "-android.tar.gz"), sha256: $sha_wl_android, host: ["macos-arm64","linux-x64","linux-arm64","windows-x64"], runtimes: ["android-arm64","android-x64"] },
                 "wasm":    { archive: ("z42-workload-" + $version + "-wasm.tar.gz"),    sha256: $sha_wl_wasm,    host: ["*"], runtimes: ["browser-wasm"] },
-                "desktop": {
-                  hosts: {
-                    "linux-x64":   { archive: ("z42-workload-" + $version + "-desktop-linux-x64.tar.gz"),   sha256: $sha_wl_dt_lx64 },
-                    "linux-arm64": { archive: ("z42-workload-" + $version + "-desktop-linux-arm64.tar.gz"), sha256: $sha_wl_dt_la64 },
-                    "macos-arm64": { archive: ("z42-workload-" + $version + "-desktop-macos-arm64.tar.gz"), sha256: $sha_wl_dt_mac },
-                    "windows-x64": { archive: ("z42-workload-" + $version + "-desktop-windows-x64.zip"),    sha256: $sha_wl_dt_win }
-                  },
-                  runtimes: []
-                }
+                "desktop": { archive: ("z42-workload-" + $version + "-desktop.tar.gz"), sha256: $sha_wl_dt, host: ["*"], runtimes: [] }
               }
             }' > dist/release-index.json
           echo "--- release-index.json ---"

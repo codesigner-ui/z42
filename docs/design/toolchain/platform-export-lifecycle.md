@@ -102,13 +102,18 @@ permissions = ["CAMERA"]
 z42 编译产物是**平台无关字节码 `app.zpkg`**（跑在 z42vm 上，跨平台字节一致）。平台差异纯在"启动器/包装"——所以 `build` 永远平台无关，平台分叉只在 run（部署形态）/ publish（可分发件）/ export（IDE 工程）发生。
 
 ```
-z42 build              # src → app.zpkg（字节码，平台无关，产一次）
-z42 run                # 跑 zpkg（host vm，最快内循环）
-z42 run <plat>         # 以 <plat> 部署形态跑：desktop=apphost(本机) / ios·android=on-device / wasm=浏览器
-z42 publish <plat>     # → release 可分发件（desktop apphost / .ipa / .aab / wasm bundle），到此为止
-z42 export <plat>      # 原生 IDE 工程（仅 ios / android；desktop·wasm 无 IDE 工程）
+z42 build                    # src → app.zpkg（字节码，平台无关，产一次）
+z42 run <app.zpkg>           # 跑 zpkg（host vm，最快内循环）
+z42 run     <toml> --rid <rid>   # 以 rid 平台的部署形态跑：desktop=apphost / ios·android=on-device / wasm=浏览器
+z42 publish <toml> --rid <rid>   # → release 可分发件（desktop apphost / .ipa / .aab / wasm bundle），到此为止
+z42 export  <toml> --rid <rid>   # 原生 IDE 工程（ios / android；desktop·wasm 无 IDE 工程）
 z42 test    <plat> [--device sim|emulator|hw]   # host + 平台上两面跑 [Test]
 ```
+
+> **命令面统一为 `--rid`（unify-platform-deploy-rid, 2026-06-17）**：publish/export/run 的部署形态不再用平台子命令
+> （`publish desktop` 等），改为 `<toml> --rid <rid>`——rid 的 category 决定平台，全平台一条命令、加平台不增命令。
+> `run --rid` 检测 `--rid` 走部署形态，否则 `run <app.zpkg>` 跑字节码。desktop 的 apphost 由单 desktop workload
+> 携全 RID `apphost-<rid>` 提供 → `publish --rid <target>` 可跨平台输出（macos 目标需 macos host 签名）。
 
 > **命令模型（define-cli-command-model, 2026-06-17）**：
 > - **build 永远产平台无关 zpkg**（字节码语言，类比 `javac`→jar / `dotnet build`→dll）；不产平台件。

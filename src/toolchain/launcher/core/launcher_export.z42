@@ -123,13 +123,23 @@ void _cmdExportWasm(ParseResult r) {
     Console.WriteLine("   Then open:   http://localhost:8080/");
 }
 
-// Resolve the apphost stub delivered by the installed desktop workload (Decision 9
-// full gating): Z42_APPHOST_TEMPLATE override, else the first installed
-// runtimes/<ver>/workloads/desktop/<apphost>. "" if no desktop workload installed.
-string _desktopApphostStub() {
-    string name = Platform.IsWindows() ? "apphost.exe" : "apphost";
+// rid → platform category (desktop / ios / android / wasm); "" if unknown.
+string _ridCategory(string rid) {
+    if (rid.StartsWith("macos-") || rid.StartsWith("linux-") || rid.StartsWith("windows-")) { return "desktop"; }
+    if (rid.StartsWith("ios-") || rid.StartsWith("iossim-")) { return "ios"; }
+    if (rid.StartsWith("android-")) { return "android"; }
+    if (rid == "browser-wasm") { return "wasm"; }
+    return "";
+}
+
+// Resolve the apphost stub for `rid` from the installed desktop workload — the
+// single RID-agnostic package carries apphost-<rid> for every desktop RID (so any
+// host can publish for any desktop target). Env override → else
+// runtimes/<ver>/workloads/desktop/apphost-<rid>. "" if not installed / not built.
+string _desktopApphostStub(string rid) {
     string ovr = Environment.GetEnvironmentVariable("Z42_APPHOST_TEMPLATE") ?? "";
     if (ovr.Length > 0) { return ovr; }
+    string name = rid.StartsWith("windows-") ? ("apphost-" + rid + ".exe") : ("apphost-" + rid);
     foreach (var ver in _installedVersions()) {
         string stub = Path.Join(Path.Join(Path.Join(Path.Join(_runtimesDir(), ver), "workloads"), "desktop"), name);
         if (File.Exists(stub)) { return stub; }
@@ -137,96 +147,141 @@ string _desktopApphostStub() {
     return "";
 }
 
-// Gate: the desktop apphost stub now ships with the desktop workload — require it.
-string _requireDesktopApphost(string cmd) {
-    string stub = _desktopApphostStub();
-    if (stub.Length == 0) {
+// Gate: apphost ships with the desktop workload — require it (+ the target's stub).
+string _requireDesktopApphost(string cmd, string rid) {
+    string stub = _desktopApphostStub(rid);
+    if (stub.Length > 0) { return stub; }
+    bool wlInstalled = false;
+    foreach (var ver in _installedVersions()) {
+        if (Directory.Exists(Path.Join(Path.Join(Path.Join(_runtimesDir(), ver), "workloads"), "desktop"))) { wlInstalled = true; }
+    }
+    if (!wlInstalled) {
         ConsoleError.WriteLine("z42 " + cmd + ": desktop workload not installed (apphost ships with it).");
         ConsoleError.WriteLine("       run: z42 workload install desktop");
-        Environment.Exit(1);
+    } else {
+        ConsoleError.WriteLine("z42 " + cmd + ": apphost for '" + rid + "' not in the installed desktop workload");
+        ConsoleError.WriteLine("       (a local single-RID build carries only the host's apphost; install the full desktop workload for cross-output).");
     }
-    return stub;
+    Environment.Exit(1);
+    return "";
 }
 
-// publish desktop: produce the RELEASE per-app native apphost exe (the desktop
-// platform's deployable). Reads [platform.desktop].publish_dir → emits the exe
-// at publish_dir/<name> (saved artifact). The exe embeds the built zpkg path
-// relative to itself (relocatable). apphost-as-config / rework-desktop-publish-run,
-// 2026-06-17 (was `export desktop`; desktop has no IDE project → it's a publish form).
-// apphost stub now delivered by the desktop workload (Decision 9 full gating).
-void _cmdPublishDesktop(ParseResult r) {
+// publish: produce the RELEASE platform deployable. `--rid`'s category selects the
+// platform (default host). desktop → native apphost exe (the only impl); other
+// platforms → B5. Unified across platforms (was per-platform `publish <plat>`).
+void _cmdPublish(ParseResult r) {
+    string rid = r.GetOption("rid");
+    if (rid.Length == 0) { rid = _hostRid(); }
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("z42 publish: --rid required (could not default to host)");
+        Environment.Exit(2); return;
+    }
+    string cat = _ridCategory(rid);
+    if (cat == "desktop") { _cmdPublishDesktop(r, rid); return; }
+    if (cat.Length > 0) {
+        ConsoleError.WriteLine("z42 publish: " + cat + " deployable not yet implemented (B5) — only desktop (apphost) is supported.");
+        Environment.Exit(2); return;
+    }
+    ConsoleError.WriteLine("z42 publish: unknown platform for rid '" + rid + "'");
+    Environment.Exit(2);
+}
+
+// desktop apphost publish for `rid` (cross-output: rid may differ from host). Emits
+// publish_dir/<name>[.exe]; the exe embeds the zpkg path relative to itself.
+void _cmdPublishDesktop(ParseResult r, string rid) {
     string tomlPath = r.GetPositional(0);
     if (!_expCheckToml("desktop", tomlPath)) { return; }
     TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
     string projName = _expTomlStr(toml, "project", "name", "");
     if (projName.Length == 0) {
-        ConsoleError.WriteLine("z42 publish desktop: [project].name missing in " + tomlPath);
+        ConsoleError.WriteLine("z42 publish: [project].name missing in " + tomlPath);
         Environment.Exit(1); return;
     }
     string publishDir = r.GetOption("output");
     if (publishDir.Length == 0) { publishDir = _platformStr(toml, "desktop", "publish_dir", ""); }
     if (publishDir.Length == 0) {
-        ConsoleError.WriteLine("z42 publish desktop: publish_dir required — add [platform.desktop] publish_dir in "
+        ConsoleError.WriteLine("z42 publish: publish_dir required — add [platform.desktop] publish_dir in "
             + tomlPath + " or pass --output");
         Environment.Exit(2); return;
     }
-
     string zpkgSrc = _desktopResolveZpkg("publish", tomlPath, toml, projName);
-
+    string outName = rid.StartsWith("windows-") ? (projName + ".exe") : projName;
     string projDir = Path.GetDirectoryName(tomlPath);
-    string outPath = (projDir.Length > 0) ? Path.Join(Path.Join(projDir, publishDir), projName)
-                                          : Path.Join(publishDir, projName);
-
-    string stub = _requireDesktopApphost("publish desktop");
+    string outPath = (projDir.Length > 0) ? Path.Join(Path.Join(projDir, publishDir), outName)
+                                          : Path.Join(publishDir, outName);
+    string stub = _requireDesktopApphost("publish", rid);
     string outDir = Path.GetDirectoryName(outPath);
     if (outDir.Length > 0) { Directory.Create(outDir); }
-    Console.WriteLine("z42 publish desktop → " + outPath);
-    Apphost.Produce(zpkgSrc, outPath, stub);
-    Console.WriteLine("✅ desktop apphost ready: " + outPath);
+    Console.WriteLine("z42 publish (" + rid + ") → " + outPath);
+    Apphost.Produce(zpkgSrc, outPath, stub, rid);
+    Console.WriteLine("✅ apphost ready: " + outPath);
 }
 
-// run desktop: produce an EPHEMERAL debug apphost in a temp dir, then exec it —
-// previews the real deployed launch path (apphost self-resolves vm, unlike
-// `z42 run` which goes through the launcher). Args after `--` forward to the app.
-// Dispatched from the run passthrough (rework-desktop-publish-run, 2026-06-17).
-// argv = [<project.z42.toml>, "--"?, <app args>...].
-void _cmdRunDesktop(string[] argv) {
-    if (argv.Length == 0 || !argv[0].EndsWith(".toml")) {
-        ConsoleError.WriteLine("usage: z42 run desktop <project.z42.toml> [-- <app args>]");
+// export: generate a native IDE project. `--rid`'s category selects the platform.
+void _cmdExport(ParseResult r) {
+    string rid = r.GetOption("rid");
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("z42 export: --rid required (ios-arm64 / android-arm64 / browser-wasm)");
         Environment.Exit(2); return;
     }
-    string tomlPath = argv[0];
+    string cat = _ridCategory(rid);
+    if (cat == "ios")     { _cmdExportIos(r);     return; }
+    if (cat == "android") { _cmdExportAndroid(r); return; }
+    if (cat == "wasm")    { _cmdExportWasm(r);    return; }
+    if (cat == "desktop") {
+        ConsoleError.WriteLine("z42 export: desktop has no IDE project — use `z42 publish --rid " + rid + "` for the apphost.");
+        Environment.Exit(2); return;
+    }
+    ConsoleError.WriteLine("z42 export: unknown platform for rid '" + rid + "'");
+    Environment.Exit(2);
+}
+
+// run deploy form: `z42 run <toml> --rid <rid> [-- <app args>]` — produce an
+// ephemeral apphost beside the zpkg and exec it (previews the deployed launch).
+// `run <app.zpkg>` (no --rid) runs bytecode on the host vm (see _runLauncher).
+void _cmdRunDeploy(string[] argv) {
+    string tomlPath = "";
+    string rid = "";
+    int sepIdx = -1;
+    int i = 0;
+    while (i < argv.Length) {
+        if (argv[i] == "--") { sepIdx = i; break; }
+        if (argv[i] == "--rid") {
+            if (i + 1 < argv.Length) { rid = argv[i + 1]; i = i + 2; continue; }
+        } else if (!argv[i].StartsWith("--") && tomlPath.Length == 0) {
+            tomlPath = argv[i];
+        }
+        i = i + 1;
+    }
+    if (tomlPath.Length == 0 || rid.Length == 0) {
+        ConsoleError.WriteLine("usage: z42 run <project.z42.toml> --rid <rid> [-- <app args>]");
+        Environment.Exit(2); return;
+    }
+    string cat = _ridCategory(rid);
+    if (cat != "desktop") {
+        ConsoleError.WriteLine("z42 run: deploy-form run for " + cat + " not yet implemented (B5); only desktop apphost.");
+        Environment.Exit(2); return;
+    }
+    string[] appArgs = (sepIdx >= 0) ? _tail(argv, sepIdx + 1) : new string[0];
     if (!File.Exists(tomlPath)) {
-        ConsoleError.WriteLine("z42 run desktop: not found: " + tomlPath);
+        ConsoleError.WriteLine("z42 run: not found: " + tomlPath);
         Environment.Exit(1); return;
     }
     TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
     string projName = _expTomlStr(toml, "project", "name", "");
     if (projName.Length == 0) {
-        ConsoleError.WriteLine("z42 run desktop: [project].name missing in " + tomlPath);
+        ConsoleError.WriteLine("z42 run: [project].name missing in " + tomlPath);
         Environment.Exit(1); return;
     }
     string zpkgSrc = _desktopResolveZpkg("run", tomlPath, toml, projName);
-
-    // Emit the ephemeral run-apphost BESIDE the zpkg (in the build/dist dir),
-    // not in a temp dir: the apphost self-resolves the vm by walking up from its
-    // own dir for `.z42` (project-local) then $HOME/.z42 (global) — a temp dir
-    // has no such ancestor, so /tmp would fail to find the runtime. Beside the
-    // zpkg matches a normal co-located deployment's resolution context.
     string zpkgDir = Path.GetDirectoryName(zpkgSrc);
-    string outPath = (zpkgDir.Length > 0) ? Path.Join(zpkgDir, projName) : projName;
-    string stub = _requireDesktopApphost("run desktop");
-    Apphost.Produce(zpkgSrc, outPath, stub);
-
-    // exec the produced apphost, forwarding args after the optional `--`.
+    string outName = rid.StartsWith("windows-") ? (projName + ".exe") : projName;
+    string outPath = (zpkgDir.Length > 0) ? Path.Join(zpkgDir, outName) : outName;
+    string stub = _requireDesktopApphost("run", rid);
+    Apphost.Produce(zpkgSrc, outPath, stub, rid);
     Process p = new Process(outPath);
-    int i = 1;
-    bool sawSep = false;
-    while (i < argv.Length) {
-        if (!sawSep && argv[i] == "--") { sawSep = true; i = i + 1; continue; }
-        p = p.Arg(argv[i]);
-        i = i + 1;
-    }
+    int j = 0;
+    while (j < appArgs.Length) { p = p.Arg(appArgs[j]); j = j + 1; }
     ProcessResult pr = p.Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run();
     Environment.Exit(pr.ExitCode);
 }

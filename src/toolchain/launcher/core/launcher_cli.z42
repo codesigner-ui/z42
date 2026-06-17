@@ -24,10 +24,11 @@ void _runLauncher(string[] argv) {
     // apphost shorthand: `z42 app.zpkg [-- args]` runs the app directly.
     if (c0.EndsWith(".zpkg") || c0.EndsWith(".zbc")) { _cmdRun(argv); return; }
     // `run` is a raw passthrough (forwards `<app> [-- args]` verbatim).
-    // `run desktop <toml>` previews the apphost deploy form (rework-desktop-publish-run).
+    //   `run <toml> --rid <rid>` previews the platform deploy form (apphost for desktop);
+    //   `run <app.zpkg>` runs the bytecode on the host vm.
     if (c0 == "run") {
         string[] rest = _tail(argv, 1);
-        if (rest.Length > 0 && rest[0] == "desktop") { _cmdRunDesktop(_tail(rest, 1)); return; }
+        if (_argvHas(rest, "--rid")) { _cmdRunDeploy(rest); return; }
         _cmdRun(rest); return;
     }
 
@@ -90,15 +91,31 @@ SubcommandRouter _launcherRoot() {
     selfup.AddOption("channel", "", "release channel or version (default: nightly)", "");
     root.Add("self-update", "update the installed launcher", selfup);
 
-    root.AddRouter("export", "generate a native IDE project (ios/android)", _exportRouter());
-    root.AddRouter("publish", "produce a release deployable for a platform", _publishRouter());
-    root.AddRouter("workload", "install / list / remove platform workloads", _workloadRouter());
+    // Platform deploy commands take `--rid <rid>` (its category selects the platform),
+    // unified across all platforms (no per-platform subcommand).
+    ArgParser pub = new ArgParser("z42 publish", "produce a release deployable (--rid selects the platform)");
+    pub.AddPositional("project", "<project.z42.toml>");
+    pub.AddOption("rid", "", "target RID (default: host; e.g. macos-arm64 / ios-arm64)", "");
+    pub.AddOption("output", "", "output dir (overrides [platform.*].publish_dir)", "");
+    root.Add("publish", "produce a release deployable (--rid selects platform)", pub);
+
+    ArgParser exp = new ArgParser("z42 export", "generate a native IDE project (--rid selects the platform)");
+    exp.AddPositional("project", "<project.z42.toml>");
+    exp.AddOption("rid", "", "target RID (e.g. ios-arm64 / android-arm64 / browser-wasm)", "");
+    exp.AddOption("output", "", "output directory", "");
+    exp.AddOption("sdk-ver", "", "platform SDK version to use", "");
+    exp.AddOption("bundle-id", "", "iOS CFBundleIdentifier (ios only)", "");
+    exp.AddOption("app-id", "", "Android application ID (android only)", "");
+    exp.AddOption("entry", "", "wasm entry point e.g. Hello.Main (wasm only)", "");
+    root.Add("export", "generate a native IDE project (--rid selects platform)", exp);
+
+    root.AddRouter("workload", "install / list / uninstall platform workloads", _workloadRouter());
 
     return root;
 }
 
 SubcommandRouter _workloadRouter() {
-    SubcommandRouter w = new SubcommandRouter("z42 workload", "install / list / remove platform workloads");
+    SubcommandRouter w = new SubcommandRouter("z42 workload", "install / list / uninstall platform workloads");
 
     ArgParser inst = new ArgParser("z42 workload install", "install a platform workload (tooling + runtime)");
     inst.AddPositional("workload", "<ios|android|wasm|desktop>");
@@ -111,50 +128,13 @@ SubcommandRouter _workloadRouter() {
 
     w.Add("list", "list installed workloads", new ArgParser("z42 workload list", "list installed workloads"));
 
-    ArgParser rm = new ArgParser("z42 workload remove", "remove an installed workload");
+    // uninstall (matches the runtime verb `z42 uninstall`; was `workload remove`).
+    ArgParser rm = new ArgParser("z42 workload uninstall", "uninstall an installed workload");
     rm.AddPositional("workload", "<wl>");
     rm.AddOption("version", "", "version (default: all)", "");
-    w.Add("remove", "remove an installed workload", rm);
+    w.Add("uninstall", "uninstall an installed workload", rm);
 
     return w;
-}
-
-SubcommandRouter _exportRouter() {
-    SubcommandRouter e = new SubcommandRouter("z42 export", "generate a native platform project from a z42 project");
-
-    ArgParser ios = new ArgParser("z42 export ios", "generate an Xcode project for iOS/iPadOS");
-    ios.AddPositional("project", "<project.z42.toml>");
-    ios.AddOption("bundle-id", "", "CFBundleIdentifier (overrides [platform.ios].bundle_id)", "");
-    ios.AddOption("output", "", "output directory (default: <name>-ios/ beside the toml)", "");
-    ios.AddOption("sdk-ver", "", "platform SDK version to use (default: project version)", "");
-    e.Add("ios", "generate an Xcode project for iOS/iPadOS", ios);
-
-    ArgParser android = new ArgParser("z42 export android", "generate a Gradle project for Android");
-    android.AddPositional("project", "<project.z42.toml>");
-    android.AddOption("app-id", "", "Android application ID (overrides [platform.android].app_id)", "");
-    android.AddOption("output", "", "output directory (default: <name>-android/ beside the toml)", "");
-    android.AddOption("sdk-ver", "", "platform SDK version to use (default: project version)", "");
-    e.Add("android", "generate a Gradle project for Android", android);
-
-    ArgParser wasm = new ArgParser("z42 export wasm", "generate an HTML+JS project for WebAssembly");
-    wasm.AddPositional("project", "<project.z42.toml>");
-    wasm.AddOption("output", "", "output directory (default: <name>-wasm/ beside the toml)", "");
-    wasm.AddOption("sdk-ver", "", "platform SDK version to use (default: nightly)", "");
-    wasm.AddOption("entry", "", "entry point e.g. Hello.Main (default: <name>.Main)", "");
-    e.Add("wasm", "generate an HTML+JS project for WebAssembly", wasm);
-
-    return e;
-}
-
-SubcommandRouter _publishRouter() {
-    SubcommandRouter p = new SubcommandRouter("z42 publish", "produce a release deployable for a platform");
-
-    ArgParser desktop = new ArgParser("z42 publish desktop", "produce a release native apphost exe");
-    desktop.AddPositional("project", "<project.z42.toml>");
-    desktop.AddOption("output", "", "publish dir for the exe (overrides [platform.desktop].publish_dir)", "");
-    p.Add("desktop", "produce a release native apphost exe", desktop);
-
-    return p;
 }
 
 // ── dispatch ──────────────────────────────────────────────────────────────
@@ -172,28 +152,22 @@ void _dispatchLauncher(CommandResolution res) {
     if (top == "install")     { _cmdInstall(r);    return; }
     if (top == "uninstall")   { _cmdUninstall(r);  return; }
     if (top == "self-update") { _cmdSelfUpdate(r); return; }
-    if (top == "export") {
-        // p = ["export", "ios"|"android"|"wasm"]
-        if (p.Length < 2) { return; }
-        string sub = p[1];
-        if (sub == "ios")     { _cmdExportIos(r);     return; }
-        if (sub == "android") { _cmdExportAndroid(r); return; }
-        if (sub == "wasm")    { _cmdExportWasm(r);    return; }
-        return;
-    }
-    if (top == "publish") {
-        // p = ["publish", "desktop"]
-        if (p.Length < 2) { return; }
-        if (p[1] == "desktop") { _cmdPublishDesktop(r); return; }
-        return;
-    }
+    if (top == "publish")   { _cmdPublish(r);   return; }   // leaf: --rid selects platform
+    if (top == "export")    { _cmdExport(r);    return; }   // leaf: --rid selects platform
     if (top == "workload") {
-        // p = ["workload", "install"|"list"|"remove"]
+        // p = ["workload", "install"|"list"|"uninstall"]
         if (p.Length < 2) { return; }
         string sub = p[1];
-        if (sub == "install") { _cmdWorkloadInstall(r); return; }
-        if (sub == "list")    { _cmdWorkloadList(r);    return; }
-        if (sub == "remove")  { _cmdWorkloadRemove(r);  return; }
+        if (sub == "install")   { _cmdWorkloadInstall(r);   return; }
+        if (sub == "list")      { _cmdWorkloadList(r);      return; }
+        if (sub == "uninstall") { _cmdWorkloadUninstall(r); return; }
         return;
     }
+}
+
+// True if argv contains `flag` (used to detect `run … --rid …` deploy form).
+bool _argvHas(string[] argv, string flag) {
+    int i = 0;
+    while (i < argv.Length) { if (argv[i] == flag) { return true; } i = i + 1; }
+    return false;
 }
