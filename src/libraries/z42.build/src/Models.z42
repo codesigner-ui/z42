@@ -1,10 +1,10 @@
-namespace Std.Build;
+namespace Z42.Build;
 
-// z42.build 数据记录。纯数据载体，无方法（需要判定的字段用「空值 + 调用方检查」
-// 的 L1 idiom，如 Inputs.Zsym == "" 表示无 sidecar）。
-
-/// 项目元数据（来自 z42.toml 的 [project] + [platform.<family>]）。
-public record Project(string Name, string Version, string Kind, string Entry, IConfigTable Config);
+// z42.build 管线**运行期**数据记录。纯数据载体，无方法（需要判定的字段用
+// 「空值 + 调用方检查」的 L1 idiom，如 Inputs.Zsym == "" 表示无 sidecar）。
+//
+// 项目清单模型（ProjectInfo / ProjectManifest / IConfigTable）住在 z42.project，
+// 不在此处——见 src/libraries/z42.project。
 
 /// 构建目标。Family ∈ TargetFamily.*；Mode ∈ BuildMode.*。
 public record Target(string Rid, string Family, string Profile, string Mode);

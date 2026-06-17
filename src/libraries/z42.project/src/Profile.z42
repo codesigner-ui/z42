@@ -1,4 +1,4 @@
-namespace Std.Project;
+namespace Z42.Project;
 
 /// `[profile.<name>]` 段。Name ∈ "debug" | "release"；Mode ∈ "interp" | "jit" | "aot"。
 /// debug 默认：pack=false / strip=false / mode=interp。release：pack=true / strip=true。

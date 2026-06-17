@@ -1,4 +1,4 @@
-namespace Std.Build;
+namespace Z42.Build;
 
 /// 管线驱动 —— 定义整条「编译 → 发布」的**流程**。
 ///

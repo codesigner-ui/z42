@@ -1,4 +1,4 @@
-namespace Std.Build;
+namespace Z42.Build;
 
 /// 平台无关头相位的 hook 扩展点。项目定义 `class ProjectHooks : BuildHooks`
 /// 并 override 需要的钩子；默认 no-op。SDK（Pipeline）在对应头相位前后调用。

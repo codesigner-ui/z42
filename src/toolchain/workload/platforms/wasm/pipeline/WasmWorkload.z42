@@ -1,6 +1,6 @@
 namespace Z42.Workload;
 
-using Std.Build;
+using Z42.Build;
 
 /// WASM 平台 workload —— 接管 `configure → package` 尾相位。host 任意；
 /// runtime pack：wasm（z42vm.wasm + wasm-bindgen glue）。无签名。
@@ -17,7 +17,7 @@ public class WasmWorkload : WorkloadBase {
 
     /// 从 [platform.wasm] 应用 title（轻量）。
     public override void Configure(IPipelineContext ctx) {
-        // title = ctx.Project.Config.StrOr("title", ctx.Project.Name)
+        // title = ctx.Platform.StrOr("title", ctx.Project.Name)
         // 渲染 package.json（name / version）
     }
 

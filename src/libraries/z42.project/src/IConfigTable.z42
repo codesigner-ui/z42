@@ -1,4 +1,4 @@
-namespace Std.Project;
+namespace Z42.Project;
 
 /// `[platform.<family>]` 等**开放段** TOML 子表的只读访问契约。
 ///

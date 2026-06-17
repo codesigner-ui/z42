@@ -1,6 +1,7 @@
-namespace Std.Build;
+namespace Z42.Build;
 
 using Std.Collections;
+using Z42.Project;
 
 /// 传给每个相位的上下文契约：相位实现只通过本接口与外界交互。
 /// 具体实现由 SDK 注入（本库只定义接口，不含实现逻辑）。
@@ -9,12 +10,14 @@ using Std.Collections;
 /// （确定性 + 安全护栏）；Dirs.Source 只读。`Exec` 标记本相位永久脏，不进缓存。
 public interface IPipelineContext {
 
-    // —— 只读数据 ——
-    Project Project     { get; }
-    Target  Target      { get; }
-    Dirs    Dirs        { get; }
-    Inputs  Inputs      { get; }
-    string  WorkloadDir { get; }
+    // —— 只读数据（项目模型来自 z42.project）——
+    ProjectInfo     Project     { get; }   // [project] 核心字段（便捷）
+    IConfigTable    Platform    { get; }   // 当前 Target.Family 的 [platform.<family>] 段
+    ProjectManifest Manifest    { get; }   // 完整清单（deps / profiles / sources / [[exe]]）
+    Target          Target      { get; }
+    Dirs            Dirs        { get; }
+    Inputs          Inputs      { get; }
+    string          WorkloadDir { get; }
 
     // —— 日志 ——
     void Log(string msg);

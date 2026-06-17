@@ -1,4 +1,4 @@
-namespace Std.Project;
+namespace Z42.Project;
 
 /// `[project]` 段。
 public record ProjectInfo(

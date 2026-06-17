@@ -1,4 +1,4 @@
-namespace Std.Build;
+namespace Z42.Build;
 
 /// 平台尾相位扩展点（基类）。workload 子类（如 `iOSWorkload`）override 平台逻辑；
 /// 项目可再 `class iOSBuild : iOSWorkload` 继承扩展，用 `base.X(ctx)` 调上一层

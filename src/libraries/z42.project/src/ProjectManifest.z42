@@ -1,4 +1,4 @@
-namespace Std.Project;
+namespace Z42.Project;
 
 /// `z42.toml` 的完整类型化模型（单项目）。z42c 与 z42.build 共同依赖的唯一真相。
 ///

@@ -1,6 +1,6 @@
 namespace Z42.Workload;
 
-using Std.Build;
+using Z42.Build;
 
 /// Desktop 平台 workload —— 接管 `configure → package` 尾相位。host 任意；
 /// **无 runtime pack**（复用宿主已装 runtime，apphost 运行时自行定位 z42vm）。
@@ -16,8 +16,8 @@ public class DesktopWorkload : WorkloadBase {
 
     /// 解析 exe 名 / 图标；macOS 渲染 .app 的 Info.plist。
     public override void Configure(IPipelineContext ctx) {
-        // exe 名 = ctx.Project.Name；publish_dir = ctx.Project.Config.StrOr("publish_dir", ".")
-        // macOS：ctx.RenderTemplate(ctx.Template("Info.plist.tmpl"), <.app/Contents/Info.plist>, ctx.Project.Config)
+        // exe 名 = ctx.Project.Name；publish_dir = ctx.Platform.StrOr("publish_dir", ".")
+        // macOS：ctx.RenderTemplate(ctx.Template("Info.plist.tmpl"), <.app/Contents/Info.plist>, ctx.Platform)
     }
 
     /// 摆 apphost 布局（裸 exe 或 macOS .app 骨架），放入 app.zpkg。

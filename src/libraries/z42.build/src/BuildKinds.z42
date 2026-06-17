@@ -1,4 +1,4 @@
-namespace Std.Build;
+namespace Z42.Build;
 
 // 常量集合。用 const string 而非 enum，规避 L1 enum 限制；同时这些值需与
 // RID 前缀 / z42.toml mode / CLI 字面量直接比较，字符串更省转换。

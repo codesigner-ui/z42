@@ -31,9 +31,8 @@ class iOSBuild         class iOSWorkload            class WorkloadBase
 | `src/Pipeline.z42` | 管线驱动 —— **流程**：八相位顺序，head（z42.build 拥有）+ tail（workload 拥有） |
 | `src/WorkloadBase.z42` | 平台尾相位扩展点（Preflight/Configure/GenerateProject/NativeBuild/Package） |
 | `src/BuildHooks.z42` | 平台无关头相位 hook 扩展点（Before/After × Compile/Trim/Assets） |
-| `src/IPipelineContext.z42` | **相位上下文契约**：只读数据 + 能力受限 fs + exec + 日志 + 产物登记 + 平台原语 + preflight 原语 |
-| `src/IConfigTable.z42` | `[platform.*]` TOML 值只读访问契约（无泛型 map → typed getter） |
-| `src/Models.z42` | 数据记录（Project/Target/Dirs/Inputs/Output/ExecResult） |
+| `src/IPipelineContext.z42` | **相位上下文契约**：项目模型 + 能力受限 fs + exec + 日志 + 产物登记 + 平台原语 + preflight 原语 |
+| `src/Models.z42` | 管线运行期记录（Target/Dirs/Inputs/Output/ExecResult；项目模型在 z42.project） |
 | `src/BuildKinds.z42` | 常量：TargetFamily / BuildMode / Phase（用 const，避开 enum） |
 
 ## 入口点
@@ -42,6 +41,7 @@ class iOSBuild         class iOSWorkload            class WorkloadBase
 - `IPipelineContext` —— 相位与外界交互的唯一契约
 
 ## 依赖关系
+- 依赖 `z42.project`（项目清单模型 ProjectInfo / ProjectManifest / IConfigTable）
 - 依赖 `Std.IO`（数据/进程语义参考）、`Std.Collections`（List）
 - **待补（实现期）**：`IPipelineContext` 中 Sign / Archive / Hash / ProbeVersion / Download
   对应的原生 builtin（toolchain 侧 Rust 实现）

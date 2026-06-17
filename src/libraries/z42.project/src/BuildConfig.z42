@@ -1,4 +1,4 @@
-namespace Std.Project;
+namespace Z42.Project;
 
 /// `[build]` 段。目录默认：OutputDir = toml 所在目录；CacheDir = ${OutputDir}/.cache；
 /// DistDir = ${OutputDir}/dist。
