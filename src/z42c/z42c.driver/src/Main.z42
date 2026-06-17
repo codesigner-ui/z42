@@ -66,7 +66,11 @@ int _build(string tomlPath) {
     ImportedSymbols imported = null;
     DependencyIndex depIndex = null;
     if (libsDir != "") {
-        scan = DepScan.Scan(libsDir, pm.Name);   // 排除 self-zpkg（包不导入自己）
+        // 声明依赖名（DepIndex 过滤：只索引 stdlib + 声明依赖，镜像 C# BuildDepIndex allowedPkgs）
+        string[] declaredDeps = new string[pm.DepCount];
+        int ddi = 0;
+        while (ddi < pm.DepCount) { declaredDeps[ddi] = pm.Deps[ddi].Name; ddi = ddi + 1; }
+        scan = DepScan.Scan(libsDir, pm.Name, declaredDeps, pm.DepCount);   // 排除 self-zpkg（包不导入自己）
         depIndex = scan.Index;
         // 全工程 usings 聚合（镜像 C# LoadExternalImported 的跨文件聚合）
         string[] allUsings = new string[8];

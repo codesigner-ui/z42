@@ -39,7 +39,12 @@ public static class DepScan {
     // prelude 包名单（镜像 C# PreludePackages.Names）。
     public static bool IsPrelude(string pkgName) { return pkgName == "z42.core"; }
 
-    public static DepScanResult Scan(string libsDir, string excludeName) {
+    // declaredDeps/declaredCount = 本工程 manifest 声明的依赖包名（z42c.* 等）。declaredCount>0 时
+    // **DepIndex 只索引 stdlib(z42.* 前缀) + 声明依赖**（镜像 C# BuildDepIndex allowedPkgs 过滤），
+    // 否则非声明的同名 instance 方法（如 flat 目录里 z42c.semantics 的 IrGen.Intern 撞 z42c.ir 的
+    // ZbcStringPool.Intern）会让键歧义被 Seal 剔除 → bare VCall（应 FQ call）。nsMap/TSIG 不过滤
+    // （DEPS 用全名单 first-wins；ImportedSymbols 由 using 激活过滤）。
+    public static DepScanResult Scan(string libsDir, string excludeName, string[] declaredDeps, int declaredCount) {
         var index = new DependencyIndex();
         string[] nsNames = new string[8];
         string[] nsFiles = new string[8];
@@ -77,12 +82,14 @@ public static class DepScan {
                     }
                     i = i + 1;
                 }
-                // DepIndex：每模块 SIGS 签名
-                ZpkgModuleSigs[] mods = ZpkgReader.ReadModuleSigs(z);
-                i = 0;
-                while (i < mods.Length) {
-                    index.AddModule(mods[i].Functions, mods[i].FuncCount, mods[i].Namespace);
-                    i = i + 1;
+                // DepIndex：每模块 SIGS 签名（声明依赖过滤——镜像 C# BuildDepIndex allowedPkgs）
+                if (declaredCount == 0 || DepScan._allowedForIndex(z.Name, declaredDeps, declaredCount)) {
+                    ZpkgModuleSigs[] mods = ZpkgReader.ReadModuleSigs(z);
+                    i = 0;
+                    while (i < mods.Length) {
+                        index.AddModule(mods[i].Functions, mods[i].FuncCount, mods[i].Namespace);
+                        i = i + 1;
+                    }
                 }
                 // TSIG 模块池
                 ExportedModuleZ[] tsig = ZpkgReader.ReadTsig(z);
@@ -136,6 +143,17 @@ public static class DepScan {
             i = i + 1;
         }
         return paths;
+    }
+
+    // DepIndex 准入：stdlib（z42. 前缀；z42c.X 不匹配）∨ 声明依赖名（镜像 C# isStdlib || allowedPkgs.Contains）。
+    private static bool _allowedForIndex(string pkgName, string[] declaredDeps, int declaredCount) {
+        if (pkgName.StartsWith("z42.")) { return true; }
+        int i = 0;
+        while (i < declaredCount) {
+            if (declaredDeps[i] == pkgName) { return true; }
+            i = i + 1;
+        }
+        return false;
     }
 
     private static int _nsIndexOf(string[] a, int n, string s) {

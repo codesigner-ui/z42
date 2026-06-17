@@ -151,8 +151,8 @@ public sealed class SymbolCollector {
                 Z42Type ft = table.ResolveTypeP(fd.Type, tp, tpc);
                 bool fstatic = this._hasWord(fd.Mods, "static");
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, fstatic, c.Name));
-                // G18：实例字段记有序元数据（声明序 + AST 源拼写）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
-                if (!fstatic) { ct.AddOwnField(fd.Name, fd.Type.Dump(), this._vis(fd.Mods)); }
+                // G18：实例字段记有序元数据（声明序 + TSIG 规范拼写 u8[]）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
+                if (!fstatic) { ct.AddOwnField(fd.Name, ExportedTypeExtractor.TsigTypeName(fd.Type), this._vis(fd.Mods)); }
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。

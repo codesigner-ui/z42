@@ -70,14 +70,14 @@ void test_tsig_inherited_fields_and_method_merge() {
         SemanticDump.DumpExports(src));
 }
 
-// G18d 回归：方法签名类型规范化（byte→u8 等），镜像 C# FuncToMethod TypeToString(resolved)；
-// 字段仍用源拼写（byte[]）。`u8[]` 来自 byte[] 数组规范名，验证结构保留（数组）+ prim 规范。
+// G18d/G18h 回归：TSIG 全用规范名（byte→u8 等），镜像 C# TypeToString(resolved)——
+// 方法返回/参数**与字段一致**走规范名（z42c.project ZpkgReader.Data:byte[] → TSIG u8[] 实证）。
+// 区别于 TYPE/SIGS 段用源拼写（byte[]，G18f/g）。
 [Test]
-void test_tsig_method_signature_canonical_field_source() {
+void test_tsig_all_canonical_field_and_method() {
     string src = "class W { public byte[] data; public byte[] ToBytes(short n) { return data; } }";
-    // 方法返回/参数 → 规范名（byte[]→u8[]，short→i16）；字段 → 源拼写（byte[]）。
-    Assert.Equal("u8[]", SemanticDump.ExportMethodRet(src, "W", "ToBytes"));
-    Assert.Equal("byte[]", SemanticDump.ExportFieldType(src, "W", "data"));
+    Assert.Equal("u8[]", SemanticDump.ExportMethodRet(src, "W", "ToBytes"));   // 方法返回规范名
+    Assert.Equal("u8[]", SemanticDump.ExportFieldType(src, "W", "data"));      // G18h：字段也规范名
 }
 
 // G18d 回归：nullable 在方法签名规范名下结构保留（string? 不被 sig.Name() 擦除为 string）。

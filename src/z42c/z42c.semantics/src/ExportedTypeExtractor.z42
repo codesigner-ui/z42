@@ -190,7 +190,7 @@ public static class ExportedTypeExtractor {
                     FieldSymbol fs = ct.Fields.Get(fd.Name) as FieldSymbol;
                     string tn = "unknown";
                     string vis = "internal";
-                    if (fs != null) { tn = fd.Type.Dump(); vis = fs.Visibility; }   // G17c-2：AST 源拼写
+                    if (fs != null) { tn = ExportedTypeExtractor.TsigTypeName(fd.Type); vis = fs.Visibility; }   // G18h：TSIG 字段规范名（u8[]）
                     if (fldc == fields.Length) {
                         ExportedFieldZ[] b = new ExportedFieldZ[fields.Length * 2];
                         int k = 0; while (k < fldc) { b[k] = fields[k]; k = k + 1; }
@@ -327,15 +327,17 @@ public static class ExportedTypeExtractor {
     // 镜像 C# FuncToMethod 用 `TypeToString(resolved)`——C# 自 G17c-2 后漂移：方法签名类型走规范名
     // （ByteWriter.ToBytes 返回 byte[] → TSIG=u8[]，与 SIGS 一致），区别于**字段**仍用源拼写（byte[]，
     // 见 _extractClass static-field 段用 fd.Type.Dump()）。泛型实参暂回落 Dump（z42c.ir 无泛型签名）。G18d。
-    private static string _tsigTypeName(TypeExpr te) {
-        if (te is ArrayType) { return ExportedTypeExtractor._tsigTypeName((te as ArrayType).Elem) + "[]"; }
-        if (te is NullableType) { return ExportedTypeExtractor._tsigTypeName((te as NullableType).Inner) + "?"; }
+    // 公开（SymbolCollector 回填 OwnField 规范拼写复用）：纯 TypeExpr 函数，无符号表依赖。
+    public static string TsigTypeName(TypeExpr te) {
+        if (te is ArrayType) { return ExportedTypeExtractor.TsigTypeName((te as ArrayType).Elem) + "[]"; }
+        if (te is NullableType) { return ExportedTypeExtractor.TsigTypeName((te as NullableType).Inner) + "?"; }
         if (te is NamedType) {
             NamedType nt = te as NamedType;
             if (nt.ArgCount == 0) { return ExportedTypeExtractor._canonName(nt.Name); }
         }
         return te.Dump();
     }
+    private static string _tsigTypeName(TypeExpr te) { return ExportedTypeExtractor.TsigTypeName(te); }
     // prim 源名 → IR 规范名（镜像 SymbolTable._canonPrim / C# TypeRegistry：仅次要别名归一）。
     private static string _canonName(string n) {
         if (n == "byte")   { return "u8"; }
