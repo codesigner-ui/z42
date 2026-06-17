@@ -6,24 +6,34 @@ namespace Z42.Semantics;
 using Z42.Syntax;
 
 public sealed class SymbolCollector {
-    // imported 符号先 seed，本地声明覆盖（CI-4；镜像 C# TypeChecker.Check(cu, imported) 合并语义）。
+    // imported 符号先 seed，本地声明覆盖（CI-4；镜像 C# SymbolCollector.Collect：MergeImported
+    // 在成员收集前——使本地类**字段/方法类型**能解析为兄弟包 imported 类，而非降级 Unknown）。
+    // 顺序：本地 interface/class stub → seed imported（guard 跳本地同名，local-wins）→ 成员解析。
     public SymbolTable CollectWithImports(CompilationUnit cu, ImportedSymbols imported) {
-        SymbolTable t = this.Collect(cu);
-        if (imported != null) {
-            string[] cls = imported.Classes.Keys();
-            int i = 0;
-            while (i < cls.Length) {
-                if (!t.Classes.ContainsKey(cls[i])) { t.Classes.Put(cls[i], imported.Classes.Get(cls[i])); }
-                i = i + 1;
-            }
-            string[] fns = imported.Functions.Keys();
-            i = 0;
-            while (i < fns.Length) {
-                if (!t.Functions.ContainsKey(fns[i])) { t.Functions.Put(fns[i], imported.Functions.Get(fns[i])); }
-                i = i + 1;
-            }
-        }
+        var t = new SymbolTable();
+        this._passInterfaces(t, cu);
+        this._passClassStubs(t, cu);
+        this._mergeImports(t, imported);
+        this._passMembers(t, cu);
         return t;
+    }
+
+    // imported 符号 seed（local stub 已注册的同名跳过，local-wins；镜像 C# MergeImported + 本地覆盖）。
+    // 必须在 _passMembers 前调用：成员（字段/方法签名）类型解析依赖 imported 类已在表中（G18）。
+    private void _mergeImports(SymbolTable table, ImportedSymbols imported) {
+        if (imported == null) { return; }
+        string[] cls = imported.Classes.Keys();
+        int i = 0;
+        while (i < cls.Length) {
+            if (!table.Classes.ContainsKey(cls[i])) { table.Classes.Put(cls[i], imported.Classes.Get(cls[i])); }
+            i = i + 1;
+        }
+        string[] fns = imported.Functions.Keys();
+        i = 0;
+        while (i < fns.Length) {
+            if (!table.Functions.ContainsKey(fns[i])) { table.Functions.Put(fns[i], imported.Functions.Get(fns[i])); }
+            i = i + 1;
+        }
     }
 
     // 全包合并收集（PS-1）：多 CU 同表（接口 stub 全包 → 类 stub 全包 → 成员/函数全包）。
@@ -34,22 +44,10 @@ public sealed class SymbolCollector {
         while (c < cuCount) { this._passInterfaces(table, cus[c]); c = c + 1; }
         c = 0;
         while (c < cuCount) { this._passClassStubs(table, cus[c]); c = c + 1; }
+        // seed imported（成员解析前；G18：兄弟包 imported 类字段/方法类型可解析为 Z42ClassType 而非 Unknown）。
+        this._mergeImports(table, imported);
         c = 0;
         while (c < cuCount) { this._passMembers(table, cus[c]); c = c + 1; }
-        if (imported != null) {
-            string[] cls = imported.Classes.Keys();
-            int i = 0;
-            while (i < cls.Length) {
-                if (!table.Classes.ContainsKey(cls[i])) { table.Classes.Put(cls[i], imported.Classes.Get(cls[i])); }
-                i = i + 1;
-            }
-            string[] fns = imported.Functions.Keys();
-            i = 0;
-            while (i < fns.Length) {
-                if (!table.Functions.ContainsKey(fns[i])) { table.Functions.Put(fns[i], imported.Functions.Get(fns[i])); }
-                i = i + 1;
-            }
-        }
         return table;
     }
 
@@ -151,7 +149,10 @@ public sealed class SymbolCollector {
             if (mem is FieldDecl) {
                 FieldDecl fd = mem as FieldDecl;
                 Z42Type ft = table.ResolveTypeP(fd.Type, tp, tpc);
-                ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, this._hasWord(fd.Mods, "static"), c.Name));
+                bool fstatic = this._hasWord(fd.Mods, "static");
+                ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, fstatic, c.Name));
+                // G18：实例字段记有序元数据（声明序 + AST 源拼写）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
+                if (!fstatic) { ct.AddOwnField(fd.Name, fd.Type.Dump(), this._vis(fd.Mods)); }
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。

@@ -53,3 +53,33 @@ void test_resolve_class_field_type() {
     var f = list.Fields.Get("head") as FieldSymbol;
     Assert.Equal("Node", f.FieldType.Name());        // 解析到 Z42ClassType
 }
+
+// G18 回归：TSIG 继承成员展开（镜像 C# ct.Fields/ct.Methods merge=base∪own）。
+// 此前 z42c 只导出自有成员 → 跨包对账 TSIG −598 + 方法序/flags 偏离；gate fixture 无
+// base-virtual-override 故未暴露。守护字段继承（祖先在前）+ 方法合并（override 保留祖先位、
+// 新方法追加）+ override→flags 0（去 virtual）。
+[Test]
+void test_tsig_inherited_fields_and_method_merge() {
+    string src = "class Base { public int Tag; public virtual string Dump() { return \"b\"; } } "
+               + "class Derived : Base { public int Extra; public Derived(int e) { Extra = e; } public override string Dump() { return \"d\"; } }";
+    // Base：自有 Tag；方法 Object 四 + 自有 virtual Dump（v）。
+    // Derived：继承 Tag 在前、自有 Extra 在后；方法 Object 四 + 继承位 Dump（override→无 v）+ 追加 ctor Derived。
+    Assert.Equal(
+        "Base(Object) F:[Tag:int] M:[ToString/v,Equals/v,GetHashCode/v,GetType,Dump/v]\n"
+      + "Derived(Base) F:[Tag:int,Extra:int] M:[ToString/v,Equals/v,GetHashCode/v,GetType,Dump,Derived]",
+        SemanticDump.DumpExports(src));
+}
+
+// G18 回归：多级继承字段链（topmost 祖先字段最前）+ static 字段不参与继承合并。
+[Test]
+void test_tsig_multilevel_inheritance_and_static_field() {
+    string src = "class A { public int a; } "
+               + "class B : A { public int b; public static int counter; } "
+               + "class C : B { public int c; }";
+    // C 实例字段链：a(A) → b(B) → c(C)；B.counter 是 static 仅在 B 自身（不继承到 C）。
+    Assert.Equal(
+        "A(Object) F:[a:int] M:[ToString/v,Equals/v,GetHashCode/v,GetType]\n"
+      + "B(A) F:[a:int,b:int,counter:int(s)] M:[ToString/v,Equals/v,GetHashCode/v,GetType]\n"
+      + "C(B) F:[a:int,b:int,c:int] M:[ToString/v,Equals/v,GetHashCode/v,GetType]",
+        SemanticDump.DumpExports(src));
+}

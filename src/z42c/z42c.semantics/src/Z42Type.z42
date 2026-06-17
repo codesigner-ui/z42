@@ -54,11 +54,31 @@ public sealed class Z42ClassType : Z42Type {
     public StrMap Fields;    // name → FieldSymbol（1A-3 收集时回填）
     public StrMap Methods;   // name → MethodSymbol
     public string[] InterfaceNames; public int InterfaceCount;   // 实现的接口（port-z42c-interface）
+    // 本类**自有实例字段**（声明序 + AST 源拼写 + 可见性），供 TSIG 继承字段展开走 base 链按序读取
+    // （Fields 是 hashed StrMap，迭代非确定；TSIG 需确定序 + 源拼写 → 单独有序元数据）。G18。
+    public string[] OwnFieldNames; public string[] OwnFieldSpellings; public string[] OwnFieldVis; public int OwnFieldCount;
     public Z42ClassType(string name, bool hasBase, string baseName) {
         this._name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = new StrMap();
         this.Methods = new StrMap();
         this.InterfaceNames = new string[0]; this.InterfaceCount = 0;
+        this.OwnFieldNames = new string[0]; this.OwnFieldSpellings = new string[0]; this.OwnFieldVis = new string[0]; this.OwnFieldCount = 0;
+    }
+
+    // 追加一个自有实例字段元数据（SymbolCollector._fillClass 按 AST 声明序调用；static 字段不入此表）。G18。
+    public void AddOwnField(string name, string spelling, string vis) {
+        if (this.OwnFieldCount == this.OwnFieldNames.Length) {
+            int cap = this.OwnFieldNames.Length * 2;
+            if (cap == 0) { cap = 4; }
+            string[] nn = new string[cap]; string[] ns = new string[cap]; string[] nv = new string[cap];
+            int i = 0;
+            while (i < this.OwnFieldCount) { nn[i] = this.OwnFieldNames[i]; ns[i] = this.OwnFieldSpellings[i]; nv[i] = this.OwnFieldVis[i]; i = i + 1; }
+            this.OwnFieldNames = nn; this.OwnFieldSpellings = ns; this.OwnFieldVis = nv;
+        }
+        this.OwnFieldNames[this.OwnFieldCount] = name;
+        this.OwnFieldSpellings[this.OwnFieldCount] = spelling;
+        this.OwnFieldVis[this.OwnFieldCount] = vis;
+        this.OwnFieldCount = this.OwnFieldCount + 1;
     }
     public override string Name() { return this._name; }
     public override bool IsAssignableTo(Z42Type other) {

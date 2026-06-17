@@ -80,11 +80,16 @@ public sealed class EmitContext {
         return this.Qualify(name);
     }
 
-    // receiver 类链（local+imported 合并表，走 base 链）是否自有该方法（IC-1 反劫持守卫）。
+    // receiver 类链是否自有该方法（IC-1 反劫持守卫）。**仅本地编译类**——镜像 C#
+    // ReceiverChainHasMethod 走 codegen `ClassRegistry`（只含本包编译产出的类，不含 imported）。
+    // imported 类（在 ImportedClassNs 中）视为不在本地注册表 → 停止返回 false，交由 DepIndex
+    // instance 捷径走 FQ Call（`Ns.Class.Method`）。否则 imported receiver 的方法会被误判为
+    // vtable-owned → 退化成 bare-name VCall（G18：`_diags.Error` 应 emit `Z42.Core.DiagnosticBag.Error`）。
     public bool ChainHasMethod(string clsName, string method) {
         string cur = clsName;
         int hops = 0;
         while (hops < 32) {
+            if (this.ImportedClassNs != null && this.ImportedClassNs.ContainsKey(cur)) { return false; }
             if (!this.Symbols.HasClass(cur)) { return false; }
             Z42ClassType ct = this.Symbols.GetClass(cur);
             if (ct.Methods.ContainsKey(method)) { return true; }

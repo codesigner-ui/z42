@@ -4,8 +4,46 @@ namespace Z42.Semantics;
 
 using Z42.Syntax;
 using Z42.Core;
+using Z42.IR;
 
 public static class SemanticDump {
+    // 导出类型签名（TSIG 形态）确定性 dump：每类 `Name(Base) F:[n:t(s?),...] M:[n(/flags)?,...]`。
+    // flags：s=static / v=virtual / a=abstract。验证继承字段展开 + 方法合并序 + override flags（G18 回归守护）。
+    public static string DumpExports(string src) {
+        ExportedModuleZ em = IrDump.ExtractExports(src, "t.z42", "");
+        string s = "";
+        int i = 0;
+        while (i < em.ClassCount) {
+            ExportedClassZ c = em.Classes[i];
+            if (i > 0) { s = s + "\n"; }
+            s = s + c.Name + "(" + c.BaseName + ") F:[";
+            int f = 0;
+            while (f < c.FieldCount) {
+                if (f > 0) { s = s + ","; }
+                ExportedFieldZ fd = c.Fields[f];
+                s = s + fd.Name + ":" + fd.TypeName;
+                if (fd.IsStatic) { s = s + "(s)"; }
+                f = f + 1;
+            }
+            s = s + "] M:[";
+            int m = 0;
+            while (m < c.MethodCount) {
+                if (m > 0) { s = s + ","; }
+                ExportedMethodZ md = c.Methods[m];
+                s = s + md.Name;
+                string fl = "";
+                if (md.IsStatic)   { fl = fl + "s"; }
+                if (md.IsVirtual)  { fl = fl + "v"; }
+                if (md.IsAbstract) { fl = fl + "a"; }
+                if (fl != "") { s = s + "/" + fl; }
+                m = m + 1;
+            }
+            s = s + "]";
+            i = i + 1;
+        }
+        return s;
+    }
+
     // 指定 key（"Class.Method" / 顶层函数名）的方法体 bound s-expr。
     public static string DumpBody(string src, string key) {
         var p = new Parser(src, "<input>");
