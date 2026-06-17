@@ -123,11 +123,37 @@ void _cmdExportWasm(ParseResult r) {
     Console.WriteLine("   Then open:   http://localhost:8080/");
 }
 
+// Resolve the apphost stub delivered by the installed desktop workload (Decision 9
+// full gating): Z42_APPHOST_TEMPLATE override, else the first installed
+// runtimes/<ver>/workloads/desktop/<apphost>. "" if no desktop workload installed.
+string _desktopApphostStub() {
+    string name = Platform.IsWindows() ? "apphost.exe" : "apphost";
+    string ovr = Environment.GetEnvironmentVariable("Z42_APPHOST_TEMPLATE") ?? "";
+    if (ovr.Length > 0) { return ovr; }
+    foreach (var ver in _installedVersions()) {
+        string stub = Path.Join(Path.Join(Path.Join(Path.Join(_runtimesDir(), ver), "workloads"), "desktop"), name);
+        if (File.Exists(stub)) { return stub; }
+    }
+    return "";
+}
+
+// Gate: the desktop apphost stub now ships with the desktop workload — require it.
+string _requireDesktopApphost(string cmd) {
+    string stub = _desktopApphostStub();
+    if (stub.Length == 0) {
+        ConsoleError.WriteLine("z42 " + cmd + ": desktop workload not installed (apphost ships with it).");
+        ConsoleError.WriteLine("       run: z42 workload install desktop");
+        Environment.Exit(1);
+    }
+    return stub;
+}
+
 // publish desktop: produce the RELEASE per-app native apphost exe (the desktop
 // platform's deployable). Reads [platform.desktop].publish_dir → emits the exe
 // at publish_dir/<name> (saved artifact). The exe embeds the built zpkg path
 // relative to itself (relocatable). apphost-as-config / rework-desktop-publish-run,
 // 2026-06-17 (was `export desktop`; desktop has no IDE project → it's a publish form).
+// apphost stub now delivered by the desktop workload (Decision 9 full gating).
 void _cmdPublishDesktop(ParseResult r) {
     string tomlPath = r.GetPositional(0);
     if (!_expCheckToml("desktop", tomlPath)) { return; }
@@ -151,8 +177,11 @@ void _cmdPublishDesktop(ParseResult r) {
     string outPath = (projDir.Length > 0) ? Path.Join(Path.Join(projDir, publishDir), projName)
                                           : Path.Join(publishDir, projName);
 
+    string stub = _requireDesktopApphost("publish desktop");
+    string outDir = Path.GetDirectoryName(outPath);
+    if (outDir.Length > 0) { Directory.Create(outDir); }
     Console.WriteLine("z42 publish desktop → " + outPath);
-    Apphost.Produce(zpkgSrc, outPath);
+    Apphost.Produce(zpkgSrc, outPath, stub);
     Console.WriteLine("✅ desktop apphost ready: " + outPath);
 }
 
@@ -186,7 +215,8 @@ void _cmdRunDesktop(string[] argv) {
     // zpkg matches a normal co-located deployment's resolution context.
     string zpkgDir = Path.GetDirectoryName(zpkgSrc);
     string outPath = (zpkgDir.Length > 0) ? Path.Join(zpkgDir, projName) : projName;
-    Apphost.Produce(zpkgSrc, outPath);
+    string stub = _requireDesktopApphost("run desktop");
+    Apphost.Produce(zpkgSrc, outPath, stub);
 
     // exec the produced apphost, forwarding args after the optional `--`.
     Process p = new Process(outPath);

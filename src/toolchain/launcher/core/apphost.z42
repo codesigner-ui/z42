@@ -24,19 +24,19 @@ using Std.IO;
 using Std.Encoding;
 
 public static class Apphost {
-    // Produce a native apphost exe at `outPath` that runs the app zpkg `app`.
+    // Produce a native apphost exe at `outPath` that runs the app zpkg `app`,
+    // patching the apphost stub `tmpl` (delivered by the desktop workload — the
+    // caller resolves it via _desktopApphostStub and gates on its presence).
     // The embedded target is `app` RELATIVE to the exe's dir (relocatable), so
-    // `<exe_dir>/<embed>` finds the zpkg. Called by desktop export
-    // (_cmdExportDesktop). Exits the process on error.
-    public static void Produce(string app, string outPath) {
+    // `<exe_dir>/<embed>` finds the zpkg. Exits the process on error.
+    public static void Produce(string app, string outPath, string tmpl) {
         if (!File.Exists(app)) {
             ConsoleError.WriteLine("z42 publish desktop: app zpkg not found: " + app);
             Environment.Exit(1);
             return;
         }
-        string tmpl = _templatePath();
         if (tmpl.Length == 0 || !File.Exists(tmpl)) {
-            ConsoleError.WriteLine("z42 publish desktop: apphost stub template not found (set Z42_APPHOST_TEMPLATE, or use a packaged z42).");
+            ConsoleError.WriteLine("z42 publish desktop: apphost stub not found: " + tmpl);
             Environment.Exit(1);
             return;
         }
@@ -158,29 +158,6 @@ public static class Apphost {
             k = k + 1;
         }
         return outBytes;
-    }
-
-    // Locate the native apphost stub template: explicit override, else next to
-    // the portable z42vm, else $Z42_HOME/launcher (installed, alongside z42vm).
-    private static string _templatePath() {
-        string name = Platform.IsWindows() ? "apphost.exe" : "apphost";
-
-        string ovr = Environment.GetEnvironmentVariable("Z42_APPHOST_TEMPLATE") ?? "";
-        if (ovr.Length > 0) { return ovr; }
-
-        string portableVm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
-        if (portableVm.Length > 0) {
-            string dir = Path.GetDirectoryName(portableVm);
-            if (dir.Length > 0) { return Path.Join(dir, name); }
-        }
-
-        string home = Environment.GetEnvironmentVariable("Z42_HOME") ?? "";
-        if (home.Length == 0) {
-            string h = Environment.GetEnvironmentVariable("HOME") ?? "";
-            if (h.Length > 0) { home = Path.Join(h, ".z42"); }
-        }
-        if (home.Length > 0) { return Path.Join(Path.Join(home, "launcher"), name); }
-        return "";
     }
 
     // First index of `needle` in `hay`, or -1.

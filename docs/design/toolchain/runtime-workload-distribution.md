@@ -57,11 +57,17 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
   "workloads": {
     "ios":     { "archive": "z42-workload-0.3.5-ios.tar.gz",     "sha256": "…", "host": ["macos-arm64"], "runtimes": ["ios-arm64","iossim-arm64"] },
     "android": { "archive": "z42-workload-0.3.5-android.tar.gz", "sha256": "…", "host": ["macos-arm64","linux-x64","linux-arm64","windows-x64"], "runtimes": ["android-arm64","android-x64"] },
-    "wasm":    { "archive": "z42-workload-0.3.5-wasm.tar.gz",    "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] }
+    "wasm":    { "archive": "z42-workload-0.3.5-wasm.tar.gz",    "sha256": "…", "host": ["*"], "runtimes": ["browser-wasm"] },
+    "desktop": { "hosts": { "macos-arm64": { "archive": "z42-workload-0.3.5-desktop-macos-arm64.tar.gz", "sha256": "…" }, "linux-x64": {…}, "linux-arm64": {…}, "windows-x64": {…} }, "runtimes": [] }
   }
 }
 ```
-> **一个 workload → 多 target RID（apphost-as-config 后续, 2026-06-17）**：`workloads.<wl>.runtimes` 列出该 workload 安装时需一并拉的 target runtime pack RID。`z42 workload install android` 读 `["android-arm64","android-x64"]` → 拉全部 ABI 的 runtime + workload tooling 包（一个 workload 统一多 ABI，对齐 `dotnet workload install android` 带全 ABI）。ios 的 `["ios-arm64","iossim-arm64"]` = 真机 + 模拟器。**desktop 不在 `workloads`**——它复用已装的 **host runtime**（`z42 install <ver>`），无 target runtime pack（Decision 9）。
+> **一个 workload → 多 target RID（apphost-as-config 后续, 2026-06-17）**：`workloads.<wl>.runtimes` 列出该 workload 安装时需一并拉的 target runtime pack RID。`z42 workload install android` 读 `["android-arm64","android-x64"]` → 拉全部 ABI 的 runtime + workload tooling 包（一个 workload 统一多 ABI，对齐 `dotnet workload install android` 带全 ABI）。ios 的 `["ios-arm64","iossim-arm64"]` = 真机 + 模拟器。
+> **desktop = per-host workload（add-desktop-workload, 2026-06-17）**：desktop 的 tooling 是 **per-host-RID**（携带
+> per-host apphost stub），且**无 target runtime pack**（`runtimes:[]`，复用 `z42 install <ver>` 的 host runtime）→
+> schema 用 `workloads.desktop.hosts.<rid>={archive,sha256}` 而非单 `archive`。launcher 按 `_hostRid()` 取
+> `hosts.<rid>`，跳过 runtime loop。apphost 从此**经 desktop workload 交付**，不再 baked 进 SDK/launcher
+> （Decision 9 完全门控：`z42 publish desktop` 需先 `z42 workload install desktop`）。
 > **已实施**：① desktop RID 双键（sdk/runtime）、platform RID 单键（runtime）、`_fetchManifest` new/old 双格式（split-release-runtime-package, 2026-06-14）。② **`workloads` 段（add-workload-manifest-install, 2026-06-17, B2-4）**：CI release.yml emit `workloads.<wl>.{archive, sha256, runtimes}`；launcher `_fetchWorkloadEntry` 解析 → 联网装。
 
 - `archive` 自带类型（`.tar.gz`/`.zip`）→ 统一解压逻辑，顺手解决 Windows `.zip`。

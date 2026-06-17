@@ -340,6 +340,16 @@ jobs:
           test -f "$pkg_dir/libs/z42.compression.zpkg" \
               || { echo "error: libs/z42.compression.zpkg missing"; exit 1; }
           echo "✓ libs/z42.compression.zpkg"
+          # desktop workload (apphost stub — Decision 9 full gating): apphost is
+          # NO LONGER in the SDK bin/; it ships in z42-workload-<v>-desktop-<rid>/.
+          test ! -e "$pkg_dir/bin/apphost" && test ! -e "$pkg_dir/bin/apphost.exe" \
+              || { echo "error: apphost must NOT be in SDK bin/ anymore (it ships via desktop workload)"; exit 1; }
+          dt_dir=$(ls -d artifacts/packages/z42-workload-*-desktop-* 2>/dev/null | head -1)
+          [ -d "$dt_dir" ] || { echo "error: no desktop workload package produced"; exit 1; }
+          { [ -f "$dt_dir/apphost" ] || [ -f "$dt_dir/apphost.exe" ]; } \
+              || { echo "error: desktop workload missing apphost stub"; ls -la "$dt_dir"; exit 1; }
+          test -f "$dt_dir/manifest.toml" || { echo "missing desktop workload manifest.toml"; exit 1; }
+          echo "✓ desktop workload: $dt_dir (apphost stub; not in SDK bin/)"
           echo "--- manifest.toml ---"
           cat "$pkg_dir/manifest.toml"
 
@@ -956,6 +966,10 @@ jobs:
                   [ -d "$psrc" ] || { echo "error: missing runtime package for ${rid}"; exit 1; }
                   (cd "$psrc" && zip -r "${out}/z42-runtime-nightly-${rid}.zip" .)
                   echo "✓ runtime ${rid} → z42-runtime-nightly-${rid}.zip"
+                  dwsrc=$(find dist-raw -maxdepth 1 -type d -name "z42-workload-*-desktop-${rid}" | head -1)
+                  [ -d "$dwsrc" ] || { echo "error: missing desktop workload for ${rid}"; exit 1; }
+                  (cd "$dwsrc" && zip -r "${out}/z42-workload-nightly-desktop-${rid}.zip" .)
+                  echo "✓ desktop workload ${rid} → z42-workload-nightly-desktop-${rid}.zip"
               elif [[ "$rid" == linux-* || "$rid" == macos-* ]]; then
                   tar -C "$dst" -czf "${out}/z42-sdk-nightly-${rid}.tar.gz" .
                   echo "✓ sdk ${rid} → z42-sdk-nightly-${rid}.tar.gz"
@@ -963,6 +977,10 @@ jobs:
                   [ -d "$psrc" ] || { echo "error: missing runtime package for ${rid}"; exit 1; }
                   tar -C "$psrc" -czf "${out}/z42-runtime-nightly-${rid}.tar.gz" .
                   echo "✓ runtime ${rid} → z42-runtime-nightly-${rid}.tar.gz"
+                  dwsrc=$(find dist-raw -maxdepth 1 -type d -name "z42-workload-*-desktop-${rid}" | head -1)
+                  [ -d "$dwsrc" ] || { echo "error: missing desktop workload for ${rid}"; exit 1; }
+                  tar -C "$dwsrc" -czf "${out}/z42-workload-nightly-desktop-${rid}.tar.gz" .
+                  echo "✓ desktop workload ${rid} → z42-workload-nightly-desktop-${rid}.tar.gz"
               else
                   # Platform RID (runtime/workload split): runtime pack (per RID) +
                   # workload tooling (primary RID only — identical across ABIs/slices).
@@ -1017,17 +1035,24 @@ jobs:
           sha_ax64="$(get_sha      "z42-runtime-nightly-android-x64.tar.gz")"
           sha_wasm="$(get_sha      "z42-runtime-nightly-browser-wasm.tar.gz")"
 
-          # Workload tooling archives (one per platform; bundle their per-RID runtime packs).
+          # Workload tooling archives (ios/android/wasm: one per platform; bundle per-RID runtime packs).
           sha_wl_ios="$(get_sha     "z42-workload-nightly-ios.tar.gz")"
           sha_wl_android="$(get_sha "z42-workload-nightly-android.tar.gz")"
           sha_wl_wasm="$(get_sha    "z42-workload-nightly-wasm.tar.gz")"
+
+          # Desktop workload (apphost stub, per-host RID — Decision 9 full gating).
+          sha_wl_dt_lx64="$(get_sha "z42-workload-nightly-desktop-linux-x64.tar.gz")"
+          sha_wl_dt_la64="$(get_sha "z42-workload-nightly-desktop-linux-arm64.tar.gz")"
+          sha_wl_dt_mac="$(get_sha  "z42-workload-nightly-desktop-macos-arm64.tar.gz")"
+          sha_wl_dt_win="$(get_sha  "z42-workload-nightly-desktop-windows-x64.zip")"
 
           for var in sha_sdk_lx64 sha_rt_lx64 \
                      sha_sdk_la64 sha_rt_la64 \
                      sha_sdk_mac  sha_rt_mac  \
                      sha_sdk_win  sha_rt_win  \
                      sha_ios sha_iossim sha_aarm64 sha_ax64 sha_wasm \
-                     sha_wl_ios sha_wl_android sha_wl_wasm; do
+                     sha_wl_ios sha_wl_android sha_wl_wasm \
+                     sha_wl_dt_lx64 sha_wl_dt_la64 sha_wl_dt_mac sha_wl_dt_win; do
             [ -n "${!var}" ] || { echo "release-index: missing sha256 for $var" >&2; exit 1; }
           done
 
@@ -1046,6 +1071,8 @@ jobs:
             --arg sha_wasm      "$sha_wasm"      \
             --arg sha_wl_ios    "$sha_wl_ios"    --arg sha_wl_android "$sha_wl_android" \
             --arg sha_wl_wasm   "$sha_wl_wasm"   \
+            --arg sha_wl_dt_lx64 "$sha_wl_dt_lx64" --arg sha_wl_dt_la64 "$sha_wl_dt_la64" \
+            --arg sha_wl_dt_mac  "$sha_wl_dt_mac"  --arg sha_wl_dt_win  "$sha_wl_dt_win"  \
             '{
               schema: $schema,
               version: $version,
@@ -1078,7 +1105,16 @@ jobs:
               workloads: {
                 "ios":     { archive: "z42-workload-nightly-ios.tar.gz",     sha256: $sha_wl_ios,     host: ["macos-arm64"], runtimes: ["ios-arm64","iossim-arm64"] },
                 "android": { archive: "z42-workload-nightly-android.tar.gz", sha256: $sha_wl_android, host: ["macos-arm64","linux-x64","linux-arm64","windows-x64"], runtimes: ["android-arm64","android-x64"] },
-                "wasm":    { archive: "z42-workload-nightly-wasm.tar.gz",    sha256: $sha_wl_wasm,    host: ["*"], runtimes: ["browser-wasm"] }
+                "wasm":    { archive: "z42-workload-nightly-wasm.tar.gz",    sha256: $sha_wl_wasm,    host: ["*"], runtimes: ["browser-wasm"] },
+                "desktop": {
+                  hosts: {
+                    "linux-x64":   { archive: "z42-workload-nightly-desktop-linux-x64.tar.gz",   sha256: $sha_wl_dt_lx64 },
+                    "linux-arm64": { archive: "z42-workload-nightly-desktop-linux-arm64.tar.gz", sha256: $sha_wl_dt_la64 },
+                    "macos-arm64": { archive: "z42-workload-nightly-desktop-macos-arm64.tar.gz", sha256: $sha_wl_dt_mac },
+                    "windows-x64": { archive: "z42-workload-nightly-desktop-windows-x64.zip",    sha256: $sha_wl_dt_win }
+                  },
+                  runtimes: []
+                }
               }
             }' > artifacts/release/release-index.json
           echo "--- release-index.json ---"

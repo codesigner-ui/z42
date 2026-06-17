@@ -57,10 +57,9 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     _makeExe(Path.Join(pkgDir, "z42"));
     Console.WriteLine("      ✓ z42 (trampoline, package root)");
-    _copyIfExists(Path.Join(cargoOut, "apphost"), Path.Join(pkgDir, "bin/apphost"));
-    _copyIfExists(Path.Join(cargoOut, "apphost.exe"), Path.Join(pkgDir, "bin/apphost.exe"));
-    _makeExe(Path.Join(pkgDir, "bin/apphost"));
-    Console.WriteLine("      ✓ apphost (stub template, bin/)");
+    // apphost stub is NOT shipped in the SDK anymore (Decision 9 full gating):
+    // it is delivered by the desktop workload (z42-workload-<v>-desktop-<rid>),
+    // installed via `z42 workload install desktop`. See _buildDesktopWorkload.
     string libs = _libsDir(root);
     c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
         .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
@@ -89,6 +88,51 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // [7/7] manifest.toml
     Console.WriteLine("[7/7] manifest.toml");
     _pkgEmitManifest(pkgDir, rid, version, profile, hostRid);
+    return 0;
+}
+
+// ── desktop workload (z42-workload-<v>-desktop-<rid>): apphost stub + manifest ──
+// Decision 9 full gating: the per-host-RID apphost stub is delivered by this
+// workload (NO target runtime pack — desktop reuses the host runtime installed
+// by `z42 install <ver>`). `z42 publish desktop` requires it; Apphost._templatePath
+// resolves the stub under runtimes/<ver>/workloads/desktop/. The apphost binary is
+// still cargo-built by _packageDesktop's launcher build; here it just lands in the
+// workload package instead of the SDK bin/.
+int _buildDesktopWorkload(string root, string rid, string version, string profile) {
+    string cargoTarget = _ridToCargo(rid);
+    bool rel = (profile == "release");
+    string exe = rid.StartsWith("windows-") ? "apphost.exe" : "apphost";
+    string pkgName = "z42-workload-" + version + "-desktop-" + rid + (rel ? "" : "-" + profile);
+    string pkgDir = Path.Join(_packagesDir(root), pkgName);
+    Console.WriteLine("Desktop workload: " + pkgName);
+    if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
+    Directory.Create(pkgDir);
+
+    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
+    string stub = Path.Join(cargoOut, exe);
+    if (!File.Exists(stub)) {
+        ConsoleError.WriteLine("error: apphost stub not built at " + stub + "; run launcher cargo build first");
+        return 1;
+    }
+    File.Copy(stub, Path.Join(pkgDir, exe));
+    _makeExe(Path.Join(pkgDir, exe));
+    Console.WriteLine("      ✓ " + exe + " (apphost stub)");
+
+    string m = "[package]\n";
+    m = m + "name        = \"z42-workload-desktop\"\n";
+    m = m + "kind        = \"workload-tooling\"\n";
+    m = m + "version     = \"" + version + "\"\n";
+    m = m + "abi-version = 1\n";
+    m = m + "rid         = \"" + rid + "\"\n";
+    m = m + "profile     = \"" + profile + "\"\n";
+    m = m + "build-date  = \"" + _utcNow() + "\"\n\n";
+    m = m + "[contents.platform]\n";
+    m = m + "apphost      = \"" + exe + "\"\n";
+    m = m + "runtime-pack = \"\"  # none — desktop reuses the host runtime (z42 install <ver>)\n\n";
+    m = m + "[compat]\n";
+    m = m + "host-min-version = \"" + version + "\"\n";
+    File.WriteAllText(Path.Join(pkgDir, "manifest.toml"), m);
+    Console.WriteLine("      ✓ manifest.toml (workload tooling — desktop)");
     return 0;
 }
 

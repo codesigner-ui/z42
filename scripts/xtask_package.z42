@@ -46,6 +46,9 @@ int _buildPackageCore(string profile, string rid, string variant) {
         c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
         if (c != 0) { return c; }
         c = _buildRuntimePackage(root, rid, version, profile);
+        if (c != 0) { return c; }
+        // desktop workload (apphost stub) — separate from SDK (Decision 9 full gating)
+        c = _buildDesktopWorkload(root, rid, version, profile);
     } else if (category == "ios") {
         c = _packageIos(root, pkgDir, rid, version, profile, hostRid);
     } else if (category == "android") {

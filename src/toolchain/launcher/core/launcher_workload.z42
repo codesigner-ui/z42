@@ -118,20 +118,37 @@ void _workloadInstallNetwork(ParseResult r, string wl, string baseUrlOpt) {
         ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not found in manifest at " + baseUrl + "/release-index.json");
         Environment.Exit(1); return;
     }
-    string toolingArchive = _jsonStr(we, "archive");
-    string toolingSha = _jsonStr(we, "sha256");
+    string toolingArchive = "";
+    string toolingSha = "";
+    string[] rids = new string[0];
+    if (we.ContainsKey("hosts")) {
+        // per-host workload (desktop): the tooling is host-RID-specific (it carries
+        // the per-host apphost stub) and has NO target runtime pack (runtimes:[]).
+        string hostRid = _hostRid();
+        JsonValue hostsObj = we.Get("hosts");
+        if (!hostsObj.IsObject() || !hostsObj.ContainsKey(hostRid)) {
+            ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not available for this host (" + hostRid + ")");
+            Environment.Exit(2); return;
+        }
+        JsonValue he = hostsObj.Get(hostRid);
+        toolingArchive = _jsonStr(he, "archive");
+        toolingSha = _jsonStr(he, "sha256");
+    } else {
+        toolingArchive = _jsonStr(we, "archive");
+        toolingSha = _jsonStr(we, "sha256");
+        // host gate (BEFORE any download): refuse workloads this host can't build.
+        string[] hosts = _jsonStrArray(we, "host");
+        if (!_hostAllowed(hosts)) {
+            ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not supported on this host ("
+                + _hostRid() + "); requires one of: " + _joinComma(hosts));
+            Environment.Exit(2); return;
+        }
+        rids = _jsonStrArray(we, "runtimes");
+    }
     if (toolingArchive.Length == 0) {
         ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' has no archive in manifest");
         Environment.Exit(1); return;
     }
-    // host gate (BEFORE any download): refuse workloads this host can't build.
-    string[] hosts = _jsonStrArray(we, "host");
-    if (!_hostAllowed(hosts)) {
-        ConsoleError.WriteLine("z42 workload install: workload '" + wl + "' not supported on this host ("
-            + _hostRid() + "); requires one of: " + _joinComma(hosts));
-        Environment.Exit(2); return;
-    }
-    string[] rids = _jsonStrArray(we, "runtimes");
 
     // 1. tooling → runtimes/<ver>/workloads/<wl>/ (download + verify + atomic move)
     Console.WriteLine("downloading " + toolingArchive + " (" + tag + ") ...");
