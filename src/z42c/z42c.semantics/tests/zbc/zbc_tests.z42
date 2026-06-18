@@ -42,6 +42,17 @@ void test_zbc_instr_compare_and_binary() {
 }
 
 [Test]
+void test_writer_utf8_multibyte() {
+    // ZW-1E：非 ASCII 串按 **UTF-8 字节**写入（`—` = U+2014 → E2 80 94，3 字节），
+    // 字节数与 ByteLength 一致。原 WriteAsciiBytes 按 char&0xFF 每 scalar 写 1 字节 →
+    // 与 STRS 长度表（ByteLength）错位 → z42c.driver banner 串损坏。
+    var w = new ByteWriter();
+    w.WriteUtf8Bytes("a—b");   // 'a'=61 / '—'=e2 80 94 / 'b'=62
+    Assert.Equal("61e2809462", w.ToHex());
+    Assert.Equal(5, "a—b".ByteLength);   // 写入字节数 == ByteLength（长度表一致性）
+}
+
+[Test]
 void test_zbc_instr_unary_and_throw() {
     var pool = new ZbcStringPool();
     // neg %1(i32), %0 → op 0x15 + tag 04 + dst 0100 + src 0000

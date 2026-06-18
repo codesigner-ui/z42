@@ -47,17 +47,39 @@ public sealed class ByteWriter {
         }
     }
 
-    // ASCII 串原始字节（无长度前缀；用于 STRS data / section tag）。
-    public void WriteAsciiBytes(string s) {
+    // 串原始字节（无长度前缀；用于 STRS data / section tag）。**UTF-8 编码**——
+    // z42 char = Unicode scalar（CharAt 遍历 Length 个 scalar），逐 scalar emit UTF-8 字节序列，
+    // 字节数与 `ByteLength`（STRS 长度表/WriteStr 前缀）一致。ZW-1E 补：原 `WriteAsciiBytes` 按
+    // `CharAt & 0xFF` 每 scalar 写 1 字节，遇多字节 UTF-8（如 banner 的 `—`=U+2014=3 字节）与
+    // ByteLength 错位 → STRS 数据整体漂移、串损坏（z42c.driver banner 实证）。ASCII 子集等价不变。
+    public void WriteUtf8Bytes(string s) {
         int n = s.Length;
         int i = 0;
-        while (i < n) { this.WriteU8((int)s.CharAt(i)); i = i + 1; }
+        while (i < n) {
+            int cp = (int)s.CharAt(i);
+            if (cp < 128) {
+                this.WriteU8(cp);
+            } else if (cp < 2048) {
+                this.WriteU8(192 | (cp >> 6));
+                this.WriteU8(128 | (cp & 63));
+            } else if (cp < 65536) {
+                this.WriteU8(224 | (cp >> 12));
+                this.WriteU8(128 | ((cp >> 6) & 63));
+                this.WriteU8(128 | (cp & 63));
+            } else {
+                this.WriteU8(240 | (cp >> 18));
+                this.WriteU8(128 | ((cp >> 12) & 63));
+                this.WriteU8(128 | ((cp >> 6) & 63));
+                this.WriteU8(128 | (cp & 63));
+            }
+            i = i + 1;
+        }
     }
 
     // 内联串（NSPC）：u16 字节长 + UTF-8 字节。ASCII → ByteLength == Length。
     public void WriteStr(string s) {
         this.WriteU16(s.ByteLength);
-        this.WriteAsciiBytes(s);
+        this.WriteUtf8Bytes(s);
     }
 
     // 回填 4 字节 LE（directory offset patch）。

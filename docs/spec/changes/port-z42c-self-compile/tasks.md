@@ -89,7 +89,9 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 - [ ] 🔴 **z42c.semantics 2 残差 REGT/name**（disasm 仅剩 2 hunk，deep C# stub/overload 怪癖，留 follow-up）：
   - **`mods.Split(" ")` → C# `Split$1` / z42c `Split`**：stdlib String.Split 重载 arity-mangling，z42c DepIndex 用 bare 名未 mangle。
   - **`TypeEnv.Root(s).WithClassGeneric(...)` 调用结果 → C# Unknown / z42c ref**：receiver=静态调用结果（类型 TypeEnv），C# 经**方法返回类型 stub**（空 Methods）→ 成员未解析→Unknown（同 cast stub 家族，但触发源是 return-type 解析而非 cast；z42c 全量解析故 ref）。结构化链不覆盖（receiver 非 cast）。诊断：`dotnet driver disasm`。
-- [ ] G19+ 逐包推进（z42c.pipeline/driver）。机制已建全（继承/LocalClasses/DepScan 过滤/TSIG 规范·TYPE·SIGS 源/字面量越界 long/cast 链 Unknown/首赋值专用寄存器/disasm 诊断）。
+- [x] 🎉 **G19b z42c.pipeline byte-identical（第 6 包）= 机制已建全，开箱即过**：dual-build 全段 delta 0、disasm 0 非-env diff，仅 STRS −1 env-artifact。无新根因——前序积累（字面量 long / cast 链 Unknown / 首赋值专用寄存器 / var-init 类型）已覆盖 pipeline 的全部构造。
+- [x] 🎉 **G20 STRS 非 ASCII UTF-8 编码（z42c.driver byte-identical = 第 7/最后一包）**：driver banner 含 em-dash `—`（U+2014，3 UTF-8 字节）暴露 ByteWriter 的 ZW-1E 延后缺口——`WriteAsciiBytes` 按 `CharAt(i) & 0xFF` 每 Unicode scalar 写 **1 字节**，而 STRS 长度表 / `WriteStr` 前缀用 `ByteLength`（UTF-8 字节数）→ 多字节串处数据与长度表**错位** → STRS 整体漂移、串损坏（`Std.IO...`→`d.IO...Le`、局部名乱码、banner 截断）。**修**：`ByteWriter.WriteUtf8Bytes`（逐 Unicode scalar emit 1/2/3/4 字节 UTF-8 序列，自包含无 stdlib 依赖；ASCII 子集等价不变）替换 `WriteAsciiBytes`，更新 4 调用点（ZbcWriter STRS data + magic/tag、ZpkgWriter ZPK magic/tag）。回归测试 `test_writer_utf8_multibyte`（`a—b` → `61e2809462`，写入字节数 == ByteLength）。**dual-build：z42c.driver 全段 delta 0、disasm 0 非-env diff = byte-identical**。**7 包全验**：core FULL / syntax·ir·project·pipeline·driver 各 0 非-env disasm diff / **semantics 仅 2 deep 残差**（Split$1 + WithClassGeneric），零回归。gate 全绿（[Test] 16/16 含新 zbc UTF-8 + e2e 7/7 zbc + 6/6 zpkg byte-identical）。
+- [ ] 🔴 **收尾：z42c.semantics 2 deep 残差**（Split$1 arity-mangling + WithClassGeneric return-type-stub 成员解析）—— 唯一阻挡「7/7 全 byte-identical」的项，留 follow-up（deep C# stub/overload 怪癖，详见上 G19a 后条目）。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）

@@ -378,7 +378,7 @@ public static class ZpkgWriterZ {
     // 装配：header("ZPK\0" + major + minor + flags + secCount + reserved) + directory + data。
     private static ByteWriter _assemble(string[] tags, ByteWriter[] datas, int secCount, int flags) {
         var w = new ByteWriter();
-        w.WriteAsciiBytes("ZPK");
+        w.WriteUtf8Bytes("ZPK");
         w.WriteU8(0);
         w.WriteU16(ZpkgWriterZ.Major);
         w.WriteU16(ZpkgWriterZ.Minor);
@@ -388,7 +388,7 @@ public static class ZpkgWriterZ {
         int offset = 16 + secCount * 12;
         int i = 0;
         while (i < secCount) {
-            w.WriteAsciiBytes(tags[i]);
+            w.WriteUtf8Bytes(tags[i]);
             w.WriteU32(offset);
             w.WriteU32(datas[i].Len());
             offset = offset + datas[i].Len();

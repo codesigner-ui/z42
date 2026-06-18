@@ -127,7 +127,7 @@ public static class ZbcWriter {
             i = i + 1;
         }
         i = 0;
-        while (i < n) { w.WriteAsciiBytes(pool.At(i)); i = i + 1; }
+        while (i < n) { w.WriteUtf8Bytes(pool.At(i)); i = i + 1; }
         return w;
     }
 
@@ -491,7 +491,7 @@ public static class ZbcWriter {
     private static ByteWriter _assemble(string[] tags, ByteWriter[] datas, int secCount, int flags) {
         var w = new ByteWriter();
         // header
-        w.WriteAsciiBytes("ZBC");
+        w.WriteUtf8Bytes("ZBC");
         w.WriteU8(0);
         w.WriteU16(ZbcVersion.Major);
         w.WriteU16(ZbcVersion.Minor);
@@ -502,7 +502,7 @@ public static class ZbcWriter {
         int offset = 16 + secCount * 12;
         int i = 0;
         while (i < secCount) {
-            w.WriteAsciiBytes(tags[i]);
+            w.WriteUtf8Bytes(tags[i]);
             w.WriteU32(offset);
             w.WriteU32(datas[i].Len());
             offset = offset + datas[i].Len();
