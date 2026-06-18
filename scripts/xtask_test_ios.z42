@@ -1,6 +1,6 @@
 // xtask — iOS platform backend (add-platform-test-pipeline, 2026-06-15).
 // Implements IPlatformBackend (logic ported from the former
-// src/toolchain/workload/platforms/ios/build.sh, now removed):
+// src/toolchain/workload/ios/platform/build.sh, now removed):
 //   ① BuildProject : cargo build × (ios targets + macOS host slice) → xcframework
 //   ② Assets       : fixtures → Tests/.../test-fixtures; stdlib → Resources/stdlib (+ test bundle)
 //   ③ RunTests     : `swift test` (XCTest R1–R7 on macOS host slice)
@@ -16,7 +16,7 @@ public class IosBackend : IPlatformBackend {
     public string Name() { return "ios"; }
 
     public AssetLayout Assets(string root) {
-        string here = Path.Join(root, "src/toolchain/workload/platforms/ios");
+        string here = Path.Join(root, "src/toolchain/workload/ios/platform");
         string[] stdlibDirs = new string[2];
         stdlibDirs[0] = Path.Join(here, "Resources/stdlib");
         stdlibDirs[1] = Path.Join(here, "Tests/Z42VMTests/Resources/stdlib");
@@ -34,7 +34,7 @@ public class IosBackend : IPlatformBackend {
             ConsoleError.WriteLine("error: cargo not found (https://rustup.rs)");
             return 1;
         }
-        string here = Path.Join(root, "src/toolchain/workload/platforms/ios");
+        string here = Path.Join(root, "src/toolchain/workload/ios/platform");
         string manifest = Path.Join(here, "rust/Cargo.toml");
         string targetDir = Path.Join(root, "artifacts/build/runtime");
         string libName = "libz42_platform_ios.a";
@@ -70,7 +70,7 @@ public class IosBackend : IPlatformBackend {
     // xcodebuild "Test Case ... passed/failed" lines. Z42_IOS_DEST overrides the
     // destination; default = first available iPhone simulator (xcrun simctl).
     public int RunTests(string root) {
-        string here = Path.Join(root, "src/toolchain/workload/platforms/ios");
+        string here = Path.Join(root, "src/toolchain/workload/ios/platform");
         string dest = Environment.GetEnvironmentVariable("Z42_IOS_DEST") ?? "";
         if (dest.Length == 0) {
             string udid = this._firstSimulatorUdid();

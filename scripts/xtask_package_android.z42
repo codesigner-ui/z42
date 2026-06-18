@@ -32,7 +32,7 @@ int _buildRuntimePackageAndroid(string root, string rid, string version, string 
     string cargoTarget = _ridToCargo(rid);
     string abi = _ridToAndroidAbi(rid);
     bool rel = (profile == "release");
-    string androidCrate = Path.Join(root, "src/toolchain/workload/platforms/android/rust");
+    string androidCrate = Path.Join(root, "src/toolchain/workload/android/platform/rust");
     string pkgName = "z42-runtime-" + version + "-" + rid + (rel ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Runtime package: " + pkgName);
@@ -156,7 +156,7 @@ string _ridToAndroidAbi(string rid) {
 // headers are copied as SELF-CONTAINED real runtime headers (not the source-tree
 // forwarding stubs, whose `#include "../../.."` only resolves inside the repo).
 void _pkgEmitAndroidGradleProject(string root, string pkgDir) {
-    string proj = Path.Join(root, "src/toolchain/workload/platforms/android");
+    string proj = Path.Join(root, "src/toolchain/workload/android/platform");
 
     // root gradle files
     foreach (var f in new string[]{ "gradlew", "gradlew.bat", "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "README.md" }) {

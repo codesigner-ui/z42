@@ -28,7 +28,7 @@ dotnet build src/compiler/z42.slnx
 ./xtask test platform wasm build      # ① wasm-pack web/node 两 target
 ./xtask test platform wasm assets     # ② 编 fixtures + 拷 stdlib + files.json
 
-cd src/toolchain/workload/platforms/wasm
+cd src/toolchain/workload/wasm/platform
 # 跑浏览器 demo（无需 Node；任选一个静态服务器）：
 miniserve --index demo/web/index.html .        # 然后开 http://127.0.0.1:8080/
 # 或：dotnet serve -p 8000                      # 开 http://127.0.0.1:8000/demo/web/index.html
@@ -152,11 +152,11 @@ wasm/
 
 ## 与跨平台契约的对齐
 
-本 facade 严格遵守 [`platforms/README.md`](../README.md) 的同形 API + 命名约定：
+本 facade 严格遵守 [`platform-contract.md`](../README.md) 的同形 API + 命名约定：
 
 - 类名 `Z42VM` / `Z42VMModule` / `Z42VMEntry` / `Z42VMValue` / `Z42VMError`（跨平台一致）
 - `ZpkgResolver` 协议：函数或 `{ resolve }` 对象任一
-- 错误码 → `Z42VMError.status` 映射详见 platforms/README.md §错误码映射表
+- 错误码 → `Z42VMError.status` 映射详见 platform-contract.md §错误码映射表
 
 ## 下一步
 

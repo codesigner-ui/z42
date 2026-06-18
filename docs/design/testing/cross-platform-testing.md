@@ -422,7 +422,7 @@ backend 文件），三步可单独调用、共享逻辑只写一份。
 | **② build test assets** | 编 R1–R7 fixtures→.zbc（z42c）+ 收 stdlib zpkg；落点参数化 | 落点不同（desktop 不拷 stdlib，search_paths 直指 _libsDir；wasm 加 `files.json`）|
 | **③ run tests** | 统一 JUnit 报告落点 | runner 不同：desktop→`cc r1_r7.c`+链 libz42.a+跑；wasm→Playwright；iOS→`swift test`/Simulator；Android→gradle `connectedAndroidTest` |
 
-> **desktop（add-desktop-platform-backend, 2026-06-16）**：第 4 个 backend，补桌面 Tier-1 C ABI 的 facade 级 R1–R7（真实外部 C 消费者链 libz42.a，对齐 wasm/iOS/Android）。本地 `./xtask test platform desktop` 7/7 验证 + junit。源 `platforms/desktop/tests/r1_r7.c`。
+> **desktop（add-desktop-platform-backend, 2026-06-16）**：第 4 个 backend，补桌面 Tier-1 C ABI 的 facade 级 R1–R7（真实外部 C 消费者链 libz42.a，对齐 wasm/iOS/Android）。本地 `./xtask test platform desktop` 7/7 验证 + junit。源 `desktop/tests/r1_r7.c`。
 
 ### 接口契约
 
@@ -458,7 +458,7 @@ public interface IPlatformBackend {
 | R6 | 生命周期：重复 init 3× | 3 段输出 |
 | R7 | 多行 stdout | 保序（a\nb\nc）|
 
-状态码↔平台异常映射见 [`platforms/README.md`](../../../src/toolchain/workload/platforms/README.md) §错误码。
+状态码↔平台异常映射见 [`platform-contract.md`](../../../src/toolchain/workload/platform-contract.md) §错误码。
 
 ### CI 聚合 dashboard 方向（地基已铺，传输层延后）
 
