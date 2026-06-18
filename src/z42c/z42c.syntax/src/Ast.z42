@@ -197,6 +197,13 @@ public sealed class ObjNewExpr : Expr {
     }
 }
 
+// GS7：default(T) 表达式（D-8b-3 Phase 2）。Target = 类型表达式（含泛型类型参数）。
+public sealed class DefaultExpr : Expr {
+    public TypeExpr Target;
+    public DefaultExpr(TypeExpr target, Span span) { this.Span = span; this.Target = target; }
+    public override string Dump() { return "(default " + this.Target.Dump() + ")"; }
+}
+
 // GS4：插值字符串节点。InterpPart 基类 → InterpText（纯文本段）/ InterpHole（{expr} 洞）。
 public class InterpPart {
     public Span Span;

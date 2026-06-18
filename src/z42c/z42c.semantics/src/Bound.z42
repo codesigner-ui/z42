@@ -236,6 +236,15 @@ public sealed class BoundNew : BoundExpr {
     }
 }
 
+// GS7：default(T) 零值表达式。ParamIndex ≥ 0 → 泛型类型参数（运行期通过 DefaultOf 指令解析）；-1 → 常量零值。
+public sealed class BoundDefault : BoundExpr {
+    public int      ParamIndex;   // ≥0 = 泛型参数索引；-1 = 常量零值（null/0/false）
+    private Z42Type _type;
+    public BoundDefault(Z42Type type, int paramIndex, Span span) { this.Span = span; this._type = type; this.ParamIndex = paramIndex; }
+    public override Z42Type Type() { return this._type; }
+    public override string  Dump() { return "(default :" + this._type.Name() + ")"; }
+}
+
 public sealed class BoundError : BoundExpr {
     public string Message;
     private Z42Type _type;

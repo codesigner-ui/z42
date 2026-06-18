@@ -12,6 +12,7 @@ public sealed class SymbolCollector {
     public SymbolTable CollectWithImports(CompilationUnit cu, ImportedSymbols imported) {
         var t = new SymbolTable();
         this._passInterfaces(t, cu);
+        this._passEnums(t, cu);
         this._passClassStubs(t, cu);
         this._mergeImports(t, imported);
         this._passMembers(t, cu);
@@ -43,6 +44,8 @@ public sealed class SymbolCollector {
         int c = 0;
         while (c < cuCount) { this._passInterfaces(table, cus[c]); c = c + 1; }
         c = 0;
+        while (c < cuCount) { this._passEnums(table, cus[c]); c = c + 1; }
+        c = 0;
         while (c < cuCount) { this._passClassStubs(table, cus[c]); c = c + 1; }
         // seed imported（成员解析前；G18：兄弟包 imported 类字段/方法类型可解析为 Z42ClassType 而非 Unknown）。
         this._mergeImports(table, imported);
@@ -54,9 +57,46 @@ public sealed class SymbolCollector {
     public SymbolTable Collect(CompilationUnit cu) {
         var table = new SymbolTable();
         this._passInterfaces(table, cu);
+        this._passEnums(table, cu);
         this._passClassStubs(table, cu);
         this._passMembers(table, cu);
         return table;
+    }
+
+    // Pass A-1：枚举类型 + 成员常量（先于类 stub——成员类型解析可能用到枚举）。
+    private void _passEnums(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is EnumDecl) {
+                EnumDecl ed = d as EnumDecl;
+                table.EnumTypes.Put(ed.Name, "enum");
+                long cur = 0;
+                int mi = 0;
+                while (mi < ed.MemberCount) {
+                    EnumMember em = ed.Members[mi];
+                    if (em.HasValue) { cur = this._parseEnumVal(em.Value); }
+                    table.EnumConsts.Put(ed.Name + "." + em.Name, new StrBox(cur.ToString()));
+                    cur = cur + 1;
+                    mi = mi + 1;
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    private long _parseEnumVal(string s) {
+        long r = 0;
+        int i = 0;
+        bool neg = false;
+        if (s.Length > 0 && s.CharAt(0) == '-') { neg = true; i = 1; }
+        while (i < s.Length) {
+            int d = (int)s.CharAt(i) - 48;
+            r = r * 10 + (long)d;
+            i = i + 1;
+        }
+        if (neg) { r = 0 - r; }
+        return r;
     }
 
     // Pass A0：接口 stub（先于类——基表判别要查 Interfaces）（port-z42c-interface）
@@ -128,12 +168,14 @@ public sealed class SymbolCollector {
     // 接口方法签名（体可无；签名同类方法解析）（port-z42c-interface）。
     private void _fillInterface(SymbolTable table, ClassDecl c) {
         Z42InterfaceType it = table.Interfaces.Get(c.Name) as Z42InterfaceType;
+        string[] tp = c.TypeParams.Names;    // 接口类型形参（泛型接口 IFoo<T>：T 列入 paramNames 解析签名）
+        int tpc = c.TypeParams.Count;
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);
             if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
-                it.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, new string[0], 0));
+                it.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, tp, tpc));
             }
             j = j + 1;
         }
@@ -175,6 +217,13 @@ public sealed class SymbolCollector {
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, fstatic, c.Name));
                 // G18：实例字段记有序元数据（声明序 + TSIG 规范拼写 u8[]）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
                 if (!fstatic) { ct.AddOwnField(fd.Name, ExportedTypeExtractor.TsigTypeName(fd.Type), this._vis(fd.Mods)); }
+            } else if (mem is PropertyDecl) {
+                // 属性作为字段处理（type-checking 用；auto-property { get;/set; } 等同只读/读写字段）。
+                PropertyDecl pd = mem as PropertyDecl;
+                Z42Type pft = table.ResolveTypeP(pd.Type, tp, tpc);
+                bool pfstatic = this._hasWord(pd.Mods, "static");
+                ct.Fields.Put(pd.Name, new FieldSymbol(pd.Name, this._vis(pd.Mods), pft, pfstatic, c.Name));
+                if (!pfstatic) { ct.AddOwnField(pd.Name, ExportedTypeExtractor.TsigTypeName(pd.Type), this._vis(pd.Mods)); }
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。

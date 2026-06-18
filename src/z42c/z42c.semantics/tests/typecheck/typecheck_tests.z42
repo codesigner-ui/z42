@@ -423,8 +423,8 @@ void test_constraint_type_param_ref() {
 
 [Test]
 void test_constraint_class_struct_conflict() {
-    // 声明期互斥：class + struct
-    string src = "class Box<T> where T : class, struct { }";
+    // 声明期互斥：class + struct（z42 用 + 分隔多约束）
+    string src = "class Box<T> where T : class + struct { }";
     Assert.Equal(1, SemanticDump.ErrorCount(src));
 }
 

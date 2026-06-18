@@ -255,6 +255,12 @@ public static class ZbcInstr {
             w.WriteU8(Op.ConstNull); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
             return;
         }
+        if (ins is DefaultOfInstr) {
+            DefaultOfInstr i = ins as DefaultOfInstr;
+            w.WriteU8(Op.DefaultOf); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU8(i.ParamIndex);
+            return;
+        }
         if (ins is CopyInstr) {
             CopyInstr i = ins as CopyInstr;
             w.WriteU8(Op.Copy); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);

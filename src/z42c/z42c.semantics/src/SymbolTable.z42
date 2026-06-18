@@ -10,11 +10,15 @@ public sealed class SymbolTable {
     public StrMap Interfaces;       // name → Z42InterfaceType（port-z42c-interface）
     public StrMap Functions;        // name → MethodSymbol（顶层 func）
     public StrMap ClassConstraints; // name → ConstraintSet（2B；仅有 where 子句的泛型类登记）
+    public StrMap EnumTypes;        // name → "enum" 标记（枚举类型名注册）
+    public StrMap EnumConsts;       // "EnumName.MemberName" → 整数值字符串
     public SymbolTable() {
         this.Classes = new StrMap();
         this.Interfaces = new StrMap();
         this.Functions = new StrMap();
         this.ClassConstraints = new StrMap();
+        this.EnumTypes = new StrMap();
+        this.EnumConsts = new StrMap();
     }
 
     public bool          HasClass(string name) { return this.Classes.ContainsKey(name); }

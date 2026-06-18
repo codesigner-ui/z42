@@ -135,6 +135,14 @@ public sealed class ConstNullInstr : IrInstr {
     public override string Dump() { return this.Dst.Dump() + " = const.null"; }
 }
 
+// default(T) 泛型类型参数零值（D-8b-3 Phase 2；opcode 0xB0）。ParamIndex = 类型实参位置（0 起）。
+public sealed class DefaultOfInstr : IrInstr {
+    public TypedReg Dst;
+    public int      ParamIndex;
+    public DefaultOfInstr(TypedReg dst, int paramIndex) { this.Dst = dst; this.ParamIndex = paramIndex; }
+    public override string Dump() { return this.Dst.Dump() + " = default_of " + this.ParamIndex.ToString(); }
+}
+
 // ── 数据移动 ──────────────────────────────────────────────────────────────────────
 public sealed class CopyInstr : IrInstr {
     public TypedReg Dst;
