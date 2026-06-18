@@ -410,6 +410,7 @@ public static class ZbcWriter {
         if (ins is NegInstr) { NegInstr i = ins as NegInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Src); return; }
         if (ins is NotInstr) { NotInstr i = ins as NotInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Src); return; }
         if (ins is ConvertInstr) { ConvertInstr i = ins as ConvertInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Src); return; }
+        if (ins is ToStrInstr) { ToStrInstr i = ins as ToStrInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Src); return; }
         if (ins is BitAndInstr) { BitAndInstr i = ins as BitAndInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.A); ZbcWriter._regtVis(rt, i.B); return; }
         if (ins is BitOrInstr)  { BitOrInstr i = ins as BitOrInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.A); ZbcWriter._regtVis(rt, i.B); return; }
         if (ins is BitXorInstr) { BitXorInstr i = ins as BitXorInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.A); ZbcWriter._regtVis(rt, i.B); return; }

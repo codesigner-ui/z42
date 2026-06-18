@@ -26,6 +26,7 @@ public static class Op {
     public static int Neg = 0x15; public static int Not = 0x18;
     public static int BitAnd = 0x19; public static int BitOr = 0x1A; public static int BitXor = 0x1B;
     public static int BitNot = 0x1C; public static int Shl = 0x1D; public static int Shr = 0x1E;
+    public static int ToStr  = 0x1F;   // GS4 interpolation: dst = src.ToString()
     public static int Call = 0x50; public static int Builtin = 0x51; public static int VCall = 0x52;
     public static int FieldGet = 0x60; public static int FieldSet = 0x61;
     public static int ObjNew = 0x70; public static int IsInstance = 0x71; public static int AsCast = 0x72;
