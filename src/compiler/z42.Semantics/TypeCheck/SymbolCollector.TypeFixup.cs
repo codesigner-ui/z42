@@ -82,6 +82,31 @@ public sealed partial class SymbolCollector
                 if (_interfaces.TryGetValue(p.Name, out var it))  return it;
                 return t;
 
+            // fix-stale-classtype-in-signature (2026-06-18): a signature built
+            // during collection captures whatever `_classes[name]` held at that
+            // moment — for a self/forward reference that is the *skeleton* (or an
+            // intermediate pre-inheritance-merge version) with an empty / partial
+            // Methods dict, because classes are immutable records replaced (not
+            // mutated) as members/inheritance are merged. Left stale, `factory()
+            // .method()` chains (`TypeEnv.Root(s).WithClassGeneric(...)`,
+            // `E.Root().With(5)`) resolve the member against the empty skeleton →
+            // spurious `E0402 has no method` (local) / silent Unknown (imported).
+            // Re-point to the final registry entry — same root-cause Phase-2 fixup
+            // as the PrimType sentinel above. Skip when already the final instance.
+            // Only non-generic class refs: a stale `Z42ClassType` carries no type
+            // args (instantiations are `Z42InstantiatedType`, handled below), so
+            // re-pointing to the registry entry can't lose generic info. Interfaces
+            // are intentionally NOT upgraded here — a generic-interface ref like
+            // `ISubscription<(T) -> void>` carries TypeArgs that the bare registry
+            // entry lacks, so upgrading would strip them (E0402 on the stdlib
+            // Multicast delegates). Interface forward-refs already degrade to a
+            // PrimType sentinel (handled above), not a stale Z42InterfaceType.
+            case Z42ClassType ctRef:
+                if (_classes.TryGetValue(ctRef.Name, out var fullCt)
+                    && !ReferenceEquals(fullCt, ctRef))
+                    return fullCt;
+                return t;
+
             case Z42ArrayType a:
                 var elem = UpgradeType(a.Element);
                 return ReferenceEquals(elem, a.Element) ? a : new Z42ArrayType(elem);

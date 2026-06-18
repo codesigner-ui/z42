@@ -72,6 +72,51 @@ public sealed class SymbolCollectorTypeFixupTests
             .Which.Name.Should().Be("A");
     }
 
+    /// fix-stale-classtype-in-signature (2026-06-18): a self / forward reference
+    /// can degrade not only to a `Z42PrimType` sentinel but to a *stale*
+    /// `Z42ClassType` skeleton — the class is registered (Phase 1) so ResolveType
+    /// returns it, but its Methods dict is still empty because classes are
+    /// immutable records replaced (not mutated) as members are merged. Left stale,
+    /// `E.Root().With(5)` resolves `.With` against the empty skeleton →
+    /// `E0402 type E has no method With` (a valid program wrongly rejected).
+    [Fact]
+    public void SelfRef_StaleClassTypeSkeleton_UpgradedToFullByFinalize()
+    {
+        var diags = new DiagnosticBag();
+        // E.Root() returns E (self-reference); the return type captured during
+        // collection is E's skeleton (no methods yet).
+        var cuE = Parse(
+            "class E { public static E Root() { return new E(); } "
+            + "public E With(int x) { return this; } }", diags);
+
+        var collector = new SymbolCollector(diags);
+        var table = collector.Collect(cuE);
+        collector.FinalizeInheritance();   // runs FinalizeTypeReferences
+
+        // Root's return type must be the FULL E — its Methods dict carries `With`,
+        // so chained `E.Root().With(...)` resolves.
+        var rootRet = table.Classes["E"].StaticMethods["Root"].Signature.Ret;
+        rootRet.Should().BeOfType<Z42ClassType>().Which.Name.Should().Be("E");
+        ((Z42ClassType)rootRet).Methods.Should().ContainKey("With");
+    }
+
+    /// End-to-end: the chained factory call type-checks with no diagnostics.
+    /// Regressing the fixup re-raises `E0402 type E has no method With`.
+    [Fact]
+    public void ChainedFactoryCall_TypeChecks_NoErrors()
+    {
+        var diags = new DiagnosticBag();
+        var cu = Parse(
+            "class E { public static E Root() { return new E(); } "
+            + "public E With(int x) { return this; } "
+            + "public int Use() { var a = E.Root().With(5); return 1; } }", diags);
+
+        // Check() runs the full pipeline (collect + FinalizeTypeReferences + bind).
+        new TypeChecker(diags).Check(cu);
+
+        diags.HasErrors.Should().BeFalse();
+    }
+
     [Fact]
     public void UnknownTypeName_StaysPrimType_NotUpgraded()
     {
