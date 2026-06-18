@@ -285,12 +285,14 @@ public static class ExportedTypeExtractor {
     }
 
     private static ExportedMethodZ _fromSymbol(MethodDecl md, MethodSymbol ms, bool isStatic) {
-        Z42FuncType sig = ms.Signature;
         // G17c-2：TSIG 用原始 AST 源拼写（md.Params/RetType.Dump，镜像 C# TypeExprToString），
         // 非解析后规范名（sig.X.Name）。ctor 的 RetType 是占位 NamedType("")，保留 sig.Ret.Name()="void"。
-        ExportedParamZ[] ps = new ExportedParamZ[sig.ParamCount];
+        // 用 md.ParamCount（AST 实际参数数）而非 sig.ParamCount：重载方法 bare key first-wins 可能
+        // 导致 ms.Signature.ParamCount != md.ParamCount，用 AST 值安全。
+        int pc = md.ParamCount;
+        ExportedParamZ[] ps = new ExportedParamZ[pc];
         int i = 0;
-        while (i < sig.ParamCount) {
+        while (i < pc) {
             ps[i] = new ExportedParamZ("p" + i.ToString(), ExportedTypeExtractor._tsigTypeName(md.Params[i].Type));   // G18d：签名类型规范名
             i = i + 1;
         }
@@ -298,10 +300,11 @@ public static class ExportedTypeExtractor {
         // override 方法的 Modifiers 不含 Virtual）。仅 `virtual` 关键字置位。
         bool isVirtual = ExportedTypeExtractor._hasWord(md.Mods, "virtual");
         bool isAbstract = ExportedTypeExtractor._hasWord(md.Mods, "abstract");
+        Z42FuncType sig = ms.Signature;
         string ret = sig.Ret.Name();
         if (!md.IsCtor) { ret = ExportedTypeExtractor._tsigTypeName(md.RetType); }   // G18d：签名类型规范名（byte[]→u8[]）
         return new ExportedMethodZ(ms.Name, ret, ms.Visibility,
-                                   isStatic, isVirtual, isAbstract, sig.ParamCount, ps, sig.ParamCount);
+                                   isStatic, isVirtual, isAbstract, pc, ps, pc);
     }
 
     private static ExportedFuncZ _extractFunc(MethodDecl md, SymbolTable symbols) {
