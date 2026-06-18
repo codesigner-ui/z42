@@ -53,7 +53,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 ## 当前焦点
 
-**0.3.x 自举线**：以 GC v1 为地基，三主线并行——A（stdlib 重组 + perf）‖ B（**编译器全自举**：7 子系统 byte-identical）‖ C（**反射完整化**：含非泛型 Method.Invoke），尾段五项扩展——boxing 机制 + test-runner 删除 + CI 三平台模拟器 + workload B1/B2，REPL 作为 capstone。详见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-19 扩展）。
+**0.3.x 自举线**：以 GC v1 为地基，三主线并行——A（stdlib 重组 + perf）‖ B（**编译器全自举**：7 子系统 byte-identical）‖ C（**反射完整化**：含非泛型 Method.Invoke），尾段五项扩展——boxing 机制 + test-runner 删除 + CI 三平台模拟器 + workload B1/B2，REPL 作为 capstone。详见 [`plan-0.3.x-three-streams/proposal.md`](spec/archive/2026-06-19-plan-0.3.x-three-streams/proposal.md)（2026-06-19 扩展）。
 
 > **2026-06-07 重排要点**：全端到端自举从 1.0 拉到 0.3.x 作为本线招牌；自举采用「受限写法 + dogfood 补真卡点」（不为自举强制提前整个 0.6/0.7 的 match/LINQ/Result）；REPL 从 0.5.x 拉到 0.3.x capstone。连锁影响见下文 [长期 SemVer 路线](#长期-semver-路线05--10) 重排。
 
@@ -77,7 +77,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 退出标准：（A）stdlib 重组完成 + 每包 bench baseline + 三轮 perf 攻坚；（B）**编译器 7 子系统全部用 z42 重写**，byte-identical CI gate 7 日零飘移 + end-to-end compile-perf median ≤ 3× C#；（C）**反射完整化**（非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举）；（D）**test-runner 删除**（`z42c test` 端到端 GA）；（E）**CI 三平台模拟器**（WASM / iOS Simulator / Android Emulator → JUnit → GitHub Checks 全绿）；（F）**workload B1+B2**（命令发现 + 包格式 + `z42 workload install/list/remove` GA）；（capstone）z42 原生 REPL。
 
-> **完整规划**见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排，supersede 2026-06-05 保守版）。以下为子版本索引。
+> **完整规划**见 [`plan-0.3.x-three-streams/proposal.md`](spec/archive/2026-06-19-plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排，supersede 2026-06-05 保守版）。以下为子版本索引。
 >
 > **B 主线＝本版本招牌（全自举，从原 1.0 拉到 0.3.x）**：7 子系统 = `z42.{Core,Syntax,Project,Driver,Semantics,IR,Pipeline}` 1:1 镜像 C# 项目，源码落 `src/z42c/` 独立顶级目录（与 `src/compiler/` 平级；2026-06-07 User 裁决，覆盖原 `src/z42.compiler/`；子目录名==包名 `z42c.<sub>`，产物 `z42c.<sub>.zpkg`）。**受限写法**：class+虚方法替代 record+match / 循环替代 LINQ / 异常替代 Result；只有自举真卡点才 dogfood 在 z42 里补该特性（禁止 workaround，per `feedback_dogfood_fill_gaps`）。**无桥接**：z42 端只 ship 就绪命令（0.3.4 起 lex/parse/manifest-check、0.3.9 起 build），0.3.x default 编译器仍是 C#，两实现并存逐字节对账。
 >
