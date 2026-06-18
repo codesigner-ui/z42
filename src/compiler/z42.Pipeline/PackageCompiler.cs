@@ -24,7 +24,9 @@ public static partial class PackageCompiler
         bool                  useRelease,
         string?               binFilter,
         bool                  useIncremental = true,
-        bool?                 cliStripOverride = null)
+        bool?                 cliStripOverride = null,
+        bool                  noPublish = false,
+        bool                  publishLib = false)
     {
         if (!TryLoadManifest(explicitToml, out var tomlPath, out var manifest)) return 1;
 
@@ -45,8 +47,14 @@ public static partial class PackageCompiler
             memberLocalBuild: manifest.Build,
             expander:         new PathTemplateExpander());
 
-        string outDir          = layout.EffectiveDistDir;
+        string outDir            = layout.EffectiveDistDir;
         string? explicitCacheDir = layout.EffectiveCacheDir;
+        // restructure-publish-output-dirs (2026-06-19): exe auto-publishes unless --no-publish.
+        // lib does NOT auto-publish on build; it publishes when publishLib=true (z42c publish command).
+        string? publishDir = null;
+        bool isLib = manifest.Project.Kind == ProjectKind.Lib;
+        if (!noPublish && (!isLib || publishLib))
+            publishDir = layout.EffectivePublishDir;
 
         // 1.5b split-debug-symbols: effective `strip` resolution priority:
         //   1) CLI `--strip-symbols=...` override
@@ -81,7 +89,8 @@ public static partial class PackageCompiler
             manifest.Dependencies,
             explicitCacheDir: explicitCacheDir,
             useIncremental:   useIncremental,
-            stripSymbols:     stripSymbols);
+            stripSymbols:     stripSymbols,
+            publishDir:       publishDir);
     }
 
     // ── Workspace mode entry (C4a) ────────────────────────────────────────────
@@ -92,7 +101,9 @@ public static partial class PackageCompiler
     /// </summary>
     public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly,
         bool useIncremental = true, bool stripSymbols = false,
-        IReadOnlyList<string>? workspaceLibDirs = null)
+        IReadOnlyList<string>? workspaceLibDirs = null,
+        bool noPublish = false,
+        bool publishLib = false)
     {
         string profileLabel = useRelease ? "release" : "debug";
         string memberDir    = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
@@ -137,6 +148,12 @@ public static partial class PackageCompiler
         // single-project paths.
         string? cacheDir = member.EffectiveCacheDir;
 
+        // restructure-publish-output-dirs (2026-06-19): exe auto-publishes unless --no-publish.
+        // lib publishes only when publishLib=true (z42c publish command).
+        string? publishDir = null;
+        if (!noPublish && (kind == ZpkgKind.Exe || publishLib))
+            publishDir = member.EffectivePublishDir;
+
         return BuildTarget(
             member.MemberName,
             member.Version,
@@ -150,7 +167,8 @@ public static partial class PackageCompiler
             explicitCacheDir: cacheDir,
             useIncremental: useIncremental,
             stripSymbols:   stripSymbols,
-            workspaceLibDirs: workspaceLibDirs);
+            workspaceLibDirs: workspaceLibDirs,
+            publishDir:       publishDir);
     }
 
     static IReadOnlyList<string> ResolveSourceFilesFromResolved(ResolvedManifest member, string memberDir)

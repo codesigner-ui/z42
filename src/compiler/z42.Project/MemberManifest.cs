@@ -179,12 +179,13 @@ public sealed class MemberManifest
         if (!model.TryGetValue("build", out var raw) || raw is not TomlTable t) return null;
         // restructure-build-output-dirs (2026-06-06): raw nullable dir
         // fields; effective compute in CentralizedBuildLayout.
-        string? outputDir = t.TryGetString("output_dir");
-        string? cacheDir  = t.TryGetString("cache_dir");
-        string? distDir   = t.TryGetString("dist_dir");
-        string  mode      = t.TryGetString("mode")        ?? "interp";
-        bool    inc       = t.TryGetBool("incremental")   ?? true;
-        return new BuildSection(outputDir, cacheDir, distDir, mode, inc);
+        string? outputDir  = t.TryGetString("output_dir");
+        string? cacheDir   = t.TryGetString("cache_dir");
+        string? distDir    = t.TryGetString("dist_dir");
+        string? publishDir = t.TryGetString("publish_dir");
+        string  mode       = t.TryGetString("mode")        ?? "interp";
+        bool    inc        = t.TryGetBool("incremental")   ?? true;
+        return new BuildSection(outputDir, cacheDir, distDir, publishDir, mode, inc);
     }
 
     static IReadOnlyList<MemberDependency>? ParseDependenciesNullable(TomlTable model, string tomlPath)

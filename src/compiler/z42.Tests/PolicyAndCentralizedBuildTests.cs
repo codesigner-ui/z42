@@ -42,12 +42,13 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
 
         var foo = LoadFoo();
         foo.IsCentralized.Should().BeTrue();
-        // restructure-build-output-dirs (2026-06-06): default cascade —
-        // output_dir = workspace_root, dist = ${output_dir}/dist,
-        // cache = ${output_dir}/.cache (+ member subdir anti-collision).
-        foo.EffectiveOutputDir.Should().Be(Path.GetFullPath(_root));
-        foo.EffectiveDistDir.Should().Be(Path.GetFullPath(Path.Combine(_root, "dist")));
-        foo.EffectiveCacheDir.Should().Be(Path.GetFullPath(Path.Combine(_root, ".cache", "foo")));
+        // restructure-publish-output-dirs (2026-06-19): default cascade changed —
+        // output_dir = workspace_root/artifacts/${project_name}/${profile},
+        // dist = ${output_dir}/dist, cache = ${output_dir}/.cache (+ member subdir anti-collision).
+        string expectedOutput = Path.GetFullPath(Path.Combine(_root, "artifacts", "foo", "debug"));
+        foo.EffectiveOutputDir.Should().Be(expectedOutput);
+        foo.EffectiveDistDir.Should().Be(Path.GetFullPath(Path.Combine(expectedOutput, "dist")));
+        foo.EffectiveCacheDir.Should().Be(Path.GetFullPath(Path.Combine(expectedOutput, ".cache", "foo")));
         foo.EffectiveProductPath.Should().Be(Path.Combine(foo.EffectiveDistDir, "foo.zpkg"));
     }
 
@@ -63,7 +64,11 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
         Member("libs/foo", "foo.z42.toml", "[project]\nname = \"foo\"\nkind = \"lib\"\n");
 
         var foo = LoadFoo(profile: "release");
-        foo.EffectiveDistDir.Should().Be(Path.GetFullPath(Path.Combine(_root, "dist", "release")));
+        // restructure-publish-output-dirs (2026-06-19): output_dir default is now
+        // workspace_root/artifacts/foo/release; relative dist_dir "dist/${profile}"
+        // resolves relative to that output_dir → artifacts/foo/release/dist/release.
+        string expectedOutput = Path.GetFullPath(Path.Combine(_root, "artifacts", "foo", "release"));
+        foo.EffectiveDistDir.Should().Be(Path.GetFullPath(Path.Combine(expectedOutput, "dist", "release")));
         foo.EffectiveProductPath.Should().EndWith(Path.Combine("dist", "release", "foo.zpkg"));
     }
 

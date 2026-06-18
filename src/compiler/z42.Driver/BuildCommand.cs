@@ -41,6 +41,8 @@ static class BuildCommand
         // 1.5b split-debug-symbols: CLI override for [profile.*].strip toml field.
         // Bool? semantics: not specified → null → use toml default; --strip-symbols → true; --strip-symbols=false → false.
         var stripOpt       = new Option<bool?>("--strip-symbols", "Strip debug symbols to a sidecar `<name>.zsym` (overrides [profile.*].strip)") { Arity = ArgumentArity.ZeroOrOne };
+        // restructure-publish-output-dirs (2026-06-19): skip auto-publish for exe targets.
+        var noPublishOpt   = new Option<bool>("--no-publish", "Skip copying exe artifact + deps to publish_dir after build");
 
         cmd.AddArgument(manifestArg);
         cmd.AddOption(releaseOpt);
@@ -51,22 +53,70 @@ static class BuildCommand
         cmd.AddOption(noWorkspaceOpt);
         cmd.AddOption(noIncrOpt);
         cmd.AddOption(stripOpt);
+        cmd.AddOption(noPublishOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
-            var manifest = ctx.ParseResult.GetValueForArgument(manifestArg);
-            var release  = ctx.ParseResult.GetValueForOption(releaseOpt);
-            var bin      = ctx.ParseResult.GetValueForOption(binOpt);
-            var packages = ctx.ParseResult.GetValueForOption(packagesOpt) ?? [];
+            var manifest  = ctx.ParseResult.GetValueForArgument(manifestArg);
+            var release   = ctx.ParseResult.GetValueForOption(releaseOpt);
+            var bin       = ctx.ParseResult.GetValueForOption(binOpt);
+            var packages  = ctx.ParseResult.GetValueForOption(packagesOpt) ?? [];
             var workspace = ctx.ParseResult.GetValueForOption(workspaceOpt);
-            var exclude  = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
-            var noWs     = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
-            var noIncr   = ctx.ParseResult.GetValueForOption(noIncrOpt);
-            var stripCli = ctx.ParseResult.GetValueForOption(stripOpt);
+            var exclude   = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
+            var noWs      = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
+            var noIncr    = ctx.ParseResult.GetValueForOption(noIncrOpt);
+            var stripCli  = ctx.ParseResult.GetValueForOption(stripOpt);
+            var noPublish = ctx.ParseResult.GetValueForOption(noPublishOpt);
 
             // Workspace 模式判断（C4a）：显式 path / --no-workspace → 走单工程
-            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false, incremental: !noIncr, stripCli: stripCli)
-                            ?? PackageCompiler.Run(manifest, release, bin, useIncremental: !noIncr, cliStripOverride: stripCli);
+            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false, incremental: !noIncr, stripCli: stripCli, noPublish: noPublish)
+                            ?? PackageCompiler.Run(manifest, release, bin, useIncremental: !noIncr, cliStripOverride: stripCli, noPublish: noPublish);
+        });
+
+        return cmd;
+    }
+
+    /// <summary>
+    /// `z42c publish` — explicit publish command.
+    /// For exe: copies artifact + non-stdlib deps to publish_dir.
+    /// For lib: copies only own .zpkg/.zsym to publish_dir.
+    /// restructure-publish-output-dirs (2026-06-19).
+    /// </summary>
+    public static Command CreatePublish()
+    {
+        var cmd         = new Command("publish", "Stage build artifacts (and exe dependencies) to publish_dir");
+        var manifestArg = ManifestArg();
+        var releaseOpt  = new Option<bool>("--release", "Publish with the release profile");
+        var packagesOpt = new Option<string[]>(["-p", "--package"], "Publish only the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
+        var workspaceOpt = new Option<bool>("--workspace", "Publish all workspace members");
+        var excludeOpt  = new Option<string[]>("--exclude", "Exclude the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
+        var noWorkspaceOpt = new Option<bool>("--no-workspace", "Force standalone mode");
+        var noIncrOpt      = new Option<bool>("--no-incremental", "Disable incremental cache (full rebuild)");
+        var stripOpt       = new Option<bool?>("--strip-symbols", "Strip debug symbols") { Arity = ArgumentArity.ZeroOrOne };
+
+        cmd.AddArgument(manifestArg);
+        cmd.AddOption(releaseOpt);
+        cmd.AddOption(packagesOpt);
+        cmd.AddOption(workspaceOpt);
+        cmd.AddOption(excludeOpt);
+        cmd.AddOption(noWorkspaceOpt);
+        cmd.AddOption(noIncrOpt);
+        cmd.AddOption(stripOpt);
+
+        cmd.SetHandler((InvocationContext ctx) =>
+        {
+            var manifest  = ctx.ParseResult.GetValueForArgument(manifestArg);
+            var release   = ctx.ParseResult.GetValueForOption(releaseOpt);
+            var packages  = ctx.ParseResult.GetValueForOption(packagesOpt) ?? [];
+            var workspace = ctx.ParseResult.GetValueForOption(workspaceOpt);
+            var exclude   = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
+            var noWs      = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
+            var noIncr    = ctx.ParseResult.GetValueForOption(noIncrOpt);
+            var stripCli  = ctx.ParseResult.GetValueForOption(stripOpt);
+
+            // `z42c publish` = build with noPublish=false, publishLib=true (publishes lib and exe)
+            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false, incremental: !noIncr, stripCli: stripCli, noPublish: false, publishLib: true)
+                            ?? PackageCompiler.Run(manifest, release, null, useIncremental: !noIncr, cliStripOverride: stripCli, noPublish: false, publishLib: true);
         });
 
         return cmd;
@@ -578,7 +628,9 @@ static class BuildCommand
         string? explicitManifest,
         bool checkOnly,
         bool incremental = true,
-        bool? stripCli = null)
+        bool? stripCli = null,
+        bool noPublish = false,
+        bool publishLib = false)
     {
         if (noWorkspace) return null;
         if (explicitManifest is not null) return null;       // 显式 path → 单工程
@@ -621,7 +673,9 @@ static class BuildCommand
                 CheckOnly:    checkOnly,
                 Release:      release,
                 Incremental:  incremental,
-                StripSymbols: effectiveStrip);
+                StripSymbols: effectiveStrip,
+                NoPublish:    noPublish,
+                PublishLib:   publishLib);
 
             var report = orchestrator.Build(result, ws.Manifest.DefaultMembers, opts);
 

@@ -226,6 +226,7 @@ public sealed class ManifestLoader
             EffectiveOutputDir   = layout.EffectiveOutputDir,
             EffectiveCacheDir    = layout.EffectiveCacheDir,
             EffectiveDistDir     = layout.EffectiveDistDir,
+            EffectivePublishDir  = layout.EffectivePublishDir,
             EffectiveProductPath = layout.EffectiveProductPath,
         };
 

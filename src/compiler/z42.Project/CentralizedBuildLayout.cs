@@ -4,28 +4,33 @@ namespace Z42.Project;
 /// Compute the effective output directories for a member build.
 ///
 /// restructure-build-output-dirs (2026-06-06): three-field model.
+/// restructure-publish-output-dirs (2026-06-19): four-field model + publish_dir.
 ///
-///     output_dir = member.OutputDir
-///                ?? workspace.OutputDir
-///                ?? workspace_root (workspace mode) / member_dir (single-project mode)
-///     cache_dir  = member.CacheDir
-///                ?? workspace.CacheDir
-///                ?? `${output_dir}/.cache`
-///     dist_dir   = member.DistDir
-///                ?? workspace.DistDir
-///                ?? `${output_dir}/dist`
+///     output_dir   = member.OutputDir
+///                  ?? workspace.OutputDir
+///                  ?? `${workspace_dir}/artifacts/${project_name}/${profile}` (workspace mode)
+///                  ?? `${workspace_dir}/artifacts/${profile}` (single-project mode)
+///     cache_dir    = member.CacheDir
+///                  ?? workspace.CacheDir
+///                  ?? `${output_dir}/.cache`
+///     dist_dir     = member.DistDir
+///                  ?? workspace.DistDir
+///                  ?? `${output_dir}/dist`
+///     publish_dir  = member.PublishDir
+///                  ?? workspace.PublishDir
+///                  ?? `${output_dir}/publish`
 ///
 /// In workspace mode, when `cache_dir` is shared across members and the
-/// template does not include `${member_name}`, the layout appends the
-/// member name as a subdirectory automatically to avoid two members
-/// stomping each other's intermediate `.zbc` files. The same protection
-/// is NOT applied to `dist_dir` — distributable products are named
-/// `<member>.zpkg` so collisions are already avoided.
+/// template does not include `${project_name}` / `${member_name}`, the
+/// layout appends the member name as a subdirectory automatically to avoid
+/// two members stomping each other's intermediate `.zbc` files. The same
+/// protection is NOT applied to `dist_dir` / `publish_dir` — distributable
+/// products are named `<member>.zpkg` so collisions are already avoided.
 ///
 /// All raw values pass through `PathTemplateExpander` so `${workspace_dir}`
-/// / `${profile}` / `${member_name}` / `${output_dir}` are interpolated
-/// before path resolution. Single-project mode skips `${workspace_dir}`
-/// expansion (it has no meaning there).
+/// / `${profile}` / `${member_name}` / `${project_name}` / `${output_dir}`
+/// are interpolated before path resolution. Single-project mode skips
+/// `${workspace_dir}` expansion (it has no meaning there).
 /// </summary>
 public sealed class CentralizedBuildLayout
 {
@@ -34,6 +39,7 @@ public sealed class CentralizedBuildLayout
         string EffectiveOutputDir,
         string EffectiveCacheDir,
         string EffectiveDistDir,
+        string EffectivePublishDir,
         string EffectiveProductPath);
 
     /// <summary>
@@ -62,21 +68,22 @@ public sealed class CentralizedBuildLayout
         BuildSection         build,
         PathTemplateExpander expander)
     {
-        // Single-project context: no workspace_dir; ${output_dir} is the
-        // member dir itself when the raw `output_dir` field is unset.
+        // Single-project context: no workspace_dir; ${workspace_dir} = memberDir.
+        // restructure-publish-output-dirs (2026-06-19): output_dir default changed
+        // from memberDir to `artifacts/${profile}` subdir (no project_name level in
+        // single-project mode since we're already inside the project directory).
         var ctx = new PathTemplateExpander.Context(
-            WorkspaceDir: memberDir,   // 自身作为根（${workspace_dir} 在单工程模式 = memberDir）
+            WorkspaceDir: memberDir,   // ${workspace_dir} in single-project mode = memberDir
             MemberDir:    memberDir,
             MemberName:   memberName,
             Profile:      profile);
 
-        // output_dir
-        string outputRaw = build.OutputDir ?? memberDir;
+        // output_dir: explicit > default `${workspace_dir}/artifacts/${profile}`
+        string outputRaw = build.OutputDir ?? "${workspace_dir}/artifacts/${profile}";
         string outputAbs = ExpandAndResolve(outputRaw, ctx, memberDir, expander, "[build].output_dir");
 
         // cache_dir
         string cacheRaw = build.CacheDir ?? "${output_dir}/.cache";
-        var cacheCtx = ctx with { /* OutputDir 通过专门 expander overload 注入 */ };
         string cacheExpanded = ExpandWithOutputDir(cacheRaw, ctx, outputAbs, expander, "[build].cache_dir");
         string cacheAbs = ResolveAbsolute(cacheExpanded, outputAbs);
 
@@ -85,12 +92,18 @@ public sealed class CentralizedBuildLayout
         string distExpanded = ExpandWithOutputDir(distRaw, ctx, outputAbs, expander, "[build].dist_dir");
         string distAbs = ResolveAbsolute(distExpanded, outputAbs);
 
+        // publish_dir
+        string publishRaw = build.PublishDir ?? "${output_dir}/publish";
+        string publishExpanded = ExpandWithOutputDir(publishRaw, ctx, outputAbs, expander, "[build].publish_dir");
+        string publishAbs = ResolveAbsolute(publishExpanded, outputAbs);
+
         string product = System.IO.Path.Combine(distAbs, $"{memberName}.zpkg");
         return new Layout(
             IsCentralized:        false,
             EffectiveOutputDir:   outputAbs,
             EffectiveCacheDir:    cacheAbs,
             EffectiveDistDir:     distAbs,
+            EffectivePublishDir:  publishAbs,
             EffectiveProductPath: product);
     }
 
@@ -112,12 +125,14 @@ public sealed class CentralizedBuildLayout
         var wsBuild = workspace.WorkspaceBuild;
         string ownerForLog = workspace.ManifestPath;
 
-        // output_dir: member > workspace > workspace_root
+        // output_dir: member > workspace > `${workspace_dir}/artifacts/${project_name}/${profile}`
+        // restructure-publish-output-dirs (2026-06-19): default changed from workspace_root
+        // to artifacts subdirectory to avoid polluting workspace root with build outputs.
         (string outputRaw, string outputField) = memberLocalBuild.OutputDir is { } mo
             ? (mo, "[build].output_dir")
             : wsBuild.OutputDir is { } wo
                 ? (wo, "[workspace.build].output_dir")
-                : (workspaceRoot, "[workspace.build].output_dir(default)");
+                : ("${workspace_dir}/artifacts/${project_name}/${profile}", "[workspace.build].output_dir(default)");
         string outputAbs = ExpandAndResolve(outputRaw, ctx, workspaceRoot, expander, outputField, ownerForLog);
 
         // cache_dir: member > workspace > `${output_dir}/.cache`
@@ -129,9 +144,9 @@ public sealed class CentralizedBuildLayout
         string cacheExpanded = ExpandWithOutputDir(cacheRaw, ctx, outputAbs, expander, cacheField, ownerForLog);
         string cacheAbs = ResolveAbsolute(cacheExpanded, outputAbs);
         // Anti-collision fallback: when raw cache template does not include
-        // ${member_name}, append the member name as a subdir so cache files
-        // from different members don't overwrite each other.
-        if (!cacheRaw.Contains("${member_name}"))
+        // ${member_name} or ${project_name}, append the member name as a subdir
+        // so cache files from different members don't overwrite each other.
+        if (!cacheRaw.Contains("${member_name}") && !cacheRaw.Contains("${project_name}"))
             cacheAbs = System.IO.Path.Combine(cacheAbs, memberName);
 
         // dist_dir: member > workspace > `${output_dir}/dist`
@@ -143,12 +158,22 @@ public sealed class CentralizedBuildLayout
         string distExpanded = ExpandWithOutputDir(distRaw, ctx, outputAbs, expander, distField, ownerForLog);
         string distAbs = ResolveAbsolute(distExpanded, outputAbs);
 
+        // publish_dir: member > workspace > `${output_dir}/publish`
+        (string publishRaw, string publishField) = memberLocalBuild.PublishDir is { } mp
+            ? (mp, "[build].publish_dir")
+            : wsBuild.PublishDir is { } wp
+                ? (wp, "[workspace.build].publish_dir")
+                : ("${output_dir}/publish", "[workspace.build].publish_dir(default)");
+        string publishExpanded = ExpandWithOutputDir(publishRaw, ctx, outputAbs, expander, publishField, ownerForLog);
+        string publishAbs = ResolveAbsolute(publishExpanded, outputAbs);
+
         string product = System.IO.Path.Combine(distAbs, $"{memberName}.zpkg");
         return new Layout(
             IsCentralized:        true,
             EffectiveOutputDir:   outputAbs,
             EffectiveCacheDir:    cacheAbs,
             EffectiveDistDir:     distAbs,
+            EffectivePublishDir:  publishAbs,
             EffectiveProductPath: product);
     }
 

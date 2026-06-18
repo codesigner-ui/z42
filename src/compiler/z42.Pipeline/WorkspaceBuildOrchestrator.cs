@@ -20,7 +20,9 @@ public sealed class WorkspaceBuildOrchestrator
         bool                  CheckOnly,       // --check-only / 'check' 命令
         bool                  Release,
         bool                  Incremental = true,    // --no-incremental → false
-        bool                  StripSymbols = false); // 1.5b: workspace-wide effective strip
+        bool                  StripSymbols = false,  // 1.5b: workspace-wide effective strip
+        bool                  NoPublish = false,     // restructure-publish-output-dirs: --no-publish
+        bool                  PublishLib = false);   // z42c publish: also publish lib targets
 
     public sealed record BuildReport(
         IReadOnlyList<string> Succeeded,
@@ -162,7 +164,7 @@ public sealed class WorkspaceBuildOrchestrator
 
     static int DefaultCompile(ResolvedManifest member, BuildOptions opts, IReadOnlyList<string> workspaceLibDirs)
     {
-        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental, opts.StripSymbols, workspaceLibDirs);
+        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental, opts.StripSymbols, workspaceLibDirs, opts.NoPublish, opts.PublishLib);
     }
 
     static string RelativePath(WorkspaceLoadResult workspace, ResolvedManifest m)

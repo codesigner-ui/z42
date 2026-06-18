@@ -8,7 +8,7 @@
 
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
-| `compiler` | —（空闲）| — | **~~add-desktop-export~~** ✅ 已归档 2026-06-17（WS008 注册 `[platform.desktop].publish_dir` + 删退役 `[apphost]` 段；43 ProjectManifest 测试绿）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
+| `compiler` | —（空闲）| — | **~~restructure-publish-output-dirs~~** ✅ 已归档 2026-06-19（publish_dir 统一；output_dir 默认改 artifacts/${project_name}/${profile}；exe 自动 publish 依赖复制；z42c publish 命令）|
 | `runtime` | —（空闲）| — | **~~runtime-dynamic-load-call~~** ✅ 已归档 2026-06-19（接口落地；VM builtin 延后——见 launcher-command-dispatch.md Deferred workload-future-b2-packaging）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
 | `stdlib` | —（空闲）| — | **~~runtime-dynamic-load-call~~** stdlib 部分 ✅ 2026-06-19（`Std.Runtime` extern 接口已落 z42.core/src/Runtime.z42）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
 | `z42c` | —（空闲）| — | **~~port-z42c-self-compile~~** ✅ 已归档 2026-06-19（G22 7/7 全包 byte-identical 完成；2 stale [ ] 项由 G19a+G22 清零）。**~~scaffold-z42c-selfhost~~** ✅ 已归档 2026-06-19（B0 骨架 + port-z42c-* 系列全完成；30 子任务通过后续变更实现）。（前序：~~mirror-build-output-per-component~~ ✅ 2026-06-16）|
@@ -18,6 +18,7 @@
 
 | change | 子系统（待逐个确认） |
 |--------|---------------------|
+| ~~restructure-publish-output-dirs~~ | compiler —— ✅ 已归档 2026-06-19 |
 | ~~scaffold-z42c-selfhost~~ | z42c + compiler —— ✅ 已归档 2026-06-19（骨架完成；实现通过 port-z42c-* 系列）|
 | ~~port-z42c-core~~ | z42c + toolchain —— ✅ 已归档 2026-06-07（见 spec/archive/2026-06-07-port-z42c-core）|
 | ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|

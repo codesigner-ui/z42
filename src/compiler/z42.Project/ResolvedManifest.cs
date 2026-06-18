@@ -46,6 +46,12 @@ public sealed record ResolvedManifest(
     /// 替代了原 `EffectiveOutDir` 字段。
     /// </summary>
     public string EffectiveDistDir     { get; init; } = "";
+    /// <summary>
+    /// 发布暂存目录（绝对路径）。exe build 自动将产物+非标准库依赖复制至此；
+    /// lib publish 命令将 .zpkg/.zsym 复制至此。默认 `${EffectiveOutputDir}/publish`。
+    /// restructure-publish-output-dirs (2026-06-19).
+    /// </summary>
+    public string EffectivePublishDir  { get; init; } = "";
     /// <summary>该 member 产物完整路径（&lt;EffectiveDistDir&gt;/&lt;name&gt;.zpkg）。</summary>
     public string EffectiveProductPath { get; init; } = "";
 }

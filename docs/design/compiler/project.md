@@ -214,11 +214,12 @@ entry = "MyApp.main"
 pack = false           # 工程级 pack 默认值（最低优先级）
 
 [build]
-# restructure-build-output-dirs (2026-06-06): 三件套字段（output_dir / cache_dir / dist_dir）
-# 都是可选的，未设走级联默认。
-# output_dir = "/build/myproj"   # 顶层根目录（默认 = toml 所在目录）
-# cache_dir  = "/dev/shm/cache"  # 中间产物（默认 ${output_dir}/.cache）
-# dist_dir   = "/build/dist"     # 最终产物（默认 ${output_dir}/dist）
+# restructure-publish-output-dirs (2026-06-19): 四件套字段（output_dir / cache_dir /
+# dist_dir / publish_dir）都是可选的，未设走级联默认。
+# output_dir  = "/build/myproj"      # 顶层根目录（workspace 默认 = artifacts/${project_name}/${profile}）
+# cache_dir   = "/dev/shm/cache"     # 中间产物（默认 ${output_dir}/.cache）
+# dist_dir    = "/build/dist"        # 最终产物（默认 ${output_dir}/dist）
+# publish_dir = "/release/myproj"    # 发布分发目录（默认 ${output_dir}/publish）
 incremental = true     # 启用增量编译，默认 true
 
 [profile.debug]
@@ -230,14 +231,25 @@ pack  = true           # release build → packed zpkg（单文件，dist/<name>
 strip = true           # 默认剥离 DBUG → 配套 <name>.zsym sidecar
 ```
 
-**`[build]` 字段说明（restructure-build-output-dirs, 2026-06-06）：**
+**`[build]` 字段说明（restructure-publish-output-dirs, 2026-06-19）：**
 
-| 字段 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `output_dir` | string? | toml 所在目录（单文件编译 = 源文件目录）| 顶层输出根目录；`${output_dir}` 模板变量解析为此值。CLI `--output-dir` 优先级最高（CLI > manifest > 默认）。 |
-| `cache_dir` | string? | `${output_dir}/.cache` | 中间产物（`.zbc` / 索引 / 增量元数据）。常见用法：单独设 `cache_dir = "/dev/shm/myproj"` 把缓存挪到 tmpfs / RAM disk，`output_dir` 和 `dist_dir` 保持磁盘上的项目目录。 |
-| `dist_dir` | string? | `${output_dir}/dist` | 最终分发产物（`.zpkg` / exe）。替代了 0.1.x 时代的 `out_dir` —— 老字段已删除，命中会触发 WS008 unknown-key 警告。 |
-| `incremental` | bool | `true` | 基于 source hash 跳过未改动文件。 |
+| 字段 | 类型 | 默认（单工程） | 默认（workspace member） | 说明 |
+|------|------|------|------|------|
+| `output_dir` | string? | `${workspace_dir}/artifacts/${profile}` | `${workspace_dir}/artifacts/${project_name}/${profile}` | 顶层输出根目录；`${output_dir}` 模板变量解析为此值。 |
+| `cache_dir` | string? | `${output_dir}/.cache` | `${output_dir}/.cache` (+ member 子目录防碰撞) | 中间产物（`.zbc` / 索引 / 增量元数据）。 |
+| `dist_dir` | string? | `${output_dir}/dist` | `${output_dir}/dist` | 最终分发产物（`.zpkg` + `.zsym`）。替代了 0.1.x 的 `out_dir`。 |
+| `publish_dir` | string? | `${output_dir}/publish` | `${output_dir}/publish` | 发布分发目录。`z42c build`（exe）和 `z42c publish` 将产物 + 非 stdlib 依赖复制到此目录。lib 默认不复制（需显式 `z42c publish`）。 |
+| `incremental` | bool | `true` | `true` | 基于 source hash 跳过未改动文件。 |
+
+**模板变量（`${...}`）**：
+
+| 变量 | 解析为 |
+|------|------|
+| `${workspace_dir}` | workspace 根目录（单工程时 = toml 所在目录） |
+| `${member_dir}` | member toml 所在目录 |
+| `${member_name}` / `${project_name}` | member 的 `[project].name`（两者等价，推荐 `${project_name}`） |
+| `${profile}` | 当前 build profile（`debug` / `release`） |
+| `${output_dir}` | 经展开后的 `output_dir` 绝对路径 |
 
 **三字段级联示例：**
 
@@ -264,7 +276,15 @@ cache_dir  = "/b"
 dist_dir   = "/c"
 ```
 
-**workspace member 继承规则**：member `[build]` 的任一字段 unset → 继承 workspace `[workspace.build]` 的对应字段；workspace 字段 unset → 走全局默认（`${output_dir}/.cache` / `${output_dir}/dist`，其中 `${output_dir}` 在 workspace 模式下默认 = workspace 根）。Workspace 模式下 `cache_dir` 模板若不含 `${member_name}` 会自动追加 member 子目录，避免不同 member 缓存碰撞。
+**workspace member 继承规则**：member `[build]` 的任一字段 unset → 继承 workspace `[workspace.build]` 的对应字段；workspace 字段 unset → 走全局默认。Workspace 模式下 `cache_dir` 模板若不含 `${member_name}` 或 `${project_name}`，会自动追加 member 子目录，避免不同 member 缓存碰撞。
+
+**`z42c build` / `z42c publish` 行为**：
+
+| 命令 | lib | exe |
+|------|-----|-----|
+| `z42c build` | 编译到 `dist_dir`，**不**复制到 `publish_dir` | 编译到 `dist_dir`，自动复制产物 + 非 stdlib 依赖到 `publish_dir` |
+| `z42c build --no-publish` | 同上（不复制） | 只编译到 `dist_dir`，跳过 publish 步骤 |
+| `z42c publish` | 编译 + 复制产物到 `publish_dir` | 编译 + 复制产物 + 非 stdlib 依赖到 `publish_dir` |
 
 **从 0.1.x `out_dir` 迁移**：直接把 `out_dir = "..."` 改成 `dist_dir = "..."`；若值就是 `"dist"`（默认），整行可以删除。pre-1.0 不留 alias —— 老字段触发 WS008 警告 + Levenshtein 建议 `dist_dir`。
 
@@ -327,17 +347,21 @@ z42c build
 
 **调试**：设环境变量 `Z42_INCR_DEBUG=1` 可看到每个文件 cached / miss 详情（miss 原因：no-record / hash-diff / no-zbc / no-export-mod）。
 
-**目录结构（含产物）：**
+**目录结构（含产物，单工程默认）：**
 
 ```
 my-app/
 ├── z42.toml
 ├── src/
 │   └── main.z42
-├── dist/               ← dist_dir（默认 ${output_dir}/dist；加入 .gitignore）
-│   └── my-app.zpkg     ← indexed 或 packed，取决于 pack 设置
-└── .cache/             ← cache_dir（默认 ${output_dir}/.cache；加入 .gitignore）
-    └── src/main.zbc    ← 仅 pack=false 时生成
+└── artifacts/
+    └── debug/              ← output_dir（默认 artifacts/${profile}）
+        ├── dist/           ← dist_dir（默认 ${output_dir}/dist；加入 .gitignore）
+        │   └── my-app.zpkg ← indexed 或 packed，取决于 pack 设置
+        ├── .cache/         ← cache_dir（默认 ${output_dir}/.cache；加入 .gitignore）
+        │   └── src/main.zbc ← 仅 pack=false 时生成
+        └── publish/        ← publish_dir（exe 时 z42c build 自动填充）
+            └── my-app.zpkg
 ```
 
 ---
@@ -701,11 +725,14 @@ description = "..."
 "my-utils" = { path = "libs/my-utils", version = "0.1.0" }
 
 [workspace.build]                        # 集中产物（C3 落地实际行为）
-# restructure-build-output-dirs (2026-06-06): three-field schema; unset =
-# cascade default. workspace_root + "/dist" / "/.cache" 与旧默认等价 ——
+# restructure-publish-output-dirs (2026-06-19): 四件套；unset = 级联默认。
+# 默认等价于：
+#   output_dir  = "artifacts/${project_name}/${profile}"
+#   cache_dir   = "${output_dir}/.cache"
+#   dist_dir    = "${output_dir}/dist"
+#   publish_dir = "${output_dir}/publish"
 # 整段可以省略，留这里只为展示语法。
-dist_dir  = "dist"
-cache_dir = ".cache"
+dist_dir = "dist/${profile}"
 
 [policy]                                 # 强制策略（C3 落地）
 "build.dist_dir" = "dist"
@@ -936,28 +963,41 @@ C4c 同时完成 WS004 完全移除（C3 标记 `[Obsolete]` 后）；归并入 
 
 #### `[workspace.build]` 集中产物布局
 
-workspace 模式下，所有 member 产物**集中**到 workspace 根：
+workspace 模式下，所有 member 产物**集中**到 workspace 根下的 `artifacts/` 子树（restructure-publish-output-dirs 2026-06-19 新默认）：
 
 ```
 <workspace_root>/
-├── dist/                     ← dist_dir (默认 ${output_dir}/dist)
-│   ├── foo.zpkg              （每 member 一份）
-│   ├── bar.zpkg
-│   └── hello.zpkg
-└── .cache/                   ← cache_dir (默认 ${output_dir}/.cache)
-    ├── foo/                  （按 member 分子目录，避免同名源文件冲突）
-    │   └── src/Foo.zbc
+└── artifacts/
+    ├── foo/
+    │   └── debug/               ← output_dir (默认 artifacts/${project_name}/${profile})
+    │       ├── dist/            ← dist_dir (默认 ${output_dir}/dist)
+    │       │   ├── foo.zpkg
+    │       │   └── foo.zsym
+    │       ├── .cache/
+    │       │   └── foo/         ← 防碰撞：cache 追加 member 子目录
+    │       │       └── src/Foo.zbc
+    │       └── publish/         ← publish_dir (默认 ${output_dir}/publish)
+    │           ├── foo.zpkg     （exe 才自动填充；lib 需 z42c publish）
+    │           └── dep.zpkg     （exe 的非 stdlib 依赖）
     ├── bar/
+    │   └── debug/ ...
     └── hello/
+        └── debug/ ...
 ```
 
 ```toml
 # z42.workspace.toml
 [workspace.build]
-# restructure-build-output-dirs (2026-06-06): output_dir / cache_dir /
-# dist_dir 三件套；workspace 默认值都通过级联机制走，不再写死。
-dist_dir = "dist/${profile}"   # ${profile} 模板：debug/release 各自分流
-# output_dir / cache_dir 未设 → 走默认：workspace 根 / ${output_dir}/.cache
+# restructure-publish-output-dirs (2026-06-19): 默认 output_dir 已改为
+# artifacts/${project_name}/${profile}，省略即等价于以下设置：
+# output_dir  = "artifacts/${project_name}/${profile}"
+# cache_dir   = "${output_dir}/.cache"    (+ member 子目录防碰撞)
+# dist_dir    = "${output_dir}/dist"
+# publish_dir = "${output_dir}/publish"
+
+# 若要按 profile 做顶层区分（0.3.x 以前旧默认），显式设置：
+# output_dir = "artifacts/${project_name}/${profile}"
+dist_dir = "dist/${profile}"   # ${profile} 模板示例：debug/release 各自分流
 ```
 
 #### `[policy]` 强制策略
@@ -972,13 +1012,14 @@ dist_dir = "dist/${profile}"   # ${profile} 模板：debug/release 各自分流
 
 **字段路径表达式**（D3.1）：用点分隔的扁平字符串 key。
 
-**默认锁定字段**（D3.2，restructure-build-output-dirs 2026-06-06 扩展为三件套）：
+**默认锁定字段**（D3.2，restructure-publish-output-dirs 2026-06-19 扩展为四件套）：
 
 | 字段路径 | 默认锁定值 |
 |---|---|
 | `build.output_dir` | `[workspace.build].output_dir` |
 | `build.cache_dir` | `[workspace.build].cache_dir` |
 | `build.dist_dir` | `[workspace.build].dist_dir` |
+| `build.publish_dir` | `[workspace.build].publish_dir` |
 
 无需在 `[policy]` 显式声明；自动生效。member 若试图覆盖产物路径 → `WS010`。
 

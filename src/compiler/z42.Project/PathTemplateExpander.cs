@@ -24,6 +24,8 @@ public sealed class PathTemplateExpander
 {
     /// <summary>
     /// 4 个内置变量值的来源容器。
+    /// restructure-publish-output-dirs (2026-06-19): ${project_name} added
+    /// as alias for ${member_name} (clearer naming; both resolve to MemberName).
     /// </summary>
     public sealed record Context(
         string WorkspaceDir,
@@ -48,9 +50,11 @@ public sealed class PathTemplateExpander
         "[build].output_dir",
         "[build].cache_dir",
         "[build].dist_dir",
+        "[build].publish_dir",
         "[workspace.build].output_dir",
         "[workspace.build].cache_dir",
         "[workspace.build].dist_dir",
+        "[workspace.build].publish_dir",
         "[workspace.dependencies].*.path",
         "[dependencies].*.path",
         "[sources].include[]",
@@ -156,6 +160,7 @@ public sealed class PathTemplateExpander
             "workspace_dir" => ctx.WorkspaceDir,
             "member_dir"    => ctx.MemberDir,
             "member_name"   => ctx.MemberName,
+            "project_name"  => ctx.MemberName,   // restructure-publish-output-dirs: alias for member_name
             "profile"       => ctx.Profile,
             _               => throw Z42Errors.UnknownTemplateVariable(filePath, fieldPath, name),
         };

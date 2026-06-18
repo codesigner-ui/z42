@@ -43,6 +43,7 @@ rootCmd.AddCommand(BuildCommand.Create());
 rootCmd.AddCommand(BuildCommand.CreateCheck());
 rootCmd.AddCommand(BuildCommand.CreateRun());
 rootCmd.AddCommand(BuildCommand.CreateClean());
+rootCmd.AddCommand(BuildCommand.CreatePublish()); // restructure-publish-output-dirs (2026-06-19)
 rootCmd.AddCommand(QueryCommands.CreateInfo());
 rootCmd.AddCommand(QueryCommands.CreateMetadata());
 rootCmd.AddCommand(QueryCommands.CreateTree());

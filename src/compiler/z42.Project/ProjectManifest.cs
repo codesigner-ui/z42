@@ -166,10 +166,10 @@ public sealed class ProjectManifest
     {
         "title",
     };
-    // apphost-as-config (2026-06-17): desktop apphost publish (replaces [apphost]).
+    // apphost-as-config (2026-06-17): desktop apphost config (replaces [apphost]).
+    // restructure-publish-output-dirs (2026-06-19): publish_dir moved to [build].
     static readonly HashSet<string> KnownPlatformDesktopKeys = new(StringComparer.Ordinal)
     {
-        "publish_dir",
     };
     static readonly HashSet<string> KnownProjectKeys = new(StringComparer.Ordinal)
     {
@@ -188,7 +188,9 @@ public sealed class ProjectManifest
         // restructure-build-output-dirs (2026-06-06): legacy `out_dir`
         // removed; old field surfaces as WS008 unknown-key + Levenshtein
         // suggestion → `dist_dir`.
-        "output_dir", "cache_dir", "dist_dir", "mode", "incremental",
+        // restructure-publish-output-dirs (2026-06-19): publish_dir added;
+        // moved from [platform.desktop] to [build] for unified publish support.
+        "output_dir", "cache_dir", "dist_dir", "publish_dir", "mode", "incremental",
     };
     static readonly HashSet<string> KnownProfileKeys = new(StringComparer.Ordinal)
     {
@@ -261,7 +263,12 @@ public sealed class ProjectManifest
     /// </summary>
     static readonly Dictionary<string, string> KnownRenames = new(StringComparer.Ordinal)
     {
-        ["out_dir"] = "dist_dir",
+        ["out_dir"]     = "dist_dir",
+        // restructure-publish-output-dirs (2026-06-19): publish_dir moved from
+        // [platform.desktop] to [build]. Old key still detected here for the
+        // [platform.desktop] scanning path (KnownPlatformDesktopKeys is now
+        // empty, so any key in that section triggers WS008).
+        ["publish_dir"] = "publish_dir",  // keep same name, different section
     };
 
     /// <summary>
@@ -496,12 +503,13 @@ public sealed class ProjectManifest
         // in CentralizedBuildLayout / ResolvedManifest. Old `out_dir` is
         // gone — KnownBuildKeys does not list it, so any toml that still
         // sets it surfaces as WS008 unknown-key + Levenshtein suggestion.
-        string? outputDir  = t.TryGetString("output_dir");
-        string? cacheDir   = t.TryGetString("cache_dir");
-        string? distDir    = t.TryGetString("dist_dir");
-        string  mode       = t.TryGetString("mode")        ?? "interp";
-        bool    incremental = t.TryGetBool("incremental")  ?? true;
-        return new BuildSection(outputDir, cacheDir, distDir, mode, incremental);
+        string? outputDir   = t.TryGetString("output_dir");
+        string? cacheDir    = t.TryGetString("cache_dir");
+        string? distDir     = t.TryGetString("dist_dir");
+        string? publishDir  = t.TryGetString("publish_dir");
+        string  mode        = t.TryGetString("mode")        ?? "interp";
+        bool    incremental = t.TryGetBool("incremental")   ?? true;
+        return new BuildSection(outputDir, cacheDir, distDir, publishDir, mode, incremental);
     }
 
     static ProfileSection ParseProfile(
@@ -708,19 +716,22 @@ public sealed record SourcesSection(
 }
 
 /// <summary>
-/// `[build]` section of `.z42.toml`. All three directory fields are raw
+/// `[build]` section of `.z42.toml`. All four directory fields are raw
 /// (unset = `null`); effective absolute paths are computed in
 /// `CentralizedBuildLayout.Resolve` / `ResolvedManifest`.
 ///
 /// restructure-build-output-dirs (2026-06-06): legacy `out_dir` field
 /// retired; replaced by `output_dir` (root) / `cache_dir` (intermediate)
-/// / `dist_dir` (final artifacts). Old `out_dir` triggers WS008 via
-/// `KnownBuildKeys` with a Levenshtein suggestion toward `dist_dir`.
+/// / `dist_dir` (final artifacts).
+/// restructure-publish-output-dirs (2026-06-19): `publish_dir` added for
+/// staged publish output (exe deps copy, lib publish). Default resolved as
+/// `${output_dir}/publish` by CentralizedBuildLayout.
 /// </summary>
 public sealed record BuildSection(
     string? OutputDir   = null,
     string? CacheDir    = null,
     string? DistDir     = null,
+    string? PublishDir  = null,
     string  Mode        = "interp",
     bool    Incremental = true
 );

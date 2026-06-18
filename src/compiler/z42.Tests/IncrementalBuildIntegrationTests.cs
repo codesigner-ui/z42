@@ -133,8 +133,9 @@ public sealed class IncrementalBuildIntegrationTests
         //   MethodInfo,ParameterInfo}.z42，63 → 67。
         // 2026-06-09 add-attribute-reflection 新增 Attribute.z42，67 → 68。
         // 2026-06-09 add-reflection-properties 新增 Reflection/PropertyInfo.z42，68 → 69。
+        // 2026-06-19 feat(stdlib): Std.Runtime 接口落地 新增 Runtime.z42，69 → 70。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/69");
+        err2.Should().Contain("cached: 0/70");
     }
 }

@@ -265,20 +265,24 @@ public sealed class ProjectManifestTests : IDisposable
     [Fact]
     public void DesktopPlatform_KnownSection_NoWarning()
     {
-        // apphost-as-config (2026-06-17): [platform.desktop] + publish_dir are a
-        // known section/key (consumed by `z42 export desktop`, not z42c) → no
-        // WS008. Replaces the retired [apphost] section.
+        // restructure-publish-output-dirs (2026-06-19): publish_dir moved from
+        // [platform.desktop] to [build]. [platform.desktop] is still a known
+        // subsection (no WS008 for the section itself), but it now has no
+        // recognized keys, so any key there (including old publish_dir) triggers
+        // WS008. [build].publish_dir is the new home and must be warning-free.
         var result = LoadWithWarnings("xtask.z42.toml", """
             [project]
             name = "xtask"
             kind = "exe"
             entry = "Xtask.Main"
 
-            [platform.desktop]
+            [build]
             publish_dir = ".."
+
+            [platform.desktop]
             """);
-        result.Warnings.Should().NotContain(w => w.Message.Contains("desktop"));
         result.Warnings.Should().NotContain(w => w.Message.Contains("publish_dir"));
+        result.Warnings.Should().NotContain(w => w.Message.Contains("desktop"));
     }
 
     [Fact]

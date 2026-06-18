@@ -30,7 +30,8 @@ public static partial class PackageCompiler
         string?               explicitCacheDir = null,
         bool                  useIncremental = true,
         bool                  stripSymbols = false,
-        IReadOnlyList<string>? workspaceLibDirs = null)
+        IReadOnlyList<string>? workspaceLibDirs = null,
+        string?               publishDir = null)
     {
         // L3-G4g: libsDirs includes projectDir/libs, projectDir/artifacts/z42/libs,
         // plus a walk-up search for the repo-level `artifacts/z42/libs` so stdlib
@@ -196,7 +197,81 @@ public static partial class PackageCompiler
         if (sidecarPath is not null)
             Console.Error.WriteLine($"wrote → {sidecarPath}");
         Console.Error.WriteLine($"    Finished → {outDir}");
+
+        // restructure-publish-output-dirs (2026-06-19): auto-publish step.
+        // For exe: copy exe.zpkg + .zsym (if present) + non-stdlib deps to publishDir.
+        // For lib: copy only own .zpkg + .zsym when publishDir is set explicitly.
+        if (publishDir is not null)
+            PublishToDir(zpkgPath, sidecarPath, kind, dependencies, libsDirs, publishDir);
+
         return 0;
+    }
+
+    /// <summary>
+    /// Stage compiled artifacts (and for exe: non-stdlib deps) to <paramref name="publishDir"/>.
+    /// For exe: copies exe.zpkg + .zsym + all non-stdlib dependency .zpkg files.
+    /// For lib: copies only own lib.zpkg + .zsym (caller is responsible for deciding when to call).
+    /// </summary>
+    static void PublishToDir(
+        string zpkgPath,
+        string? sidecarPath,
+        ZpkgKind kind,
+        IReadOnlyList<ZpkgDep> dependencies,
+        string[] libsDirs,
+        string publishDir)
+    {
+        Directory.CreateDirectory(publishDir);
+
+        // Copy own artifact
+        string destZpkg = Path.Combine(publishDir, Path.GetFileName(zpkgPath));
+        File.Copy(zpkgPath, destZpkg, overwrite: true);
+        Console.Error.WriteLine($"publish → {destZpkg}");
+
+        if (sidecarPath is not null && File.Exists(sidecarPath))
+        {
+            string destSym = Path.Combine(publishDir, Path.GetFileName(sidecarPath));
+            File.Copy(sidecarPath, destSym, overwrite: true);
+            Console.Error.WriteLine($"publish → {destSym}");
+        }
+
+        // For exe: copy non-stdlib dependencies (stdlib = name starts with "z42.")
+        if (kind == ZpkgKind.Exe)
+        {
+            foreach (var dep in dependencies)
+            {
+                string depFile = dep.File;
+                string depName = Path.GetFileNameWithoutExtension(depFile);
+                if (depName.StartsWith("z42.", StringComparison.Ordinal)) continue;
+
+                // Find the dep in libsDirs
+                string? depPath = null;
+                foreach (var dir in libsDirs)
+                {
+                    string candidate = Path.Combine(dir, depFile);
+                    if (File.Exists(candidate)) { depPath = candidate; break; }
+                }
+                if (depPath is null) continue;
+
+                string destDep = Path.Combine(publishDir, depFile);
+                File.Copy(depPath, destDep, overwrite: true);
+                Console.Error.WriteLine($"publish → {destDep}");
+
+                // Also copy .zsym sidecar for the dep if present
+                string depSymFile = Path.ChangeExtension(depFile, ".zsym");
+                string? depSymPath = null;
+                foreach (var dir in libsDirs)
+                {
+                    string candidate = Path.Combine(dir, depSymFile);
+                    if (File.Exists(candidate)) { depSymPath = candidate; break; }
+                }
+                if (depSymPath is not null)
+                {
+                    string destDepSym = Path.Combine(publishDir, depSymFile);
+                    File.Copy(depSymPath, destDepSym, overwrite: true);
+                    Console.Error.WriteLine($"publish → {destDepSym}");
+                }
+            }
+        }
     }
 
     // ── Build target sub-steps ────────────────────────────────────────────────

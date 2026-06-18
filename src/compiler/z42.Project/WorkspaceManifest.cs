@@ -147,15 +147,16 @@ public sealed class WorkspaceManifest
             return WorkspaceBuildShared.Default;
 
         // restructure-build-output-dirs (2026-06-06): three dir fields are
-        // raw (unset = null); effective compute lives in
-        // CentralizedBuildLayout. Workspace `out_dir` is gone.
-        string? outputDir = t.TryGetString("output_dir");
-        string? cacheDir  = t.TryGetString("cache_dir");
-        string? distDir   = t.TryGetString("dist_dir");
-        bool    inc       = t.TryGetBool("incremental") ?? true;
-        string  mode      = t.TryGetString("mode")      ?? "interp";
+        // raw (unset = null); effective compute lives in CentralizedBuildLayout.
+        // restructure-publish-output-dirs (2026-06-19): publish_dir added.
+        string? outputDir  = t.TryGetString("output_dir");
+        string? cacheDir   = t.TryGetString("cache_dir");
+        string? distDir    = t.TryGetString("dist_dir");
+        string? publishDir = t.TryGetString("publish_dir");
+        bool    inc        = t.TryGetBool("incremental") ?? true;
+        string  mode       = t.TryGetString("mode")      ?? "interp";
 
-        return new WorkspaceBuildShared(outputDir, cacheDir, distDir, inc, mode);
+        return new WorkspaceBuildShared(outputDir, cacheDir, distDir, publishDir, inc, mode);
     }
 
     static IReadOnlyDictionary<string, object> ParsePolicy(TomlTable model)
@@ -208,19 +209,18 @@ public sealed record WorkspaceDeclaredDep(
 ///
 /// restructure-build-output-dirs (2026-06-06): three dir fields
 /// (`OutputDir` / `CacheDir` / `DistDir`) are raw (unset = null);
-/// effective absolute paths are computed in `CentralizedBuildLayout`
+/// restructure-publish-output-dirs (2026-06-19): `PublishDir` added.
+/// Effective absolute paths are computed in `CentralizedBuildLayout`
 /// with member values overriding when set, otherwise falling back to
-/// these workspace defaults, otherwise to global defaults
-/// (`output_dir` → workspace_root, `cache_dir` → `${output_dir}/.cache`,
-/// `dist_dir` → `${output_dir}/dist`). Old `OutDir` field (default
-/// `"dist"`) retired with the project-level rename.
+/// these workspace defaults, otherwise to global defaults.
 /// </summary>
 public sealed record WorkspaceBuildShared(
     string? OutputDir,
     string? CacheDir,
     string? DistDir,
+    string? PublishDir,
     bool    Incremental,
     string  Mode)
 {
-    public static WorkspaceBuildShared Default => new(null, null, null, true, "interp");
+    public static WorkspaceBuildShared Default => new(null, null, null, null, true, "interp");
 }
