@@ -11,13 +11,12 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{exit, Command};
 
-// Shared "locate z42 home / vm" primitives + app run path now live in
-// z42-hostrun; re-exported so existing `z42_launcher::{...}` callers (the `z42`
-// bin, the apphost stub) keep working until apphost moves to the workload (step 2).
-pub use z42_hostrun::{
-    env_z42_home, exec_app, home_z42, probe_app_runtime, resolve_app_runtime,
-    resolve_app_runtime_in, vm_name, AppRuntime,
-};
+// "locate z42 home / vm" primitives from z42-hostrun. `vm_name` is re-exported
+// (the `z42` bin imports `z42_launcher::vm_name`); the rest are internal helpers.
+// The app run path (exec_app / resolve_app_runtime / …) now lives entirely in
+// z42-hostrun, consumed directly by the workload-owned apphost stub.
+use z42_hostrun::{env_z42_home, home_z42};
+pub use z42_hostrun::vm_name;
 
 /// Trampoline's `$Z42_HOME`: env override, else `$HOME/.z42`, else `./.z42`.
 pub fn z42_home() -> PathBuf {
