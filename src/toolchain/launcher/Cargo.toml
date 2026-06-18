@@ -7,7 +7,9 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-# Shared host-resolve/exec logic for both bins (add-apphost).
+# Host-resolve/exec logic for the `z42` trampoline. The apphost stub moved to
+# the desktop workload (src/toolchain/workload/desktop/platform/apphost); both
+# share the app run path via z42-hostrun (apphost-to-workload, 2026-06-18).
 [lib]
 name = "z42_launcher"
 path = "src/lib.rs"
@@ -16,17 +18,8 @@ path = "src/lib.rs"
 name = "z42"
 path = "src/main.rs"
 
-# Per-app apphost stub template (add-apphost). `z42 publish desktop` copies this
-# binary and patches its embedded target placeholder with the app's zpkg path.
-# NB: lives at src/apphost.rs (NOT src/bin/) — `.gitignore` ignores `bin/`.
-[[bin]]
-name = "apphost"
-path = "src/apphost.rs"
-
 [dependencies]
-# App run path (locate z42vm + run app zpkg directly), shared with the apphost
-# stub. Extracted from this crate's lib so the workload-owned apphost can reuse
-# it without depending on the launcher (apphost-to-workload, 2026-06-18).
+# Shared "locate z42 home / vm" primitives used by the trampoline.
 z42-hostrun = { path = "../../runtime/crates/z42-hostrun" }
 
 [profile.release]

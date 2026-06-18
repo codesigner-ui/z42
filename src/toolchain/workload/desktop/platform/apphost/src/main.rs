@@ -20,7 +20,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-use z42_launcher::{exec_app, resolve_app_runtime};
+use z42_hostrun::{exec_app, resolve_app_runtime};
 
 /// 32-byte sentinel the patcher greps for in the on-disk binary. Followed by a
 /// 992-byte payload holding the NUL-terminated app zpkg path (relative to the

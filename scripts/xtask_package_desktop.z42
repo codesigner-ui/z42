@@ -53,6 +53,9 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     c = _cargo(rel, "build", "src/toolchain/launcher/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _copyIfExists(Path.Join(cargoOut, "z42"), Path.Join(pkgDir, "z42"));
     _copyIfExists(Path.Join(cargoOut, "z42.exe"), Path.Join(pkgDir, "z42.exe"));
+    // apphost stub now lives in the desktop workload (z42-apphost crate); build it
+    // into the same target dir so _buildDesktopWorkload picks up cargoOut/apphost.
+    c = _cargo(rel, "build", "src/toolchain/workload/desktop/platform/apphost/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _makeExe(Path.Join(pkgDir, "bin/z42c"));
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     _makeExe(Path.Join(pkgDir, "z42"));
@@ -98,7 +101,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
 // CI then COLLECTS all RIDs' stubs into ONE z42-workload-<v>-desktop package so
 // any host can `publish --rid <target>` (cross-platform apphost output). No target
 // runtime pack — desktop reuses the host runtime (`z42 install <ver>`). The apphost
-// binary is cargo-built by _packageDesktop's launcher build; it lands here, not in SDK bin/.
+// binary is cargo-built by _packageDesktop's z42-apphost crate build; it lands here, not in SDK bin/.
 int _buildDesktopWorkload(string root, string rid, string version, string profile) {
     string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
@@ -114,7 +117,7 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
     string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
     string stub = Path.Join(cargoOut, srcExe);
     if (!File.Exists(stub)) {
-        ConsoleError.WriteLine("error: apphost stub not built at " + stub + "; run launcher cargo build first");
+        ConsoleError.WriteLine("error: apphost stub not built at " + stub + "; run the z42-apphost crate cargo build first");
         return 1;
     }
     File.Copy(stub, Path.Join(pkgDir, dstExe));
