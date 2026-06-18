@@ -9,8 +9,8 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | **~~add-desktop-export~~** ✅ 已归档 2026-06-17（WS008 注册 `[platform.desktop].publish_dir` + 删退役 `[apphost]` 段；43 ProjectManifest 测试绿）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
-| `runtime` | **runtime-dynamic-load-call（进行中）** | 2026-06-18 | on-demand 地基:`__load_zpkg` + `__call_static`(固定签名,无 Invoke)。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
-| `stdlib` | **runtime-dynamic-load-call（进行中）** | 2026-06-18 | 同上(跨子系统：`Std.Runtime.LoadZpkg`/`CallStatic` extern)。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
+| `runtime` | **runtime-dynamic-load-call（进行中）** | 2026-06-18 | on-demand 地基:`__load_zpkg` + `__call_static`(固定签名,无 Invoke)。VM builtin 实现延后（前置：反射 MVP + 编译器自举）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
+| `stdlib` | —（空闲）| — | **~~runtime-dynamic-load-call~~** stdlib 部分 ✅ 2026-06-19（`Std.Runtime` extern 接口已落 z42.core/src/Runtime.z42；VM builtin 实现延后，stdlib 锁释放）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
 | `toolchain` | —（空闲）| — | **~~clarify-launcher-command-face~~ ✅ 已归档 2026-06-17**（实装 `z42 list --workloads`；命令面 `update`/`use`/`workload update` 标 planned——真特性需 latest/pin resolution 未建）。**~~dry-ci-release-index~~ ✅ 已归档 2026-06-17** |
 
