@@ -111,11 +111,23 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
   - **剩余 GS1 层**（z42.core byte-identical 前需补全）：① SymbolCollector/签名记录 optional 参数 + minArgCount；② TypeChecker 调用点省略可选参 → 填默认值（镜像 C# BindArgsReordered 的 `BoundDefault` fallback）；③ codegen 调用点 emit 默认值；④ SIGS/export minArgCount 字节对齐。
 - [x] **GS3 本地方法重载 Name$arity 键注册**（4 文件：SymbolCollector + TypeChecker + IrGen + ExportedTypeExtractor）：① `SymbolCollector._passMembers` 改用 `regName`（unique→bare，重载→Name$arity；镜像 C# SymbolCollector）；② `TypeChecker` 绑方法体时优先试 Name$arity 键（fallback bare），body 键同步用 mkey；③ `IrGen.EmitFunction` 函数名用方法符号键（mangled），body 查表同步；④ `ExportedTypeExtractor._extractClass` 从 `ct.Methods`/`ct.StaticMethods` **符号映射**迭代（含全重载键），不回 AST decl。**compiler-z42 gate 全绿：7/7 source + 6/6 zpkg byte-identical（7 包自有无重载，新路径零回归）**。
 - [x] **GS4 插值字符串 `$"...{expr}..."`（9 文件端到端）**：① `ZbcFormat.z42` + `ZbcInstr.z42` + `ZbcWriter.z42` + `IrInstr.z42`：加 `ToStrInstr`（opcode 0x1F，`_un` 格式 dst+src）；② `Ast.z42`：加 `InterpPart`/`InterpText`/`InterpHole`/`InterpolatedStringExpr` AST 节点；③ `Parser.z42`：`InterpolatedStringLiteral` token → `_parseInterpolated`（sub-Parser 解析每个 `{expr}` 洞，支持 `\\n/t/r/\\/"/{{}}/}}` 转义）；④ `Bound.z42`：加 `BoundInterpPart`/`BoundInterpText`/`BoundInterpHole`/`BoundInterpolatedStr`；⑤ `TypeChecker.z42`：`_bindInterpolatedStr`（每文本段→BoundInterpText，每洞→递归 _bindExpr→BoundInterpHole；结果类型 string）；⑥ `ExprEmitter.z42`：`_emitInterpolation`（每段 ConstStr 或 ToStr+innerReg，链式 StrConcatInstr 合并）。**compiler-z42 gate 全绿 7/7+6/6（Assert.z42 $"..." 现能编译无错）**。
-- [ ] **GS5 Dictionary.z42 泛型类支持**（z42.core 72 errors，需修 z42c）：① Parser 支持 indexer 声明 `public TValue this[TKey key] { get {...}; set {...} }`（`_parseMemberBody` 在类型后见 `this` 关键字 → 解析 indexer，产 IndexerDecl 或复用 PropertyDecl+名="this"）；② TypeChecker `_bindMember` + `_bindMemberCall` 处理 `Z42GenericParamType` receiver（方法调用/成员访问退化为 object 行为：ToString/GetHashCode/Equals 走 prim wrapper，其余 → `Z42UnknownType`）；③ 泛型实例化类型 `KeyValuePair<TKey, TValue>` 解析（`Z42InstantiatedType`）。gate 7/7 必须保持绿。
+- [x] **GS5-batch z42.core 零错 dogfood gap-batch（Parser+Semantics，2026-06-19）**：GS3/GS4 后 z42.core 剩余缺口，逐错补齐：
+  - **Parser 限定类型名变量声明**（`_isVarDeclStart`）：`Qualified.Type[] ident` 前瞻（q.dot.q.dot…ident + []? + ident + = / ;）。触发：`Std.Attribute[]` 局部变量。
+  - **Parser 后置 ++ / --**（`_parseExpr` while-loop Led 入口）：`TokenKind.PlusPlus/MinusMinus` → 消费 + `UnaryExpr(op, left)`（无右操作数）。触发：`for (…; i++) {` incr 表达式。
+  - **SymbolCollector 枚举 pass**（`_passEnums`，先于 classStub）：`EnumDecl` → `EnumTypes.Put` + 成员常量值 `EnumConsts.Put("Name.Member", StrBox(cur))`。
+  - **SymbolCollector PropertyDecl 作字段**（`_fillClass` 新 branch）：属性（`{ get; }`/`{ set; }` auto-property）mirror 字段处理（`FieldSymbol` + `AddOwnField`）。触发：`String.Length`、`Array.Length` 等属性。
+  - **SymbolTable EnumTypes / EnumConsts**：新增两个 StrMap 字段（构造器初始化）。
+  - **BinaryTypeTable 基元包装 struct 支持**（`TypeFacts._asPrimName` + `_structPrimName`）：`Boolean/Byte/Int32/Int64/…` BCL 名 → 对应基元名，使 `IsNumeric/IsIntegral/IsOrderable/IsBool` 接受 `Z42ClassType` 基元包装类。触发：`Boolean` 三目 / `Byte`/`Char` 比较。
+  - **TypeChecker 枚举绑定**：`IdentExpr` 查 `EnumTypes`（防 undefined 错）；`MemberExpr` `EnumName.MemberName` → `BoundLitInt`（`EnumConsts` 值）。
+  - **TypeChecker 同类未限定 static 方法调用**（`_bindCall` IdentExpr 分支）：`env.CurrentClass()` → 查 `ct.Methods` → 找到 static 方法 → `BoundCall("static")`。触发：`Platform.z42 OSKindValue()` 自调用。
+  - **TypeChecker ForStmt 脱糖**（`_bindStmt` 新分支）：`for(init;cond;incr) body` → `{ init; while(cond) { body; incr; } }`（含 `_loopDepth` 管理 + `BoundLitBool(true)` 无条件 for）。
+  - **TypeChecker 隐式 Object 基类**（`_findMethod` / `_findField`）：无显式 base 的 class 在 base 链末段回退查 `Object`（`Object.GetType()/Equals()/ToString()` 等）。触发：`Attribute.GetType()`。
+  - **🎉 z42.core 全 69 文件零错 + gate 7/7 byte-identical 绿（commit 9761d8c8）**。
 
 ## 验证
 - [x] G9：`xtask test compiler-z42` 全绿（byte-compare 7/7 + zpkg 6/6 无回归）
 - [x] 里程碑：z42c 能编译 z42c.core 全部源（无 error，双路均成功）
+- [x] 里程碑 II-a：z42c 编译 z42.core 全 69 文件零错（GS5-batch 全部缺口补齐，2026-06-19；gate 7/7 byte-identical 绿 commit 9761d8c8）
 
 ## 备注
 - 占用 z42c 锁（延续自举主线）。byte-identical 对账留各包能编译后再逐包验。
