@@ -100,19 +100,41 @@ SubcommandRouter _launcherRoot() {
     pub.AddOption("output", "", "output dir (overrides [platform.*].publish_dir)", "");
     root.Add("publish", "produce a release deployable (--rid selects platform)", pub);
 
-    ArgParser exp = new ArgParser("z42 export", "generate a native IDE project (--rid selects the platform)");
-    exp.AddPositional("project", "<project.z42.toml>");
-    exp.AddOption("rid", "", "target RID (e.g. ios-arm64 / android-arm64 / browser-wasm)", "");
-    exp.AddOption("output", "", "output directory", "");
-    exp.AddOption("sdk-ver", "", "platform SDK version to use", "");
-    exp.AddOption("bundle-id", "", "iOS CFBundleIdentifier (ios only)", "");
-    exp.AddOption("app-id", "", "Android application ID (android only)", "");
-    exp.AddOption("entry", "", "wasm entry point e.g. Hello.Main (wasm only)", "");
-    root.Add("export", "generate a native IDE project (--rid selects platform)", exp);
+    // export = native IDE project per platform FAMILY (Xcode/Gradle/web cover all
+    // arches of a family) → per-platform subcommand (`export ios`), not `--rid`
+    // (which is arch-level, used by publish/run). define-cli-command-model 2026-06-18.
+    root.AddRouter("export", "generate a native IDE project (ios / android / wasm)", _exportRouter());
 
     root.AddRouter("workload", "install / list / uninstall platform workloads", _workloadRouter());
 
     return root;
+}
+
+SubcommandRouter _exportRouter() {
+    SubcommandRouter e = new SubcommandRouter("z42 export", "generate a native IDE project (ios / android / wasm)");
+
+    ArgParser ios = new ArgParser("z42 export ios", "generate an Xcode project");
+    ios.AddPositional("project", "<project.z42.toml>");
+    ios.AddOption("output", "", "output directory", "");
+    ios.AddOption("sdk-ver", "", "platform SDK version to use", "");
+    ios.AddOption("bundle-id", "", "iOS CFBundleIdentifier", "");
+    e.Add("ios", "generate an Xcode project", ios);
+
+    ArgParser android = new ArgParser("z42 export android", "generate a Gradle project");
+    android.AddPositional("project", "<project.z42.toml>");
+    android.AddOption("output", "", "output directory", "");
+    android.AddOption("sdk-ver", "", "platform SDK version to use", "");
+    android.AddOption("app-id", "", "Android application ID", "");
+    e.Add("android", "generate a Gradle project", android);
+
+    ArgParser wasm = new ArgParser("z42 export wasm", "generate a web/npm project");
+    wasm.AddPositional("project", "<project.z42.toml>");
+    wasm.AddOption("output", "", "output directory", "");
+    wasm.AddOption("sdk-ver", "", "platform SDK version to use", "");
+    wasm.AddOption("entry", "", "wasm entry point e.g. Hello.Main", "");
+    e.Add("wasm", "generate a web/npm project", wasm);
+
+    return e;
 }
 
 SubcommandRouter _workloadRouter() {
@@ -154,7 +176,15 @@ void _dispatchLauncher(CommandResolution res) {
     if (top == "uninstall")   { _cmdUninstall(r);  return; }
     if (top == "self-update") { _cmdSelfUpdate(r); return; }
     if (top == "publish")   { _cmdPublish(r);   return; }   // leaf: --rid selects platform
-    if (top == "export")    { _cmdExport(r);    return; }   // leaf: --rid selects platform
+    if (top == "export") {
+        // p = ["export", "ios"|"android"|"wasm"]
+        if (p.Length < 2) { return; }
+        string esub = p[1];
+        if (esub == "ios")     { _cmdExportIos(r);     return; }
+        if (esub == "android") { _cmdExportAndroid(r); return; }
+        if (esub == "wasm")    { _cmdExportWasm(r);    return; }
+        return;
+    }
     if (top == "workload") {
         // p = ["workload", "install"|"list"|"uninstall"]
         if (p.Length < 2) { return; }

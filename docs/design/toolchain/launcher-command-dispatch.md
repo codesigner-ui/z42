@@ -2,6 +2,10 @@
 
 > ⚠️ **前瞻设计草案（未实施）**。为把 `z42` 从"固定几条内建命令的 muxer"演进成可扩展命令分发器（new/build/publish/test/workload/平台打包…）铺路。落地开 spec。
 
+> **裁决（2026-06-18，define-cli-command-model）**：官方四平台（desktop/ios/android/wasm）是**一等支持、固定不变** → 各平台的 build/export/publish 逻辑做成 **`z42.workload.<plat>` 包并由 launcher 编译期依赖（baked-in）**，见 `src/toolchain/workload/<plat>/appbuilder/`。**本文的目录发现 + spawn 机制（Decision 2/4）因此降级为 deferred**——仅当未来需支持**第三方 / 可插拔平台**时才实施（YAGNI：官方平台不会动态新增，baked 不臃肿、不需 drop-in）。
+> 不受影响、保留：**runtime pack 按需下载**（`z42 workload install ios` 拉 xcframework/.so 原生资产，体积大不入 base，见 [runtime-workload-distribution.md](runtime-workload-distribution.md)）。
+> 命令形态：**`export <plat>` 子命令**（IDE 工程是平台族级）；**`publish|run --rid <rid>`**（部署件是 arch 级）。
+
 ## 问题
 
 `z42` 要分发越来越多命令：创建项目、编译、导出平台工程、打包发布、下载 workload/runtime…… 全 baked 进 launcher 会让它臃肿、与编译器/平台发布节奏强耦合、且每加一个平台就要重编 launcher。需要一套"目录发现 + 命令行注册"并存的机制。

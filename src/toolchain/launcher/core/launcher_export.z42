@@ -221,24 +221,10 @@ void _cmdPublishDesktop(ParseResult r, string rid) {
     Console.WriteLine("✅ apphost ready: " + outPath);
 }
 
-// export: generate a native IDE project. `--rid`'s category selects the platform.
-void _cmdExport(ParseResult r) {
-    string rid = r.GetOption("rid");
-    if (rid.Length == 0) {
-        ConsoleError.WriteLine("z42 export: --rid required (ios-arm64 / android-arm64 / browser-wasm)");
-        Environment.Exit(2); return;
-    }
-    string cat = _ridCategory(rid);
-    if (cat == "ios")     { _cmdExportIos(r);     return; }
-    if (cat == "android") { _cmdExportAndroid(r); return; }
-    if (cat == "wasm")    { _cmdExportWasm(r);    return; }
-    if (cat == "desktop") {
-        ConsoleError.WriteLine("z42 export: desktop has no IDE project — use `z42 publish --rid " + rid + "` for the apphost.");
-        Environment.Exit(2); return;
-    }
-    ConsoleError.WriteLine("z42 export: unknown platform for rid '" + rid + "'");
-    Environment.Exit(2);
-}
+// export verb shape: per-platform subcommand (`z42 export ios|android|wasm <toml>`),
+// dispatched by launcher_cli.z42 :: _dispatchLauncher to _cmdExport{Ios,Android,Wasm}.
+// (Family-level IDE-project generation — see define-cli-command-model 2026-06-18.
+// Arch-level deployables use `publish|run --rid` instead.)
 
 // run deploy form: `z42 run <toml> --rid <rid> [-- <app args>]` — produce an
 // ephemeral apphost beside the zpkg and exec it (previews the deployed launch).
