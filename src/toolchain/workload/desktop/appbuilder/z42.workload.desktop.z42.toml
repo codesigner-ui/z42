@@ -1,0 +1,23 @@
+# Desktop workload — z42 build logic (apphost producer). The **first real
+# workload z42 package**: the launcher depends on it so `z42 publish desktop`
+# calls Z42.Workload.Desktop.Apphost.Produce. (apphost-producer-workload, 2026-06-18)
+[project]
+name    = "z42.workload.desktop"
+version = "0.1.0"
+kind    = "lib"
+
+[sources]
+# Only the producer. DesktopWorkload.z42 (the future z42.build pipeline handler)
+# is parked — it imports the not-yet-compiled z42.build — so it is excluded here.
+include = ["apphost.z42"]
+
+[dependencies]
+"z42.core"     = "0.1.0"
+"z42.io"       = "0.1.0"
+"z42.encoding" = "0.1.0"
+
+[build]
+# Emit the .zpkg into the shared libs dir (== launcher build's Z42_LIBS) so the
+# launcher's z42c build resolves this dependency. xtask_package_desktop builds
+# this package immediately before the launcher (see [2c/7]).
+dist_dir = "../../../../../artifacts/build/libraries/dist/release"

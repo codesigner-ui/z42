@@ -64,6 +64,12 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // it is delivered by the desktop workload (z42-workload-<v>-desktop-<rid>),
     // installed via `z42 workload install desktop`. See _buildDesktopWorkload.
     string libs = _libsDir(root);
+    // desktop workload package (apphost producer) — build into Z42_LIBS first so
+    // the launcher's z42c build resolves its `z42.workload.desktop` dependency.
+    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("src/toolchain/workload/desktop/appbuilder/z42.workload.desktop.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
     c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
         .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
         .Env("Z42_LIBS", libs));
