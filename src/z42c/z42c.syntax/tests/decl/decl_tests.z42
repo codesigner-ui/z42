@@ -179,9 +179,9 @@ void test_generic_delegate_and_record() {
 
 [Test]
 void test_generic_where_constraints() {
-    // 多形参 + 多约束（逗号：类型 + new()）+ 多 where 子句（incr 6d-3 结构化）
+    // 多形参 + 多约束（+ 分隔：Rust 风格，z42 语法；类型 + new()）+ 多 where 子句（incr 6d-3 结构化）
     Assert.Equal("(unit (class Foo<T,U> where T : IComparable<T>, new() where U : class))",
-                 parseUnit("class Foo<T, U> where T : IComparable<T>, new() where U : class { }"));
+                 parseUnit("class Foo<T, U> where T : IComparable<T> + new() where U : class { }"));
 }
 
 [Test]

@@ -113,6 +113,16 @@ public sealed class ExprEmitter {
         if (e is BoundConvert) { return this._emitConvert(e as BoundConvert); }
         if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
         if (e is BoundInterpolatedStr) { return this._emitInterpolation(e as BoundInterpolatedStr); }
+        if (e is BoundDefault) {
+            BoundDefault def = e as BoundDefault;
+            TypedReg dr = this._ctx.Alloc(IrType.Ref);
+            if (def.ParamIndex >= 0) {
+                this._ctx.Emit(new DefaultOfInstr(dr, def.ParamIndex));
+            } else {
+                this._ctx.Emit(new ConstNullInstr(dr));
+            }
+            return dr;
+        }
         // 其余节点 → 后续增量：占位 const.null（保 dump 良构）
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(e.Type()));
         this._ctx.Emit(new ConstNullInstr(ph));

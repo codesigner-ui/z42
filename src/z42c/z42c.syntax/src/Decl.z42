@@ -207,6 +207,26 @@ public sealed class ClassDecl : Decl {
     }
 }
 
+// 索引器 `T this[P p] { get { ... } set { ... } }`（GS5 stdlib Dictionary）。
+// 下游 SymbolCollector/TypeChecker/IrGen/ExportedTypeExtractor 暂跳过（只读消费）；
+// 未来 byte-identical 需展开为 get_Item/set_Item（镜像 C# IndexerDecl lowering）。
+public sealed class IndexerDecl : Decl {
+    public string  Mods;
+    public TypeExpr RetType;       // 元素类型（TValue）
+    public Param[] Params;         // 索引器参数（TKey key）
+    public int     ParamCount;
+    public bool    HasGet;
+    public Stmt    GetBody;        // 仅 HasGet 时有效
+    public bool    HasSet;
+    public Stmt    SetBody;        // 仅 HasSet 时有效
+    public IndexerDecl(string mods, TypeExpr retType, Param[] params_, int paramCount,
+                       bool hasGet, Stmt getBody, bool hasSet, Stmt setBody, Span span) { this.Span = span;
+        this.Mods = mods; this.RetType = retType; this.Params = params_; this.ParamCount = paramCount;
+        this.HasGet = hasGet; this.GetBody = getBody; this.HasSet = hasSet; this.SetBody = setBody;
+    }
+    public override string Dump() { return "(indexer " + this.RetType.Dump() + ")"; }
+}
+
 // 声明 Dump 辅助：基类列表 + where 子句列表渲染（与旧字符串拼接逐字符一致）。
 public class DeclHelpers {
     // `` 或 ` : A, B, C`

@@ -217,6 +217,33 @@ public sealed class TypeChecker {
             }
             return new BoundContinue(s.Span);
         }
+        // for 循环脱糖为 while（continue 不修改 incr，适用于无 continue 的 for body；for 有 continue 时须升级 BoundFor）。
+        // { init; while (cond) { body; incr; } }
+        if (s is ForStmt) {
+            ForStmt f = s as ForStmt;
+            TypeEnv forScope = env.PushScope();
+            BoundStmt[] outerStmts = new BoundStmt[2];
+            int on = 0;
+            if (f.HasInit) { outerStmts[on] = this._bindStmt(f.Init, forScope, ret); on = on + 1; }
+            BoundExpr fcond = new BoundLitBool(true, new Z42PrimType("bool"), s.Span);
+            if (f.HasCond) {
+                fcond = this._bindExpr(f.Cond, forScope);
+                this._requireBool(fcond.Type(), "for", f.Cond.Span);
+            }
+            this._loopDepth = this._loopDepth + 1;
+            BoundStmt fbody = this._bindStmt(f.Body, forScope, ret);
+            this._loopDepth = this._loopDepth - 1;
+            BoundStmt[] lbody = new BoundStmt[2];
+            int ln = 1;
+            lbody[0] = fbody;
+            if (f.HasIncr) {
+                BoundExpr fincr = this._bindExpr(f.Incr, forScope);
+                lbody[ln] = new BoundExprStmt(fincr, s.Span);
+                ln = ln + 1;
+            }
+            outerStmts[on] = new BoundWhile(fcond, new BoundBlock(lbody, ln, s.Span), s.Span); on = on + 1;
+            return new BoundBlock(outerStmts, on, s.Span);
+        }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", s.Span);
         return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType(), s.Span), s.Span);
     }
@@ -274,6 +301,10 @@ public sealed class TypeChecker {
             IdentExpr id = e as IdentExpr;
             Z42Type t = env.LookupVar(id.Name);
             if (t == null) {
+                // 枚举类型名（如 GCHandleType）裸出现时不报 undefined——MemberExpr 路径会处理常量访问。
+                if (env.Symbols.EnumTypes.ContainsKey(id.Name)) {
+                    return new BoundIdent(id.Name, new Z42UnknownType(), id.Span);
+                }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined: " + id.Name, id.Span);
                 return new BoundError("undefined " + id.Name, new Z42ErrorType(), id.Span);
             }
@@ -342,6 +373,9 @@ public sealed class TypeChecker {
         }
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
+        }
+        if (e is DefaultExpr) {
+            return this._bindDefault(e as DefaultExpr, env);
         }
         if (e is TernaryExpr) {
             TernaryExpr t = e as TernaryExpr;
@@ -479,6 +513,14 @@ public sealed class TypeChecker {
                     return new BoundStaticGet(tid.Name, m.Name, sfs.FieldType, m.Span);
                 }
             }
+            // 枚举常量访问 `EnumType.Member` → BoundLitInt（long）。
+            if (env.LookupVar(tid.Name) == null && env.Symbols.EnumTypes.ContainsKey(tid.Name)) {
+                string ekey = tid.Name + "." + m.Name;
+                if (env.Symbols.EnumConsts.ContainsKey(ekey)) {
+                    StrBox evalBox = env.Symbols.EnumConsts.Get(ekey) as StrBox;
+                    return new BoundLitInt(evalBox.Value, new Z42PrimType("long"), m.Span);
+                }
+            }
         }
         BoundExpr target = this._bindExpr(m.Target, env);
         Z42Type tt = target.Type();
@@ -501,6 +543,10 @@ public sealed class TypeChecker {
         if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
+        // GS5：泛型类型形参（TKey/TValue 等）上的成员访问松绑到 Unknown（调用方再按 DepIndex 真实解析）。
+        if (tt is Z42GenericParamType) {
+            return new BoundMember(target, m.Name, new Z42UnknownType(), m.Span);
+        }
         // prim receiver 属性访问（镜像 _bindMemberCall 的 prim 处理）：prim 名首字母大写 →
         // stdlib 包装类（"string"→"String"，imported 自 z42.core TSIG）→ 取字段/属性真类型；
         // 查无则松绑 Unknown（codegen 经 DepIndex/VM builtin 真实解析，如 string.Length）。
@@ -522,8 +568,11 @@ public sealed class TypeChecker {
         bool more = true;
         while (more) {
             if (cur.Fields.ContainsKey(name)) { return cur.Fields.Get(name) as FieldSymbol; }
-            if (!cur.HasBase) { more = false; }
-            else {
+            if (!cur.HasBase) {
+                // 无显式 base 的 class 隐式继承 Object（struct 不继承，但字段不含在 Object）。
+                if (cur.Name() != "Object" && symbols.HasClass("Object")) { cur = symbols.GetClass("Object"); }
+                else { more = false; }
+            } else {
                 Z42ClassType b = symbols.GetClass(cur.BaseName);
                 if (b == null) { more = false; } else { cur = b; }
             }
@@ -541,6 +590,15 @@ public sealed class TypeChecker {
         }
         if ((from is Z42ClassType) && (to is Z42InterfaceType)) {   // class→iface（port-z42c-interface；单向）
             return symbols.Implements(from.Name(), to.Name());
+        }
+        if ((from is Z42InstantiatedType) && (to is Z42InterfaceType)) {   // generic class instance → iface
+            return symbols.Implements((from as Z42InstantiatedType).Def.Name(), to.Name());
+        }
+        if ((from is Z42InstantiatedType) && (to is Z42ClassType)) {   // generic class instance → base class
+            return symbols.IsSubclassOf((from as Z42InstantiatedType).Def.Name(), to.Name());
+        }
+        if ((from is Z42ClassType) && (to is Z42InstantiatedType)) {   // `this` (bare class) → instantiated return type
+            return from.Name() == (to as Z42InstantiatedType).Def.Name();
         }
         return false;
     }
@@ -561,12 +619,36 @@ public sealed class TypeChecker {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);
                 return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, ms.Signature.Ret, call.Span);
             }
+            // 同类无限定静态调用（unqualified static call within class body：OSKindValue() inside Platform）。
+            if (env.HasClass()) {
+                string cls = env.CurrentClass();
+                if (env.Symbols.HasClass(cls)) {
+                    Z42ClassType sct = env.Symbols.GetClass(cls);
+                    string smkey = this._overloadKey(env.Symbols, sct, id.Name, call.ArgCount);
+                    MethodSymbol sms = this._findMethod(env.Symbols, sct, smkey);
+                    if (sms != null && sms.IsStatic) {
+                        return new BoundCall("static", false, null, cls, smkey, args, call.ArgCount, sms.Signature.Ret, call.Span);
+                    }
+                }
+            }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined function: " + id.Name, call.Span);
             return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, new Z42ErrorType(), call.Span);
         }
         // 成员调用：obj.m(args) / Class.m(args)
         if (call.Callee is MemberExpr) {
             return this._bindMemberCall(call.Callee as MemberExpr, args, call.ArgCount, env, call.Span);
+        }
+        // 通用间接调用：array[i](args) / method()(args) 等 callee 是任意表达式且类型为 Z42FuncType。
+        // Z42GenericParamType：泛型接口方法返回类型参数（如 ISubscription<TD>.Get()→TD）；type-erased，运行期解析。
+        {
+            BoundExpr callee = this._bindExpr(call.Callee, env);
+            Z42Type ct = callee.Type();
+            if (ct is Z42FuncType) {
+                return new BoundIndirectCall(callee, args, call.ArgCount, (ct as Z42FuncType).Ret, call.Span);
+            }
+            if (ct is Z42GenericParamType) {
+                return new BoundIndirectCall(callee, args, call.ArgCount, new Z42UnknownType(), call.Span);
+            }
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported call form", call.Span);
         return new BoundError("unsupported call", new Z42ErrorType(), call.Span);
@@ -703,6 +785,22 @@ public sealed class TypeChecker {
         return a;
     }
 
+    // default(T)（GS7 / D-8b-3 Phase 2）：泛型类型参数 → BoundDefault(paramIndex)；其他 → BoundDefault(-1)。
+    private BoundExpr _bindDefault(DefaultExpr d, TypeEnv env) {
+        Z42Type t = env.ResolveType(d.Target);
+        if (t is Z42GenericParamType) {
+            string pname = t.Name();
+            int idx = 0;
+            int pi = 0;
+            while (pi < env.TypeParamCount) {
+                if (env.TypeParamNames[pi] == pname) { idx = pi; pi = env.TypeParamCount + 1; }
+                else { pi = pi + 1; }
+            }
+            return new BoundDefault(t, idx, d.Span);
+        }
+        return new BoundDefault(t, -1, d.Span);
+    }
+
     // new T(args)（1D）：解析 T（须为已知类型）+ 绑定实参。ctor 重载解析留后续。
     private BoundExpr _bindNew(ObjNewExpr n, TypeEnv env) {
         BoundExpr[] args = new BoundExpr[n.ArgCount];
@@ -735,8 +833,11 @@ public sealed class TypeChecker {
         bool more = true;
         while (more) {
             if (cur.Methods.ContainsKey(name)) { return cur.Methods.Get(name) as MethodSymbol; }
-            if (!cur.HasBase) { more = false; }
-            else {
+            if (!cur.HasBase) {
+                // 无显式 base 的 class 隐式继承 Object（mirror C# object root；struct 无 Object 方法）。
+                if (cur.Name() != "Object" && symbols.HasClass("Object")) { cur = symbols.GetClass("Object"); }
+                else { more = false; }
+            } else {
                 Z42ClassType b = symbols.GetClass(cur.BaseName);
                 if (b == null) { more = false; } else { cur = b; }
             }

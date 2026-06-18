@@ -40,6 +40,7 @@ public static class Op {
     public static int RetVal = 0x43;   // 带值返回
     public static int Throw  = 0x44;
     public static int StrConcat = 0x85;
+    public static int DefaultOf = 0xB0;  // default(T) 泛型类型参数零值（D-8b-3 Phase 2；镜像 C# Opcodes.DefaultOf）
     public static int Convert = 0xB1;   // (T)expr 数值转换（spec fix-numeric-cast-lowering；镜像 C# Opcodes.Convert）
 }
 
