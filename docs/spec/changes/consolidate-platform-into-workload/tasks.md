@@ -10,7 +10,7 @@
 | S0 设计落地 + 冲突修复 | consolidate-platform-into-workload | ✅ 12015219 |
 | S1 Tier2 embed→host-api | ~~migrate-tier2-to-workload~~ | ✅ 87e7cce4 |
 | S2 apphost（重构为 apphost-as-config）| ~~add-desktop-export~~ | ✅ 77a5acba（apphost=`[platform.desktop]` 配置，非命令；非"desktop workload 脚手架"）|
-| S3 facade→workload/platforms | ~~migrate-facades-to-workload~~ | ✅ 45da148a |
+| S3 facade→workload/platforms | ~~migrate-facades-to-workload~~ | ✅ 45da148a（后经 2026-06-18 refactor 扁平化为 `workload/<plat>/platform/`，见 workload/README.md）|
 | S5 host/ 移除 | ~~remove-host-toplevel~~ | ✅ 本 change |
 | **B 子系统**（B1 命令发现 / B2 打包+auto-runtime / B4 测试改 workload 驱动 / B5 export 生命周期）| build-workload-subsystem | 📋 立项 29380849，待实施 |
 

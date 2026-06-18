@@ -5,7 +5,7 @@
 
 ## Why
 
-consolidate-platform-into-workload 的机械搬迁已完成（S0 设计 / S1 Tier2→host-api / S3' platforms→workload/platforms）。但 host 的彻底解散与"全平台应用开发"目标，依赖一套**当前只有前瞻设计草案、尚未实施**的 workload 子系统：
+consolidate-platform-into-workload 的机械搬迁已完成（S0 设计 / S1 Tier2→host-api / S3' platforms→workload/platforms）。**注（2026-06-18 重组）**：后经独立 refactor 改为**平台优先** `workload/<plat>/{appbuilder,template,platform,tests}`（去 `platforms/` 中间层），host-api→`runtime/crates/z42-host`；结构以 `src/toolchain/workload/README.md` 为准，下文路径 `workload/platforms/*` 应按此读作 `workload/<plat>/platform/*`。但 host 的彻底解散与"全平台应用开发"目标，依赖一套**当前只有前瞻设计草案、尚未实施**的 workload 子系统：
 
 - [launcher-command-dispatch.md](../../../design/toolchain/launcher-command-dispatch.md) — 命令发现机制（Core/SDK/Workload 三层 + 目录发现 + Std.Cli 树合并）⚠️ 未实施
 - [runtime-workload-distribution.md](../../../design/toolchain/runtime-workload-distribution.md) — workload 安装 / manifest / 打包 ⚠️ workload 段未实施（runtime 拆包已落地）
@@ -24,7 +24,7 @@ consolidate-platform-into-workload 的机械搬迁已完成（S0 设计 / S1 Tie
 | **B1** | **命令发现机制**：launcher 扫命令目录 + 读 manifest → 把 SDK/workload 命令注册进 Std.Cli 树（与代码注册 core 同形）| — | launcher-command-dispatch.md |
 | **B2** | **workload 包格式 + `z42 workload install/list/remove`**：manifest `workloads` 段实现、版本作用域 `runtimes/<ver>/workloads/<wl>/`、host 校验 | B1 | runtime-workload-distribution.md |
 | **B3 (=S2)** | **desktop 平台 export（apphost-as-config）**：加 `[platform.desktop]` 段 + `z42 export/publish desktop` 产 apphost（对称 ios/android/wasm）；**取消 `z42 apphost` 命令**，apphost.z42 stub-patch 逻辑成为 desktop export 实现。**复用现有 `launcher_export*.z42` 框架，不需先做 B1** | —（独立于 B1）| platform-export-lifecycle.md `[platform.desktop]` |
-| **B4 (=S4)** | **R1–R7 改 workload 驱动**：平台一致性测试 = workload 生成/驱动的工程（test 流程 ≡ 用户建 app）；删 `workload/platforms/*/tests` 手维护脚手架 | B3 | platform-export-lifecycle.md §test 双面 |
+| **B4 (=S4)** | **R1–R7 改 workload 驱动**：平台一致性测试 = workload 生成/驱动的工程（test 流程 ≡ 用户建 app）；删 `workload/<plat>/`（platform/Tests、tests）手维护脚手架 | B3 | platform-export-lifecycle.md §test 双面 |
 | **B5** | **导出/发布生命周期**：`z42 new/platform add/export/publish/test`、managed+eject | B1–B4 | platform-export-lifecycle.md |
 | **S5** | host/ 顶层移除 + 文档收口（B4 后 host/ 真空）| B4 | consolidate design.md |
 
