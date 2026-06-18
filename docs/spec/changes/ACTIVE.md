@@ -37,7 +37,7 @@
 | investigate-concurrent-gc-stale-mark-race | runtime（暂停，不占锁） |
 | ~~add-export-command~~ | toolchain —— ✅ 已归档 2026-06-14（`z42 export ios/android/wasm`；`[platform.*]` toml；`runtimes/<rid>/<ver>/` 平台 SDK；launcher_export*.z42 4 文件；0292c3a3）|
 | ~~split-release-runtime-package~~ | toolchain —— ✅ 已归档 2026-06-14（`z42-runtime-*` 独立包；SDK 当 launcher；release-index.json runtime/launcher 子键；9 RID；4bbbd01b）|
-| migrate-scripts-to-z42 | scripts/ + toolchain（不改 src/libraries/，不占 stdlib 锁）|
+| ~~migrate-scripts-to-z42~~ | toolchain —— ✅ 已归档 2026-06-19（主体完成；release.yml 2 处 .sh 延后 — 见 docs/workflow/release.md Deferred migrate-future-release-scripts）|
 | add-z42-wasm-playground | runtime? / toolchain?（待回填） |
 | ~~add-reflection-mvp~~ | runtime + stdlib —— ✅ 已归档 2026-06-09（feat 30776fae）|
 | ~~make-typeof-return-type~~ | compiler + runtime —— ✅ 已归档 2026-06-09（C2，option A）|
