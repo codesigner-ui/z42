@@ -71,6 +71,18 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
         .Env("Z42_LIBS", libs));
     if (c != 0) { return c; }
     c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("src/toolchain/workload/ios/appbuilder/z42.workload.ios.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
+    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("src/toolchain/workload/android/appbuilder/z42.workload.android.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
+    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
+        .Arg("--").Arg("build").Arg("src/toolchain/workload/wasm/appbuilder/z42.workload.wasm.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", libs));
+    if (c != 0) { return c; }
+    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
         .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
         .Env("Z42_LIBS", libs));
     if (c != 0) { return c; }

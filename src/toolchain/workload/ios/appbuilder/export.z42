@@ -5,9 +5,17 @@
 // a Swift AppDelegate host, and Info.plist. The z42 app bytecode (app.zpkg) is
 // included as a bundle resource; z42vm.xcframework is expected in <outputDir>/
 // (copy from the platform SDK, or install with `z42 install <ver> --rid ios-arm64`).
-namespace Z42Launcher;
+namespace Z42.Workload.Ios;
 
 using Std.IO;
+
+// Public cross-package entry — `z42 export ios` (launcher_export.z42) delegates here.
+public static class IosExport {
+    public static void Generate(string outputDir, string name, string bundleId,
+                                string displayName, string minIos, string zpkgSrc, string sdkDir) {
+        _generateIosProject(outputDir, name, bundleId, displayName, minIos, zpkgSrc, sdkDir);
+    }
+}
 
 // Generate the full iOS project tree under outputDir.
 void _generateIosProject(string outputDir, string name, string bundleId,

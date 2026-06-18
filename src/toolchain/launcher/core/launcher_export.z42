@@ -14,6 +14,9 @@ using Std;
 using Std.IO;
 using Std.Toml;
 using Z42.Workload.Desktop;   // Apphost.Produce — desktop publish lives in the workload package
+using Z42.Workload.Ios;       // IosExport.Generate — iOS export lives in the workload package
+using Z42.Workload.Android;   // AndroidExport.Generate — Android export lives in the workload package
+using Z42.Workload.Wasm;      // WasmExport.Generate — WASM export lives in the workload package
 
 // ── entry points ──────────────────────────────────────────────────────────────
 
@@ -46,7 +49,7 @@ void _cmdExportIos(ParseResult r) {
     string sdkDir  = _expFindIosSdk(sdkVer);
 
     Console.WriteLine("z42 export ios → " + outputDir);
-    _generateIosProject(outputDir, projName, bundleId, displayName, minIos, zpkgSrc, sdkDir);
+    IosExport.Generate(outputDir, projName, bundleId, displayName, minIos, zpkgSrc, sdkDir);
     Console.WriteLine("✅ iOS project ready. Open " + outputDir + "/" + projName + ".xcodeproj in Xcode.");
 }
 
@@ -83,8 +86,8 @@ void _cmdExportAndroid(ParseResult r) {
     string sdkDir  = (sdkVer.Length > 0) ? _platformSdkDir("android-arm64", sdkVer) : "";
 
     Console.WriteLine("z42 export android → " + outputDir);
-    _generateAndroidProject(outputDir, projName, appId, displayName,
-                            versionCode, versionName, minSdk, targetSdk, zpkgSrc, sdkDir);
+    AndroidExport.Generate(outputDir, projName, appId, displayName,
+                           versionCode, versionName, minSdk, targetSdk, zpkgSrc, sdkDir);
     Console.WriteLine("✅ Android project ready. Open " + outputDir + " in Android Studio.");
 }
 
@@ -118,7 +121,7 @@ void _cmdExportWasm(ParseResult r) {
     string sdkDir = _platformSdkDir("browser-wasm", sdkVer);
 
     Console.WriteLine("z42 export wasm → " + outputDir);
-    _generateWasmProject(outputDir, projName, title, entryPoint, zbcSrc, sdkDir);
+    WasmExport.Generate(outputDir, projName, title, entryPoint, zbcSrc, sdkDir);
     Console.WriteLine("✅ WASM project ready.");
     Console.WriteLine("   Serve with:  python3 -m http.server 8080 --directory " + outputDir);
     Console.WriteLine("   Then open:   http://localhost:8080/");

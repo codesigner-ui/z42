@@ -1,0 +1,19 @@
+# Android workload — z42 build logic (Gradle project export). Real workload z42
+# package; launcher depends on it so `z42 export android` calls
+# Z42.Workload.Android.AndroidExport.Generate. (platform-workload-packages, 2026-06-18)
+[project]
+name    = "z42.workload.android"
+version = "0.1.0"
+kind    = "lib"
+
+[sources]
+# Only the export logic. AndroidWorkload.z42 (future z42.build pipeline handler)
+# is parked — imports the not-yet-compiled z42.build — so excluded here.
+include = ["export.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"
+"z42.io"   = "0.1.0"
+
+[build]
+dist_dir = "../../../../../artifacts/build/libraries/dist/release"

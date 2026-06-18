@@ -13,9 +13,17 @@
 //
 // Serve with any static HTTP server, e.g.:
 //   python3 -m http.server 8080 --directory <output>
-namespace Z42Launcher;
+namespace Z42.Workload.Wasm;
 
 using Std.IO;
+
+// Public cross-package entry — `z42 export wasm` (launcher_export.z42) delegates here.
+public static class WasmExport {
+    public static void Generate(string outputDir, string name, string title,
+                                string entryPoint, string zbcSrc, string sdkDir) {
+        _generateWasmProject(outputDir, name, title, entryPoint, zbcSrc, sdkDir);
+    }
+}
 
 void _generateWasmProject(string outputDir, string name, string title,
                           string entryPoint, string zbcSrc, string sdkDir) {
