@@ -5,6 +5,7 @@ namespace Z42.Semantics;
 
 using Z42.Syntax;
 using Z42.Core;
+using Z42.IR.BinaryFormat;
 
 public sealed class TypeChecker {
     private DiagnosticBag     _diags;
@@ -238,7 +239,14 @@ public sealed class TypeChecker {
     private BoundExpr _bindExpr(Expr e, TypeEnv env) {
         if (e is IntLitExpr) {
             IntLitExpr lit = e as IntLitExpr;
-            return new BoundLitInt(lit.Value, new Z42PrimType("int"), lit.Span);   // 1A: int（long 推断 1B）
+            // 镜像 C# TypeChecker.Exprs：字面量数值越 int 界（> int.MaxValue 或 < int.MinValue）
+            // → 类型 long，否则 int。值解析复用 ZbcInstr._parseIntLit（hex/bin/十进制 + 后缀剥离）。
+            long v = ZbcInstr._parseIntLit(lit.Value);
+            long imax = 2147483647;
+            long imin = 0 - 2147483647 - 1;
+            Z42Type lt = new Z42PrimType("int");
+            if (v > imax || v < imin) { lt = new Z42PrimType("long"); }
+            return new BoundLitInt(lit.Value, lt, lit.Span);
         }
         if (e is CharLitExpr) {
             CharLitExpr ch = e as CharLitExpr;

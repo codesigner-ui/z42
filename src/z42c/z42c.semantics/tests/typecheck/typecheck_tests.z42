@@ -529,3 +529,30 @@ void test_array_new() {
     string src = "class C { int M() { int[] xs = new int[3]; return xs.Length; } }";
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── 整型字面量越界 → long（镜像 C# TypeChecker.Exprs；G18-literal-typing）──────
+// 值 > int.MaxValue（或 < int.MinValue）→ 类型 long，否则 int。z42c.project
+// `0xFFFFFFFFL` mask 的 REGT tag i32-vs-i64 残差由此修复（dual-build MODS delta 0）。
+[Test]
+void test_int_literal_in_range_is_int() {
+    // int.MaxValue 整好（2147483647）不越界 → int
+    string src = "class C { long M() { return 2147483647; } }";
+    Assert.Equal("(block (return (lit-int 2147483647 :int)))", SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_int_literal_hex_suffix_over_range_is_long() {
+    // 0xFFFFFFFFL = 4294967295 > int.MaxValue → long（剥 L 后缀解析十六进制）
+    string src = "class C { long M() { return 0xFFFFFFFFL; } }";
+    Assert.Equal("(block (return (lit-int 0xFFFFFFFFL :long)))", SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_int_literal_decimal_over_range_is_long() {
+    // 2147483648 = int.MaxValue + 1 → long（十进制越界路径）
+    string src = "class C { long M() { return 2147483648; } }";
+    Assert.Equal("(block (return (lit-int 2147483648 :long)))", SemanticDump.DumpBody(src, "C.M"));
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
