@@ -23,6 +23,12 @@ path = "src/main.rs"
 name = "apphost"
 path = "src/apphost.rs"
 
+[dependencies]
+# App run path (locate z42vm + run app zpkg directly), shared with the apphost
+# stub. Extracted from this crate's lib so the workload-owned apphost can reuse
+# it without depending on the launcher (apphost-to-workload, 2026-06-18).
+z42-hostrun = { path = "../../runtime/crates/z42-hostrun" }
+
 [profile.release]
 opt-level = "z"
 lto       = true
