@@ -123,8 +123,11 @@ public sealed class IrGen {
                         if (mem is MethodDecl) {
                             MethodDecl md = mem as MethodDecl;
                             if (md.HasBody) {              // G11：ctor 也发 `<qualClass>.<Class>` 函数（md.Name=类名，ret void，实例）
-                                string key = c.Name + "." + md.Name;       // SemanticModel 键（短）
-                                string irName = this._q(c.Name) + "." + md.Name;   // IR/包内名（FQ，fixture 实证）
+                                // GS3：重载方法键为 Name$arity，unique 方法为 bare name（镜像 TypeChecker.mkey 逻辑）。
+                                string methKey = md.Name + "$" + md.ParamCount.ToString();
+                                if (owner == null || !owner.Methods.ContainsKey(methKey)) { methKey = md.Name; }
+                                string key = c.Name + "." + methKey;       // SemanticModel 键（短）
+                                string irName = this._q(c.Name) + "." + methKey;   // IR/包内名（FQ，fixture 实证）
                                 if (model.HasBody(key)) {
                                     bool isStaticMethod = this._hasWord(md.Mods, "static");
                                     bool isInstance = !isStaticMethod;   // 实例方法有 this；静态方法无

@@ -128,7 +128,7 @@ public static class ExportedTypeExtractor {
                     while (x < sig.ParamCount) { pts[x] = ExportedTypeExtractor._tsigTypeName(md.Params[x].Type); x = x + 1; }   // G18d：签名类型规范名
                     string iret = sig.Ret.Name();
                     if (!md.IsCtor) { iret = ExportedTypeExtractor._tsigTypeName(md.RetType); }
-                    ms[mc] = ExportedTypeExtractor._im(md.Name, iret, pts, sig.ParamCount);
+                    ms[mc] = ExportedTypeExtractor._im(md.Name, iret, pts, sig.ParamCount);   // 接口方法无重载，bare Name
                     mc = mc + 1;
                 }
             }
@@ -228,10 +228,14 @@ public static class ExportedTypeExtractor {
                     if (amem is MethodDecl) {
                         MethodDecl amd = amem as MethodDecl;
                         if (!ExportedTypeExtractor._hasWord(amd.Mods, "static")) {     // 实例方法（含 ctor，G11）
-                            MethodSymbol ams = chain[mci].Methods.Get(amd.Name) as MethodSymbol;
+                            // GS3：重载方法以 Name$arity 键存，查找先试 Name$arity，再 bare（unique 方法）。
+                            // seenName 用 amkey（重载时含 $）做去重键，使 F$1/F$2 互不干扰（各自新增而非 override 替换）。
+                            string amkey = amd.Name + "$" + amd.ParamCount.ToString();
+                            if (!chain[mci].Methods.ContainsKey(amkey)) { amkey = amd.Name; }
+                            MethodSymbol ams = chain[mci].Methods.Get(amkey) as MethodSymbol;
                             if (ams != null) {
-                                ExportedMethodZ em = ExportedTypeExtractor._fromSymbol(amd, ams, false);
-                                int at = ExportedTypeExtractor._indexOf(seenName, seenc, amd.Name);
+                                ExportedMethodZ em = ExportedTypeExtractor._fromSymbol(amd, ams, false, amkey);
+                                int at = ExportedTypeExtractor._indexOf(seenName, seenc, amkey);
                                 if (at >= 0) { methods[seenAt[at]] = em; }            // override：替换祖先位
                                 else {
                                     if (mc == methods.Length) {
@@ -244,7 +248,7 @@ public static class ExportedTypeExtractor {
                                         int k = 0; while (k < seenc) { sn[k] = seenName[k]; sa[k] = seenAt[k]; k = k + 1; }
                                         seenName = sn; seenAt = sa;
                                     }
-                                    methods[mc] = em; seenName[seenc] = amd.Name; seenAt[seenc] = mc;
+                                    methods[mc] = em; seenName[seenc] = amkey; seenAt[seenc] = mc;
                                     seenc = seenc + 1; mc = mc + 1;
                                 }
                             }
@@ -256,20 +260,23 @@ public static class ExportedTypeExtractor {
             mci = mci - 1;
         }
         // ── static 方法：本类自有（C# StaticMethods 段不继承合并）──
+        // GS3：静态重载方法以 Name$arity 键存，先试 Name$arity，再 bare（unique 方法）。
         int sj = 0;
         while (sj < c.MemberCount) {
             Decl smem = ExportedTypeExtractor._unwrap(c.Members[sj]);
             if (smem is MethodDecl) {
                 MethodDecl smd = smem as MethodDecl;
                 if (ExportedTypeExtractor._hasWord(smd.Mods, "static")) {
-                    MethodSymbol sms = ct.Methods.Get(smd.Name) as MethodSymbol;
+                    string smkey = smd.Name + "$" + smd.ParamCount.ToString();
+                    if (!ct.Methods.ContainsKey(smkey)) { smkey = smd.Name; }
+                    MethodSymbol sms = ct.Methods.Get(smkey) as MethodSymbol;
                     if (sms != null) {
                         if (mc == methods.Length) {
                             ExportedMethodZ[] b = new ExportedMethodZ[methods.Length * 2];
                             int k = 0; while (k < mc) { b[k] = methods[k]; k = k + 1; }
                             methods = b;
                         }
-                        methods[mc] = ExportedTypeExtractor._fromSymbol(smd, sms, true);
+                        methods[mc] = ExportedTypeExtractor._fromSymbol(smd, sms, true, smkey);
                         mc = mc + 1;
                     }
                 }
@@ -284,7 +291,9 @@ public static class ExportedTypeExtractor {
         return ez;
     }
 
-    private static ExportedMethodZ _fromSymbol(MethodDecl md, MethodSymbol ms, bool isStatic) {
+    // GS3：methKey = 重载时 Name$arity，unique 时 bare Name（镜像 C# FuncToMethod mn=registry key）。
+    // ExportedMethodZ 用 methKey 作名（TSIG byte-identical：C# TSIG 方法名含 $arity 后缀）。
+    private static ExportedMethodZ _fromSymbol(MethodDecl md, MethodSymbol ms, bool isStatic, string methKey) {
         Z42FuncType sig = ms.Signature;
         // G17c-2：TSIG 用原始 AST 源拼写（md.Params/RetType.Dump，镜像 C# TypeExprToString），
         // 非解析后规范名（sig.X.Name）。ctor 的 RetType 是占位 NamedType("")，保留 sig.Ret.Name()="void"。
@@ -300,7 +309,7 @@ public static class ExportedTypeExtractor {
         bool isAbstract = ExportedTypeExtractor._hasWord(md.Mods, "abstract");
         string ret = sig.Ret.Name();
         if (!md.IsCtor) { ret = ExportedTypeExtractor._tsigTypeName(md.RetType); }   // G18d：签名类型规范名（byte[]→u8[]）
-        return new ExportedMethodZ(ms.Name, ret, ms.Visibility,
+        return new ExportedMethodZ(methKey, ret, ms.Visibility,
                                    isStatic, isVirtual, isAbstract, sig.ParamCount, ps, sig.ParamCount);
     }
 

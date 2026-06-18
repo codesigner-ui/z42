@@ -143,6 +143,28 @@ public sealed class SymbolCollector {
         Z42ClassType ct = table.Classes.Get(c.Name) as Z42ClassType;
         string[] tp = c.TypeParams.Names;     // 类型形参（泛型类；非泛型 Count=0）
         int tpc = c.TypeParams.Count;
+        // GS3：预扫描检测本地重载（同名多 arity 方法）——镜像 C# methodNameCount[(Name, IsStatic)]>1 判断。
+        // 重载方法注册为 Name$arity 键；unique 方法保留 bare 键（不影响 7 包 byte-identical 门）。
+        StrMap seenInst   = new StrMap();   // 实例方法首次见
+        StrMap seenSt     = new StrMap();   // 静态方法首次见
+        StrMap ovldInst   = new StrMap();   // 实例方法重载（>1 arity）
+        StrMap ovldSt     = new StrMap();   // 静态方法重载
+        int pi = 0;
+        while (pi < c.MemberCount) {
+            Decl pmem = this._unwrap(c.Members[pi]);
+            if (pmem is MethodDecl) {
+                MethodDecl pmd = pmem as MethodDecl;
+                bool pst = this._hasWord(pmd.Mods, "static");
+                if (pst) {
+                    if (seenSt.ContainsKey(pmd.Name)) { ovldSt.Put(pmd.Name, "1"); }
+                    else { seenSt.Put(pmd.Name, "1"); }
+                } else {
+                    if (seenInst.ContainsKey(pmd.Name)) { ovldInst.Put(pmd.Name, "1"); }
+                    else { seenInst.Put(pmd.Name, "1"); }
+                }
+            }
+            pi = pi + 1;
+        }
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);
@@ -156,7 +178,11 @@ public sealed class SymbolCollector {
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。
-                ct.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, tp, tpc));
+                // GS3：重载方法注册 Name$arity；unique 方法 bare name（镜像 C# SymbolCollector.Classes.cs regName 逻辑）。
+                bool mst = this._hasWord(md.Mods, "static");
+                bool isOvld = mst ? ovldSt.ContainsKey(md.Name) : ovldInst.ContainsKey(md.Name);
+                string regName = isOvld ? md.Name + "$" + md.ParamCount.ToString() : md.Name;
+                ct.Methods.Put(regName, this._methodSymbol(table, md, c.Name, tp, tpc));
             }
             j = j + 1;
         }
