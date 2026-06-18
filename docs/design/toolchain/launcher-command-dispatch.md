@@ -99,6 +99,35 @@ $Z42_HOME/tools/                           全局用户工具（类 ~/.cargo/bin
 
 ## Deferred / 待 spec 细化
 
+### workload-future-command-discovery（B1，2026-06-19）
+- **来源**：`impl-command-discovery` DRAFT + `build-workload-subsystem` B1
+- **触发原因**：B1 单做"发现 0 个命令"，无 user-facing 价值；需先有 B2（workload 包格式 + install）产出可发现的命令
+- **前置依赖**：B2 workload 打包 + `z42 workload install` 落地；`runtime-dynamic-load-call` VM 实现
+- **触发条件**：B2 完成后（已有真实 workload 可被发现）
+- **当前 workaround**：export/publish/workload 全部 baked 进 launcher core（`launcher_cli.z42`）；命令增减需重编 launcher
+- 实施顺序应为 **B2 → B1**（B1 鸡蛋问题决策 Z）；Std.Cli 需扩"spawn 式叶子"（`stdlib` 锁）
+
+### workload-future-b2-packaging（B2，2026-06-19）
+- **来源**：`build-workload-subsystem` B2
+- **触发原因**：workload 按需自动下载 + manifest `workloads` 段尚未实施；当前 workload 靠 `z42 workload install --from <dir>` 本地手装
+- **前置依赖**：`runtime-dynamic-load-call` VM builtin 实现（`__load_zpkg`）；GitHub Releases workload 包格式定稿
+- **触发条件**：反射 MVP + 编译器自举完成后
+
+### workload-future-b4-test-driven（B4，2026-06-19）
+- **来源**：`build-workload-subsystem` B4 / 原 `consolidate-platform-into-workload` S4
+- **触发原因**：平台一致性测试（R1–R7）目前是手维护脚手架；改由 workload 生成/驱动需先有 B3（✅ 已完成）+ B2
+- **前置依赖**：B2
+- **触发条件**：B2 完成后
+
+### workload-future-b5-lifecycle（B5，2026-06-19）
+- **来源**：`build-workload-subsystem` B5
+- **触发原因**：`z42 new/platform add/test/fmt` 等完整 export/publish 生命周期命令尚未实施
+- **前置依赖**：B1–B4
+
+---
+
+### 原有 Deferred 条目
+
 - `.cmd.toml` 完整 schema（arg 摘要、别名、min/max-runtime 区间）。
 - workload 包格式（manifest + packs 布局、依赖/版本解析、签名）。
 - 命令版本冲突/多版本共存策略；`z42 commands list` 自省。

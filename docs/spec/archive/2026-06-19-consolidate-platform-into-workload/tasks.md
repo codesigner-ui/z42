@@ -1,6 +1,6 @@
 # Tasks: consolidate-platform-into-workload
 
-> 状态：🟢 机械整合弧完成（S0/S1/S2/S3/S5）；净新增 workload 子系统（B）余下 | 创建：2026-06-17
+> 状态：🟢 已归档 2026-06-19（S0–S5 全完成；B 子系统设计转 workload-subsystem-future 归档） | 创建：2026-06-17
 > 类型：refactor（结构整合）+ docs。S0 docs-only；物理迁移各独立 change。
 
 ## 进度（2026-06-17）

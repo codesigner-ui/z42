@@ -9,8 +9,8 @@
 | 子系统 | 当前持有 change | 起始 | 说明 |
 |--------|----------------|------|------|
 | `compiler` | —（空闲）| — | **~~add-desktop-export~~** ✅ 已归档 2026-06-17（WS008 注册 `[platform.desktop].publish_dir` + 删退役 `[apphost]` 段；43 ProjectManifest 测试绿）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
-| `runtime` | **runtime-dynamic-load-call（进行中）** | 2026-06-18 | on-demand 地基:`__load_zpkg` + `__call_static`(固定签名,无 Invoke)。VM builtin 实现延后（前置：反射 MVP + 编译器自举）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
-| `stdlib` | —（空闲）| — | **~~runtime-dynamic-load-call~~** stdlib 部分 ✅ 2026-06-19（`Std.Runtime` extern 接口已落 z42.core/src/Runtime.z42；VM builtin 实现延后，stdlib 锁释放）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
+| `runtime` | —（空闲）| — | **~~runtime-dynamic-load-call~~** ✅ 已归档 2026-06-19（接口落地；VM builtin 延后——见 launcher-command-dispatch.md Deferred workload-future-b2-packaging）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
+| `stdlib` | —（空闲）| — | **~~runtime-dynamic-load-call~~** stdlib 部分 ✅ 2026-06-19（`Std.Runtime` extern 接口已落 z42.core/src/Runtime.z42）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
 | `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
 | `toolchain` | —（空闲）| — | **~~clarify-launcher-command-face~~ ✅ 已归档 2026-06-17**（实装 `z42 list --workloads`；命令面 `update`/`use`/`workload update` 标 planned——真特性需 latest/pin resolution 未建）。**~~dry-ci-release-index~~ ✅ 已归档 2026-06-17** |
 
@@ -70,7 +70,8 @@
 | ~~add-reflection-array-element-type~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（数组运行期不擦除 `GcRef<ArrayObj{element_type,elems}>`；`Type.IsArray`/`GetElementType()` + 非擦除 `arr.GetType()`；zbc 1.16/zpkg 0.18 ArrayNew/Lit element_type FQ 名；dotnet 1561/1561 + array_element_type.z42 e2e interp+jit + cargo lib 807 + 集成 native/zbc_compat 全绿 + xtask vm 354/cross-zpkg 2/stdlib 272）。**z42c writer 同步延后**（User 决策"先实现，延后 z42c"；当时 z42c 锁被占）→ `xtask test compiler-z42` byte-identical gate 暂红，follow-up 跟踪（见 memory `project_z42c_selfhosting`）|
 | ~~add-reflection-get-interfaces~~ | compiler + runtime + stdlib —— ✅ 已归档 2026-06-14（`Type.GetInterfaces()` 含继承接口；zbc 1.17/zpkg 0.19 TYPE section 类接口块；base-walk 聚合 + 按名 dedup；dotnet 1562/1562 + get_interfaces.z42 e2e interp+jit + cargo lib 807 + 集成 zbc_compat/native 全绿 + xtask vm 356/cross-zpkg 2/stdlib 272）。z42c writer 接口块镜像延后（follow-up，同 array-element-type 处理）|
 | ~~plan-0.3.x-three-streams~~ | docs —— ✅ 已归档 2026-06-19（五项扩展重排：boxing 0.3.11 + Method.Invoke 非泛型 0.3.12 + test-runner 删除 0.3.13 + CI三平台 0.3.13 + workload B1/B2 0.3.14；REPL 后移 0.3.15；soak 0.3.16）|
-| consolidate-platform-into-workload | docs（S0–S5 机械整合弧 ✅ 完成；B 子系统余下）|
-| build-workload-subsystem | docs（B 程序级立项）；B3=S2 ✅(add-desktop-export)/命令模型 ✅(rework-desktop-publish-run)。**排序重排为 B2→B1**（User 2026-06-17：B1 单独空转，B2 产命令来源）|
+| ~~consolidate-platform-into-workload~~ | docs —— ✅ 已归档 2026-06-19（S0–S5 机械整合弧全完成；B 子系统设计转 workload-subsystem-future 归档）|
+| ~~build-workload-subsystem~~ | docs —— ✅ 已归档 2026-06-19（B1–B5 全延后；延后条目入 launcher-command-dispatch.md Deferred；与 impl-command-discovery 合并为 workload-subsystem-future）|
 | ~~impl-workload-install~~ | toolchain —— ✅ 已归档 2026-06-17（三平台 runtime/workload 分包 + `z42 workload install/list/remove`；本地 produce+install 端到端 iOS/wasm/android；多 RID 增量装；后续 B2-4 CI/B1/B4/B5 入 roadmap Deferred）|
-| impl-command-discovery | docs（B1 DRAFT，待 B2 后）；命令发现机制（spawn-leaf 进 Std.Cli 树，跨 stdlib 锁）|
+| ~~impl-command-discovery~~ | docs —— ✅ 已归档 2026-06-19（B1 DRAFT；与 build-workload-subsystem 合并为 workload-subsystem-future；延后至 B2 完成后）|
+| ~~runtime-dynamic-load-call~~ | runtime + stdlib —— ✅ 已归档 2026-06-19（接口落地；VM builtin 延后——前置：反射 MVP + 自举）|
