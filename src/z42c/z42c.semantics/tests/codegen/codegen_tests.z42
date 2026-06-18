@@ -367,9 +367,11 @@ void test_cstyle_cast_convert() {
 // ── 无初始化器局部声明（port-z42c-self-compile G8）─────────────────────────────
 [Test]
 void test_var_decl_no_init() {
-    // `int x;` 不发 IR（镜像 C# VisitVarDecl）；`x = 5` 首次赋值绑定寄存器
+    // `int x;` 不发 IR；`x = 5` 首次赋值**分配专用寄存器 + copy**（镜像 C# WriteBackName：
+    // 首赋值 `new TypedReg(_nextReg++, valReg.Type)` + copy，非直接绑 rhs 寄存器——
+    // z42c.semantics `ExportedMethodZ[] m; m = new[3]` dual-build 实证 C# 发 copy）。
     string src = "int F() { int x; x = 5; return x; }";
-    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 5\n  ret %0\n}",
+    Assert.Equal("fn @F(0) -> int {\nentry:\n  %0 = const.i64 5\n  %1 = copy %0\n  ret %1\n}",
                  IrDump.DumpFunc(src, "F"));
 }
 

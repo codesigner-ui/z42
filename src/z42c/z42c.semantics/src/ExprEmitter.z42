@@ -299,8 +299,13 @@ public sealed class ExprEmitter {
                 this._ctx.Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), tid.Name, val));
                 return val;
             }
-            this._ctx.Locals.Put(tid.Name, val);
-            return val;
+            // local 首次赋值（无 init 声明 `T m;` 后 `m = rhs`）：镜像 C# WriteBackName
+            // —— 分配专用寄存器 + copy（而非直接把 local 绑到 rhs 寄存器）。否则 m 复用
+            // rhs 寄存器 → 比 C# 少一条 copy + 少一个寄存器（z42c.semantics MODS 实证 −14B）。
+            TypedReg varReg = this._ctx.Alloc(val.Type);
+            this._ctx.Locals.Put(tid.Name, varReg);
+            if (varReg.Id != val.Id) { this._ctx.Emit(new CopyInstr(varReg, val)); }
+            return varReg;
         }
         if (a.Target is BoundMember) {
             BoundMember tm = a.Target as BoundMember;
@@ -328,11 +333,13 @@ public sealed class ExprEmitter {
             return dst0;
         }
         TypedReg obj = this.Emit(m.Target);
-        // G18i：receiver 是 `as`-cast 到**跨-ns** 类时，字段读结果 tag → Unknown（镜像 C#：cast-to-
-        // cross-ns-class 不加载目标类字段 → 字段类型 codegen 期 Unknown）。param/var/this（非 cast）
-        // 或同-ns cast 正常 ToIrType。
+        // G18i/G19a：receiver 是 `as`-cast 到**类**（Z42ClassType/Z42InstantiatedType，跨-ns 与否
+        // 均然）时，字段读结果 tag → Unknown（镜像 C#：cast-to-class 不加载目标类字段 → 字段类型
+        // codegen 期 Unknown）。param/var/this（非 cast）正常 ToIrType；prim/array/iface cast 不触发。
+        // G19a 更正 G18i：原 IsCrossNs 门过窄——同-ns 类 cast（Z42PrimType/Z42InstantiatedType）C#
+        // 同样 Unknown（z42c.semantics·ir 实证），真因是 cast receiver 而非跨-ns。
         int ftag = this._ctx.ToIrType(m.Type());
-        if ((m.Target is BoundCast) && this._ctx.IsCrossNs(m.Target.Type().Name())) { ftag = IrType.Unknown; }
+        if (this._castUnknownChain(m.Target)) { ftag = IrType.Unknown; }
         TypedReg dst = this._ctx.Alloc(ftag);
         this._ctx.Emit(new FieldGetInstr(dst, obj, m.MemberName));
         return dst;
@@ -344,6 +351,10 @@ public sealed class ExprEmitter {
             // 镜像 C# EmitBoundCall：实参先于 receiver（寄存器编号序——byte-identical）
             TypedReg[] iargs = this._emitArgs(c);
             TypedReg recv = this.Emit(c.Receiver);
+            // G19a：receiver 是 `as`-cast 到类 → 调用结果 tag Unknown（同 _emitMember 字段；
+            // 镜像 C# BindMemberCallOnClass：cast-to-class 走 stub→method 未解析→Z42Type.Unknown）。
+            int itag = this._ctx.ToIrType(c.Type());
+            if (this._castUnknownChain(c.Receiver)) { itag = IrType.Unknown; }
             // IC-1 反劫持守卫：receiver 类链（local+imported）自有方法 → VCall（vtable 赢）
             bool owns = this._ctx.ChainHasMethod(c.OwnerClass, c.MethodName);
             if (!owns && this._ctx.Deps != null) {
@@ -355,14 +366,14 @@ public sealed class ExprEmitter {
                     full[0] = recv;
                     int fi = 0;
                     while (fi < c.ArgCount) { full[fi + 1] = iargs[fi]; fi = fi + 1; }
-                    TypedReg ddst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+                    TypedReg ddst = this._ctx.Alloc(itag);
                     this._ctx.Emit(new CallInstr(ddst, de.QualifiedName, full, c.ArgCount + 1));
                     return ddst;
                 }
             }
             // VCall fallback：imported receiver → 依赖 ns 追踪（C# 行 198-200 镜像，缺则 DEPS 漏条目）
             this._ctx.TrackImportedClass(c.OwnerClass);
-            TypedReg idst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+            TypedReg idst = this._ctx.Alloc(itag);
             this._ctx.Emit(new VCallInstr(idst, recv, c.MethodName, iargs, c.ArgCount));
             return idst;
         }
@@ -450,5 +461,25 @@ public sealed class ExprEmitter {
         TypedReg dst = this._ctx.Alloc(toIr);
         this._ctx.Emit(new ConvertInstr(dst, src));
         return dst;
+    }
+
+    // cast 目标是否为类（Z42ClassType / Z42InstantiatedType）——field.get / instance-call 在
+    // cast-to-class receiver 上结果 tag → Unknown 的门（G19a；prim/array/iface cast 不触发）。
+    private static bool _isClassCast(Z42Type t) {
+        return (t is Z42ClassType) || (t is Z42InstantiatedType);
+    }
+
+    // receiver 表达式是否处于 cast-to-class 的「Unknown 链」上（镜像 C#：cast-to-class 的
+    // field/method 结果语义类型 Unknown，链式 `(x as T).f.Name()` 整条 Unknown）。结构化沿
+    // member.Target / call.Receiver 递归——只穿 cast→field→call 链，不误判同 REGT-Unknown 的
+    // 无关寄存器（REGT-tag 传播曾过度匹配 522 处）。BoundIdent/param/this 等非链节点 → false。
+    private bool _castUnknownChain(BoundExpr e) {
+        if ((e is BoundCast) && ExprEmitter._isClassCast(e.Type())) { return true; }
+        if (e is BoundMember) { return this._castUnknownChain((e as BoundMember).Target); }
+        if (e is BoundCall) {
+            BoundCall bc = e as BoundCall;
+            if (bc.Receiver != null) { return this._castUnknownChain(bc.Receiver); }
+        }
+        return false;
     }
 }

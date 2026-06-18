@@ -304,7 +304,10 @@ public sealed class FunctionEmitter {
                 if (this._ctx.Locals.ContainsKey(v.Name)) {
                     dst = this._ctx.Locals.Get(v.Name) as TypedReg;
                 } else {
-                    dst = this._ctx.Alloc(this._ctx.ToIrType(v.VarType));
+                    // 镜像 C# WriteBackName：var 专用寄存器 tag = init 表达式寄存器类型（r.Type），
+                    // 非声明类型。差异仅在 init 为 Unknown（cast 链）而声明类型具体时显现（如
+                    // `string s = (x as T).Name()` → C# Unknown / 声明类型 str）。
+                    dst = this._ctx.Alloc(r.Type);
                     this._ctx.Locals.Put(v.Name, dst);
                 }
                 if (dst.Id != r.Id) { this._ctx.Emit(new CopyInstr(dst, r)); }
