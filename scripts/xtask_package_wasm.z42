@@ -19,7 +19,7 @@ using Std.IO;
 int _buildRuntimePackageWasm(string root, string rid, string version, string profile) {
     string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
-    string wasmRoot = Path.Join(root, "src/toolchain/workload/platforms/wasm");
+    string wasmRoot = Path.Join(root, "src/toolchain/workload/wasm/platform");
     string pkgName = "z42-runtime-" + version + "-" + rid + (rel ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Runtime package: " + pkgName);
@@ -70,7 +70,7 @@ int _buildRuntimePackageWasm(string root, string rid, string version, string pro
 
 // ── workload tooling: js/ facade + package.json (runtime pkg-* symlinked at install) ──
 int _packageWasm(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
-    string wasmRoot = Path.Join(root, "src/toolchain/workload/platforms/wasm");
+    string wasmRoot = Path.Join(root, "src/toolchain/workload/wasm/platform");
 
     // build the separate runtime pack first (wasm module + bindings live there).
     int c = _buildRuntimePackageWasm(root, rid, version, profile);

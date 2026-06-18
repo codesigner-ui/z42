@@ -47,7 +47,7 @@ public class DesktopBackend : IPlatformBackend {
         string outDir  = Path.Join(root, "artifacts/build/desktop-test");
         Directory.Create(outDir);
         string bin     = Path.Join(outDir, "r1_r7");
-        string src     = Path.Join(root, "src/toolchain/workload/platforms/desktop/tests/r1_r7.c");
+        string src     = Path.Join(root, "src/toolchain/workload/desktop/tests/r1_r7.c");
         string include = Path.Join(root, "src/runtime/include");
 
         // cc r1_r7.c -I include -o bin -L libDir -lz42 <platform native libs>

@@ -32,7 +32,7 @@ int _checkVersionsDrift() {
 
     // ── Android ──────────────────────────────────────────────────────────
     Console.WriteLine("── Android ──────────────────────────────────────────────────────────────");
-    string gradleText = File.ReadAllText(Path.Join(root, "src/toolchain/workload/platforms/android/z42vm/build.gradle.kts"));
+    string gradleText = File.ReadAllText(Path.Join(root, "src/toolchain/workload/android/platform/z42vm/build.gradle.kts"));
     string wantMin = _scalarStr(toml.Get("platform").Get("android").Get("min_api"));
     string gotMin  = _firstMatchGroup(gradleText, "minSdk\\s*=\\s*([0-9]+)", 1);
     failCount = failCount + _check("build.gradle.kts  minSdk", wantMin, gotMin);
@@ -50,9 +50,9 @@ int _checkVersionsDrift() {
     // which reads platform.ios.{min_ios,min_macos} from versions.toml at
     // runtime (no hardcoded literal → drift structurally impossible there).
     // The sole remaining hardcoded `.iOS(.v<major>)` projection is the
-    // committed host harness src/toolchain/workload/platforms/ios/Package.swift
+    // committed host harness src/toolchain/workload/ios/platform/Package.swift
     // (used for `swift test`); re-anchor the drift check onto it.
-    string pkgSwiftText = File.ReadAllText(Path.Join(root, "src/toolchain/workload/platforms/ios/Package.swift"));
+    string pkgSwiftText = File.ReadAllText(Path.Join(root, "src/toolchain/workload/ios/platform/Package.swift"));
     string wantIos = _scalarStr(toml.Get("platform").Get("ios").Get("min_ios"));
     string gotIosMajor = _firstMatchGroup(pkgSwiftText, "\\.iOS\\(\\.v([0-9]+)\\)", 1);
     string gotIos = gotIosMajor + ".0";

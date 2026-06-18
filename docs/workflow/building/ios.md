@@ -1,6 +1,6 @@
 # iOS facade — build & run
 
-> 🟢 已落地 · facade [`platforms/ios/`](../../../src/toolchain/workload/platforms/ios/) · spec [`2026-05-12-add-platform-ios/`](../../spec/archive/2026-05-12-add-platform-ios/)
+> 🟢 已落地 · facade [`ios/platform/`](../../../src/toolchain/workload/ios/platform/) · spec [`2026-05-12-add-platform-ios/`](../../spec/archive/2026-05-12-add-platform-ios/)
 
 把 z42 VM 编进 `Z42VM.xcframework`，让 Swift / SwiftUI app `import Z42VM` 跑 `.zbc`。iOS app 只能在 **macOS 主机**上编。**从零开始按下面 4 步走**。
 
@@ -48,7 +48,7 @@ dotnet build src/compiler/z42.slnx
 `Package.swift`：
 
 ```swift
-.package(path: "/abs/path/to/z42/src/toolchain/workload/platforms/ios"),
+.package(path: "/abs/path/to/z42/src/toolchain/workload/ios/platform"),
 // 或 release：
 // .package(url: "https://github.com/codesigner-ui/z42-ios.git", from: "0.1.0"),
 ```
@@ -79,7 +79,7 @@ _ = try vm.invoke(e)
 **See also**
 
 - **本地打 per-slice SDK package**（自包含 `Package.swift` + `Z42VM.xcframework`）：[`../packaging.md`](../packaging.md) — `./xtask package release --rid ios-arm64 / iossim-arm64`
-- Swift API + 错误码（spec 落地后补）：`platforms/ios/README.md`
-- 跨平台契约：[`platforms/README.md`](../../../src/toolchain/workload/platforms/README.md)
+- Swift API + 错误码（spec 落地后补）：`ios/README.md`
+- 跨平台契约：[`platform-contract.md`](../../../src/toolchain/workload/platform-contract.md)
 - 设计 + 决策：[spec](../../spec/archive/2026-05-12-add-platform-ios/)
 - Demo / XCTest / CI 推迟到独立 spec（`add-platform-ios-demo` / `-tests` / `-ci`）。

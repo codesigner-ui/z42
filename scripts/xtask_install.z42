@@ -337,7 +337,7 @@ int _checkAndroidBuildSdk(string root, TomlValue toml) {
 int _checkAndroidDrift(string root, TomlValue toml) {
     string wantMin = _vget(toml, "platform.android.min_api");
     string wantTgt = _vget(toml, "platform.android.target_api");
-    string gradle = Path.Join(root, "src/toolchain/workload/platforms/android/z42vm/build.gradle.kts");
+    string gradle = Path.Join(root, "src/toolchain/workload/android/platform/z42vm/build.gradle.kts");
     string text = File.Exists(gradle) ? File.ReadAllText(gradle) : "";
     string minActual = _firstIntAfter(text, "minSdk");
     string compileActual = _firstIntAfter(text, "compileSdk");
@@ -379,7 +379,7 @@ int _setupIos(string root, TomlValue toml, string mode) {
 int _checkIosDrift(string root, TomlValue toml) {
     string wantIos = _vget(toml, "platform.ios.min_ios");
     string wantMac = _vget(toml, "platform.ios.min_macos");
-    string pkg = Path.Join(root, "src/toolchain/workload/platforms/ios/Package.swift");
+    string pkg = Path.Join(root, "src/toolchain/workload/ios/platform/Package.swift");
     string text = File.Exists(pkg) ? File.ReadAllText(pkg) : "";
     string iosActual = _firstIntAfter(text, ".iOS(.v");
     string macActual = _firstIntAfter(text, ".macOS(.v");

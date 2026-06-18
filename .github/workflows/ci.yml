@@ -1109,7 +1109,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd src/toolchain/workload/platforms/wasm/tests
+          cd src/toolchain/workload/wasm/platform/tests
           npm install --no-audit --no-fund
           npx playwright install --with-deps chromium
       - name: test platform wasm (build + assets + Playwright R1–R7)
@@ -1232,14 +1232,14 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          working-directory: src/toolchain/workload/platforms/android
+          working-directory: src/toolchain/workload/android/platform
           script: ./gradlew :z42vm:connectedAndroidTest
       - name: Publish Android test report (GitHub Check)
         uses: dorny/test-reporter@v1
         if: always()
         with:
           name: platform-tests / android
-          path: 'src/toolchain/workload/platforms/android/z42vm/build/outputs/androidTest-results/connected/**/*.xml'
+          path: 'src/toolchain/workload/android/platform/z42vm/build/outputs/androidTest-results/connected/**/*.xml'
           reporter: java-junit
           fail-on-error: false
       - name: Upload Android JUnit
@@ -1247,7 +1247,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: junit-android
-          path: src/toolchain/workload/platforms/android/z42vm/build/outputs/androidTest-results/connected/**
+          path: src/toolchain/workload/android/platform/z42vm/build/outputs/androidTest-results/connected/**
           if-no-files-found: warn
 
   test-desktop:

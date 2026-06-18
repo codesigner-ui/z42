@@ -92,7 +92,7 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
 
     // [2/3] Sources/ + Package.swift (binaryTarget = install-resolved placeholder)
     Console.WriteLine("[2/3] Sources/Z42VM + Package.swift (tooling)");
-    string iosSrc = Path.Join(root, "src/toolchain/workload/platforms/ios");
+    string iosSrc = Path.Join(root, "src/toolchain/workload/ios/platform");
     Directory.Create(Path.Join(pkgDir, "Sources/Z42VM"));
     Directory.Create(Path.Join(pkgDir, "Sources/Z42VMC/include"));
     foreach (var f in Directory.Enumerate(Path.Join(iosSrc, "Sources/Z42VM"))) {

@@ -1,6 +1,6 @@
 // xtask — wasm platform backend (add-platform-test-pipeline, 2026-06-15).
 // Implements IPlatformBackend for browser-wasm. Ports the three phases of
-// src/toolchain/workload/platforms/wasm/{build.sh,test.sh} into z42:
+// src/toolchain/workload/wasm/platform/{build.sh,test.sh} into z42:
 //   ① BuildProject : wasm-pack build (web + nodejs)
 //   ② Assets       : declares js/fixtures + js/stdlib + files.json (shared driver fills)
 //   ③ RunTests     : local node + Playwright (R1–R7, Chromium headless)
@@ -13,7 +13,7 @@ public class WasmBackend : IPlatformBackend {
     public string Name() { return "wasm"; }
 
     public AssetLayout Assets(string root) {
-        string wasmDir = Path.Join(root, "src/toolchain/workload/platforms/wasm");
+        string wasmDir = Path.Join(root, "src/toolchain/workload/wasm/platform");
         string[] stdlibDirs = new string[1];
         stdlibDirs[0] = Path.Join(wasmDir, "js/stdlib");
         return new AssetLayout(Path.Join(wasmDir, "js/fixtures"), stdlibDirs, true);
@@ -26,7 +26,7 @@ public class WasmBackend : IPlatformBackend {
             ConsoleError.WriteLine("error: wasm-pack not on PATH (cargo install wasm-pack --locked)");
             return 1;
         }
-        string wasmDir = Path.Join(root, "src/toolchain/workload/platforms/wasm");
+        string wasmDir = Path.Join(root, "src/toolchain/workload/wasm/platform");
 
         Console.WriteLine("  wasm-pack build --target web");
         int c = _execIn(new Process("wasm-pack").Arg("build").Arg("--target").Arg("web")
@@ -42,7 +42,7 @@ public class WasmBackend : IPlatformBackend {
     // (artifacts/tools/node, dev) and prepends it to PATH; in CI (no local node)
     // falls back to PATH node/npm/npx from actions/setup-node.
     public int RunTests(string root) {
-        string testsDir = Path.Join(root, "src/toolchain/workload/platforms/wasm/tests");
+        string testsDir = Path.Join(root, "src/toolchain/workload/wasm/platform/tests");
         string nodeBin  = Path.Join(root, "artifacts/tools/node/bin");
         bool localNode  = File.Exists(Path.Join(nodeBin, "node"));
         if (!localNode) {
@@ -62,7 +62,7 @@ public class WasmBackend : IPlatformBackend {
         // self-asserting demo loads pkg-nodejs + invokes Hello.Main + checks
         // stdout=="hello, world". Covers the Node target Playwright (browser)
         // doesn't. Fail-fast: no chromium download needed.
-        string wasmDir = Path.Join(root, "src/toolchain/workload/platforms/wasm");
+        string wasmDir = Path.Join(root, "src/toolchain/workload/wasm/platform");
         Console.WriteLine("  node demo/node/run.js (pkg-nodejs smoke)");
         int nc = _execIn(new Process(nodeExe).Arg(Path.Join(wasmDir, "demo/node/run.js")), wasmDir);
         if (nc != 0) { ConsoleError.WriteLine("error: pkg-nodejs node smoke failed"); return nc; }
