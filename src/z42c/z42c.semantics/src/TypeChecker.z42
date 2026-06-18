@@ -552,9 +552,10 @@ public sealed class TypeChecker {
             IdentExpr tid = mem.Target as IdentExpr;
             if (env.LookupVar(tid.Name) == null && env.Symbols.HasClass(tid.Name)) {
                 Z42ClassType ct = env.Symbols.GetClass(tid.Name);
-                MethodSymbol ms = this._findMethod(env.Symbols, ct, mem.Name);
+                string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
+                MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
                 if (ms != null) {
-                    return new BoundCall("static", false, null, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret, sp);
+                    return new BoundCall("static", false, null, ct.Name(), mkey, args, argCount, ms.Signature.Ret, sp);
                 }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                     "no static method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
@@ -566,9 +567,10 @@ public sealed class TypeChecker {
         Z42Type rt = recv.Type();
         if (rt is Z42ClassType) {
             Z42ClassType ct = rt as Z42ClassType;
-            MethodSymbol ms = this._findMethod(env.Symbols, ct, mem.Name);
+            string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
+            MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
             if (ms != null) {
-                return new BoundCall("instance", true, recv, ct.Name(), mem.Name, args, argCount, ms.Signature.Ret, sp);
+                return new BoundCall("instance", true, recv, ct.Name(), mkey, args, argCount, ms.Signature.Ret, sp);
             }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                 "no method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
@@ -593,9 +595,10 @@ public sealed class TypeChecker {
         string wrapper = TypeChecker._primWrapper(rt.Name());
         if (env.Symbols.HasClass(wrapper)) {
             Z42ClassType wct = env.Symbols.GetClass(wrapper);
-            MethodSymbol wms = this._findMethod(env.Symbols, wct, mem.Name);
+            string mkey = this._overloadKey(env.Symbols, wct, mem.Name, argCount);
+            MethodSymbol wms = this._findMethod(env.Symbols, wct, mkey);
             if (wms != null) {
-                return new BoundCall("instance", true, recv, rt.Name(), mem.Name, args, argCount, wms.Signature.Ret, sp);
+                return new BoundCall("instance", true, recv, rt.Name(), mkey, args, argCount, wms.Signature.Ret, sp);
             }
         }
         return new BoundCall("instance", true, recv, rt.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
@@ -690,6 +693,17 @@ public sealed class TypeChecker {
     }
 
     // 方法查找：本类 → base 链（迭代）。
+    // 重载 arity 解析键（镜像 C# instArityKey / BindMemberCallOnPrimitive 的 primArityKey）：
+    // 重载方法在 TSIG 以 `Name$arity` 存（如 String.Split→`Split$1`/`Split$2`），unique 方法存 bare。
+    // 故 `Name$argCount` 键存在 → 该 overload，发 mangled 名；否则 bare。emit 名须用此键
+    // （byte-identical：C# v_call 发 `Split$1` 非 `Split`）。对 unique 方法 arity 键不存在 → 退回 bare，
+    // 6 个已 byte-identical 包不受影响（其调用皆 unique 方法）。
+    private string _overloadKey(SymbolTable symbols, Z42ClassType ct, string name, int argCount) {
+        string ak = name + "$" + argCount.ToString();
+        if (this._findMethod(symbols, ct, ak) != null) { return ak; }
+        return name;
+    }
+
     private MethodSymbol _findMethod(SymbolTable symbols, Z42ClassType ct, string name) {
         Z42ClassType cur = ct;
         bool more = true;
