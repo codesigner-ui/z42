@@ -113,6 +113,26 @@ docs/spec/
 **每次新对话首条消息触发：** Claude 自动读取 `.claude/projects/<project>/memory/MEMORY.md`
 和当前阶段（roadmap + `docs/spec/changes/` 进行中变更），主动汇报状态和下一步，再处理用户输入。
 
+### 阶段 0 必做：扫描可归档变更（2026-06-19 新增）
+
+**在处理用户指令前，Claude 必须先扫描 `docs/spec/changes/` 下的全部 change，识别并归档"实质已完成"的 change：**
+
+**可归档的判定标准：**
+1. **tasks.md 阶段摘要（进度概览）全部 [x]** 且目标已验证（GREEN 通过 / 对账面板 / byte-identical 确认等）
+2. **所有 [ ] 均属"被后续任务明确覆盖的早期诊断记录"**——后续某个 task 说"清零 / 修复 / 顺带清掉"了该条，则视为已完成
+3. **tasks.md 头部已标 🟢 已完成** 但尚未 move 到 archive
+
+发现可归档 change 时：
+- 将被覆盖的 stale `[ ]` 改为 `[x]`（注明由哪个后续任务解决）
+- 更新 tasks.md 头部状态为 `🟢 已完成 | 完成：YYYY-MM-DD`
+- 执行阶段 9 归档动作（mv + ACTIVE.md 更新）
+- 归档提交并入当次会话第一个 commit，不单独占新对话
+
+**检测来源（无需逐行细读，粗扫就够）：**
+- tasks.md 头部状态标志（🟢 / 🟡 / 🔴）
+- `grep -c '^\- \[ \]' tasks.md` 的未勾数 vs tasks.md 末尾 G/子任务的"完成声明"
+- `docs/spec/changes/ACTIVE.md` 子系统持有表是否有与 `spec/changes/` 不符的陈旧条目
+
 Claude 读到以下关键词时自动触发对应动作：
 
 | 用户说 | Claude 做 |
@@ -425,6 +445,8 @@ docs/spec/changes/<change-name>/
 4. 将 tasks.md 中对应项 `[ ]` → `[x]`
 5. 简短说明完成情况
 6. 遇到阻塞 → 记录到 tasks.md 备注区 + 告知 User
+
+**回溯勾销（2026-06-19 新增）**：当一个新任务（G-N / 子任务）的完成说明中包含"清零 / 修复 / 顺带清掉 / 覆盖"某个早期未勾 `[ ]` 条目时，**必须在同一步骤内**将该早期条目改为 `[x]`，并在其描述中补注 "（由 G-N/子任务 X 解决）"。不允许让"已被后续任务解决的 [ ] 条目"在 tasks.md 中继续存在，否则会造成"progress summary 全绿 but tasks 有 [ ]"的误导，导致 change 无法正确识别为可归档。
 
 **z42 pipeline 顺序（不跳步）：** Lexer → Parser → AST → TypeChecker → Codegen → VM interp → 测试
 

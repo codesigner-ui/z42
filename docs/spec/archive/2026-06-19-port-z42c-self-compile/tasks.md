@@ -1,6 +1,6 @@
 # Tasks: port-z42c-self-compile
 
-> 状态：🟡 进行中 | 创建：2026-06-15
+> 状态：🟢 已完成 | 创建：2026-06-15 | 完成：2026-06-19
 
 **变更说明：** dogfood gap-batch——让自举 z42c 编译器能编译**自己的源码**（src/z42c/
 7 包），逐个补齐 z42c 当前缺的语法/语义/stdlib 缺口（feedback_dogfood_fill_gaps：
@@ -72,7 +72,7 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
 - [x] **G18e LocalClasses 反劫持守卫修正（G18b 多-ns 包回归修复）**：G18b 用 `ImportedClassNs.ContainsKey` 判 imported，但该图（G17b `_pkgClassNs`）**含本包跨-ns 自有类**（z42c.ir 的 `Z42.IR.BinaryFormat` 段 ByteWriter/StrMapIr/ZbcStringPool）→ 被误判 imported → ChainHasMethod 返 false → 本地实例调用（`bw.ToHex()`/`pool.Intern()`/`sm.Put()`）劫持到同名外部方法（Std.Numerics.BigInt.ToHex / Z42.Semantics.IrGen.Intern / Z42.Semantics.StrMap.Put）→ **虚假跨包 DEPS**（z42c.ir DEPS 4 vs C# 1）。修：`EmitContext.LocalClasses`（本包自有声明类名集，`IrDump._pkgLocalClasses` 全 ns）+ ChainHasMethod 改查 LocalClasses（镜像 C# ReceiverChainHasMethod 走仅本地 ClassRegistry）。**z42c.ir DEPS/SIGS/TSIG/EXPT 恢复 byte-identical**；core/syntax 无回归（gate 全绿）。instrument 实证劫持点（`HIJACK owner=ByteWriter method=ToHex...`）确诊。
 - [x] **G18d TSIG 方法签名类型规范化（C# 漂移 sync）**：C# TSIG 方法 ret/param 用 `TypeToString(resolved)`=**规范名**（ByteWriter.ToBytes:byte[] → TSIG `u8[]`，whichsec 实证 TSIG/MODS 引 idx249=u8[]），区别于**字段**仍源拼写（byte[]）。z42c 原 G17c-2 一律 `Dump()`（源拼写 byte[]）。修：`_tsigTypeName`（规范化 prim 名 + 保留数组/nullable 结构；泛型回落 Dump）用于 `_fromSymbol`/`_extractFunc`/`_extractInterface` 的 ret+param；字段保留 Dump。回归测试 collect +2（方法签名 byte[]→u8[]·short→i16 + 字段源拼写 byte[] + nullable string? 结构保留）。core/syntax 无回归 + gate 全绿。
 - [x] **G18f SIGS 签名类型源拼写**：whichsec 实证 zpkg 顶层 SIGS type_str 用**源拼写**（C# byte[]@idx692），TSIG/MODS 用规范名（u8[]@idx249）——C# 二分：SIGS=源 / TSIG=规范。z42c `FunctionEmitter` retName/paramTypes 原 `ResolveTypeP().Name()`=规范（u8[]）。修：`_sigTypeName`（仅会被规范化的次要 prim 别名 byte/sbyte/short/ushort/uint/ulong 走源名；nullable 剥 ?、class/泛型/delegate 委托 ResolveTypeP；数组递归）用于 SIGS ret+param。Tag.FromName("byte[]")==("u8[]")→Object 不变。**z42c.ir SIGS/STRS/TSIG/EXPT/DEPS/NSPC/META/IMPL 全 byte-identical**；core/syntax 无回归（无次要-别名签名）+ gate 全绿。
-- [ ] 🔴 **z42c.ir 末段残差（ZbcInstr.z42 REGT 类型 tag，22 处）**：8/9 段 byte-identical 后，`disasm` ZASM diff 揪出 MODS REGT 22 处寄存器类型 tag 分歧（全在 ZbcInstr.z42，G17c-4-class，**与 G18 无关、pre-existing、此前被 DEPS/STRS 层掩盖**）：
+- [x] 🔴 **z42c.ir 末段残差（ZbcInstr.z42 REGT 类型 tag，22 处）**（**G17c-4/G18i/G19a 完全清零**；G19a 验证：ir disasm 全清 0 非-env diff）：8/9 段 byte-identical 后，`disasm` ZASM diff 揪出 MODS REGT 22 处寄存器类型 tag 分歧（全在 ZbcInstr.z42，G17c-4-class，**与 G18 无关、pre-existing、此前被 DEPS/STRS 层掩盖**）：
   - **i32-vs-i64（4 处）**：`int t = 0;` → z42c 寄存器 tag 取 **init 表达式类型**（const.i64 0 → i64）；C# 取**声明类型**（int → i32）。修法：FunctionEmitter BoundVarDeclStmt 用声明类型 tag。
   - **field.get 结果 tag（6 str + 12 ref = 18 处）**：跨-ns 本地类字段读（`i.Func`/`.ElemName`/`.Name`，i=`ins as CallInstr`，CallInstr@Z42.IR 从 BinaryFormat 段读）→ z42c 取字段声明类型 tag（str/ref）；C# 留 **Unknown(0x00)**。疑跨-ns 字段类型 codegen 期未解析。修法：跨-ns 类字段读结果 tag → Unknown（镜像 C#）。
   - **诊断法（已验证，今后逐包首选）**：`dotnet driver disasm <zpkg> -o x.zasm`（C# CLI 可 disasm zpkg）→ diff 两路 ZASM 直接看寄存器 tag/指令分歧，比段尺寸/池索引解码精准。
@@ -86,7 +86,7 @@ G9 落地后首次对真实包 standalone 双路构建对账（隔离 .cache 防
   - **cast-to-class receiver 的 field/method 结果 → Unknown（结构化链传播）**（`ExprEmitter._emitMember`/`_emitCall` + `_castUnknownChain`）：`(t as Z42PrimType).Name()` / `(x as Z42InstantiatedType).Def.Name()` —— C# cast-to-class 走 stub→成员未解析→语义 Unknown，链式整条 Unknown。**G19a 更正 G18i**：原 `IsCrossNs` 门过窄（同-ns 类 cast 也 Unknown，真因是 cast receiver 而非跨-ns）+ 只管 field 不管 method call。修：`_isClassCast`（Z42ClassType/Z42InstantiatedType cast target）+ `_castUnknownChain`（结构沿 member.Target/call.Receiver 递归，只穿 cast→field→call 链——REGT-tag 传播曾过度匹配 522 处，故用结构化而非寄存器 tag）。**顺带清掉 ir 的 4 处 disasm 残差**（同 same-ns cast 模式，G18i 跨-ns 门漏掉）。
   - **var-decl-with-init 寄存器 tag = init 表达式寄存器类型**（`FunctionEmitter` 无-Locals 分支 `Alloc(r.Type)`，原 `ToIrType(v.VarType)` 声明类型）：镜像 C# `WriteBackName` 用 `valReg.Type`。差异仅在 init 为 Unknown（cast 链）而声明类型具体时显现（`string s = (cast).Name()` → C# Unknown / 声明 str）。
   - **效果**：z42c.semantics MODS/SIGS/TSIG/EXPT/DEPS/NSPC/META/IMPL 全 delta 0，仅 STRS −1（env-artifact）。**core FULL / syntax 仍 −1 / ir 现 disasm 全清（0 非-env diff，G18i 4 残差被顺带修复）/ project 仍 disasm 全同**，零回归。gate 全绿（[Test] 16/16 + e2e 7/7 zbc + 6/6 zpkg byte-identical）。
-- [ ] 🔴 **z42c.semantics 2 残差 REGT/name**（disasm 仅剩 2 hunk，deep C# stub/overload 怪癖，留 follow-up）：
+- [x] 🔴 **z42c.semantics 2 残差 REGT/name**（**G21 + G22 完全清零**；G22 验证：7/7 全 byte-identical）（disasm 仅剩 2 hunk，deep C# stub/overload 怪癖，留 follow-up）：
   - **`mods.Split(" ")` → C# `Split$1` / z42c `Split`**：stdlib String.Split 重载 arity-mangling，z42c DepIndex 用 bare 名未 mangle。
   - **`TypeEnv.Root(s).WithClassGeneric(...)` 调用结果 → C# Unknown / z42c ref**：receiver=静态调用结果（类型 TypeEnv），C# 经**方法返回类型 stub**（空 Methods）→ 成员未解析→Unknown（同 cast stub 家族，但触发源是 return-type 解析而非 cast；z42c 全量解析故 ref）。结构化链不覆盖（receiver 非 cast）。诊断：`dotnet driver disasm`。
 - [x] 🎉 **G19b z42c.pipeline byte-identical（第 6 包）= 机制已建全，开箱即过**：dual-build 全段 delta 0、disasm 0 非-env diff，仅 STRS −1 env-artifact。无新根因——前序积累（字面量 long / cast 链 Unknown / 首赋值专用寄存器 / var-init 类型）已覆盖 pipeline 的全部构造。

@@ -11,15 +11,15 @@
 | `compiler` | —（空闲）| — | **~~add-desktop-export~~** ✅ 已归档 2026-06-17（WS008 注册 `[platform.desktop].publish_dir` + 删退役 `[apphost]` 段；43 ProjectManifest 测试绿）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
 | `runtime` | —（空闲）| — | **~~runtime-dynamic-load-call~~** ✅ 已归档 2026-06-19（接口落地；VM builtin 延后——见 launcher-command-dispatch.md Deferred workload-future-b2-packaging）。（前序 ~~add-reflection-transitive-interfaces~~ ✅ 2026-06-17）|
 | `stdlib` | —（空闲）| — | **~~runtime-dynamic-load-call~~** stdlib 部分 ✅ 2026-06-19（`Std.Runtime` extern 接口已落 z42.core/src/Runtime.z42）。（前序 ~~add-reflection-assignable-from~~ ✅ 2026-06-16）|
-| `z42c` | **port-z42c-self-compile（进行中）** | 2026-06-16 | dogfood gap-batch：z42c 自编译全部 7 自身包（G1-G8 已落地，**功能性自举达成**；下一级=逐包 byte-identical）。（~~mirror-build-output-per-component~~ ✅ 已归档 2026-06-16：16 测试 toml 加 `[build] output_dir` → artifacts/build/z42c/<member>/tests/<unit>）。前序全归档：…→~~sync-z42c-zbc-117-interfaces~~✅/~~fix-z42c-irdump-gate-bugs~~✅/~~fix-z42c-load-fixup-loop~~✅ 2026-06-16 |
+| `z42c` | —（空闲）| — | **~~port-z42c-self-compile~~** ✅ 已归档 2026-06-19（G22 7/7 全包 byte-identical 完成；2 stale [ ] 项由 G19a+G22 清零）。**~~scaffold-z42c-selfhost~~** ✅ 已归档 2026-06-19（B0 骨架 + port-z42c-* 系列全完成；30 子任务通过后续变更实现）。（前序：~~mirror-build-output-per-component~~ ✅ 2026-06-16）|
 | `toolchain` | —（空闲）| — | **~~clarify-launcher-command-face~~ ✅ 已归档 2026-06-17**（实装 `z42 list --workloads`；命令面 `update`/`use`/`workload update` 标 planned——真特性需 latest/pin resolution 未建）。**~~dry-ci-release-index~~ ✅ 已归档 2026-06-17** |
 
 ## 全部 in-flight change（参考，子系统占用以上表为准）
 
 | change | 子系统（待逐个确认） |
 |--------|---------------------|
-| scaffold-z42c-selfhost | z42c + compiler（已提交 127b7f11；gate 确认中，归档待绿）|
-| port-z42c-core | z42c + toolchain |
+| ~~scaffold-z42c-selfhost~~ | z42c + compiler —— ✅ 已归档 2026-06-19（骨架完成；实现通过 port-z42c-* 系列）|
+| ~~port-z42c-core~~ | z42c + toolchain —— ✅ 已归档 2026-06-07（见 spec/archive/2026-06-07-port-z42c-core）|
 | ~~port-z42c-codegen~~ | z42c —— ✅ 已归档 2026-06-09（CG-1A–2，210 cases）|
 | ~~port-z42c-zbc-writer~~ | z42c —— ✅ 已归档 2026-06-10（功能完整 .zbc writer + empty 逐字节 + e2e 四向；DBUG/span 移交 add-z42c-source-spans）|
 | ~~add-z42c-source-spans~~ | z42c —— ✅ 已归档 2026-06-10（span→DBUG + byte-compare 3/3；7942ab7d）|
