@@ -1,23 +1,23 @@
-// apphost stub-patch library (add-apphost 2026-06-09; --out + relative embed
-// 2026-06-10; apphost-as-config / add-desktop-export 2026-06-17).
+// apphost stub-patch library — the desktop workload's publish logic
+// (add-apphost 2026-06-09; --out + relative embed 2026-06-10; apphost-as-config
+// 2026-06-17; → desktop workload package z42.workload.desktop, 2026-06-18).
 //
 // Produces a per-app native apphost executable by copying the native apphost
-// stub template (../src/apphost.rs, shipped next to z42vm) and patching its
-// embedded target placeholder with the app's zpkg path. This is the **desktop
-// platform's publish artifact** — driven by `[platform.desktop]` config via
-// `z42 publish desktop` (launcher_export.z42 :: _cmdExportDesktop). There is no
-// standalone `z42 apphost` command (apphost-as-config, 2026-06-17): apphost is
-// the desktop output, symmetric with ios `.ipa` / android `.aab` / wasm bundle.
+// stub (the z42-apphost crate at platform/apphost, shipped next to z42vm) and
+// patching its embedded target placeholder with the app's zpkg path. This is the
+// **desktop platform's publish artifact** — driven by `[platform.desktop]` via
+// `z42 publish desktop` (launcher_export.z42, which depends on this package).
+// apphost is the desktop output, symmetric with ios `.ipa` / android `.aab` / wasm bundle.
 //
 // The embed is always resolved at runtime against the exe's OWN dir
 // (current_exe), so an exe + its zpkg can be relocated together.
 //
-// The placeholder is a 32-byte MAGIC sentinel (matching apphost.rs) followed
+// The placeholder is a 32-byte MAGIC sentinel (matching platform/apphost) followed
 // by a 992-byte payload; total 1024. We locate MAGIC by content, then
 // overwrite the payload with the NUL-terminated path. See
 // docs/design/runtime/launcher.md ("apphost").
 
-namespace Z42Launcher;
+namespace Z42.Workload.Desktop;
 
 using Std;
 using Std.IO;
