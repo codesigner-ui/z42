@@ -23,8 +23,8 @@
 
 ## 阶段 1: `__load_zpkg`（⏸ 延后——前置：反射 MVP + 编译器自举完成）
 
-- [ ] 1.1 `lazy_loader.rs`:加 `declare_from_path(path)` —— 读 zbc 元数据建 `ZpkgCandidate` 插 `declared_zpkgs`
-- [ ] 1.2 `corelib/runtime_dyn.rs`:`__load_zpkg(path)` builtin —— 调 declare_from_path + `load_zpkg_file`;幂等;错误抛 RuntimeException
+- [ ] 1.1 `z42_host::ZpkgResolver` trait + `VmBuilder::set_zpkg_resolver()`：apphost 注入平台特定 resolver（filesystem / asset / bundle）
+- [ ] 1.2 `corelib/runtime_dyn.rs`:`__load_zpkg(name)` builtin —— 按优先级解析（缓存 → resolver → filesystem 搜索）→ bytes → `load_zpkg_bytes`；幂等；错误抛 RuntimeException
 - [ ] 1.3 `corelib/mod.rs`:注册 builtin
 
 ## 阶段 2: `__call_static`（⏸ 延后——前置：反射 MVP + 编译器自举完成）
@@ -34,7 +34,7 @@
 
 ## 阶段 4: 测试与验证（⏸ 延后——前置：阶段 1+2 完成）
 
-- [ ] 4.1 Rust 单测 `runtime_dyn_tests.rs`:declare_from_path / call_static 正确+错误签名 / 幂等
+- [ ] 4.1 Rust 单测 `runtime_dyn_tests.rs`:ZpkgResolver trait / filesystem 搜索 / call_static 正确+错误签名 / 幂等
 - [ ] 4.2 VM e2e `src/tests/dynamic-load-call/load_call/`:load 测试 zpkg → call_static 传参取返回；expected_output
 - [ ] 4.3 `cargo build --release` + `cargo test`(runtime 单测,memory:改 runtime 必跑)
 - [ ] 4.4 `z42 xtask.zpkg test`(dotnet + vm interp+jit + cross-zpkg + lib 全绿)

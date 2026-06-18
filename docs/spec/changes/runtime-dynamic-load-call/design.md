@@ -4,19 +4,34 @@
 
 ```
 launcher(z42, 跑在 VM 内)
-  │  __load_zpkg("…/workloads/ios/z42.workload.ios.zpkg")
+  │  Runtime.LoadZpkg("z42.workload.ios")          ← 逻辑名，不含路径
   ▼
-Std.Runtime.LoadZpkg ──extern──► [builtin] __load_zpkg
-  │   读 zbc 元数据 → ZpkgCandidate → LazyLoader.declared_zpkgs.insert + load_zpkg_file
-  ▼   (类型/函数注册进全局表;transitive deps 自动 re-seed;幂等)
+[builtin] __load_zpkg(name)
+  │
+  ├─ 1. 已加载缓存命中？→ no-op（幂等）
+  │
+  ├─ 2. Apphost ZpkgResolver（若注册）
+  │     Desktop launcher : FileSystemResolver → $Z42_HOME/.../<name>.zpkg
+  │     Android apphost  : AssetResolver      → AssetManager.open(<name>.zpkg)
+  │     iOS apphost      : BundleResolver     → Bundle.path(forResource:<name>)
+  │     (均由 native 层在 VM 初始化时通过 z42_host API 注入)
+  │
+  └─ 3. 默认 filesystem 优先级搜索（未注册 Resolver 时）
+        .z42/workloads/<name>.zpkg             项目本地（最高）
+        $Z42_HOME/runtimes/<ver>/workloads/<name>/  版本作用域 workload 目录
+        $Z42_HOME/workloads/<name>.zpkg        全局 fallback
+  │
+  ▼   解析到 bytes → ZpkgCandidate → LazyLoader.declared_zpkgs.insert + load_zpkg_file
+      (类型/函数注册进全局表；transitive deps 自动 re-seed；幂等)
+
 launcher
-  │  int rc = __call_static("Z42.Workload.Ios.Export.Run", args)
+  │  int rc = Runtime.CallStatic("Z42.Workload.Ios.IosExport.Run", args)
   ▼
-Std.Runtime.CallStatic ──extern──► [builtin] __call_static
+[builtin] __call_static(fqn, string[])
   │   try_lookup_function(fqn) → Arc<Function>（懒加载触发）
-  │   校验签名 (string[])->int
+  │   校验签名 (string[])->int（严格，任一不符 → RuntimeException）
   │   重入 VM：以单个 string[] 实参建帧执行（interp/JIT 按当前后端）
-  ▼   取 int 返回 → 透传
+  ▼   取 int 返回 → 透传给 launcher
 ```
 
 复用既有(勘察确认):
@@ -43,6 +58,33 @@ Std.Runtime.CallStatic ──extern──► [builtin] __call_static
 ### Decision 4: packed 自包含优先
 **问题**:workload zpkg 的依赖怎么满足?
 **决定**:阶段 1 先要求 **packed 自包含**(deps 内联),`__load_zpkg` 零 dep 解析。transitive dep 懒链接(`lazy_loader` 已支持 re-seed)留作可选增强,不在本变更验证。
+
+### Decision 5: ZpkgResolver — 平台透明的逻辑名解析（2026-06-19）
+**问题**:`LoadZpkg` 的参数若是绝对文件系统路径，在 Android（APK assets / OBB）等移动平台上无法通用——asset 不在普通文件系统路径下。
+**选项**:
+- A: scheme URI（`asset://`, `bundle://`）— z42 代码需感知平台，每个平台写法不同。
+- B: 逻辑名 + apphost 注册 Resolver（inversion of control）— z42 代码只写包名，平台差异全部下沉到 native 层。
+- C: bytes-based `LoadZpkgBytes(byte[])` — 平台无关但把 IO 推给 z42 调用方。
+
+**决定**:**B**。`LoadZpkg` 参数统一为**逻辑包名**（如 `"z42.workload.ios"`），VM builtin 持有一个可选的 `ZpkgResolver` 钩子。
+
+解析优先级：
+1. 已加载缓存（幂等）
+2. Apphost 注册的 `ZpkgResolver`（平台特定：filesystem / AssetManager / Bundle）
+3. 默认 filesystem 优先级搜索（项目本地 → 版本作用域 → 全局，各找 `<name>.zpkg`）
+
+Resolver 是 Rust trait（`z42_host` crate），由 apphost 在 `VmBuilder` 初始化时注入：
+```rust
+// desktop launcher (default):
+vm.set_zpkg_resolver(FileSystemResolver::new(search_paths));
+
+// android:
+vm.set_zpkg_resolver(AssetResolver::new(asset_manager));
+
+// ios:
+vm.set_zpkg_resolver(BundleResolver::new(bundle_path));
+```
+未注册时走默认 filesystem 搜索，向后兼容。z42 代码跨平台一致。
 
 ## Implementation Notes
 - **builtin 重入 VM(关键)**:`__call_static` 在一个正在执行的 z42 程序(launcher)内,需重入解释器/JIT 执行另一个函数并取返回。必须确认/实现"从 builtin 嵌套调用 z42 函数"路径——host-api 的 native→z42 是顶层版本,这里是 mid-execution 嵌套版本。**实施第一步先验证该重入可行**(否则方案需调整)。
