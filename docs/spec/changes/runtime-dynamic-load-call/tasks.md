@@ -10,8 +10,12 @@
 - [ ] 阶段 3: stdlib 封装
 - [ ] 阶段 4: 测试与验证
 
-## 阶段 0: 可行性验证(先做,决定方案是否成立)
-- [ ] 0.1 勘 `crates/z42-host` + interp,确认/打通"从 builtin 嵌套重入执行一个 `Arc<Function>` 并取返回"路径(host-call 推广)。若不可行 → 停下报告,调整方案。
+## 阶段 0: 可行性验证(✅ GO,2026-06-18)
+- [x] 0.1 确认 builtin 可重入 VM 调 z42 函数取返回。**GO**:
+  - 统一入口 `interp::exec_function(ctx,&module,&func,&args)->ExecOutcome`(`pub(crate)`、`&VmContext` 不可变 → 可嵌套);`run_returning`(mod.rs:68)取返回。
+  - builtin 签名 `fn(&VmContext,&[Value])->Result<Value>`(corelib/mod.rs:62)拿 `&VmContext`,无借用冲突。
+  - 先例:ObjNew 调 ctor(exec_object.rs:145)、call_indirect 调闭包(exec_call.rs:161)、JIT vcall(jit/helpers/vcall.rs:116)、嵌入 invoke_impl(host/ops.rs:245)全走 exec_function 重入 + 传播异常。
+  - 实现细节:跨 zpkg 目标函数的 owning module 取法照搬 call_indirect 跨包路径。
 
 ## 阶段 1: `__load_zpkg`
 - [ ] 1.1 `lazy_loader.rs`:加 `declare_from_path(path)` —— 读 zbc 元数据建 `ZpkgCandidate` 插 `declared_zpkgs`
