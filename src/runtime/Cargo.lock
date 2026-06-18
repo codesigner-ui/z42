@@ -2299,6 +2299,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "z42-host"
+version = "0.1.0"
+dependencies = [
+ "z42",
+ "z42-abi",
+]
+
+[[package]]
 name = "z42-macros"
 version = "0.3.0"
 dependencies = [

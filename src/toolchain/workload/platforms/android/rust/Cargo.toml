@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 # Android ABIs out of the NDK; the older 2.3 snapshot's `sysv.S` CFI
 # issue is fixed in libffi 3.4.7 which ships inside libffi-sys 4.1.
 z42      = { path = "../../../../../runtime", default-features = false, features = ["android"] }
-z42-host = { path = "../../../../workload/host-api" }
+z42-host = { path = "../../../../../runtime/crates/z42-host" }
 
 [profile.release]
 opt-level = "z"
