@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 # dep too because Tier 1 types live there and the wasm crate re-borrows
 # them (ZpkgResolver trait, Z42HostStatus).
 z42   = { path = "../../../../runtime", default-features = false, features = ["wasm"] }
-z42-host = { path = "../../../workload/host-api" }
+z42-host = { path = "../../../../runtime/crates/z42-host" }
 z42-abi  = { path = "../../../../runtime/crates/z42-abi" }
 
 wasm-bindgen = "0.2"

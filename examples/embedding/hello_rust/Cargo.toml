@@ -16,6 +16,6 @@ name = "hello_rust"
 path = "src/main.rs"
 
 [dependencies]
-# Point this at a checkout of the z42 repo's src/toolchain/workload/host-api/ crate.
+# Point this at a checkout of the z42 repo's src/runtime/crates/z42-host/ crate.
 # Future: crates.io publish (see roadmap "Rust crate publish" — currently deferred).
-z42-host = { path = "../../../src/toolchain/workload/host-api" }
+z42-host = { path = "../../../src/runtime/crates/z42-host" }
