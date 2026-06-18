@@ -53,9 +53,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 ## 当前焦点
 
-**0.3.x 自举线**：以 GC v1 为地基，三主线并行——A（stdlib 重组 + perf）‖ B（**编译器全自举**：7 子系统用 z42 重写到 byte-identical）‖ C（反射 MVP），REPL 作为自举完成后的 capstone。详见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排）。
+**0.3.x 自举线**：以 GC v1 为地基，三主线并行——A（stdlib 重组 + perf）‖ B（**编译器全自举**：7 子系统 byte-identical）‖ C（**反射完整化**：含非泛型 Method.Invoke），尾段五项扩展——boxing 机制 + test-runner 删除 + CI 三平台模拟器 + workload B1/B2，REPL 作为 capstone。详见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-19 扩展）。
 
 > **2026-06-07 重排要点**：全端到端自举从 1.0 拉到 0.3.x 作为本线招牌；自举采用「受限写法 + dogfood 补真卡点」（不为自举强制提前整个 0.6/0.7 的 match/LINQ/Result）；REPL 从 0.5.x 拉到 0.3.x capstone。连锁影响见下文 [长期 SemVer 路线](#长期-semver-路线05--10) 重排。
+
+> **2026-06-19 扩展要点**：boxing 机制（0.3.11）作为非泛型 Method.Invoke 前置新增；Method.Invoke 非泛型从 0.5.x 拉入 0.3.12；IsEnum + 嵌套泛型反射 + 接口成员枚举并入 0.3.12；test-runner 删除（z42c test GA）新增 0.3.13；CI 三平台模拟器（WASM/iOS Simulator/Android Emulator → GitHub Checks）新增 0.3.13 并行；workload B1+B2（命令发现 + 包格式）新增 0.3.14；REPL 后移 0.3.15；soak 0.3.16。0.5.x 反射收窄为泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>。
 
 ### 0.2.x — 工程化 & 包系统 + perf CI ✅ 收尾
 
@@ -73,7 +75,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 ### 0.3.x — 自举线（GC v1 地基 → stdlib ‖ 全自举 ‖ 反射 → REPL）（2026-06-07 重排）
 
-退出标准：（A）stdlib 重组完成 + 每包 bench baseline + 三轮 perf 攻坚；（B）**编译器 7 子系统全部用 z42 重写**，byte-identical CI gate 7 日零飘移 + end-to-end compile-perf median ≤ 3× C# + z42c-selfhost 下全测试绿；（C）反射 MVP（只读元数据 + `typeof`/`GetType` + Attribute）；（capstone）z42 原生 REPL。
+退出标准：（A）stdlib 重组完成 + 每包 bench baseline + 三轮 perf 攻坚；（B）**编译器 7 子系统全部用 z42 重写**，byte-identical CI gate 7 日零飘移 + end-to-end compile-perf median ≤ 3× C#；（C）**反射完整化**（非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举）；（D）**test-runner 删除**（`z42c test` 端到端 GA）；（E）**CI 三平台模拟器**（WASM / iOS Simulator / Android Emulator → JUnit → GitHub Checks 全绿）；（F）**workload B1+B2**（命令发现 + 包格式 + `z42 workload install/list/remove` GA）；（capstone）z42 原生 REPL。
 
 > **完整规划**见 [`plan-0.3.x-three-streams/proposal.md`](spec/changes/plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排，supersede 2026-06-05 保守版）。以下为子版本索引。
 >
@@ -83,7 +85,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 >
 > **REPL = capstone（从原 0.5.x 拉到 0.3.x）**：自举端到端 build 跑通后落地（前置 Semantic/TypeChecker/IR 均在本线内交付），单独 spec `add-z42-repl`。
 >
-> **C 主线 MVP 不含 Method.Invoke**：完整 Invoke 强依赖 generic instantiation，推 0.5.x L3-R 完整版。
+> **C 主线完整化含非泛型 Method.Invoke（2026-06-19 调整）**：boxing 机制（0.3.11）为前置；非泛型方法 Invoke 在 0.3.12 落地。泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T> 仍依赖 generic instantiation，推 0.5.x L3-R。
 >
 > **C3 Attribute reflection 前置**：用户自定义 attribute 机制 spec 需先落地（0.3.4 起草）。
 
@@ -99,14 +101,19 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.3.6 | typecheck | A5 perf #3 JSON/YAML/TOML | — |
 | 0.3.7 | ir（codegen + lowering，寄存器 SSA）| | |
 | 0.3.8 | emit（ZbcWriter/ZpkgWriter → byte-identical .zbc/.zpkg）| | |
-| 0.3.9 | pipeline → **端到端 z42 build 跑通** | | |
-| 0.3.10 | byte-identical gate 全 7 子系统绿 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
-| 0.3.11 | **REPL capstone**（z42 原生）| | |
-| 0.3.12 | 收尾：z42c-selfhost 下全 dotnet/xtask test 绿 + soak + A perf delta report | | |
+| 0.3.9 | 归档 port-z42c-self-compile（G22 全绿）+ runtime-dynamic-load-call 归档 | | |
+| 0.3.10 | byte-identical CI gate 全 7 子系统 7 日零飘移 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
+| 0.3.11 | **Boxing 机制**：auto-boxing（prim→Object）+ box/unbox IR 指令 + 编译器隐式转换规则（spec-first，lang/ir/vm 三层）| | |
+| 0.3.12 | **反射完整化**：Method.Invoke（非泛型）‖ IsEnum（enum 作类型实体 spec 前置）‖ 嵌套泛型 GetGenericArguments ‖ 接口成员枚举 | | |
+| 0.3.13 | **test-runner 删除**：z42.test 加 TestRunner 类（反射驱动 [Test] 发现）+ z42c.driver `test` 命令 + 退役 Rust binary ‖ **CI 三平台模拟器**：WASM(Playwright) / iOS Simulator(`xcodebuild -destination`) / Android(emulator-runner+KVM) → JUnit → GitHub Checks（stdlib+z42c ‖ toolchain 双锁并行）| | |
+| 0.3.14 | **workload B1**（命令发现：launcher 扫目录 → Std.Cli 树合并）+ **B2**（workload 包格式 + `z42 workload install/list/remove`）| | |
+| 0.3.15 | **REPL capstone**（z42 原生：变量 / 表达式 / 类型声明 / 实例化 + 跨 line scope）| | |
+| 0.3.16 | 收尾：z42c-selfhost 下全 dotnet/xtask test 绿 + soak + A perf delta report | | |
 
 **‖ = 三主线在该子版本并行推进**。子版本号弹性——本线终点由退出标准定义，自举 dogfood 补特性时插入特性 spec 子版本。
 
 **重排沿革**：
+- **2026-06-19（五项扩展）**：boxing 机制（0.3.11）新增；Method.Invoke 非泛型从原 0.5.x 拉入 0.3.12；IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举并入 0.3.12；test-runner 删除新增 0.3.13；CI 三平台模拟器（WASM/iOS Simulator/Android Emulator）新增 0.3.13 并行；workload B1+B2 新增 0.3.14；REPL 后移 0.3.15；soak 后移 0.3.16。0.5.x 反射收窄为泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>。
 - **2026-06-07（全自举）**：原"B 只做 4 子系统（Lexer/Project/Driver/Parser）+ 剩余推 0.5.x"→ 全 7 子系统并入本线；原"REPL 推 0.5.x"→ 本线 capstone；原"byte-identical 推 1.0"→ 本线退出标准；原"compile-perf gate 0.5.x 启用"→ 0.3.10 启用。
 - **2026-06-05（从 0.3.x 移出，仍生效）**：Golden 全 L1 覆盖 + interp/JIT 一致性 CI / 调试符号 / Profiler hooks → 0.4.x 起；热重载 VM 完整实现 → 0.5.x 起；GC v1 → 0.3.0（提前）。
 
@@ -132,7 +139,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 版本 | 主题 | Phase | 估时 |
 |------|------|:----:|:----:|
-| **0.5.x** | 泛型完整 + Trait 静态分发 + 反射**完整版**（Method.Invoke，依赖 generic instantiation）+ LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |
+| **0.5.x** | 泛型完整 + Trait 静态分发 + 反射**泛型扩展**（泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>，依赖 generic instantiation；非泛型 Method.Invoke 已在 0.3.12 落地）+ LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |
 | **0.6.x** | 函数式（Lambda / 命名参数 / 模式匹配 / `let` 不可变 / LINQ）+ unmanaged + GC v2 + linter | L3 | 9–11 周 |
 | **0.7.x** | `Result<T,E>` + `?` + ADT + `match` 穷尽检查 | L3 | 6–8 周 |
 | **0.8.x** | async / await + 多线程 + GC v3（generational + concurrent）+ DAP debugger | L3 | 12–16 周 |
@@ -147,7 +154,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 ```
 0.1 ─► 0.2 ─► 0.3 ──┬──► 0.4 ──► 0.5 ──► 0.6 ──► 0.7 ──► 0.8 ──► 0.9 ──► 0.10 ──► 1.0
        │       │   │           │                                            │
-       │       │   ├── reflection MVP (0.3 C) ──► reflection 完整 (0.5.1–0.5.3 + test 增强 0.5.6)
+       │       │   ├── reflection C1-C3 (0.3 C ✅) ──► boxing 机制 (0.3.11) ──► Method.Invoke 非泛型 (0.3.12) ──► 泛型 Invoke/MakeGenericType (0.5.x)
        │       │   │                                                        │
        │       │   ├── 编译器全自举 7 子系统 (0.3 B：Lex→Parse→Proj→Driver→Sem→TC→IR→Emit→Pipeline)
        │       │   │           ──► byte-identical gate + compile-perf ≤3× (0.3.x 退出)
@@ -167,7 +174,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 - 0.3 B 编译器全自举 ◄── 0.3.0 GC v1（z42 端编译器对 GC 压力大）
 - 0.3 B 自举受限写法 ◄── 泛型 G1-G4 + 闭包核心（已提前落地）；缺 match/LINQ/Result 用 class+虚方法 / 循环 / 异常替代，真卡点才 dogfood 提前
 - 0.3 C3 Attribute reflection ◄── 用户自定义 attribute 机制（features.md §X，0.3.5 前先 spec）
-- 0.5 反射完整版 Method.Invoke ◄── 0.5 L3-G 泛型 instantiation
+- 0.3.11 boxing 机制 ◄── 0.3.12 Method.Invoke 非泛型（auto-boxing prim→Object 是 Invoke 的直接前置）
+- 0.5 反射泛型扩展（泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>）◄── 0.5 L3-G 泛型 instantiation
 - 0.5 反射 ◄── 0.10 性能数据自查（type metadata access）
 - 0.6 unmanaged ◄── 0.9.6 C ABI 头文件
 - 0.7 Result ◄── 0.8 async（async fn 通常返回 `Task<Result<T,E>>`）
@@ -187,7 +195,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | §12 Hot Reload | 0.5.x（从 0.3.2 推后；GC v1 后真热更新落地）| 🟡 设计有 |
 | §13 Execution Mode Annotations | 0.1.x（注解）→ 0.5.x（运行时切换；从 0.3.x 推后）| 🟡 注解 ✅；运行时切换待 |
 | §14 Generics + Trait | 0.5.x | ✅ G1-G4 + L3-Impl 提前落地 |
-| §15 Reflection | **MVP 0.3.x（只读元数据 + typeof + Attribute）/ 完整 0.5.1–0.5.3（含 Method.Invoke）** | 🟡 C1 GetType 路线落地（[archive/2026-06-09-add-reflection-mvp](spec/archive/2026-06-09-add-reflection-mvp/)：Type + Std.Reflection.{Field,Method,Parameter}Info + GetType 句柄化）；**C2 typeof→Type 落地**（[archive/2026-06-09-make-typeof-return-type](spec/archive/2026-06-09-make-typeof-return-type/)：`typeof(T)` 返回 Std.Type，用户类带真句柄）；**C3 Attribute 落地（class + method）**（[archive/2026-06-09-add-attribute-reflection](spec/archive/2026-06-09-add-attribute-reflection/) class-level + [archive/2026-06-09-add-attribute-reflection-methods](spec/archive/2026-06-09-add-attribute-reflection-methods/) method-level：`class Foo : Attribute` + `[Foo]` on class/method → `Type`/`MethodInfo` GetCustomAttributes 活实例；factory-thunk；改进 C# 5 处缺陷；见 [attributes.md](design/language/attributes.md)）；L3-R Invoke 待 |
+| §15 Reflection | **0.3.x C主线**：只读元数据 + typeof/GetType + Attribute（C1-C3 ✅）；GetInterfaces / IsArray / IsAbstract 等扩展 ✅；**完整化（0.3.12）**：非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举（boxing 机制 0.3.11 为前置）；**0.5.x 泛型扩展**：泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T> | 🟡 C1-C3 + 多项扩展已落地（见 spec/archive 2026-06-09–06-17 系列）；boxing + Method.Invoke 待 0.3.11–0.3.12 |
 | §16 Lambda + Closure | 0.6.0 | ✅ L2-C1 + L3-C2 核心提前落地 |
 | §17 Result + ADT + match | 0.7.x | 📋 |
 | §18 可裁剪 / Tree-shaking / 200KB 子集 | 0.9.x（嵌入 / 裁剪）+ 1.0-rc（AOT 静态链接）| 📋 |
@@ -252,7 +260,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.2.3 | Perf CI |
 | 0.2.5 | 多平台 CI matrix |
 | 0.3.10 | z42c-selfhost byte-identical gate（7 子系统逐字节对账）+ compile-perf ≤3× C# |
-| 0.4.6 | `z42c test` 100% 通过 |
+| 0.3.13 | `z42c test` GA（z42 原生测试运行器，Rust test-runner 退役）+ CI 三平台 GitHub Checks（WASM / iOS Simulator / Android Emulator）全绿 |
+| 0.3.14 | workload B2 `z42 workload install/list/remove` 端到端绿 |
+| 0.4.6 | `z42c test` 100% 通过（stdlib 全量 [Test] 用例由 z42 原生 runner 执行）|
 | 0.4.7 | `z42c bench --diff` 通过 |
 | 0.4.8 | `z42-doc` 无错 |
 | 0.5.0 | 跨 zpkg 反射元数据一致性 |

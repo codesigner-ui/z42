@@ -1,8 +1,8 @@
 # Proposal: 0.3.x 自举线（GC v1 地基 → stdlib 整理 ‖ 编译器**全自举** ‖ 反射 MVP → REPL capstone）
 
-> 状态：📋 规划修订（**2026-06-07 重大重排**，supersede 2026-06-05 保守版）｜类型：roadmap 重排｜责任人：User + Claude
+> 状态：📋 规划修订（**2026-06-19 五项扩展**，supersede 2026-06-07 版）｜类型：roadmap 重排｜责任人：User + Claude
 >
-> **本次修订的历史**：2026-06-05 第一版把 0.3.x 定为"三主线保守版"——B 主线只做 4 个易做子系统（Lexer/Project/Driver/Parser），Sem/TC/IR/Pipeline 推 0.5.x，全自举（byte-identical）放 1.0，REPL 推 0.5.x。**2026-06-07 User 重新裁决：把全端到端自举从 1.0 拉到 0.3.x 作为本线招牌**，REPL 改为自举完成后的 capstone。下表"2026-06-07 裁决"覆盖原保守版对应条目。
+> **本次修订的历史**：2026-06-05 第一版把 0.3.x 定为"三主线保守版"——B 主线只做 4 个易做子系统（Lexer/Project/Driver/Parser），Sem/TC/IR/Pipeline 推 0.5.x，全自举（byte-identical）放 1.0，REPL 推 0.5.x。**2026-06-07 User 重新裁决：把全端到端自举从 1.0 拉到 0.3.x 作为本线招牌**，REPL 改为自举完成后的 capstone。**2026-06-19 User 裁决：五项扩展**——boxing 机制（0.3.11）、Method.Invoke 非泛型（0.3.12，从 0.5.x 拉入）、test-runner 删除（0.3.13）、CI 三平台模拟器（0.3.13 并行）、workload B1+B2（0.3.14）；REPL 后移 0.3.15；soak 后移 0.3.16。
 
 ## 背景
 
@@ -17,7 +17,17 @@
 
 ## User 已裁决
 
-### 2026-06-07 裁决（本次重排，覆盖保守版）
+### 2026-06-19 裁决（五项扩展）
+
+| 决策点 | 裁决 |
+|------|------|
+| 反射完整化范围（Q1） | **包含非泛型 Method.Invoke**（boxing 机制 0.3.11 为前置；泛型方法 Invoke/MakeGenericType/Activator.CreateInstance<T> 仍 0.5.x）|
+| workload 深度（Q2） | **B1+B2 基础**（命令发现 + workload 包格式 + install/list/remove）|
+| CI 模拟器范围（Q3） | **三平台同时**（WASM / iOS Simulator / Android Emulator → GitHub Checks）|
+| test-runner 退役 | **删除 Rust test-runner，完全由 z42.test TestRunner 类替代**；`z42c test` 命令作为入口 |
+| REPL 时序 | **后移至 0.3.15**（为上述四项让出 0.3.11–0.3.14 窗口）|
+
+### 2026-06-07 裁决（全自举，覆盖保守版）
 
 | 决策点 | 裁决 |
 |------|------|
@@ -31,7 +41,7 @@
 
 | 决策点 | 裁决 |
 |------|------|
-| C 主线 0.3.x 深度 | 只读元数据 + typeof/GetType + Attribute reflection；**不含 Method.Invoke**（强依赖 generic instantiation，推 0.5.x L3-R） |
+| C 主线 0.3.x 深度 | 只读元数据 + typeof/GetType + Attribute reflection + **完整化（0.3.12）**：非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举；**boxing 机制（0.3.11）为前置**；泛型方法 Invoke / MakeGenericType / Activator.CreateInstance<T> 仍 0.5.x |
 | GC v1 时机 | 前置到 0.3.0（A/B/C 共同前置） |
 | z42 编译器源码位置 | `src/z42c/` 独立顶级目录，7 子包 1:1 镜像 C# 项目（详见下文 §B 主线深度规划）|
 
@@ -85,7 +95,7 @@
 - C2：`typeof(T)` 编译器关键字 + `obj.GetType()` runtime intrinsic + z42.reflection 包公开
 - C3：Attribute reflection（前置：用户自定义 attribute 机制 spec 需先落地）
 
-**0.3.x 不做**（推 0.5.x L3-R 完整版）：`Method.Invoke` / `Activator.CreateInstance<T>()` / `Type.MakeGenericType`。
+**0.3.x 不做**（推 0.5.x L3-R）：泛型方法 Invoke / `Activator.CreateInstance<T>()` / `Type.MakeGenericType`（依赖 generic instantiation）。非泛型 `Method.Invoke` 已纳入 0.3.12。
 
 **与 B 的协同**：自举编译器自身需要读类型元数据（Semantics/TypeChecker），C 主线暴露的 metadata API 正是 B 的客户——两线互为 dogfood。
 
@@ -136,14 +146,32 @@ Point { X = 1, Y = 2 }
 
 0.3.8   B: emit（ZbcWriter/ZpkgWriter）—— 产 byte-identical .zbc/.zpkg
 
-0.3.9   B: pipeline（编排）→ 首个 z42 端到端 build 跑通
+0.3.9   归档 port-z42c-self-compile（G22 全绿，7/7 byte-identical）+ runtime-dynamic-load-call 归档
 
-0.3.10  B: byte-identical gate 全 7 子系统绿（z42c-selfhost 编 stdlib + 自身源码字节相同）
-        + compile-perf gate 启用（median ≤ 3× / P99 ≤ 5×）
+0.3.10  B: byte-identical CI gate 全 7 子系统 7 日零飘移 + compile-perf gate 启用（median ≤ 3× / P99 ≤ 5×）
 
-0.3.11  REPL capstone（z42 原生）
+0.3.11  Boxing 机制（lang/ir/vm spec-first）：auto-boxing（prim→Object）+ box/unbox IR 指令
+        + 编译器隐式转换规则 ← Method.Invoke 前置
 
-0.3.12  收尾：z42c-selfhost 下全部 dotnet test / xtask test 全绿 + soak + A perf delta report
+0.3.12  反射完整化（四项并行，均 runtime+stdlib 锁）：
+        ‖ Method.Invoke（非泛型；`object[]` args + 实例 dispatch）
+        ‖ IsEnum（需 enum 作类型实体独立 spec 前置）
+        ‖ 嵌套泛型 GetGenericArguments
+        ‖ 接口成员枚举（接口继承接口 / transitive）
+
+0.3.13  并行两路（不同子系统锁，真正并行）：
+        [stdlib+z42c]  test-runner 删除：z42.test 加 TestRunner 类（反射驱动 [Test] 发现）
+                        + z42c.driver `test` 命令 + 退役 Rust test-runner binary
+        [toolchain]    CI 三平台模拟器：WASM(ubuntu+Playwright) / iOS Simulator
+                        (xcodebuild -destination) / Android(emulator-runner+KVM)
+                        → JUnit → GitHub Checks（infra-ci-platform-test-dashboard）
+
+0.3.14  Workload B1（命令发现：launcher 扫目录 → Std.Cli 树合并）
+        + B2（workload 包格式 + `z42 workload install/list/remove`）[toolchain]
+
+0.3.15  REPL capstone（z42 原生：变量/表达式/类型声明/实例化 + 跨 line scope）[z42c]
+
+0.3.16  收尾：z42c-selfhost 下全部 dotnet test / xtask test 全绿 + soak + A perf delta report
 ```
 
 `‖` = 同子版本三主线并行推进。
@@ -172,11 +200,13 @@ Point { X = 1, Y = 2 }
 
 ## Out of Scope（明确不在 0.3.x）
 
-- `Method.Invoke` / generic instantiation 反射（→ 0.5.x L3-R）
+- 泛型方法 Invoke + `MakeGenericType` + `Activator.CreateInstance<T>()`（→ 0.5.x L3-R；依赖 generic instantiation）
+- 非泛型 Method.Invoke **已纳入 0.3.12**（不再在此列出）
 - match/ADT/LINQ/Result **完整版**（→ 0.6/0.7；除非自举真卡点逐特性提前）
 - async/await（编译器是同步的，自举不需要）
 - 删除 `src/compiler/` C# bootstrap（→ 1.0；0.3.x 期间两实现并存，default 仍是 C#）
 - NativeAOT 跨架构（→ 1.0）
+- workload B4（平台测试改 workload 驱动）+ B5（完整 export/publish 生命周期）→ 0.4.x
 
 ## Open Questions（spec 起草阶段需 User 裁决）
 
@@ -190,7 +220,7 @@ Point { X = 1, Y = 2 }
 
 ---
 
-**审批状态**：2026-06-07 User 已裁决四项重排（全自举 / 受限写法 / REPL 本版 / 全保留）；本 proposal 反映该裁决，待 User 确认子版本编排后同步 roadmap.md，再于 0.3.1 启动 A0/B0/C0 三独立 change spec。
+**审批状态**：2026-06-19 User 裁决五项扩展（boxing + Method.Invoke 非泛型 + test-runner 删除 + CI 三平台 + workload B1/B2）已同步到 roadmap.md 和本文档。下一步：0.3.9 归档 port-z42c-self-compile → 0.3.10 CI gate 铺设 → 0.3.11 boxing 机制 spec-first 启动。
 
 ---
 
