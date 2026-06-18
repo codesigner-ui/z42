@@ -9,7 +9,9 @@ public sealed class Param {
     public Span Span;
     public TypeExpr Type;
     public string   Name;
-    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; }
+    public Expr     Default;   // GS1：可选参数默认值（`int x = 5`）；无默认值 = null。镜像 C# Param.Default。
+    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; this.Default = null; }
+    // Dump 不含 Default（镜像 C# AstDumper.VisitParam：仅 `Param {mod}{name} {span}`，不输出默认值）→ 无默认值参数 Dump 不变。
     public string Dump() { return this.Type.Dump() + " " + this.Name; }
 }
 

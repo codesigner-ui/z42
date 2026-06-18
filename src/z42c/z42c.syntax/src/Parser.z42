@@ -845,7 +845,12 @@ public sealed class Parser {
                     int i = 0; while (i < pc) { b[i] = ps[i]; i = i + 1; }
                     ps = b;
                 }
-                ps[pc] = new Param(pt, pn, pt.Span); pc = pc + 1;
+                Param prm = new Param(pt, pn, pt.Span);
+                if (this._peek().Kind == TokenKind.Eq) {   // GS1：默认参数值 `int x = expr`
+                    this._advance();
+                    prm.Default = this._parseExpr(0);
+                }
+                ps[pc] = prm; pc = pc + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
             }
         }
