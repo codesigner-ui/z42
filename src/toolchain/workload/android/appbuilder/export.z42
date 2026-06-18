@@ -4,10 +4,20 @@
 // Generates a standard Kotlin+Gradle Android project with the z42 app bytecode
 // pre-copied into assets/. The z42 runtime (libz42vm.so) comes from the Android
 // platform SDK at ~/.z42/runtimes/android-arm64/<ver>/.
-namespace Z42Launcher;
+namespace Z42.Workload.Android;
 
 using Std;
 using Std.IO;
+
+// Public cross-package entry — `z42 export android` (launcher_export.z42) delegates here.
+public static class AndroidExport {
+    public static void Generate(string outputDir, string name, string appId,
+                                string displayName, string versionCode, string versionName,
+                                string minSdk, string targetSdk, string zpkgSrc, string sdkDir) {
+        _generateAndroidProject(outputDir, name, appId, displayName, versionCode, versionName,
+                                minSdk, targetSdk, zpkgSrc, sdkDir);
+    }
+}
 
 void _generateAndroidProject(string outputDir, string name, string appId,
                              string displayName, string versionCode, string versionName,
