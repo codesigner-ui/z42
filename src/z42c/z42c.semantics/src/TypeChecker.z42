@@ -60,7 +60,10 @@ public sealed class TypeChecker {
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 if (md.HasBody) {                       // G11：ctor（IsCtor）也绑体——ms 已收集（名=类名，ret void），this+字段入 scope
-                    MethodSymbol ms = ct.Methods.Get(md.Name) as MethodSymbol;
+                    // GS3：重载方法以 Name$arity 键存于 ct.Methods；先试 Name$arity，再 bare name（镜像 C# regName 逻辑）。
+                    string mkey = md.Name + "$" + md.ParamCount.ToString();
+                    if (!ct.Methods.ContainsKey(mkey)) { mkey = md.Name; }
+                    MethodSymbol ms = ct.Methods.Get(mkey) as MethodSymbol;
                     // 活跃类型形参 = 类的 + 方法自身的（2A-2）。
                     int mtpc = md.TypeParams.Count;
                     string[] allParams = this._mergeParams(c.TypeParams.Names, c.TypeParams.Count, md.TypeParams.Names, mtpc);
@@ -76,7 +79,7 @@ public sealed class TypeChecker {
                         }
                     }
                     BoundStmt body = this._bindMethodBody(symbols, env, md);
-                    model.AddBody(c.Name + "." + md.Name, body);
+                    model.AddBody(c.Name + "." + mkey, body);   // GS3：body 键用 mkey（重载时=Name$arity）
                 }
             }
             j = j + 1;
@@ -366,8 +369,31 @@ public sealed class TypeChecker {
         if (e is CallExpr) {
             return this._bindCall(e as CallExpr, env);
         }
+        if (e is InterpolatedStringExpr) {
+            return this._bindInterpolatedStr(e as InterpolatedStringExpr, env);
+        }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported expression (1A)", e.Span);
         return new BoundError("unsupported expr", new Z42ErrorType(), e.Span);
+    }
+
+    // GS4：插值字符串绑定。每 text → BoundInterpText；每 hole → 递归 _bindExpr → BoundInterpHole。
+    // 结果类型恒为 string（镜像 C# TypeChecker.Exprs case InterpolatedStrExpr）。
+    private BoundExpr _bindInterpolatedStr(InterpolatedStringExpr e, TypeEnv env) {
+        BoundInterpPart[] bparts = new BoundInterpPart[e.PartCount];
+        int i = 0;
+        while (i < e.PartCount) {
+            InterpPart p = e.Parts[i];
+            if (p is InterpText) {
+                InterpText tp = p as InterpText;
+                bparts[i] = new BoundInterpText(tp.Text, tp.Span);
+            } else {
+                InterpHole hp = p as InterpHole;
+                BoundExpr inner = this._bindExpr(hp.Inner, env);
+                bparts[i] = new BoundInterpHole(inner, hp.Span);
+            }
+            i = i + 1;
+        }
+        return new BoundInterpolatedStr(bparts, e.PartCount, new Z42PrimType("string"), e.Span);
     }
 
     // ════ 运算（集中 if-is + BinaryTypeTable，1B）═══════════════════════════════

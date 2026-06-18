@@ -55,6 +55,27 @@ public sealed class BoundLitBool : BoundExpr {
     }
 }
 
+// GS4：插值字符串 bound 节点。BoundInterpPart → BoundInterpText / BoundInterpHole。
+public class BoundInterpPart { public Span Span; public BoundInterpPart(Span span) { this.Span = span; } }
+public sealed class BoundInterpText : BoundInterpPart {
+    public string Text;
+    public BoundInterpText(string text, Span span) : base(span) { this.Text = text; }
+}
+public sealed class BoundInterpHole : BoundInterpPart {
+    public BoundExpr Inner;
+    public BoundInterpHole(BoundExpr inner, Span span) : base(span) { this.Inner = inner; }
+}
+public sealed class BoundInterpolatedStr : BoundExpr {
+    public BoundInterpPart[] Parts;
+    public int               PartCount;
+    private Z42Type _t;
+    public BoundInterpolatedStr(BoundInterpPart[] parts, int partCount, Z42Type t, Span span) {
+        this.Span = span; this.Parts = parts; this.PartCount = partCount; this._t = t;
+    }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(interp-str " + this.PartCount.ToString() + " :string)"; }
+}
+
 public sealed class BoundLitNull : BoundExpr {
     private Z42Type _type;
     public BoundLitNull(Z42Type type, Span span) { this.Span = span; this._type = type; }

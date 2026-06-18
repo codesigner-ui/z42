@@ -420,6 +420,13 @@ public sealed class ConvertInstr : IrInstr {
     public override string Dump() { return this.Dst.Dump() + " = convert " + IrType.Name(this.Dst.Type) + " " + this.Src.Dump(); }
 }
 
+// ToStr（GS4 interpolation）：dst = src.ToString()；镜像 C# ToStrInstr opcode 0x1F。
+public sealed class ToStrInstr : IrInstr {
+    public TypedReg Dst; public TypedReg Src;
+    public ToStrInstr(TypedReg dst, TypedReg src) { this.Dst = dst; this.Src = src; }
+    public override string Dump() { return this.Dst.Dump() + " = to_str " + this.Src.Dump(); }
+}
+
 // ── 字符串拼接（CG-1E）：a + b（string）。──────────────────────────────────────────
 public sealed class StrConcatInstr : IrInstr {
     public TypedReg Dst; public TypedReg A; public TypedReg B;

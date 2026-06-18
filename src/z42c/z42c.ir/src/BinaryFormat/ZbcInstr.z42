@@ -285,6 +285,7 @@ public static class ZbcInstr {
         if (ins is NotInstr) { NotInstr i = ins as NotInstr; ZbcInstr._un(w, Op.Not, i.Dst, i.Src); return; }
         if (ins is BitNotInstr) { BitNotInstr i = ins as BitNotInstr; ZbcInstr._un(w, Op.BitNot, i.Dst, i.Src); return; }
         if (ins is ConvertInstr) { ConvertInstr i = ins as ConvertInstr; ZbcInstr._un(w, Op.Convert, i.Dst, i.Src); return; }
+        if (ins is ToStrInstr) { ToStrInstr i = ins as ToStrInstr; ZbcInstr._un(w, Op.ToStr, i.Dst, i.Src); return; }
         // 未覆盖 opcode（call/field/obj/array/is·as/const-str·f64·char → ZW-1C/1D/1E）：
         // 静默跳过会产出语义错流（e2e div-zero oracle 可截获）；e2e 源须避开未覆盖指令。
     }

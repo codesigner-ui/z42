@@ -112,10 +112,57 @@ public sealed class ExprEmitter {
         if (e is BoundCast) { return this._emitCast(e as BoundCast); }
         if (e is BoundConvert) { return this._emitConvert(e as BoundConvert); }
         if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
+        if (e is BoundInterpolatedStr) { return this._emitInterpolation(e as BoundInterpolatedStr); }
         // 其余节点 → 后续增量：占位 const.null（保 dump 良构）
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(e.Type()));
         this._ctx.Emit(new ConstNullInstr(ph));
         return ph;
+    }
+
+    // GS4：插值串发射。镜像 C# EmitInterpolation：
+    // 1. 所有 part 左→右依次发射，收集寄存器列表；
+    // 2. EmitConcat 左折叠 StrConcatInstr。
+    // 文本段 → ConstStrInstr；洞 → emit inner + ToStrInstr（内层非 BoundLitStr/BoundInterpolatedStr 时）。
+    private TypedReg _emitInterpolation(BoundInterpolatedStr interp) {
+        if (interp.PartCount == 0) {
+            TypedReg empty = this._ctx.Alloc(IrType.Str);
+            int emptyIdx = this._ctx.Gen.Intern("");
+            this._ctx.Emit(new ConstStrInstr(empty, emptyIdx));
+            return empty;
+        }
+        TypedReg[] regs = new TypedReg[interp.PartCount];
+        int i = 0;
+        while (i < interp.PartCount) {
+            BoundInterpPart p = interp.Parts[i];
+            if (p is BoundInterpText) {
+                BoundInterpText tp = p as BoundInterpText;
+                TypedReg dst = this._ctx.Alloc(IrType.Str);
+                int idx = this._ctx.Gen.Intern(tp.Text);
+                this._ctx.Emit(new ConstStrInstr(dst, idx));
+                regs[i] = dst;
+            } else {
+                BoundInterpHole hp = p as BoundInterpHole;
+                TypedReg innerReg = this.Emit(hp.Inner);
+                bool isStrLit = (hp.Inner is BoundLitStr) || (hp.Inner is BoundInterpolatedStr);
+                if (!isStrLit) {
+                    TypedReg strReg = this._ctx.Alloc(IrType.Str);
+                    this._ctx.Emit(new ToStrInstr(strReg, innerReg));
+                    innerReg = strReg;
+                }
+                regs[i] = innerReg;
+            }
+            i = i + 1;
+        }
+        // left-fold: result = regs[0]; for each regs[j] j>0: result = StrConcat(result, regs[j])
+        TypedReg result = regs[0];
+        int j = 1;
+        while (j < interp.PartCount) {
+            TypedReg dst = this._ctx.Alloc(IrType.Str);
+            this._ctx.Emit(new StrConcatInstr(dst, result, regs[j]));
+            result = dst;
+            j = j + 1;
+        }
+        return result;
     }
 
     // lambda 发射（port-z42c-closures）：lift 子发射器 + LoadFn（无捕获）/ MkClos（捕获，恒堆）。

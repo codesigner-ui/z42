@@ -196,3 +196,25 @@ public sealed class ObjNewExpr : Expr {
         return s + ")";
     }
 }
+
+// GS4：插值字符串节点。InterpPart 基类 → InterpText（纯文本段）/ InterpHole（{expr} 洞）。
+public class InterpPart {
+    public Span Span;
+    public InterpPart(Span span) { this.Span = span; }
+}
+public sealed class InterpText : InterpPart {
+    public string Text;
+    public InterpText(string text, Span span) : base(span) { this.Text = text; }
+}
+public sealed class InterpHole : InterpPart {
+    public Expr Inner;
+    public InterpHole(Expr inner, Span span) : base(span) { this.Inner = inner; }
+}
+public sealed class InterpolatedStringExpr : Expr {
+    public InterpPart[] Parts;
+    public int          PartCount;
+    public InterpolatedStringExpr(InterpPart[] parts, int partCount, Span span) {
+        this.Span = span; this.Parts = parts; this.PartCount = partCount;
+    }
+    public override string Dump() { return "(interp " + this.PartCount.ToString() + ")"; }
+}
