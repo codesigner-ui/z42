@@ -424,7 +424,21 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__net_tls_socket_drop",              tls::builtin_net_tls_socket_drop),
     ("__net_tls_socket_set_read_timeout",  tls::builtin_net_tls_socket_set_read_timeout),
     ("__net_tls_socket_set_write_timeout", tls::builtin_net_tls_socket_set_write_timeout),
+
+    // ── runtime-dynamic-load-call (DEFERRED) — stubs so zpkg loads cleanly ──
+    ("__load_zpkg",  builtin_load_zpkg_stub),
+    ("__call_static", builtin_call_static_stub),
 ];
+
+// runtime-dynamic-load-call stubs (DEFERRED): registered so zpkgs that declare
+// [Native("__load_zpkg")] / [Native("__call_static")] load cleanly; calls fail
+// at runtime until the reflection MVP is complete.
+fn builtin_load_zpkg_stub(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    anyhow::bail!("__load_zpkg: not yet implemented (runtime-dynamic-load-call DEFERRED)")
+}
+fn builtin_call_static_stub(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    anyhow::bail!("__call_static: not yet implemented (runtime-dynamic-load-call DEFERRED)")
+}
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
 /// resolver's `builtin_id_of` lookup. Built once on first access from
