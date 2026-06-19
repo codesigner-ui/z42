@@ -4,7 +4,9 @@
 //   z42c --dump-ast    <file.z42>          AST s-expression
 //   z42c --dump-bound  <file.z42>          类型检查后的 Bound 树（含类型注解 + 诊断数）
 //   z42c --emit-zbc    <file.z42> <out>    编译到 .zbc（ZW-1A/1B opcode 子集；无 DBUG）
-// 未实现：manifest-check / build（后端落地后解锁）。dump 格式与 C# byte-identical 对齐留 6e。
+//   z42c build         <project.z42.toml>  编译整包 → dist/<name>.zpkg
+// 未实现（占位）：
+//   z42c test          <file.zbc|project.z42.toml>  运行 [Test] 方法（0.3.13：依赖 Method.Invoke）
 namespace Z42.Driver;
 
 using Std;
@@ -25,6 +27,12 @@ void Main() {
     string file = argv[1];
     if (cmd == "build") {
         Environment.Exit(_build(file));
+        return;
+    }
+    if (cmd == "test") {
+        // 0.3.13 占位：等待 Method.Invoke（0.3.12）+ z42.test.TestRunner v2
+        ConsoleError.WriteLine("z42c test: not yet implemented (requires Method.Invoke, 0.3.13)");
+        Environment.Exit(2);
         return;
     }
     if (cmd == "--emit-zbc") {
@@ -167,4 +175,5 @@ void _usage() {
     Console.WriteLine("  z42c --dump-ir     <file.z42>          .zasm-like IR text");
     Console.WriteLine("  z42c --emit-zbc    <file.z42> <out>    compile to .zbc (subset)");
     Console.WriteLine("  z42c build         <project.z42.toml>  build packed .zpkg -> dist/");
+    Console.WriteLine("  z42c test          <file.zbc|project>  run [Test] methods (0.3.13, not yet)");
 }
