@@ -81,6 +81,31 @@ public sealed class TypeChecker {
                     BoundStmt body = this._bindMethodBody(symbols, env, md);
                     model.AddBody(c.Name + "." + mkey, body);   // GS3：body 键用 mkey（重载时=Name$arity）
                 }
+            } else if (mem is IndexerDecl) {
+                // get_Item / set_Item 体绑定（IndexerDecl lowering；镜像 C# IndexerDecl 处理）。
+                IndexerDecl id = mem as IndexerDecl;
+                if (id.HasGet) {
+                    var getEnv = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), c.TypeParams.Names, c.TypeParams.Count);
+                    getEnv.Define("this", ct);
+                    string[] gfns = ct.Fields.Keys();
+                    int gfk = 0;
+                    while (gfk < gfns.Length) { FieldSymbol gfs = ct.Fields.Get(gfns[gfk]) as FieldSymbol; getEnv.Define(gfns[gfk], gfs.FieldType); gfk = gfk + 1; }
+                    int gp = 0;
+                    while (gp < id.ParamCount) { getEnv.Define(id.Params[gp].Name, getEnv.ResolveType(id.Params[gp].Type)); gp = gp + 1; }
+                    Z42Type gret = getEnv.ResolveType(id.RetType);
+                    model.AddBody(c.Name + ".get_Item", this._bindStmt(id.GetBody, getEnv, gret));
+                }
+                if (id.HasSet) {
+                    var setEnv = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), c.TypeParams.Names, c.TypeParams.Count);
+                    setEnv.Define("this", ct);
+                    string[] sfns = ct.Fields.Keys();
+                    int sfk = 0;
+                    while (sfk < sfns.Length) { FieldSymbol sfs = ct.Fields.Get(sfns[sfk]) as FieldSymbol; setEnv.Define(sfns[sfk], sfs.FieldType); sfk = sfk + 1; }
+                    int sp = 0;
+                    while (sp < id.ParamCount) { setEnv.Define(id.Params[sp].Name, setEnv.ResolveType(id.Params[sp].Type)); sp = sp + 1; }
+                    setEnv.Define("value", setEnv.ResolveType(id.RetType));
+                    model.AddBody(c.Name + ".set_Item", this._bindStmt(id.SetBody, setEnv, new Z42VoidType()));
+                }
             }
             j = j + 1;
         }
@@ -809,6 +834,18 @@ public sealed class TypeChecker {
             }
             return new BoundCall("instance", true, recv, itDef2.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
         }
+        // Z42GenericParamType：T.GetHashCode() 等继承自 Object 的方法 → 查 Object 类取真实返回类型。
+        if (rt is Z42GenericParamType) {
+            if (env.Symbols.HasClass("Object")) {
+                Z42ClassType objCt = env.Symbols.GetClass("Object");
+                string gpMkey = this._overloadKey(env.Symbols, objCt, mem.Name, argCount);
+                MethodSymbol gpMs = this._findMethod(env.Symbols, objCt, gpMkey);
+                if (gpMs != null) {
+                    return new BoundCall("instance", true, recv, rt.Name(), gpMkey, args, argCount, gpMs.Signature.Ret, sp);
+                }
+            }
+            return new BoundCall("instance", true, recv, rt.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
+        }
         // prim receiver（IC-3，镜像 C#）：prim 名首字母大写 → stdlib 包装类（"string"→"String"，
         // imported 自 z42.core TSIG）→ 取方法 ret 真类型（dst tag 字节实证 Str 非 Unknown）；
         // 查无则松绑定 Unknown（codegen 经 DepIndex 真实解析）。
@@ -946,7 +983,7 @@ public sealed class TypeChecker {
         return new BoundDefault(t, -1, d.Span);
     }
 
-    // new T(args)（1D）：解析 T（须为已知类型）+ 绑定实参。ctor 重载解析留后续。
+    // new T(args)（1D）：解析 T（须为已知类型）+ 绑定实参 + ctor 重载解析。
     private BoundExpr _bindNew(ObjNewExpr n, TypeEnv env) {
         BoundExpr[] args = new BoundExpr[n.ArgCount];
         int i = 0;
@@ -958,7 +995,20 @@ public sealed class TypeChecker {
         if (t is Z42InstantiatedType) {   // 2B：泛型实例化 → 校验型参约束（委托 ConstraintChecker）
             this._constraints.Check(env.GetSymbols(), t as Z42InstantiatedType);
         }
-        return new BoundNew(t.Name(), args, n.ArgCount, t, n.Span);
+        // ctor 重载键（镜像 C# ResolveCtorName：单 ctor bare、重载 Name$argCount）
+        Z42ClassType cls = null;
+        if (t is Z42ClassType) { cls = t as Z42ClassType; }
+        if (t is Z42InstantiatedType) { cls = (t as Z42InstantiatedType).Def; }
+        string ctorName = cls != null ? this._ctorKey(cls, n.ArgCount) : "";
+        return new BoundNew(t.Name(), ctorName, args, n.ArgCount, t, n.Span);
+    }
+
+    // ctor 方法键：重载存 Name$argCount，唯一 ctor 存 bare Name，无显式 ctor → bare Name。
+    private string _ctorKey(Z42ClassType ct, int argCount) {
+        string name = ct.Name();
+        string ak = name + "$" + argCount.ToString();
+        if (ct.Methods.ContainsKey(ak)) { return ak; }
+        return name;
     }
 
     // 方法查找：本类 → base 链（迭代）。

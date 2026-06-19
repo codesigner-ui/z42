@@ -306,18 +306,19 @@ public sealed class FieldSetInstr : IrInstr {
 }
 
 // ── 对象 / 数组 / 类型测试（CG-1D；CG-2 加泛型 type-args）─────────────────────────
-// new ClassName<TypeArgs>(args)。ctor 名（重载解析）延后——z42c BoundNew 暂无 ctor 信息。
+// new ClassName<TypeArgs>(args)。CtorName = FQ ctor 方法名（如 "Std.Exception.Exception$1"）；
 // TypeArgs = resolved 类型实参名（new Box<int>() → ["int"]，VM 写入 ScriptObject.type_args）；非泛型空。
 public sealed class ObjNewInstr : IrInstr {
     public TypedReg   Dst;
     public string     ClassName;
+    public string     CtorName;   // FQ ctor 方法名（"{qualCls}.{methodKey}"，如 "Std.Exception.Exception$1"）
     public string[]   TypeArgs;
     public int        TypeArgCount;
     public TypedReg[] Args;
     public int        ArgCount;
-    public ObjNewInstr(TypedReg dst, string className, string[] typeArgs, int typeArgCount,
+    public ObjNewInstr(TypedReg dst, string className, string ctorName, string[] typeArgs, int typeArgCount,
                        TypedReg[] args, int argCount) {
-        this.Dst = dst; this.ClassName = className;
+        this.Dst = dst; this.ClassName = className; this.CtorName = ctorName;
         this.TypeArgs = typeArgs; this.TypeArgCount = typeArgCount;
         this.Args = args; this.ArgCount = argCount;
     }

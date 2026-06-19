@@ -221,11 +221,12 @@ public sealed class BoundConvert : BoundExpr {
 // new T(args)（1D）：构造（ctor 签名检查留后续；结果类型 = T）。
 public sealed class BoundNew : BoundExpr {
     public string      TypeName;
+    public string      CtorName;  // 短名 ctor 方法键（如 "Exception$1"）；ExprEmitter 构建 fqCtor = qualCls + "." + CtorName
     public BoundExpr[] Args;
     public int         ArgCount;
     private Z42Type _type;
-    public BoundNew(string typeName, BoundExpr[] args, int argCount, Z42Type type, Span span) { this.Span = span;
-        this.TypeName = typeName; this.Args = args; this.ArgCount = argCount; this._type = type;
+    public BoundNew(string typeName, string ctorName, BoundExpr[] args, int argCount, Z42Type type, Span span) { this.Span = span;
+        this.TypeName = typeName; this.CtorName = ctorName; this.Args = args; this.ArgCount = argCount; this._type = type;
     }
     public override Z42Type Type() { return this._type; }
     public override string  Dump() {

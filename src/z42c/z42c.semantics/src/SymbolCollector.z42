@@ -224,6 +224,40 @@ public sealed class SymbolCollector {
                 bool pfstatic = this._hasWord(pd.Mods, "static");
                 ct.Fields.Put(pd.Name, new FieldSymbol(pd.Name, this._vis(pd.Mods), pft, pfstatic, c.Name));
                 if (!pfstatic) { ct.AddOwnField(pd.Name, ExportedTypeExtractor.TsigTypeName(pd.Type), this._vis(pd.Mods)); }
+                // get_X / set_X accessor 方法符号（IrGen 发 builtin stub 或编译体；镜像 C# SynthesizeClassAutoProp）。
+                string pvis = this._vis(pd.Mods);
+                Z42Type[] getPs0 = new Z42Type[0];
+                if (pd.HasGet) {
+                    ct.Methods.Put("get_" + pd.Name, new MethodSymbol("get_" + pd.Name, pvis,
+                        new Z42FuncType(getPs0, 0, pft), pfstatic, c.Name, false, null));
+                }
+                if (pd.HasSet) {
+                    Z42Type[] setPs0 = new Z42Type[1];
+                    setPs0[0] = pft;
+                    ct.Methods.Put("set_" + pd.Name, new MethodSymbol("set_" + pd.Name, pvis,
+                        new Z42FuncType(setPs0, 1, new Z42VoidType()), pfstatic, c.Name, false, null));
+                }
+            } else if (mem is IndexerDecl) {
+                // get_Item / set_Item accessor 方法符号（IndexerDecl lowering；镜像 C# IndexerDecl → get_Item/set_Item）。
+                IndexerDecl id = mem as IndexerDecl;
+                Z42Type idRet = table.ResolveTypeP(id.RetType, tp, tpc);
+                bool idStatic = this._hasWord(id.Mods, "static");
+                string idvis = this._vis(id.Mods);
+                if (id.HasGet) {
+                    Z42Type[] getPs1 = new Z42Type[id.ParamCount];
+                    int qi0 = 0;
+                    while (qi0 < id.ParamCount) { getPs1[qi0] = table.ResolveTypeP(id.Params[qi0].Type, tp, tpc); qi0 = qi0 + 1; }
+                    ct.Methods.Put("get_Item", new MethodSymbol("get_Item", idvis,
+                        new Z42FuncType(getPs1, id.ParamCount, idRet), idStatic, c.Name, false, null));
+                }
+                if (id.HasSet) {
+                    Z42Type[] setPs1 = new Z42Type[id.ParamCount + 1];
+                    int qi1 = 0;
+                    while (qi1 < id.ParamCount) { setPs1[qi1] = table.ResolveTypeP(id.Params[qi1].Type, tp, tpc); qi1 = qi1 + 1; }
+                    setPs1[id.ParamCount] = idRet;
+                    ct.Methods.Put("set_Item", new MethodSymbol("set_Item", idvis,
+                        new Z42FuncType(setPs1, id.ParamCount + 1, new Z42VoidType()), idStatic, c.Name, false, null));
+                }
             } else if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。

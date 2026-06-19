@@ -103,7 +103,7 @@ void test_zbc_objnew_ctorless_import_token() {
     cls[0] = "Counter";
     var alloc = new TokenAllocator(new string[0], 0, cls, 1);
     var w = new ByteWriter();
-    ZbcInstr.WriteInstr(w, new ObjNewInstr(new TypedReg(0, IrType.Ref), "Counter",
+    ZbcInstr.WriteInstr(w, new ObjNewInstr(new TypedReg(0, IrType.Ref), "Counter", "Counter.Counter",
                         new string[0], 0, new TypedReg[0], 0), pool, new int[1], alloc);
     // 70 20 0000 | class=00000000 | ctor=0x80000001 LE=01000080 | argc=00 | tpCount=00
     Assert.Equal("7020000000000000010000800000", w.ToHex());

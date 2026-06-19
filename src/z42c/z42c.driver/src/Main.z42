@@ -26,7 +26,10 @@ void Main() {
     string cmd  = argv[0];
     string file = argv[1];
     if (cmd == "build") {
-        Environment.Exit(_build(file));
+        bool isRelease = false;
+        int ai = 2;
+        while (ai < argv.Length) { if (argv[ai] == "--release") { isRelease = true; } ai = ai + 1; }
+        Environment.Exit(_build(file, isRelease));
         return;
     }
     if (cmd == "test") {
@@ -59,7 +62,7 @@ void Main() {
 
 // `z42c build <toml>`：manifest → 源发现 → 逐文件编译 → packed zpkg → dist/<name>.zpkg。
 // MVP：单工程/packed/无增量（镜像 C# PackageCompiler.BuildTarget 关键路径）。
-int _build(string tomlPath) {
+int _build(string tomlPath, bool isRelease) {
     ProjectManifest pm = ManifestLoader.Load(tomlPath);
     string projectDir = Path.GetDirectoryName(tomlPath);
     if (projectDir == "") { projectDir = "."; }
@@ -110,7 +113,7 @@ int _build(string tomlPath) {
     string[] texts = new string[srcs.Length];
     int i = 0;
     while (i < srcs.Length) { texts[i] = File.ReadAllText(srcs[i]); i = i + 1; }
-    CompiledModuleZ[] cms = IrDump.BuildPackage(texts, srcs, srcs.Length, depIndex, imported);
+    CompiledModuleZ[] cms = IrDump.BuildPackage(texts, srcs, srcs.Length, depIndex, imported, isRelease);
     ZbcFileZ[] mods = new ZbcFileZ[srcs.Length];
     i = 0;
     while (i < srcs.Length) {

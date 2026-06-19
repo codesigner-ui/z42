@@ -41,6 +41,7 @@ public sealed class IrGen {
     public DependencyIndex Deps;       // 跨包索引（CI-4；调用方 Generate 前设置，null=无）
     public StrMap ImportedClassNs;     // imported 短类名 → ns（IC-1；含本包跨-ns 自有类，G17b）
     public StrMap LocalClasses;        // 本包自有声明类名集（G18：ChainHasMethod 反劫持守卫仅认本地类）
+    public bool IsRelease;   // release 模式：strip debug info（不 emit .locals/.linetable），镜像 C# stripSymbols=true
     public IrFunction[] Lifted; public int LiftedCount;   // lambda lift（port-z42c-closures；模块尾追加）
 
     public void AddLifted(IrFunction f) {
@@ -122,12 +123,13 @@ public sealed class IrGen {
                         Decl mem = this._unwrap(rawMem);
                         if (mem is MethodDecl) {
                             MethodDecl md = mem as MethodDecl;
+                            // GS3：重载方法键为 Name$arity，unique 方法为 bare name（镜像 C# EmitMethod 逻辑）。
+                            // 先算 methKey，HasBody 和 extern 两路都需要（对齐 C# IrGen.Functions.cs:EmitMethod）。
+                            string methKey = md.Name + "$" + md.ParamCount.ToString();
+                            if (owner == null || !owner.Methods.ContainsKey(methKey)) { methKey = md.Name; }
+                            string irName = this._q(c.Name) + "." + methKey;   // IR/包内名（FQ，fixture 实证）
                             if (md.HasBody) {              // G11：ctor 也发 `<qualClass>.<Class>` 函数（md.Name=类名，ret void，实例）
-                                // GS3：重载方法键为 Name$arity，unique 方法为 bare name（镜像 TypeChecker.mkey 逻辑）。
-                                string methKey = md.Name + "$" + md.ParamCount.ToString();
-                                if (owner == null || !owner.Methods.ContainsKey(methKey)) { methKey = md.Name; }
                                 string key = c.Name + "." + methKey;       // SemanticModel 键（短）
-                                string irName = this._q(c.Name) + "." + methKey;   // IR/包内名（FQ，fixture 实证）
                                 if (model.HasBody(key)) {
                                     bool isStaticMethod = this._hasWord(md.Mods, "static");
                                     bool isInstance = !isStaticMethod;   // 实例方法有 this；静态方法无
@@ -140,9 +142,70 @@ public sealed class IrGen {
                                 // legacy [Native("__name")] extern → 发 builtin 桩函数（镜像 C# EmitNativeStub）。
                                 string nat = this._nativeIntrinsic(rawMem);
                                 if (nat != "") {
-                                    IrFunction stub = this._emitNativeStub(this._q(c.Name) + "." + md.Name, md, nat,
+                                    IrFunction stub = this._emitNativeStub(irName, md, nat,
                                                                            this._hasWord(md.Mods, "static"));
                                     funcs = this._pushFunc(funcs, fc, stub); fc = fc + 1;
+                                }
+                            }
+                        } else if (mem is PropertyDecl) {
+                            // auto-property get_X → builtin 桩（extern）或 field.get __prop_X 桩（非 extern）。
+                            PropertyDecl pd = mem as PropertyDecl;
+                            bool pdExtern = this._hasWord(pd.Mods, "extern");
+                            bool pdStatic = this._hasWord(pd.Mods, "static");
+                            if (pd.HasGet && pdExtern) {
+                                string nat2 = this._nativeIntrinsic(rawMem);
+                                if (nat2 != "") {
+                                    TypeParamList emptyTpP = new TypeParamList(new string[0], 0, pd.Span);
+                                    MethodDecl synthPd = new MethodDecl("", false, false, pd.Type, "get_" + pd.Name,
+                                                                         emptyTpP, new WhereClause[0], 0,
+                                                                         new Param[0], 0, false, null, pd.Span);
+                                    IrFunction pstub = this._emitNativeStub(this._q(c.Name) + ".get_" + pd.Name,
+                                                                             synthPd, nat2, pdStatic);
+                                    funcs = this._pushFunc(funcs, fc, pstub); fc = fc + 1;
+                                }
+                            } else if (pd.HasGet && !pdExtern) {
+                                // 非 extern auto-prop：合成 field.get @__prop_Name 桩（镜像 C# SynthesizeClassAutoProp）。
+                                string backing = "__prop_" + pd.Name;
+                                string getIrNm = this._q(c.Name) + ".get_" + pd.Name;
+                                string retNm = this._typeFieldName(pd.Type);
+                                int retTag = this._irTypeTag(pd.Type);
+                                IrFunction ag = this._emitAutoPropGetter(getIrNm, backing, retNm, retTag, pdStatic, pd.Span.Line);
+                                funcs = this._pushFunc(funcs, fc, ag); fc = fc + 1;
+                            }
+                        } else if (mem is IndexerDecl) {
+                            // IndexerDecl → get_Item / set_Item 编译函数（镜像 C# IndexerDecl lowering）。
+                            IndexerDecl idx = mem as IndexerDecl;
+                            Z42ClassType idxOwner = owner;
+                            TypeParamList emptyTpI = new TypeParamList(new string[0], 0, idx.Span);
+                            TypeExpr voidRet = new NamedType("void", new TypeExpr[0], 0, idx.Span);
+                            if (idx.HasGet) {
+                                string getKey = c.Name + ".get_Item";
+                                string getIrName = this._q(c.Name) + ".get_Item";
+                                if (model.HasBody(getKey)) {
+                                    MethodDecl synthGet = new MethodDecl("", false, false, idx.RetType, "get_Item",
+                                                                          emptyTpI, new WhereClause[0], 0,
+                                                                          idx.Params, idx.ParamCount, true, idx.GetBody, idx.Span);
+                                    var feGet = new FunctionEmitter(model.Symbols, this);
+                                    IrFunction getIrf = feGet.EmitFunction(getIrName, synthGet, model.GetBody(getKey),
+                                                                            true, false, idxOwner, c.TypeParams.Names, c.TypeParams.Count);
+                                    funcs = this._pushFunc(funcs, fc, getIrf); fc = fc + 1;
+                                }
+                            }
+                            if (idx.HasSet) {
+                                string setKey = c.Name + ".set_Item";
+                                string setIrName = this._q(c.Name) + ".set_Item";
+                                if (model.HasBody(setKey)) {
+                                    Param[] setPs = new Param[idx.ParamCount + 1];
+                                    int spi = 0;
+                                    while (spi < idx.ParamCount) { setPs[spi] = idx.Params[spi]; spi = spi + 1; }
+                                    setPs[idx.ParamCount] = new Param(idx.RetType, "value", idx.Span);
+                                    MethodDecl synthSet = new MethodDecl("", false, false, voidRet, "set_Item",
+                                                                          emptyTpI, new WhereClause[0], 0,
+                                                                          setPs, idx.ParamCount + 1, true, idx.SetBody, idx.Span);
+                                    var feSet = new FunctionEmitter(model.Symbols, this);
+                                    IrFunction setIrf = feSet.EmitFunction(setIrName, synthSet, model.GetBody(setKey),
+                                                                            true, false, idxOwner, c.TypeParams.Names, c.TypeParams.Count);
+                                    funcs = this._pushFunc(funcs, fc, setIrf); fc = fc + 1;
                                 }
                             }
                         }
@@ -266,6 +329,30 @@ public sealed class IrGen {
                     fields[fcount] = new IrFieldDesc(fd.Name, tn);
                     fcount = fcount + 1;
                 }
+            } else if (mem is PropertyDecl) {
+                // 非 extern auto-prop → 合成 __prop_X 备份字段（镜像 C# SynthesizeClassAutoProp backing field）。
+                PropertyDecl fpd = mem as PropertyDecl;
+                bool fpdExtern = this._hasWord(fpd.Mods, "extern");
+                bool fpdStatic = this._hasWord(fpd.Mods, "static");
+                if (!fpdExtern) {
+                    string bfn = "__prop_" + fpd.Name;
+                    string bft = this._typeFieldName(fpd.Type);
+                    if (fpdStatic) {
+                        if (sfcount == sfields.Length) {
+                            IrFieldDesc[] b3 = new IrFieldDesc[sfields.Length * 2];
+                            int k = 0; while (k < sfcount) { b3[k] = sfields[k]; k = k + 1; }
+                            sfields = b3;
+                        }
+                        sfields[sfcount] = new IrFieldDesc(bfn, bft); sfcount = sfcount + 1;
+                    } else {
+                        if (fcount == fields.Length) {
+                            IrFieldDesc[] b4 = new IrFieldDesc[fields.Length * 2];
+                            int k = 0; while (k < fcount) { b4[k] = fields[k]; k = k + 1; }
+                            fields = b4;
+                        }
+                        fields[fcount] = new IrFieldDesc(bfn, bft); fcount = fcount + 1;
+                    }
+                }
             }
             j = j + 1;
         }
@@ -336,6 +423,52 @@ public sealed class IrGen {
         return new IrFunction(name, totalParams, retType, isStatic, blocks, 1, totalParams + 1,
                               "Interp", new string[0], 0, new int[0], 0,
                               new IrLineEntry[0], 0, new IrLocalVarEntry[0], 0);
+    }
+
+    // 非 extern auto-property getter 桩（镜像 C# SynthesizeClassAutoProp get 路径）：
+    // field.get %0 @__prop_X → %1; ret %1。含 .locals(%0=this) + .linetable(line)。
+    private IrFunction _emitAutoPropGetter(string name, string backingField, string retTypeName, int retTag,
+                                           bool isStatic, int line) {
+        int totalParams = isStatic ? 0 : 1;
+        TypedReg thisReg = new TypedReg(0, IrType.Ref);
+        TypedReg dst = new TypedReg(totalParams, retTag);
+        IrInstr[] instrs = new IrInstr[1];
+        instrs[0] = new FieldGetInstr(dst, thisReg, backingField);
+        RetTerm term = new RetTerm(true, dst);
+        IrBlock[] blocks = new IrBlock[1];
+        blocks[0] = new IrBlock("entry", instrs, 1, term, true);
+        string[] paramTypes = new string[totalParams];
+        int[] regTypes = new int[totalParams + 1];
+        if (!isStatic) { paramTypes[0] = "?"; regTypes[0] = IrType.Unknown; }
+        regTypes[totalParams] = retTag;
+        // Release 模式：strip debug info（镜像 C# stripSymbols：不写 .linetable/.locals）。
+        IrLineEntry[] lineTable = new IrLineEntry[0];
+        int lineCount = 0;
+        IrLocalVarEntry[] locals = new IrLocalVarEntry[0];
+        if (!this.IsRelease) {
+            lineTable = new IrLineEntry[1];
+            lineTable[0] = new IrLineEntry(0, 0, line, false, null, 0);
+            lineCount = 1;
+            locals = new IrLocalVarEntry[1];
+            locals[0] = new IrLocalVarEntry("this", 0);
+        }
+        return new IrFunction(name, totalParams, retTypeName, isStatic, blocks, 1, totalParams + 1,
+                              "Interp", paramTypes, totalParams, regTypes, totalParams + 1,
+                              lineTable, lineCount, locals, locals.Length);
+    }
+
+    // IrType tag from TypeExpr（prim 名 → tag；其余 Ref）。
+    private int _irTypeTag(TypeExpr te) {
+        if (te is NamedType) {
+            string nm = (te as NamedType).Name;
+            if (nm == "int" || nm == "uint") { return IrType.I32; }
+            if (nm == "long" || nm == "ulong") { return IrType.I64; }
+            if (nm == "bool") { return IrType.Bool; }
+            if (nm == "float") { return IrType.F32; }
+            if (nm == "double") { return IrType.F64; }
+            if (nm == "byte" || nm == "sbyte" || nm == "short" || nm == "ushort") { return IrType.I32; }
+        }
+        return IrType.Unknown;
     }
 
     private IrFunction[] _pushFunc(IrFunction[] arr, int count, IrFunction irf) {
