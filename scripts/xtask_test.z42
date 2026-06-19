@@ -138,7 +138,10 @@ int _testAll() {
     // stage 4: stdlib [Test] (no build)
     Console.WriteLine("\n=== stage: stdlib [Test] ===");
     c = _testLibCore("test", new string[0], true, "", "4"); if (c != 0) { return c; }
-    Console.WriteLine("\n✅ GREEN — all stages passed (compiler + vm + cross-zpkg + stdlib)");
+    // stage 5: z42c self-host byte-identical (0.3.10 gate)
+    Console.WriteLine("\n=== stage: compiler-z42 ===");
+    c = _testCompilerZ42(); if (c != 0) { return c; }
+    Console.WriteLine("\n✅ GREEN — all stages passed (compiler + vm + cross-zpkg + stdlib + compiler-z42)");
     return 0;
 }
 

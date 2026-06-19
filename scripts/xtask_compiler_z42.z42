@@ -190,7 +190,9 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
         return 1;
     }
     Console.WriteLine("✅ z42c [Test]: all " + totalUnits.ToString() + " unit(s) passed");
-    return _testCompilerZ42E2e(root, vm, flat);
+    int ec = _testCompilerZ42E2e(root, vm, flat);
+    if (ec != 0) { return ec; }
+    return _testZ42cSelfHostByteIdentical(root, vm, flat, members, profile);
 }
 
 // e2e（port-z42c-zbc-writer ZW-1B）：z42c 自举编译器产 .zbc → z42vm 真实执行。
@@ -541,6 +543,70 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
     return 0;
 }
 
+// 0.3.10 gate：z42c driver (built by C#) recompiles each of the 7 z42c packages;
+// output must be byte-identical to the C#-built artifacts.
+// Z42_LIBS=flat (stdlib + C#-built z42c) for dep resolution of each build.
+int _testZ42cSelfHostByteIdentical(string root, string vm, string flat, string[] members, string profile) {
+    Console.WriteLine("");
+    Console.WriteLine("── z42c self-host byte-identical: z42c compiles z42c packages ──");
+
+    string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
+    string outDir = Path.Join(root, "artifacts/build/z42c/selfhost-out");
+    Directory.Create(outDir);
+    _cleanGlob(outDir, "*.zpkg");
+
+    int ok = 0;
+    int fail = 0;
+    int i = 0;
+    while (i < members.Length) {
+        string member = members[i];
+        string tomlPath = Path.Join(root, "src/z42c/" + member + "/" + member + ".z42.toml");
+        string expected = Path.Join(root, "artifacts/build/z42c/" + member + "/" + profile + "/dist/" + member + ".zpkg");
+
+        ProcessResult br = new Process(vm)
+            .Arg(driverZpkg).Arg("--")
+            .Arg("build").Arg(tomlPath).Arg("--release").Arg("--output-dir").Arg(outDir)
+            .Env("Z42_LIBS", flat)
+            .Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run();
+        if (br.ExitCode != 0) {
+            Console.WriteLine("  ✗ z42c build failed: " + member);
+            fail = fail + 1;
+            i = i + 1;
+            continue;
+        }
+
+        string produced = Path.Join(outDir, member + ".zpkg");
+        if (!File.Exists(produced)) {
+            Console.WriteLine("  ✗ output not found: " + produced);
+            fail = fail + 1;
+            i = i + 1;
+            continue;
+        }
+
+        byte[] got = File.ReadAllBytes(produced);
+        byte[] want = File.ReadAllBytes(expected);
+        // Section-level compare: ignore BLID (deferred in z42c; C# adds it in release/strip mode).
+        // All other sections (META/STRS/NSPC/EXPT/DEPS/SIGS/MODS and TSIG/IMPL when present)
+        // must be byte-identical.
+        if (!_sectionsEqualIgnoreBlid(got, want)) {
+            Console.WriteLine("  ✗ sections mismatch: " + member + " (z42c " + got.Length.ToString() + "B vs C# " + want.Length.ToString() + "B)");
+            fail = fail + 1;
+        } else {
+            Console.WriteLine("  ✓ " + member + " (sections byte-identical, BLID ignored)");
+            ok = ok + 1;
+        }
+        i = i + 1;
+    }
+
+    Console.WriteLine("");
+    if (fail > 0) {
+        Console.WriteLine("❌ z42c self-host: " + fail.ToString() + "/" + members.Length.ToString() + " packages differ from C#");
+        return 1;
+    }
+    Console.WriteLine("✅ z42c self-host: " + ok.ToString() + "/" + members.Length.ToString() + " packages byte-identical to C# compiler");
+    return 0;
+}
+
 bool _bytesEqual(byte[] a, byte[] b) {
     if (a.Length != b.Length) { return false; }
     int i = 0;
@@ -549,4 +615,69 @@ bool _bytesEqual(byte[] a, byte[] b) {
         i = i + 1;
     }
     return true;
+}
+
+// Compare zpkg files section-by-section, ignoring BLID (deferred in z42c).
+// Header: "ZPK\0"[4]+major[2]+minor[2]+flags[2]+secCount[2]+reserved[4] = 16B.
+// Directory: secCount * 12B (tag[4]+offset[4]+size[4]), starting at byte 16.
+// BLID = bytes [66,76,73,68] ('B','L','I','D' in ASCII).
+bool _sectionsEqualIgnoreBlid(byte[] got, byte[] want) {
+    if (got.Length < 16 || want.Length < 16) { return false; }
+    int gotSec  = _zpkgU16(got, 10);
+    int wantSec = _zpkgU16(want, 10);
+    // For each section in got, find matching section in want and compare data
+    int gi = 0;
+    while (gi < gotSec) {
+        int gd   = 16 + gi * 12;
+        int goff = _zpkgU32(got, gd + 4);
+        int gsiz = _zpkgU32(got, gd + 8);
+        bool found = false;
+        int wi = 0;
+        while (wi < wantSec) {
+            int wd = 16 + wi * 12;
+            if (got[gd] == want[wd] && got[gd+1] == want[wd+1] && got[gd+2] == want[wd+2] && got[gd+3] == want[wd+3]) {
+                found = true;
+                if (_zpkgU32(want, wd + 8) != gsiz) { return false; }
+                int woff = _zpkgU32(want, wd + 4);
+                int bi = 0;
+                while (bi < gsiz) {
+                    if (got[goff + bi] != want[woff + bi]) { return false; }
+                    bi = bi + 1;
+                }
+            }
+            wi = wi + 1;
+        }
+        if (!found) { return false; }
+        gi = gi + 1;
+    }
+    // Verify want has no extra sections besides BLID
+    int wi2 = 0;
+    while (wi2 < wantSec) {
+        int wd = 16 + wi2 * 12;
+        bool isBlid = want[wd] == 66 && want[wd+1] == 76 && want[wd+2] == 73 && want[wd+3] == 68;
+        if (!isBlid) {
+            bool foundInGot = false;
+            int gi2 = 0;
+            while (gi2 < gotSec) {
+                int gd = 16 + gi2 * 12;
+                if (got[gd] == want[wd] && got[gd+1] == want[wd+1] && got[gd+2] == want[wd+2] && got[gd+3] == want[wd+3]) {
+                    foundInGot = true;
+                }
+                gi2 = gi2 + 1;
+            }
+            if (!foundInGot) { return false; }
+        }
+        wi2 = wi2 + 1;
+    }
+    return true;
+}
+
+int _zpkgU16(byte[] data, int off) {
+    return (int)data[off] | ((int)data[off + 1] << 8);
+}
+
+int _zpkgU32(byte[] data, int off) {
+    int lo = (int)data[off] | ((int)data[off+1] << 8);
+    int hi = (int)data[off+2] | ((int)data[off+3] << 8);
+    return lo | (hi << 16);
 }
