@@ -63,8 +63,10 @@ public static class DepScan {
         while (pi < paths.Length) {
             ZpkgInfo z = ZpkgReader.Open(File.ReadAllBytes(paths[pi]));
             string basename = Path.GetFileName(paths[pi]);
-            if (z != null && !z.IsExe && basename != excludeZpkg) {  // lib-kind only + 非 self
-                // nsMap：NSPC 全名单 first-wins
+            if (z != null && !z.IsExe) {  // lib-kind only
+                // nsMap：NSPC 全名单 first-wins（**含 self**；BuildDependencyMap 用 selfZpkgFile 过滤自依赖
+                // 镜像 C# ScanLibsForNamespaces 不排除 self → BuildDependencyMap 排除——确保 self
+                // namespace 映射到 self.zpkg 而非被其他声明同 ns 的包抢占）
                 string[] nss = ZpkgReader.ReadNamespaces(z);
                 int i = 0;
                 while (i < nss.Length) {
@@ -82,30 +84,33 @@ public static class DepScan {
                     }
                     i = i + 1;
                 }
-                // DepIndex：每模块 SIGS 签名（声明依赖过滤——镜像 C# BuildDepIndex allowedPkgs）
-                if (declaredCount == 0 || DepScan._allowedForIndex(z.Name, declaredDeps, declaredCount)) {
-                    ZpkgModuleSigs[] mods = ZpkgReader.ReadModuleSigs(z);
+                // DepIndex 和 TSIG：排除 self（避免自引用；镜像 C# BuildDepIndex excludeName 语义）
+                if (basename != excludeZpkg) {
+                    // DepIndex：每模块 SIGS 签名（声明依赖过滤——镜像 C# BuildDepIndex allowedPkgs）
+                    if (declaredCount == 0 || DepScan._allowedForIndex(z.Name, declaredDeps, declaredCount)) {
+                        ZpkgModuleSigs[] mods = ZpkgReader.ReadModuleSigs(z);
+                        i = 0;
+                        while (i < mods.Length) {
+                            index.AddModule(mods[i].Functions, mods[i].FuncCount, mods[i].Namespace);
+                            i = i + 1;
+                        }
+                    }
+                    // TSIG 模块池
+                    ExportedModuleZ[] tsig = ZpkgReader.ReadTsig(z);
                     i = 0;
-                    while (i < mods.Length) {
-                        index.AddModule(mods[i].Functions, mods[i].FuncCount, mods[i].Namespace);
+                    while (i < tsig.Length) {
+                        if (exportedCount == exported.Length) {
+                            ExportedModuleZ[] b1 = new ExportedModuleZ[exported.Length * 2];
+                            string[] b2 = new string[exported.Length * 2];
+                            int k = 0;
+                            while (k < exportedCount) { b1[k] = exported[k]; b2[k] = exportedPkg[k]; k = k + 1; }
+                            exported = b1; exportedPkg = b2;
+                        }
+                        exported[exportedCount] = tsig[i];
+                        exportedPkg[exportedCount] = z.Name;
+                        exportedCount = exportedCount + 1;
                         i = i + 1;
                     }
-                }
-                // TSIG 模块池
-                ExportedModuleZ[] tsig = ZpkgReader.ReadTsig(z);
-                i = 0;
-                while (i < tsig.Length) {
-                    if (exportedCount == exported.Length) {
-                        ExportedModuleZ[] b1 = new ExportedModuleZ[exported.Length * 2];
-                        string[] b2 = new string[exported.Length * 2];
-                        int k = 0;
-                        while (k < exportedCount) { b1[k] = exported[k]; b2[k] = exportedPkg[k]; k = k + 1; }
-                        exported = b1; exportedPkg = b2;
-                    }
-                    exported[exportedCount] = tsig[i];
-                    exportedPkg[exportedCount] = z.Name;
-                    exportedCount = exportedCount + 1;
-                    i = i + 1;
                 }
             }
             pi = pi + 1;

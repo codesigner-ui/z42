@@ -152,7 +152,7 @@ int _build(string tomlPath, bool isRelease, string outputDirOverride) {
     // DEPS 条目（usings ∪ usedDepNs → nsMap）
     ZpkgDepList depList = new ZpkgDepList(new ZpkgDepZ[0], 0);
     if (scan != null) {
-        depList = ZpkgBuilder.BuildDependencyMap(mods, srcs.Length, scan.NsNames, scan.NsFiles, scan.NsCount);
+        depList = ZpkgBuilder.BuildDependencyMap(mods, srcs.Length, scan.NsNames, scan.NsFiles, scan.NsCount, pm.Name + ".zpkg");
     }
     ZpkgFileZ z = ZpkgBuilder.BuildPackedD(pm.Name, pm.Version, isExe, pm.HasEntry, pm.Entry, mods, srcs.Length,
                                            depList.Items, depList.Count);

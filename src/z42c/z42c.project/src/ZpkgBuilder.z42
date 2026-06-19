@@ -86,8 +86,11 @@ public static class ZpkgBuilder {
     // DEPS 条目（镜像 C# BuildDependencyMap）：每单元 usings → usedDepNs 顺序 AddDepNs；
     // ns→file 经 nsNames/nsFiles 平行表（DepScan 产物）。z42 无交错数组/out 参 →
     // 扁平 (file,ns) 对收集（去重保序）+ 二遍按 file 首现序聚合，holder 返回。
+    // selfZpkgFile（"pkgname.zpkg"）= 当前包自身 zpkg 文件名；nsMap 含 self 后此处过滤自依赖
+    // （镜像 C# BuildDependencyMap 的 `if (depFile == selfZpkgName) return` 行）。
     public static ZpkgDepList BuildDependencyMap(ZbcFileZ[] modules, int moduleCount,
-                                                 string[] nsNames, string[] nsFiles, int nsCount) {
+                                                 string[] nsNames, string[] nsFiles, int nsCount,
+                                                 string selfZpkgFile) {
         string[] pairFile = new string[8];
         string[] pairNs   = new string[8];
         int pairCount = 0;
@@ -96,7 +99,7 @@ public static class ZpkgBuilder {
             ZbcFileZ m = modules[mi];
             int u = 0;
             while (u < m.UsingCount) {
-                pairCount = ZpkgBuilder._addPair(pairFile, pairNs, pairCount, nsNames, nsFiles, nsCount, m.Usings[u]);
+                pairCount = ZpkgBuilder._addPair(pairFile, pairNs, pairCount, nsNames, nsFiles, nsCount, m.Usings[u], selfZpkgFile);
                 if (pairCount > pairFile.Length - 1) {
                     string[] b1 = new string[pairFile.Length * 2];
                     string[] b2 = new string[pairFile.Length * 2];
@@ -107,7 +110,7 @@ public static class ZpkgBuilder {
             }
             u = 0;
             while (u < m.UsedDepNsCount) {
-                pairCount = ZpkgBuilder._addPair(pairFile, pairNs, pairCount, nsNames, nsFiles, nsCount, m.UsedDepNs[u]);
+                pairCount = ZpkgBuilder._addPair(pairFile, pairNs, pairCount, nsNames, nsFiles, nsCount, m.UsedDepNs[u], selfZpkgFile);
                 if (pairCount > pairFile.Length - 1) {
                     string[] b1 = new string[pairFile.Length * 2];
                     string[] b2 = new string[pairFile.Length * 2];
@@ -148,9 +151,11 @@ public static class ZpkgBuilder {
         return new ZpkgDepList(deps, fileCount);
     }
 
-    // (file,ns) 对去重追加；ns 不在 nsMap → 跳过（镜像 AddDepNs 未解析即略）。返回新 count。
+    // (file,ns) 对去重追加；ns 不在 nsMap → 跳过；file==selfZpkgFile → 跳过自依赖
+    // （镜像 C# AddDepNs 的 `if (depFile == selfZpkgName) return`）。返回新 count。
     private static int _addPair(string[] pairFile, string[] pairNs, int pairCount,
-                                string[] nsNames, string[] nsFiles, int nsCount, string ns) {
+                                string[] nsNames, string[] nsFiles, int nsCount, string ns,
+                                string selfZpkgFile) {
         string file = "";
         int i = 0;
         while (i < nsCount) {
@@ -158,6 +163,7 @@ public static class ZpkgBuilder {
             i = i + 1;
         }
         if (file == "") { return pairCount; }
+        if (selfZpkgFile != "" && file == selfZpkgFile) { return pairCount; }  // 自依赖排除
         i = 0;
         while (i < pairCount) {
             if (pairFile[i] == file && pairNs[i] == ns) { return pairCount; }

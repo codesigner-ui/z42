@@ -92,15 +92,45 @@ public sealed class EmitContext {
         string cur = clsName;
         int hops = 0;
         while (hops < 32) {
-            if (this.LocalClasses == null || !this.LocalClasses.ContainsKey(cur)) { return false; }   // 非本地声明类 → 不算 vtable-owned
-            if (!this.Symbols.HasClass(cur)) { return false; }
-            Z42ClassType ct = this.Symbols.GetClass(cur);
+            // 泛型实例化名（List<string>）→ 裸名（List）查 LocalClasses/SymbolTable。
+            string bare = cur;
+            int bi = 0;
+            bool foundAngle = false;
+            while (bi < bare.Length && !foundAngle) {
+                if (bare.CharAt(bi) == '<') { bare = bare.Substring(0, bi); foundAngle = true; }
+                bi = bi + 1;
+            }
+            // IC-3 prim→wrapper：prim 别名（"string"）→ 包装类名（"String"）再查 LocalClasses
+            // 镜像 C# ReceiverChainHasMethod 经 QualifyClassName 把 prim 映射到 "Std.String" 等
+            // FQ 类名在 ClassRegistry 查找；z42c 用短名 LocalClasses，故只需 bare→wrapper 映射。
+            string lookup = EmitContext._primWrapper(bare);
+            if (this.LocalClasses == null || !this.LocalClasses.ContainsKey(lookup)) { return false; }   // 非本地声明类 → 不算 vtable-owned
+            if (!this.Symbols.HasClass(lookup)) { return false; }
+            Z42ClassType ct = this.Symbols.GetClass(lookup);
             if (ct.Methods.ContainsKey(method)) { return true; }
             if (!ct.HasBase || ct.BaseName == "") { return false; }
             cur = ct.BaseName;
             hops = hops + 1;
         }
         return false;
+    }
+
+    // prim 别名 → 包装类名（镜像 TypeChecker._primWrapper；ChainHasMethod IC-3 映射用）。
+    private static string _primWrapper(string n) {
+        if (n == "string")              { return "String"; }
+        if (n == "int"    || n == "i32") { return "Int32"; }
+        if (n == "long"   || n == "i64") { return "Int64"; }
+        if (n == "short"  || n == "i16") { return "Int16"; }
+        if (n == "sbyte"  || n == "i8")  { return "SByte"; }
+        if (n == "byte"   || n == "u8")  { return "Byte"; }
+        if (n == "ushort" || n == "u16") { return "UInt16"; }
+        if (n == "uint"   || n == "u32") { return "UInt32"; }
+        if (n == "ulong"  || n == "u64") { return "UInt64"; }
+        if (n == "float"  || n == "f32") { return "Single"; }
+        if (n == "double" || n == "f64") { return "Double"; }
+        if (n == "bool")                { return "Boolean"; }
+        if (n == "char")                { return "Char"; }
+        return n;   // 已是类名（"String"/"List" 等）→ 原样
     }
 
     // 类的声明 ns 是否异于当前模块 ns（跨-ns，含 imported）。G18i：`as`-cast 到跨-ns 类后字段读
