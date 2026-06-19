@@ -77,8 +77,10 @@ public sealed class ExprEmitter {
             if (at != null && !(at.Elem is Z42PrimType) && !(at.Elem is Z42GenericParamType)) {
                 elemName = this._ctx.QualifyClass(an.ElemName);
             }
-            // ElemName → IrType（prim 名经 ToIrType 等价物：用 Z42PrimType 包一层）
-            this._ctx.Emit(new ArrayNewInstr(dst, size, this._ctx.ToIrType(new Z42PrimType(an.ElemName)), elemName));
+            // ElemTag：直接用实际元素 Z42Type 走 ToIrType（泛型形参→Unknown 0x00，非 Ref）。
+            // 修 PrimTag 对泛型形参名回落 Ref 的 bug：通过 Z42PrimType 包装会调 PrimTag("T")→Ref。
+            int elemTag = at != null ? this._ctx.ToIrType(at.Elem) : IrType.Ref;
+            this._ctx.Emit(new ArrayNewInstr(dst, size, elemTag, elemName));
             return dst;
         }
         if (e is BoundRefArg) {

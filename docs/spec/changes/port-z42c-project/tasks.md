@@ -1,6 +1,6 @@
 # Tasks: port-z42c-project — z42c.project 真实移植
 
-> 状态：🟡 进行中 | 创建：2026-06-08 | 子系统锁：z42c（顺序续作，承接 port-z42c-syntax）
+> 状态：✅ 完成 | 创建：2026-06-08 | 子系统锁：z42c（顺序续作，承接 port-z42c-syntax）
 > **变更说明：** 把 C# `z42.Project`（清单模型 / 加载器 / zpkg 读写）用 z42 重写，替换 ProjectSkeleton。
 > **类型：** port（实现既有行为）。架构见 [self-hosting.md](../../../design/compiler/self-hosting.md)。
 > **C# 参考映射**：见会话内 z42.Project 全量 map（ProjectManifest 769 / ManifestLoader 398 / ZpkgReader·Writer ~1750 byte-identical / 等，共 ~5500 LOC）。
@@ -27,15 +27,17 @@
 
 > **project 机械段（incr 1-3：清单/workspace/路径模板）完成。** 后续 = 文件系统段（源 glob 发现 + ResolvedManifest 合并）+ byte-identical 硬段（zpkg 读写，须等 ir 移植）。
 
-## 后续增量（文件系统段，依赖 Std.IO Directory/Path.Glob）
-- [ ] **4**：源文件 glob 发现（include/exclude → 绝对路径）+ workspace 成员 glob 展开 + ResolvedManifest（member+workspace 合并 + CentralizedBuildLayout 套 PathTemplate 算 effective dirs）
+## increment 4（文件系统段 — ✅ 已完成，port-z42c-self-compile 期间实现）
+- [x] `SourceDiscovery.z42`：源文件 glob 发现（include/exclude → 绝对路径；`**/` 递归展开；`src/**/*.z42` 默认回落）
+- [x] 默认 `[sources]` 缺失回落 `["src/**/*.z42"]`（G9 `d86f9110`）
 
-## 后续增量（byte-identical 硬段，强依赖 z42c.ir 的 ZbcFile/IrModule —— 须先移植 ir/emit）
-- [ ] **4**：ZpkgReader（META/STRS/NSPC/EXPT/DEPS/SIGS/MODS/FILE/TSIG/IMPL 各段；zpkg v0.11 格式，逐字节）
-- [ ] **5**：ZpkgWriter + ZpkgBuilder（packed/indexed 模式；string pool dedup；split-debug-symbols sidecar + BLAKE3-128 BLID）→ round-trip golden
-- [ ] **6**：integration（ResolvedManifest → 源 → lex/parse/typecheck/codegen → ZbcFile → ZpkgBuilder → ZpkgWriter → dist/*.zpkg）
+## increment 5（byte-identical 硬段 — ✅ 已完成，port-z42c-self-compile 期间实现）
+- [x] `ZpkgReader.z42`（META/STRS/NSPC/EXPT/DEPS/SIGS/MODS/FILE/TSIG/IMPL 各段；zpkg v0.22+ 格式）
+- [x] `ZpkgWriter.z42` + `ZpkgBuilder.z42`（packed/indexed 模式；string pool dedup；split-debug-symbols sidecar + BLAKE3-128 BLID）
 
-> **注**：increment 4-6（zpkg 读写）须等 z42c.ir（IrModule/ZbcFile/ZbcWriter）移植到位——zpkg 承载的是 IR 编译产物。故 **project 的硬段排在 ir/semantics 之后**。机械段（1-3，清单/源发现）可独立先行。
+## increment 6（integration — ✅ 已完成，端到端 z42c build 全链）
+- [x] ResolvedManifest → 源发现 → lex/parse/typecheck/codegen → ZbcFile → ZpkgBuilder → ZpkgWriter → dist/*.zpkg
+- [x] 验证：z42c build 7 个自身包全 byte-identical（G22，2026-06-18）
 
 ## 备注
 - ProjectSkeleton.z42 暂留（semantics/pipeline 仍引用，各自移植时移除）。

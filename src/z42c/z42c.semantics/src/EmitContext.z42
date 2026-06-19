@@ -260,14 +260,13 @@ public sealed class EmitContext {
 
     // Z42Type → IrType 标签（z42c.ir 是无依赖叶子不能引用 Z42Type，故映射在 semantics 侧）。
     public int ToIrType(Z42Type t) {
-        if (t is Z42InterfaceType) { return IrType.Ref; }   // 接口值=Ref（体内局部；签名形参另见 FunctionEmitter——REGT 字节实证两形态）
         if (t is Z42VoidType) { return IrType.Void; }
         if (t is Z42PrimType) { return this.PrimTag(t.Name()); }
         if (t is Z42ClassType) { return IrType.Ref; }
-        if (t is Z42InstantiatedType) { return IrType.Ref; }
         if (t is Z42ArrayType) { return IrType.Ref; }
-        // Unknown / Error / 泛型形参 / func → Unknown(0x00)（镜像 C# ToIrType `_ => IrType.Unknown`；
-        // 如 string.ByteLength 等未识别 prim 属性松绑 Unknown → REGT 0x00，非 Ref）。
+        // Interface / InstantiatedType / GenericParam / Error / func → Unknown(0x00)
+        // 镜像 C# ToIrType: only PrimType/ClassType/ArrayType/OptionType/NullType→Ref；
+        // 其余（含接口、泛型实例化、泛型形参）→ Unknown。
         return IrType.Unknown;
     }
 

@@ -225,7 +225,11 @@ public sealed class IrGen {
         int bi2 = 0;
         while (bi2 < c.BaseCount) {       // 基表判别（port-z42c-interface）：跳过接口，取首个类
             string bn = c.Bases[bi2].Dump();
-            if (!this._symbols.HasInterface(bn)) {
+            // HasInterface map 存裸名（无泛型实参）；去掉 <...> 再查。
+            string barebn = bn;
+            int ltIdx = bn.IndexOf("<");
+            if (ltIdx >= 0) { barebn = bn.Substring(0, ltIdx); }
+            if (!this._symbols.HasInterface(barebn)) {
                 baseName = bn;
                 if (!this._hasDot(baseName)) { baseName = this._q(baseName); }
                 bi2 = c.BaseCount;        // 取首个类即止

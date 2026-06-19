@@ -135,14 +135,6 @@
 ## increment 6e-2（后续 — byte-identical 对账，最硬）
 - [ ] 调研 C# `--dump-tokens`/`--dump-ast` 精确格式 → 设计 z42c dump 格式对齐方案（架构性，先出设计）→ 逐字节对账 CI gate
 
-### 6d-3（后续 — where 约束结构化）
-- [ ] WhereClause/WhereConstraint（TypeExpr | new()/class/struct）于 Class/Delegate/Record/Method；移除残留 `_parseTypeText`/WhereText string
-
-## increment 6d（后续 — Visitor + TypeExpr）
-- [ ] 真实 Visitor 基类（替代 Dump 临时方案）；TypeExpr AST（替代类型文本字符串）
-
-## increment 6e（后续 — byte-identical）
-- [ ] token + AST JSON 与 C# `--dump-tokens` / `--dump-ast` 逐项对账
 
 ## 备注
 - SyntaxSkeleton.z42 暂留（semantics/pipeline/driver 仍引用，各自移植时移除）。
