@@ -44,13 +44,16 @@ public sealed class ExportedClassZ {
     public ExportedFieldZ[]  Fields;   public int FieldCount;
     public ExportedMethodZ[] Methods;  public int MethodCount;
     public string[] Interfaces; public int InterfaceCount;   // 实现的接口名（port-z42c-interface）
+    public string[] TypeParams; public int TpCount;          // 泛型类型参数名（如 "T"/"K"/"V"）
     public ExportedClassZ(string name, bool hasBase, string baseName,
                           ExportedFieldZ[] fields, int fieldCount,
-                          ExportedMethodZ[] methods, int methodCount) {
+                          ExportedMethodZ[] methods, int methodCount,
+                          string[] typeParams, int tpCount) {
         this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = fields; this.FieldCount = fieldCount;
         this.Methods = methods; this.MethodCount = methodCount;
         this.Interfaces = new string[0]; this.InterfaceCount = 0;
+        this.TypeParams = typeParams; this.TpCount = tpCount;
     }
 }
 

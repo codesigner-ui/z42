@@ -159,6 +159,18 @@ public sealed class Parser {
             Expr operand = this._parseExpr(85);
             return new CastExpr(ct, operand, t.Span);
         }
+        // GS6: 数组类型强转 (T[])expr：类型关键字或类名后跟 []，区别于 (T)expr（peek(2) 不同）。
+        if (k == TokenKind.LParen
+            && (this._isTypeKeyword(this._peekAt(1).Kind) || this._peekAt(1).Kind == TokenKind.Identifier)
+            && this._peekAt(2).Kind == TokenKind.LBracket
+            && this._peekAt(3).Kind == TokenKind.RBracket
+            && this._peekAt(4).Kind == TokenKind.RParen) {
+            this._advance();
+            TypeExpr ct = this._parseType();
+            this._expect(TokenKind.RParen, ")");
+            Expr operand = this._parseExpr(85);
+            return new CastExpr(ct, operand, t.Span);
+        }
         // 泛型类型形参 cast `(TD)expr`：( Identifier ) Identifier → 无歧义（`(val)ident` 在 z42 无效语法）。
         // 用于 stdlib 中 `return (TD)DelegateOps.MakeClosure(...)` 类型形参强转场景。
         if (k == TokenKind.LParen && this._peekAt(1).Kind == TokenKind.Identifier
@@ -221,6 +233,8 @@ public sealed class Parser {
             return new DefaultExpr(ty, t.Span);
         }
         if (k == TokenKind.Identifier)    { this._advance(); return new IdentExpr(t.Text, t.Span); }
+        // GS6: 类型关键字在 primary 表达式位置（int.Parse / string.FromChars 等）→ IdentExpr(keyword)
+        if (this._isTypeKeyword(k)) { this._advance(); return new IdentExpr(t.Text, t.Span); }
         this._diags.Error(DiagnosticCodes.UnexpectedToken, "unexpected token in expression", t.Span);
         this._advance();
         return new IdentExpr("<error>", t.Span);

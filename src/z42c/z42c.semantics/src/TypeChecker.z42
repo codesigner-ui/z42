@@ -187,6 +187,7 @@ public sealed class TypeChecker {
                 if (cc.HasVar) {
                     cenv = env.PushScope();
                     cenv.Define(cc.VarName, exType);
+                    if (this._lambdaActive) { this._lambdaLocals.Put(cc.VarName, exType); }
                 }
                 BoundStmt body = this._bindStmt(cc.Body, cenv, ret);
                 catches[ci] = new BoundCatchClause(cc.HasType, exName, cc.HasVar, cc.VarName, body, cc.Span);
@@ -243,6 +244,42 @@ public sealed class TypeChecker {
             }
             outerStmts[on] = new BoundWhile(fcond, new BoundBlock(lbody, ln, s.Span), s.Span); on = on + 1;
             return new BoundBlock(outerStmts, on, s.Span);
+        }
+        // GS6: foreach 脱糖 → { T[] __fe_arr=iter; int __fe_i=0; while(__fe_i<__fe_arr.Length){T name=__fe_arr[__fe_i]; body; __fe_i=__fe_i+1;} }
+        if (s is ForeachStmt) {
+            ForeachStmt fe = s as ForeachStmt;
+            TypeEnv feScope = env.PushScope();
+            BoundExpr feIter = this._bindExpr(fe.Iter, feScope);
+            Z42Type feElem = new Z42UnknownType();
+            bool feIsVar = (fe.Type is NamedType) && ((fe.Type as NamedType).Name == "var");
+            if (feIsVar) {
+                if (feIter.Type() is Z42ArrayType) { feElem = (feIter.Type() as Z42ArrayType).Elem; }
+            } else { feElem = feScope.ResolveType(fe.Type); }
+            string feArrName = "__fe_arr"; string feIdxName = "__fe_i";
+            feScope.Define(feArrName, feIter.Type());
+            feScope.Define(feIdxName, new Z42PrimType("int"));
+            TypeEnv elemScope = feScope.PushScope();
+            elemScope.Define(fe.Name, feElem);
+            this._loopDepth = this._loopDepth + 1;
+            BoundStmt febody = this._bindStmt(fe.Body, elemScope, ret);
+            this._loopDepth = this._loopDepth - 1;
+            Z42Type intT2 = new Z42PrimType("int"); Span sp3 = s.Span;
+            BoundStmt nameDecl = new BoundVarDeclStmt(fe.Name, feElem,
+                new BoundIndex(new BoundIdent(feArrName, feIter.Type(), sp3),
+                               new BoundIdent(feIdxName, intT2, sp3), feElem, sp3), sp3);
+            BoundExpr incrVal = new BoundBinary("+", new BoundIdent(feIdxName, intT2, sp3),
+                new BoundLitInt("1", intT2, sp3), intT2, sp3);
+            BoundExpr incrExpr = new BoundAssign(new BoundIdent(feIdxName, intT2, sp3), incrVal, intT2, sp3);
+            BoundStmt[] wbody2 = new BoundStmt[3];
+            wbody2[0] = nameDecl; wbody2[1] = febody; wbody2[2] = new BoundExprStmt(incrExpr, sp3);
+            BoundExpr lenExpr = new BoundMember(new BoundIdent(feArrName, feIter.Type(), sp3), "Length", intT2, sp3);
+            BoundExpr wcond2 = new BoundBinary("<", new BoundIdent(feIdxName, intT2, sp3), lenExpr, new Z42PrimType("bool"), sp3);
+            BoundStmt wloop2 = new BoundWhile(wcond2, new BoundBlock(wbody2, 3, sp3), sp3);
+            BoundStmt arrDecl2 = new BoundVarDeclStmt(feArrName, feIter.Type(), feIter, sp3);
+            BoundStmt idxDecl2 = new BoundVarDeclStmt(feIdxName, intT2, new BoundLitInt("0", intT2, sp3), sp3);
+            BoundStmt[] outer2 = new BoundStmt[3];
+            outer2[0] = arrDecl2; outer2[1] = idxDecl2; outer2[2] = wloop2;
+            return new BoundBlock(outer2, 3, sp3);
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", s.Span);
         return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType(), s.Span), s.Span);
@@ -406,6 +443,18 @@ public sealed class TypeChecker {
         if (e is InterpolatedStringExpr) {
             return this._bindInterpolatedStr(e as InterpolatedStringExpr, env);
         }
+        // GS6: lambda 作为调用参数（无 expected type 上下文）→ 按参数显式类型或 Unknown 合成 expected。
+        if (e is LambdaExpr) {
+            LambdaExpr lam2 = e as LambdaExpr;
+            Z42Type[] lpts = new Z42Type[lam2.ParamCount];
+            int li = 0;
+            while (li < lam2.ParamCount) {
+                if (lam2.Params[li].HasType) { lpts[li] = env.ResolveType(lam2.Params[li].Type); }
+                else { lpts[li] = new Z42UnknownType(); }
+                li = li + 1;
+            }
+            return this._bindLambda(lam2, new Z42FuncType(lpts, lam2.ParamCount, new Z42UnknownType()), env);
+        }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported expression (1A)", e.Span);
         return new BoundError("unsupported expr", new Z42ErrorType(), e.Span);
     }
@@ -547,6 +596,17 @@ public sealed class TypeChecker {
         if (tt is Z42GenericParamType) {
             return new BoundMember(target, m.Name, new Z42UnknownType(), m.Span);
         }
+        // GS6: 泛型实例化类型（LinkedListNode<T> 等）成员访问 → 查 Def 类字段，泛型字段类型松绑 Unknown。
+        if (tt is Z42InstantiatedType) {
+            Z42ClassType itDef = (tt as Z42InstantiatedType).Def;
+            FieldSymbol itFs = this._findField(env.Symbols, itDef, m.Name);
+            if (itFs != null) {
+                Z42Type fType = itFs.FieldType;
+                if (fType is Z42GenericParamType) { fType = new Z42UnknownType(); }
+                return new BoundMember(target, m.Name, fType, m.Span);
+            }
+            return new BoundMember(target, m.Name, new Z42UnknownType(), m.Span);
+        }
         // prim receiver 属性访问（镜像 _bindMemberCall 的 prim 处理）：prim 名首字母大写 →
         // stdlib 包装类（"string"→"String"，imported 自 z42.core TSIG）→ 取字段/属性真类型；
         // 查无则松绑 Unknown（codegen 经 DepIndex/VM builtin 真实解析，如 string.Length）。
@@ -584,6 +644,11 @@ public sealed class TypeChecker {
     private bool _isAssignable(Z42Type from, Z42Type to, SymbolTable symbols) {
         if ((from is Z42ErrorType) || (from is Z42UnknownType)) { return true; }
         if ((to is Z42ErrorType) || (to is Z42UnknownType)) { return true; }
+        // GS6: 泛型类型参数（T）类型擦除——仅当恰好一侧是 GenericParamType 时放行（T→concrete 或 concrete→T）。
+        // 两侧均为 GenericParamType（K→V）走 IsAssignableTo 判同名；两侧均为 concrete 走普通路径。
+        if ((from is Z42GenericParamType) != (to is Z42GenericParamType)) { return true; }
+        // GS6: 任何类型均可赋给 object（通用基类）
+        if ((to is Z42PrimType) && (to.Name() == "object")) { return true; }
         if (from.IsAssignableTo(to)) { return true; }
         if ((from is Z42ClassType) && (to is Z42ClassType)) {
             return symbols.IsSubclassOf(from.Name(), to.Name());
@@ -599,6 +664,10 @@ public sealed class TypeChecker {
         }
         if ((from is Z42ClassType) && (to is Z42InstantiatedType)) {   // `this` (bare class) → instantiated return type
             return from.Name() == (to as Z42InstantiatedType).Def.Name();
+        }
+        // GS6: 数值 prim 互相窄化（int→u8 等，stdlib 二进制格式大量使用）—— 信任程序员，运行期截断
+        if ((from is Z42PrimType) && (to is Z42PrimType)) {
+            if (TypeChecker._isNumericPrim(from.Name()) && TypeChecker._isNumericPrim(to.Name())) { return true; }
         }
         return false;
     }
@@ -670,6 +739,24 @@ public sealed class TypeChecker {
                 return new BoundCall("static", false, null, tid.Name, mem.Name, args, argCount, new Z42ErrorType(), sp);
             }
         }
+        // GS6: prim 关键字静态调用（int.Parse / string.FromChars 等）→ wrapper class 静态方法
+        if (mem.Target is IdentExpr) {
+            IdentExpr tid2 = mem.Target as IdentExpr;
+            if (env.LookupVar(tid2.Name) == null && TypeChecker._isPrimKeyword(tid2.Name)) {
+                string pwrap2 = TypeChecker._primWrapper(tid2.Name);
+                if (env.Symbols.HasClass(pwrap2)) {
+                    Z42ClassType wct2 = env.Symbols.GetClass(pwrap2);
+                    string wmkey2 = this._overloadKey(env.Symbols, wct2, mem.Name, argCount);
+                    MethodSymbol wms2 = this._findMethod(env.Symbols, wct2, wmkey2);
+                    if (wms2 != null) {
+                        return new BoundCall("static", false, null, pwrap2, wmkey2, args, argCount, wms2.Signature.Ret, sp);
+                    }
+                    this._diags.Error(DiagnosticCodes.UndefinedSymbol,
+                        "no static method `" + mem.Name + "` on `" + pwrap2 + "`", sp);
+                    return new BoundCall("static", false, null, pwrap2, mem.Name, args, argCount, new Z42ErrorType(), sp);
+                }
+            }
+        }
         // 实例：bind target 为值
         BoundExpr recv = this._bindExpr(mem.Target, env);
         Z42Type rt = recv.Type();
@@ -696,6 +783,18 @@ public sealed class TypeChecker {
         }
         if ((rt is Z42ErrorType) || (rt is Z42UnknownType)) {
             return new BoundCall("instance", true, recv, "<?>", mem.Name, args, argCount, new Z42ErrorType(), sp);
+        }
+        // GS6: 泛型实例化类型（LinkedList<T>.Next() 等）→ 查 Def 类方法，返回类型泛型参数松绑 Unknown。
+        if (rt is Z42InstantiatedType) {
+            Z42ClassType itDef2 = (rt as Z42InstantiatedType).Def;
+            string itmkey = this._overloadKey(env.Symbols, itDef2, mem.Name, argCount);
+            MethodSymbol itms = this._findMethod(env.Symbols, itDef2, itmkey);
+            if (itms != null) {
+                Z42Type itRet = itms.Signature.Ret;
+                if (itRet is Z42GenericParamType) { itRet = new Z42UnknownType(); }
+                return new BoundCall("instance", true, recv, itDef2.Name(), itmkey, args, argCount, itRet, sp);
+            }
+            return new BoundCall("instance", true, recv, itDef2.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
         }
         // prim receiver（IC-3，镜像 C#）：prim 名首字母大写 → stdlib 包装类（"string"→"String"，
         // imported 自 z42.core TSIG）→ 取方法 ret 真类型（dst tag 字节实证 Str 非 Unknown）；
@@ -769,6 +868,39 @@ public sealed class TypeChecker {
         if (n == "char") { return "Char"; }
         if (n == "string") { return "String"; }
         return TypeChecker._capFirst(n);   // 其它（已是 PascalCase 或未知）→ 首字母大写回退
+    }
+
+    // GS6: 判断是否为 prim 关键字（_bindMemberCall 静态路由用）。
+    private static bool _isPrimKeyword(string n) {
+        if (n == "int"    || n == "i32")  { return true; }
+        if (n == "long"   || n == "i64")  { return true; }
+        if (n == "short"  || n == "i16")  { return true; }
+        if (n == "sbyte"  || n == "i8")   { return true; }
+        if (n == "byte"   || n == "u8")   { return true; }
+        if (n == "ushort" || n == "u16")  { return true; }
+        if (n == "uint"   || n == "u32")  { return true; }
+        if (n == "ulong"  || n == "u64")  { return true; }
+        if (n == "float"  || n == "f32")  { return true; }
+        if (n == "double" || n == "f64")  { return true; }
+        if (n == "bool"   || n == "char") { return true; }
+        if (n == "string") { return true; }
+        return false;
+    }
+
+    // GS6: 判断是否为数值 prim（_isAssignable 窄化用）。
+    private static bool _isNumericPrim(string n) {
+        if (n == "int"    || n == "i32")  { return true; }
+        if (n == "long"   || n == "i64")  { return true; }
+        if (n == "short"  || n == "i16")  { return true; }
+        if (n == "sbyte"  || n == "i8")   { return true; }
+        if (n == "byte"   || n == "u8")   { return true; }
+        if (n == "ushort" || n == "u16")  { return true; }
+        if (n == "uint"   || n == "u32")  { return true; }
+        if (n == "ulong"  || n == "u64")  { return true; }
+        if (n == "float"  || n == "f32")  { return true; }
+        if (n == "double" || n == "f64")  { return true; }
+        if (n == "char") { return true; }
+        return false;
     }
 
     // prim 名 → 首字母大写（_primWrapper 的回退）。

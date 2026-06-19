@@ -283,7 +283,7 @@ public static class ExportedTypeExtractor {
             }
             sj = sj + 1;
         }
-        ExportedClassZ ez = new ExportedClassZ(c.Name, true, baseName, fields, fldc, methods, mc);
+        ExportedClassZ ez = new ExportedClassZ(c.Name, true, baseName, fields, fldc, methods, mc, c.TypeParams.Names, c.TypeParams.Count);
         if (ct != null && ct.InterfaceCount > 0) {                  // 类接口表（port-z42c-interface）
             ez.Interfaces = ct.InterfaceNames;
             ez.InterfaceCount = ct.InterfaceCount;

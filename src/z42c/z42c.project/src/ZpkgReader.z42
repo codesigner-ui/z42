@@ -239,10 +239,11 @@ public static class ZpkgReader {
                 int x = 0;
                 while (x < ifc) { c.U32(); x = x + 1; }   // 接口名（MVP 不消费）
                 int tpc = c.U8();
+                string[] tps = new string[tpc];
                 x = 0;
-                while (x < tpc) { c.U32(); x = x + 1; }
+                while (x < tpc) { tps[x] = z.Pool[c.U32()]; x = x + 1; }
                 ZpkgReader._skipTpConstraints(c);
-                classes[ci] = new ExportedClassZ(cname, hasBase, baseName, fields, fc, methods, mc);
+                classes[ci] = new ExportedClassZ(cname, hasBase, baseName, fields, fc, methods, mc, tps, tpc);
                 ci = ci + 1;
             }
             // interfaces（跳过——MVP 不 import 接口）
