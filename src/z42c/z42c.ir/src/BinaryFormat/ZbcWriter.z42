@@ -433,6 +433,7 @@ public static class ZbcWriter {
         if (ins is IsInstanceInstr) { IsInstanceInstr i = ins as IsInstanceInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
         if (ins is AsCastInstr) { AsCastInstr i = ins as AsCastInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
         if (ins is ArrayNewInstr) { ArrayNewInstr an2 = ins as ArrayNewInstr; ZbcWriter._regtVis(rt, an2.Dst); ZbcWriter._regtVis(rt, an2.Size); return; }
+        if (ins is ArrayNewLitInstr) { ArrayNewLitInstr anl = ins as ArrayNewLitInstr; ZbcWriter._regtVis(rt, anl.Dst); ZbcWriter._regtArgs(rt, anl.Elems, anl.ElemCount); return; }
         if (ins is StaticGetInstr) { ZbcWriter._regtVis(rt, (ins as StaticGetInstr).Dst); return; }
         if (ins is StaticSetInstr) { ZbcWriter._regtVis(rt, (ins as StaticSetInstr).Val); return; }
         if (ins is ArrayLenInstr) { ArrayLenInstr al2 = ins as ArrayLenInstr; ZbcWriter._regtVis(rt, al2.Dst); ZbcWriter._regtVis(rt, al2.Arr); return; }
@@ -441,6 +442,7 @@ public static class ZbcWriter {
         if (ins is MkClosInstr) { MkClosInstr mk2 = ins as MkClosInstr; ZbcWriter._regtVis(rt, mk2.Dst); ZbcWriter._regtArgs(rt, mk2.Captures, mk2.CaptureCount); return; }
         if (ins is ArrayGetInstr) { ArrayGetInstr i = ins as ArrayGetInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Arr); ZbcWriter._regtVis(rt, i.Idx); return; }
         if (ins is ArraySetInstr) { ArraySetInstr i = ins as ArraySetInstr; ZbcWriter._regtVis(rt, i.Arr); ZbcWriter._regtVis(rt, i.Idx); ZbcWriter._regtVis(rt, i.Val); return; }
+        if (ins is LoadLocalAddrInstr) { LoadLocalAddrInstr la = ins as LoadLocalAddrInstr; ZbcWriter._regtVis(rt, la.Dst); ZbcWriter._regtVis(rt, la.Slot); return; }
     }
 
     private static void _regtTerm(int[] rt, IrTerminator t) {

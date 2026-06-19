@@ -408,6 +408,19 @@ public sealed class TypeChecker {
             Z42Type elem = env.ResolveType(an.Elem);
             return new BoundArrayNew(size, elem.Name(), new Z42ArrayType(elem), an.Span);
         }
+        if (e is ArrayInitExpr) {
+            ArrayInitExpr ai = e as ArrayInitExpr;
+            Z42Type elem = env.ResolveType(ai.Elem);
+            BoundExpr[] elems = new BoundExpr[ai.ElemCount];
+            int bi = 0;
+            while (bi < ai.ElemCount) { elems[bi] = this._bindExpr(ai.Elems[bi], env); bi = bi + 1; }
+            return new BoundArrayLit(elems, ai.ElemCount, elem.Name(), new Z42ArrayType(elem), ai.Span);
+        }
+        if (e is RefArgExpr) {
+            RefArgExpr ra = e as RefArgExpr;
+            BoundExpr inner = this._bindExpr(ra.Inner, env);
+            return new BoundRefArg(inner, new Z42UnknownType(), ra.Span);
+        }
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);
         }

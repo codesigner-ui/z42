@@ -401,6 +401,32 @@ void test_array_new_prim_short() {
                  IrDump.DumpFunc(src, "C.Make"));
 }
 
+// ── 数组字面量初始化 new T[]{v,...}（SA-2）──────────────────────────────────────────
+// 镜像 C# BoundArrayLit → ArrayNewLitInstr（opcode 0x81）；Dump = arr.new.lit  %e0, %e1, ...。
+[Test]
+void test_array_init_prim() {
+    string src = "int[] Make() { return new int[]{1, 2, 3}; }";
+    Assert.Equal("fn @Make(0) -> int[] {\nentry:\n  %0 = const.i64 1\n  %1 = const.i64 2\n  %2 = const.i64 3\n  %3 = arr.new.lit  %0, %1, %2\n  ret %3\n}",
+                 IrDump.DumpFunc(src, "Make"));
+}
+
+[Test]
+void test_array_init_empty() {
+    string src = "int[] Make() { return new int[]{}; }";
+    Assert.Equal("fn @Make(0) -> int[] {\nentry:\n  %0 = arr.new.lit\n  ret %0\n}",
+                 IrDump.DumpFunc(src, "Make"));
+}
+
+// ── ref 参数 load_local_addr（SA-3 ref）────────────────────────────────────────────
+// 调用方 ref arg → load_local_addr slot → 传 call 实参（镜像 C# AddressOf.cs Alloc(Unknown)）。
+[Test]
+void test_ref_arg_emits_load_local_addr() {
+    string src = "void Inc(ref int x) { } void Main() { int c = 0; Inc(ref c); }";
+    string ir = IrDump.DumpFunc(src, "Main");
+    Assert.Equal("fn @Main(0) -> void {\nentry:\n  %0 = const.i64 0\n  %1 = copy %0\n  %2 = load_local_addr %1\n  %3 = call @Inc(%2)\n  ret\n}",
+                 ir);
+}
+
 // ── var-decl 寄存器复用（port-z42c-self-compile G17c-4）────────────────────────────
 // 同名局部在兄弟作用域重声明（if/else 各分支 `int x = ...`）复用首次分配的寄存器
 // （镜像 C# WriteBackName 平表 locals）；否则寄存器数随分支膨胀（z42c.ir WriteInstr +73B REGT）。

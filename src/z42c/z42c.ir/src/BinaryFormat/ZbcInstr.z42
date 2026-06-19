@@ -81,6 +81,13 @@ public static class ZbcInstr {
             w.WriteU32(pool.Idx(an.ElemName));   // zbc 1.16：elem FQ 名
             return;
         }
+        if (ins is ArrayNewLitInstr) {
+            ArrayNewLitInstr al = ins as ArrayNewLitInstr;
+            w.WriteU8(Op.ArrayNewLit); w.WriteU8(Tag.FromIrType(al.Dst.Type)); w.WriteU16(al.Dst.Id);
+            ZbcInstr._args(w, al.Elems, al.ElemCount);
+            w.WriteU32(pool.Idx(al.ElemName));
+            return;
+        }
         if (ins is StaticGetInstr) {
             StaticGetInstr sg = ins as StaticGetInstr;
             w.WriteU8(Op.StaticGet); w.WriteU8(Tag.FromIrType(sg.Dst.Type)); w.WriteU16(sg.Dst.Id);
@@ -292,6 +299,12 @@ public static class ZbcInstr {
         if (ins is BitNotInstr) { BitNotInstr i = ins as BitNotInstr; ZbcInstr._un(w, Op.BitNot, i.Dst, i.Src); return; }
         if (ins is ConvertInstr) { ConvertInstr i = ins as ConvertInstr; ZbcInstr._un(w, Op.Convert, i.Dst, i.Src); return; }
         if (ins is ToStrInstr) { ToStrInstr i = ins as ToStrInstr; ZbcInstr._un(w, Op.ToStr, i.Dst, i.Src); return; }
+        if (ins is LoadLocalAddrInstr) {
+            LoadLocalAddrInstr la = ins as LoadLocalAddrInstr;
+            w.WriteU8(Op.LoadLocalAddr); w.WriteU8(Tag.FromIrType(la.Dst.Type)); w.WriteU16(la.Dst.Id);
+            w.WriteU16(la.Slot.Id);
+            return;
+        }
         // 未覆盖 opcode（call/field/obj/array/is·as/const-str·f64·char → ZW-1C/1D/1E）：
         // 静默跳过会产出语义错流（e2e div-zero oracle 可截获）；e2e 源须避开未覆盖指令。
     }
@@ -351,6 +364,7 @@ public static class ZbcInstr {
         if (ins is CallInstr) { CallInstr i = ins as CallInstr; pool.Intern(i.Func); return; }
         if (ins is LoadFnInstr) { pool.Intern((ins as LoadFnInstr).Func); return; }       // C# 池序实证：lift 名入池
         if (ins is ArrayNewInstr) { pool.Intern((ins as ArrayNewInstr).ElemName); return; }
+        if (ins is ArrayNewLitInstr) { pool.Intern((ins as ArrayNewLitInstr).ElemName); return; }
         if (ins is StaticGetInstr) { pool.Intern((ins as StaticGetInstr).Field); return; }
         if (ins is StaticSetInstr) { pool.Intern((ins as StaticSetInstr).Field); return; }
         if (ins is MkClosInstr) { pool.Intern((ins as MkClosInstr).Func); return; }

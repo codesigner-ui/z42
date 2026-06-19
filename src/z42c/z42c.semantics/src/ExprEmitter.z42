@@ -81,6 +81,27 @@ public sealed class ExprEmitter {
             this._ctx.Emit(new ArrayNewInstr(dst, size, this._ctx.ToIrType(new Z42PrimType(an.ElemName)), elemName));
             return dst;
         }
+        if (e is BoundRefArg) {
+            BoundRefArg ra = e as BoundRefArg;
+            TypedReg slotReg = this.Emit(ra.Inner);
+            TypedReg dst = this._ctx.Alloc(IrType.Unknown);
+            this._ctx.Emit(new LoadLocalAddrInstr(dst, slotReg));
+            return dst;
+        }
+        if (e is BoundArrayLit) {
+            BoundArrayLit al = e as BoundArrayLit;
+            TypedReg[] elemRegs = new TypedReg[al.ElemCount];
+            int ei = 0;
+            while (ei < al.ElemCount) { elemRegs[ei] = this.Emit(al.Elems[ei]); ei = ei + 1; }
+            TypedReg dst = this._ctx.Alloc(IrType.Ref);
+            string elemName = al.ElemName;
+            Z42ArrayType at = al.Type() as Z42ArrayType;
+            if (at != null && !(at.Elem is Z42PrimType) && !(at.Elem is Z42GenericParamType)) {
+                elemName = this._ctx.QualifyClass(al.ElemName);
+            }
+            this._ctx.Emit(new ArrayNewLitInstr(dst, elemRegs, al.ElemCount, elemName));
+            return dst;
+        }
         if (e is BoundStaticGet) {
             BoundStaticGet sg = e as BoundStaticGet;
             // StaticGet 结果寄存器 = Unknown（C# REGT 字节实证：静态字段读 IR 层擦除）

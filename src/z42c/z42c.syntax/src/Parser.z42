@@ -132,7 +132,12 @@ public sealed class Parser {
                     int i = 0; while (i < n) { bigger[i] = args[i]; i = i + 1; }
                     args = bigger;
                 }
-                args[n] = this._parseExpr(0); n = n + 1;
+                Expr arg = null;
+                if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out) {
+                    Token refTok = this._peek(); this._advance();
+                    arg = new RefArgExpr(this._parseExpr(0), refTok.Span);
+                } else { arg = this._parseExpr(0); }
+                args[n] = arg; n = n + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); }
                 else { break; }
             }
@@ -191,6 +196,27 @@ public sealed class Parser {
         if (k == TokenKind.New) {
             this._advance();
             TypeExpr ty = this._parseType();
+            // 数组初始化 new T[]{v1,...}（SA-2）：_parseType 已吃 T[] 的 []，后跟 { = 字面量初始化器
+            if (this._peek().Kind == TokenKind.LBrace) {
+                TypeExpr elemTy = ty;
+                if (ty is ArrayType) { elemTy = (ty as ArrayType).Elem; }
+                this._advance();   // {
+                Expr[] elems = new Expr[8];
+                int en = 0;
+                if (this._peek().Kind != TokenKind.RBrace) {
+                    while (true) {
+                        if (en == elems.Length) {
+                            Expr[] b = new Expr[elems.Length * 2];
+                            int i = 0; while (i < en) { b[i] = elems[i]; i = i + 1; }
+                            elems = b;
+                        }
+                        elems[en] = this._parseExpr(0); en = en + 1;
+                        if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+                    }
+                }
+                this._expect(TokenKind.RBrace, "}");
+                return new ArrayInitExpr(elemTy, elems, en, t.Span);
+            }
             // 数组创建 new T[size]（SA-1）：_parseType 只吃 `[]`，带 size 的 `[` 留此处
             if (this._peek().Kind == TokenKind.LBracket) {
                 this._advance();
@@ -941,6 +967,8 @@ public sealed class Parser {
         int pc = 0;
         if (this._peek().Kind != TokenKind.RParen) {
             while (true) {
+                bool isRef = false;
+                if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out) { this._advance(); isRef = true; }
                 TypeExpr pt = this._parseType();
                 string pn = this._peek().Text;
                 if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
@@ -951,6 +979,7 @@ public sealed class Parser {
                     ps = b;
                 }
                 Param prm = new Param(pt, pn, pt.Span);
+                prm.IsRef = isRef;
                 if (this._peek().Kind == TokenKind.Eq) {   // GS1：默认参数值 `int x = expr`
                     this._advance();
                     prm.Default = this._parseExpr(0);

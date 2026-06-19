@@ -43,6 +43,34 @@ public sealed class ArrayNewInstr : IrInstr {
     public override string Dump() { return "%" + this.Dst.Id.ToString() + " = array_new " + this.ElemName + "[%" + this.Size.Id.ToString() + "]"; }
 }
 
+// ref 参数调用：load_local_addr %slot → addr 寄存器（传 callee；opcode 0xA0；镜像 C# LoadLocalAddrInstr）。
+// Dst.Type = IrType.Unknown（AddressOf.cs：Alloc(IrType.Unknown)）。
+public sealed class LoadLocalAddrInstr : IrInstr {
+    public TypedReg Dst;
+    public TypedReg Slot;
+    public LoadLocalAddrInstr(TypedReg dst, TypedReg slot) { this.Dst = dst; this.Slot = slot; }
+    public override string Dump() { return "%" + this.Dst.Id.ToString() + " = load_local_addr %" + this.Slot.Id.ToString(); }
+}
+
+public sealed class ArrayNewLitInstr : IrInstr {
+    public TypedReg   Dst;
+    public TypedReg[] Elems;
+    public int        ElemCount;
+    public string     ElemName;
+    public ArrayNewLitInstr(TypedReg dst, TypedReg[] elems, int elemCount, string elemName) {
+        this.Dst = dst; this.Elems = elems; this.ElemCount = elemCount; this.ElemName = elemName;
+    }
+    public override string Dump() {
+        string s = "%" + this.Dst.Id.ToString() + " = arr.new.lit";
+        if (this.ElemCount > 0) {
+            s = s + "  ";
+            int i = 0;
+            while (i < this.ElemCount) { if (i > 0) { s = s + ", "; } s = s + "%" + this.Elems[i].Id.ToString(); i = i + 1; }
+        }
+        return s;
+    }
+}
+
 public sealed class StaticGetInstr : IrInstr {
     public TypedReg Dst; public string Field;    // FQ "Cls.Field"
     public StaticGetInstr(TypedReg dst, string field) { this.Dst = dst; this.Field = field; }

@@ -22,6 +22,28 @@ public sealed class ArrayNewExpr : Expr {
     public override string Dump() { return "(array-new " + this.Elem.Dump() + " " + this.Size.Dump() + ")"; }
 }
 
+// ref 实参（ref var）→ 传变量地址（load_local_addr）。Inner 必须是 lvalue 局部变量。
+public sealed class RefArgExpr : Expr {
+    public Expr Inner;
+    public RefArgExpr(Expr inner, Span span) { this.Span = span; this.Inner = inner; }
+    public override string Dump() { return "(ref " + this.Inner.Dump() + ")"; }
+}
+
+public sealed class ArrayInitExpr : Expr {
+    public TypeExpr Elem;
+    public Expr[]   Elems;
+    public int      ElemCount;
+    public ArrayInitExpr(TypeExpr elem, Expr[] elems, int elemCount, Span span) {
+        this.Span = span; this.Elem = elem; this.Elems = elems; this.ElemCount = elemCount;
+    }
+    public override string Dump() {
+        string s = "(array-init " + this.Elem.Dump() + " [";
+        int i = 0;
+        while (i < this.ElemCount) { if (i > 0) { s = s + " "; } s = s + this.Elems[i].Dump(); i = i + 1; }
+        return s + "])";
+    }
+}
+
 public sealed class LambdaParam {
     public Span     Span;
     public bool     HasType;
