@@ -312,6 +312,7 @@ public sealed class Lexer {
                 else if (e == '\\') { result = result + "\\"; }
                 else if (e == '"')  { result = result + "\""; }
                 else if (e == '\'') { result = result + "'"; }
+                else if (e == '0')  { result = result + "\0"; }
                 else                { result = result + inner.Substring(i + 1, 1); }   // 未知转义：保留原字符
                 i = i + 2;
                 runStart = i;
