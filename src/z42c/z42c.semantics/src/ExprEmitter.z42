@@ -539,7 +539,7 @@ public sealed class ExprEmitter {
         int tcount = 0;
         if (n.Type() is Z42InstantiatedType) {           // Box<int> → class "Box" + args ["int"]
             Z42InstantiatedType inst = n.Type() as Z42InstantiatedType;
-            className = inst.Def.Name();
+            className = inst.Def.IrName();
             targs = new string[inst.ArgCount];
             int k = 0;
             while (k < inst.ArgCount) { targs[k] = inst.TypeArgs[k].Name(); k = k + 1; }

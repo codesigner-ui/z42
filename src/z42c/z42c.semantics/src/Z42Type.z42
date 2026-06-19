@@ -57,6 +57,9 @@ public sealed class Z42ClassType : Z42Type {
     // 本类**自有实例字段**（声明序 + AST 源拼写 + 可见性），供 TSIG 继承字段展开走 base 链按序读取
     // （Fields 是 hashed StrMap，迭代非确定；TSIG 需确定序 + 源拼写 → 单独有序元数据）。G18。
     public string[] OwnFieldNames; public string[] OwnFieldSpellings; public string[] OwnFieldVis; public int OwnFieldCount;
+    // class-arity-overloading（同名多 arity 同 CU；泛型版注册 Name$N 键，IrName() 返回 Name$N）。
+    public bool HasArityMangle;    // true → 此 CT 以 Name$N 键注册
+    public int  ArityMangleCount;  // TypeParams.Count when HasArityMangle
     public Z42ClassType(string name, bool hasBase, string baseName) {
         this._name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = new StrMap();
@@ -81,6 +84,11 @@ public sealed class Z42ClassType : Z42Type {
         this.OwnFieldCount = this.OwnFieldCount + 1;
     }
     public override string Name() { return this._name; }
+    // IR 名：arity-mangled 时返回 Name$N（镜像 C# Z42ClassType.IrName）。
+    public string IrName() {
+        if (this.HasArityMangle) { return this._name + "$" + this.ArityMangleCount.ToString(); }
+        return this._name;
+    }
     public override bool IsAssignableTo(Z42Type other) {
         if (other is Z42ErrorType) { return true; }
         // 同名（1A-1 不查继承链；subclass→base 赋值在 1C，需类表走 base 链）

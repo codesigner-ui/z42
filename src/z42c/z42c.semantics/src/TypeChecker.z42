@@ -46,7 +46,10 @@ public sealed class TypeChecker {
     }
 
     private void _bindClass(SemanticModel model, SymbolTable symbols, ClassDecl c) {
-        Z42ClassType ct = symbols.GetClass(c.Name);
+        // Arity-mangle：泛型类若以 Name$N 键注册，优先取该 CT。
+        string ctKey = c.Name;
+        if (c.TypeParams.Count > 0) { string mk = c.Name + "$" + c.TypeParams.Count.ToString(); if (symbols.HasClass(mk)) { ctKey = mk; } }
+        Z42ClassType ct = symbols.GetClass(ctKey);
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);
@@ -79,7 +82,7 @@ public sealed class TypeChecker {
                         }
                     }
                     BoundStmt body = this._bindMethodBody(symbols, env, md);
-                    model.AddBody(c.Name + "." + mkey, body);   // GS3：body 键用 mkey（重载时=Name$arity）
+                    model.AddBody(ctKey + "." + mkey, body);   // GS3：body 键用 mkey（重载时=Name$arity）；arity-mangle 时用 ctKey（Name$N）
                 }
             } else if (mem is IndexerDecl) {
                 // get_Item / set_Item 体绑定（IndexerDecl lowering；镜像 C# IndexerDecl 处理）。
@@ -93,7 +96,7 @@ public sealed class TypeChecker {
                     int gp = 0;
                     while (gp < id.ParamCount) { getEnv.Define(id.Params[gp].Name, getEnv.ResolveType(id.Params[gp].Type)); gp = gp + 1; }
                     Z42Type gret = getEnv.ResolveType(id.RetType);
-                    model.AddBody(c.Name + ".get_Item", this._bindStmt(id.GetBody, getEnv, gret));
+                    model.AddBody(ctKey + ".get_Item", this._bindStmt(id.GetBody, getEnv, gret));
                 }
                 if (id.HasSet) {
                     var setEnv = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), c.TypeParams.Names, c.TypeParams.Count);
@@ -104,7 +107,7 @@ public sealed class TypeChecker {
                     int sp = 0;
                     while (sp < id.ParamCount) { setEnv.Define(id.Params[sp].Name, setEnv.ResolveType(id.Params[sp].Type)); sp = sp + 1; }
                     setEnv.Define("value", setEnv.ResolveType(id.RetType));
-                    model.AddBody(c.Name + ".set_Item", this._bindStmt(id.SetBody, setEnv, new Z42VoidType()));
+                    model.AddBody(ctKey + ".set_Item", this._bindStmt(id.SetBody, setEnv, new Z42VoidType()));
                 }
             }
             j = j + 1;

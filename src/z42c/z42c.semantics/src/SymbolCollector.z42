@@ -116,6 +116,27 @@ public sealed class SymbolCollector {
 
     // Pass A：类 stub（基表判别：接口入 InterfaceNames，类→base）
     private void _passClassStubs(SymbolTable table, CompilationUnit cu) {
+        // ── Pre-scan：检测同 CU 内同名不同 arity 的类，泛型版需 arity-mangle（镜像 C# NeedsMangle 逻辑）。
+        // firstArityMap[name] = 首次见到的 arity（字符串）；multiArityMap[name] = "1" 若有多个不同 arity。
+        StrMap firstArityMap = new StrMap();
+        StrMap multiArityMap = new StrMap();
+        int pi = 0;
+        while (pi < cu.DeclCount) {
+            Decl pd = this._unwrap(cu.Decls[pi]);
+            if (pd is ClassDecl) {
+                ClassDecl pc = pd as ClassDecl;
+                if (pc.Kind == "class" || pc.Kind == "struct") {
+                    string arStr = pc.TypeParams.Count.ToString();
+                    if (firstArityMap.ContainsKey(pc.Name)) {
+                        StrBox fa = firstArityMap.Get(pc.Name) as StrBox;
+                        if (fa.Value != arStr) { multiArityMap.Put(pc.Name, "1"); }
+                    } else {
+                        firstArityMap.Put(pc.Name, new StrBox(arStr));
+                    }
+                }
+            }
+            pi = pi + 1;
+        }
         int i = 0;
         while (i < cu.DeclCount) {
             Decl d = this._unwrap(cu.Decls[i]);
@@ -133,10 +154,13 @@ public sealed class SymbolCollector {
                         else if (!hasBase) { hasBase = true; baseName = bn; }
                         b = b + 1;
                     }
+                    bool needsMangle = c.TypeParams.Count > 0 && multiArityMap.ContainsKey(c.Name);
+                    string key = needsMangle ? c.Name + "$" + c.TypeParams.Count.ToString() : c.Name;
                     Z42ClassType ct = new Z42ClassType(c.Name, hasBase, baseName);
                     ct.InterfaceNames = ifaces;
                     ct.InterfaceCount = ifc;
-                    table.Classes.Put(c.Name, ct);
+                    if (needsMangle) { ct.HasArityMangle = true; ct.ArityMangleCount = c.TypeParams.Count; }
+                    table.Classes.Put(key, ct);
                 }
             }
             i = i + 1;
@@ -182,7 +206,10 @@ public sealed class SymbolCollector {
     }
 
     private void _fillClass(SymbolTable table, ClassDecl c) {
-        Z42ClassType ct = table.Classes.Get(c.Name) as Z42ClassType;
+        // Arity-mangle：泛型类若已以 Name$N 键注册，优先取该 CT（镜像 C# TryGetClassFor）。
+        string ctKey = c.Name;
+        if (c.TypeParams.Count > 0) { string mk = c.Name + "$" + c.TypeParams.Count.ToString(); if (table.Classes.ContainsKey(mk)) { ctKey = mk; } }
+        Z42ClassType ct = table.Classes.Get(ctKey) as Z42ClassType;
         string[] tp = c.TypeParams.Names;     // 类型形参（泛型类；非泛型 Count=0）
         int tpc = c.TypeParams.Count;
         // GS3：预扫描检测本地重载（同名多 arity 方法）——镜像 C# methodNameCount[(Name, IsStatic)]>1 判断。
