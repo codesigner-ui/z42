@@ -83,19 +83,22 @@ public sealed class CentralizedBuildLayout
         string outputAbs = ExpandAndResolve(outputRaw, ctx, memberDir, expander, "[build].output_dir");
 
         // cache_dir
+        // Resolve relative to memberDir (the z42.toml directory), not outputAbs.
+        // Paths using ${output_dir} are already expanded to absolute by ExpandWithOutputDir,
+        // so ResolveAbsolute passes them through unchanged regardless of the base.
         string cacheRaw = build.CacheDir ?? "${output_dir}/.cache";
         string cacheExpanded = ExpandWithOutputDir(cacheRaw, ctx, outputAbs, expander, "[build].cache_dir");
-        string cacheAbs = ResolveAbsolute(cacheExpanded, outputAbs);
+        string cacheAbs = ResolveAbsolute(cacheExpanded, memberDir);
 
         // dist_dir
         string distRaw = build.DistDir ?? "${output_dir}/dist";
         string distExpanded = ExpandWithOutputDir(distRaw, ctx, outputAbs, expander, "[build].dist_dir");
-        string distAbs = ResolveAbsolute(distExpanded, outputAbs);
+        string distAbs = ResolveAbsolute(distExpanded, memberDir);
 
         // publish_dir
         string publishRaw = build.PublishDir ?? "${output_dir}/publish";
         string publishExpanded = ExpandWithOutputDir(publishRaw, ctx, outputAbs, expander, "[build].publish_dir");
-        string publishAbs = ResolveAbsolute(publishExpanded, outputAbs);
+        string publishAbs = ResolveAbsolute(publishExpanded, memberDir);
 
         string product = System.IO.Path.Combine(distAbs, $"{memberName}.zpkg");
         return new Layout(

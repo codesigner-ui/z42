@@ -105,6 +105,31 @@ public sealed class PolicyAndCentralizedBuildTests : IDisposable
         rm.EffectiveDistDir.Should().EndWith("dist");
     }
 
+    [Fact]
+    public void StandaloneMode_ExplicitRelativeDistDir_ResolvesFromMemberDir()
+    {
+        // Regression: restructure-publish-output-dirs (2026-06-19) changed the
+        // output_dir default from memberDir to memberDir/artifacts/${profile}.
+        // Relative paths in dist_dir must still resolve from memberDir (the z42.toml
+        // location), not from outputAbs — otherwise "../../../dist" walks extra levels.
+        // This mirrors the real workload pattern: dist_dir = "../../../../../artifacts/..."
+        string singleDir = Path.Combine(_root, "deep", "proj");
+        Directory.CreateDirectory(singleDir);
+        File.WriteAllText(Path.Combine(singleDir, "foo.z42.toml"), """
+            [project]
+            name = "foo"
+            kind = "lib"
+            [build]
+            dist_dir = "../../shared_dist"
+            """);
+
+        var loader = new ManifestLoader();
+        var rm = loader.LoadStandalone(Path.Combine(singleDir, "foo.z42.toml"));
+        // "../../shared_dist" from singleDir (_root/deep/proj) → _root/shared_dist
+        string expected = Path.GetFullPath(Path.Combine(singleDir, "..", "..", "shared_dist"));
+        rm.EffectiveDistDir.Should().Be(expected);
+    }
+
     // ── 默认锁定字段（D5）─────────────────────────────────────────────────
 
     [Fact]
