@@ -7,5 +7,3 @@ pack    = true
 [sources]
 include = ["src/**/*.z42"]
 
-[build]
-output_dir = "."

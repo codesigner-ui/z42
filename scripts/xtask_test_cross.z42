@@ -71,7 +71,7 @@ int _testCrossZpkgImpl(string mode) {
         }
 
         // Stage 2: ext (deps on target/dist).
-        if (!_buildPkg(driverDll, extDir, Path.Join(targetDir, "dist"))) {
+        if (!_buildPkg(driverDll, extDir, Path.Join(targetDir, "artifacts", "debug", "dist"))) {
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (ext build)");
             failCount = failCount + 1;
@@ -84,8 +84,8 @@ int _testCrossZpkgImpl(string mode) {
         string mainLibs = Path.Join(mainDir, "libs");
         if (Directory.Exists(mainLibs)) { Directory.Delete(mainLibs, true); }
         Directory.Create(mainLibs);
-        _copyZpkgs(Path.Join(targetDir, "dist"), mainLibs);
-        _copyZpkgs(Path.Join(extDir,    "dist"), mainLibs);
+        _copyZpkgs(Path.Join(targetDir, "artifacts", "debug", "dist"), mainLibs);
+        _copyZpkgs(Path.Join(extDir,    "artifacts", "debug", "dist"), mainLibs);
         string mainToml = _findToml(mainDir);
         if (mainToml.Length == 0 || !_invokeBuild(driverDll, mainToml)) {
             Console.WriteLine("    main build failed");
@@ -97,7 +97,7 @@ int _testCrossZpkgImpl(string mode) {
         }
 
         // Stage 4: run main zpkg through z42vm.
-        string mainZpkg = _firstZpkg(Path.Join(mainDir, "dist"));
+        string mainZpkg = _firstZpkg(Path.Join(mainDir, "artifacts", "debug", "dist"));
         if (mainZpkg.Length == 0) {
             Console.WriteLine("    main produced no zpkg");
             fail = fail + 1;
@@ -110,8 +110,8 @@ int _testCrossZpkgImpl(string mode) {
         // Per-test libs dir: stdlib zpkgs + target + ext.
         string testLibs = File.CreateTempDir("z42-xpkg-");
         _copyStdlibZpkgs(stdlibDist, testLibs);
-        _copyZpkgs(Path.Join(targetDir, "dist"), testLibs);
-        _copyZpkgs(Path.Join(extDir,    "dist"), testLibs);
+        _copyZpkgs(Path.Join(targetDir, "artifacts", "debug", "dist"), testLibs);
+        _copyZpkgs(Path.Join(extDir,    "artifacts", "debug", "dist"), testLibs);
 
         string actual = "";
         bool runErr = false;
