@@ -150,7 +150,12 @@ public sealed class SymbolCollector {
                     int b = 0;
                     while (b < c.BaseCount) {
                         string bn = c.Bases[b].Dump();
-                        if (table.Interfaces.ContainsKey(bn)) { ifaces[ifc] = bn; ifc = ifc + 1; }
+                        // 泛型接口查表用裸名（"IComparable<char>" → "IComparable"），
+                        // 存储也用裸名（镜像 C# ExportedTypeExtractor ifaceList.Select(i => i.Name)）。
+                        string bnLookup = bn;
+                        int ltIdx = bn.IndexOf("<");
+                        if (ltIdx >= 0) { bnLookup = bn.Substring(0, ltIdx); }
+                        if (table.Interfaces.ContainsKey(bnLookup)) { ifaces[ifc] = bnLookup; ifc = ifc + 1; }
                         else if (!hasBase) { hasBase = true; baseName = bn; }
                         b = b + 1;
                     }

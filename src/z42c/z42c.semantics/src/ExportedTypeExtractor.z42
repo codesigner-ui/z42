@@ -408,6 +408,15 @@ public static class ExportedTypeExtractor {
         if (te is NamedType) {
             NamedType nt = te as NamedType;
             if (nt.ArgCount == 0) { return ExportedTypeExtractor._canonName(nt.Name); }
+            // 泛型实参用 ", " 分隔（镜像 C# TypeToString: string.Join(", ", ...)），避免 Dump() 的无空格格式。
+            string s = nt.Name + "<";
+            int ai = 0;
+            while (ai < nt.ArgCount) {
+                if (ai > 0) { s = s + ", "; }
+                s = s + ExportedTypeExtractor.TsigTypeName(nt.Args[ai]);
+                ai = ai + 1;
+            }
+            return s + ">";
         }
         return te.Dump();
     }
