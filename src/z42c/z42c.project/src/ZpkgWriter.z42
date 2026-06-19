@@ -1,7 +1,7 @@
 // packed `.zpkg` 写入器（port-z42c-zpkg-build BP-3）。镜像 C# ZpkgWriter.WritePacked（七段子集）。
 // 段序铁律：META → STRS → NSPC → EXPT → DEPS → SIGS → MODS；intern 序 1:1 C#
 // （zpkg 元串[namespaces→exports→deps] → 逐模块[ns→src→hash→InternPoolStrings]）。
-// 延后：indexed/FILE、sidecar/MDBG/BLID、TSIG/IMPL（ExportedModules）、stripSymbols。
+// 延后：indexed/FILE、sidecar/MDBG/BLID。
 namespace Z42.Project;
 
 using Z42.IR;
@@ -12,7 +12,7 @@ public static class ZpkgWriterZ {
     public static int Major = 0;
     public static int Minor = 22;   // 2026-06-16 add-reflection-assignable-from：随内嵌 zbc 1.20 联动（接口块存 FQ 名）
 
-    public static ByteWriter WritePacked(ZpkgFileZ zpkg) {
+    public static ByteWriter WritePacked(ZpkgFileZ zpkg, bool isRelease) {
         var pool = new ZbcStringPool();
         // ── intern：zpkg 元串（镜像 InternZpkgStrings：namespaces → exports → deps）──
         int i = 0;
@@ -50,7 +50,7 @@ public static class ZpkgWriterZ {
         var expt = ZpkgWriterZ._buildExpt(zpkg, pool);
         var deps = ZpkgWriterZ._buildDeps(zpkg, pool);
         var sigs = ZpkgWriterZ._buildSigs(zpkg, pool);
-        var mods = ZpkgWriterZ._buildMods(zpkg, pool);
+        var mods = ZpkgWriterZ._buildMods(zpkg, pool, isRelease);
 
         int secCount = 7;
         if (zpkg.ExportedCount > 0) { secCount = 9; }   // + TSIG + IMPL（C#：TSIG present ⇒ IMPL present）
@@ -140,7 +140,7 @@ public static class ZpkgWriterZ {
     // MODS：count + 每模块{ns,src,hash idx + fnCount u16 + firstSigIdx u32 +
     //        func_len+体, type_len+体, dbug_len+体, regt_len+体, tidx_len(0)}。
     // 体复用 zbc 段构建器（全局池 + per-module remap + per-module TokenAllocator）。
-    private static ByteWriter _buildMods(ZpkgFileZ zpkg, ZbcStringPool pool) {
+    private static ByteWriter _buildMods(ZpkgFileZ zpkg, ZbcStringPool pool, bool isRelease) {
         var w = new ByteWriter();
         w.WriteU32(zpkg.ModuleCount);
         int firstSigIdx = 0;
@@ -157,7 +157,7 @@ public static class ZpkgWriterZ {
             ByteWriter typeData = new ByteWriter();
             if (irm.ClassCount > 0) { typeData = ZbcWriter.BuildType(irm.Classes, irm.ClassCount, pool); }
             ByteWriter dbugData = new ByteWriter();
-            if (ZbcWriter.HasDebug(irm)) { dbugData = ZbcWriter.BuildDbug(irm.Functions, irm.FuncCount, pool); }
+            if (!isRelease && ZbcWriter.HasDebug(irm)) { dbugData = ZbcWriter.BuildDbug(irm.Functions, irm.FuncCount, pool); }
             ByteWriter regtData = ZbcWriter.BuildRegt(irm.Functions, irm.FuncCount);
 
             w.WriteU32(pool.Idx(m.Namespace));

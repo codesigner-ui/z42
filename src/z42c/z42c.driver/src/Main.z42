@@ -27,9 +27,14 @@ void Main() {
     string file = argv[1];
     if (cmd == "build") {
         bool isRelease = false;
+        string outputDir = "";
         int ai = 2;
-        while (ai < argv.Length) { if (argv[ai] == "--release") { isRelease = true; } ai = ai + 1; }
-        Environment.Exit(_build(file, isRelease));
+        while (ai < argv.Length) {
+            if (argv[ai] == "--release") { isRelease = true; }
+            if (argv[ai] == "--output-dir" && ai + 1 < argv.Length) { outputDir = argv[ai + 1]; ai = ai + 1; }
+            ai = ai + 1;
+        }
+        Environment.Exit(_build(file, isRelease, outputDir));
         return;
     }
     if (cmd == "test") {
@@ -62,7 +67,7 @@ void Main() {
 
 // `z42c build <toml>`：manifest → 源发现 → 逐文件编译 → packed zpkg → dist/<name>.zpkg。
 // MVP：单工程/packed/无增量（镜像 C# PackageCompiler.BuildTarget 关键路径）。
-int _build(string tomlPath, bool isRelease) {
+int _build(string tomlPath, bool isRelease, string outputDirOverride) {
     ProjectManifest pm = ManifestLoader.Load(tomlPath);
     string projectDir = Path.GetDirectoryName(tomlPath);
     if (projectDir == "") { projectDir = "."; }
@@ -161,10 +166,10 @@ int _build(string tomlPath, bool isRelease) {
         ConsoleError.WriteLine("z42c build: kind=exe but no Main() found");
         return 1;
     }
-    string distDir = Path.Join(projectDir, "dist");
+    string distDir = outputDirOverride.Length > 0 ? outputDirOverride : Path.Join(projectDir, "dist");
     Directory.Create(distDir);
     string outPath = Path.Join(distDir, pm.Name + ".zpkg");
-    File.WriteAllBytes(outPath, ZpkgWriterZ.WritePacked(z).ToBytes());
+    File.WriteAllBytes(outPath, ZpkgWriterZ.WritePacked(z, isRelease).ToBytes());
     Console.WriteLine("wrote -> " + outPath);
     return 0;
 }

@@ -76,18 +76,13 @@ public sealed class FunctionEmitter {
         int[] regTypes = new int[this._ctx.RegTagCount];
         int rt = 0;
         while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
-        IrLineEntry[] lines = new IrLineEntry[0];
-        int lineCount = 0;
-        IrLocalVarEntry[] localVars = new IrLocalVarEntry[0];
-        // Release 模式：strip debug info（镜像 C# stripSymbols=true：DBUG 段不写入 .zbc）。
-        // Debug 模式：保留行表 + 局部变量表（不过 SnapshotLocals 含参数，debug 模式暂不追求 byte-identical）。
-        if (!this._gen.IsRelease) {
-            lines = new IrLineEntry[this._ctx.LineCount];
-            lineCount = this._ctx.LineCount;
-            int li = 0;
-            while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
-            localVars = this._ctx.SnapshotLocals();
-        }
+        // 始终填充行表/局部变量表（供 InternPoolStrings 把 DBUG 串入 STRS 池）；
+        // release 模式下 DBUG 字节不写入 MODS——由 ZpkgWriter._buildMods(isRelease) 控制。
+        IrLineEntry[] lines = new IrLineEntry[this._ctx.LineCount];
+        int lineCount = this._ctx.LineCount;
+        int li = 0;
+        while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
+        IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
         this._gen._mergeUsedNsPub(this._ctx);
         IrFunction irf = new IrFunction(name, totalParams, retName, isStaticMethod,
                               this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
@@ -205,16 +200,11 @@ public sealed class FunctionEmitter {
         int[] regTypes = new int[this._ctx.RegTagCount];
         int rt = 0;
         while (rt < this._ctx.RegTagCount) { regTypes[rt] = this._ctx.RegTags[rt]; rt = rt + 1; }
-        IrLineEntry[] lines = new IrLineEntry[0];
-        int lineCount = 0;
-        IrLocalVarEntry[] localVars = new IrLocalVarEntry[0];
-        if (!this._gen.IsRelease) {
-            lines = new IrLineEntry[this._ctx.LineCount];
-            lineCount = this._ctx.LineCount;
-            int li = 0;
-            while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
-            localVars = this._ctx.SnapshotLocals();
-        }
+        IrLineEntry[] lines = new IrLineEntry[this._ctx.LineCount];
+        int lineCount = this._ctx.LineCount;
+        int li = 0;
+        while (li < this._ctx.LineCount) { lines[li] = this._ctx.Lines[li]; li = li + 1; }
+        IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
         this._gen._mergeUsedNsPub(this._ctx);
         // IsStatic=false（SIGS 字节实证——survey 报告与字节相左，以字节为准）
         return new IrFunction(name, totalParams, retName, false,
