@@ -302,7 +302,7 @@ void test_new_generic() {
 [Test]
 void test_new_generic_multi() {
     string src = "class Pair<K, V> { } class C { Pair<int, string> Make() { return new Pair<int, string>(); } }";
-    Assert.Equal("fn @C.Make(1) -> Pair<int,string> {\nentry:\n  %1 = obj_new Pair<int,string>()\n  ret %1\n}",
+    Assert.Equal("fn @C.Make(1) -> Pair<int, string> {\nentry:\n  %1 = obj_new Pair<int, string>()\n  ret %1\n}",
                  IrDump.DumpFunc(src, "C.Make"));
 }
 

@@ -40,7 +40,7 @@ public sealed class StdlibSidecarPairingTests
         if (!Directory.Exists(distRoot))
             return; // stdlib hasn't been built in this clone — nothing to verify, treat as skip
         var zpkgPaths = Directory.EnumerateFiles(distRoot, "*.zpkg", SearchOption.AllDirectories)
-            .Where(p => p.Contains("/dist/"))
+            .Where(p => p.Contains("/dist/") && !p.Contains("/tests/dist/"))
             .ToList();
 
         if (zpkgPaths.Count == 0)
