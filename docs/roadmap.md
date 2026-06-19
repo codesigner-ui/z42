@@ -101,7 +101,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.3.6 | typecheck | A5 perf #3 JSON/YAML/TOML | — |
 | 0.3.7 | ir（codegen + lowering，寄存器 SSA）| | |
 | 0.3.8 | emit（ZbcWriter/ZpkgWriter → byte-identical .zbc/.zpkg）| | |
-| 0.3.9 | 归档 port-z42c-self-compile（G22 全绿）+ runtime-dynamic-load-call 归档 | | |
+| 0.3.9 | ✅ 归档 port-z42c-self-compile（G22 全绿）+ runtime-dynamic-load-call 归档 ‖ **✅ z42c 编译全 22 stdlib 包 byte-identical**（z42c 可完整替代 C# 编译器；commit 36485ae4，2026-06-19）| | |
 | 0.3.10 | byte-identical CI gate 全 7 子系统 7 日零飘移 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
 | 0.3.11 | **Boxing 机制**：auto-boxing（prim→Object）+ box/unbox IR 指令 + 编译器隐式转换规则（spec-first，lang/ir/vm 三层）| | |
 | 0.3.12 | **反射完整化**：Method.Invoke（非泛型）‖ IsEnum（enum 作类型实体 spec 前置）‖ 嵌套泛型 GetGenericArguments ‖ 接口成员枚举 | | |
