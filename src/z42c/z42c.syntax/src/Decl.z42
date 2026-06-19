@@ -117,13 +117,16 @@ public sealed class MethodDecl : Decl {
     public int           ParamCount;
     public bool          HasBody;
     public Stmt          Body;        // 仅 HasBody 时有效
+    public Expr[]        BaseArgs;    // `: base(args)` 调用实参（isCtor 时有意义；无 base call 时 null/Count=0）
+    public int           BaseArgCount;
     public MethodDecl(string mods, bool isFree, bool isCtor, TypeExpr retType, string name,
                       TypeParamList typeParams, WhereClause[] wheres, int whereCount,
-                      Param[] ps, int pc, bool hasBody, Stmt body,
+                      Param[] ps, int pc, bool hasBody, Stmt body, Expr[] baseArgs, int baseArgCount,
                 Span span) { this.Span = span;
         this.Mods = mods; this.IsFree = isFree; this.IsCtor = isCtor; this.RetType = retType; this.Name = name;
         this.TypeParams = typeParams; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
+        this.BaseArgs = baseArgs; this.BaseArgCount = baseArgCount;
     }
     public override string Dump() {
         string head = this.IsCtor ? "ctor" : (this.IsFree ? "func" : "method");

@@ -14,6 +14,13 @@ public sealed class IrFieldDesc {
     public IrFieldDesc(string name, string type) { this.Name = name; this.Type = type; }
 }
 
+// 类型参数约束描述（仅接口约束列表；足以覆盖 z42.core where 子句）。
+public sealed class IrConstraintDesc {
+    public string[] Interfaces;
+    public int      InterfaceCount;
+    public IrConstraintDesc() { this.Interfaces = new string[0]; this.InterfaceCount = 0; }
+}
+
 // 类/结构描述：名 + 基类 + 字段（slot 序）。
 public sealed class IrClassDesc {
     public string        Name;
@@ -24,12 +31,16 @@ public sealed class IrClassDesc {
     public IrFieldDesc[] StaticFields; public int StaticFieldCount;   // zbc 1.13（SA-3）
     public string[] Interfaces; public int InterfaceCount;   // zbc 1.17：TYPE 接口块（bare 名）
     public int Flags;   // class-shape flags（zbc 1.12）：bit0 abstract / bit1 sealed / bit2 struct / bit3 record
+    public string[]           TypeParams;           public int TypeParamCount;        // zbc L3-G1
+    public IrConstraintDesc[] TypeParamConstraints; // aligned with TypeParams（null = empty bundles）
     public IrClassDesc(string name, bool hasBase, string baseName, IrFieldDesc[] fields, int fieldCount) {
         this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = fields; this.FieldCount = fieldCount;
         this.StaticFields = new IrFieldDesc[0]; this.StaticFieldCount = 0;
         this.Interfaces = new string[0]; this.InterfaceCount = 0;
         this.Flags = 0;
+        this.TypeParams = new string[0]; this.TypeParamCount = 0;
+        this.TypeParamConstraints = new IrConstraintDesc[0];
     }
 }
 

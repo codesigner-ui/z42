@@ -158,7 +158,7 @@ public sealed class IrGen {
                                     TypeParamList emptyTpP = new TypeParamList(new string[0], 0, pd.Span);
                                     MethodDecl synthPd = new MethodDecl("", false, false, pd.Type, "get_" + pd.Name,
                                                                          emptyTpP, new WhereClause[0], 0,
-                                                                         new Param[0], 0, false, null, pd.Span);
+                                                                         new Param[0], 0, false, null, new Expr[0], 0, pd.Span);
                                     IrFunction pstub = this._emitNativeStub(this._q(c.Name) + ".get_" + pd.Name,
                                                                              synthPd, nat2, pdStatic);
                                     funcs = this._pushFunc(funcs, fc, pstub); fc = fc + 1;
@@ -184,7 +184,7 @@ public sealed class IrGen {
                                 if (model.HasBody(getKey)) {
                                     MethodDecl synthGet = new MethodDecl("", false, false, idx.RetType, "get_Item",
                                                                           emptyTpI, new WhereClause[0], 0,
-                                                                          idx.Params, idx.ParamCount, true, idx.GetBody, idx.Span);
+                                                                          idx.Params, idx.ParamCount, true, idx.GetBody, new Expr[0], 0, idx.Span);
                                     var feGet = new FunctionEmitter(model.Symbols, this);
                                     IrFunction getIrf = feGet.EmitFunction(getIrName, synthGet, model.GetBody(getKey),
                                                                             true, false, idxOwner, c.TypeParams.Names, c.TypeParams.Count);
@@ -201,7 +201,7 @@ public sealed class IrGen {
                                     setPs[idx.ParamCount] = new Param(idx.RetType, "value", idx.Span);
                                     MethodDecl synthSet = new MethodDecl("", false, false, voidRet, "set_Item",
                                                                           emptyTpI, new WhereClause[0], 0,
-                                                                          setPs, idx.ParamCount + 1, true, idx.SetBody, idx.Span);
+                                                                          setPs, idx.ParamCount + 1, true, idx.SetBody, new Expr[0], 0, idx.Span);
                                     var feSet = new FunctionEmitter(model.Symbols, this);
                                     IrFunction setIrf = feSet.EmitFunction(setIrName, synthSet, model.GetBody(setKey),
                                                                             true, false, idxOwner, c.TypeParams.Names, c.TypeParams.Count);
@@ -257,16 +257,37 @@ public sealed class IrGen {
     }
 
     // TYPE 段（IrClassDesc）字段类型名：**源拼写**（byte[]，非规范 u8[]）——whichsec/disasm 实证 C#
-    // TYPE 段 .field 用源拼写（同顶层 SIGS，区别于方法签名 TSIG 用规范名 G18d）。仅会被规范化的次要 prim
-    // 别名走源名；nullable 剥 ?（镜像 ResolveType）、class/泛型委托 ResolveType；数组递归。G18g（同 G18f _sigTypeName）。
+    // TYPE 段 .field 用源拼写（镜像 C# IrGen.Helpers TypeName：alias-prim 用别名，
+    // 点缀名 Std.Foo → "unknown"（C# 走 MemberType fallback），type-param/class/generic 用源名）。
     private string _typeFieldName(TypeExpr te) {
         if (te is ArrayType) { return this._typeFieldName((te as ArrayType).Elem) + "[]"; }
         if (te is NullableType) { return this._typeFieldName((te as NullableType).Inner); }
         if (te is NamedType) {
             NamedType nt = te as NamedType;
             if (nt.ArgCount == 0 && this._isAliasPrim(nt.Name)) { return nt.Name; }
+            return this._typeSourceName(nt);
         }
-        return this._symbols.ResolveType(te).Name();
+        return "unknown";
+    }
+    // 源名拼写（同 C# TypeName GenericType 分支：多 arg 用 ", " 分隔）。
+    // 点缀无参名（Std.Foo）→ "unknown"（镜像 C# MemberType fallback）。
+    private string _typeSourceName(NamedType nt) {
+        if (nt.ArgCount == 0) {
+            if (this._hasDot(nt.Name)) { return "unknown"; }
+            return nt.Name;
+        }
+        string s = nt.Name + "<";
+        int i = 0;
+        while (i < nt.ArgCount) {
+            if (i > 0) { s = s + ", "; }
+            if (nt.Args[i] is NamedType) {
+                s = s + this._typeSourceName(nt.Args[i] as NamedType);
+            } else {
+                s = s + this._typeFieldName(nt.Args[i]);
+            }
+            i = i + 1;
+        }
+        return s + ">";
     }
     private bool _isAliasPrim(string n) {
         return n == "byte" || n == "sbyte" || n == "short" || n == "ushort" || n == "uint" || n == "ulong";
@@ -283,8 +304,11 @@ public sealed class IrGen {
 
     // 类 → IrClassDesc（名 + 基类 + 字段 slot 序）。CG-1A 描述就绪，字段访问 codegen 在 CG-1C 用。
     private IrClassDesc _classDesc(ClassDecl c) {
-        bool hasBase = true;   // 镜像 C#：无显式基类 → "Std.Object"（universal base，TYPE base idx 非 0xFFFFFFFF）
-        string baseName = "Std.Object";
+        // 镜像 C# EmitClassDesc：struct/record 无默认基类；Std.Object 自身无基类；其余默认 "Std.Object"。
+        bool isStructOrRecord = c.Kind == "struct" || c.Kind == "record";
+        bool isRoot = c.Name == "Object";
+        bool hasBase = !(isStructOrRecord || isRoot);
+        string baseName = hasBase ? "Std.Object" : "";
         int bi2 = 0;
         while (bi2 < c.BaseCount) {       // 基表判别（port-z42c-interface）：跳过接口，取首个类
             string bn = c.Bases[bi2].Dump();
@@ -294,7 +318,8 @@ public sealed class IrGen {
             if (ltIdx >= 0) { barebn = bn.Substring(0, ltIdx); }
             if (!this._symbols.HasInterface(barebn)) {
                 baseName = bn;
-                if (!this._hasDot(baseName)) { baseName = this._q(baseName); }
+                if (!this._hasDot(baseName)) { baseName = this._qClass(baseName); }   // 镜像 QualifyClassName
+                hasBase = true;
                 bi2 = c.BaseCount;        // 取首个类即止
             }
             bi2 = bi2 + 1;
@@ -372,16 +397,58 @@ public sealed class IrGen {
         if (c.Kind == "struct")  { flags = flags + 4; }                 // bit2
         if (c.Kind == "record")  { flags = flags + 8; }                 // bit3
         cd2.Flags = flags;
+        // TypeParams + constraint bundles（zbc L3-G1/G3a；镜像 C# BuildConstraintList）
+        if (c.TypeParams.Count > 0) {
+            cd2.TypeParams = c.TypeParams.Names;
+            cd2.TypeParamCount = c.TypeParams.Count;
+            IrConstraintDesc[] descs = new IrConstraintDesc[c.TypeParams.Count];
+            int ti = 0;
+            while (ti < c.TypeParams.Count) { descs[ti] = new IrConstraintDesc(); ti = ti + 1; }
+            int wi = 0;
+            while (wi < c.WhereCount) {
+                WhereClause wc = c.Wheres[wi];
+                int tpi = 0;
+                while (tpi < c.TypeParams.Count) {
+                    if (c.TypeParams.Names[tpi] == wc.TypeParam) { break; }
+                    tpi = tpi + 1;
+                }
+                if (tpi < c.TypeParams.Count) {
+                    string[] ifaces = new string[wc.Count];
+                    int ifc = 0;
+                    int ci = 0;
+                    while (ci < wc.Count) {
+                        WhereConstraint wcon = wc.Constraints[ci];
+                        if (wcon.IsType && wcon.Type is NamedType) {
+                            NamedType wnt = wcon.Type as NamedType;
+                            ifaces[ifc] = wnt.Name; ifc = ifc + 1;   // bare name（同 C# i.Name）
+                        }
+                        ci = ci + 1;
+                    }
+                    descs[tpi].Interfaces = ifaces;
+                    descs[tpi].InterfaceCount = ifc;
+                }
+                wi = wi + 1;
+            }
+            cd2.TypeParamConstraints = descs;
+        }
         return cd2;
     }
 
     // 接口 → 最小 IrClassDesc（zbc 1.19，add-reflection-interface-class-predicates）：
     // 无 base/字段/静态/接口块，Flags = abstract(1)|interface(16) = 17（镜像 C# EmitInterfaceDesc：
-    // 接口隐式 abstract，typeof(IFoo).IsAbstract==true）。typeparam（泛型接口）暂随 BuildType tpCount=0。
+    // 接口隐式 abstract，typeof(IFoo).IsAbstract==true）。泛型接口需填 TypeParams（镜像 C# EmitInterfaceDesc）。
     private IrClassDesc _interfaceDesc(ClassDecl c) {
         IrFieldDesc[] empty = new IrFieldDesc[0];
         IrClassDesc cd = new IrClassDesc(this._q(c.Name), false, "", empty, 0);
         cd.Flags = 17;
+        if (c.TypeParams.Count > 0) {
+            cd.TypeParams = c.TypeParams.Names;
+            cd.TypeParamCount = c.TypeParams.Count;
+            IrConstraintDesc[] descs = new IrConstraintDesc[c.TypeParams.Count];
+            int ti = 0;
+            while (ti < c.TypeParams.Count) { descs[ti] = new IrConstraintDesc(); ti = ti + 1; }
+            cd.TypeParamConstraints = descs;
+        }
         return cd;
     }
 

@@ -1018,26 +1018,37 @@ public sealed class Parser {
     private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, TypeExpr retType, string name, TypeParamList typeParams, Span sp) {
         ParamList pl = this._parseParamList();
         WhereList wl = this._parseWhereClause();
-        // ctor 基类构造器调用 `: base(args)`（或 `: this(args)`）— 消费后忽略（base call 语义留 VM 层）。
+        // ctor 基类构造器调用 `: base(args)` — 解析并存储（isCtor；base/this 关键字消费后丢弃）。
+        Expr[] baseArgs = new Expr[0];
+        int baseArgCount = 0;
         if (isCtor && this._peek().Kind == TokenKind.Colon) {
             this._advance();   // :
             if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }  // base / this
-            if (this._peek().Kind == TokenKind.LParen) {   // (args) 带括号深度追踪
-                int depth = 1;
-                this._advance();
-                while (depth > 0 && this._peek().Kind != TokenKind.Eof) {
-                    int kd = this._peek().Kind;
-                    if (kd == TokenKind.LParen) { depth = depth + 1; }
-                    else if (kd == TokenKind.RParen) { depth = depth - 1; }
-                    this._advance();
+            if (this._peek().Kind == TokenKind.LParen) {
+                this._advance();   // (
+                Expr[] ba = new Expr[4];
+                int ban = 0;
+                if (this._peek().Kind != TokenKind.RParen) {
+                    while (true) {
+                        if (ban == ba.Length) {
+                            Expr[] bg = new Expr[ba.Length * 2];
+                            int bi = 0; while (bi < ban) { bg[bi] = ba[bi]; bi = bi + 1; }
+                            ba = bg;
+                        }
+                        ba[ban] = this._parseExpr(0); ban = ban + 1;
+                        if (this._peek().Kind == TokenKind.Comma) { this._advance(); }
+                        else { break; }
+                    }
                 }
+                this._expect(TokenKind.RParen, ")");
+                baseArgs = ba; baseArgCount = ban;
             }
         }
         bool hasBody = false;
         Stmt body = new BlockStmt(new Stmt[0], 0, sp);
         if (this._peek().Kind == TokenKind.LBrace) { body = this._parseBlock(); hasBody = true; }
         else { this._expectSemi(); }
-        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body, sp);
+        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body, baseArgs, baseArgCount, sp);
     }
 
     private TypeParamList _emptyTypeParams() { return new TypeParamList(new string[0], 0, this._peek().Span); }

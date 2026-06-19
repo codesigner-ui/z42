@@ -168,7 +168,7 @@ public sealed class Z42InstantiatedType : Z42Type {
         string s = this.Def.Name() + "<";
         int i = 0;
         while (i < this.ArgCount) {
-            if (i > 0) { s = s + ","; }
+            if (i > 0) { s = s + ", "; }
             s = s + this.TypeArgs[i].Name();
             i = i + 1;
         }

@@ -136,7 +136,42 @@ public sealed class TypeChecker {
             p = p + 1;
         }
         Z42Type ret = env.ResolveType(md.RetType);
-        return this._bindStmt(md.Body, env, ret);
+        BoundStmt body = this._bindStmt(md.Body, env, ret);
+        // base ctor call：ctor + BaseArgCount > 0 → 在体首插入 call @BaseCls.CtorKey %0, ...args
+        if (md.IsCtor && md.BaseArgCount > 0) {
+            Z42Type thisType = env.LookupVar("this");
+            if (thisType is Z42ClassType) {
+                Z42ClassType curCls = thisType as Z42ClassType;
+                if (curCls.HasBase && curCls.BaseName != "") {
+                    Z42ClassType baseCls = symbols.GetClass(curCls.BaseName);
+                    if (baseCls != null) {
+                        string bKey = this._ctorKey(baseCls, md.BaseArgCount);
+                        BoundExpr[] callArgs = new BoundExpr[md.BaseArgCount + 1];
+                        callArgs[0] = new BoundIdent("this", thisType, md.Span);
+                        int ba = 0;
+                        while (ba < md.BaseArgCount) { callArgs[ba + 1] = this._bindExpr(md.BaseArgs[ba], env); ba = ba + 1; }
+                        BoundCall baseCall = new BoundCall("base_ctor", false, null, curCls.BaseName, bKey,
+                                                            callArgs, md.BaseArgCount + 1, new Z42VoidType(), md.Span);
+                        BoundExprStmt baseStmt = new BoundExprStmt(baseCall, md.Span);
+                        BoundStmt[] stmts = null;
+                        int sc = 0;
+                        if (body is BoundBlock) {
+                            BoundBlock bb = body as BoundBlock;
+                            stmts = new BoundStmt[bb.Count + 1];
+                            stmts[0] = baseStmt;
+                            int si = 0;
+                            while (si < bb.Count) { stmts[si + 1] = bb.Stmts[si]; si = si + 1; }
+                            sc = bb.Count + 1;
+                        } else {
+                            stmts = new BoundStmt[2];
+                            stmts[0] = baseStmt; stmts[1] = body; sc = 2;
+                        }
+                        return new BoundBlock(stmts, sc, md.Span);
+                    }
+                }
+            }
+        }
+        return body;
     }
 
     // ════ 语句（集中 if-is）═══════════════════════════════════════════════════
@@ -243,15 +278,14 @@ public sealed class TypeChecker {
             }
             return new BoundContinue(s.Span);
         }
-        // for 循环脱糖为 while（continue 不修改 incr，适用于无 continue 的 for body；for 有 continue 时须升级 BoundFor）。
-        // { init; while (cond) { body; incr; } }
+        // for 循环 → BoundFor（独立节点，FunctionEmitter 生成 cond/body/incr/end 四块，
+        // continue 跳 incrL 而非 condL，镜像 C# EmitBoundFor，block 结构 byte-identical）。
         if (s is ForStmt) {
             ForStmt f = s as ForStmt;
             TypeEnv forScope = env.PushScope();
-            BoundStmt[] outerStmts = new BoundStmt[2];
-            int on = 0;
-            if (f.HasInit) { outerStmts[on] = this._bindStmt(f.Init, forScope, ret); on = on + 1; }
-            BoundExpr fcond = new BoundLitBool(true, new Z42PrimType("bool"), s.Span);
+            BoundStmt finit = null;
+            if (f.HasInit) { finit = this._bindStmt(f.Init, forScope, ret); }
+            BoundExpr fcond = null;
             if (f.HasCond) {
                 fcond = this._bindExpr(f.Cond, forScope);
                 this._requireBool(fcond.Type(), "for", f.Cond.Span);
@@ -259,16 +293,9 @@ public sealed class TypeChecker {
             this._loopDepth = this._loopDepth + 1;
             BoundStmt fbody = this._bindStmt(f.Body, forScope, ret);
             this._loopDepth = this._loopDepth - 1;
-            BoundStmt[] lbody = new BoundStmt[2];
-            int ln = 1;
-            lbody[0] = fbody;
-            if (f.HasIncr) {
-                BoundExpr fincr = this._bindExpr(f.Incr, forScope);
-                lbody[ln] = new BoundExprStmt(fincr, s.Span);
-                ln = ln + 1;
-            }
-            outerStmts[on] = new BoundWhile(fcond, new BoundBlock(lbody, ln, s.Span), s.Span); on = on + 1;
-            return new BoundBlock(outerStmts, on, s.Span);
+            BoundExpr fincr = null;
+            if (f.HasIncr) { fincr = this._bindExpr(f.Incr, forScope); }
+            return new BoundFor(f.HasInit, finit, f.HasCond, fcond, f.HasIncr, fincr, fbody, s.Span);
         }
         // GS6: foreach 脱糖 → { T[] __fe_arr=iter; int __fe_i=0; while(__fe_i<__fe_arr.Length){T name=__fe_arr[__fe_i]; body; __fe_i=__fe_i+1;} }
         if (s is ForeachStmt) {

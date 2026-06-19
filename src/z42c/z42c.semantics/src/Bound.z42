@@ -390,6 +390,23 @@ public sealed class BoundWhile : BoundStmt {
     }
 }
 
+// for (init; cond; incr) body（镜像 C# BoundFor；独立节点避免 continue 跳过 incr 的脱糖 bug）
+public sealed class BoundFor : BoundStmt {
+    public bool HasInit; public BoundStmt Init;
+    public bool HasCond; public BoundExpr Cond;
+    public bool HasIncr; public BoundExpr Incr;
+    public BoundStmt Body;
+    public BoundFor(bool hasInit, BoundStmt init, bool hasCond, BoundExpr cond,
+                    bool hasIncr, BoundExpr incr, BoundStmt body, Span span) {
+        this.Span = span;
+        this.HasInit = hasInit; this.Init = init;
+        this.HasCond = hasCond; this.Cond = cond;
+        this.HasIncr = hasIncr; this.Incr = incr;
+        this.Body = body;
+    }
+    public override string Dump() { return "(for)"; }
+}
+
 public sealed class BoundBreak : BoundStmt {
     public BoundBreak(Span span) { this.Span = span;}
     public override string Dump() { return "(break)"; }

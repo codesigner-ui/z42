@@ -149,7 +149,28 @@ public static class ZbcWriter {
                 w.WriteU16(0);   // per-field attrCount（zbc 1.14；z42c IrFieldDesc 无 attr → 0）
                 f = f + 1;
             }
-            w.WriteU8(0);     // tpCount（z42c IrClassDesc 无 typeparam）
+            // TypeParams + per-tp constraint bundles（zbc L3-G1/G3a，镜像 C# BuildType tpCount+WriteConstraintBundle）
+            int tpCount = cd.TypeParamCount;
+            if (tpCount > 255) { tpCount = 255; }
+            w.WriteU8(tpCount);
+            int tpi = 0;
+            while (tpi < tpCount) {
+                w.WriteU32(pool.Idx(cd.TypeParams[tpi]));
+                // constraint bundle（flags=0 → only interfaces；无 class/struct/base/func constraint）
+                IrConstraintDesc cDesc = null;
+                if (cd.TypeParamConstraints != null && tpi < cd.TypeParamConstraints.Length) {
+                    cDesc = cd.TypeParamConstraints[tpi];
+                }
+                w.WriteU8(0);   // flags（仅接口约束；bit0-5 = 0）
+                int ifc = (cDesc != null) ? cDesc.InterfaceCount : 0;
+                w.WriteU8(ifc);
+                int ifi = 0;
+                while (ifi < ifc) {
+                    w.WriteU32(pool.Idx(cDesc.Interfaces[ifi]));
+                    ifi = ifi + 1;
+                }
+                tpi = tpi + 1;
+            }
             w.WriteU16(0);    // attrCount（zbc 1.10）
             w.WriteU8(cd.Flags);   // class-shape flags（zbc 1.12，G12）：abstract/sealed/struct/record
             w.WriteU16(cd.StaticFieldCount);   // static-fields count（zbc 1.13；SA-3）

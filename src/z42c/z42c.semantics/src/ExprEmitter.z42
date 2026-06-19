@@ -306,8 +306,22 @@ public sealed class ExprEmitter {
         if (op == "-") { TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(u.Type())); this._ctx.Emit(new NegInstr(d, x)); return d; }
         if (op == "~") { TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(u.Type())); this._ctx.Emit(new BitNotInstr(d, x)); return d; }
         if (op == "+") { return x; }
-        TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));   // ++ / -- → CG 后续
+        // post-increment / post-decrement（镜像 C# EmitBoundPostfix）：
+        // 1. savedOld = copy x（表达式返回旧值）
+        // 2. newVal = x ± 1
+        // 3. x = copy newVal（写回原寄存器，x 即 Locals 寄存器本身）
+        // 注：仅 BoundIdent 操作数（即 `i++`）时 x 是 Locals 活寄存器，写回合法；
+        //     非 ident（`arr[i]++`）暂不处理增量（留 D-post-inc-nonident）。
+        TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
         this._ctx.Emit(new CopyInstr(ph, x));
+        if (u.Operand is BoundIdent) {
+            TypedReg one = this._ctx.Alloc(IrType.I64);
+            TypedReg nv  = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
+            this._ctx.Emit(new ConstI64Instr(one, "1"));
+            if (op == "++") { this._ctx.Emit(new AddInstr(nv, x, one)); }
+            else             { this._ctx.Emit(new SubInstr(nv, x, one)); }
+            this._ctx.Emit(new CopyInstr(x, nv));
+        }
         return ph;
     }
 
@@ -449,6 +463,14 @@ public sealed class ExprEmitter {
 
     // 调用分派：free → call @f / static → call @Class.m / instance → vcall recv.m。
     private TypedReg _emitCall(BoundCall c) {
+        // base ctor call：call @QualBaseCls.CtorKey %0, ...args（静态 direct call，args 含 this）
+        if (c.Kind == "base_ctor") {
+            TypedReg[] bargs = this._emitArgs(c);
+            string fqCtor = this._ctx.QualifyClass(c.OwnerClass) + "." + c.MethodName;
+            TypedReg bdst = this._ctx.Alloc(IrType.Ref);
+            this._ctx.Emit(new CallInstr(bdst, fqCtor, bargs, c.ArgCount));
+            return bdst;
+        }
         if (c.Kind == "instance") {
             // 镜像 C# EmitBoundCall：实参先于 receiver（寄存器编号序——byte-identical）
             TypedReg[] iargs = this._emitArgs(c);

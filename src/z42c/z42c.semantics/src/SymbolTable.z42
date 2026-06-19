@@ -109,6 +109,30 @@ public sealed class SymbolTable {
                 }
                 return def;
             }
+            // 限定名回退（G19b）：源码写 "Std.Attribute" 时 NamedType.Name 保含点串；
+            // 类注册用裸名（SymbolCollector line 139），点串查不到 → 取最后段重查。
+            // 镜像 C# MemberType→类型系统能按最后段找到类；SIGS 仍输出 "unknown"（TypeName 不处理 MemberType）。
+            // z42.core String has no LastIndexOf; find last '.' manually.
+            int lastDot = -1;
+            int di = 0;
+            while (di < n.Length) {
+                if (n.CharAt(di) == '.') { lastDot = di; }
+                di = di + 1;
+            }
+            if (lastDot >= 0) {
+                string bare = n.Substring(lastDot + 1);
+                if (this.Interfaces.ContainsKey(bare)) { return this.Interfaces.Get(bare) as Z42InterfaceType; }
+                if (this.Classes.ContainsKey(bare)) {
+                    Z42ClassType bdef = this.Classes.Get(bare) as Z42ClassType;
+                    if (nt.ArgCount > 0) {
+                        Z42Type[] btargs = new Z42Type[nt.ArgCount];
+                        int ba = 0;
+                        while (ba < nt.ArgCount) { btargs[ba] = this.ResolveTypeP(nt.Args[ba], paramNames, paramCount); ba = ba + 1; }
+                        return new Z42InstantiatedType(bdef, btargs, nt.ArgCount);
+                    }
+                    return bdef;
+                }
+            }
             return new Z42UnknownType();   // imported / 未声明 → Unknown
         }
         if (te is ArrayType) {
