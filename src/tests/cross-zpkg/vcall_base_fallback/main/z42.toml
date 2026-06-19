@@ -5,6 +5,9 @@ kind    = "exe"
 entry   = "Demo.App.Main"
 pack    = true
 
+[build]
+output_dir = "."
+
 [dependencies]
 "demo.base" = "0.1.0"
 "demo.ext"  = "0.1.0"

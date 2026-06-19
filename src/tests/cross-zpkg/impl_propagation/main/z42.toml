@@ -5,6 +5,9 @@ kind    = "exe"
 entry   = "Demo.App.Main"
 pack    = true
 
+[build]
+output_dir = "."
+
 [dependencies]
 "demo.target"  = "0.1.0"
 "demo.greeter" = "0.1.0"

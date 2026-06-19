@@ -7,5 +7,8 @@ pack    = true        # required for cross-zpkg TSIG-based reference compilation
 [sources]
 include = ["src/**/*.z42"]
 
+[build]
+output_dir = "."
+
 [dependencies]
 "demo.target" = "0.1.0"
