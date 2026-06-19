@@ -125,7 +125,7 @@ public static partial class PackageCompiler
 
         WarnUnresolvedUsings(units, nsMap);
 
-        var dependencies = BuildDependencyMap(units, nsMap);
+        var dependencies = BuildDependencyMap(units, nsMap, name + ".zpkg");
         var zbcFiles     = units.Select(u => u.ToZbcFile()).ToList();
         var exportedModules = units
             .Where(u => u.ExportedTypes != null)
@@ -347,7 +347,16 @@ public static partial class PackageCompiler
         void AddNewWorkspaceLayout(string baseDir)
         {
             if (!Directory.Exists(baseDir)) return;
-            foreach (var memberDir in Directory.EnumerateDirectories(baseDir).OrderBy(p => p, StringComparer.Ordinal))
+            // fix-workspace-prelude-first (2026-06-19): sort member dirs prelude-first
+            // so z42.core registers 'Std' before z42.cli, matching z42c DepScan
+            // flat-alllibs resolution. Without this, alphabetical order puts z42.cli
+            // before z42.core → z42.cli.zpkg wins the 'Std' first-wins slot → DEPS
+            // section drifts from z42c self-compiled output.
+            foreach (var memberDir in Directory.EnumerateDirectories(baseDir)
+                .OrderBy(p => {
+                    string name = Path.GetFileName(p);
+                    return PreludePackages.Names.Contains(name) ? "0_" + name : "1_" + name;
+                }, StringComparer.Ordinal))
                 foreach (var profileDir in Directory.EnumerateDirectories(memberDir).OrderBy(p => p, StringComparer.Ordinal))
                     AddDirIfExists(Path.Combine(profileDir, "dist"));
         }
@@ -830,13 +839,15 @@ public static partial class PackageCompiler
     /// Build the dependency list (file → namespaces) from resolved usings and dependency calls.
     static List<ZpkgDep> BuildDependencyMap(
         IReadOnlyList<CompiledUnit>  units,
-        Dictionary<string, string>   nsMap)
+        Dictionary<string, string>   nsMap,
+        string                       selfZpkgName = "")
     {
         var depMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
         void AddDepNs(string ns)
         {
             if (!nsMap.TryGetValue(ns, out var depFile)) return;
+            if (selfZpkgName.Length > 0 && depFile == selfZpkgName) return;  // exclude self-dep
             if (!depMap.TryGetValue(depFile, out var nsList))
             {
                 nsList = [];
