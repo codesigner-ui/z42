@@ -457,8 +457,22 @@ public sealed class ExprEmitter {
         int ftag = this._ctx.ToIrType(m.Type());
         if (this._castUnknownChain(m.Target)) { ftag = IrType.Unknown; }
         TypedReg dst = this._ctx.Alloc(ftag);
+        // Issue B：auto-property getter dispatch — class 有 get_MemberName → VCall（镜像 C#）
+        Z42ClassType propCt = this._receiverClassType(m.Target.Type());
+        if (propCt != null && propCt.Methods.ContainsKey("get_" + m.MemberName)) {
+            TypedReg[] noArgs = new TypedReg[0];
+            this._ctx.Emit(new VCallInstr(dst, obj, "get_" + m.MemberName, noArgs, 0));
+            return dst;
+        }
         this._ctx.Emit(new FieldGetInstr(dst, obj, m.MemberName));
         return dst;
+    }
+
+    // receiver 若为 class 类型返回其 Z42ClassType，用于属性 getter 分派判断。
+    private Z42ClassType _receiverClassType(Z42Type t) {
+        if (t is Z42ClassType) { return t as Z42ClassType; }
+        if (t is Z42InstantiatedType) { return (t as Z42InstantiatedType).Def; }
+        return null;
     }
 
     // 调用分派：free → call @f / static → call @Class.m / instance → vcall recv.m。
