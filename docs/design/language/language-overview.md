@@ -699,6 +699,46 @@ public static void Log(string msg) => Console.WriteLine(msg);
 
 ---
 
+## Deferred / Future Work
+
+### params-future-impl: `params` 关键字完整实现
+
+- **来源**：设计讨论 2026-06-19；`Path.Join` 多参数需求触发
+- **触发原因**：自举完成前不实施；`params object[]` 还依赖 `object` 基类型（L2+ 特性，需 boxing 机制）
+- **前置依赖**：
+  1. 自举完成（bootstrap C# 编译器→z42c）
+  2. `params object[]` 重载额外依赖：`object` 类型引入（L2）
+- **触发条件**：自举完成后，需要 `Path.Join(params string[])` / `Console.Write(string, params object[])` 等 API 时
+- **当前 workaround**：多段路径用嵌套 `Path.Join(Path.Join(a, b), c)`；3-arg / 4-arg 显式重载作为过渡
+
+**设计摘要**（等实施时直接从这里转 spec）：
+
+语法：`params` 关键字放在最后一个参数前，参数类型必须是 `T[]`。
+
+```z42
+// typed overload — 无 boxing，同构参数最优性能
+public static string Join(params string[] parts) { ... }
+
+// object overload — 混类型参数（需 object 类型支持，L2+）
+public static void Write(string fmt, params object[] args) { ... }
+```
+
+**重载决议**（对齐 C# 语义）：
+- Normal form（单个 `T[]` 参数直传）优先于 expanded form（展开为散列参数）
+- 两个 params 重载均在 expanded form 时，element type 更具体的胜出：`params string[]` 优于 `params object[]`（string 精确匹配）
+- 调用方传混合类型（如 `f(1, "x")`）：`params string[]` 不适用，fallthrough 到 `params object[]`
+
+**IR 策略：纯编译器前端 lowering，零新 IR 指令**：
+- `Path.Join(a, b, c)` → 编译器 emit `new string[3]` + ARRAY_STORE × 3 + CALL（单 `string[]` 参数）
+- `Path.Join(arr)` → 直接 normal form 调用，不产生额外数组
+- VM / IR 层不感知 `params`，仅 TypeChecker + Codegen 处理
+
+**Pipeline 改动**：
+1. Lexer：新 token `params`
+2. Parser/AST：`ParameterNode.IsParams: bool`
+3. TypeChecker：末尾参数约束校验；调用时 arity ≥ required 参数数；element type 推断；重载决议 normal/expanded form
+4. Codegen：expanded form 调用点 → 隐式打包 `new T[] { args... }`
+
 ---
 
 ## 16. 编译器错误恢复
