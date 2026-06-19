@@ -12,7 +12,7 @@ public static class ExportedTypeExtractor
     /// Build an ExportedModule from the SemanticModel of a compiled source file.
     public static ExportedModule Extract(SemanticModel sem, string ns, CompilationUnit? cu = null)
     {
-        var classes    = ExtractClasses(sem);
+        var classes    = ExtractClasses(sem, cu);
         var interfaces = ExtractInterfaces(sem, cu);
         var enums      = ExtractEnums(sem);
         var functions  = ExtractFunctions(sem);
@@ -126,7 +126,7 @@ public static class ExportedTypeExtractor
         _               => "<unknown>",
     };
 
-    private static List<ExportedClassDef> ExtractClasses(SemanticModel sem)
+    private static List<ExportedClassDef> ExtractClasses(SemanticModel sem, CompilationUnit? cu)
     {
         var result = new List<ExportedClassDef>();
         foreach (var (name, ct) in sem.Classes)
@@ -183,6 +183,21 @@ public static class ExportedTypeExtractor
                 ct.Name, ct.BaseClassName,
                 false, false, false,
                 fields, methods, ifaceNames, typeParams, constraints));
+        }
+        // Sort by source declaration order so TSIG class list matches z42c's cu.Decls iteration.
+        // sem.Classes is a Dictionary whose iteration order is non-deterministic (hash-bucketed);
+        // without this sort C# emits classes alphabetically while z42c emits in source order.
+        if (cu is not null)
+        {
+            var sourceIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < cu.Classes.Count; i++)
+                sourceIndex[cu.Classes[i].Name] = i;
+            result.Sort((a, b) =>
+            {
+                int ai = sourceIndex.TryGetValue(a.Name, out var av) ? av : int.MaxValue;
+                int bi = sourceIndex.TryGetValue(b.Name, out var bv) ? bv : int.MaxValue;
+                return ai.CompareTo(bi);
+            });
         }
         return result;
     }
