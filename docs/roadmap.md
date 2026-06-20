@@ -338,6 +338,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 组件化运行时 | libz42 基座 + interp/jit/aot/gc/debug 组件；static/dynlink/dlopen 三粒度 + 切换语义；嵌入按需链接 | [runtime/componentized-runtime.md](design/runtime/componentized-runtime.md) |
 | 分层执行 | interp/JIT 各自内部分层 + OSR/deopt + 低层回收 + 引用诊断 + hot-reload 共用基建 | [runtime/tiered-execution.md](design/runtime/tiered-execution.md) |
 | IR 优化与特化 | 编译期优化 tier0 基线 + intrinsic 表（编译期折常量 + 引擎内联，硬编码纯度）；`"sss".Length` 折叠 | [runtime/ir-specialization.md](design/runtime/ir-specialization.md) |
+| 加载上下文（ALC 式） | zpkg 重载/卸载/回收（含内部 metadata/缓存池）；惰性 GC 卸载 + 保留根诊断 + 缓存不自钉铁律 | [runtime/load-context.md](design/runtime/load-context.md) |
 | ref local / return / field / struct | parameter-modifiers D1-D4 | [language/parameter-modifiers.md](design/language/parameter-modifiers.md) |
 | StackTrace / 构造器重载 / 字段 ? 标注 / self-assign | exceptions Phase 1 限制 | [language/exceptions.md](design/language/exceptions.md) |
 | Layer 3 用户定义 operator/keyword | customization 第三层 | [language/customization.md](design/language/customization.md) |

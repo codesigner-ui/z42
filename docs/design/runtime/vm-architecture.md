@@ -225,7 +225,7 @@ host::state::HOST  (RwLock<Option<HostState>>，进程单实例)
 
 v0.1 单实例：`HOST: RwLock<Option<HostState>>`。`Z42HostRef` 是一个 sentinel pointer（`0x1`），所有 host API 调用读 `HOST` 验证活跃。
 
-多实例 / ALC-like 上下文进 [embedding.md §12 Deferred](embedding.md)。届时 `RwLock<Option<...>>` 升级为 `Slab<HostState>`，`Z42HostRef` 编码 `(idx, gen)`，VM 全局状态（GC heap、JIT cache、type registry）必须 per-handle 化。
+多实例 / ALC-like 上下文进 [embedding.md §12 Deferred](embedding.md)。届时 `RwLock<Option<...>>` 升级为 `Slab<HostState>`，`Z42HostRef` 编码 `(idx, gen)`，VM 全局状态（GC heap、JIT cache、type registry）必须 per-handle 化。zpkg 重载/卸载/回收的完整设计（含保留根诊断、内部缓存回收）见 [load-context.md](load-context.md)。
 
 详见 [docs/design/runtime/embedding.md](embedding.md) 与 [docs/spec/archive/2026-05-10-add-embedding-api/design.md](../../spec/archive/2026-05-10-add-embedding-api/design.md) D1/D5。
 

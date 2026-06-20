@@ -190,3 +190,4 @@ gc     = static  仅此一种   # 不参与 dynlink/dlopen，见 §3
 - **包分发** 见 [runtime-workload-distribution.md](../toolchain/runtime-workload-distribution.md)：其 Deferred `runtime-future-jit-cdylib-split` 是本架构的第一个落地切口。
 - **分层执行 / OSR / 回收 / hot-reload**（叠在本组件框架之上，引擎内部各自分层）见 [tiered-execution.md](tiered-execution.md)。
 - **IR 优化 / 特化 / intrinsic / tier0 基线质量** 见 [ir-specialization.md](ir-specialization.md)。
+- **zpkg 加载上下文 / 重载 / 卸载回收 / 保留根诊断**（ALC 式，复用 observer/注册基座）见 [load-context.md](load-context.md)。
