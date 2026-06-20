@@ -81,7 +81,7 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 ## launcher / runtime 拆分 + 首次 bootstrap
 
 **当前两包格式**：SDK 与 runtime 独立发布；launcher 不单独发包（`z42 self-update` 下 SDK 包即可）。
-- **SDK package** = 原生 trampoline（`bin/z42`）+ `launcher.zpkg` + z42vm + z42c + libs；`install-z42.sh` 和 `z42 self-update` 都下这个。
+- **SDK package** = 原生 apphost（根 `z42`）+ `programs/launcher/launcher.zpkg` + `bin/z42vm` + z42c + libs；`install-z42.sh` 和 `z42 self-update` 都下这个。
 - **runtime package** = z42vm + libs；`z42 install <ver>` 下这个。
 
 **第一次执行（`install-z42`，唯一保留的原生 bootstrap；shell/PS + 系统 curl）一次装完即功能完整**：
@@ -91,9 +91,9 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 2. curl 拉 channel manifest：releases/latest/download/release-index.json（或 nightly tag）
 3. 从 manifest 取 sdk archive + sha
 4. 下载 → 校验 → 解压：
-     sdk → ~/.z42/bin/z42 + ~/.z42/launcher/launcher.zpkg + ~/.z42/launcher/z42vm + libs
+     sdk → ~/.z42/z42 + ~/.z42/programs/launcher/launcher.zpkg + ~/.z42/bin/z42vm + libs
            config.toml default=<ver>
-5. ~/.z42/bin 入 PATH（或打印指引）
+5. ~/.z42 + ~/.z42/bin 入 PATH（或打印指引）
 6. 完成 —— z42 list / run / build 立即可用
    （项目本地变体：装进 <repo>/.z42，隔离/pin，沿用现状）
 ```
@@ -107,9 +107,10 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 ```
 ~/.z42/
-  bin/z42                  launcher 原生 trampoline（薄）
-  launcher/launcher.zpkg   launcher 逻辑（z42）
-  launcher/z42vm           （sdk 包里 bin/z42vm 解压重排后放这里）
+  z42                      launcher 原生 apphost（薄；2026-06-20 trampoline → apphost）
+  bin/z42vm                launcher 运行时 VM
+  programs/launcher/launcher.zpkg   launcher 逻辑（z42）
+  programs/<cmd>/          SDK 命令（跟 SDK 走，版本无关）
   config.toml              default = "<ver>"  ·  channel = stable|nightly
   cache/                   下过的归档（校验通过再解压；断点/复用）
   runtimes/
@@ -118,7 +119,7 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
   tools/                   全局用户工具（类 ~/.cargo/bin，版本无关）
 ```
 
-三类可安装物：**① runtime 版本（side-by-side）· ② launcher 自身（trampoline + launcher.zpkg，无 vm）· ③ workload（挂某 runtime 版本下）**。
+三类可安装物：**① runtime 版本（side-by-side）· ② launcher 自身（apphost + launcher.zpkg，无 vm）· ③ workload（挂某 runtime 版本下）**。
 
 ## install 机制（runtime/workload 分包 + 平台铺设策略 + 联网/本地两源）
 
@@ -182,7 +183,7 @@ RID 已铺的 jniLibs slice。android `build.gradle abiFilters=[arm64-v8a, x86_6
 - **两个 channel**：`stable`（→ 最新 `v<ver>`）/ `nightly`（滚动）；存 `config.toml channel`。具体版号 pin 仍可用。
 - `z42 install <ver|latest|nightly>` → 读对应 manifest 解析版本 → 下 host RID archive → 校验 sha → 解到 `runtimes/<ver>/`。
 - `z42 update [--channel …]` → manifest 取 channel 最新 → 比已装新则装 +（可选）重指 default；nightly 用 version / `published` 比对（沿用 bootstrap 已有 published_at 逻辑）。
-- `z42 self update` → 换 **launcher bundle**（`bin/z42` trampoline + `launcher/launcher.zpkg`）：下 launcher archive → 原子替换（trampoline 替换是唯一须碰 native 自替换处）。launcher 不带 vm（复用 runtime vm），故 self update 不涉及 vm。
+- `z42 self update` → 换 **launcher bundle**（根 `z42` apphost + `programs/launcher/launcher.zpkg` + `bin/z42vm`）：下 launcher archive → 原子替换（apphost 替换是唯一须碰 native 自替换处）。launcher 复用自带 `bin/z42vm` 跑核心。
 - **workload ↔ runtime 版本联动**：workload 嵌入件 ABI 必须配 runtime 版本。升级 runtime → 提示/重装匹配 workload；`z42 workload update` 拉配套版本。
 
 ## 命令面（在现有 install/link/list/default/which/info 上扩）
@@ -190,7 +191,7 @@ RID 已铺的 jniLibs slice。android `build.gradle abiFilters=[arm64-v8a, x86_6
 ```
 z42 install <ver|latest|nightly>        # host runtime
 z42 update [--channel stable|nightly]   # (planned) 升级 host runtime — 需 channel→latest 解析（未建）
-z42 self update                         # 升级 launcher trampoline 自身（已有）
+z42 self update                         # 升级 launcher apphost 自身（已有）
 z42 default <ver>                       # 全局默认（已有）
 z42 use <ver|stable|nightly>            # (planned) 项目 pin（写 + 解析 z42.toml [project].runtime；解析侧未建）
 z42 list [--workloads]                  # 已装版本（+ --workloads 列 workload）（已有）

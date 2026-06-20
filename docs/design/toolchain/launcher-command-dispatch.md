@@ -21,8 +21,8 @@
 | 层 | 例子 | 提供者 | 注册方式 | 为何 |
 |----|------|--------|---------|------|
 | **Core** | run / install / link / list / which / uninstall / info | launcher 自带 | **代码注册**（Std.Cli router，已有）| 引导关键——得先有 install/run 才能装 SDK |
-| **SDK** | new / build / export / publish / test / fmt | 随 runtime/SDK 装 | **目录发现**（版本作用域）| 与编译器同版本、可独立发布 |
-| **Workload** | 平台 publish/export/工程生成 + 模板 + **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（drop-in 即注册）| 平台按需、host 无关平台不强塞 |
+| **SDK** | new / build / test / fmt | 随 SDK 装 | **目录发现**（`$Z42_HOME/programs/`，**跟 SDK 走**）| 纯工具无 ABI 耦合、与编译器同 SDK、可独立发布 |
+| **Workload** | 平台 publish/export/工程生成 + 模板 + native 包（xcframework/AAR）+ **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（`runtimes/<ver>/workloads/`，**版本作用域**，drop-in 即注册）| 平台按需 + native ABI 配套 runtime 版本 |
 
 > **命令模型 + apphost 归属（define-cli-command-model, 2026-06-17）**：完整动词语义（字节码模型 / build-zpkg / run 双形态 / publish-deployable / export-IDE工程）见 [platform-export-lifecycle.md](platform-export-lifecycle.md)。要点：
 > - **取消 `z42 apphost` 命令**。apphost 是 `[platform.desktop]` 配置驱动的 desktop **publish 部署件**，经 **`z42 publish desktop`**（release，留存）产出；**`z42 run desktop`** 产 debug apphost 临时跑（预演部署启动）。`apphost.z42` 的 stub-patch 逻辑是这两者的实现，不再是独立 verb。
@@ -31,7 +31,9 @@
 > - 门控不变：默认 `build`/`run`（无参）零 workload；`publish`/`export`/`run <plat>` 才下载对应平台 workload（desktop 亦 workload，仅 publish/run 维度；host runtime 仍经 `z42 install`）。
 > 详见 [runtime-workload-distribution.md](runtime-workload-distribution.md) + `docs/spec/changes/consolidate-platform-into-workload/`。
 
-判据：**Core 必须 baked**（鸡生蛋）；**SDK + workload 必须目录发现**（否则每加平台重编 launcher、无法按版本/平台隔离）。
+判据：**Core 必须 baked**（鸡生蛋）；**SDK + workload 必须目录发现**（否则每加平台重编 launcher、无法按平台隔离）。
+
+> **命令归属裁决（2026-06-20）**：**SDK 命令**（new/build/test/fmt——纯工具、无 native ABI 耦合）**跟当前 SDK 走**，装在版本无关的 `$Z42_HOME/programs/`，**不进 `runtimes/<ver>/`**；多版本命令作用域暂不做（复杂、当前无需求，见 Deferred `cmd-future-version-scoped`）。**平台 workload**（publish/export 命令 + 配套 native 包）**仍版本作用域**于 `runtimes/<ver>/workloads/<wl>/`——native 嵌入件 ABI 必须配 runtime（见 [runtime-workload-distribution.md](runtime-workload-distribution.md) Decision 5）。
 
 ## 两种注册机制 → 合并进同一棵 Std.Cli 树
 
@@ -65,17 +67,20 @@ min-runtime = "0.3.0"
 
 > 为何不学 dotnet 的单 `commands.toml` 索引：per-command sidecar 让"装/卸一个命令 = drop/删一对文件"，无需并发改一个共享索引文件（避免写竞争）。
 
-### 目录布局（版本作用域 + 全局 + 项目本地），按优先级合并
+### 目录布局（SDK 级 + 全局 + 项目本地），按优先级合并
 
 ```
-<repo>/.z42/commands/                      项目本地（pin；复用 install-z42 的 .z42 隔离模式）   ← 最高
-$Z42_HOME/runtimes/<ver>/commands/         SDK 命令（版本作用域）
-$Z42_HOME/runtimes/<ver>/workloads/<wl>/commands/   workload 装入
-$Z42_HOME/tools/                           全局用户工具（类 ~/.cargo/bin，版本无关）        ← 最低
+<repo>/.z42/programs/<cmd>/                 项目本地（pin；复用 install-z42 的 .z42 隔离模式）   ← 最高
+$Z42_HOME/programs/<cmd>/                   SDK 命令（跟 SDK 走，版本无关）
+$Z42_HOME/runtimes/<ver>/workloads/<wl>/    workload 装入（版本作用域；ABI 配套 <ver>）
+$Z42_HOME/tools/                            全局用户工具（类 ~/.cargo/bin）                  ← 最低
 ```
 
-- **版本作用域要紧**：`z42 publish ios` 解析到的是匹配当前 runtime 的 ios 打包器，不跨版本串味（`--runtime <ver>` 可覆盖）。
-- 优先级：core > 项目本地 > 版本 SDK/workload > 全局 tools；同名 first-wins-by-precedence。
+每个 `programs/<cmd>/` 含 `<cmd>.zpkg` + `<cmd>.cmd.toml`（子目录隔离，对齐 [launcher.md](../runtime/launcher.md) 的 `programs/` 布局）。
+
+- **SDK 命令跟 SDK 走**：new/build/test/fmt 随当前 SDK，**不进 `runtimes/<ver>/`**；多版本命令作用域暂不做（见 Deferred `cmd-future-version-scoped`）。
+- **workload 仍版本作用域**：平台命令 + native 包挂 `runtimes/<ver>/workloads/`，ABI 配 runtime（[runtime-workload-distribution.md](runtime-workload-distribution.md) Decision 5）。
+- 优先级：core > 项目本地 > SDK programs > 版本 workload > 全局 tools；同名 first-wins-by-precedence。
 - ⚠️ **目录扫描必须显式排序**（[common-pitfalls.md §1](../../../.claude/rules/common-pitfalls.md)）：`Directory.Enumerate` 跨 OS 顺序不定，first-wins 注册前按稳定键 sort，否则 CI 跨平台炸。
 
 ## 分发与参数透传
@@ -85,7 +90,7 @@ $Z42_HOME/tools/                           全局用户工具（类 ~/.cargo/bin
 
 ## workload 安装
 
-`z42 workload install ios` → 下载 workload 包（命令 zpkg + `.cmd.toml` + 模板 + native 资产如 xcframework）→ 解到 `runtimes/<ver>/workloads/ios/` → 下次 `z42 <cmd>` 自动发现。对标 `dotnet workload install`。卸载 = 删目录。
+`z42 workload install ios` → 下载 workload 包（命令 zpkg + `.cmd.toml` + 模板 + native 资产如 xcframework）→ 解到 `runtimes/<ver>/workloads/ios/`（版本作用域，ABI 配套）→ 下次 `z42 <cmd>` 自动发现。对标 `dotnet workload install`。卸载 = 删目录。
 
 ## Decisions
 
@@ -94,7 +99,7 @@ $Z42_HOME/tools/                           全局用户工具（类 ~/.cargo/bin
 | 1 | core 只留运行时自管理，baked-in | 引导关键 + launcher 与编译器版本解耦 |
 | 2 | SDK/workload 走 sidecar manifest 目录发现 + 裸约定 fallback | help 完整（manifest）+ drop-in 低门槛（约定）；避开纯约定的"无描述"病 |
 | 3 | 全部合并进同一棵 Std.Cli router | 统一 help/分发/未知处理，复用既有库 |
-| 4 | 版本作用域目录 + 项目本地 + 全局三层，显式排序 | 命令随 runtime 版本/平台隔离；deterministic |
+| 4 | SDK 命令 `programs/`（SDK 级）+ 项目本地 + 全局三层；workload 仍版本作用域，显式排序 | SDK 命令跟 SDK 不进 runtime（多版本作用域 deferred）；workload native ABI 配 runtime；deterministic |
 | 5 | 平台支持 = 可安装 workload | 基础包小、平台按需、host 无关平台不强塞 |
 
 ## Deferred / 待 spec 细化
@@ -126,10 +131,17 @@ $Z42_HOME/tools/                           全局用户工具（类 ~/.cargo/bin
 
 ---
 
+### cmd-future-version-scoped（命令多版本作用域，2026-06-20）
+- **来源**：2026-06-20 命令归属裁决
+- **触发原因**：命令现跟 SDK 走（`$Z42_HOME/programs/`，版本无关）；"不同 runtime 配不同 SDK 命令/打包器"的版本作用域复杂且当前无需求
+- **前置依赖**：多 SDK 版本共存的实际场景出现（如同机同时维护 0.3.x / 0.4.x 项目，且命令行为不兼容）
+- **触发条件**：用户呼声 / 跨版本命令行为冲突实际发生
+- **当前 workaround**：单 SDK 命令集；`--runtime <ver>` 只切 app 运行时，不切命令实现
+
 ### 原有 Deferred 条目
 
 - `.cmd.toml` 完整 schema（arg 摘要、别名、min/max-runtime 区间）。
 - workload 包格式（manifest + packs 布局、依赖/版本解析、签名）。
 - 命令版本冲突/多版本共存策略；`z42 commands list` 自省。
 - 与 `z42up`（roadmap 1.0 版本管理工具）的边界。
-- **`launcher-future-self-update-windows`**：Windows 上 `z42 self-update` 时 `Directory.Delete($Z42_HOME/launcher/)` 因 `z42.exe`（父进程等 z42vm）持有文件锁而失败。待 rename-then-copy 策略或 PowerShell 延迟替换实现。当前 workaround：Windows 用户改用 `install-z42.bat --system`。见 `docs/design/runtime/launcher.md` 中的 `launcher-future-self-update-windows` 条目。
+- **`launcher-future-self-update-windows`**：Windows 上 `z42 self-update` 时替换 `$Z42_HOME/programs/launcher/` + `bin/z42vm` 因 `z42.exe`（父进程等 z42vm）持有文件锁而失败。待 rename-then-copy 策略或 PowerShell 延迟替换实现。当前 workaround：Windows 用户改用 `install-z42.bat --system`。见 `docs/design/runtime/launcher.md` 中的 `launcher-future-self-update-windows` 条目。
