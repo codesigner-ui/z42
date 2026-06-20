@@ -335,6 +335,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Static abstract iter 2+ | 类型级访问（`T.Zero` / `T.Parse(s)`）| [language/static-abstract-interface.md](design/language/static-abstract-interface.md) |
 | `params T[]` + `params object[]` 重载 | 可变参数关键字；typed overload 无 boxing，object[] fallback 处理混类型；自举完成后实施，object[] 另需 L2 object 类型 | [language/language-overview.md](design/language/language-overview.md#params-future-impl-params-关键字完整实现) |
 | z42vm JIT cdylib 拆分 | 把 cranelift JIT 拆成可 dlopen 的 `libz42_jit.dylib`（z42vm 6M→~3.5M）；ROI 低（拆 ~3M / 整包 ~70M，中高工作量）2026-06-21 暂缓 | [toolchain/runtime-workload-distribution.md](design/toolchain/runtime-workload-distribution.md#deferred--待-spec-细化) |
+| 组件化运行时 | libz42 基座 + interp/jit/aot/gc/debug 组件；static/dynlink/dlopen 三粒度 + 切换语义；嵌入按需链接 | [runtime/componentized-runtime.md](design/runtime/componentized-runtime.md) |
+| 分层执行 | interp/JIT 各自内部分层 + OSR/deopt + 低层回收 + 引用诊断 + hot-reload 共用基建 | [runtime/tiered-execution.md](design/runtime/tiered-execution.md) |
+| IR 优化与特化 | 编译期优化 tier0 基线 + intrinsic 表（编译期折常量 + 引擎内联，硬编码纯度）；`"sss".Length` 折叠 | [runtime/ir-specialization.md](design/runtime/ir-specialization.md) |
 | ref local / return / field / struct | parameter-modifiers D1-D4 | [language/parameter-modifiers.md](design/language/parameter-modifiers.md) |
 | StackTrace / 构造器重载 / 字段 ? 标注 / self-assign | exceptions Phase 1 限制 | [language/exceptions.md](design/language/exceptions.md) |
 | Layer 3 用户定义 operator/keyword | customization 第三层 | [language/customization.md](design/language/customization.md) |
