@@ -5,7 +5,7 @@
 //   _buildRuntimePackageIos → z42-runtime-<ver>-<rid>/  (native libs + Z42VM.xcframework
 //                              + headers + libs/) — the platform VM runtime, version-managed
 //                              independently; installed under runtimes/<rid>/<ver>/.
-//   _packageIos             → workload tooling (Sources/ + Package.swift + examples + manifest);
+//   _packageIos             → workload tooling (Sources/ + Package.swift + manifest);
 //                              Package.swift binaryTarget = __Z42_RUNTIME_XCFRAMEWORK__ placeholder,
 //                              resolved by `z42 workload install` to the installed runtime's xcframework.
 //
@@ -71,7 +71,7 @@ int _buildRuntimePackageIos(string root, string rid, string version, string prof
     return 0;
 }
 
-// ── workload tooling: Sources/ + Package.swift (placeholder) + examples + manifest ──
+// ── workload tooling: Sources/ + Package.swift (placeholder) + manifest ──
 int _packageIos(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
     bool rel = (profile == "release");
     string iosMin = _vReadOr(root, "platform.ios.min_ios", "16.0");
@@ -129,20 +129,8 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
     File.WriteAllText(Path.Join(pkgDir, "Package.swift"), pkg);
     Console.WriteLine("      ✓ Sources/ + Package.swift (placeholder binaryTarget)");
 
-    // examples/hello_c
-    string dst = Path.Join(pkgDir, "examples/hello_c");
-    Directory.Create(dst);
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md"), Path.Join(dst, "README.md"));
-    string driver = _driverDll(root);
-    if (!File.Exists(driver)) { ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler"); return 1; }
-    c = _exec(new Process("dotnet").Arg(driver).Arg(Path.Join(root, "examples/embedding/hello.z42"))
-        .Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));
-    if (c != 0) { return c; }
-
     // [3/3] manifest.toml (tooling — references the separate runtime pack)
     Console.WriteLine("[3/3] manifest.toml");
-    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
     string m = "[package]\n";
     m = m + "name        = \"z42-workload-ios\"\n";
     m = m + "kind        = \"workload-tooling\"\n";
@@ -152,8 +140,6 @@ int _packageIos(string root, string pkgDir, string rid, string version, string p
     m = m + "profile     = \"" + profile + "\"\n";
     m = m + "build-date  = \"" + _utcNow() + "\"\n";
     m = m + "build-host  = \"" + hostRid + "\"\n\n";
-    m = m + "[contents]\n";
-    m = m + "examples    = [" + examplesList + "]\n\n";
     m = m + "[contents.platform]\n";
     m = m + "swiftpm-manifest = \"Package.swift\"\n";
     m = m + "swift-sources    = \"Sources/Z42VM\"\n";

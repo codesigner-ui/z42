@@ -69,7 +69,7 @@
 | `src/runtime/include/z42_host.h` | Tier 1 C 头文件（与 `z42_abi.h` 平行） |
 | `src/runtime/src/host/` | C ABI 在 VM 内的实现（Rust `extern "C"`） |
 | `src/toolchain/workload/host-api/` | Tier 2 Rust crate（`z42-host`）—— consolidate-platform-into-workload S1 迁此 |
-| `examples/embedding/` | hello-world 示例（C / Rust，规范源，亦随 SDK 分发） |
+| `examples/embedding/` | hello-world 示例（C / Rust，规范源）；仓内夹具，**不随发行包分发**（示例后移到 workload）|
 | `src/toolchain/workload/{ios,android,wasm}/platform/` | Tier 3 facade（与 P4.x spec 协同） |
 
 ---
@@ -549,11 +549,12 @@ z42-<v>-<rid>-<config>/
 ├── libs/                  stdlib zpkg + zsym（跨包 byte-identical；无 namespace 索引——读 NSPC）
 ├── native/                平台静态/动态库 + 单 slice container（如 iOS xcframework）+ C ABI 头
 ├── (root) <平台原生入口>  iOS: Sources/+Package.swift；Android: kotlin/+cpp/；wasm: pkg-*/+package.json
-├── examples/              hello_c/main.c byte-identical；README 平台特定
 └── manifest.toml          统一 schema（abi-version / rid / contents.platform / compat）
 ```
 
-**核心 invariant**：`libs/` 与 `native/include/` 与 `examples/hello_c/main.c` 跨 9 包 byte-identical（C ABI 头 + zpkg 字节码 + C 嵌入示例都是平台无关）。
+> **examples 不再随包分发（remove-examples-from-packaging, 2026-06-20）**：早期包形态曾含 `examples/`（hello_c/hello_rust），现已移除——`examples/` 是仓内测试夹具，示例分发后移到 workload。
+
+**核心 invariant**：`libs/` 与 `native/include/` 跨 9 包 byte-identical（C ABI 头 + zpkg 字节码都是平台无关）。
 
 **multi-arch 合并 container**（multi-slice xcframework / multi-ABI AAR）进 Deferred；Phase 2 用户呼声出来再加 `z42-<v>-ios-xcframework-<config>` / `z42-<v>-android-aar-<config>` 两个 convenience 包。
 

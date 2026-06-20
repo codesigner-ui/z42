@@ -92,17 +92,6 @@ int _packageWasm(string root, string pkgDir, string rid, string version, string 
     }
     File.WriteAllText(Path.Join(pkgDir, "package.json"), _wasmPackageJson(version));
 
-    // examples/hello_c
-    string dst = Path.Join(pkgDir, "examples/hello_c");
-    Directory.Create(dst);
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md"), Path.Join(dst, "README.md"));
-    string driver = _driverDll(root);
-    if (!File.Exists(driver)) { ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler"); return 1; }
-    c = _exec(new Process("dotnet").Arg(driver).Arg(Path.Join(root, "examples/embedding/hello.z42"))
-        .Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));
-    if (c != 0) { return c; }
-
     // manifest.toml (tooling)
     Console.WriteLine("[3/3] manifest.toml");
     _pkgEmitManifestWasm(pkgDir, rid, version, profile, hostRid);
@@ -163,7 +152,6 @@ string _wasmPackageJson(string version) {
 void _pkgEmitManifestWasm(string pkgDir, string rid, string version, string profile, string buildHost) {
     string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
     string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
-    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
     string staticList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42.a", "");
     string dynamicList = _quotedExisting(Path.Join(pkgDir, "native"), "z42_wasm_bg.wasm", "");
     string m = "[package]\n";
@@ -177,8 +165,7 @@ void _pkgEmitManifestWasm(string pkgDir, string rid, string version, string prof
     m = m + "build-host  = \"" + buildHost + "\"\n\n";
     m = m + "[contents]\n";
     m = m + "bin         = [" + binList + "]\n";
-    m = m + "libs        = [" + libsList + "]\n";
-    m = m + "examples    = [" + examplesList + "]\n\n";
+    m = m + "libs        = [" + libsList + "]\n\n";
     m = m + "[contents.native]\n";
     m = m + "static      = [" + staticList + "]\n";
     m = m + "dynamic     = [" + dynamicList + "]\n";

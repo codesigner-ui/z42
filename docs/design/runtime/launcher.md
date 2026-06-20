@@ -107,7 +107,7 @@ z42-<ver>-<rid>-<profile>/
 │   │   └── z42c.*.zpkg
 │   └── repl/
 │       └── z42.repl.zpkg
-├── native/  examples/  manifest.toml
+├── native/  manifest.toml
 ```
 
 **便携解析**（launcher-at-package-root 2026-06-04；apphost 化 2026-06-20）：`z42`（apphost）在包根，payload 打包时 patch 为 `programs/launcher/launcher.zpkg`（相对路径）；z42vm probe 走统一顺序（完整定义见下「运行时解析」节）——关键是 `{exe_dir}/bin/z42vm`（colocated）优先于项目本地，launcher 总用自己同包的 vm。installed 与便携模式 **probe 路径相同**（exe 同级的 `bin/z42vm`），无需区分两套逻辑。核心的 `run`/`which` 在未 pin `--runtime` 时直接用这个 portable runtime（不查 `runtimes/<ver>`）。于是 `<pkg>/z42 run app.zpkg` 开箱即用，**不重复 z42vm/libs、不用 symlink**（Windows 友好）。`z42` 在根而非 `bin/`：它是包的统一入口，`bin/` 留给工具（z42c/z42vm/apphost 模板）。
@@ -148,7 +148,7 @@ z42vm            # VM 主进程
 libs/            # stdlib zpkg
 ```
 
-**SDK 包**同上便携模式布局（用于 `install-z42.sh` bootstrap 和便携模式），含 z42c apphost + programs/ + native/ + examples/。
+**SDK 包**同上便携模式布局（用于 `install-z42.sh` bootstrap 和便携模式），含 z42c apphost + programs/ + native/（examples 不再随包分发——remove-examples-from-packaging, 2026-06-20）。
 
 `release-index.json` 新格式（CI 待更新，旧格式 `runtimes.<rid>.archive` 保留兼容回退）：
 ```json

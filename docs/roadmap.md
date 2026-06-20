@@ -215,7 +215,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 多平台 CI matrix | 0.2.5 | macOS / Linux / Windows × x86_64/arm64 全绿 |
 | 项目级 CI 模板 | 0.2.5 | `z42c new` 自带 GitHub Actions / GitLab CI 模板 |
 | Release 自动化 | 0.2.6 | git tag → 跨平台 binary + zpkg 自动产出 |
-| 跨平台 SDK package 分发 | 0.2.6 | 13 个 per-arch SDK 包（desktop × 5 / iOS × 3 / Android × 4 / wasm × 1）；统一 `bin/libs/native/examples/manifest.toml` 形态；详见 [embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
+| 跨平台 SDK package 分发 | 0.2.6 | 13 个 per-arch SDK 包（desktop × 5 / iOS × 3 / Android × 4 / wasm × 1）；统一 `bin/libs/native/manifest.toml` 形态（examples 已于 2026-06-20 移出发行包）；详见 [embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | 跨 mode 一致性 CI | 0.3.0 | interp / JIT 同测试集结果一致 |
 | `z42c test` GREEN 门禁 | 0.4.6 | stdlib + 用户代码 z42 测试纳入 GREEN |
 | `z42c bench --diff` | 0.4.7 | z42 代码 bench 进 perf CI |

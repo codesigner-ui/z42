@@ -39,7 +39,6 @@ int _buildPackageCore(string profile, string rid, string variant) {
     Directory.Create(Path.Join(pkgDir, "bin"));
     Directory.Create(Path.Join(pkgDir, "libs"));
     Directory.Create(Path.Join(pkgDir, "native/include"));
-    Directory.Create(Path.Join(pkgDir, "examples"));
 
     int c;
     if (category == "desktop") {
@@ -207,10 +206,6 @@ int _pkgSha256Check(string root, string pkgDir) {
     if (File.Exists(Path.Join(pkgDir, "native/include/z42_host.h"))
         && !_filesEqual(Path.Join(pkgDir, "native/include/z42_host.h"), Path.Join(root, "src/runtime/include/z42_host.h"))) {
         ConsoleError.WriteLine("  ✗ native/include/z42_host.h differs"); fail = true;
-    }
-    // 3. examples/hello_c/main.c vs source (every shape ships hello_c)
-    if (!_filesEqual(Path.Join(pkgDir, "examples/hello_c/main.c"), Path.Join(root, "examples/embedding/hello_c/main.c"))) {
-        ConsoleError.WriteLine("  ✗ examples/hello_c/main.c differs"); fail = true;
     }
     if (fail) { return 1; }
     return 0;

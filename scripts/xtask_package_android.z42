@@ -114,8 +114,7 @@ int _packageAndroid(string root, string pkgDir, string rid, string version, stri
     // [3/4] the gradle project (Kotlin facade + JNI bridge + self-contained headers)
     Console.WriteLine("[2/3] gradle project (z42vm module + JNI bridge)");
     _pkgEmitAndroidGradleProject(root, pkgDir);
-    c = _pkgEmitHelloC(root, pkgDir); if (c != 0) { return c; }
-    Console.WriteLine("      ✓ gradle project + examples/hello_c");
+    Console.WriteLine("      ✓ gradle project");
 
     // [4/4] manifest.toml (tooling — references the separate runtime pack)
     Console.WriteLine("[3/3] manifest.toml");
@@ -209,7 +208,6 @@ void _pkgCopyKtTree(string src, string dst) {
 void _pkgEmitManifestAndroidTooling(string root, string pkgDir, string rid, string version, string profile, string buildHost) {
     string minApi = _vRead(root, "platform.android.min_api");
     string tgtApi = _vRead(root, "platform.android.target_api");
-    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
     string m = "[package]\n";
     m = m + "name        = \"z42-workload-android\"\n";
     m = m + "kind        = \"workload-tooling\"\n";
@@ -219,8 +217,6 @@ void _pkgEmitManifestAndroidTooling(string root, string pkgDir, string rid, stri
     m = m + "profile     = \"" + profile + "\"\n";
     m = m + "build-date  = \"" + _utcNow() + "\"\n";
     m = m + "build-host  = \"" + buildHost + "\"\n\n";
-    m = m + "[contents]\n";
-    m = m + "examples    = [" + examplesList + "]\n\n";
     m = m + "[contents.platform]\n";
     m = m + "gradle-project = \".\"\n";
     m = m + "gradle-module  = \"z42vm\"\n";

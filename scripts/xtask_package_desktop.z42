@@ -19,7 +19,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     bool rel = (profile == "release");
 
     // [1/7] z42c via dotnet publish single-file
-    Console.WriteLine("[1/7] z42c (dotnet publish " + dotnetRid + ", " + profile + ")");
+    Console.WriteLine("[1/5] z42c (dotnet publish " + dotnetRid + ", " + profile + ")");
     string pub = Directory.CreateTempDir("xtask-pub");
     int c = _exec(new Process("dotnet").Arg("publish").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
         .Arg("-c").Arg(dotnetConfig).Arg("-r").Arg(dotnetRid)
@@ -31,7 +31,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     Console.WriteLine("      ✓ bin/z42c");
 
     // [2/7] z42vm + libz42.* via cargo build --target + staticlib/cdylib
-    Console.WriteLine("[2/7] z42vm + libz42 (cargo " + cargoTarget + ", " + profile + ")");
+    Console.WriteLine("[2/5] z42vm + libz42 (cargo " + cargoTarget + ", " + profile + ")");
     c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _cargoRustc(rel, cargoTarget, "staticlib");
     _cargoRustc(rel, cargoTarget, "cdylib");
@@ -43,13 +43,13 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     Console.WriteLine("      ✓ native/ (libz42.* / z42.*)");
 
     // [2b/7] z42-compression cdylib + staticlib
-    Console.WriteLine("[2b/7] z42-compression (cargo " + cargoTarget + ", " + profile + ")");
+    Console.WriteLine("[2b/5] z42-compression (cargo " + cargoTarget + ", " + profile + ")");
     c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, "z42-compression"); if (c != 0) { return c; }
     _copyNativeLibs(cargoOut, pkgDir);
     Console.WriteLine("      ✓ native/libz42_compression.*");
 
     // [2c/7] launcher trampoline (pkg root) + launcher.zpkg
-    Console.WriteLine("[2c/7] z42 launcher (trampoline + launcher.zpkg)");
+    Console.WriteLine("[2c/5] z42 launcher (trampoline + launcher.zpkg)");
     c = _cargo(rel, "build", "src/toolchain/launcher/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _copyIfExists(Path.Join(cargoOut, "z42"), Path.Join(pkgDir, "z42"));
     _copyIfExists(Path.Join(cargoOut, "z42.exe"), Path.Join(pkgDir, "z42.exe"));
@@ -90,24 +90,16 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     Console.WriteLine("      ✓ launcher.zpkg");
 
     // [3/7] C ABI headers
-    Console.WriteLine("[3/7] C ABI headers");
+    Console.WriteLine("[3/5] C ABI headers");
     File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
     File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
 
     // [4/7] stdlib zpkg + zsym
-    Console.WriteLine("[4/7] stdlib zpkg + zsym");
+    Console.WriteLine("[4/5] stdlib zpkg + zsym");
     c = _pkgCopyLibs(libs, pkgDir); if (c != 0) { return c; }
 
-    // [5/7] examples/hello_c
-    Console.WriteLine("[5/7] examples/hello_c");
-    c = _pkgEmitHelloC(root, pkgDir); if (c != 0) { return c; }
-
-    // [6/7] examples/hello_rust
-    Console.WriteLine("[6/7] examples/hello_rust");
-    _pkgEmitHelloRust(root, pkgDir);
-
-    // [7/7] manifest.toml
-    Console.WriteLine("[7/7] manifest.toml");
+    // [5/5] manifest.toml
+    Console.WriteLine("[5/5] manifest.toml");
     _pkgEmitManifest(pkgDir, rid, version, profile, hostRid);
     return 0;
 }
@@ -186,38 +178,12 @@ int _buildRuntimePackage(string root, string rid, string version, string profile
     return 0;
 }
 
-// ── example helpers ──────────────────────────────────────────────────────────
-
-int _pkgEmitHelloC(string root, string pkgDir) {
-    string dst = Path.Join(pkgDir, "examples/hello_c");
-    Directory.Create(dst);
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/main.c"), Path.Join(dst, "main.c"));
-    File.Copy(Path.Join(root, "examples/embedding/hello_c/README.md"), Path.Join(dst, "README.md"));
-    string driver = _driverDll(root);
-    if (!File.Exists(driver)) {
-        ConsoleError.WriteLine("error: z42c not built at " + driver + "; run build compiler");
-        return 1;
-    }
-    return _exec(new Process("dotnet").Arg(driver)
-        .Arg(Path.Join(root, "examples/embedding/hello.z42")).Arg("--emit").Arg("zbc").Arg("-o").Arg(Path.Join(dst, "hello.zbc")));
-}
-
-void _pkgEmitHelloRust(string root, string pkgDir) {
-    string src = Path.Join(root, "examples/embedding/hello_rust");
-    string dst = Path.Join(pkgDir, "examples/hello_rust");
-    Directory.Create(Path.Join(dst, "src"));
-    File.Copy(Path.Join(src, "Cargo.toml"), Path.Join(dst, "Cargo.toml"));
-    File.Copy(Path.Join(src, "src/main.rs"), Path.Join(dst, "src/main.rs"));
-    File.Copy(Path.Join(src, "README.md"), Path.Join(dst, "README.md"));
-}
-
 // ── manifest (desktop SDK) ───────────────────────────────────────────────────
 
 void _pkgEmitManifest(string pkgDir, string rid, string version, string profile, string buildHost) {
     string buildDate = _utcNow();
     string binList = _quotedDirList(Path.Join(pkgDir, "bin"), "");
     string libsList = _quotedDirList(Path.Join(pkgDir, "libs"), ".zpkg");
-    string examplesList = _quotedSubdirs(Path.Join(pkgDir, "examples"));
     string staticList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42.a", "z42.lib");
     string dynamicList = _quotedExisting(Path.Join(pkgDir, "native"), "libz42.dylib", "libz42.so");
     string m = "";
@@ -231,8 +197,7 @@ void _pkgEmitManifest(string pkgDir, string rid, string version, string profile,
     m = m + "build-host  = \"" + buildHost + "\"\n\n";
     m = m + "[contents]\n";
     m = m + "bin         = [" + binList + "]\n";
-    m = m + "libs        = [" + libsList + "]\n";
-    m = m + "examples    = [" + examplesList + "]\n\n";
+    m = m + "libs        = [" + libsList + "]\n\n";
     m = m + "[contents.native]\n";
     m = m + "static      = [" + staticList + "]\n";
     m = m + "dynamic     = [" + dynamicList + "]\n";
@@ -258,18 +223,6 @@ string _quotedDirList(string dir, string suffix) {
         if (suffix.Length == 0 || f.EndsWith(suffix)) {
             if (acc.Length > 0) { acc = acc + ", "; }
             acc = acc + "\"" + f + "\"";
-        }
-    }
-    return acc;
-}
-
-string _quotedSubdirs(string dir) {
-    if (!Directory.Exists(dir)) { return ""; }
-    string acc = "";
-    foreach (var d in Directory.Enumerate(dir)) {
-        if (Directory.Exists(Path.Join(dir, d))) {
-            if (acc.Length > 0) { acc = acc + ", "; }
-            acc = acc + "\"" + d + "\"";
         }
     }
     return acc;
