@@ -524,36 +524,48 @@ fn main() -> Result<()> {
         _ => false,
     };
     if is_eager {
-        // Eager: load all declared dependencies (DEPS) and import namespaces.
-        for dep in &user_artifact.dependencies {
-            if let Some(ref dir) = libs_dir {
-                let dep_path = dir.join(&dep.file);
-                if dep_path.exists() {
-                    let dep_str = dep_path.to_string_lossy().into_owned();
-                    if let Ok(a) = z42::metadata::load_artifact(&dep_str) {
-                        modules.push(a.module);
-                        let canonical = dep_path.canonicalize().unwrap_or(dep_path.clone());
-                        loaded_paths.insert(canonical);
-                        initially_loaded_zpkgs.push(dep.file.clone());
-                    }
-                }
-            }
-        }
-        for ns in &user_artifact.import_namespaces {
-            if let Some(ref dir) = libs_dir {
-                let libs_paths = vec![dir.clone()];
-                let Ok(zpkg_paths) = z42::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
-                for zpkg_path in zpkg_paths {
-                    let canonical = zpkg_path.canonicalize().unwrap_or(zpkg_path.clone());
-                    if loaded_paths.contains(&canonical) { continue; }
-                    let zpkg_str = zpkg_path.to_string_lossy().into_owned();
-                    if let Ok(a) = z42::metadata::load_artifact(&zpkg_str) {
-                        modules.push(a.module);
-                        loaded_paths.insert(canonical);
+        // Eager + TRANSITIVE: BFS over the whole dependency graph so indirectly
+        // declared zpkgs are merged too — not just the entry's direct deps.
+        //
+        // fix-jit-cross-zpkg-call (2026-06-20): JIT requires every callee
+        // pre-compiled into the module, but the previous code loaded only the
+        // entry's direct `dependencies` / `import_namespaces`. A transitive
+        // target (e.g. `Std.Toml.TomlValue.Parse`, reached via
+        // z42c.project → z42.toml) was therefore neither merged nor declared,
+        // so it was unresolvable under `--mode jit` (interp dodged this by being
+        // fully lazy with runtime transitive unfold). We drain a worklist of
+        // dep files + namespaces, enqueuing each loaded artifact's own deps,
+        // until the graph is exhausted. `loaded_paths` dedups by canonical path.
+        if let Some(ref dir) = libs_dir {
+            use std::collections::VecDeque;
+            let libs_paths = vec![dir.clone()];
+            let mut file_queue: VecDeque<String> =
+                user_artifact.dependencies.iter().map(|d| d.file.clone()).collect();
+            let mut ns_queue: VecDeque<String> =
+                user_artifact.import_namespaces.iter().cloned().collect();
+            loop {
+                // Resolve pending namespaces to concrete zpkg files first.
+                while let Some(ns) = ns_queue.pop_front() {
+                    let Ok(zpkg_paths) = z42::metadata::resolve_namespace(&ns, &[], &libs_paths)
+                    else { continue };
+                    for zpkg_path in zpkg_paths {
                         if let Some(name) = zpkg_path.file_name().and_then(|n| n.to_str()) {
-                            initially_loaded_zpkgs.push(name.to_string());
+                            file_queue.push_back(name.to_string());
                         }
                     }
+                }
+                let Some(file) = file_queue.pop_front() else { break };
+                let dep_path = dir.join(&file);
+                if !dep_path.exists() { continue; }
+                let canonical = dep_path.canonicalize().unwrap_or_else(|_| dep_path.clone());
+                if !loaded_paths.insert(canonical) { continue; }  // already merged
+                let dep_str = dep_path.to_string_lossy().into_owned();
+                if let Ok(a) = z42::metadata::load_artifact(&dep_str) {
+                    // Enqueue this artifact's own deps for transitive closure.
+                    for d in &a.dependencies { file_queue.push_back(d.file.clone()); }
+                    for ns in &a.import_namespaces { ns_queue.push_back(ns.clone()); }
+                    modules.push(a.module);
+                    initially_loaded_zpkgs.push(file.clone());
                 }
             }
         }

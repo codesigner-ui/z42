@@ -103,7 +103,8 @@ z42vm <file>
   │
   ├── 5.1d 依赖加载策略
   │      interp: 纯懒加载（build_declared_candidates 填充 LazyLoader）
-  │      jit/aot: eager 预加载所有声明依赖（同时也填 LazyLoader 以防 type/func 零碎 miss）
+  │      jit/aot: eager 预加载所有声明依赖（**transitive BFS**，见下）
+  │              （同时也填 LazyLoader 以防 type/func 零碎 miss）
   │
   ├── 5.1e merge_modules → final_module
   │      + build_type_registry / verify_constraints / build_*_index
@@ -311,7 +312,32 @@ if let Some(cell) = cross_cell:
   （function_table 装入后 `Arc<Function>` 不变；hot-reload 是独立失效路径，不经此 site 缓存）。
 - **只在本模块 miss 后介入**：本模块命中路径一条多余指令都不加（`cross_cell` 仅在
   既有 cross-zpkg 慢路径处取用）。
-- **仅 interp**：JIT 的 cross-zpkg 走 `jit_call` helper，本机制不动它。
+- **仅 interp**：JIT 的 cross-zpkg 走 `jit_call` helper，本机制不动它（见下）。
+
+### JIT cross-zpkg 调用解析（fix-jit-cross-zpkg-call，2026-06-20）
+
+JIT 把一个模块的全部函数编译成原生码，`jit_call` 跳转到 `fn_entries`（本 JIT 模块
+编入的函数）。**跨 zpkg 的 callee 不在 `fn_entries`**，需两条配合机制：
+
+1. **eager 加载必须 transitive**（[main.rs](../../../src/runtime/src/main.rs) `is_eager` 分支）。
+   旧实现只加载 entry 的**直接** `dependencies` / `import_namespaces`，**传递依赖漏掉** ——
+   例如 `Std.Toml.TomlValue.Parse` 经 `z42c.project → z42.toml` 间接到达，既没 merge
+   进 `final_module` 也没进 `declared_zpkgs`（interp 靠运行期懒加载的传递 unfold 兜住，
+   JIT 没有这一步）→ `--mode jit` 下 `undefined function`。修法：BFS 排空一个
+   `{dep 文件, namespace}` 工作队列，每加载一个 artifact 再把它自身的 deps 入队，直到
+   依赖图穷尽（`loaded_paths` 按 canonical path 去重）。于是整个传递闭包都 merge 进
+   `final_module`、全部 JIT 编译、调用原生解析。
+
+2. **`jit_call` 的 interp 兜底**（[jit/helpers/call.rs](../../../src/runtime/src/jit/helpers/call.rs)
+   `cross_zpkg_via_interp`）。`fn_entries` miss 后镜像 interp `exec_call::call` 的解析
+   顺序：① `module.func_index` → `module.functions`（已 merge 但未 JIT 编入的函数）；
+   ② `try_lookup_function`（仅懒加载可达的 zpkg）——两者都在**解释器**上执行 callee，
+   结果回填 JIT caller 帧。与 `jit_vcall` 既有懒加载兜底对称；在机制 1 完整 merge 后
+   它是防御性安全网（把"漏 merge → 硬崩"降级为"正确但较慢的 interp 执行"）。
+
+> 取舍：机制 1 让 JIT 每次运行都编译整个传递闭包（含全部触达的 stdlib），小输入下
+> upfront JIT-compile 开销显著（z42.core 编译 interp 16.9s → jit 7.9s，约 2.1×，
+> 仍 ~8× C#）。换来跨包调用全原生、零 interp 回退。未来 lazy-JIT / 原生码缓存可摊薄。
 
 ### 依赖传递（Decision 4：着色算法）
 

@@ -46,10 +46,16 @@ pub unsafe extern "C" fn jit_call(
                 .unwrap_or("<invalid>");
             match ctx_ref.fn_entries.get(func_name) {
                 Some(e) => e.clone(),
-                None => {
-                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("undefined function `{}`", func_name).into()));
-                    return 1;
-                }
+                // Cross-zpkg lazy-loader fallback: the callee lives in another
+                // zpkg that wasn't JIT-compiled into this module, so there is no
+                // `FnEntry`. Resolve it via the VM context and run it through the
+                // interpreter — mirrors interp `exec_call::call`'s
+                // `try_lookup_function` path and `jit_vcall`'s lazy fallback.
+                // Without this, a static cross-package call (e.g.
+                // `Std.Toml.TomlValue.Parse`) aborts the whole program under
+                // `--mode jit` while working under interp.
+                None => return cross_zpkg_via_interp(
+                    frame_ref, ctx, dst, func_name, args_ptr, argc, caller_line, caller_col),
             }
         }
     };
@@ -76,6 +82,55 @@ pub unsafe extern "C" fn jit_call(
     frame_ref.regs[dst as usize] = callee_frame.ret.take().unwrap_or(Value::Null);
     callee_frame.recycle();
     0
+}
+
+/// Direct-call fallback when the target has no JIT machine-code `FnEntry`.
+/// Two cases land here, both mirroring `interp::exec_call::call`'s resolution
+/// order:
+///   1. the callee lives in the eagerly-merged main `module` but was not
+///      JIT-compiled (so it's absent from `fn_entries`) — resolve it via
+///      `module.func_index` and run it on the interpreter;
+///   2. the callee lives in a dependency zpkg only reachable through the lazy
+///      loader (`try_lookup_function`) — load + interp it.
+/// Either way the callee runs interpreted and the result is spliced back into
+/// the JIT caller's frame. Without case 1, a static cross-package call (e.g.
+/// `Std.Toml.TomlValue.Parse`) aborts under `--mode jit` while working under
+/// interp, because the lazy loader doesn't own already-merged functions.
+unsafe fn cross_zpkg_via_interp(
+    frame_ref: &mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, func_name: &str,
+    args_ptr: *const u32, argc: usize,
+    caller_line: u32, caller_col: u32,
+) -> u8 {
+    let vm_ctx = vm_ctx_ref(ctx);
+    let module = &*(*ctx).module;
+
+    let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
+    let args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
+    // jit-stack-trace: stamp the caller's site before descending.
+    vm_ctx.update_top_frame_pos(caller_line, caller_col);
+
+    // Case 1: function present in the merged main module (interp's hot path).
+    let outcome = if let Some(callee) = module.func_index.get(func_name)
+        .and_then(|&idx| module.functions.get(idx))
+    {
+        crate::interp::exec_function(vm_ctx, module, callee, &args)
+    // Case 2: cross-zpkg target reachable only through the lazy loader.
+    } else if let Some(lazy_fn) = vm_ctx.try_lookup_function(func_name) {
+        crate::interp::exec_function(vm_ctx, module, lazy_fn.as_ref(), &args)
+    } else {
+        set_exception(vm_ctx, Value::Str(format!("undefined function `{}`", func_name).into()));
+        return 1;
+    };
+
+    match outcome {
+        Ok(crate::interp::ExecOutcome::Returned(ret)) => {
+            frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);
+            0
+        }
+        Ok(crate::interp::ExecOutcome::Thrown(val)) => { set_exception(vm_ctx, val); 1 }
+        Err(e) => { set_exception(vm_ctx, Value::Str(e.to_string().into())); 1 }
+    }
 }
 
 /// `jit_builtin` after `formalize-jit-method-token` (2026-05-08): receives
