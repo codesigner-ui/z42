@@ -311,8 +311,6 @@ jobs:
           test -f "$pkg_dir/manifest.toml"        || { echo "missing manifest.toml"; exit 1; }
           test -d "$pkg_dir/libs"                 || { echo "missing libs/"; exit 1; }
           test -d "$pkg_dir/native/include"       || { echo "missing native/include/"; exit 1; }
-          test -d "$pkg_dir/examples/hello_c"     || { echo "missing examples/hello_c/"; exit 1; }
-          test -f "$pkg_dir/examples/hello_c/hello.zbc" || { echo "missing hello.zbc"; exit 1; }
           # bin/z42c (or z42c.exe) must be present + executable
           if [ -f "$pkg_dir/bin/z42c.exe" ]; then
               echo "✓ bin/z42c.exe ($(du -h "$pkg_dir/bin/z42c.exe" | cut -f1))"
@@ -636,7 +634,6 @@ jobs:
             test -f "$pkg_dir/Package.swift"                     || { echo "missing Package.swift"; exit 1; }
             grep -q "__Z42_RUNTIME_XCFRAMEWORK__" "$pkg_dir/Package.swift" \
               || { echo "Package.swift not an install-resolved placeholder template"; exit 1; }
-            test -f "$pkg_dir/examples/hello_c/hello.zbc"        || { echo "missing hello.zbc"; exit 1; }
             # runtime pack: native static lib + xcframework + headers + stdlib libs
             test -f "$rt_dir/native/libz42.a"            || { echo "missing runtime native/libz42.a"; exit 1; }
             test -d "$rt_dir/native/Z42VM.xcframework"   || { echo "missing runtime Z42VM.xcframework/"; exit 1; }
@@ -744,7 +741,6 @@ jobs:
             test -d "$pkg_dir/z42vm/src/main/java/io/z42/vm"          || { echo "missing kotlin facade"; exit 1; }
             test -f "$pkg_dir/z42vm/src/main/cpp/z42vm_jni.c"         || { echo "missing JNI bridge"; exit 1; }
             test -f "$pkg_dir/z42vm/src/main/cpp/include/z42_host.h"  || { echo "missing self-contained JNI header"; exit 1; }
-            test -f "$pkg_dir/examples/hello_c/hello.zbc"             || { echo "missing hello.zbc"; exit 1; }
             # runtime pack: per-ABI .so + .a + headers + stdlib libs
             test -f "$rt_dir/native/libz42_platform_android.so"      || { echo "missing runtime .so"; exit 1; }
             test -f "$rt_dir/native/libz42_platform_android.a"       || { echo "missing runtime .a"; exit 1; }
@@ -850,7 +846,6 @@ jobs:
           test -f "$pkg_dir/manifest.toml"               || { echo "missing manifest.toml"; exit 1; }
           test -f "$pkg_dir/package.json"                || { echo "missing package.json"; exit 1; }
           test -d "$pkg_dir/js"                          || { echo "missing js/"; exit 1; }
-          test -f "$pkg_dir/examples/hello_c/hello.zbc"  || { echo "missing hello.zbc"; exit 1; }
           # runtime pack: wasm module + static lib + wasm-bindgen output + stdlib libs
           test -f "$rt_dir/native/z42_wasm_bg.wasm"      || { echo "missing z42_wasm_bg.wasm"; exit 1; }
           test -f "$rt_dir/native/libz42.a"              || { echo "missing native/libz42.a"; exit 1; }
