@@ -120,12 +120,13 @@ pub fn ensure_portable_vm(exe_dir: &Path) {
 }
 
 /// apphost run-path resolution: locate a z42vm + libs to run the app's zpkg
-/// directly. Search order:
+/// directly. Most-local-wins order (align-bin-z42vm-probe, 2026-06-21):
 ///   ① `$Z42_PORTABLE_VM`           (explicit override / SDK-colocated vm — set
 ///                                    by [`ensure_portable_vm`])
-///   ② `$Z42_HOME/launcher`         (installed root)
-///   ③ local: walk up from `exe_dir`, `<d>/.z42/launcher` then `<d>/.z42`
-///   ④ system: `$HOME/.z42/launcher`
+///   ② local: walk up from `exe_dir`, `<d>/.z42/launcher` then `<d>/.z42`
+///                                    (apphost-relative project venv)
+///   ③ user:   `$HOME/.z42/launcher`
+///   ④ system: `$Z42_HOME/launcher`  (lowest — explicit overrides go via ①)
 pub fn resolve_app_runtime(exe_dir: &Path) -> Option<AppRuntime> {
     resolve_app_runtime_in(
         env_portable_vm().as_deref(),
@@ -136,6 +137,7 @@ pub fn resolve_app_runtime(exe_dir: &Path) -> Option<AppRuntime> {
 }
 
 /// Pure form of [`resolve_app_runtime`] with the env roots injected (tests).
+/// `env_home` = `$Z42_HOME` (system); `sys_home` = `$HOME/.z42` (user).
 pub fn resolve_app_runtime_in(
     portable_vm: Option<&Path>,
     env_home: Option<&Path>,
@@ -149,13 +151,7 @@ pub fn resolve_app_runtime_in(
             return Some(rt);
         }
     }
-    // ② $Z42_HOME override.
-    if let Some(h) = env_home {
-        if let Some(rt) = probe_app_runtime(&h.join("launcher")) {
-            return Some(rt);
-        }
-    }
-    // ③ local: from the exe's dir upward, looking for a `.z42` install root.
+    // ② local (most specific): exe's dir upward, `<d>/.z42/launcher` then `<d>/.z42`.
     let mut cur = Some(exe_dir);
     while let Some(d) = cur {
         let dotz42 = d.join(".z42");
@@ -167,8 +163,14 @@ pub fn resolve_app_runtime_in(
         }
         cur = d.parent();
     }
-    // ④ system.
+    // ③ user home: $HOME/.z42/launcher.
     if let Some(h) = sys_home {
+        if let Some(rt) = probe_app_runtime(&h.join("launcher")) {
+            return Some(rt);
+        }
+    }
+    // ④ system: $Z42_HOME/launcher (lowest — an explicit choice belongs in ①).
+    if let Some(h) = env_home {
         if let Some(rt) = probe_app_runtime(&h.join("launcher")) {
             return Some(rt);
         }
@@ -246,16 +248,30 @@ mod tests {
         assert!(probe_app_runtime(&d).is_none());
     }
 
+    // Most-local-wins ordering: local `.z42` (②) beats both user $HOME (③) and
+    // system $Z42_HOME (④), even when all three exist. (2026-06-21)
     #[test]
-    fn z42_home_override_wins() {
-        let env_home = temp_dir("env");
+    fn local_beats_user_and_system() {
+        let env_home = temp_dir("env");   // $Z42_HOME (system, ④)
         let local_base = temp_dir("local");
-        let sys = temp_dir("sys");
+        let sys = temp_dir("sys");        // $HOME/.z42 (user, ③)
         make_runtime(&env_home.join("launcher"), false);
         make_runtime(&local_base.join(".z42").join("launcher"), false);
         make_runtime(&sys.join("launcher"), false);
         let rt = resolve_app_runtime_in(None, Some(&env_home), &local_base, Some(&sys)).expect("found");
-        assert!(rt.vm.starts_with(&env_home));
+        assert!(rt.vm.starts_with(&local_base), "local .z42 wins over $HOME and $Z42_HOME");
+    }
+
+    // User $HOME/.z42 (③) beats system $Z42_HOME (④) when there's no local .z42.
+    #[test]
+    fn user_home_beats_system_z42_home() {
+        let env_home = temp_dir("env2");  // $Z42_HOME (④)
+        let sys = temp_dir("sys-user");   // $HOME/.z42 (③)
+        let exe_dir = temp_dir("exe-nolocal");
+        make_runtime(&env_home.join("launcher"), false);
+        make_runtime(&sys.join("launcher"), false);
+        let rt = resolve_app_runtime_in(None, Some(&env_home), &exe_dir, Some(&sys)).expect("found");
+        assert!(rt.vm.starts_with(&sys), "$HOME/.z42 (user) wins over $Z42_HOME (system)");
     }
 
     #[test]
