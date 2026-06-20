@@ -19,7 +19,8 @@ struct Cli {
     /// discovered via TIDX.
     entry: Option<String>,
 
-    /// Execution mode override (default: use annotation in bytecode)
+    /// Execution mode override (default: jit when built with the `jit`
+    /// feature, else interp)
     #[arg(long, value_enum)]
     mode: Option<ExecMode>,
 
@@ -508,21 +509,37 @@ fn main() -> Result<()> {
         loaded_for_replay.push((file.to_string(), byte_size));
     }
 
+    // Resolve the effective execution mode ONCE so both the dependency-loading
+    // strategy (below) and `Vm::new` (later) agree. Explicit `--mode` wins;
+    // otherwise default to JIT when the feature is compiled in
+    // (make-jit-default, 2026-06-20), falling back to interp for jit-less
+    // builds (e.g. wasm / `--features interp-only`).
+    // P4.1: arms referencing feature-gated CLI variants must themselves be
+    // gated, else the constructor doesn't exist when the feature is off.
+    let effective_mode: z42::metadata::ExecMode = match cli.mode {
+        #[cfg(feature = "jit")]
+        Some(ExecMode::Jit) => z42::metadata::ExecMode::Jit,
+        #[cfg(feature = "aot")]
+        Some(ExecMode::Aot) => z42::metadata::ExecMode::Aot,
+        Some(ExecMode::Interp) => z42::metadata::ExecMode::Interp,
+        None => {
+            #[cfg(feature = "jit")]
+            { z42::metadata::ExecMode::Jit }
+            #[cfg(not(feature = "jit"))]
+            { z42::metadata::ExecMode::Interp }
+        }
+    };
+
     // 5.1d — dependency loading strategy:
     //   Interp mode → pure lazy. Zpkgs are loaded on demand when the
     //     interpreter encounters a Call to an unresolved function
     //     (see interp/exec_instr.rs + metadata/lazy_loader.rs).
-    //   JIT/AOT mode → eager. JIT requires all callee functions to be
-    //     pre-compiled, so we pre-load all declared deps at startup.
-    // P4.1: branches involving feature-gated variants must also be gated, otherwise
-    // the match arm references a non-existent enum constructor when the feature is off.
-    let is_eager = match cli.mode {
-        #[cfg(feature = "jit")]
-        Some(ExecMode::Jit) => true,
-        #[cfg(feature = "aot")]
-        Some(ExecMode::Aot) => true,
-        _ => false,
-    };
+    //   JIT/AOT mode → eager (transitive BFS). JIT requires all callee
+    //     functions to be pre-compiled, so we pre-load the whole dep closure.
+    let is_eager = matches!(
+        effective_mode,
+        z42::metadata::ExecMode::Jit | z42::metadata::ExecMode::Aot
+    );
     if is_eager {
         // Eager + TRANSITIVE: BFS over the whole dependency graph so indirectly
         // declared zpkgs are merged too — not just the entry's direct deps.
@@ -640,15 +657,7 @@ fn main() -> Result<()> {
         });
     }
 
-    let default_mode = match cli.mode {
-        #[cfg(feature = "jit")]
-        Some(ExecMode::Jit) => z42::metadata::ExecMode::Jit,
-        #[cfg(feature = "aot")]
-        Some(ExecMode::Aot) => z42::metadata::ExecMode::Aot,
-        _                   => z42::metadata::ExecMode::Interp,
-    };
-
-    let vm = z42::vm::Vm::new(default_mode);
+    let vm = z42::vm::Vm::new(effective_mode);
     // CLI positional `entry` overrides any artifact-supplied entry hint.
     let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
     let result = vm.run(&*ctx, effective_entry);

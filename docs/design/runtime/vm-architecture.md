@@ -597,7 +597,11 @@ match callee_value {
 - **interp**：`exec_function` → `exec_instr` match 分发到 ~60 个 IR 指令
   实现。`Value` 是 `Rc<RefCell<ValueKind>>` 或 enum 变体
 - **JIT**：Cranelift 后端编译每个 `Function` 成 native code。`ExecMode`
-  注解决定 function-level 的分发路径；模块默认模式由 `Vm::default_mode`
+  注解决定 function-level 的分发路径；模块默认模式由 `Vm::default_mode`。
+  **z42vm CLI 默认 = jit**（make-jit-default，2026-06-20；built `--features jit`
+  时；jit-less 构建如 wasm 回落 interp）。`--mode interp|jit` 显式覆盖。
+  注意：嵌入式 FFI 路径（test-runner 等，`host/ops.rs`）的默认模式由 embedder
+  config（`Z42ExecMode`）决定，**不受 CLI 默认影响**——测试仍走 interp。
 - **AOT**：留白（interp 全绿前不填实现）
 
 两种后端共享：
