@@ -14,13 +14,18 @@ void test_periodic_fires_multiple_times() {
     Timer t = Timer.StartPeriodic(50, () => {
         fires[0] = fires[0] + 1;
     });
-    // harden-timer-test-jitter (2026-06-01): a Thread.Sleep-based timer has
-    // unbounded wakeup jitter under load. The old 220ms/50ms window (ideal ~4
-    // fires) left no margin and dropped below 3 fires on contended macOS CI
-    // runners under `test-all.sh --parallel --jobs=4`. Use a 500ms window
-    // (ideal ~10 fires) so the `>= 3` assertion survives ~3x scheduling
-    // slowdown while still proving the timer fires repeatedly.
-    Thread.Sleep(500);
+    // poll-timer-fires (2026-06-21): a Thread.Sleep-based timer has unbounded
+    // wakeup jitter under load — even the prior fixed 500ms window (ideal ~10
+    // fires) still dropped below 3 fires on contended macOS CI runners. Poll up
+    // to ~5s for the >= 3 target instead of a fixed sleep: a working 50ms timer
+    // reaches 3 fires in ~150ms and exits early, while a starved runner gets the
+    // slack it needs. Only a genuinely dead periodic thread (never reaching 3
+    // fires in 5s) trips the assertion — which is exactly what the test guards.
+    int waitedMs = 0;
+    while (fires[0] < 3 && waitedMs < 5000) {
+        Thread.Sleep(50);
+        waitedMs = waitedMs + 50;
+    }
     t.StopAndJoin();
     Assert.True(fires[0] >= 3);
 }
