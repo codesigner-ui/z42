@@ -20,7 +20,7 @@ use std::env;
 use std::path::PathBuf;
 use std::process::exit;
 
-use z42_hostrun::{exec_app, resolve_app_runtime};
+use z42_hostrun::{ensure_portable_vm, exec_app, resolve_app_runtime};
 
 /// 32-byte sentinel the patcher greps for in the on-disk binary. Followed by a
 /// 992-byte payload holding the NUL-terminated app zpkg path (relative to the
@@ -84,6 +84,11 @@ fn main() {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let app_zpkg = exe_dir.join(&target);
+
+    // SDK-internal colocated bootstrap: if a z42vm ships in this package (next to
+    // the apphost, or in `bin/`), pin it via $Z42_PORTABLE_VM so this app uses
+    // its own ABI-matched vm AND any SDK app it spawns inherits the same one.
+    ensure_portable_vm(&exe_dir);
 
     let rt = match resolve_app_runtime(&exe_dir) {
         Some(rt) => rt,
