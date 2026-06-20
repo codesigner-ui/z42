@@ -65,7 +65,7 @@ pub unsafe extern "C" fn jit_vcall(
                 crate::metadata::resolver::vcall_ic_lookup(&*ic_ptr, recv_type)
             {
                 if fn_idx != crate::metadata::tokens::UNRESOLVED {
-                    if let Some(entry) = ctx_ref.fn_entries_by_id.get(fn_idx as usize).cloned().flatten() {
+                    if let Some(entry) = ctx_ref.fn_entries_by_id.get(fn_idx as usize).and_then(|o| o.as_ref()) {
                         // Move `obj_val` in — this branch always returns, so the
                         // primitive / vtable fall-through paths never observe the
                         // move (conditional-move-into-diverging-branch).
@@ -109,7 +109,6 @@ pub unsafe extern "C" fn jit_vcall(
         let overload = format!("{}.{}${}", class_name, method, arity);
         for func_name in [primary.as_str(), overload.as_str()] {
             if let Some(entry) = ctx_ref.fn_entries.get(func_name) {
-                let entry = entry.clone();
                 let mut callee = JitFrame::new(entry.max_reg, &call_args);
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                 let vm_ctx = vm_ctx_ref(ctx);
@@ -178,7 +177,7 @@ pub unsafe extern "C" fn jit_vcall(
     }
 
     let entry = match ctx_ref.fn_entries.get(&func_name) {
-        Some(e) => e.clone(),
+        Some(e) => e,
         None => {
             set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: compiled entry for `{}` not found", func_name).into()));
             return 1;
