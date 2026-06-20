@@ -339,6 +339,41 @@ JIT 把一个模块的全部函数编译成原生码，`jit_call` 跳转到 `fn_
 > upfront JIT-compile 开销显著（z42.core 编译 interp 16.9s → jit 7.9s，约 2.1×，
 > 仍 ~8× C#）。换来跨包调用全原生、零 interp 回退。未来 lazy-JIT / 原生码缓存可摊薄。
 
+### 单函数 interp 降级：不可 JIT 翻译的 opcode（fix-jit-cross-zpkg-transitive-eager，2026-06-20）
+
+机制 1（transitive eager merge）+ `--mode jit` 默认化的**联合副作用**：`compile_module`
+现在要把整个传递闭包的**每一个**函数都喂给 cranelift 翻译，而闭包里必然含有 JIT 尚未
+支持的 opcode —— 最常见的是 `out`/`ref`/`in` 参数（`LoadLocalAddr` / `LoadElemAddr` /
+`LoadFieldAddr`，spec impl-ref-out-in-runtime）和 native interop（`CallNative` /
+`CallNativeVtable` / `PinPtr` / `UnpinPtr`）。旧 `compile_module` 在 `translate_function`
+里碰到这些 opcode 直接 `bail!`，`?` 把错误冒泡到顶层 → **整个程序 abort**（CI Bootstrap 的
+`xtask build stdlib` 因此报 `JIT cannot translate LoadLocalAddr yet`）。
+
+修法：把"整模块要么全编译要么全失败"改成**逐函数降级**。
+
+1. **预扫描跳过**（[jit/mod.rs](../../../src/runtime/src/jit/mod.rs) `compile_module` +
+   [jit/translate.rs](../../../src/runtime/src/jit/translate.rs) `jit_unsupported_reason`）：
+   declare / translate 前先扫描每个函数，含不可翻译 opcode 的**既不 declare 也不 translate**
+   （留在 `func_ids` / `fn_entries` 之外）。`fn_entries_by_id` 仍按 `functions` 顺序逐槽
+   push `None`，MethodId↔槽位对齐不变。`jit_unsupported_reason` 的 opcode 名单必须与
+   `translate_function` 里所有 `bail!` 分支严格同步。
+
+2. **调用点自动走 interp 兜底**：`Call` 永远经 `hr_call`（`jit_call`）helper 跳转，**从不**
+   emit cranelift 直接调用，所以被跳过的 callee 在 `fn_entries` miss → `cross_zpkg_via_interp`
+   Case 1（`module.func_index` 命中已 merge 但未编入的函数）→ 解释器执行。`VCall` 三条派发路径
+   （IC 快路径 / 原始类型接收者 / 对象 vtable）都补齐了同样的 merged-module interp 兜底
+   （[jit/helpers/vcall.rs](../../../src/runtime/src/jit/helpers/vcall.rs)）。
+
+3. **entry / static-init 也兜底**：`JitModule::run_fn` 在 `fn_entries` miss 时（被跳过的
+   entry 或 `__static_init__`）改用 `interp::exec_function` 执行，不再硬报 `entry not found`；
+   `JitModule::run` 的 `__static_init__` 名单改从 `module.functions` 枚举（对齐 interp 的
+   `init_static_fields`），确保被跳过的静态初始化器**仍会运行**（否则静态字段静默不初始化）。
+
+> 净效果：JIT 模块尽量编原生码，含 interp-only opcode 的函数（及其整棵调用子树）在解释器上
+> 跑，全程对外行为与 `--mode interp` 一致。这才兑现 translate.rs 里"Function falls back to
+> interp"那句注释（此前是谎言：实际是整模块崩）。回归测试：`src/tests/refs/{out_var,
+> in_param,ref_local,ref_nested}` 摘掉 `interp_only` 标记，现在 interp + jit 双模式皆过。
+
 ### 依赖传递（Decision 4：着色算法）
 
 ```

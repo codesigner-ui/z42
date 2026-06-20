@@ -122,10 +122,27 @@ pub unsafe extern "C" fn jit_vcall(
                 callee.recycle();
                 return 0;
             }
-            // Lazy loader fallback — call via interpreter.
             // Reach VmContext through the JIT module ctx pointer (set by
             // JitModule::run for the duration of this entry call).
             let vm_ctx = vm_ctx_ref(ctx);
+            // fix-jit-cross-zpkg-transitive-eager (2026-06-20): merged-module
+            // fallback. The method may live in the merged module but have been
+            // skipped by `compile_module` (interp-only opcode), so it's absent
+            // from `fn_entries` yet `try_lookup_function` (lazy-loader only)
+            // can't see it either. Resolve via `module.func_index` and interp it.
+            if let Some(callee) = module.func_index
+                .get(func_name).and_then(|&idx| module.functions.get(idx))
+            {
+                match crate::interp::exec_function(vm_ctx, module, callee, &call_args) {
+                    Ok(crate::interp::ExecOutcome::Returned(ret)) => {
+                        frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);
+                        return 0;
+                    }
+                    Ok(crate::interp::ExecOutcome::Thrown(val)) => { set_exception(vm_ctx, val); return 1; }
+                    Err(e) => { set_exception(vm_ctx, Value::Str(e.to_string().into())); return 1; }
+                }
+            }
+            // Lazy loader fallback — callee lives in a not-yet-loaded zpkg.
             if let Some(lazy_fn) = vm_ctx.try_lookup_function(func_name) {
                 match crate::interp::exec_function(vm_ctx, module, lazy_fn.as_ref(), &call_args) {
                     Ok(outcome) => match outcome {
@@ -179,7 +196,30 @@ pub unsafe extern "C" fn jit_vcall(
     let entry = match ctx_ref.fn_entries.get(&func_name) {
         Some(e) => e,
         None => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: compiled entry for `{}` not found", func_name).into()));
+            // fix-jit-cross-zpkg-transitive-eager (2026-06-20): the resolved
+            // virtual method lives in the merged module but was not JIT-compiled
+            // (it contains an interp-only opcode such as `LoadLocalAddr`, so
+            // `compile_module` skipped it). Run it on the interpreter — mirrors
+            // the primitive-receiver lazy fallback above and `jit_call`'s
+            // `cross_zpkg_via_interp` Case 1. Without this an `out`/`ref` virtual
+            // method would abort under `--mode jit`.
+            let vm_ctx = vm_ctx_ref(ctx);
+            if let Some(callee) = module.func_index.get(&func_name)
+                .and_then(|&idx| module.functions.get(idx))
+            {
+                let mut call_args: Vec<Value> = Vec::with_capacity(argc + 1);
+                call_args.push(obj_val);
+                call_args.extend(arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()));
+                return match crate::interp::exec_function(vm_ctx, module, callee, &call_args) {
+                    Ok(crate::interp::ExecOutcome::Returned(ret)) => {
+                        frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);
+                        0
+                    }
+                    Ok(crate::interp::ExecOutcome::Thrown(val)) => { set_exception(vm_ctx, val); 1 }
+                    Err(e) => { set_exception(vm_ctx, Value::Str(e.to_string().into())); 1 }
+                };
+            }
+            set_exception(vm_ctx, Value::Str(format!("VCall: compiled entry for `{}` not found", func_name).into()));
             return 1;
         }
     };

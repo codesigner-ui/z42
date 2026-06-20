@@ -47,9 +47,28 @@ impl JitModule {
     /// `JitModuleCtx.vm_ctx` for the duration of this call so JIT helpers
     /// (which receive `*const JitModuleCtx`) can reach VmContext through it.
     pub fn run_fn(&mut self, ctx: &VmContext, entry_name: &str) -> Result<()> {
-        let entry = self.ctx.fn_entries.get(entry_name)
-            .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?
-            .clone();
+        let entry = match self.ctx.fn_entries.get(entry_name) {
+            Some(e) => e.clone(),
+            None => {
+                // fix-jit-cross-zpkg-transitive-eager (2026-06-20): the target
+                // function was skipped by `compile_module` (it contains an
+                // interp-only opcode such as `LoadLocalAddr`) so it has no JIT
+                // entry. Run it on the interpreter instead of hard-failing —
+                // covers a skipped entry-point or `__static_init__`. The
+                // interpreter never re-enters JIT code, so the whole call
+                // subtree just runs interpreted. SAFETY: `module` is set in
+                // `compile_module` from a `&Module` that outlives the JitModule.
+                let module = unsafe { &*self.ctx.module };
+                let func = module.func_index.get(entry_name)
+                    .and_then(|&idx| module.functions.get(idx))
+                    .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?;
+                return match crate::interp::exec_function(ctx, module, func, &[])? {
+                    crate::interp::ExecOutcome::Returned(_) => Ok(()),
+                    crate::interp::ExecOutcome::Thrown(val) =>
+                        Err(anyhow::anyhow!("{}", crate::exception::format_uncaught(&val, module))),
+                };
+            }
+        };
         // Cast `&VmContext` (immutable ref) to a `*mut VmContext` for the
         // JIT ABI. The JIT extern-C bridge expects a `*mut` pointer for
         // historical compatibility (the helper functions reach VmContext
@@ -95,12 +114,19 @@ impl JitModule {
         ctx.static_fields_clear();
 
         // Collect all __static_init__ entries; sort by name for determinism.
+        // fix-jit-cross-zpkg-transitive-eager (2026-06-20): enumerate from the
+        // merged module (not `fn_entries`) so a `__static_init__` that was
+        // skipped by `compile_module` (interp-only opcode) is still run — via
+        // `run_fn`'s interp fallback. Matches interp's `init_static_fields`,
+        // which also scans `module.functions`. SAFETY: see `run_fn`.
         let init_names: Vec<String> = {
-            let mut v: Vec<&String> = self.ctx.fn_entries.keys()
+            let module = unsafe { &*self.ctx.module };
+            let mut v: Vec<String> = module.functions.iter()
+                .map(|f| f.name.clone())
                 .filter(|n| n.ends_with(".__static_init__"))
                 .collect();
             v.sort();
-            v.into_iter().cloned().collect()
+            v
         };
 
         for init_name in init_names {
@@ -144,10 +170,22 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
         .map(|f| (f.name.clone(), translate::max_reg(f)))
         .collect();
 
-    // ── 3. Declare all z42 functions in Cranelift ────────────────────────────
+    // ── 3. Declare all JIT-translatable z42 functions in Cranelift ───────────
+    // fix-jit-cross-zpkg-transitive-eager (2026-06-20): a function containing
+    // an opcode the JIT can't translate yet (out/ref params → LoadLocalAddr,
+    // native interop → CallNative, …) is skipped here — neither declared nor
+    // defined — so the whole-module compile no longer aborts. Skipped functions
+    // are absent from `func_ids` / `fn_entries`, so a `Call` to one misses the
+    // JIT entry table at runtime and lands on the interp fallback
+    // (`jit_call` → `cross_zpkg_via_interp`). `Call` always routes through the
+    // `hr_call` helper (never a direct cranelift call), so callers need no
+    // special handling.
     let ptr = jit.target_config().pointer_type();
     let mut func_ids: HashMap<String, FuncId> = HashMap::new();
     for func in functions {
+        if translate::jit_unsupported_reason(func).is_some() {
+            continue;
+        }
         let mut sig = jit.make_signature();
         sig.params.push(AbiParam::new(ptr));   // frame *mut JitFrame
         sig.params.push(AbiParam::new(ptr));   // ctx   *const JitModuleCtx
@@ -159,8 +197,11 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     // ── 4. Declare all helper functions as imports ────────────────────────────
     let helper_ids = helpers::declare_imports(&mut jit)?;
 
-    // ── 5. Translate each z42 function ───────────────────────────────────────
+    // ── 5. Translate each JIT-translatable z42 function ──────────────────────
     for func in functions {
+        if !func_ids.contains_key(&func.name) {
+            continue;  // skipped in step 3 → runs on interp fallback
+        }
         let max_r = max_regs[&func.name];
         translate::translate_function(&mut jit, &helper_ids, func, max_r, &func_ids)?;
     }
