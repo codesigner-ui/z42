@@ -71,7 +71,7 @@ pub unsafe extern "C" fn jit_obj_new(
         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
         let vm_ctx = vm_ctx_ref(ctx);
         vm_ctx.push_frame(crate::exception::VmFrame::new(
-            entry.name.to_string(), entry.file.to_string(),
+            entry.name.clone(), entry.file.clone(),
             &callee.regs as *const _, &callee.env_arena as *const _));
         let r = jit_fn(&mut callee, ctx);
         vm_ctx.pop_frame();

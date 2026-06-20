@@ -10,8 +10,8 @@ fn snapshot_freezes_line_and_column() {
     f.column.set(40);
     assert_eq!(snap.line,   7);
     assert_eq!(snap.column, 13);
-    assert_eq!(snap.func_name, "Foo");
-    assert_eq!(snap.file, "f.z42");
+    assert_eq!(&*snap.func_name, "Foo");
+    assert_eq!(&*snap.file, "f.z42");
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn format_drops_column_when_zero() {
 #[test]
 fn format_omits_file_when_empty() {
     let frames = vec![
-        FrameSnapshot { func_name: "Anon".into(), file: String::new(), line: 5, column: 8 },
+        FrameSnapshot { func_name: "Anon".into(), file: "".into(), line: 5, column: 8 },
     ];
     assert_eq!(format_stack_trace(&frames), "  at Anon (line 5, col 8)");
 }
@@ -58,7 +58,7 @@ fn format_omits_line_when_zero() {
 #[test]
 fn format_handles_no_position_info() {
     let frames = vec![
-        FrameSnapshot { func_name: "Bare".into(), file: String::new(), line: 0, column: 0 },
+        FrameSnapshot { func_name: "Bare".into(), file: "".into(), line: 0, column: 0 },
     ];
     assert_eq!(format_stack_trace(&frames), "  at Bare");
 }

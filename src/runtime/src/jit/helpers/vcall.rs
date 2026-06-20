@@ -51,20 +51,30 @@ pub unsafe extern "C" fn jit_vcall(
     // below), (3) receiver TypeId matches cache, (4) cached_fn_idx
     // resolves to an entry in `fn_entries_by_id`.
     if !ic_ptr.is_null() {
-        if let Value::Object(ref rc) = obj_val {
-            let recv_type = rc.type_desc().id.0;
+        // Read the receiver TypeId without keeping a borrow into `obj_val`, so
+        // the hit path below can *move* `obj_val` into the callee frame (one
+        // receiver clone per vcall instead of two — `jit_vcall` is the #1
+        // hotspot in compiler workloads). `recv_type` is a Copy u32.
+        let recv_type = match &obj_val {
+            Value::Object(rc) => Some(rc.type_desc().id.0),
+            _ => None,
+        };
+        if let Some(recv_type) = recv_type {
             // PIC fast path (review.md C5 P2 — 4-slot linear scan).
             if let Some((_slot, fn_idx)) =
                 crate::metadata::resolver::vcall_ic_lookup(&*ic_ptr, recv_type)
             {
                 if fn_idx != crate::metadata::tokens::UNRESOLVED {
                     if let Some(entry) = ctx_ref.fn_entries_by_id.get(fn_idx as usize).cloned().flatten() {
+                        // Move `obj_val` in — this branch always returns, so the
+                        // primitive / vtable fall-through paths never observe the
+                        // move (conditional-move-into-diverging-branch).
                         let mut callee = JitFrame::new_method_args_from(
-                            entry.max_reg, obj_val.clone(), &frame_ref.regs, arg_regs);
+                            entry.max_reg, obj_val, &frame_ref.regs, arg_regs);
                         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                         let vm_ctx = vm_ctx_ref(ctx);
                         vm_ctx.push_frame(crate::exception::VmFrame::new(
-                            entry.name.to_string(), entry.file.to_string(),
+                            entry.name.clone(), entry.file.clone(),
                             &callee.regs as *const _, &callee.env_arena as *const _));
                         let r = jit_fn(&mut callee, ctx);
                         vm_ctx.pop_frame();
@@ -104,7 +114,7 @@ pub unsafe extern "C" fn jit_vcall(
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                 let vm_ctx = vm_ctx_ref(ctx);
                 vm_ctx.push_frame(crate::exception::VmFrame::new(
-                    entry.name.to_string(), entry.file.to_string(),
+                    entry.name.clone(), entry.file.clone(),
                     &callee.regs as *const _, &callee.env_arena as *const _));
                 let r = jit_fn(&mut callee, ctx);
                 vm_ctx.pop_frame();
@@ -180,7 +190,7 @@ pub unsafe extern "C" fn jit_vcall(
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
     let vm_ctx = vm_ctx_ref(ctx);
     vm_ctx.push_frame(crate::exception::VmFrame::new(
-        entry.name.to_string(), entry.file.to_string(),
+        entry.name.clone(), entry.file.clone(),
         &callee.regs as *const _, &callee.env_arena as *const _));
     let r = jit_fn(&mut callee, ctx);
     vm_ctx.pop_frame();

@@ -174,8 +174,8 @@ pub unsafe extern "C" fn jit_call_indirect(
 
     vm_ctx.update_top_frame_pos(caller_line, caller_col);
     vm_ctx.push_frame(crate::exception::VmFrame::new(
-        entry.name.to_string(),
-        entry.file.to_string(),
+        entry.name.clone(),
+        entry.file.clone(),
         &callee_frame.regs as *const _,
         &callee_frame.env_arena as *const _,
     ));

@@ -419,8 +419,11 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
         .and_then(|e| e.file.clone())
         .unwrap_or_default();
     ctx.push_frame(crate::exception::VmFrame::new(
-        crate::metadata::bytecode::format_frame_name(func),
-        file,
+        // VmFrame stores Arc<str> (perf-jit-frame-strings); interp builds the
+        // owned String once then hands ownership to the Arc (same alloc cost as
+        // the previous String field — no interp regression).
+        std::sync::Arc::from(crate::metadata::bytecode::format_frame_name(func)),
+        std::sync::Arc::from(file),
         &frame.regs as *const Vec<Value>,
         &frame.env_arena as *const Vec<Vec<Value>>,
     ));

@@ -62,8 +62,12 @@ use crate::vm_context::VmContext;
 /// then degrades to `(file:line)`.
 #[derive(Debug)]
 pub struct VmFrame {
-    pub func_name: String,
-    pub file:      String,
+    // `Arc<str>` (not `String`): JIT `FnEntry` already holds `Arc<str>` name +
+    // file, so per-call `push_frame` clones the Arc (O(1) atomic refcount) on
+    // the hot path instead of allocating + copying a fresh `String` every call
+    // (perf-jit-frame-strings, 2026-06-20 — `jit_vcall` was the #1 hotspot).
+    pub func_name: std::sync::Arc<str>,
+    pub file:      std::sync::Arc<str>,
     pub line:      Cell<u32>,
     pub column:    Cell<u32>,
     /// Pointer to the frame's register file. The Vec content is the
@@ -90,7 +94,7 @@ unsafe impl Sync for VmFrame {}
 
 impl VmFrame {
     pub fn new(
-        func_name: String, file: String,
+        func_name: std::sync::Arc<str>, file: std::sync::Arc<str>,
         regs: *const Vec<Value>, env_arena: *const Vec<Vec<Value>>,
     ) -> Self {
         Self {
@@ -121,8 +125,8 @@ pub type FrameInfo = VmFrame;
 /// borrow scopes.
 #[derive(Debug, Clone)]
 pub struct FrameSnapshot {
-    pub func_name: String,
-    pub file:      String,
+    pub func_name: std::sync::Arc<str>,
+    pub file:      std::sync::Arc<str>,
     pub line:      u32,
     pub column:    u32,
 }

@@ -66,8 +66,8 @@ impl JitModule {
         // / jit_call_indirect / jit_obj_new / jit_to_str on the same
         // unified API.
         ctx.push_frame(crate::exception::VmFrame::new(
-            entry.name.to_string(),
-            entry.file.to_string(),
+            entry.name.clone(),
+            entry.file.clone(),
             &frame.regs as *const _,
             &frame.env_arena as *const _,
         ));
