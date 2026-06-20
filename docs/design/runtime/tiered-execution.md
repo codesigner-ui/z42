@@ -131,4 +131,5 @@ desktop/android 上可在 interp 之上叠加"热函数提升到 JIT"一档；iO
 - 组件框架（引擎作为组件、observer/注册基座）：[componentized-runtime.md](componentized-runtime.md)
 - IR 优化 / 特化 / intrinsic / tier0 基线质量：[ir-specialization.md](ir-specialization.md)
 - zpkg 加载上下文 / 重载 / 卸载回收 / 保留根诊断（复用本篇 §6/§7 基建）：[load-context.md](load-context.md)
+- 诊断事件总线（`inspect_artifacts` / 编译·deopt·OSR·tier 事件 emit 于此）：[diagnostics.md](diagnostics.md)
 - 当前单态架构：[vm-architecture.md](vm-architecture.md)

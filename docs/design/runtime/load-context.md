@@ -118,3 +118,4 @@ context 持有的 native 扩展库句柄（ext.rs dlopen 的 `libz42_*`）teardo
 - 回收 / 诊断 / 帧迁移 / hot-reload 共用基建：[tiered-execution.md](tiered-execution.md)
 - 组件框架（observer / 注册槽 → 边可按 ctx 摘除）：[componentized-runtime.md](componentized-runtime.md)
 - per-context 全局态 / ALC 延后项出处：[vm-architecture.md](vm-architecture.md)
+- 诊断事件总线（`whyRetained` / context 生命周期事件 emit 于此）：[diagnostics.md](diagnostics.md)
