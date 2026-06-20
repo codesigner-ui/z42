@@ -485,6 +485,15 @@ public sealed class GoldenTests
             };
             psi.ArgumentList.Add(irFile);
             psi.ArgumentList.Add(entryName);
+            // Pin interp: this is the compiler-side reference harness — its
+            // expected_output.txt fixtures were all captured under interp, and
+            // some cases (e.g. gc/gc_oom_exception, marked `interp_only`) are
+            // semantically interp-only. The z42vm CLI default flipped to jit
+            // (default-jit-mode), so without this pin the harness silently ran
+            // jit and interp_only cases trapped. JIT coverage is the xtask VM
+            // golden runner's job (it honours the `interp_only` marker).
+            psi.ArgumentList.Add("--mode");
+            psi.ArgumentList.Add("interp");
             if (StdlibLibsDir != null)
                 psi.Environment["Z42_LIBS"] = StdlibLibsDir;
 
