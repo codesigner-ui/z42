@@ -250,8 +250,10 @@ int _dispatchBuild(string[] p, ParseResult r) {
     if (sub == "compiler")     { return _buildCompiler(); }
     if (sub == "compiler-z42") { return _buildCompilerZ42(); }
     if (sub == "stdlib")       { return _buildStdlib(); }
+    // unify-launcher-apphost (2026-06-21): launcher trampoline crate is gone;
+    // `z42` is now the per-app apphost stub. "build launcher" = build that stub.
     if (sub == "launcher")     { return _exec(_cargoRelease()
-                                     .Arg("--manifest-path").Arg("src/toolchain/launcher/Cargo.toml")); }
+                                     .Arg("--manifest-path").Arg("src/toolchain/workload/desktop/platform/apphost/Cargo.toml")); }
     if (sub == "all") {
         int c = _buildRuntime();  if (c != 0) { return c; }
         c = _buildCompiler();     if (c != 0) { return c; }

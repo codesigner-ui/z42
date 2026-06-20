@@ -16,9 +16,13 @@ z42）；其余逻辑全部用 z42 写。
 | `core/launcher.z42` | **z42** | launcher 命令实现：`~/.z42` 缓存 / 版本解析 / 起 app / 各子命令 handler（从 `Std.Cli.ParseResult` 读参）。编译为 `launcher.zpkg`（Exe-mode）。 |
 | `core/launcher_cli.z42` | **z42** | CLI 层（migrate-xtask-launcher-to-std-cli）：`Std.Cli` 嵌套 `SubcommandRouter` 命令树 + `_runLauncher`（apphost 简写 / `run` 透传 / Resolve + dispatch）。每层 `-h` help 由库生成（手写 `_help()` 已删）。 |
 | `core/apphost.z42` | **z42** | apphost stub-patch 库（apphost-as-config 2026-06-17）：拷贝 apphost stub 模板 + patch 内嵌占位符 + macOS ad-hoc 重签名。`Produce(app, outPath)` 由 `_cmdPublishDesktop`（`z42 publish desktop`）调用——**无独立 `z42 apphost` 命令**。 |
-| `src/lib.rs` | Rust | 共享 host-resolve/exec：`Runtime` / `z42_home` / `probe_runtime` / `resolve_*` / `exec_core`——trampoline 与 apphost 复用。 |
-| `src/main.rs` | Rust | trampoline `z42`（installed→portable）：定位 launcher 运行时 → `exec z42vm launcher.zpkg -- <argv>` → 回传退出码。 |
-| `src/apphost.rs` | Rust | 每-app 原生 apphost stub **模板**：内嵌占位符（`z42 publish desktop` patch 成 app zpkg 名）→ 运行时本地优先解析 → 起 app。占位符须 **volatile 读**（防 release const-fold）。 |
+
+> **unify-launcher-apphost（2026-06-21）**：原 Rust trampoline crate（`Cargo.toml` /
+> `src/main.rs` / `src/lib.rs`）**已删**。`z42` 现在就是**通用 per-app apphost stub**
+> （`src/toolchain/workload/desktop/platform/apphost`，z42-apphost crate），SDK 打包时
+> patch 成 payload=`programs/launcher/launcher.zpkg`。运行时解析全部复用 `z42-hostrun`
+> （`resolve_app_runtime` + `ensure_portable_vm`，most-local-wins）。本目录现只剩
+> `core/`（launcher 核心 z42 源 → `launcher.zpkg`）。
 
 ## 命令（P1）
 

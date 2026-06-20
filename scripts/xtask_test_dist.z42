@@ -160,8 +160,10 @@ int[] _launcherSmoke(string distDir, string work) {
     int pass = 0;
     int fail = 0;
     string launcher = Path.Join(distDir, "z42");
-    if (!File.Exists(launcher) || !File.Exists(Path.Join(distDir, "launcher.zpkg"))) {
-        Console.WriteLine("Launcher smoke: SKIP (z42 or launcher.zpkg not in package)");
+    // unify-launcher-apphost (2026-06-21): z42 is an apphost; its launcher.zpkg
+    // payload lives at programs/launcher/ (was the package root).
+    if (!File.Exists(launcher) || !File.Exists(Path.Join(distDir, "programs/launcher/launcher.zpkg"))) {
+        Console.WriteLine("Launcher smoke: SKIP (z42 or programs/launcher/launcher.zpkg not in package)");
         Console.WriteLine("");
         int[] r0 = new int[2]; r0[0] = 0; r0[1] = 0; return r0;
     }

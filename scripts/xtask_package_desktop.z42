@@ -48,18 +48,16 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _copyNativeLibs(cargoOut, pkgDir);
     Console.WriteLine("      ✓ native/libz42_compression.*");
 
-    // [2c/7] launcher trampoline (pkg root) + launcher.zpkg
-    Console.WriteLine("[2c/5] z42 launcher (trampoline + launcher.zpkg)");
-    c = _cargo(rel, "build", "src/toolchain/launcher/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
-    _copyIfExists(Path.Join(cargoOut, "z42"), Path.Join(pkgDir, "z42"));
-    _copyIfExists(Path.Join(cargoOut, "z42.exe"), Path.Join(pkgDir, "z42.exe"));
-    // apphost stub now lives in the desktop workload (z42-apphost crate); build it
-    // into the same target dir so _buildDesktopWorkload picks up cargoOut/apphost.
+    // [2c/5] z42 launcher (apphost → programs/launcher/launcher.zpkg) + workloads.
+    // unify-launcher-apphost (2026-06-21): the launcher trampoline crate is gone.
+    // `z42` is now the per-app apphost stub, patched to run the launcher core at
+    // `programs/launcher/launcher.zpkg` (produced at the end of this block).
+    Console.WriteLine("[2c/5] z42 launcher (apphost + launcher.zpkg)");
+    // apphost stub (z42-apphost crate) — used both by the desktop workload and
+    // to produce `z42` below. Lands at cargoOut/apphost (shared target dir).
     c = _cargo(rel, "build", "src/toolchain/workload/desktop/platform/apphost/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _makeExe(Path.Join(pkgDir, "bin/z42c"));
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
-    _makeExe(Path.Join(pkgDir, "z42"));
-    Console.WriteLine("      ✓ z42 (trampoline, package root)");
     // apphost stub is NOT shipped in the SDK anymore (Decision 9 full gating):
     // it is delivered by the desktop workload (z42-workload-<v>-desktop-<rid>),
     // installed via `z42 workload install desktop`. See _buildDesktopWorkload.
@@ -86,8 +84,17 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
         .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
         .Env("Z42_LIBS", libs));
     if (c != 0) { return c; }
-    File.Copy(Path.Join(root, "artifacts/build/toolchain/launcher/z42.launcher.zpkg"), Path.Join(pkgDir, "launcher.zpkg"));
-    Console.WriteLine("      ✓ launcher.zpkg");
+    // launcher.zpkg → programs/launcher/ (the `z42` apphost's payload location).
+    bool isWin = rid.StartsWith("windows-");
+    string plDir = Path.Join(pkgDir, "programs/launcher");
+    Directory.Create(plDir);
+    File.Copy(Path.Join(root, "artifacts/build/toolchain/launcher/z42.launcher.zpkg"), Path.Join(plDir, "launcher.zpkg"));
+    Console.WriteLine("      ✓ programs/launcher/launcher.zpkg");
+    // Produce `z42` = apphost stub patched to run programs/launcher/launcher.zpkg.
+    string apphostStub = Path.Join(cargoOut, isWin ? "apphost.exe" : "apphost");
+    string z42Out = Path.Join(pkgDir, isWin ? "z42.exe" : "z42");
+    c = _produceApphost(apphostStub, z42Out, "programs/launcher/launcher.zpkg", rid); if (c != 0) { return c; }
+    Console.WriteLine("      ✓ z42 (apphost, package root)");
 
     // [3/7] C ABI headers
     Console.WriteLine("[3/5] C ABI headers");
@@ -240,4 +247,74 @@ string _quotedExisting(string dir, string a, string b) {
     if (a.Length > 0 && File.Exists(Path.Join(dir, a))) { acc = "\"" + a + "\""; }
     if (b.Length > 0 && File.Exists(Path.Join(dir, b))) { if (acc.Length > 0) { acc = acc + ", "; } acc = acc + "\"" + b + "\""; }
     return acc;
+}
+
+// ── inline apphost patcher (internal SDK packaging) ─────────────────────────
+// Produces the SDK's own apphosts (currently `z42`) by patching the per-app
+// apphost stub. Replicates Z42.Workload.Desktop.Apphost.PatchBytes; inlined
+// (not shared) per decision — internal dev tooling, keep it simple.
+// ⚠ MAGIC must stay in sync with the Rust stub at
+//   src/toolchain/workload/desktop/platform/apphost/src/main.rs.
+
+byte[] _asciiBytes(string s) {
+    byte[] b = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) { b[i] = (byte)s.CharAt(i); i = i + 1; }
+    return b;
+}
+
+int _byteIndexOf(byte[] hay, byte[] needle) {
+    if (needle.Length == 0 || needle.Length > hay.Length) { return -1; }
+    int limit = hay.Length - needle.Length;
+    int i = 0;
+    while (i <= limit) {
+        int j = 0;
+        bool match = true;
+        while (j < needle.Length) {
+            if (hay[i + j] != needle[j]) { match = false; break; }
+            j = j + 1;
+        }
+        if (match) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Produce an apphost exe at `outPath` from stub `tmpl`, embedding payload path
+// `embed` (relative to outPath's dir, so `<exe_dir>/<embed>` finds the zpkg).
+// chmod +x; ad-hoc codesign on a macOS target (must run on a macOS host).
+int _produceApphost(string tmpl, string outPath, string embed, string targetRid) {
+    if (!File.Exists(tmpl)) {
+        ConsoleError.WriteLine("apphost: stub not found: " + tmpl);
+        return 1;
+    }
+    byte[] buf = File.ReadAllBytes(tmpl);
+    byte[] magic = _asciiBytes("z42-apphost-target-v1-MAGIC-0001");
+    int at = _byteIndexOf(buf, magic);
+    if (at < 0) { ConsoleError.WriteLine("apphost: MAGIC missing in stub " + tmpl); return 1; }
+    int payloadStart = at + magic.Length;
+    int payloadLen = 1024 - magic.Length;   // 992-byte payload region
+    if (payloadStart + payloadLen > buf.Length) { ConsoleError.WriteLine("apphost: stub truncated"); return 1; }
+    byte[] nameBytes = _asciiBytes(embed);
+    if (nameBytes.Length + 1 > payloadLen) { ConsoleError.WriteLine("apphost: payload path too long: " + embed); return 1; }
+    // Overwrite the whole payload: name bytes, then NUL + zero fill.
+    int k = 0;
+    while (k < payloadLen) {
+        if (k < nameBytes.Length) { buf[payloadStart + k] = nameBytes[k]; }
+        else { buf[payloadStart + k] = (byte)0; }
+        k = k + 1;
+    }
+    File.WriteAllBytes(outPath, buf);
+    File.MakeExecutable(outPath);
+    // A macOS apphost MUST be re-signed after patching (the kernel rejects the
+    // now-stale ad-hoc signature). codesign is macOS-only → require a mac host.
+    if (targetRid.StartsWith("macos-")) {
+        if (!Platform.IsMacOS()) {
+            ConsoleError.WriteLine("apphost: a macOS target (" + targetRid + ") must be produced on a macOS host (codesign).");
+            return 1;
+        }
+        ProcessResult cs = new Process("codesign").Arg("-s").Arg("-").Arg("-f").Arg(outPath).Stderr(Stdio.Inherit()).Run();
+        if (cs.ExitCode != 0) { ConsoleError.WriteLine("apphost: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + ")"); return 1; }
+    }
+    return 0;
 }
