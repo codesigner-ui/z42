@@ -21,8 +21,8 @@
 | 层 | 例子 | 提供者 | 注册方式 | 为何 |
 |----|------|--------|---------|------|
 | **Core** | run / install / link / list / which / uninstall / info | launcher 自带 | **代码注册**（Std.Cli router，已有）| 引导关键——得先有 install/run 才能装 SDK |
-| **SDK** | new / build / test / fmt | 随 SDK 装 | **目录发现**（`$Z42_HOME/programs/`，**跟 SDK 走**）| 纯工具无 ABI 耦合、与编译器同 SDK、可独立发布 |
-| **Workload** | 平台 publish/export/工程生成 + 模板 + native 包（xcframework/AAR）+ **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（`runtimes/<ver>/workloads/`，**版本作用域**，drop-in 即注册）| 平台按需 + native ABI 配套 runtime 版本 |
+| **SDK** | new / build / test / fmt | 随 SDK 装 | **目录发现**（`$Z42_HOME/programs/`，**跟 SDK 走**）| 与编译器同 SDK、可独立发布 |
+| **Workload** | 平台 publish/export/工程生成 + 模板 + native 包（xcframework/AAR）+ **apphost（desktop publish 产物）**（desktop/ios/android/wasm）| 按需 `z42 workload install` | **目录发现**（`$Z42_HOME/workloads/`，**跟 SDK 走**，drop-in 即注册）| 平台按需、host 无关平台不强塞；ABI↔runtime 版本绑定暂不做 |
 
 > **命令模型 + apphost 归属（define-cli-command-model, 2026-06-17）**：完整动词语义（字节码模型 / build-zpkg / run 双形态 / publish-deployable / export-IDE工程）见 [platform-export-lifecycle.md](platform-export-lifecycle.md)。要点：
 > - **取消 `z42 apphost` 命令**。apphost 是 `[platform.desktop]` 配置驱动的 desktop **publish 部署件**，经 **`z42 publish desktop`**（release，留存）产出；**`z42 run desktop`** 产 debug apphost 临时跑（预演部署启动）。`apphost.z42` 的 stub-patch 逻辑是这两者的实现，不再是独立 verb。
@@ -33,7 +33,9 @@
 
 判据：**Core 必须 baked**（鸡生蛋）；**SDK + workload 必须目录发现**（否则每加平台重编 launcher、无法按平台隔离）。
 
-> **命令归属裁决（2026-06-20）**：**SDK 命令**（new/build/test/fmt——纯工具、无 native ABI 耦合）**跟当前 SDK 走**，装在版本无关的 `$Z42_HOME/programs/`，**不进 `runtimes/<ver>/`**；多版本命令作用域暂不做（复杂、当前无需求，见 Deferred `cmd-future-version-scoped`）。**平台 workload**（publish/export 命令 + 配套 native 包）**仍版本作用域**于 `runtimes/<ver>/workloads/<wl>/`——native 嵌入件 ABI 必须配 runtime（见 [runtime-workload-distribution.md](runtime-workload-distribution.md) Decision 5）。
+> **命令归属裁决（2026-06-20）**：**SDK 命令 + 平台 workload 都跟当前 SDK 走**，装在版本无关的 `$Z42_HOME/programs/`（命令）/ `$Z42_HOME/workloads/`（workload），**不进 `runtimes/<ver>/`**（`runtimes/<ver>/` 只放 app 运行时）。
+> - **多版本命令作用域**暂不做（复杂、当前无需求，见 Deferred `cmd-future-version-scoped`）。
+> - **workload↔runtime 版本绑定**暂不做：native 嵌入件 ABI 理论上须配 runtime，但当前为简化跟 SDK 走；多版本共存且 ABI 真冲突时再引入（见 Deferred `workload-future-version-scoped` + [runtime-workload-distribution.md](runtime-workload-distribution.md)）。
 
 ## 两种注册机制 → 合并进同一棵 Std.Cli 树
 
@@ -72,15 +74,14 @@ min-runtime = "0.3.0"
 ```
 <repo>/.z42/programs/<cmd>/                 项目本地（pin；复用 install-z42 的 .z42 隔离模式）   ← 最高
 $Z42_HOME/programs/<cmd>/                   SDK 命令（跟 SDK 走，版本无关）
-$Z42_HOME/runtimes/<ver>/workloads/<wl>/    workload 装入（版本作用域；ABI 配套 <ver>）
+$Z42_HOME/workloads/<wl>/                   workload 装入（跟 SDK 走，版本无关；drop-in）
 $Z42_HOME/tools/                            全局用户工具（类 ~/.cargo/bin）                  ← 最低
 ```
 
 每个 `programs/<cmd>/` 含 `<cmd>.zpkg` + `<cmd>.cmd.toml`（子目录隔离，对齐 [launcher.md](../runtime/launcher.md) 的 `programs/` 布局）。
 
-- **SDK 命令跟 SDK 走**：new/build/test/fmt 随当前 SDK，**不进 `runtimes/<ver>/`**；多版本命令作用域暂不做（见 Deferred `cmd-future-version-scoped`）。
-- **workload 仍版本作用域**：平台命令 + native 包挂 `runtimes/<ver>/workloads/`，ABI 配 runtime（[runtime-workload-distribution.md](runtime-workload-distribution.md) Decision 5）。
-- 优先级：core > 项目本地 > SDK programs > 版本 workload > 全局 tools；同名 first-wins-by-precedence。
+- **SDK 命令 + workload 跟 SDK 走**：new/build/test/fmt + 平台 workload 随当前 SDK，**不进 `runtimes/<ver>/`**；多版本命令作用域 + workload↔runtime ABI 绑定均暂不做（见 Deferred `cmd-future-version-scoped` / `workload-future-version-scoped`）。
+- 优先级：core > 项目本地 > SDK programs > workloads > 全局 tools；同名 first-wins-by-precedence。
 - ⚠️ **目录扫描必须显式排序**（[common-pitfalls.md §1](../../../.claude/rules/common-pitfalls.md)）：`Directory.Enumerate` 跨 OS 顺序不定，first-wins 注册前按稳定键 sort，否则 CI 跨平台炸。
 
 ## 分发与参数透传
@@ -90,7 +91,7 @@ $Z42_HOME/tools/                            全局用户工具（类 ~/.cargo/bi
 
 ## workload 安装
 
-`z42 workload install ios` → 下载 workload 包（命令 zpkg + `.cmd.toml` + 模板 + native 资产如 xcframework）→ 解到 `runtimes/<ver>/workloads/ios/`（版本作用域，ABI 配套）→ 下次 `z42 <cmd>` 自动发现。对标 `dotnet workload install`。卸载 = 删目录。
+`z42 workload install ios` → 下载 workload 包（命令 zpkg + `.cmd.toml` + 模板 + native 资产如 xcframework）→ 解到 `$Z42_HOME/workloads/ios/`（跟 SDK 走）→ 下次 `z42 <cmd>` 自动发现。对标 `dotnet workload install`。卸载 = 删目录。
 
 ## Decisions
 
@@ -99,7 +100,7 @@ $Z42_HOME/tools/                            全局用户工具（类 ~/.cargo/bi
 | 1 | core 只留运行时自管理，baked-in | 引导关键 + launcher 与编译器版本解耦 |
 | 2 | SDK/workload 走 sidecar manifest 目录发现 + 裸约定 fallback | help 完整（manifest）+ drop-in 低门槛（约定）；避开纯约定的"无描述"病 |
 | 3 | 全部合并进同一棵 Std.Cli router | 统一 help/分发/未知处理，复用既有库 |
-| 4 | SDK 命令 `programs/`（SDK 级）+ 项目本地 + 全局三层；workload 仍版本作用域，显式排序 | SDK 命令跟 SDK 不进 runtime（多版本作用域 deferred）；workload native ABI 配 runtime；deterministic |
+| 4 | SDK 命令 `programs/` + workload `workloads/`（均 SDK 级）+ 项目本地 + 全局三层，显式排序 | 命令 + workload 跟 SDK 不进 runtime；多版本作用域 + workload ABI 绑定均 deferred；deterministic |
 | 5 | 平台支持 = 可安装 workload | 基础包小、平台按需、host 无关平台不强塞 |
 
 ## Deferred / 待 spec 细化

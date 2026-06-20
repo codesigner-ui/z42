@@ -221,7 +221,7 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 | 2 | 每 release 发 `release-index.json` manifest 作供给契约 | 稳定/可缓存/可离线/可签名；避开裸 API 的 rate-limit + 契约不稳（rustup/dotnet 同选）|
 | 3 | channel 解析借 GitHub `/latest/` 重定向 + 固定 `nightly` tag | 无需 API 枚举，stable URL 即解析入口 |
 | 4 | 两 channel（stable/nightly）+ 项目 pin 复用 `z42.toml [project].runtime` | 最少概念；不引入新 version 文件 |
-| 5 | workload 版本作用域（挂 `runtimes/<ver>/`）+ 与 runtime 版本联动 | 嵌入件 ABI 必须配 runtime |
+| 5 | ~~workload 版本作用域（挂 `runtimes/<ver>/`）+ 与 runtime 版本联动~~ **（2026-06-20 改向：workload 跟 SDK 走，落 `$Z42_HOME/workloads/`，暂不绑 runtime 版本）** | 原由：嵌入件 ABI 须配 runtime。**改向理由**：简化——单 SDK 期无多版本 ABI 冲突；版本作用域延后到真冲突时（`workload-future-version-scoped`）。**注**：当前 install 代码仍铺到 `runtimes/<ver>/workloads/`，迁移到 `$Z42_HOME/workloads/` 为后续 change |
 | 6 | launcher 与 runtime 拆分；**launcher 不带 vm，复用已装 runtime 的 vm** | 不必为 launcher 造/最小化 vm；NativeAOT 后转原生 |
 | 7 | 首次 `install-z42` 一次装 launcher + host runtime（manifest 驱动），之后全 z42 驱动 | "第一次执行完成安装"；下载交 shell（无需带 TLS 的 launcher vm），对齐 dotnet |
 | 8 | `runtime` 为 per-RID 名词/组件，但 `install` 只装 host；target runtime 仅经 workload 组合进 | 命名诚实 + 用户面无冗余直装路径 |
@@ -243,6 +243,7 @@ z42 run / z42 <app.zpkg>                # 解析版本 → 跑（已有）
 - **跨产 macos apphost 的 codesign**：`publish --rid macos-*` 在非 macos host 上 patch 成功但无法 ad-hoc codesign（macos-only）→ 现报清晰错误。待远程签名 / 在 linux 上签 Mach-O（参 apphost cross-sign 延后）。
 - **真实 iOS 多-slice xcframework**：B2 用 macos 单 slice 验机制；device+sim 多 slice 合并归 CI。
 - **launcher 最小 vm → 由 NativeAOT 原生 launcher 取代**：本设计 launcher 已不带 vm（复用 runtime vm），故现在无需最小化 vm；NativeAOT 落地后把 launcher AOT 成原生二进制（rustup 式），vm 问题永久消失。届时 `install-z42` 可只下原生 launcher，bootstrap 更轻。
+- **`workload-future-version-scoped`（workload↔runtime ABI 版本作用域，2026-06-20）**：现 workload 跟 SDK 走（`$Z42_HOME/workloads/`，版本无关，简化）。当多 runtime 版本共存且 native 嵌入件（xcframework/AAR）ABI 与某 runtime 版本真冲突时，回到版本作用域（挂 `runtimes/<ver>/workloads/`）+ workload↔runtime 联动。**前置依赖**：多 runtime 版本共存 + 跨版本 ABI 实际不兼容。**当前 workaround**：单 SDK 期跟 SDK 走；install 代码现仍铺 `runtimes/<ver>/workloads/`（待迁移到 `$Z42_HOME/workloads/`）。
 - manifest schema 定稿（多 archive 类型、可选 z42c-less 精简 runtime、依赖/兼容区间）。
 - self update 的原子替换 + 回滚（Windows 文件占用、权限）。
 - workload↔runtime 版本兼容矩阵与升级时的自动重装策略。
