@@ -329,49 +329,31 @@ _restore_exec() {
 
 if [ $SYSTEM_INSTALL -eq 1 ]; then
   # ── Managed install ──────────────────────────────────────────────────────
-  vm_name="z42vm"; tramp="z42"; z42c_bin="z42c"; apphost_bin="apphost"
-  [ -f "$TMP/pkg/bin/z42vm.exe" ] \
-    && { vm_name="z42vm.exe"; tramp="z42.exe"; z42c_bin="z42c.exe"; apphost_bin="apphost.exe"; }
-
-  mkdir -p "$DEST/bin" "$DEST/launcher"
-
-  # Trampoline → $DEST/bin/z42 (goes on PATH)
-  cp -f "$TMP/pkg/$tramp" "$DEST/bin/$tramp"
-  _restore_exec "$DEST/bin/$tramp"
-
-  # Compiler (optional)
-  if [ -f "$TMP/pkg/bin/$z42c_bin" ]; then
-    cp -f "$TMP/pkg/bin/$z42c_bin" "$DEST/bin/$z42c_bin"
-    _restore_exec "$DEST/bin/$z42c_bin"
-  fi
-
-  # Launcher runtime: z42vm + launcher.zpkg + libs
-  cp -f "$TMP/pkg/bin/$vm_name" "$DEST/launcher/$vm_name"
-  _restore_exec "$DEST/launcher/$vm_name"
-  cp -f "$TMP/pkg/launcher.zpkg" "$DEST/launcher/launcher.zpkg"
-  rm -rf "$DEST/launcher/libs"; cp -R "$TMP/pkg/libs" "$DEST/launcher/libs"
-
-  # apphost stub template (for `z42 publish desktop`)
-  if [ -f "$TMP/pkg/bin/$apphost_bin" ]; then
-    cp -f "$TMP/pkg/bin/$apphost_bin" "$DEST/launcher/$apphost_bin"
-    _restore_exec "$DEST/launcher/$apphost_bin"
-  fi
-
-  # Register version + set default
-  say_verbose "running: z42 link $DEST/launcher --as $VER"
-  Z42_HOME="$DEST" "$DEST/bin/$tramp" link "$DEST/launcher" --as "$VER" >/dev/null
-  Z42_HOME="$DEST" "$DEST/bin/$tramp" default "$VER" >/dev/null
-
+  # unify-launcher-apphost (2026-06-21): the SDK launcher no longer manages
+  # multiple runtimes. The package is self-contained — z42 (apphost) at the
+  # root, bin/z42vm colocated, programs/launcher/launcher.zpkg, libs/ — so a
+  # managed install is just an extract-in-place into $DEST (same as portable)
+  # plus a PATH hint. No structured bin/launcher/runtimes split, no separate
+  # launcher runtime (the apphost uses its colocated bin/z42vm). Update =
+  # re-run this script / `z42 self-update`: the STAMP check above no-ops a same
+  # -version reinstall; a new tag re-extracts. (Multi-version support deferred.)
+  rm -rf "$DEST"; mkdir -p "$DEST"
+  cp -R "$TMP/pkg"/. "$DEST"/
+  # GitHub Actions artifact upload/download strips the executable bit.
+  _restore_exec "$DEST/z42" "$DEST/z42.exe" \
+                "$DEST/bin/z42vm" "$DEST/bin/z42vm.exe" \
+                "$DEST/bin/z42c" "$DEST/bin/z42c.exe"
   echo "$WANT" > "$STAMP"
   say_ok "Installed  ${bold}$VER${normal} / $RID  →  $DEST  (managed)"
 
   if [ $NO_PATH -eq 0 ]; then
+    # z42 lives at the package root; z42c / z42vm in bin/ (launcher.md PATH rule).
     case ":$PATH:" in
-      *":$DEST/bin:"*) say "  \$PATH already contains ${bold}$DEST/bin${normal}" ;;
+      *":$DEST:"*) say "  \$PATH already contains ${bold}$DEST${normal}" ;;
       *)
         printf "%b\n" "" >&3
         printf "%b\n" "  ${bold}To activate z42, add to your shell profile:${normal}" >&3
-        printf "%b\n" "    ${yellow}export PATH=\"$DEST/bin:\$PATH\"${normal}" >&3
+        printf "%b\n" "    ${yellow}export PATH=\"$DEST:$DEST/bin:\$PATH\"${normal}" >&3
         printf "%b\n" "" >&3
         printf "%b\n" "  Then restart your shell (or run the export above), and:" >&3
         printf "%b\n" "    ${bold}z42 run <app.zpkg>${normal}" >&3

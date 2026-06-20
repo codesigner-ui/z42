@@ -166,12 +166,16 @@ libs/            # stdlib zpkg
 
 ## 安装模式（installed, model B — install-z42-to-home, 2026-06-03）
 
-`scripts/install-z42.sh --system`（或 `install-z42.bat --system`）从 GitHub Releases 下载 launcher 包并铺进 `$Z42_HOME`（默认 `~/.z42`）：
+`scripts/install-z42.sh --system`（或 `install-z42.bat --system`）从 GitHub Releases 下载 launcher 包并**原样解压**进 `$Z42_HOME`（默认 `~/.z42`）——与 portable 同一套 `cp -R`，自包含布局：
 - `z42`（apphost，根，放 PATH）+ `bin/z42c`（apphost → `programs/z42c/z42c.driver.zpkg`）
-- `bin/z42vm + programs/launcher/launcher.zpkg + libs/`（跑 launcher 核心）
-- 本版本经 **`z42 link $Z42_HOME --as <ver>` + `z42 default <ver>`** 注册为 app 运行时——`runtimes/<ver>/link.txt` 重定向到 `$Z42_HOME/`（`bin/z42vm + libs/`），**不二次拷贝**。
+- `bin/z42vm + programs/launcher/launcher.zpkg + libs/`（z42 apphost 经 `ensure_portable_vm` 用**同址** `bin/z42vm` 跑 launcher 核心）
 
-装完 `z42` 在 PATH 上、`z42 run app.zpkg` 任意目录可用（apphost **installed 优先于 portable**），多版本可共存于 `runtimes/<ver>`。安装脚本只**打印** PATH 接入指引，不自动改 profile。
+> **unify-launcher-apphost（2026-06-21）**：SDK launcher **不做多版本**。managed 即"解压即用"——
+> 无独立 `$Z42_HOME/launcher/` 运行时、无 `z42 link`/`runtimes/<ver>` 注册（同址 vm 取代了独立
+> launcher 运行时）。**更新**＝重跑 `install-z42.sh` / `z42 self-update`（`.bootstrap-stamp` 戳跳过
+> 同版本重装，新 tag 重新解压覆盖）。多版本支持按需后置。
+
+装完 `z42` 在 PATH 上（`$Z42_HOME` + `$Z42_HOME/bin`）、`z42 run app.zpkg` 任意目录可用。安装脚本只**打印** PATH 接入指引，不自动改 profile。
 
 > `install-z42.sh` 支持 `--dest <dir>`（指定安装目录）、`--dry-run`（预览不下载）、`--version <ver>`（覆盖版本）、`--verbose`（详细输出）、`--no-path`（抑制 PATH 提示）。联网 `z42 install <ver>` / `z42 self-update`（P2）已实现，见下「P2 命令」。
 
