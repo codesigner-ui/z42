@@ -390,6 +390,9 @@ public sealed partial class SymbolCollector : ISymbolBinder
         FuncType   ft => new Z42FuncType(
                             ft.ParamTypes.Select(ResolveType).ToList(),
                             ResolveType(ft.ReturnType)),
+        // Qualified type `Std.Type` / `Std.Reflection.FieldInfo` — strip namespace prefix,
+        // resolve the right-most name. Mirrors z42c G19b lastDot fallback in ResolveTypeP.
+        MemberType mt => ResolveType(new NamedType(mt.Right, mt.Span)),
         NamedType  nt when _activeTypeParams?.Contains(nt.Name) == true
                       => new Z42GenericParamType(nt.Name),
         // Primitive lookup centralized in WellKnownTypes (docs/review.md Part 6 F5 #1, 2026-05-25).

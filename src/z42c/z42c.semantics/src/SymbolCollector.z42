@@ -9,14 +9,28 @@ public sealed class SymbolCollector {
     // imported 符号先 seed，本地声明覆盖（CI-4；镜像 C# SymbolCollector.Collect：MergeImported
     // 在成员收集前——使本地类**字段/方法类型**能解析为兄弟包 imported 类，而非降级 Unknown）。
     // 顺序：本地 interface/class stub → seed imported（guard 跳本地同名，local-wins）→ 成员解析。
+    // 接口必须在 _passClassStubs 之前 seed（基表判别：_passClassStubs 查 table.Interfaces 区分 iface vs class base）。
     public SymbolTable CollectWithImports(CompilationUnit cu, ImportedSymbols imported) {
         var t = new SymbolTable();
         this._passInterfaces(t, cu);
         this._passEnums(t, cu);
+        this._mergeImportedInterfaces(t, imported);
         this._passClassStubs(t, cu);
         this._mergeImports(t, imported);
         this._passMembers(t, cu);
         return t;
+    }
+
+    // imported 接口骨架 seed（_passClassStubs 前调用；local 同名接口已由 _passInterfaces 注册，local-wins）。
+    // G18-import：IBasicCollection 等跨包接口须在 _passClassStubs 前进 table.Interfaces，否则被误当 class base。
+    private void _mergeImportedInterfaces(SymbolTable table, ImportedSymbols imported) {
+        if (imported == null) { return; }
+        string[] ifs = imported.Interfaces.Keys();
+        int i = 0;
+        while (i < ifs.Length) {
+            if (!table.Interfaces.ContainsKey(ifs[i])) { table.Interfaces.Put(ifs[i], imported.Interfaces.Get(ifs[i])); }
+            i = i + 1;
+        }
     }
 
     // imported 符号 seed（local stub 已注册的同名跳过，local-wins；镜像 C# MergeImported + 本地覆盖）。
@@ -45,9 +59,11 @@ public sealed class SymbolCollector {
         while (c < cuCount) { this._passInterfaces(table, cus[c]); c = c + 1; }
         c = 0;
         while (c < cuCount) { this._passEnums(table, cus[c]); c = c + 1; }
+        // imported 接口必须在 _passClassStubs 前 seed（基表判别：查 table.Interfaces 区分 iface vs class base）。
+        this._mergeImportedInterfaces(table, imported);
         c = 0;
         while (c < cuCount) { this._passClassStubs(table, cus[c]); c = c + 1; }
-        // seed imported（成员解析前；G18：兄弟包 imported 类字段/方法类型可解析为 Z42ClassType 而非 Unknown）。
+        // seed imported classes + funcs（成员解析前；G18：兄弟包 imported 类字段/方法类型可解析为 Z42ClassType 而非 Unknown）。
         this._mergeImports(table, imported);
         c = 0;
         while (c < cuCount) { this._passMembers(table, cus[c]); c = c + 1; }
@@ -205,6 +221,15 @@ public sealed class SymbolCollector {
             if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
                 it.Methods.Put(md.Name, this._methodSymbol(table, md, c.Name, tp, tpc));
+            } else if (mem is PropertyDecl) {
+                // 接口属性 getter → get_X 方法符号（镜像 C# IEnumerator<T>.Current → get_Current）。
+                PropertyDecl pd = mem as PropertyDecl;
+                if (pd.HasGet) {
+                    string gkey = "get_" + pd.Name;
+                    Z42Type gret = table.ResolveTypeP(pd.Type, tp, tpc);
+                    Z42Type[] gps = new Z42Type[0];
+                    it.Methods.Put(gkey, new MethodSymbol(gkey, "public", new Z42FuncType(gps, 0, gret), false, c.Name, false, null));
+                }
             }
             j = j + 1;
         }
@@ -247,15 +272,20 @@ public sealed class SymbolCollector {
                 Z42Type ft = table.ResolveTypeP(fd.Type, tp, tpc);
                 bool fstatic = this._hasWord(fd.Mods, "static");
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, fstatic, c.Name));
-                // G18：实例字段记有序元数据（声明序 + TSIG 规范拼写 u8[]）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
-                if (!fstatic) { ct.AddOwnField(fd.Name, ExportedTypeExtractor.TsigTypeName(fd.Type), this._vis(fd.Mods)); }
+                // G18：实例字段记有序元数据（声明序 + TSIG 规范拼写）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
+                // 用 resolved Z42Type.Name() 镜像 C# TypeToString(sym.Type)：接口→裸名、Predicate<T>→Func<T,bool>、
+                // Func/Action 规范化；Unknown/Error → AST fallback（imported 包 interface 未进 ImportedSymbols 时降级）。
+                if (!fstatic) { string fsp = (ft is Z42UnknownType || ft is Z42ErrorType) ? ExportedTypeExtractor.TsigTypeName(fd.Type) : ft.Name(); ct.AddOwnField(fd.Name, fsp, this._vis(fd.Mods)); }
             } else if (mem is PropertyDecl) {
                 // 属性作为字段处理（type-checking 用；auto-property { get;/set; } 等同只读/读写字段）。
                 PropertyDecl pd = mem as PropertyDecl;
                 Z42Type pft = table.ResolveTypeP(pd.Type, tp, tpc);
                 bool pfstatic = this._hasWord(pd.Mods, "static");
                 ct.Fields.Put(pd.Name, new FieldSymbol(pd.Name, this._vis(pd.Mods), pft, pfstatic, c.Name));
-                if (!pfstatic) { ct.AddOwnField(pd.Name, ExportedTypeExtractor.TsigTypeName(pd.Type), this._vis(pd.Mods)); }
+                // 镜像 C# SynthesizeClassAutoProp：后备字段名 __prop_X（非源名 X），供 TSIG 导出匹配。
+                // extern/native 属性无后备字段；后备字段 vis 固定 private（C# 合成行为）。
+                bool pfExtern = this._hasWord(pd.Mods, "extern");
+                if (!pfstatic && !pfExtern) { string pfsp = (pft is Z42UnknownType || pft is Z42ErrorType) ? ExportedTypeExtractor.TsigTypeName(pd.Type) : pft.Name(); ct.AddOwnField("__prop_" + pd.Name, pfsp, "private"); }
                 // get_X / set_X accessor 方法符号（IrGen 发 builtin stub 或编译体；镜像 C# SynthesizeClassAutoProp）。
                 string pvis = this._vis(pd.Mods);
                 Z42Type[] getPs0 = new Z42Type[0];

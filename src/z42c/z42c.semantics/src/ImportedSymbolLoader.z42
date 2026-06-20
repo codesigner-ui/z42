@@ -17,10 +17,12 @@ public sealed class ImportedSymbols {
     public StrMap Classes;          // 短名 → Z42ClassType（成员已填）
     public StrMap Functions;        // 名 → MethodSymbol（自由函数）
     public StrMap ClassNamespaces;  // 短名 → 原 ns（QualifyClassName / 诊断用；值存 StrBox）
+    public StrMap Interfaces;       // 短名 → Z42InterfaceType（接口骨架；供 _passClassStubs 基表判别）
     public ImportedSymbols() {
         this.Classes = new StrMap();
         this.Functions = new StrMap();
         this.ClassNamespaces = new StrMap();
+        this.Interfaces = new StrMap();
     }
 }
 
@@ -38,7 +40,7 @@ public static class ImportedSymbolLoader {
             else { active[i] = ImportedSymbolLoader._pkgProvidesUsing(exported, pkgNames, exportedCount, pkgNames[i], usings, usingCount); }
             i = i + 1;
         }
-        // ── Phase1：骨架（短名 → 空成员 Z42ClassType）──
+        // ── Phase1：骨架（短名 → 空成员 Z42ClassType + 接口名表）──
         i = 0;
         while (i < exportedCount) {
             if (active[i]) {
@@ -54,6 +56,15 @@ public static class ImportedSymbolLoader {
                         r.ClassNamespaces.Put(cl.Name, new StrBox(em.Namespace));
                     }
                     c = c + 1;
+                }
+                // 接口骨架（供下游 _passClassStubs 基表判别：imported 接口名必须在 table.Interfaces 中）
+                int ic = 0;
+                while (ic < em.InterfaceCount) {
+                    ExportedInterfaceZ iz = em.Interfaces[ic];
+                    if (!r.Interfaces.ContainsKey(iz.Name)) {
+                        r.Interfaces.Put(iz.Name, new Z42InterfaceType(iz.Name));
+                    }
+                    ic = ic + 1;
                 }
             }
             i = i + 1;
@@ -101,6 +112,8 @@ public static class ImportedSymbolLoader {
             if (!ct.Fields.ContainsKey(fd.Name)) {
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, fd.Visibility,
                     ImportedSymbolLoader._resolve(r, fd.TypeName, tps, tpc), fd.IsStatic, ct.Name()));
+                // G18-import：实例字段入 OwnField* 有序元数据（TSIG 继承字段展开；static 不入，同本地 _fillClass）。
+                if (!fd.IsStatic) { ct.AddOwnField(fd.Name, fd.TypeName, fd.Visibility); }
             }
             i = i + 1;
         }
@@ -115,6 +128,8 @@ public static class ImportedSymbolLoader {
                 // z42c 既有约定：静态/实例同进 Methods（IsStatic 标真值）——D3
                 var sym = new MethodSymbol(m.Name, m.Visibility, sig, m.IsStatic, ct.Name(), false, null);
                 ct.Methods.Put(m.Name, sym);
+                // G18-import：实例方法入 OwnMethod* 有序元数据（TSIG 方法继承展开；static 不入）。
+                if (!m.IsStatic) { ct.AddOwnMethod(m.Name, m.IsVirtual, m.IsAbstract); }
                 // 重载 arity 后缀（"Substring$2"）→ 同时注册 bare 键 first-wins（镜像 C# Phase2）
                 int dollar = ImportedSymbolLoader._dollarAt(m.Name);
                 if (dollar >= 0) {

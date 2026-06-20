@@ -353,6 +353,7 @@ public static class ExportedTypeExtractor
             $"{inst.Definition.Name}<{string.Join(", ", inst.TypeArgs.Select(TypeToString))}>",
         Z42ClassType ct        => ct.Name,
         Z42InterfaceType it    => it.Name,
+        Z42EnumType en         => en.Name,
         Z42NullType            => "null",
         Z42ErrorType           => "error",
         Z42UnknownType         => "unknown",

@@ -57,6 +57,9 @@ public sealed class Z42ClassType : Z42Type {
     // 本类**自有实例字段**（声明序 + AST 源拼写 + 可见性），供 TSIG 继承字段展开走 base 链按序读取
     // （Fields 是 hashed StrMap，迭代非确定；TSIG 需确定序 + 源拼写 → 单独有序元数据）。G18。
     public string[] OwnFieldNames; public string[] OwnFieldSpellings; public string[] OwnFieldVis; public int OwnFieldCount;
+    // 本类**自有实例方法**（TSIG 序 + 各 flag），供 imported 祖先（无 ClassDecl AST）参与 TSIG 方法继承展开。
+    // 仅实例方法（非 static）；含 ctor、override、virtual。static 走自有 ClassDecl 段，不需有序备份。G18-import。
+    public string[] OwnMethodNames; public bool[] OwnMethodIsVirtual; public bool[] OwnMethodIsAbstract; public int OwnMethodCount;
     // class-arity-overloading（同名多 arity 同 CU；泛型版注册 Name$N 键，IrName() 返回 Name$N）。
     public bool HasArityMangle;    // true → 此 CT 以 Name$N 键注册
     public int  ArityMangleCount;  // TypeParams.Count when HasArityMangle
@@ -66,6 +69,7 @@ public sealed class Z42ClassType : Z42Type {
         this.Methods = new StrMap();
         this.InterfaceNames = new string[0]; this.InterfaceCount = 0;
         this.OwnFieldNames = new string[0]; this.OwnFieldSpellings = new string[0]; this.OwnFieldVis = new string[0]; this.OwnFieldCount = 0;
+        this.OwnMethodNames = new string[0]; this.OwnMethodIsVirtual = new bool[0]; this.OwnMethodIsAbstract = new bool[0]; this.OwnMethodCount = 0;
     }
 
     // 追加一个自有实例字段元数据（SymbolCollector._fillClass 按 AST 声明序调用；static 字段不入此表）。G18。
@@ -82,6 +86,21 @@ public sealed class Z42ClassType : Z42Type {
         this.OwnFieldSpellings[this.OwnFieldCount] = spelling;
         this.OwnFieldVis[this.OwnFieldCount] = vis;
         this.OwnFieldCount = this.OwnFieldCount + 1;
+    }
+    // 追加一个自有实例方法元数据（TSIG 序调用；ImportedSymbolLoader 按 ExportedClassZ.Methods 顺序调用）。G18-import。
+    public void AddOwnMethod(string key, bool isVirtual, bool isAbstract) {
+        if (this.OwnMethodCount == this.OwnMethodNames.Length) {
+            int cap = this.OwnMethodNames.Length * 2;
+            if (cap == 0) { cap = 4; }
+            string[] nn = new string[cap]; bool[] nv = new bool[cap]; bool[] na = new bool[cap];
+            int i = 0;
+            while (i < this.OwnMethodCount) { nn[i] = this.OwnMethodNames[i]; nv[i] = this.OwnMethodIsVirtual[i]; na[i] = this.OwnMethodIsAbstract[i]; i = i + 1; }
+            this.OwnMethodNames = nn; this.OwnMethodIsVirtual = nv; this.OwnMethodIsAbstract = na;
+        }
+        this.OwnMethodNames[this.OwnMethodCount] = key;
+        this.OwnMethodIsVirtual[this.OwnMethodCount] = isVirtual;
+        this.OwnMethodIsAbstract[this.OwnMethodCount] = isAbstract;
+        this.OwnMethodCount = this.OwnMethodCount + 1;
     }
     public override string Name() { return this._name; }
     // IR 名：arity-mangled 时返回 Name$N（镜像 C# Z42ClassType.IrName）。

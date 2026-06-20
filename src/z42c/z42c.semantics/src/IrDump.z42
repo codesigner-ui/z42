@@ -83,13 +83,36 @@ public static class IrDump {
             }
             i = i + 1;
         }
+        // G18 部分修���：全包 classMap（shortName/Name$N → ClassDecl），用于跨文件 base 类方法继承���
+        // 镜像 C# SymbolCollector 第二趟 mergedMethods 对同包跨文件基类的处理。
+        StrMap pkgClassMap = new StrMap();
+        int pci = 0;
+        while (pci < count) {
+            int pcj = 0;
+            while (pcj < cus[pci].DeclCount) {
+                Decl pcd = cus[pci].Decls[pcj];
+                if (pcd is AttributedDecl) { pcd = (pcd as AttributedDecl).Inner; }
+                if (pcd is ClassDecl) {
+                    ClassDecl pccd = pcd as ClassDecl;
+                    if (pccd.Kind == "class" || pccd.Kind == "struct") {
+                        if (!pkgClassMap.ContainsKey(pccd.Name)) { pkgClassMap.Put(pccd.Name, pccd); }
+                        if (pccd.TypeParams.Count > 0) {
+                            string pcmk = pccd.Name + "$" + pccd.TypeParams.Count.ToString();
+                            if (!pkgClassMap.ContainsKey(pcmk)) { pkgClassMap.Put(pcmk, pccd); }
+                        }
+                    }
+                }
+                pcj = pcj + 1;
+            }
+            pci = pci + 1;
+        }
         CompiledModuleZ[] r = new CompiledModuleZ[count];
         i = 0;
         while (i < count) {
             r[i] = IrDump._compileCu(cus[i], symbols, deps, imported, classNs, localClasses, isRelease);
             string ns2 = "main";                                 // no-ns build 路径缺省（C# 字节实证）
             if (cus[i].HasNamespace) { ns2 = cus[i].Namespace; }
-            r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc);
+            r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc, pkgClassMap);
             i = i + 1;
         }
         return r;

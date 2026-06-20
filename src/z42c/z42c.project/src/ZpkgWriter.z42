@@ -197,6 +197,8 @@ public static class ZpkgWriterZ {
             }
             i = 0;
             while (i < cl.MethodCount) { ZpkgWriterZ._internMethod(pool, cl.Methods[i]); i = i + 1; }
+            i = 0;
+            while (i < cl.TpCount) { pool.Intern(cl.TypeParams[i]); i = i + 1; }
             c = c + 1;
         }
         c = 0;
@@ -272,8 +274,10 @@ public static class ZpkgWriterZ {
                 w.WriteU16(cl.InterfaceCount);      // 类接口表（port-z42c-interface）
                 int ifx = 0;
                 while (ifx < cl.InterfaceCount) { w.WriteU32(pool.Idx(cl.Interfaces[ifx])); ifx = ifx + 1; }
-                w.WriteU8(0);                       // type params
-                w.WriteU8(0);                       // constraints
+                w.WriteU8(cl.TpCount);
+                int tp = 0;
+                while (tp < cl.TpCount) { w.WriteU32(pool.Idx(cl.TypeParams[tp])); tp = tp + 1; }
+                w.WriteU8(0);                       // constraints (z42c classes have no where constraints)
                 c = c + 1;
             }
             w.WriteU16(em.InterfaceCount);
