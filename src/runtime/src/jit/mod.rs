@@ -238,6 +238,10 @@ pub fn run(ctx: &VmContext, module: &Module, entry_name: &str) -> Result<()> {
     let mut jit_module = compile_module(module)?;
 
     let duration_us = start.elapsed().as_micros() as u64;
+    if std::env::var("Z42_JIT_PROFILE").is_ok() {
+        eprintln!("[JIT PROFILE] compiled {} functions in {:.3}s",
+            function_count, duration_us as f64 / 1_000_000.0);
+    }
     ctx.counters().jit_methods_compiled.fetch_add(function_count, Ordering::Relaxed);
     ctx.counters().jit_compile_us_total.fetch_add(duration_us, Ordering::Relaxed);
 

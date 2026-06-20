@@ -40,7 +40,10 @@ pub unsafe extern "C" fn jit_vcall(
 
     let obj_val = frame_ref.regs[obj as usize].clone();
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
-    let mut extra_args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
+    // Args are read directly from the caller's registers at each call site via
+    // `new_method_args_from` (no per-vcall `Vec<Value>` collect); only the
+    // primitive-dispatch block below materialises a Vec, and only because its
+    // lazy-loader fallback hands a `&[Value]` to the interpreter.
 
     // ── IC fast path ────────────────────────────────────────────────────
     // Only applies when (1) IC pointer non-null, (2) receiver is an object
@@ -56,9 +59,8 @@ pub unsafe extern "C" fn jit_vcall(
             {
                 if fn_idx != crate::metadata::tokens::UNRESOLVED {
                     if let Some(entry) = ctx_ref.fn_entries_by_id.get(fn_idx as usize).cloned().flatten() {
-                        let mut call_args: Vec<Value> = vec![obj_val.clone()];
-                        call_args.append(&mut extra_args);
-                        let mut callee = JitFrame::new(entry.max_reg, &call_args);
+                        let mut callee = JitFrame::new_method_args_from(
+                            entry.max_reg, obj_val.clone(), &frame_ref.regs, arg_regs);
                         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                         let vm_ctx = vm_ctx_ref(ctx);
                         vm_ctx.push_frame(crate::exception::VmFrame::new(
@@ -87,9 +89,12 @@ pub unsafe extern "C" fn jit_vcall(
     // `interp/exec_vcall.rs::vcall`. Subsumes the legacy `Value::Str`
     // hardcoded `__str_*` fallback (review2 §2.2).
     if let Some(class_name) = crate::interp::primitive_class_name(&obj_val) {
-        let mut call_args = vec![obj_val.clone()];
-        call_args.append(&mut extra_args);
-        let arity = call_args.len() - 1; // exclude `this`
+        // Materialise (this, args…) once: the lazy-loader fallback below passes
+        // a `&[Value]` to the interpreter, so this block genuinely needs a Vec.
+        let mut call_args: Vec<Value> = Vec::with_capacity(argc + 1);
+        call_args.push(obj_val.clone());
+        call_args.extend(arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()));
+        let arity = argc; // exclude `this`
         let primary = format!("{}.{}", class_name, method);
         let overload = format!("{}.{}${}", class_name, method, arity);
         for func_name in [primary.as_str(), overload.as_str()] {
@@ -128,8 +133,8 @@ pub unsafe extern "C" fn jit_vcall(
                 }
             }
         }
-        // Restore args for fallback paths.
-        extra_args = call_args.into_iter().skip(1).collect();
+        // `call_args` drops here; the vtable path below re-reads args from the
+        // caller's registers directly (no hand-off needed).
     }
 
     let (class_name, recv_type_id) = match &obj_val {
@@ -170,9 +175,8 @@ pub unsafe extern "C" fn jit_vcall(
         }
     };
 
-    let mut call_args: Vec<Value> = vec![obj_val];
-    call_args.append(&mut extra_args);
-    let mut callee = JitFrame::new(entry.max_reg, &call_args);
+    let mut callee = JitFrame::new_method_args_from(
+        entry.max_reg, obj_val, &frame_ref.regs, arg_regs);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
     let vm_ctx = vm_ctx_ref(ctx);
     vm_ctx.push_frame(crate::exception::VmFrame::new(

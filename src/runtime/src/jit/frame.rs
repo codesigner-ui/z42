@@ -38,6 +38,43 @@ impl JitFrame {
         JitFrame { regs, ret: None, env_arena: Vec::new() }
     }
 
+    /// Allocate a frame and fill its first registers directly from the caller's
+    /// register file, indexed by `arg_indices`. Avoids the intermediate
+    /// `Vec<Value>` collect + the resulting double-clone that `new(_, &args)`
+    /// incurs on the hot `jit_call` path (perf: per-call malloc/free + one of
+    /// two arg clones eliminated; reg Vec still pooled). Each argument is cloned
+    /// exactly once (caller reg → callee reg).
+    pub fn new_args_from(max_reg: usize, caller_regs: &[Value], arg_indices: &[u32]) -> Self {
+        let size = max_reg + 1;
+        let mut regs = take_pooled_regs(size);
+        for (i, &r) in arg_indices.iter().enumerate() {
+            if i < size {
+                regs[i] = caller_regs[r as usize].clone();
+            }
+        }
+        JitFrame { regs, ret: None, env_arena: Vec::new() }
+    }
+
+    /// Like `new_args_from`, but for a method call: register 0 is the receiver
+    /// (`this`), and registers `1..` are the positional args read from the
+    /// caller's register file via `arg_indices`. Avoids the
+    /// `vec![obj]` + `append(extra_args)` two-Vec dance on the hot `jit_vcall`
+    /// path. The receiver is moved in (already cloned by the caller).
+    pub fn new_method_args_from(
+        max_reg: usize, receiver: Value, caller_regs: &[Value], arg_indices: &[u32],
+    ) -> Self {
+        let size = max_reg + 1;
+        let mut regs = take_pooled_regs(size);
+        if size > 0 { regs[0] = receiver; }
+        for (i, &r) in arg_indices.iter().enumerate() {
+            let slot = i + 1;
+            if slot < size {
+                regs[slot] = caller_regs[r as usize].clone();
+            }
+        }
+        JitFrame { regs, ret: None, env_arena: Vec::new() }
+    }
+
     /// Return the register Vec to the pool for reuse.
     pub fn recycle(self) {
         return_pooled_regs(self.regs);
@@ -56,12 +93,18 @@ thread_local! {
 }
 
 /// Take a Vec<Value> from the pool (or allocate a new one), sized to `size`.
+///
+/// INVARIANT: every Vec in the pool is already all-`Value::Null` (see
+/// `return_pooled_regs`, which nulls before pooling; fresh Vecs start Null).
+/// So we only `resize` to the requested length — no redundant per-element
+/// reset on take (that reset already happened on the matching recycle, and
+/// doing it twice is pure per-call overhead on every register slot).
 fn take_pooled_regs(size: usize) -> Vec<Value> {
     FRAME_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();
         if let Some(mut regs) = pool.pop() {
-            // Reset to Null and resize
-            for v in regs.iter_mut() { *v = Value::Null; }
+            // `regs` is all-Null by the pool invariant; resize keeps it Null
+            // (truncated tail is Null → no-op drops; growth fills with Null).
             regs.resize(size, Value::Null);
             regs
         } else {
@@ -70,9 +113,10 @@ fn take_pooled_regs(size: usize) -> Vec<Value> {
     })
 }
 
-/// Return a Vec<Value> to the pool for future reuse.
+/// Return a Vec<Value> to the pool for future reuse. Nulls every slot first to
+/// release Arc/Rc references promptly AND uphold the all-Null pool invariant
+/// relied on by `take_pooled_regs`.
 fn return_pooled_regs(mut regs: Vec<Value>) {
-    // Drop all values to release Rc references before pooling
     for v in regs.iter_mut() { *v = Value::Null; }
     FRAME_POOL.with(|pool| {
         let mut pool = pool.borrow_mut();

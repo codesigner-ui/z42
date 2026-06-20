@@ -60,10 +60,10 @@ pub unsafe extern "C" fn jit_call(
         }
     };
 
+    // Fill the callee frame directly from the caller's registers — no
+    // intermediate `Vec<Value>` alloc, args cloned once instead of twice.
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
-    let args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
-
-    let mut callee_frame = JitFrame::new(entry.max_reg, &args);
+    let mut callee_frame = JitFrame::new_args_from(entry.max_reg, &frame_ref.regs, arg_regs);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
     let vm_ctx = vm_ctx_ref(ctx);
 
