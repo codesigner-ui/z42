@@ -342,6 +342,8 @@ public sealed class FunctionEmitter {
             this._emitTry(s as BoundTry);
         } else if (s is BoundIf) {
             this._emitIf(s as BoundIf);
+        } else if (s is BoundForeach) {
+            this._emitForeach(s as BoundForeach);
         } else if (s is BoundFor) {
             this._emitFor(s as BoundFor);
         } else if (s is BoundWhile) {
@@ -414,6 +416,74 @@ public sealed class FunctionEmitter {
         this._emitStmt(w.Body);
         if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(condL)); }
         this._ctx.PopLoop();
+        this._ctx.StartBlock(endL);
+    }
+
+    // WriteBackName ミラー（镜像 C# WriteBackName：首次分配寄存器，已有则复用；id 不同则 emit copy）。
+    private void _writeBack(string name, TypedReg val) {
+        TypedReg dst;
+        if (this._ctx.Locals.ContainsKey(name)) {
+            dst = this._ctx.Locals.Get(name) as TypedReg;
+        } else {
+            dst = this._ctx.Alloc(val.Type);
+            this._ctx.Locals.Put(name, dst);
+        }
+        if (dst.Id != val.Id) { this._ctx.Emit(new CopyInstr(dst, val)); }
+    }
+
+    // foreach → 6 块（entry/fe_cond/fe_body/fe_inc/fe_end + 可能中间块）。
+    // 镜像 C# EmitBoundForeach：ConstI32 计数器 + ArrayLen（数组 path）或 Count field/VCall（类 path）。
+    private void _emitForeach(BoundForeach fe) {
+        TypedReg collReg = this._expr.Emit(fe.Collection);
+        // 计数器寄存器：ConstI32(0) + WriteBack（NOT BoundLitInt → i64；镜像 C# ConstI32Instr(0)）。
+        TypedReg zeroReg = this._ctx.Alloc(IrType.I32);
+        this._ctx.Emit(new ConstI32Instr(zeroReg, "0"));
+        string idxVar = "__fe_i_" + this._ctx.LabelSeq.ToString();
+        this._writeBack(idxVar, zeroReg);
+        // 长度：数组 → ArrayLenInstr（loop 前一次性求值，镜像 C#）；类 → Count field/VCall。
+        TypedReg lenReg = this._ctx.Alloc(IrType.I32);
+        if (fe.IsClassIter) {
+            if (fe.CountIsField) {
+                this._ctx.Emit(new FieldGetInstr(lenReg, collReg, "Count"));
+            } else {
+                TypedReg[] noArgs = new TypedReg[0];
+                this._ctx.Emit(new VCallInstr(lenReg, collReg, "Count", noArgs, 0));
+            }
+        } else {
+            this._ctx.Emit(new ArrayLenInstr(lenReg, collReg));
+        }
+        string condL = this._ctx.Fresh("fe_cond");
+        string bodyL = this._ctx.Fresh("fe_body");
+        string incrL = this._ctx.Fresh("fe_inc");
+        string endL  = this._ctx.Fresh("fe_end");
+        this._ctx.EndBlock(new BrTerm(condL));
+        this._ctx.StartBlock(condL);
+        TypedReg iReg = this._ctx.Locals.Get(idxVar) as TypedReg;
+        TypedReg cmpReg = this._ctx.Alloc(IrType.Bool);
+        this._ctx.Emit(new LtInstr(cmpReg, iReg, lenReg));
+        this._ctx.EndBlock(new BrCondTerm(cmpReg, bodyL, endL));
+        this._ctx.PushLoop(incrL, endL);
+        this._ctx.StartBlock(bodyL);
+        TypedReg idxReg = this._ctx.Locals.Get(idxVar) as TypedReg;
+        TypedReg elemReg = this._ctx.Alloc(this._ctx.ToIrType(fe.VarType));
+        if (fe.IsClassIter) {
+            TypedReg[] idxArgs = new TypedReg[1]; idxArgs[0] = idxReg;
+            this._ctx.Emit(new VCallInstr(elemReg, collReg, "get_Item", idxArgs, 1));
+        } else {
+            this._ctx.Emit(new ArrayGetInstr(elemReg, collReg, idxReg));
+        }
+        this._writeBack(fe.VarName, elemReg);
+        this._emitStmt(fe.Body);
+        if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(incrL)); }
+        this._ctx.PopLoop();
+        this._ctx.StartBlock(incrL);
+        TypedReg idxReg2 = this._ctx.Locals.Get(idxVar) as TypedReg;
+        TypedReg oneReg  = this._ctx.Alloc(IrType.I32);
+        this._ctx.Emit(new ConstI32Instr(oneReg, "1"));
+        TypedReg nextReg = this._ctx.Alloc(IrType.I32);
+        this._ctx.Emit(new AddInstr(nextReg, idxReg2, oneReg));
+        this._writeBack(idxVar, nextReg);
+        this._ctx.EndBlock(new BrTerm(condL));
         this._ctx.StartBlock(endL);
     }
 }

@@ -407,6 +407,24 @@ public sealed class BoundFor : BoundStmt {
     public override string Dump() { return "(for)"; }
 }
 
+// foreach (T name in coll) body（镜像 C# BoundForeach；FunctionEmitter 专用路径产出 byte-identical IR）。
+// IsClassIter=false → 数组 path（ArrayLen+ArrayGet+ConstI32 计数器）。
+// IsClassIter=true  → 类 iterator path（VCall get_Item + Count field/method）。
+public sealed class BoundForeach : BoundStmt {
+    public string    VarName;
+    public Z42Type   VarType;
+    public BoundExpr Collection;
+    public BoundStmt Body;
+    public bool IsClassIter; public bool CountIsField;
+    public BoundForeach(string varName, Z42Type varType, BoundExpr coll, BoundStmt body,
+                        bool isClassIter, bool countIsField, Span span) {
+        this.Span = span; this.VarName = varName; this.VarType = varType;
+        this.Collection = coll; this.Body = body;
+        this.IsClassIter = isClassIter; this.CountIsField = countIsField;
+    }
+    public override string Dump() { return "(foreach " + this.VarName + ")"; }
+}
+
 public sealed class BoundBreak : BoundStmt {
     public BoundBreak(Span span) { this.Span = span;}
     public override string Dump() { return "(break)"; }

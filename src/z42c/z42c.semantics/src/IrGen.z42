@@ -183,6 +183,12 @@ public sealed class IrGen {
                                 int retTag = this._irTypeTag(pd.Type);
                                 IrFunction ag = this._emitAutoPropGetter(getIrNm, backing, retNm, retTag, pdStatic, pd.Span.Line);
                                 funcs = this._pushFunc(funcs, fc, ag); fc = fc + 1;
+                                // setter（HasSet）：合成 field.set @__prop_Name 桩（镜像 C# SynthesizeClassAutoProp set）。
+                                if (pd.HasSet) {
+                                    string setIrNm = this._q(this._classIrShortName(c)) + ".set_" + pd.Name;
+                                    IrFunction sg = this._emitAutoPropSetter(setIrNm, backing, retNm, retTag, pdStatic, pd.Span.Line);
+                                    funcs = this._pushFunc(funcs, fc, sg); fc = fc + 1;
+                                }
                             }
                         } else if (mem is IndexerDecl) {
                             // IndexerDecl → get_Item / set_Item 编译函数（镜像 C# IndexerDecl lowering）。
@@ -539,7 +545,41 @@ public sealed class IrGen {
                               lineTable, lineCount, locals, locals.Length);
     }
 
-    // IrType tag from TypeExpr（prim 名 → tag；其余 Ref）。
+    // 非 extern auto-property setter 桩（镜像 C# SynthesizeClassAutoProp set 路径）：
+    // field.set %0 @__prop_X %1; ret。含 .locals(%0=this, %1=value) + .linetable(line)。
+    private IrFunction _emitAutoPropSetter(string name, string backingField, string valTypeName, int valTag,
+                                           bool isStatic, int line) {
+        int totalParams = isStatic ? 1 : 2;   // static: (value); instance: (this, value)
+        TypedReg thisReg = new TypedReg(0, IrType.Ref);
+        TypedReg valReg  = new TypedReg(isStatic ? 0 : 1, valTag);
+        IrInstr[] instrs = new IrInstr[1];
+        instrs[0] = new FieldSetInstr(thisReg, backingField, valReg);
+        RetTerm term = new RetTerm(false, null);
+        IrBlock[] blocks = new IrBlock[1];
+        blocks[0] = new IrBlock("entry", instrs, 1, term, true);
+        string[] paramTypes = new string[totalParams];
+        int[] regTypes = new int[totalParams];
+        if (!isStatic) { paramTypes[0] = "?"; regTypes[0] = IrType.Unknown; }
+        paramTypes[isStatic ? 0 : 1] = valTypeName;
+        regTypes[isStatic ? 0 : 1] = valTag;
+        IrLineEntry[] lineTable = new IrLineEntry[0];
+        int lineCount = 0;
+        IrLocalVarEntry[] locals = new IrLocalVarEntry[0];
+        if (!this.IsRelease) {
+            lineTable = new IrLineEntry[1];
+            lineTable[0] = new IrLineEntry(0, 0, line, false, null, 0);
+            lineCount = 1;
+            locals = isStatic ? new IrLocalVarEntry[1] : new IrLocalVarEntry[2];
+            if (!isStatic) { locals[0] = new IrLocalVarEntry("this", 0); }
+            locals[isStatic ? 0 : 1] = new IrLocalVarEntry("value", isStatic ? 0 : 1);
+        }
+        return new IrFunction(name, totalParams, "void", isStatic, blocks, 1, totalParams,
+                              "Interp", paramTypes, totalParams, regTypes, totalParams,
+                              lineTable, lineCount, locals, locals.Length);
+    }
+
+    // IrType tag from TypeExpr（prim 名 → tag；string → Str；array → Ref；class/iface → Ref；void → Void）。
+    // 镜像 C# ToIrType(Z42Type)：string[] 是 Ref，string 是 Str，class 是 Ref，其他具名 Unknown。
     private int _irTypeTag(TypeExpr te) {
         if (te is NamedType) {
             string nm = (te as NamedType).Name;
@@ -549,7 +589,12 @@ public sealed class IrGen {
             if (nm == "float") { return IrType.F32; }
             if (nm == "double") { return IrType.F64; }
             if (nm == "byte" || nm == "sbyte" || nm == "short" || nm == "ushort") { return IrType.I32; }
+            if (nm == "string") { return IrType.Str; }
+            if (nm == "char") { return IrType.Char; }
+            if (nm == "void") { return IrType.Void; }
+            return IrType.Ref;   // class / interface / opaque named → Ref（镜像 C#）
         }
+        if (te is ArrayType) { return IrType.Ref; }   // T[] → Ref
         return IrType.Unknown;
     }
 

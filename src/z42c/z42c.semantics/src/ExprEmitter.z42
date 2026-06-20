@@ -426,6 +426,16 @@ public sealed class ExprEmitter {
         if (a.Target is BoundMember) {
             BoundMember tm = a.Target as BoundMember;
             TypedReg obj = this.Emit(tm.Target);
+            // auto-property setter dispatch（镜像 _emitMember getter dispatch）：
+            // class 有 set_MemberName → v_call（镜像 C# SynthesizeClassAutoProp setter 路径）。
+            Z42ClassType setCt = this._receiverClassType(tm.Target.Type());
+            if (setCt != null && setCt.Methods.ContainsKey("set_" + tm.MemberName)) {
+                TypedReg voidDst = this._ctx.Alloc(IrType.Void);
+                TypedReg[] setArgs = new TypedReg[1];
+                setArgs[0] = val;
+                this._ctx.Emit(new VCallInstr(voidDst, obj, "set_" + tm.MemberName, setArgs, 1));
+                return val;
+            }
             this._ctx.Emit(new FieldSetInstr(obj, tm.MemberName, val));
             return val;
         }

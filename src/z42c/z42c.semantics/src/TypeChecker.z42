@@ -300,7 +300,8 @@ public sealed class TypeChecker {
             if (f.HasIncr) { fincr = this._bindExpr(f.Incr, forScope); }
             return new BoundFor(f.HasInit, finit, f.HasCond, fcond, f.HasIncr, fincr, fbody, s.Span);
         }
-        // GS6: foreach 脱糖 → { T[] __fe_arr=iter; int __fe_i=0; while(__fe_i<__fe_arr.Length){T name=__fe_arr[__fe_i]; body; __fe_i=__fe_i+1;} }
+        // GS6: foreach → BoundForeach（镜像 C# TypeChecker：保留语义节点，FunctionEmitter 专用 _emitForeach
+        // 产出 ArrayLen+ConstI32 计数器 byte-identical IR；替代旧脱糖到 while+BoundMember.Length 路径）。
         if (s is ForeachStmt) {
             ForeachStmt fe = s as ForeachStmt;
             TypeEnv feScope = env.PushScope();
@@ -309,32 +310,31 @@ public sealed class TypeChecker {
             bool feIsVar = (fe.Type is NamedType) && ((fe.Type as NamedType).Name == "var");
             if (feIsVar) {
                 if (feIter.Type() is Z42ArrayType) { feElem = (feIter.Type() as Z42ArrayType).Elem; }
+                else if (feIter.Type() is Z42ClassType) {
+                    // class-iter：elem type from get_Item return type（镜像 C# ElemTypeOf）
+                    Z42ClassType feCt = feIter.Type() as Z42ClassType;
+                    if (feCt.Methods.ContainsKey("get_Item")) {
+                        MethodSymbol feMs = feCt.Methods.Get("get_Item") as MethodSymbol;
+                        if (feMs != null && feMs.Signature != null) { feElem = feMs.Signature.Ret; }
+                    }
+                }
             } else { feElem = feScope.ResolveType(fe.Type); }
-            string feArrName = "__fe_arr"; string feIdxName = "__fe_i";
-            feScope.Define(feArrName, feIter.Type());
-            feScope.Define(feIdxName, new Z42PrimType("int"));
             TypeEnv elemScope = feScope.PushScope();
             elemScope.Define(fe.Name, feElem);
             this._loopDepth = this._loopDepth + 1;
             BoundStmt febody = this._bindStmt(fe.Body, elemScope, ret);
             this._loopDepth = this._loopDepth - 1;
-            Z42Type intT2 = new Z42PrimType("int"); Span sp3 = s.Span;
-            BoundStmt nameDecl = new BoundVarDeclStmt(fe.Name, feElem,
-                new BoundIndex(new BoundIdent(feArrName, feIter.Type(), sp3),
-                               new BoundIdent(feIdxName, intT2, sp3), feElem, sp3), sp3);
-            BoundExpr incrVal = new BoundBinary("+", new BoundIdent(feIdxName, intT2, sp3),
-                new BoundLitInt("1", intT2, sp3), intT2, sp3);
-            BoundExpr incrExpr = new BoundAssign(new BoundIdent(feIdxName, intT2, sp3), incrVal, intT2, sp3);
-            BoundStmt[] wbody2 = new BoundStmt[3];
-            wbody2[0] = nameDecl; wbody2[1] = febody; wbody2[2] = new BoundExprStmt(incrExpr, sp3);
-            BoundExpr lenExpr = new BoundMember(new BoundIdent(feArrName, feIter.Type(), sp3), "Length", intT2, sp3);
-            BoundExpr wcond2 = new BoundBinary("<", new BoundIdent(feIdxName, intT2, sp3), lenExpr, new Z42PrimType("bool"), sp3);
-            BoundStmt wloop2 = new BoundWhile(wcond2, new BoundBlock(wbody2, 3, sp3), sp3);
-            BoundStmt arrDecl2 = new BoundVarDeclStmt(feArrName, feIter.Type(), feIter, sp3);
-            BoundStmt idxDecl2 = new BoundVarDeclStmt(feIdxName, intT2, new BoundLitInt("0", intT2, sp3), sp3);
-            BoundStmt[] outer2 = new BoundStmt[3];
-            outer2[0] = arrDecl2; outer2[1] = idxDecl2; outer2[2] = wloop2;
-            return new BoundBlock(outer2, 3, sp3);
+            // ClassIterTarget：class with get_Item + Count field or method（镜像 C# ClassIterTarget）
+            bool feIsClassIter = false; bool feCountIsField = false;
+            Z42Type feCollType = feIter.Type();
+            Z42ClassType feClassDef = null;
+            if (feCollType is Z42ClassType) { feClassDef = feCollType as Z42ClassType; }
+            else if (feCollType is Z42InstantiatedType) { feClassDef = (feCollType as Z42InstantiatedType).Def; }
+            if (feClassDef != null && feClassDef.Methods.ContainsKey("get_Item")) {
+                if (feClassDef.Fields.ContainsKey("Count")) { feIsClassIter = true; feCountIsField = true; }
+                else if (feClassDef.Methods.ContainsKey("Count")) { feIsClassIter = true; feCountIsField = false; }
+            }
+            return new BoundForeach(fe.Name, feElem, feIter, febody, feIsClassIter, feCountIsField, s.Span);
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch, "unsupported statement (1A)", s.Span);
         return new BoundExprStmt(new BoundError("unsupported stmt", new Z42ErrorType(), s.Span), s.Span);
