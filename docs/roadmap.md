@@ -386,6 +386,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | ~~`jit-future-safepoint-inline`~~ | ✅ landed 2026-06-03 as [inline-jit-safepoint-check](spec/archive/2026-06-03-inline-jit-safepoint-check/tasks.md) — `atomic_rmw sub + brif` 内联在 translate.rs 5 处 emit site，slow path 走 `jit_check_safepoint_slow` 新 helper | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
 | `jit-future-f64-specialization` | F64 `fadd` / `fsub` / `fcmp` 走 native（结构与 I64 完全对称，只是 payload 类型）；等 F64-heavy benchmark 出现再做 | [archive/2026-05-28-jit-type-specialization/tasks.md](spec/archive/2026-05-28-jit-type-specialization/tasks.md#out-of-scope-items-deferred-for-future-spec) |
 | TLS 后续（streaming / system-roots / keepalive-pool / server）| `add-z42-net-tls` (2026-06-03) 客户端落地后的 4 项：https `SendStreaming`、honour 系统 CA、TLS 连接池、服务端 TLS | [stdlib/net.md](design/stdlib/net.md#net-future-tls--已落地-2026-06-03-add-z42-net-tls) |
+| `repl-future-tab-completion` | Tab 补全候选列表（依赖 LSP server 语义信息，0.5.x）| [toolchain/repl.md](design/toolchain/repl.md#repl-future-tab-completion) |
+| `repl-future-incremental-compilation` | Growing Transcript O(n) 重编译 → 增量模块加载（大 session 性能，benchmark 驱动）| [toolchain/repl.md](design/toolchain/repl.md#repl-future-incremental-compilation) |
+| `repl-future-load-directive` | `.load file.z42` 指令（ROI 低，MVP 不做）| [toolchain/repl.md](design/toolchain/repl.md#repl-future-load-directive) |
+| `repl-future-mobile` | mobile / WASM REPL（iOS W^X 限制，依赖 1.1.x mobile scripting）| [toolchain/repl.md](design/toolchain/repl.md#repl-future-mobile) |
+| `repl-future-debugger` | 调试集成（DAP server + VM 单步支持，0.8.x）| [toolchain/repl.md](design/toolchain/repl.md#repl-future-debugger) |
 
 ### 实施期延后（D-* 系列）
 
