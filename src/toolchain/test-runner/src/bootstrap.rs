@@ -94,8 +94,10 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
     // add-threading-stdlib (2026-05-20): module → VmCore; Vm thin.
     let string_pool_len = final_module.string_pool.len();
     let ctx = VmContext::with_module(final_module);
+    // support-colocated-zpkg-deps (2026-06-20): the install API now takes a
+    // search-dir list; the test runner resolves deps from the single libs dir.
     ctx.install_lazy_loader_with_deps(
-        libs_dir,
+        libs_dir.into_iter().collect(),
         string_pool_len,
         declared_candidates,
         initially_loaded_zpkgs,

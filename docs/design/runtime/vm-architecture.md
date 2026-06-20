@@ -101,7 +101,7 @@ z42vm <file>
   │      → probe `<basename>.zsym` 同目录；存在且 build_id 匹配 →
   │        合并 sidecar DBUG 到 per-module funcs（详见下方 sidecar 章节）
   │
-  ├── 5.1d 依赖加载策略
+  ├── 5.1d 依赖加载策略（search_dirs = [入口zpkg目录, stdlib libs]，见下「同址搜索」）
   │      interp: 纯懒加载（build_declared_candidates 填充 LazyLoader）
   │      jit/aot: eager 预加载所有声明依赖（**transitive BFS**，见下）
   │              （同时也填 LazyLoader 以防 type/func 零碎 miss）
@@ -109,11 +109,25 @@ z42vm <file>
   ├── 5.1e merge_modules → final_module
   │      + build_type_registry / verify_constraints / build_*_index
   │
-  ├── install_with_deps(libs_dir, pool_len, declared, initially_loaded)
+  ├── install_with_deps(search_dirs, pool_len, declared, initially_loaded)
   │      [lazy_loader.rs]
   │
   └── Vm::new(final_module, default_mode).run(entry)
 ```
+
+### 依赖同址搜索（support-colocated-zpkg-deps，2026-06-20）
+
+依赖 zpkg 按文件名在 `search_dirs` 列表里**按序**解析，而非单一 `libs_dir`。z42vm CLI
+组装 `search_dirs = [入口 zpkg 所在目录, stdlib libs 目录]`（去重、顺序固定 →
+解析确定性；入口目录优先）。**动机**：apphost 把 payload 与它的包依赖放在一起发布——
+`bin/z42c`(apphost) → `programs/z42c/z42c.driver.zpkg`，其兄弟 `z42c.core.zpkg` 等也在
+`programs/z42c/`，**不在 stdlib `libs/`**。同址搜索让 driver 既能找到同址的 `z42c.*`，
+又能从 `libs/` 找 `z42.*`，无需把两者拍平到一个目录。
+
+落点：`LazyLoader.search_dirs: Vec<PathBuf>`（原 `libs_dir: Option`）；transitive unfold
+用 `ZpkgCandidate::build_in_dirs(dirs, file)`（首个含该文件的目录胜出）。eager BFS 与
+`build_declared_candidates` 同样遍历 search_dirs。FFI/embedded（test-runner）从 bytes 加载、
+无入口目录，search_dirs 退化为 `[libs_dir]`，行为不变。
 
 ---
 

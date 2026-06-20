@@ -42,7 +42,7 @@ fn fake_candidate(namespaces: &[&str]) -> ZpkgCandidate {
 #[test]
 fn candidates_routes_by_exact_namespace() {
     let loader = LazyLoader::new(
-        None,
+        Vec::new(),
         0,
         vec![
             ("a.zpkg".to_string(), fake_candidate(&["Std.IO"])),
@@ -59,7 +59,7 @@ fn candidates_routes_by_descendant_namespace() {
     // Querying `Std.Collections` should match a zpkg declaring
     // `Std.Collections.Generic` (descendant prefix match).
     let loader = LazyLoader::new(
-        None,
+        Vec::new(),
         0,
         vec![
             ("a.zpkg".to_string(), fake_candidate(&["Std.Collections.Generic"])),
@@ -78,7 +78,7 @@ fn candidates_routes_by_descendant_namespace() {
 #[test]
 fn candidates_routes_multi_zpkg_sharing_namespace() {
     let loader = LazyLoader::new(
-        None,
+        Vec::new(),
         0,
         vec![
             (
@@ -106,7 +106,7 @@ fn candidates_routes_multi_zpkg_sharing_namespace() {
 #[test]
 fn install_filters_already_loaded_from_declared() {
     let loader = LazyLoader::new(
-        None,
+        Vec::new(),
         0,
         vec![(
             "z42.collections.zpkg".to_string(),
@@ -121,7 +121,7 @@ fn install_filters_already_loaded_from_declared() {
 #[test]
 fn remaining_declared_excludes_loaded() {
     let mut loader = LazyLoader::new(
-        None,
+        Vec::new(),
         0,
         vec![
             ("a.zpkg".to_string(), fake_candidate(&["X"])),
@@ -138,7 +138,7 @@ fn remaining_declared_excludes_loaded() {
 #[test]
 fn candidates_excludes_subsequently_loaded() {
     let mut loader = LazyLoader::new(
-        None,
+        Vec::new(),
         0,
         vec![(
             "a.zpkg".to_string(),
@@ -170,8 +170,56 @@ fn vm_context_install_then_uninstall_is_clean() {
 #[test]
 fn vm_context_install_with_deps_no_libs_no_declared_returns_none() {
     let ctx = crate::vm_context::VmContext::new();
-    ctx.install_lazy_loader_with_deps(None, 0, Vec::new(), Vec::new());
+    ctx.install_lazy_loader_with_deps(Vec::new(), 0, Vec::new(), Vec::new());
     assert!(ctx.try_lookup_function("Std.Anything.F").is_none());
     assert!(ctx.try_lookup_type("Std.Anything").is_none());
     ctx.uninstall_lazy_loader();
+}
+
+// ── build_in_dirs: colocated dep search (support-colocated-zpkg-deps) ─────────
+
+/// Path to a committed, valid zpkg fixture usable as a real on-disk zpkg.
+fn fixture_zpkg() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/zpkg-format/packed-minimal/source.zpkg")
+}
+
+#[test]
+fn build_in_dirs_not_found_errors() {
+    let a = std::env::temp_dir().join("z42-coloc-a-empty");
+    let _ = std::fs::create_dir_all(&a);
+    assert!(ZpkgCandidate::build_in_dirs(&[a], "nope.zpkg").is_err());
+    assert!(ZpkgCandidate::build_in_dirs(&[], "nope.zpkg").is_err());
+}
+
+#[test]
+fn build_in_dirs_finds_in_later_dir() {
+    // Two dirs; the zpkg lives only in the SECOND — `build_in_dirs` must skip
+    // the first and resolve from the second (colocated-dep search semantics).
+    let base = std::env::temp_dir().join("z42-coloc-order");
+    let dir1 = base.join("empty");
+    let dir2 = base.join("has");
+    let _ = std::fs::create_dir_all(&dir1);
+    let _ = std::fs::create_dir_all(&dir2);
+    let target = dir2.join("colo.zpkg");
+    std::fs::copy(fixture_zpkg(), &target).expect("copy fixture zpkg");
+
+    let cand = ZpkgCandidate::build_in_dirs(&[dir1.clone(), dir2.clone()], "colo.zpkg")
+        .expect("resolves from the second dir");
+    assert_eq!(cand.file_path, target, "resolved from the dir that actually has the file");
+}
+
+#[test]
+fn build_in_dirs_first_dir_wins() {
+    // When present in BOTH dirs, the FIRST listed dir wins (deterministic order).
+    let base = std::env::temp_dir().join("z42-coloc-firstwins");
+    let dir1 = base.join("first");
+    let dir2 = base.join("second");
+    let _ = std::fs::create_dir_all(&dir1);
+    let _ = std::fs::create_dir_all(&dir2);
+    std::fs::copy(fixture_zpkg(), dir1.join("dup.zpkg")).unwrap();
+    std::fs::copy(fixture_zpkg(), dir2.join("dup.zpkg")).unwrap();
+
+    let cand = ZpkgCandidate::build_in_dirs(&[dir1.clone(), dir2.clone()], "dup.zpkg").unwrap();
+    assert_eq!(cand.file_path, dir1.join("dup.zpkg"), "first search dir wins on conflict");
 }

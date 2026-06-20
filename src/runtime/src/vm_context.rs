@@ -1095,19 +1095,22 @@ impl VmContext {
     /// Install with no declared dependencies — for tests / single-file
     /// scripts without stdlib references.
     pub fn install_lazy_loader(&self, libs_dir: Option<PathBuf>, main_pool_len: usize) {
-        self.install_lazy_loader_with_deps(libs_dir, main_pool_len, Vec::new(), Vec::new());
+        self.install_lazy_loader_with_deps(
+            libs_dir.into_iter().collect(), main_pool_len, Vec::new(), Vec::new());
     }
 
     /// Install with declared deps (see `LazyLoader::new` for parameter docs).
+    /// `search_dirs` are consulted in order to resolve transitive dep zpkgs by
+    /// file name (typically `[entry-zpkg dir, stdlib libs dir]`).
     pub fn install_lazy_loader_with_deps(
         &self,
-        libs_dir: Option<PathBuf>,
+        search_dirs: Vec<PathBuf>,
         main_pool_len: usize,
         declared: Vec<(String, ZpkgCandidate)>,
         initially_loaded: Vec<String>,
     ) {
         *self.core.lazy_loader.lock() = Some(LazyLoader::new(
-            libs_dir,
+            search_dirs,
             main_pool_len,
             declared,
             initially_loaded,

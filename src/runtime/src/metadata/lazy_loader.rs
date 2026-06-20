@@ -61,13 +61,33 @@ impl ZpkgCandidate {
             namespaces: meta.namespaces,
         })
     }
+
+    /// Build a candidate by searching `dirs` in order for `file_name`, using
+    /// the first directory that actually contains the file. Enables colocated
+    /// dependency resolution (support-colocated-zpkg-deps, 2026-06-20): an
+    /// apphost whose payload + its deps live together (e.g.
+    /// `programs/z42c/z42c.driver.zpkg` next to `z42c.core.zpkg`) resolves
+    /// those siblings even though they aren't in the stdlib `libs/` dir.
+    pub fn build_in_dirs(dirs: &[PathBuf], file_name: &str) -> Result<Self> {
+        for dir in dirs {
+            let file_path = dir.join(file_name);
+            if file_path.is_file() {
+                return Self::build(dir, file_name);
+            }
+        }
+        anyhow::bail!("zpkg `{file_name}` not found in any search dir ({} candidates)", dirs.len())
+    }
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 /// Lazy-loaded dependency state. Owned by `VmContext::lazy_loader`.
 pub struct LazyLoader {
-    libs_dir:       Option<PathBuf>,
+    /// Directories searched (in order) to resolve a transitive dep zpkg by
+    /// file name. Typically `[entry-zpkg-dir, stdlib-libs-dir]` so an apphost's
+    /// colocated package deps resolve alongside the stdlib
+    /// (support-colocated-zpkg-deps, 2026-06-20).
+    search_dirs:    Vec<PathBuf>,
     /// Length of the main (user) module's string pool.
     /// ConstStr indices < `main_pool_len` resolve against the main module's
     /// pool; indices >= `main_pool_len` resolve against `string_pool` below
@@ -115,7 +135,7 @@ impl LazyLoader {
     }
 
     pub fn new(
-        libs_dir: Option<PathBuf>,
+        search_dirs: Vec<PathBuf>,
         main_pool_len: usize,
         declared: Vec<(String, ZpkgCandidate)>,
         initially_loaded: Vec<String>,
@@ -126,7 +146,7 @@ impl LazyLoader {
             .filter(|(k, _)| !loaded_zpkgs.contains(k))
             .collect();
         Self {
-            libs_dir,
+            search_dirs,
             main_pool_len,
             string_pool:    Vec::new(),
             loaded_zpkgs,
@@ -346,15 +366,18 @@ impl LazyLoader {
             }
         }
 
-        // Transitively expand `ZpkgDep` list into the declared set.
-        if let Some(libs) = self.libs_dir.clone() {
+        // Transitively expand `ZpkgDep` list into the declared set. Each dep is
+        // resolved across all `search_dirs` (entry-zpkg dir + stdlib libs), so a
+        // colocated package dep is found even when it isn't in `libs/`.
+        if !self.search_dirs.is_empty() {
+            let dirs = self.search_dirs.clone();
             for dep in &artifact.dependencies {
                 if self.loaded_zpkgs.contains(&dep.file)
                     || self.declared_zpkgs.contains_key(&dep.file)
                 {
                     continue;
                 }
-                match ZpkgCandidate::build(&libs, &dep.file) {
+                match ZpkgCandidate::build_in_dirs(&dirs, &dep.file) {
                     Ok(cand) => {
                         self.declared_zpkgs.insert(dep.file.clone(), cand);
                     }

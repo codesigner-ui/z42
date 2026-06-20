@@ -176,8 +176,10 @@ pub(crate) fn build_host_module(
     };
 
     let ctx = VmContext::new();
+    // FFI/embedded path loads the module from bytes (no on-disk entry dir), so
+    // the search set is just the libs dir (support-colocated-zpkg-deps).
     ctx.install_lazy_loader_with_deps(
-        libs_dir,
+        libs_dir.into_iter().collect(),
         final_module.string_pool.len(),
         Vec::new(),
         initially_loaded,

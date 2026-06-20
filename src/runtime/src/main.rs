@@ -348,16 +348,17 @@ fn log_module_paths(module_paths: &[PathBuf]) {
 /// eager-loaded at startup, or JIT-mode deps already merged) are excluded.
 fn build_declared_candidates(
     user_artifact: &z42::metadata::LoadedArtifact,
-    libs_dir:      &Option<PathBuf>,
+    search_dirs:   &[PathBuf],
     initially_loaded: &[String],
 ) -> Vec<(String, z42::metadata::lazy_loader::ZpkgCandidate)> {
     let mut declared: Vec<(String, z42::metadata::lazy_loader::ZpkgCandidate)> = Vec::new();
-    let Some(dir) = libs_dir else { return declared };
+    if search_dirs.is_empty() { return declared; }
 
     let loaded_has = |name: &str| initially_loaded.iter().any(|f| f == name);
     let declared_has = |d: &[(String, _)], name: &str| d.iter().any(|(f, _)| f == name);
 
-    let libs_paths = vec![dir.clone()];
+    // Namespace reverse-lookup searches every dep dir (entry-zpkg dir + libs).
+    let libs_paths = search_dirs.to_vec();
 
     // .zpkg dependencies (DEPS): file field is authoritative; fall back to
     // the sibling `namespaces` field if the literal filename does not resolve
@@ -365,7 +366,7 @@ fn build_declared_candidates(
     // package filenames like `z42.collections.zpkg`).
     for dep in &user_artifact.dependencies {
         if loaded_has(&dep.file) || declared_has(&declared, &dep.file) { continue; }
-        if let Ok(cand) = z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &dep.file) {
+        if let Ok(cand) = z42::metadata::lazy_loader::ZpkgCandidate::build_in_dirs(search_dirs, &dep.file) {
             declared.push((dep.file.clone(), cand));
             continue;
         }
@@ -381,7 +382,7 @@ fn build_declared_candidates(
                     .map(str::to_owned)
                 else { continue };
                 if loaded_has(&file_name) || declared_has(&declared, &file_name) { continue; }
-                match z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+                match z42::metadata::lazy_loader::ZpkgCandidate::build_in_dirs(search_dirs, &file_name) {
                     Ok(cand) => declared.push((file_name, cand)),
                     Err(e)   => tracing::warn!("cannot read zpkg meta `{}`: {e}", file_name),
                 }
@@ -402,7 +403,7 @@ fn build_declared_candidates(
             else { continue };
             if loaded_has(&file_name) { continue; }
             if declared_has(&declared, &file_name) { continue; }
-            match z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+            match z42::metadata::lazy_loader::ZpkgCandidate::build_in_dirs(search_dirs, &file_name) {
                 Ok(cand) => declared.push((file_name, cand)),
                 Err(e)   => tracing::warn!("cannot read zpkg meta `{}`: {e}", file_name),
             }
@@ -458,6 +459,34 @@ fn main() -> Result<()> {
 
     // Locate stdlib libs directory.
     let libs_dir = resolve_libs_dir();
+
+    // Dependency search dirs (support-colocated-zpkg-deps, 2026-06-20): resolve
+    // a dep zpkg from the ENTRY zpkg's own directory first, then the stdlib
+    // `libs/`. This lets an apphost ship its payload + that payload's package
+    // deps together — e.g. `programs/z42c/z42c.driver.zpkg` finds its sibling
+    // `z42c.core.zpkg` even though those aren't in `libs/`. Order is fixed
+    // (entry dir, then libs) so resolution stays deterministic; de-duped so a
+    // self-contained dir doesn't get scanned twice.
+    let search_dirs: Vec<PathBuf> = {
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        if let Some(entry_dir) = std::path::Path::new(file).parent() {
+            let entry_dir = if entry_dir.as_os_str().is_empty() {
+                PathBuf::from(".")
+            } else {
+                entry_dir.to_path_buf()
+            };
+            if entry_dir.is_dir() {
+                dirs.push(entry_dir);
+            }
+        }
+        if let Some(libs) = &libs_dir {
+            if !dirs.iter().any(|d| d == libs) {
+                dirs.push(libs.clone());
+            }
+        }
+        dirs
+    };
+
     if cli.verbose {
         match &libs_dir {
             Some(dir) => log_libs(dir),
@@ -553,9 +582,11 @@ fn main() -> Result<()> {
         // fully lazy with runtime transitive unfold). We drain a worklist of
         // dep files + namespaces, enqueuing each loaded artifact's own deps,
         // until the graph is exhausted. `loaded_paths` dedups by canonical path.
-        if let Some(ref dir) = libs_dir {
+        if !search_dirs.is_empty() {
             use std::collections::VecDeque;
-            let libs_paths = vec![dir.clone()];
+            // Resolve each dep file across all search dirs (entry-zpkg dir +
+            // libs) — colocated package deps merge alongside the stdlib.
+            let libs_paths = search_dirs.clone();
             let mut file_queue: VecDeque<String> =
                 user_artifact.dependencies.iter().map(|d| d.file.clone()).collect();
             let mut ns_queue: VecDeque<String> =
@@ -572,8 +603,12 @@ fn main() -> Result<()> {
                     }
                 }
                 let Some(file) = file_queue.pop_front() else { break };
-                let dep_path = dir.join(&file);
-                if !dep_path.exists() { continue; }
+                // First search dir that actually has this file wins (fixed order
+                // → deterministic; entry dir before libs).
+                let Some(dep_path) = search_dirs.iter()
+                    .map(|d| d.join(&file))
+                    .find(|p| p.exists())
+                else { continue };
                 let canonical = dep_path.canonicalize().unwrap_or_else(|_| dep_path.clone());
                 if !loaded_paths.insert(canonical) { continue; }  // already merged
                 let dep_str = dep_path.to_string_lossy().into_owned();
@@ -592,7 +627,7 @@ fn main() -> Result<()> {
     // BEFORE moving `user_artifact.module` into `modules` (partial-move).
     let declared_candidates = build_declared_candidates(
         &user_artifact,
-        &libs_dir,
+        &search_dirs,
         &initially_loaded_zpkgs,
     );
 
@@ -635,7 +670,7 @@ fn main() -> Result<()> {
     // GetCommandLineArgs(). Done before vm.run so the program sees them.
     ctx.set_program_args(cli.args.clone());
     ctx.install_lazy_loader_with_deps(
-        libs_dir.clone(),
+        search_dirs.clone(),
         string_pool_len,
         declared_candidates,
         initially_loaded_zpkgs,
