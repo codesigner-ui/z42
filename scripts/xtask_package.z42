@@ -44,7 +44,7 @@ int _buildPackageCore(string profile, string rid, string variant) {
     if (category == "desktop") {
         c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
         if (c != 0) { return c; }
-        c = _buildRuntimePackage(root, rid, version, profile);
+        c = _buildRuntimePackage(root, pkgDir, rid, version, profile);
         if (c != 0) { return c; }
         // desktop workload (apphost stub) — separate from SDK (Decision 9 full gating)
         c = _buildDesktopWorkload(root, rid, version, profile);
@@ -157,10 +157,14 @@ void _pkgEmitBinReadmePlaceholder(string pkgDir, string targetLabel) {
     File.WriteAllText(Path.Join(pkgDir, "bin/README.md"), content);
 }
 
-// Copy any libz42.*/z42.* native artifacts present in cargoOut into native/.
+// Copy the desktop VM native libs present in cargoOut into native/. Excludes
+// mobile platform facades (libz42_platform_ios/android.*): they can linger stale
+// in the shared cargo target dir and do NOT belong in a desktop SDK — they ship
+// only in their own mobile runtime packs.
 void _copyNativeLibs(string cargoOut, string pkgDir) {
     if (!Directory.Exists(cargoOut)) { return; }
     foreach (var f in Directory.Enumerate(cargoOut)) {
+        if (f.StartsWith("libz42_platform")) { continue; }   // mobile facade — not desktop SDK
         bool isLib = f.StartsWith("libz42") || f == "z42.lib" || f == "z42.dll" || f.StartsWith("z42_compression");
         if (isLib && (f.EndsWith(".a") || f.EndsWith(".dylib") || f.EndsWith(".so") || f.EndsWith(".lib") || f.EndsWith(".dll"))) {
             File.Copy(Path.Join(cargoOut, f), Path.Join(pkgDir, "native/" + f));

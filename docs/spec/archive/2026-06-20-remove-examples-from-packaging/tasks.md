@@ -1,6 +1,6 @@
 # Tasks: 发行包不再打包 examples
 
-> 状态：🟡 进行中 | 创建：2026-06-20 | 类型：refactor（toolchain packaging）
+> 状态：🟢 已完成 | 创建：2026-06-20 完成：2026-06-21 | 类型：refactor（toolchain packaging）
 
 **变更说明：** 所有发行包（desktop SDK / 各平台 workload tooling）不再产出 `examples/` 目录（hello_c / hello_rust）。SDK 瘦身 + 示例职责后移到 workload（已 in-flight 的 `add-workload-command-dispatch` 走 `examples/workloads/greet/`）。
 
@@ -32,7 +32,7 @@
 - [x] 1.5 xtask_package_wasm.z42：删内联 hello_c 块 + manifest 字段
 - [x] 1.6 docs 同步（embedding.md / launcher.md / roadmap.md）
 - [x] 2.1 xtask 全量重编（rm .cache 强制）**无 error**；5 个 package .zbc strings 验证 **examples 0 次**、xtask.zpkg **hello_c 0 次** → 改动确证落进 zpkg
-- [ ] 2.2 完整 `package release` 端到端 + `test dist`：**暂缓**（User 指示先提交；分支当时 runtime WIP 阻断完整构建，现 runtime 已可编译，待 User 放行后补跑）
+- [x] 2.2 完整 `package release --rid macos-arm64` 端到端：SDK 包**无 examples/**（bin/native/libs/manifest 完好）；`test dist` 377/0（2026-06-21，随 rework-host-runtime-pack 一并验证）
 
 ## 备注
 - manifest `examples` 字段无任何 install/launcher 消费者（已 grep 确认），整行删除安全。

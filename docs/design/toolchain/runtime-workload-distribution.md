@@ -82,7 +82,7 @@ release.yml 发 9 个 RID 的 `z42-<ver>-<rid>.tar.gz` + `SHA256SUMS`，tag `v<v
 
 **当前两包格式**：SDK 与 runtime 独立发布；launcher 不单独发包（`z42 self-update` 下 SDK 包即可）。
 - **SDK package** = 原生 apphost（根 `z42`）+ `programs/launcher/launcher.zpkg` + `bin/z42vm` + z42c + libs；`install-z42.sh` 和 `z42 self-update` 都下这个。
-- **runtime package** = z42vm + libs；`z42 install <ver>` 下这个。
+- **runtime package** = z42vm + **native/（嵌入件 libz42.{a,dylib} + libz42_compression.* + C ABI headers）** + libs；`z42 install <ver>` 下这个。host runtime pack 是**完整可嵌入运行时**（与 ios/android/wasm 的 runtime pack 对称，见下第 142 行），桌面嵌入用户只需此包、不必下整个 SDK。其 `libs/` 与 `native/` 由 `_buildRuntimePackage` **从同次构建的 SDK 包逐字节拷贝**（单一字节源 → SDK 与 runtime pack byte-identical；rework-host-runtime-pack, 2026-06-21）。
 
 **第一次执行（`install-z42`，唯一保留的原生 bootstrap；shell/PS + 系统 curl）一次装完即功能完整**：
 

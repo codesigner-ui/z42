@@ -156,25 +156,30 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
 
 // ── launcher artifact ────────────────────────────────────────────────────────
 // ── runtime artifact ─────────────────────────────────────────────────────────
-// Layout matches $Z42_HOME/runtimes/<ver>/ — extract-and-move with no
-// path transformation. Contains: z42vm + libs/. Used by `z42 install <ver>`.
-
-int _buildRuntimePackage(string root, string rid, string version, string profile) {
+// Layout matches $Z42_HOME/runtimes/<ver>/ — extract-and-move with no path
+// transformation. Contains: z42vm + native/ (embed libs + C ABI headers) + libs/.
+// Used by `z42 install <ver>`. native/ makes it a COMPLETE embeddable runtime
+// (parity with the mobile runtime packs): a desktop embedder needs only this pack,
+// not the full SDK. libs/ + native/ are copied verbatim from the SDK package that
+// _packageDesktop just assembled — single byte source → SDK and runtime pack stay
+// byte-identical, and no native libs are re-collected/re-globbed here.
+int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string version, string profile) {
     string cargoTarget = _ridToCargo(rid);
     string pkgName = "z42-runtime-" + version + "-" + rid + (profile == "release" ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Runtime package: " + pkgName);
     if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
-    Directory.Create(Path.Join(pkgDir, "libs"));
+    Directory.Create(pkgDir);
 
-    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
     // z42vm at root (matches runtimes/<ver>/ layout)
+    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
     _copyIfExists(Path.Join(cargoOut, "z42vm"),     Path.Join(pkgDir, "z42vm"));
     _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "z42vm.exe"));
     _makeExe(Path.Join(pkgDir, "z42vm"));
-    // libs/
-    int c = _pkgCopyLibs(_libsDir(root), pkgDir); if (c != 0) { return c; }
-    Console.WriteLine("  ✓ runtime package: " + pkgDir);
+    // libs/ + native/ (embed libs + include/ headers) copied verbatim from the SDK.
+    Directory.Copy(Path.Join(sdkPkgDir, "libs"),   Path.Join(pkgDir, "libs"),   true);
+    Directory.Copy(Path.Join(sdkPkgDir, "native"), Path.Join(pkgDir, "native"), true);
+    Console.WriteLine("  ✓ runtime package (z42vm + native/ + libs from SDK): " + pkgDir);
     return 0;
 }
 
