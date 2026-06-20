@@ -8,8 +8,16 @@ use super::convert::{arg_str, arg_usize};
 /// see [`builtin_str_byte_length`] / `Std.String.ByteLength`.
 /// args: [this: str]
 pub fn builtin_str_length(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = arg_str(args, 0, "__str_length")?;
-    Ok(Value::I64(s.chars().count() as i64))
+    // O(1) amortised via the per-string metadata cache (perf-str-char-index):
+    // the z42c lexer queries `src.Length` once per character, which would be
+    // O(n²) with a fresh `chars().count()` each time.
+    match args.first() {
+        Some(Value::Str(s)) => Ok(Value::I64(super::str_meta::char_len(s) as i64)),
+        _ => {
+            let s = arg_str(args, 0, "__str_length")?;
+            Ok(Value::I64(s.chars().count() as i64))
+        }
+    }
 }
 
 /// Returns the number of UTF-8 bytes in the string. O(1).
@@ -34,8 +42,20 @@ pub fn builtin_str_byte_length(_ctx: &VmContext, args: &[Value]) -> Result<Value
 /// full scans (`chars().nth(i)` + `chars().count()` in the error branch)
 /// — O(2n) on failure, wasteful on long strings.
 pub fn builtin_str_char_at(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = arg_str(args, 0, "__str_char_at")?;
     let i = arg_usize(args, 1, "__str_char_at")?;
+    // O(1) amortised via the per-string metadata cache (perf-str-char-index):
+    // ASCII strings index bytes directly; non-ASCII use a cached char→byte
+    // offset table. Avoids the O(i) `chars().nth(i)` walk the lexer triggers
+    // for every character (→ O(n²) over a source file).
+    if let Some(Value::Str(s)) = args.first() {
+        return match super::str_meta::char_at(s, i) {
+            Some(c) => Ok(Value::Char(c)),
+            None => Err(anyhow!(
+                "__str_char_at: index {} out of range (length {})",
+                i, super::str_meta::char_len(s))),
+        };
+    }
+    let s = arg_str(args, 0, "__str_char_at")?;
     let mut last_seen = 0usize;
     for (idx, c) in s.chars().enumerate() {
         if idx == i {

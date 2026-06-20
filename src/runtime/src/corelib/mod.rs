@@ -28,6 +28,7 @@
 pub mod convert;
 pub mod io;
 pub mod string;
+pub mod str_meta;
 pub mod math;
 pub mod fs;
 pub mod object;

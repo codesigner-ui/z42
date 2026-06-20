@@ -195,7 +195,7 @@ pub unsafe extern "C" fn jit_field_get(
                 b.slots.get(slot).cloned().unwrap_or(Value::Null)
             } else { Value::Null }
         }
-        Value::Str(s) if field_name == "Length"     => Value::I64(s.chars().count() as i64),
+        Value::Str(s) if field_name == "Length"     => Value::I64(crate::corelib::str_meta::char_len(s) as i64),
         Value::Str(s) if field_name == "ByteLength" => Value::I64(s.len() as i64),
         Value::Array(rc) if field_name == "Length" || field_name == "Count" => Value::I64(rc.borrow().len() as i64),
         other => {

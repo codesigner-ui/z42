@@ -159,7 +159,7 @@ pub(super) fn field_get(
             }
         }
         Value::Str(s) => match field_name {
-            "Length"     => Value::I64(s.chars().count() as i64),
+            "Length"     => Value::I64(crate::corelib::str_meta::char_len(s) as i64),
             "ByteLength" => Value::I64(s.len() as i64),
             other        => bail!("string has no field `{}`", other),
         },
