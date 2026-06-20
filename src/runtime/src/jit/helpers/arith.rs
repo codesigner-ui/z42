@@ -23,15 +23,21 @@ pub unsafe extern "C" fn jit_add(
         (*frame).regs[dst as usize] = Value::I64(x.wrapping_add(*y));
         return 0;
     }
-    let va = regs[a as usize].clone();
-    let vb = regs[b as usize].clone();
-    let result = match (&va, &vb) {
-        (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb).into()),
-        (Value::Str(sa), vb) => Value::Str(format!("{}{}", sa, value_to_str(vb)).into()),
-        (va, Value::Str(sb)) => Value::Str(format!("{}{}", value_to_str(va), sb).into()),
-        _ => match int_binop_helper(&va, &vb, i64::wrapping_add, |x, y| x + y) {
-            Ok(r)  => r,
-            Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); return 1; }
+    // Build the owned result under a scoped borrow — no operand clones. The
+    // string-concat path (common in z42c name mangling / message building)
+    // previously cloned both operands just to drop the regs borrow before the
+    // write; `format!` already produces a fresh owned String.
+    let result = {
+        let va = &regs[a as usize];
+        let vb = &regs[b as usize];
+        match (va, vb) {
+            (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb).into()),
+            (Value::Str(sa), vb) => Value::Str(format!("{}{}", sa, value_to_str(vb)).into()),
+            (va, Value::Str(sb)) => Value::Str(format!("{}{}", value_to_str(va), sb).into()),
+            _ => match int_binop_helper(va, vb, i64::wrapping_add, |x, y| x + y) {
+                Ok(r)  => r,
+                Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string().into())); return 1; }
+            }
         }
     };
     (*frame).regs[dst as usize] = result;
@@ -145,15 +151,13 @@ pub unsafe extern "C" fn jit_eq(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, a: u32, b: u32,
 ) {
+    // Compute the result under a scoped immutable borrow, then write — no
+    // operand clones (`Value: PartialEq` compares by reference). The previous
+    // version cloned both operands on the non-I64 path (string / object
+    // equality, very common in compiler token/name comparison).
     let regs = &(*frame).regs;
-    // Fast path: both I64
-    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
-        (*frame).regs[dst as usize] = Value::Bool(x == y);
-        return;
-    }
-    let va = regs[a as usize].clone();
-    let vb = regs[b as usize].clone();
-    (*frame).regs[dst as usize] = Value::Bool(va == vb);
+    let result = regs[a as usize] == regs[b as usize];
+    (*frame).regs[dst as usize] = Value::Bool(result);
 }
 
 #[unsafe(no_mangle)]
@@ -161,15 +165,10 @@ pub unsafe extern "C" fn jit_ne(
     frame: *mut JitFrame, _ctx: *const JitModuleCtx,
     dst: u32, a: u32, b: u32,
 ) {
+    // Clone-free: compare by reference under a scoped borrow (see jit_eq).
     let regs = &(*frame).regs;
-    // Fast path: both I64
-    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
-        (*frame).regs[dst as usize] = Value::Bool(x != y);
-        return;
-    }
-    let va = regs[a as usize].clone();
-    let vb = regs[b as usize].clone();
-    (*frame).regs[dst as usize] = Value::Bool(va != vb);
+    let result = regs[a as usize] != regs[b as usize];
+    (*frame).regs[dst as usize] = Value::Bool(result);
 }
 
 macro_rules! cmp_op {
