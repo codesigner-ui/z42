@@ -288,7 +288,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | ✅ |
 | M7 | VM 元数据 + 标准库基础（core/io/collections）| L2 | 🟡 stdlib 基础已广；反射元数据 → 0.3.x C 主线 |
 | M8 | TypeChecker + Codegen 扩展（L3 特性）| L3 | 🟡 部分（泛型 / lambda / delegate 提前）|
-| M9 | VM AOT（LLVM/inkwell）| L3 | 📋 |
+| M9 | VM AOT（**cranelift-AOT**，复用 JIT 翻译 + cranelift-object；非 LLVM，2026-06-21 改向，见 [aot.md](design/runtime/aot.md)）| L3 | 📋 |
 | M10 | 自举（Self-hosting，7 子系统 byte-identical）| L3+ → 0.3.x | 🚧 进行中（B0 骨架 + 构建管线落地 2026-06-07 [scaffold-z42c-selfhost](spec/changes/scaffold-z42c-selfhost/)；架构见 [self-hosting.md](design/compiler/self-hosting.md)；core/syntax 等后续）|
 
 ---
@@ -342,6 +342,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 诊断与跟踪 | 事件（编译/类型/GC/deopt/context）+ 计数（counter/gauge/histogram）+ 时间（per-函数编译耗时）；fire() 近零成本门控 + perfetto 输出 | [runtime/diagnostics.md](design/runtime/diagnostics.md) |
 | 统一 safepoint/STW + 精确 GC 契约 | GC safepoint 泛化为 OSR/卸载/hot-reload 共用；线程状态（InNative=安全）；精确 GC = GC map@安全点 + 派生指针受控（ALC 卸载前提） | [runtime/safepoint.md](design/runtime/safepoint.md) |
 | 对象与值表示 ABI | 隐式 Value/对象 ABI 固化（repr(C)+tag 表）；统一对象头去 native；字符串改 GC；移动/分代预留（gc_word/forwarding/card table/pin 区）；TypeDesc 留 context-arena | [runtime/object-abi.md](design/runtime/object-abi.md) |
+| AOT 后端 | cranelift-AOT（复用 JIT 翻译 + cranelift-object，非 LLVM）；AOT+JIT+interp 混合（.NET R2R/ART 模型）；host 交叉编译；精确 GC stack map | [runtime/aot.md](design/runtime/aot.md) |
 | ref local / return / field / struct | parameter-modifiers D1-D4 | [language/parameter-modifiers.md](design/language/parameter-modifiers.md) |
 | StackTrace / 构造器重载 / 字段 ? 标注 / self-assign | exceptions Phase 1 限制 | [language/exceptions.md](design/language/exceptions.md) |
 | Layer 3 用户定义 operator/keyword | customization 第三层 | [language/customization.md](design/language/customization.md) |

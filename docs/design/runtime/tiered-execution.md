@@ -133,4 +133,5 @@ desktop/android 上可在 interp 之上叠加"热函数提升到 JIT"一档；iO
 - zpkg 加载上下文 / 重载 / 卸载回收 / 保留根诊断（复用本篇 §6/§7 基建）：[load-context.md](load-context.md)
 - 诊断事件总线（`inspect_artifacts` / 编译·deopt·OSR·tier 事件 emit 于此）：[diagnostics.md](diagnostics.md)
 - 统一 safepoint / STW 协议（OSR/回收所依赖的安全点）+ 精确 GC 契约：[safepoint.md](safepoint.md)
+- AOT 后端（作 baseline 档与 JIT 共存；iOS/wasm 的优化档）：[aot.md](aot.md)
 - 当前单态架构：[vm-architecture.md](vm-architecture.md)
