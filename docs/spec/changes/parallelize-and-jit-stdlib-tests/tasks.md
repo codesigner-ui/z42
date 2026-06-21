@@ -11,11 +11,11 @@
 
 ## 阶段 A: 并行化 stdlib [Test]
 - [x] A.0 compile 由 `dotnet run --no-build --project` → 直接 `dotnet z42c.dll`：3× 启动提速（0.78s→0.26s）、byte-identical、并发安全（无 obj/ race）。用户"简单改法"。全量 272/272 通过（193s 本地 baseline）
-- [ ] A.1 `_testLibCore`：gather 所有 (lib, unit, parentDeps) 成扁平列表
-- [ ] A.2 两阶段批量：批量编译（写 toml→spawn→wait→删 toml，batch=jobs）→ 批量运行（spawn runner→wait→judge），仿 `_runVmBatch`
-- [ ] A.3 错误/输出聚合：compile error + TAP 结果按原顺序打印，保持可读
-- [ ] A.4 `test all` stage 4 传更大 jobs（如 0=auto/available_parallelism）
-- [ ] A.5 验证：本地 `xtask test stdlib`（全 22 lib）全绿 + 计时对比串行（确认提速）
+- [x] A.1 per-lib batch（复用 fixed `units[]`，无需动态列表）：`_testLibCore` 内 `foreach units` → `_runUnitsBatched`
+- [x] A.2 两阶段批量（`_runUnitsBatched`）：spawn bsz 编译→wait（删 toml）→spawn bsz runner→wait+打印 TAP，仿 `_runVmBatch`。`_compileTestUnit` 重构为 `_compilePrep`（返回未 spawn Process）
+- [x] A.3 输出聚合：compile error + TAP 用捕获的 `ProcessResult.Stdout`，batch 顺序打印（Process 默认 Pipe）
+- [x] A.4 `jobs` 语义改为 unit 级 batch 宽度（runner 不再收 --jobs → Setup/Teardown 恢复执行）；`test all` 已传 4
+- [x] A.5 验证：全量 272/272 通过；serial 193s → jobs=4 96s（**2× 本地**）；jobs=1 默认路径亦过
 
 ## 阶段 B: test-runner --mode 接口
 - [ ] B.1 main.rs：`--mode interp|jit` clap value_enum flag（默认 interp，保持现状）

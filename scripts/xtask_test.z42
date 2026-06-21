@@ -211,6 +211,12 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
     int totalFailed = 0;
     int totalFiles = 0;
     int libsTested = 0;
+    // parallelize-and-jit-stdlib-tests A: `jobs` now means unit-level batch
+    // width (how many units compile+run concurrently), not the runner's
+    // within-unit --jobs. Default 1 = serial. `test all` passes 4.
+    int jobsN = 1;
+    try { jobsN = int.Parse(jobs); } catch (Exception e) { jobsN = 1; }
+    if (jobsN < 1) { jobsN = 1; }
     foreach (var lib in libList) {
         string testsDir = Path.Join(libsRoot, lib + "/" + subdir);
         if (!Directory.Exists(testsDir)) { continue; }
@@ -228,20 +234,13 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
         // + [<subdir>.dependencies] for synthetic manifest dep merge.
         string parentToml = Path.Join(libsRoot, lib + "/" + lib + ".z42.toml");
         DepBundle parentDeps = _harvestParentDeps(parentToml, subdir);
-        foreach (var u in units) {
-            totalFiles = totalFiles + 1;
-            string testZpkg = "";
-            int cc = _compileTestUnit(root, lib, u, parentDeps, kind, ref testZpkg);
-            if (cc != 0) {
-                Console.WriteLine("✗ COMPILE ERROR: " + u.UnitName);
-                totalFailed = totalFailed + 1;
-                continue;
-            }
-            Process rp = new Process(runner);
-            if (jobs != "1") { rp = rp.Arg("--jobs").Arg(jobs); }
-            int rc = _exec(rp.Arg(testZpkg));
-            if (rc != 0) { totalFailed = totalFailed + 1; }
-        }
+        totalFiles = totalFiles + units.Length;
+        // parallelize-and-jit-stdlib-tests A: this lib's units compile+run in
+        // batches of `jobsN` (unit-level parallelism, mirrors _runVmBatch).
+        // Each runner runs serially within its unit (no --jobs) so [Setup]/
+        // [Teardown] still execute — the parallelism is across units, not
+        // within. The per-unit z42.core bootstrap (the dominant cost) overlaps.
+        totalFailed = totalFailed + _runUnitsBatched(root, runner, lib, units, parentDeps, kind, jobsN);
     }
     Console.WriteLine("");
     Console.WriteLine("════════════════════════════════════════════════");
@@ -450,13 +449,85 @@ void _appendDeps(DepBundle b, TomlValue depsTable) {
     }
 }
 
-/// Compile a single test unit. Single-file mode keeps the legacy
-/// `z42c <file> --emit zbc -o <out.zbc>` path; dir-mode synthesises a
-/// mini-manifest at `<work>/<lib>/<unit>/test.z42.toml`, calls
-/// `z42c build <synthetic>`, and returns the produced `.zpkg` path.
-/// Sets `outArtifact` to the runnable bytecode path on success.
-int _compileTestUnit(string root, string lib, TestUnit u,
-                     DepBundle parentDeps, string kind, ref string outArtifact) {
+/// Run a lib's test units in batches of `jobs`, parallelizing the dominant
+/// per-unit z42.core bootstrap across units (parallelize-and-jit-stdlib-tests
+/// A). Each batch: spawn `jobs` compiles → wait → spawn `jobs` runners → wait
+/// + print captured TAP in batch order. Returns the failure count. Mirrors
+/// `_runVmBatch` (xtask_test_vm.z42). Each runner runs serially within its
+/// unit (no --jobs) so [Setup]/[Teardown] still execute.
+int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
+                     DepBundle parentDeps, string kind, int jobs) {
+    int failed = 0;
+    int i = 0;
+    while (i < units.Length) {
+        int bsz = jobs;
+        if (i + bsz > units.Length) { bsz = units.Length - i; }
+
+        // ── compile phase: spawn bsz compiles, wait, collect artifacts ──
+        ProcessHandle[] ch    = new ProcessHandle[bsz];
+        string[]        tomls = new string[bsz];
+        string[]        arts  = new string[bsz];
+        bool[]          okc   = new bool[bsz];
+        int b = 0;
+        while (b < bsz) {
+            string toml = "";
+            string art  = "";
+            Process cp = _compilePrep(root, lib, units[i + b], parentDeps, kind,
+                                      ref toml, ref art);
+            tomls[b] = toml;
+            arts[b]  = art;
+            ch[b]    = cp.WorkingDirectory(root).Spawn();
+            b = b + 1;
+        }
+        b = 0;
+        while (b < bsz) {
+            ProcessResult cr = ch[b].Wait();
+            // delete the dir-mode synthetic toml regardless of outcome
+            if (tomls[b].Length > 0) { try { File.Delete(tomls[b]); } catch (Exception e) {} }
+            okc[b] = (cr.ExitCode == 0);
+            if (!okc[b]) {
+                Console.WriteLine("✗ COMPILE ERROR: " + units[i + b].UnitName);
+                Console.Write(cr.Stdout);
+                Console.Write(cr.Stderr);
+                failed = failed + 1;
+            }
+            b = b + 1;
+        }
+
+        // ── run phase: spawn runners for compiled units, wait, print TAP ──
+        ProcessHandle[] rh = new ProcessHandle[bsz];
+        b = 0;
+        while (b < bsz) {
+            if (okc[b]) {
+                rh[b] = new Process(runner).Arg(arts[b]).WorkingDirectory(root).Spawn();
+            }
+            b = b + 1;
+        }
+        b = 0;
+        while (b < bsz) {
+            if (okc[b]) {
+                ProcessResult rr = rh[b].Wait();
+                Console.Write(rr.Stdout);
+                if (rr.Stderr.Length > 0) { Console.Write(rr.Stderr); }
+                if (rr.ExitCode != 0) { failed = failed + 1; }
+            }
+            b = b + 1;
+        }
+        i = i + bsz;
+    }
+    return failed;
+}
+
+/// Prepare (but don't spawn) the driver compile for one test unit. Computes
+/// output paths and, for dir-mode units, writes the synthetic mini-manifest;
+/// `outToml` is that manifest to delete after the build ("" for flat-mode),
+/// `outArtifact` the runnable bytecode path the runner consumes. Factored
+/// from the former _compileTestUnit so units compile in parallel batches.
+/// Single-file mode → `z42c <file> --emit zbc -o <out.zbc>`; dir-mode →
+/// `z42c build <synthetic>` producing `<dist>/<name>.zpkg`.
+Process _compilePrep(string root, string lib, TestUnit u,
+                     DepBundle parentDeps, string kind,
+                     ref string outToml, ref string outArtifact) {
     // kind = "test" → <lib>.test.<unit> under tests/; "bench" → <lib>.bench.<unit>
     // under bench/. Both run through the same z42-test-runner (which dispatches
     // [Test] and [Benchmark] identically).
@@ -472,17 +543,15 @@ int _compileTestUnit(string root, string lib, TestUnit u,
     Directory.Create(distDir);
     if (!u.IsDirMode) {
         string zbc = Path.Join(distDir, projName + ".zbc");
-        // Invoke the built driver DLL directly (`dotnet z42c.dll`) instead of
-        // `dotnet run --no-build --project` — 3x faster startup (skips MSBuild
-        // project evaluation) and concurrency-safe (no obj/ cache race when
-        // units compile in parallel). Output is byte-identical. Mirrors the
-        // direct-DLL pattern already used by xtask_regen / test_cross / platform.
-        int cc = _exec(new Process("dotnet")
+        outToml = "";
+        outArtifact = zbc;
+        // Direct driver DLL (`dotnet z42c.dll`) — 3x faster than `dotnet run
+        // --project` and concurrency-safe (no obj/ cache race in parallel
+        // batches). Byte-identical output.
+        return new Process("dotnet")
             .Arg(_driverDll(root))
             .Arg(u.SourceFile)
-            .Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc));
-        outArtifact = zbc;
-        return cc;
+            .Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc);
     }
     // Dir-mode: Microsoft.Extensions.FileSystemGlobbing.Matcher resolves
     // include patterns relative to the manifest's projectDir and doesn't
@@ -490,30 +559,21 @@ int _compileTestUnit(string root, string lib, TestUnit u,
     // simple and stable, the synthetic toml is written NEXT TO the test
     // source files (inside `tests/<unit>/`) using a unique name; the
     // `[build].output_dir` is set to the persistent <lib>/release/tests
-    // subtree so the .zpkg lands in the shared `tests/dist/`, and the toml
-    // itself is deleted after the build. The unique name
+    // subtree so the .zpkg lands in the shared `tests/dist/`. The unique name
     // `.xtask-<projName>.z42.toml` prefixes a `.` so the file is naturally
-    // git-ignored on most setups and won't collide with user manifests.
+    // git-ignored on most setups and won't collide with user manifests; it is
+    // per-unit unique so parallel-batch compiles don't clobber each other.
     string syntheticToml = Path.Join(u.DirPath, ".xtask-" + projName + ".z42.toml");
-    string includeGlob = "**/*.z42";
     File.WriteAllText(syntheticToml,
-        _renderSyntheticManifest(projName, includeGlob, testsBase, u.UnitName, parentDeps));
-    int bc = _exec(new Process("dotnet")
-        .Arg(_driverDll(root))
-        .Arg("build").Arg(syntheticToml));
-    // Clean the synthetic toml regardless of compile success — leaving
-    // it behind would dirty the source tree and racks up over many runs.
-    try { File.Delete(syntheticToml); } catch (Exception) {}
-    if (bc != 0) {
-        outArtifact = "";
-        return bc;
-    }
-    // PackageCompiler emits `<output_dir>/dist/<name>.zpkg` per
-    // restructure-build-output-dirs cascade (dist_dir defaults to
-    // ${output_dir}/dist; the synthetic toml omits dist_dir → shared
-    // <testsBase>/dist/, and overrides cache_dir to a per-unit subdir).
+        _renderSyntheticManifest(projName, "**/*.z42", testsBase, u.UnitName, parentDeps));
+    outToml = syntheticToml;
+    // PackageCompiler emits `<output_dir>/dist/<name>.zpkg` (dist_dir defaults
+    // to ${output_dir}/dist; synthetic toml omits dist_dir → shared
+    // <testsBase>/dist/, cache_dir overridden to a per-unit subdir).
     outArtifact = Path.Join(distDir, projName + ".zpkg");
-    return 0;
+    return new Process("dotnet")
+        .Arg(_driverDll(root))
+        .Arg("build").Arg(syntheticToml);
 }
 
 /// Serialise a synthetic mini-manifest to TOML text. Kept hand-rolled
