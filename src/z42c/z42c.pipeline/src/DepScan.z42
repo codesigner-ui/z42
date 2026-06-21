@@ -45,6 +45,17 @@ public static class DepScan {
     // ZbcStringPool.Intern）会让键歧义被 Seal 剔除 → bare VCall（应 FQ call）。nsMap/TSIG 不过滤
     // （DEPS 用全名单 first-wins；ImportedSymbols 由 using 激活过滤）。
     public static DepScanResult Scan(string libsDir, string excludeName, string[] declaredDeps, int declaredCount) {
+        // 单目录 = 多目录的退化形态（Milestone 1 flat dist / 单工程 Z42_LIBS 走这里）。
+        string[] one = new string[1];
+        one[0] = libsDir;
+        return DepScan.ScanDirs(one, 1, excludeName, declaredDeps, declaredCount);
+    }
+
+    // Milestone 2（per-member 布局）：成员产物落各自 dist 目录，故兄弟解析需扫**多个** libsDir。
+    // dirs[0..dirCount) 全部 *.zpkg 合并后**prelude-first + Ordinal**（按 basename）排序——
+    // first-wins 跨目录确定（common-pitfalls §1：成员名唯一，无跨目录同名碰撞）。单目录调用方
+    // 经 Scan 退化到此（dirCount=1），扫描序与旧 _sortedZpkgs 一致 → 产物 byte-identical。
+    public static DepScanResult ScanDirs(string[] dirs, int dirCount, string excludeName, string[] declaredDeps, int declaredCount) {
         var index = new DependencyIndex();
         string[] nsNames = new string[8];
         string[] nsFiles = new string[8];
@@ -52,13 +63,13 @@ public static class DepScan {
         ExportedModuleZ[] exported = new ExportedModuleZ[8];
         string[] exportedPkg = new string[8];
         int exportedCount = 0;
-        if (!Directory.Exists(libsDir)) {
-            return new DepScanResult(index, nsNames, nsFiles, 0, exported, exportedPkg, 0);
-        }
         // 包不导入自己：构建某包时把它自己的 .zpkg 排除出扫描（flat libs 含 self 时——
         // 否则同包符号经 DepIndex 解析 → 自依赖 DEPS + FQ 调用，与 C#[libs 不含 self]不一致）。
         string excludeZpkg = excludeName + ".zpkg";
-        string[] paths = DepScan._sortedZpkgs(libsDir);
+        string[] paths = DepScan._sortedZpkgsMulti(dirs, dirCount);
+        if (paths.Length == 0) {
+            return new DepScanResult(index, nsNames, nsFiles, 0, exported, exportedPkg, 0);
+        }
         int pi = 0;
         while (pi < paths.Length) {
             ZpkgInfo z = ZpkgReader.Open(File.ReadAllBytes(paths[pi]));
@@ -119,9 +130,58 @@ public static class DepScan {
         return new DepScanResult(index, nsNames, nsFiles, nsCount, exported, exportedPkg, exportedCount);
     }
 
+    // 多目录合并 + prelude-first（"0_"+name）+ Ordinal 排序（按 basename）。
+    // 不存在的目录跳过（per-member 布局下后续成员 dist 在建本成员时尚空）。
+    private static string[] _sortedZpkgsMulti(string[] dirs, int dirCount) {
+        // 第一遍：统计总数。
+        int total = 0;
+        int di = 0;
+        while (di < dirCount) {
+            if (Directory.Exists(dirs[di])) { total = total + Path.Glob(dirs[di], "*.zpkg").Length; }
+            di = di + 1;
+        }
+        // 第二遍：合并到 flat 数组。
+        string[] paths = new string[total];
+        int pc = 0;
+        di = 0;
+        while (di < dirCount) {
+            if (Directory.Exists(dirs[di])) {
+                string[] hits = Path.Glob(dirs[di], "*.zpkg");
+                int hi = 0;
+                while (hi < hits.Length) { paths[pc] = hits[hi]; pc = pc + 1; hi = hi + 1; }
+            }
+            di = di + 1;
+        }
+        // 同名包跨目录去重（first-wins）：某包同时在成员 dist 与 Z42_LIBS（外部 stdlib
+        // 种子）出现时只扫一次，避免 DepIndex 重复 AddModule → 歧义键被 Seal 剔除。
+        // 单目录调用方无重名（一目录不会有两份同名文件）→ 此步 no-op，Milestone 1 byte-identical 不变。
+        return DepScan._dedupByBasename(DepScan._sortZpkgKeys(paths));
+    }
+
+    // 排序后的 paths 中，每个 basename 仅保留首次出现（first-wins）。
+    private static string[] _dedupByBasename(string[] paths) {
+        string[] seen = new string[paths.Length];
+        int seenCount = 0;
+        string[] kept = new string[paths.Length];
+        int keptCount = 0;
+        int i = 0;
+        while (i < paths.Length) {
+            string b = Path.GetFileName(paths[i]);
+            if (DepScan._nsIndexOf(seen, seenCount, b) < 0) {
+                seen[seenCount] = b; seenCount = seenCount + 1;
+                kept[keptCount] = paths[i]; keptCount = keptCount + 1;
+            }
+            i = i + 1;
+        }
+        if (keptCount == paths.Length) { return kept; }
+        string[] r = new string[keptCount];
+        i = 0;
+        while (i < keptCount) { r[i] = kept[i]; i = i + 1; }
+        return r;
+    }
+
     // prelude-first（"0_"+name）+ Ordinal 排序（镜像 C# BuildDepIndex 的 sortedPaths）。
-    private static string[] _sortedZpkgs(string dir) {
-        string[] paths = Path.Glob(dir, "*.zpkg");
+    private static string[] _sortZpkgKeys(string[] paths) {
         // 排序键并行数组 + 插入排序
         string[] keys = new string[paths.Length];
         int i = 0;

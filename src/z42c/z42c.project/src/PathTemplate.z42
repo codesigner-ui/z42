@@ -51,6 +51,7 @@ public static class PathTemplate {
         if (name == "workspace_dir") { return ctx.WorkspaceDir; }
         if (name == "member_dir")    { return ctx.MemberDir; }
         if (name == "member_name")   { return ctx.MemberName; }
+        if (name == "project_name")  { return ctx.MemberName; }   // 别名（镜像 C# PathTemplateExpander）
         if (name == "profile")       { return ctx.Profile; }
         if (name == "output_dir")    { return ctx.OutputDir; }
         return orig.Substring(start, close + 1 - start);   // 未知变量：保留字面

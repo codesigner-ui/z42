@@ -71,6 +71,15 @@ driver    ◄── pipeline, ir, core
 
 **构建**：`z42c build --workspace --release`（cwd=`src/z42c`）→ 拓扑序编译 7 子包 → `artifacts/build/z42c/<member>/<profile>/{dist,cache}/`。经 xtask：`./xtask build compiler-z42`。
 
+### z42c driver 自有 `build --workspace`（端口 C# orchestrator，z42c-build-workspace）
+
+z42c.driver 实现了自己的 `build --workspace`（`Main._buildWorkspace` + `z42c.pipeline/WorkspaceBuild.z42`），替换 C# 编译器的硬前置。两个里程碑：
+
+- **成员发现 + 拓扑序**（`WorkspaceBuild.Plan` / `DiscoverMembers` / `TopoOrder`）：`members=["*"]` 下 wsDir 每个「恰含一份 `*.z42.toml`」的子目录 = 成员；读各成员 `[project].name` + `[dependencies]`，仅保留指向 workspace 内成员的边；O(N²) 层式拓扑（就绪集按 name Ordinal 发射 = C# `TopologicalLayers` 层内 name-sort 同序）。受限子集：无交错数组 → flat 平行数组（`WsMembers.DepFlat/DepOff/DepLen`）；无 enum → 颜色用 bool/int。环 → 抛 `Exception`。
+- **Milestone 1（显式 `--output-dir <flat>`）**：全成员产物落该 flat dir（= 各成员 libsDir，deps-first 解析兄弟）。产物 zpkg 与 C# `build --workspace` byte-identical（字节与输出目录无关）。注意 flat dir 须含外部 stdlib 依赖（调用方 seed `Z42_LIBS` 内容）。
+- **Milestone 2（无 `--output-dir`，drop-in 替代 C# stdlib build）**：`WorkspaceBuild.PlanLayout` 按 `[workspace.build].output_dir` 模板（`PathTemplate.Expand`，`${project_name}`/`${profile}`/`${workspace_dir}`）展开 per-member 布局 → 各成员产物落各自 `<output_dir>/dist`（默认 `dist_dir=${output_dir}/dist`，镜像 C# `CentralizedBuildLayout.ResolveWorkspace`）。**兄弟解析扫全成员 dist 列表 + `Z42_LIBS`**（外部 stdlib，如 z42c.* → z42.core）——`DepScan.ScanDirs` 多目录合并后 prelude-first + Ordinal 排序（成员名唯一，无跨目录同名碰撞 → first-wins 确定）。镜像 C# `WorkspaceBuildOrchestrator` 的 `workspaceLibDirs`（成员 `EffectiveDistDir` 透传）。先建全部成员 dist（空目录）再拓扑序逐个 build，使后续成员 dist 在建本成员时已可被 `DepScan` 扫到（虽空）。
+- **byte-identical 范围**：`--emit-zbc`（代码段）逐字节一致 C#；整包 zpkg 对 stdlib 有 ~1-3% pre-existing 差异（DEPS provider env-artifact / TSIG / IMPL），gate 只验 `--emit-zbc` + 功能正确，不追整包 byte-identical。
+
 **workspace 兄弟包解析（dogfood #1 根因修复，2026-06-07）**：
 
 - **问题**：C# 编译器的 `BuildLibsDirs` 曾把 `artifacts/build/libraries/` 硬编码为唯一会扫描的 workspace 布局根。stdlib 兄弟依赖能解析纯因 stdlib 恰好输出到那里；z42c 输出到 `artifacts/build/z42c/`，兄弟包扫不到。
