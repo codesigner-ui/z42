@@ -1,0 +1,126 @@
+# 对象与值表示 ABI（Object & Value ABI）
+
+> **状态：DESIGN（值/对象表示已实施，规范化+演进未实施）** · 创建 2026-06-21
+>
+> 把当前**隐式**的跨引擎值/对象表示固化成**显式、版本化的 ABI**（组件化的"共享契约"本体），并为**移动/分代 GC**预留空间、**统一所有堆对象**（含字符串）到一个对象头。
+>
+> 精确 GC 的另一半"谁是 ref"在此（与 [safepoint.md](safepoint.md) 的"GC map@安全点"互补）；消费方：interp / JIT / AOT 三引擎 + GC + [load-context.md](load-context.md)。
+
+---
+
+## 1. 现状（已成形，但隐式且脆弱）
+- **Value = Rust tagged enum**（[metadata/types.rs](../../../src/runtime/src/metadata/types.rs)）：`I64=0/F64=1/Bool=2/Char=3`（内联值）、`Str(Arc<str>)=4`、`Array(GcRef<ArrayObj>)=6`/`Object(GcRef<ScriptObject>)=7`、`Closure/Ref/PinnedView`(Box)、`TypeHandle(Arc)`、`WeakRef`。
+- **ScriptObject** = `{ type_desc: Arc<TypeDesc>, slots: Box<[Value]>, native: NativeData }`。
+- **GcRef** = `NonNull<RegionEntry<T>> + generation`（ABA 防护）；RegionEntry **Box-owned 永不重定位 → 当前非移动堆**。
+- **JIT 与 interp 共享内存 Value 表示**：JIT 直接 `store tag`+payload 到帧的 Value 寄存器数组，**硬编码 tag 值 + 偏移**。
+- 三套内存管理：Arc(`TypeDesc`/`Str`)、GcRef(`Array`/`Object`)、Box(`Closure`)。
+
+**核心问题**：已有一份**事实上的跨引擎 Value ABI**，但它绑死 rustc 对 enum 的布局——隐式、脆弱。**本文 = 把它固化成显式版本化规范。**
+
+---
+
+## 2. 值表示（Value）
+- **固化为稳定 ABI**：`#[repr(C)]`（或文档化布局）+ **tag 值表 + payload 偏移规范**，interp/JIT/AOT 对契约编码，不靠 rustc 心情。tag 值（`I64=0`…）已是公开判别值，纳入规范并冻结（变更 = ABI 版本 bump）。
+- **保留 fat tagged 值**（tag + payload，~16–24B）作 v1；**NaN-box / tagged-pointer 压缩进 Deferred**（后续优化，复杂度大，现 fat enum 够用）。
+- 跨引擎契约：一个 Value slot 的 `{tag 偏移, payload 偏移, 总大小}` 是 ABI 一部分；JIT/AOT 据此 load/store。
+
+---
+
+## 3. 统一对象头 + 对象种类（去掉 ad-hoc `native`）
+
+**所有堆对象共用一个头**，按 **object kind** 区分 payload（精确 GC 据 kind 扫）。**普通用户对象不再带 `native` 字段**（省空间）。
+
+### 统一头
+```
+ObjectHeader {
+    gc_word:   usize,   // mark/color 位 + age/generation 位 + lock/hash 位；
+                        // GC 复制期复用为 forwarding pointer（JVM mark-word 式）
+    type/kind: ptr,     // → TypeDesc（含字段布局/vtable/反射）或 kind 判别
+}
+```
+> 注:当前 mark 在 `RegionEntry` 上、对象无 GC 字。**为移动/分代,规范要求对象自带 `gc_word`**（见 §6）。
+
+### 对象种类
+| kind | payload | 精确 GC 扫描 |
+|---|---|---|
+| 普通 ref 对象（用户类） | `slots: Value[]` | 逐 slot 看 tag（`Array`/`Object` 才 trace） |
+| **字符串（改 GC，§5）** | len + UTF-8 字节 | 无内部 ref，跳过 |
+| 字节/原始缓冲 | 原始字节 | 无内部 ref，跳过 |
+| ref 数组 | element_type + 元素 Value[] | 扫元素 |
+| 弱引用对象 | weak handle | **不 trace target** |
+| Type 对象（反射） | 引用 TypeDesc | 该引用是保留边（§7 边界） |
+| **不透明 native（未来 Stream/FileHandle）** | 原始 native ptr + **finalizer** | 无 ref；收集时跑 finalizer（§5.1） |
+
+→ `ScriptObject.native: NativeData` ad-hoc 字段**消除**；`WeakRef`/`TypeHandle`/未来 `FileHandle` 变成上述 kind。
+
+### slots 布局（= 对象内存布局本体，跨引擎 ABI）
+- `slots` 是**实例字段存储**:定长 `Value[]`,槽数 = `TypeDesc.fields.len()`,`alloc` 时定死不增长。
+- 名→槽由 `TypeDesc.field_index`（类级共享）。**继承:基类字段在前、子类追加**（基类槽号父子稳定）。
+- 访问 `obj.f` = `slots[常量槽号]`（O(1)）；JIT = `slots 基址 + 槽号×sizeof(Value)` 的 Value 大小 load/store → **槽偏移 + Value 大小是 ABI 一部分,须固化**。
+
+---
+
+## 4. GcRef 语义
+- 现:`NonNull<RegionEntry> + generation`(ABA 防护)。**改名 `generation`→`epoch`**:避免与**分代 GC 的 young/old generation** 混淆。
+- **必须"可重定位"**（为移动 GC，§6）。两方案(fork,待 benchmark):
+  - **(a) 稳定 entry + 重定位 payload + 精确 fixup**:GC 把所有 GcRef 改写到新址(evacuation+fixup)。访问无额外间接;移动时全堆 fixup。
+  - **(b) 句柄表间接**:GcRef→表→对象;移动只改表一格,访问多一跳。
+  - young 复制式偏好 (a)+bump 分配。**fork 留文档,实现期 benchmark 定。**
+- 访问含 `epoch` 校验(use-after-free 安全);JIT 可在可证明安全处 elide。
+
+---
+
+## 5. 字符串改 GC 对象
+- `Value::Str(Arc<str>)` → **GC 字符串对象**(统一头,可移动/分代)。标准做法(JVM/.NET)。
+- **驻留/字面量串** = context 拥有,放永生/context 空间,**随 context 卸载释放**(对接 load-context)。
+- 代价:纳入 GC → 多点 GC 压力(换掉 Arc 确定性释放);收益:统一一套堆 + 可移动。**接受**。
+- (Deferred)小字符串内联优化(SSO)。
+
+### 5.1 Finalizer
+不透明 native(FileHandle/Stream)被收集时释放底层资源 → 需 **finalizer 队列**。经典坑(非确定/顺序/resurrection)→ **首选显式 close/dispose,finalizer 仅兜底**。
+
+---
+
+## 6. 移动 / 分代 GC 的 ABI 预留（不锁死非移动）
+
+对象 ABI 现在就为移动/分代留空间(算法细节归未来 GC 设计文档,本文只留 ABI 室):
+- **对象头 `gc_word`**:mark/color + age/gen 位;**复制期复用为 forwarding pointer**。
+- **精确 GC 是移动前提**(回扣 [safepoint.md §7](safepoint.md)):移动须找到并更新所有 ref;per-slot tag 自描述 + 按 kind 扫 → 可精确 fixup。
+- **GcRef 可重定位**(§4)。
+- **写屏障 → card table / remembered set**:分代追 old→young,minor GC 不必扫整个 old。z42 已有写屏障(并发模式)→ 复用/扩。
+- **pinned 与移动冲突**(回扣 [safepoint.md §4](safepoint.md) InNative):native/FFI 期 pinned 不可移 → pin set 跳过,或 pinned 分配在**非移动 pin 区**。
+- **per-generation 不同策略**(目标):young = 复制/evacuate(移动、bump 分配)、old = mark-sweep 或 mark-compact;`gc_word` 的 age/gen 位指明所在代。**具体算法 = 未来 GC 设计文档。**
+
+---
+
+## 7. 内存管理边界（精确"统一"到哪）
+- **用户可见堆对象**(普通对象/字符串/缓冲/数组/弱引用/Type/不透明native)→ **全 GC、一个头**。
+- **内部元数据 `TypeDesc`** → **不进 GC 堆**,归 **context-arena**([load-context.md](load-context.md) teardown 确定性释放)。Type 这个 **GC 对象引用 TypeDesc** = 一条保留边(`whyRetained` 可见)。
+- **不过度统一**:把 TypeDesc 也 GC 化会让类型生命周期被 GC 可达性绑架,破坏 load-context 的确定性卸载 → **不做**。
+- `Arc` 收敛到仅"内部共享元数据"(TypeDesc,context-arena 托管);`Box` 留瞬态(stack closure 等)。
+
+---
+
+## 8. 决策记录（2026-06-21）
+| # | 决策 |
+|---|---|
+| 值布局 | `#[repr(C)]`+tag 表+偏移规范化(冻结/版本化);fat enum v1,NaN-box 延后 |
+| 对象头 | 统一头 = `gc_word`(mark+age+forwarding) + type/kind;去 ad-hoc `native` |
+| 对象种类 | ref-object/字符串(GC)/字节缓冲/ref-array/弱引用/Type/不透明native;按 kind 精确扫 |
+| 移动/分代 | **ABI 预留**(gc_word forwarding + GcRef 可重定位 + card table + pin 区 + per-gen 位);实现可 v1 非移动,不锁死 |
+| GcRef | `NonNull+epoch`(改名避混);可重定位 fork (a)fixup/(b)句柄 待 benchmark |
+| 字符串 | 改 GC 对象;驻留串 context 拥有;finalizer 兜底 |
+| 边界 | 用户堆全 GC;TypeDesc 留 context-arena(不 GC 化) |
+
+## 9. 分阶段
+1. 固化 Value ABI(`#[repr(C)]`+tag/偏移规范),JIT/AOT 对规范编码。
+2. 统一对象头(加 `gc_word`)+ 对象 kind 化,去 `native` 字段;字符串改 GC。
+3. GcRef 改名 epoch + 可重定位接口(先 non-moving 实现满足接口)。
+4. 写屏障 → card table / remembered set;pin 区。
+5. 移动/分代实现(young 复制 / old mark-sweep)——**单独 GC 设计文档**驱动,本 ABI 已就位。
+
+## 10. 交叉引用
+- 精确 GC@安全点(另一半契约):[safepoint.md](safepoint.md) · OSR/tier:[tiered-execution.md](tiered-execution.md)
+- context-arena / TypeDesc 生命周期 / `whyRetained`:[load-context.md](load-context.md)
+- 组件化共享契约:[componentized-runtime.md](componentized-runtime.md) · 诊断:[diagnostics.md](diagnostics.md)
+- 当前架构:[vm-architecture.md](vm-architecture.md) · **移动/分代 GC 算法:未来 GC 设计文档**

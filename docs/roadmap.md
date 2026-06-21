@@ -341,6 +341,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 加载上下文（ALC 式） | zpkg 重载/卸载/回收（含内部 metadata/缓存池）；惰性 GC 卸载 + 保留根诊断 + 缓存不自钉铁律 | [runtime/load-context.md](design/runtime/load-context.md) |
 | 诊断与跟踪 | 事件（编译/类型/GC/deopt/context）+ 计数（counter/gauge/histogram）+ 时间（per-函数编译耗时）；fire() 近零成本门控 + perfetto 输出 | [runtime/diagnostics.md](design/runtime/diagnostics.md) |
 | 统一 safepoint/STW + 精确 GC 契约 | GC safepoint 泛化为 OSR/卸载/hot-reload 共用；线程状态（InNative=安全）；精确 GC = GC map@安全点 + 派生指针受控（ALC 卸载前提） | [runtime/safepoint.md](design/runtime/safepoint.md) |
+| 对象与值表示 ABI | 隐式 Value/对象 ABI 固化（repr(C)+tag 表）；统一对象头去 native；字符串改 GC；移动/分代预留（gc_word/forwarding/card table/pin 区）；TypeDesc 留 context-arena | [runtime/object-abi.md](design/runtime/object-abi.md) |
 | ref local / return / field / struct | parameter-modifiers D1-D4 | [language/parameter-modifiers.md](design/language/parameter-modifiers.md) |
 | StackTrace / 构造器重载 / 字段 ? 标注 / self-assign | exceptions Phase 1 限制 | [language/exceptions.md](design/language/exceptions.md) |
 | Layer 3 用户定义 operator/keyword | customization 第三层 | [language/customization.md](design/language/customization.md) |

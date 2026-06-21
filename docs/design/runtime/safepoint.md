@@ -97,4 +97,4 @@ z42 追求**精确 GC**。精确的代价/约束**集中在与 safepoint + codeg
 ## 10. 交叉引用
 - OSR / tier 回收：[tiered-execution.md](tiered-execution.md) · context 卸载：[load-context.md](load-context.md)
 - safepoint/STW 事件：[diagnostics.md](diagnostics.md) · 组件框架：[componentized-runtime.md](componentized-runtime.md)
-- 对象布局 / 谁是 ref（精确 GC 的另一半契约）：**对象 ABI（#2，待写）** · 当前架构：[vm-architecture.md](vm-architecture.md)
+- 对象布局 / 谁是 ref（精确 GC 的另一半契约）：[object-abi.md](object-abi.md) · 当前架构：[vm-architecture.md](vm-architecture.md)
