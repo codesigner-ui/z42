@@ -184,7 +184,7 @@ libs/ + programs/z42c/ + programs/repl/
 
 - **来源**：0.3.15 设计讨论（Growing Transcript 性能权衡）
 - **触发原因**：Growing Transcript 是 O(n) 重编译；小 session 可接受，大 session 慢
-- **前置依赖**：增量模块加载 + 跨模块静态状态共享 VM 能力
+- **前置依赖**：增量模块加载 + 跨模块静态状态共享 VM 能力 —— 即 [load-context.md](../runtime/load-context.md)（每轮输入 = 一个加载上下文，重定义 = 新版 supersede 旧版 + 旧版无引用时回收 `whyRetained`）+ [componentized-runtime.md](../runtime/componentized-runtime.md)（运行时编译器作为可加载组件）。该增量方案 = "每行 = 一个 context" 模型，其使能基建已在 2026-06-21 运行时设计弧中落定（DESIGN）。
 - **触发条件**：session 规模成为实际性能瓶颈时（benchmark 驱动）
 - **当前 workaround**：Growing Transcript（session 历史通常不超过几百行）
 
