@@ -12,7 +12,8 @@
 - [ ] S5 删 C# + 迁新家
 
 ## S2（当前）：z42c 进 CI 验证门 + 叶子切换
-- [ ] S2.1 xtask `test compiler-z42-stdlib`（或扩展 `test compiler-z42`）：z42c `build --workspace` 编全 stdlib 到 temp flat → 跑抽样 stdlib [Test] 验证功能正确。零风险（additive，C# 不动）
+- [x] S2.1 xtask `test compiler-z42-stdlib`：自足（C# 建 stdlib 种子 + tooling + z42c）→ z42c `build --workspace` 编全 22 stdlib 到私有 dogfood 目录 → 功能验证（z42c-7包 + z42c-built-stdlib 跑 z42c --emit-zbc）。**全私有目录 + File.Copy**（避开 _linkAll hard-link inode 别名污染）。本地通过：22 pkgs + emit OK
+  - 踩坑记录：① hard-link 共享 alllibs + rebuild → per-member 源 0 字节（换 copy）；② 陈旧 built stdlib 缺新 extern GetCommandLineArgs（自建 fresh stdlib 种子）
 - [ ] S2.2 CI job 挂该验证（linux-x64，仿 stdlib-jit-consistency）
 - [ ] S2.3 （验证稳定后）切 test-unit compile / cross-zpkg compile 到 z42c
 

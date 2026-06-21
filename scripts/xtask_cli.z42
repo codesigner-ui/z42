@@ -143,6 +143,8 @@ SubcommandRouter _testRouter() {
         new ArgParser("xtask test compiler", "dotnet test"));
     t.Add("compiler-z42", "build src/z42c + smoke",
         new ArgParser("xtask test compiler-z42", "z42c smoke"));
+    t.Add("compiler-z42-stdlib", "z42c dogfood-builds stdlib + functional check",
+        new ArgParser("xtask test compiler-z42-stdlib", "z42c builds stdlib"));
     ArgParser changed = new ArgParser("xtask test changed", "only changed-area tests");
     changed.AddFlag("dry-run", "", "print the plan, don't run");
     changed.AddOptionalPositional("base", "git base ref (default: HEAD)");
@@ -274,6 +276,7 @@ int _dispatchTest(string[] p, ParseResult r) {
     if (sub == "dist")         { return _testDist(r); }
     if (sub == "compiler")     { return _exec(new Process("dotnet").Arg("test").Arg("src/compiler/z42.Tests/z42.Tests.csproj")); }
     if (sub == "compiler-z42") { return _testCompilerZ42(); }
+    if (sub == "compiler-z42-stdlib") { return _testCompilerZ42Stdlib(); }
     if (sub == "changed")      { return _testChanged(r); }
     if (sub == "platform") {
         string plat = p.Length > 2 ? p[2] : "";
