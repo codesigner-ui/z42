@@ -528,8 +528,25 @@ public static class ExportedTypeExtractor {
         bool isAbstract = ExportedTypeExtractor._hasWord(md.Mods, "abstract");
         string ret = "void";
         if (!md.IsCtor) { ret = ExportedTypeExtractor._hybridTypeName(md.RetType, sig.Ret); }
+        int reqd = ExportedTypeExtractor._requiredCount(md.Params, pc);
         return new ExportedMethodZ(methKey, ret, ms.Visibility,
-                                   isStatic, isVirtual, isAbstract, pc, ps, pc);
+                                   isStatic, isVirtual, isAbstract, reqd, ps, pc);
+    }
+
+    // 必填参数个数 = 首个带默认值（`Param.Default != null`）参数的下标（其后皆可选）。
+    // 镜像 C# SymbolCollector.BuildFuncSignature 的 RequiredCount 计算（默认值尾随）。
+    // 无默认值 → 返回 pc（全必填）。TSIG 据此 emit minArgCount，否则跨包调用省略
+    // 默认实参会被消费端误判 E0402（dogfood S3 暴露：MulticastAction.Invoke(T,bool=false) 等）。
+    private static int _requiredCount(Param[] ps, int pc) {
+        int required = pc;
+        int i = 0;
+        while (i < pc) {
+            if (ps[i].Default != null) {
+                if (i < required) { required = i; }
+            }
+            i = i + 1;
+        }
+        return required;
     }
 
     // G18-import：imported 祖先方法（无 MethodDecl）→ 从 MethodSymbol 构建 ExportedMethodZ。
@@ -563,7 +580,7 @@ public static class ExportedTypeExtractor {
             }
             ret = ExportedTypeExtractor._hybridTypeName(md.RetType, sig.Ret);
         }
-        return new ExportedFuncZ(md.Name, ret, pc, ps, pc);
+        return new ExportedFuncZ(md.Name, ret, ExportedTypeExtractor._requiredCount(md.Params, pc), ps, pc);
     }
 
     // 方法/函数**签名**类型名（ret + param）：规范化 prim 名（byte→u8 等）+ 保留数组/nullable 结构。

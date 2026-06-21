@@ -23,8 +23,8 @@ stdlib → 由 z42c 编 → 需 z42c 先在
 | 阶段 | 内容 | 鸡生蛋安全 | 状态 |
 |---|---|---|---|
 | **S0** | `build --workspace`（前置能力）| — | ✅ 已完成（z42c-build-workspace 归档）|
-| **S2** | 切**叶子编译点**到 z42c（test-unit compile / cross-zpkg / golden regen）——编用户/测试码，非 bootstrap 链。加 `_z42c` helper（z42vm + z42c.driver.zpkg）| C# 仍建 stdlib+z42c | 进行中 |
-| **S3** | stdlib dogfood：C# 种子 stdlib → C# build z42c → z42c 重编 stdlib（覆盖/验证）| 有序，C# 种子在前 | 待 |
+| **S2** | 切**叶子编译点**到 z42c（test-unit / cross-zpkg / golden regen）。S2.1/S2.2 ✅；**S2.3 阻塞**：cross-zpkg 用 `impl Trait for Type`，z42c 未端口该特性 → 需先端口 impl-block（独立 workstream）| C# 仍建 z42c | S2.1/2 ✅；S2.3 阻塞 |
+| **S3** | stdlib dogfood：z42c **M2 per-member drop-in** 重编 stdlib（覆盖 canonical 布局）| 有序，C# 种子在前 | 🔴 阻塞：可行性验证 ✅（272 pass）+ 修 TSIG bug；生产接管阻塞于 z42c BLID sidecar + multicast aggregate parity |
 | **S1** | z42c apphost（原生 `z42c`，分发用）——SDK 安装布局 | 纯产物 | 待（分发阶段）|
 | **S4** | z42c 自举闭环 + **committed/下载 z42c 种子**（Rust stage0 式）| 种子就位解除 C# 构建依赖 | 待 |
 | **S5** | 删 `src/compiler/`，`src/z42c/` 迁新家（布局待定：src/compiler vs src/libraries）| 仅 S4 后 | 待 |
