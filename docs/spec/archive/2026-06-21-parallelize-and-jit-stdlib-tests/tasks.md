@@ -1,6 +1,6 @@
 # Tasks: parallelize-and-jit-stdlib-tests
 
-> 状态：🟡 进行中 | 创建：2026-06-21
+> 状态：🟢 已完成 | 创建：2026-06-21 | 完成：2026-06-21
 > 子系统：`toolchain`（ACTIVE.md 登记）
 
 ## 进度概览
@@ -26,12 +26,12 @@
 
 ## 阶段 C: CI 接线
 - [x] C.2 `xtask test stdlib --mode` 透传（xtask_test.z42 `_testLibCore`/`_runUnitsBatched` + xtask_cli.z42 stdlib/bench leaf option）；`test all` 显式传 "interp"
-- [ ] C.1 ci.yml：linux-x64 跑 `xtask test stdlib --mode jit`（placement 待 User 定：独立 job ~21min 并行 vs 并入 vm-jit-consistency ~32min serial vs nightly）
+- [x] C.1 ci.yml：新增**独立并行 job** `stdlib-jit-consistency (linux-x64)`（User 选 placement）跑 `test stdlib --mode jit --jobs 4`；不进 publish-nightly needs（download-bootstrap 死锁规避）
 
 ## 阶段 D: 文档
-- [ ] D.1 vm-architecture.md：test-runner exec-mode + bootstrap jit eager-load 原理
-- [ ] D.2 docs/workflow/testing/README.md：stdlib 并行 + `--mode` 用法
-- [ ] D.3 归档 + ACTIVE.md 释放
+- [x] D.1 `docs/design/testing/testing.md`：exec-mode 设计段（in-process/subprocess × interp/jit 正交但耦合；为何不做 in-process jit；xtask --jobs ≠ runner --jobs）。**改投 testing.md 而非 proposal 里写的 vm-architecture.md**——这是 test-tooling 机制非 VM 核心
+- [x] D.2 `docs/workflow/testing/stdlib-tests.md`：`--jobs` 并行 + `--mode jit` 用法 + 机制；顺带修 stale `test lib`→`test stdlib`、错误的 `--format` 示例
+- [x] D.3 归档 + ACTIVE.md 释放
 
 ## 备注
 - 并行安全性：dir-mode 合成 toml 名 `.xtask-<projName>.z42.toml` 已 per-unit 唯一，cache_dir per-unit，dist 文件名 per-unit → 并发编译不冲突（已确认）。

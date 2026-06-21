@@ -412,6 +412,60 @@ jobs:
           "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test vm jit --jobs=4
           "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test cross-zpkg jit
 
+  # ── stdlib [Test] JIT consistency (parallelize-and-jit-stdlib-tests) ──────
+  # build-and-test runs the 272 stdlib [Test] files under interp (in-process
+  # runner). This job re-runs them under JIT (`--mode jit` forks z42vm --mode
+  # jit per unit) to catch interp/JIT divergence in stdlib — the in-process
+  # runner can't drive the JIT, so subprocess is the proven jit path. Separate
+  # parallel lane (not folded into vm-jit-consistency) so it overlaps build-and-
+  # test instead of extending the critical path. linux-x64 only — cranelift
+  # behaviour is host-independent (same rationale as vm-jit-consistency).
+  stdlib-jit-consistency:
+    name: stdlib-jit-consistency (linux-x64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (shared key with build-and-test)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - uses: ./.github/actions/xtask-bootstrap
+
+      - name: stdlib [Test] — JIT mode (xtask)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # downloaded z42 runs xtask; xtask builds the current toolchain then
+          # runs every stdlib [Test] unit under JIT (subprocess fork z42vm
+          # --mode jit). --jobs 4 parallelizes units across cores.
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test stdlib --mode jit --jobs 4
+
   # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
   # uploads bench/results/e2e.json as artifact for manual inspection.
   # No diff/gate yet — that's P1.D.3 (gh-pages baseline + automatic PR diff).

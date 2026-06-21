@@ -47,6 +47,39 @@ R1 已落地 (commits ea54554 / bb2df98 / 5180d21)：编译时发现 + 6 个 att
 
 ---
 
+## 执行模式：in-process vs subprocess、interp vs jit（parallelize-and-jit-stdlib-tests, 2026-06-21）
+
+runner 有两条执行路径，互不相同的两件事（不要混淆）：
+
+| 维度 | in-process（R3b 默认） | subprocess（fallback） |
+|------|----------------------|----------------------|
+| 实现 | `bootstrap.rs` 建 VmContext，`runner.rs` 直调 `interp::run_outcome` | `exec.rs` fork `z42vm <zbc> <method>` 每 test 一个进程 |
+| Setup/Teardown | ✅ 跑（共享 VmContext 链） | ❌ 不跑（独立进程，无共享态） |
+| 触发 | 默认 | `--jobs N>1`（VmContext `!Send`）或 `--legacy-subprocess` 或 `--mode jit` |
+
+**`--mode interp|jit`（exec mode）与上面的进程模型是正交但耦合的**：
+
+- **interp** → in-process（`runner.rs` 硬编码 `interp::run_outcome`，从不读
+  `LoadedRunner.vm`）。
+- **jit** → **强制 subprocess**。根因：in-process runner 直调 interpreter，没有
+  driving JIT 的路径（要支持得让 `runner.rs` 走 jit dispatch，是更大的改动）。
+  而 fork 的 `z42vm --mode jit` 已有完整 jit 路径 + transitive eager-load
+  （`main.rs` 5.1d），直接复用。代价：jit 下 Setup/Teardown 不跑。
+- `--mode` 也透传给 subprocess 路径 fork 的 z42vm（`exec.rs` / `parallel.rs`），
+  否则 z42vm CLI 默认（jit）会与 runner 的 interp 意图不一致。
+
+> **为何不做 in-process jit**：runner.rs 的 `interp::run_outcome` 是测试执行的
+> 唯一入口，jit 化需要把 Setup/Test/Teardown 三处都改走 jit dispatch。当前阶段
+> ROI 不足——subprocess jit 已能覆盖"stdlib 在 JIT 下是否与 interp 分歧"这一目标
+> （CI `stdlib-jit-consistency` job）。若将来 in-process jit 有需求，再实现。
+
+> **xtask `--jobs` ≠ runner `--jobs`**：xtask 的 `test stdlib --jobs N` 是
+> **unit 级并行**（N 个 unit 同时 compile+run，每个 runner 仍 in-process 串行 →
+> 保留 Setup/Teardown）；runner 自身的 `--jobs N` 是 test 级并行（强制 subprocess）。
+> xtask 现在用前者，不再给 runner 传后者。
+
+---
+
 ## 测试目录组织（约定，2026-05-05 dotnet/runtime-style）
 
 z42 测试组织对标 [dotnet/runtime](https://github.com/dotnet/runtime/tree/main/src) 的成熟模式 ——「被测对象在哪，测试就在哪」+「中央 VM 测试集按特性分类」。
