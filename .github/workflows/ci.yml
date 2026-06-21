@@ -466,6 +466,58 @@ jobs:
           # --mode jit). --jobs 4 parallelizes units across cores.
           "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test stdlib --mode jit --jobs 4
 
+  # ── z42c dogfood-builds stdlib (replace-csharp-compiler S2.1) ─────────────
+  # Validates the self-host compiler (z42c) can build the ENTIRE stdlib
+  # workspace via `build --workspace` and that the z42c-built stdlib is
+  # functionally correct (z42c re-runs against it). Additive — C# stays the
+  # bootstrap seed; products land in a private dogfood dir, production stdlib
+  # untouched. Gates the C#→z42c replacement path (roadmap S2). linux-x64 only.
+  compiler-z42-stdlib:
+    name: compiler-z42-stdlib (linux-x64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (shared key with build-and-test)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - uses: ./.github/actions/xtask-bootstrap
+
+      - name: z42c dogfood-builds stdlib (xtask)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # downloaded z42 runs xtask; the command self-builds fresh stdlib (C#
+          # seed) + z42c, then z42c build --workspace re-builds all 22 stdlib
+          # pkgs + a functional emit check against the z42c-built stdlib.
+          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test compiler-z42-stdlib
+
   # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
   # uploads bench/results/e2e.json as artifact for manual inspection.
   # No diff/gate yet — that's P1.D.3 (gh-pages baseline + automatic PR diff).
