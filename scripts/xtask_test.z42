@@ -472,10 +472,14 @@ int _compileTestUnit(string root, string lib, TestUnit u,
     Directory.Create(distDir);
     if (!u.IsDirMode) {
         string zbc = Path.Join(distDir, projName + ".zbc");
+        // Invoke the built driver DLL directly (`dotnet z42c.dll`) instead of
+        // `dotnet run --no-build --project` — 3x faster startup (skips MSBuild
+        // project evaluation) and concurrency-safe (no obj/ cache race when
+        // units compile in parallel). Output is byte-identical. Mirrors the
+        // direct-DLL pattern already used by xtask_regen / test_cross / platform.
         int cc = _exec(new Process("dotnet")
-            .Arg("run").Arg("--no-build").Arg("--project").Arg(_driverProj())
-            .Arg("-c").Arg("Release")
-            .Arg("--").Arg(u.SourceFile)
+            .Arg(_driverDll(root))
+            .Arg(u.SourceFile)
             .Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc));
         outArtifact = zbc;
         return cc;
@@ -495,9 +499,8 @@ int _compileTestUnit(string root, string lib, TestUnit u,
     File.WriteAllText(syntheticToml,
         _renderSyntheticManifest(projName, includeGlob, testsBase, u.UnitName, parentDeps));
     int bc = _exec(new Process("dotnet")
-        .Arg("run").Arg("--no-build").Arg("--project").Arg(_driverProj())
-        .Arg("-c").Arg("Release")
-        .Arg("--").Arg("build").Arg(syntheticToml));
+        .Arg(_driverDll(root))
+        .Arg("build").Arg(syntheticToml));
     // Clean the synthetic toml regardless of compile success — leaving
     // it behind would dirty the source tree and racks up over many runs.
     try { File.Delete(syntheticToml); } catch (Exception) {}
