@@ -119,3 +119,4 @@ context 持有的 native 扩展库句柄（ext.rs dlopen 的 `libz42_*`）teardo
 - 组件框架（observer / 注册槽 → 边可按 ctx 摘除）：[componentized-runtime.md](componentized-runtime.md)
 - per-context 全局态 / ALC 延后项出处：[vm-architecture.md](vm-architecture.md)
 - 诊断事件总线（`whyRetained` / context 生命周期事件 emit 于此）：[diagnostics.md](diagnostics.md)
+- 卸载所依赖的统一 safepoint 协议 + 精确 GC（可靠卸载的前提）：[safepoint.md](safepoint.md)
