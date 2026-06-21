@@ -34,7 +34,7 @@ mod runner;     // in-process Setup/Test/Teardown chain (R3b default)
 mod skip_eval;  // add-test-skip-platform-feature-eval: conditional [Skip] evaluator
 
 use anyhow::{Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use colored::*;
 use std::path::PathBuf;
 
@@ -107,6 +107,34 @@ struct Cli {
     /// add-runner-list-and-dry-run-flags (2026-05-31).
     #[arg(long)]
     dry_run: bool,
+
+    /// Execution mode. Default: `interp` (in-process runner). `jit` runs each
+    /// [Test] under the cranelift JIT by forcing the subprocess path — the
+    /// forked z42vm honours `--mode jit` (full JIT + transitive eager-load),
+    /// which the in-process runner can't drive. Used by CI's linux-x64
+    /// stdlib-jit lane to catch interp/JIT divergence in stdlib tests.
+    /// [Setup]/[Teardown] don't run under jit (subprocess limitation).
+    #[arg(long, value_enum, default_value = "interp")]
+    mode: ExecModeArg,
+}
+
+/// CLI execution-mode flag. Local enum so clap derives `ValueEnum` without
+/// touching the runtime type (mirrors z42vm's main.rs). Aot is not exposed —
+/// the runner only needs interp/jit.
+#[derive(Clone, Copy, ValueEnum)]
+enum ExecModeArg {
+    Interp,
+    Jit,
+}
+
+impl ExecModeArg {
+    /// The `--mode` value string to forward to a forked z42vm.
+    fn as_vm_arg(self) -> &'static str {
+        match self {
+            ExecModeArg::Interp => "interp",
+            ExecModeArg::Jit    => "jit",
+        }
+    }
 }
 
 fn main() {
@@ -147,11 +175,22 @@ fn run(cli: &Cli) -> Result<i32> {
     // subprocess mode since VmContext is !Send. Resolve N first so the
     // routing decision is explicit.
     let jobs = resolve_jobs(cli.jobs);
-    let use_subprocess = cli.legacy_subprocess || jobs > 1;
+    // parallelize-and-jit-stdlib-tests B: `--mode jit` also forces subprocess.
+    // The in-process runner (runner.rs) calls interp::run_outcome directly and
+    // can't dispatch through the JIT; the forked z42vm honours `--mode jit`
+    // (full cranelift path + transitive eager-load) and is the proven way to
+    // exercise stdlib tests under JIT. interp stays in-process (default).
+    let jit_mode = matches!(cli.mode, ExecModeArg::Jit);
+    let use_subprocess = cli.legacy_subprocess || jobs > 1 || jit_mode;
     if jobs > 1 && !cli.legacy_subprocess {
         eprintln!(
             "{}: --jobs {} forces subprocess execution; [Setup]/[Teardown] will not run",
             "note".yellow(), jobs);
+    }
+    if jit_mode && jobs <= 1 && !cli.legacy_subprocess {
+        eprintln!(
+            "{}: --mode jit forces subprocess execution; [Setup]/[Teardown] will not run",
+            "note".yellow());
     }
 
     if use_subprocess {
@@ -186,14 +225,15 @@ fn run(cli: &Cli) -> Result<i32> {
         }
         let z42vm = exec::resolve_z42vm(cli.z42vm.as_ref())
             .context("locating z42vm binary (use --z42vm to override)")?;
+        let mode_arg = cli.mode.as_vm_arg();
         let results: Vec<TestResult> = if jobs > 1 {
             // Parallel subprocess pool.
-            parallel::run_tests(&z42vm, zbc_path, &report.tests, jobs, &skip_env)
+            parallel::run_tests(&z42vm, zbc_path, &report.tests, jobs, &skip_env, mode_arg)
         } else {
             // Serial legacy path.
             report.tests.iter()
                 .map(|t| {
-                    let (outcome, bench_stats) = exec::run_one(&z42vm, zbc_path, t, &skip_env);
+                    let (outcome, bench_stats) = exec::run_one(&z42vm, zbc_path, t, &skip_env, mode_arg);
                     TestResult::from_outcome(
                         t.method_name.to_string(),
                         outcome,
@@ -207,7 +247,8 @@ fn run(cli: &Cli) -> Result<i32> {
         return Ok(exit_code);
     }
 
-    // R3b in-process path (default).
+    // R3b in-process path (default). Interp only — `--mode jit` is routed to
+    // the subprocess path above (the in-process runner can't drive the JIT).
     let mut loaded = bootstrap::bootstrap(zbc_path)
         .with_context(|| format!("bootstrapping in-process VM for `{zbc_path}`"))?;
 

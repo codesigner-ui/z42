@@ -124,7 +124,8 @@ SubcommandRouter _testRouter() {
     ArgParser stdlib = new ArgParser("xtask test stdlib", "stdlib [Test] (all or one)");
     stdlib.AddFlag("no-build", "", "skip tooling rebuild");
     stdlib.AddOption("filter", "k", "test-name filter", "");
-    stdlib.AddOption("jobs", "", "parallel [Test] jobs", "");
+    stdlib.AddOption("jobs", "", "parallel unit batch width", "");
+    stdlib.AddOption("mode", "", "interp|jit (default: interp; jit forks z42vm)", "");
     stdlib.AddOptionalPositional("lib", "single lib (default: all)");
     t.Add("stdlib", "stdlib [Test] (all or one)", stdlib);
     ArgParser vm = new ArgParser("xtask test vm", "golden VM tests");
@@ -192,7 +193,8 @@ SubcommandRouter _benchRouter() {
     ArgParser stdlib = new ArgParser("xtask bench stdlib", "per-lib [Benchmark]");
     stdlib.AddFlag("no-build", "", "skip tooling rebuild");
     stdlib.AddOption("filter", "k", "bench-name filter", "");
-    stdlib.AddOption("jobs", "", "parallel jobs", "");
+    stdlib.AddOption("jobs", "", "parallel unit batch width", "");
+    stdlib.AddOption("mode", "", "interp|jit (default: interp)", "");
     stdlib.AddOptionalPositional("lib", "single lib (default: all)");
     bn.Add("stdlib", "per-lib [Benchmark]", stdlib);
     return bn;

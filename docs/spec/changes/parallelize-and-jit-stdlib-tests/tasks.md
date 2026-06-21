@@ -18,15 +18,15 @@
 - [x] A.5 验证：全量 272/272 通过；serial 193s → jobs=4 96s（**2× 本地**）；jobs=1 默认路径亦过
 
 ## 阶段 B: test-runner --mode 接口
-- [ ] B.1 main.rs：`--mode interp|jit` clap value_enum flag（默认 interp，保持现状）
-- [ ] B.2 bootstrap.rs：`Vm::new(mode)`；mode==jit 时 transitive eager-load BFS（port main.rs L566-630）
-- [ ] B.3 subprocess 路径：fork z42vm 透传 `--mode <mode>`
-- [ ] B.4 Rust 单测：bootstrap jit 加载 cross-zpkg dep 用例（cargo test）
-- [ ] B.5 验证：`z42-test-runner <zbc> --mode jit` 在跨 zpkg 依赖测试上通过（z42.io/z42.crypto 等）
+- [x] B.1 main.rs：`--mode interp|jit` clap value_enum flag（默认 interp）
+- [x] B.2 **设计修正**：in-process runner（runner.rs）硬编码 `interp::run_outcome`，从不读 `loaded.vm` → 无法 in-process jit。改为 **`--mode jit` 强制 subprocess**（fork z42vm --mode jit，复用 z42vm 已有 transitive eager-load + jit）。bootstrap.rs 还原 interp-only（其 eager-load 改动撤销）
+- [x] B.3 subprocess 路径（exec.rs/parallel.rs）：fork z42vm 透传 `--mode <mode>`
+- [~] B.4 Rust 单测：run_one 签名变更，现有 skip_eval 单测不受影响；cargo test 绿（新 jit-load 用例略——逻辑复用 z42vm 已测路径）
+- [x] B.5 验证：`z42-test-runner <zbc> --mode jit` 通过；全量 stdlib --mode jit **272/272**（16min 本地）
 
 ## 阶段 C: CI 接线
-- [ ] C.1 ci.yml：linux-x64 跑 `xtask test stdlib --mode jit`（并入 vm-jit-consistency 或独立步骤）
-- [ ] C.2 `xtask test stdlib` 增 `--mode` 透传（xtask_test.z42 + xtask_cli.z42）
+- [x] C.2 `xtask test stdlib --mode` 透传（xtask_test.z42 `_testLibCore`/`_runUnitsBatched` + xtask_cli.z42 stdlib/bench leaf option）；`test all` 显式传 "interp"
+- [ ] C.1 ci.yml：linux-x64 跑 `xtask test stdlib --mode jit`（placement 待 User 定：独立 job ~21min 并行 vs 并入 vm-jit-consistency ~32min serial vs nightly）
 
 ## 阶段 D: 文档
 - [ ] D.1 vm-architecture.md：test-runner exec-mode + bootstrap jit eager-load 原理

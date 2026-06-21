@@ -61,6 +61,7 @@ pub fn run_one(
     zbc_path: &str,
     test: &DiscoveredTest,
     skip_env: &SkipEnv,
+    mode_arg: &str,
 ) -> (Outcome, Option<BenchStats>) {
     // capture-benchmark-stats-in-testresult (2026-05-31): return tuple so
     // callers can attach BenchStats parsed from subprocess-captured stdout
@@ -78,6 +79,8 @@ pub fn run_one(
     let mut child = match Command::new(z42vm)
         .arg(zbc_path)
         .arg(test.method_name)
+        .arg("--mode")
+        .arg(mode_arg)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

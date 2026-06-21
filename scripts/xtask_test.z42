@@ -137,7 +137,7 @@ int _testAll() {
     c = _testCrossZpkgCore("interp"); if (c != 0) { return c; }
     // stage 4: stdlib [Test] (no build)
     Console.WriteLine("\n=== stage: stdlib [Test] ===");
-    c = _testLibCore("test", new string[0], true, "", "4"); if (c != 0) { return c; }
+    c = _testLibCore("test", new string[0], true, "", "4", "interp"); if (c != 0) { return c; }
     // stage 5: z42c self-host byte-identical (0.3.10 gate)
     Console.WriteLine("\n=== stage: compiler-z42 ===");
     c = _testCompilerZ42(); if (c != 0) { return c; }
@@ -160,10 +160,10 @@ int _testLib(ParseResult r, string kind) {
     string[] libs;
     if (lib.Length > 0) { libs = new string[1]; libs[0] = lib; }
     else { libs = new string[0]; }
-    return _testLibCore(kind, libs, r.GetFlag("no-build"), r.GetOption("filter"), r.GetOption("jobs"));
+    return _testLibCore(kind, libs, r.GetFlag("no-build"), r.GetOption("filter"), r.GetOption("jobs"), r.GetOption("mode"));
 }
 
-int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, string jobs) {
+int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, string jobs, string mode) {
     // kind = "test" → discover <lib>/tests/, merge [tests.dependencies], emit
     // <lib>.test.<unit> to <lib>/release/tests/. "bench" → <lib>/bench/,
     // [bench.dependencies], <lib>.bench.<unit> to <lib>/release/bench/. The
@@ -217,6 +217,9 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
     int jobsN = 1;
     try { jobsN = int.Parse(jobs); } catch (Exception e) { jobsN = 1; }
     if (jobsN < 1) { jobsN = 1; }
+    // mode forwarded to z42-test-runner: "" / "interp" → in-process interp;
+    // "jit" → runner forces subprocess fork of z42vm --mode jit.
+    if (mode.Length == 0) { mode = "interp"; }
     foreach (var lib in libList) {
         string testsDir = Path.Join(libsRoot, lib + "/" + subdir);
         if (!Directory.Exists(testsDir)) { continue; }
@@ -240,7 +243,7 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
         // Each runner runs serially within its unit (no --jobs) so [Setup]/
         // [Teardown] still execute — the parallelism is across units, not
         // within. The per-unit z42.core bootstrap (the dominant cost) overlaps.
-        totalFailed = totalFailed + _runUnitsBatched(root, runner, lib, units, parentDeps, kind, jobsN);
+        totalFailed = totalFailed + _runUnitsBatched(root, runner, lib, units, parentDeps, kind, jobsN, mode);
     }
     Console.WriteLine("");
     Console.WriteLine("════════════════════════════════════════════════");
@@ -456,7 +459,7 @@ void _appendDeps(DepBundle b, TomlValue depsTable) {
 /// `_runVmBatch` (xtask_test_vm.z42). Each runner runs serially within its
 /// unit (no --jobs) so [Setup]/[Teardown] still execute.
 int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
-                     DepBundle parentDeps, string kind, int jobs) {
+                     DepBundle parentDeps, string kind, int jobs, string mode) {
     int failed = 0;
     int i = 0;
     while (i < units.Length) {
@@ -499,7 +502,8 @@ int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
         b = 0;
         while (b < bsz) {
             if (okc[b]) {
-                rh[b] = new Process(runner).Arg(arts[b]).WorkingDirectory(root).Spawn();
+                rh[b] = new Process(runner).Arg(arts[b]).Arg("--mode").Arg(mode)
+                    .WorkingDirectory(root).Spawn();
             }
             b = b + 1;
         }

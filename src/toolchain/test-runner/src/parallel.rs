@@ -39,6 +39,7 @@ pub fn run_tests(
     tests: &[DiscoveredTest<'_>],
     jobs: usize,
     skip_env: &SkipEnv,
+    mode_arg: &str,
 ) -> Vec<TestResult> {
     let n = tests.len();
     if n == 0 {
@@ -62,7 +63,7 @@ pub fn run_tests(
                         return;
                     }
                     let test = &tests[idx];
-                    let (outcome, bench_stats) = exec::run_one(z42vm, zbc_path, test, skip_env);
+                    let (outcome, bench_stats) = exec::run_one(z42vm, zbc_path, test, skip_env, mode_arg);
                     let tr = TestResult::from_outcome(
                         test.method_name.to_string(),
                         outcome,
