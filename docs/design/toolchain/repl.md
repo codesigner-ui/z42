@@ -127,12 +127,64 @@ namespace Std.Scripting {
 
 ## REPL 内置指令（`.` 前缀，不编译）
 
-| 指令 | 功能 |
-|------|------|
-| `.exit` / `.quit` / Ctrl-D | 退出 |
-| `.help` | 帮助信息 |
-| `.reset` | 清空会话（transcript + $ReplVars 归零）|
-| `.history` | 显示 eval 历史 |
+**约定**：以 `.` 开头的整行 = 元指令（meta，不进编译/transcript）；其余 = z42 代码。
+未知 `.xxx` → `unknown command '.xxx'; try .help` 并保留会话。指令大小写不敏感、可带参。
+标注：**[MVP]** = 0.3.15 首发；**[diag]** = 依赖 [diagnostics.md](../runtime/diagnostics.md)（事件/计数/时间）；
+**[refl]** = 依赖反射；**[defer]** = 见下 Deferred。
+
+### 会话控制
+| 指令 | 功能 | |
+|------|------|---|
+| `.help [cmd]` | 无参列全部指令分组；带参看该指令详情 | [MVP] |
+| `.exit` / `.quit` / Ctrl-D | 退出 REPL | [MVP] |
+| `.reset` | 清空会话（transcript + `$ReplVars` 归零，回到空白 session）| [MVP] |
+| `.clear` | 清屏（**不**清会话状态）| [MVP] |
+
+### 历史 / 转录
+| 指令 | 功能 | |
+|------|------|---|
+| `.history [n]` | 显示最近 `n` 条 eval（默认全部，带行号）| [MVP] |
+| `.save <file.z42>` | 把当前会话 transcript 导出为可独立编译的 `.z42` | [MVP] |
+| `.load <file.z42>` | 把文件内容按行喂入会话 | [defer] `repl-future-load-directive` |
+
+### 作用域内省
+| 指令 | 功能 | |
+|------|------|---|
+| `.vars` | 列会话变量：`name : Type = value` | [MVP] |
+| `.types` | 列会话内声明的类型 | [MVP] |
+| `.usings` | 列当前生效的 `using` | [MVP] |
+| `.using <ns>` | 给会话追加一个 `using <ns>;` | [MVP] |
+| `.type <expr>` | 显示表达式的**静态类型**（typecheck，不求值；类 GHCi `:type`）| [refl] |
+| `.members <Type>` | 反射列出类型成员（字段/方法/属性）| [refl] |
+
+### 执行 / 诊断
+| 指令 | 功能 | |
+|------|------|---|
+| `.mode [interp\|jit]` | 无参显示当前执行模式；带参切换（`ExecMode`，JIT 平台才有 jit）| [MVP] |
+| `.time <expr>` | 求值并报告**编译 + 执行耗时**（per-eval span）| [diag] |
+| `.counters` | 打印运行时计数器快照（编译次数/异常数/分配等）| [diag] |
+| `.trace [on\|off\|<cat>]` | 开关事件跟踪（编译/GC/类型加载…按 category）| [diag] |
+
+### 元信息
+| 指令 | 功能 | |
+|------|------|---|
+| `.version` | z42 运行时 + 编译器 zpkg 版本 | [MVP] |
+
+### `.help` 输出样例
+```
+z42 REPL — 输入 z42 代码即时求值；. 前缀为元指令。
+  会话:   .help [cmd]  .exit/.quit  .reset  .clear
+  历史:   .history [n]  .save <f.z42>
+  内省:   .vars  .types  .usings  .using <ns>  .type <expr>  .members <Type>
+  执行:   .mode [interp|jit]  .time <expr>  .counters  .trace [on|off|<cat>]
+  元:     .version
+  (.type/.members 需反射；.time/.counters/.trace 需 diagnostics)
+```
+
+> **MVP 指令集**（0.3.15 首发）：`.help .exit .quit .reset .clear .history .save
+> .vars .types .usings .using .mode .version`。`.type`/`.members` 随反射就绪并入；
+> `.time`/`.counters`/`.trace` 随 [diagnostics.md](../runtime/diagnostics.md) 落地并入；
+> `.load` 见 Deferred。
 
 ## 行编辑器
 
