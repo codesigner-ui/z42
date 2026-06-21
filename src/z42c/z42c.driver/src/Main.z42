@@ -27,14 +27,26 @@ void Main() {
     string file = argv[1];
     if (cmd == "build") {
         bool isRelease = false;
+        bool isWorkspace = false;
         string outputDir = "";
-        int ai = 2;
+        // ai from 1: `build --workspace` 时 argv[1] 是 flag 不是 toml 路径。
+        int ai = 1;
         while (ai < argv.Length) {
             if (argv[ai] == "--release") { isRelease = true; }
-            if (argv[ai] == "--output-dir" && ai + 1 < argv.Length) { outputDir = argv[ai + 1]; ai = ai + 1; }
+            else if (argv[ai] == "--workspace") { isWorkspace = true; }
+            else if (argv[ai] == "--output-dir" && ai + 1 < argv.Length) { outputDir = argv[ai + 1]; ai = ai + 1; }
             ai = ai + 1;
         }
-        Environment.Exit(_build(file, isRelease, outputDir));
+        if (isWorkspace) {
+            Environment.Exit(_buildWorkspace(isRelease, outputDir));
+            return;
+        }
+        Environment.Exit(_build(file, isRelease, outputDir, ""));
+        return;
+    }
+    if (cmd == "clean") {
+        string target = (argv.Length >= 2 && !file.StartsWith("--")) ? file : ".";
+        Environment.Exit(_clean(target));
         return;
     }
     if (cmd == "test") {
@@ -67,7 +79,7 @@ void Main() {
 
 // `z42c build <toml>`：manifest → 源发现 → 逐文件编译 → packed zpkg → dist/<name>.zpkg。
 // MVP：单工程/packed/无增量（镜像 C# PackageCompiler.BuildTarget 关键路径）。
-int _build(string tomlPath, bool isRelease, string outputDirOverride) {
+int _build(string tomlPath, bool isRelease, string outputDirOverride, string libsDirOverride) {
     ProjectManifest pm = ManifestLoader.Load(tomlPath);
     string projectDir = Path.GetDirectoryName(tomlPath);
     if (projectDir == "") { projectDir = "."; }
@@ -77,7 +89,11 @@ int _build(string tomlPath, bool isRelease, string outputDirOverride) {
         return 1;
     }
     // ── 跨包依赖（CI-4）：Z42_LIBS 扫描 → DepIndex + nsMap + TSIG 池；usings 聚合决定激活集 ──
-    string libsDir = Environment.GetEnvironmentVariable("Z42_LIBS") ?? "";
+    // workspace build 传 libsDirOverride（共享 flat dist，解析兄弟成员）；
+    // 单工程留空 → 回落 Z42_LIBS env。
+    string libsDir = libsDirOverride.Length > 0
+        ? libsDirOverride
+        : (Environment.GetEnvironmentVariable("Z42_LIBS") ?? "");
     DepScanResult scan = null;
     ImportedSymbols imported = null;
     DependencyIndex depIndex = null;
@@ -174,6 +190,73 @@ int _build(string tomlPath, bool isRelease, string outputDirOverride) {
     return 0;
 }
 
+// `z42c build --workspace [--output-dir <flat>] [--release]`：从 CWD 向上找
+// z42.workspace.toml → 成员拓扑序 → 逐成员 build。
+// Milestone 1：需 --output-dir <flat>，全成员产物落该 flat dir（= 各成员 libsDir，
+// deps-first 解析兄弟）。产物 zpkg 与 C# `build --workspace` byte-identical（字节与
+// 目录无关）。注意：flat dir 须含 stdlib 依赖（调用方 seed Z42_LIBS 内容）。
+// Milestone 2（drop-in）：缺省按 [workspace.build].output_dir 模板展开 per-member
+// 布局 + 多 libsDir 解析——待 PathTemplate 端口。
+int _buildWorkspace(bool isRelease, string outputDir) {
+    string cwd = Environment.GetCurrentDirectory();
+    string wsToml = _findWorkspaceToml(cwd);
+    if (wsToml == "") {
+        ConsoleError.WriteLine("z42c build --workspace: no z42.workspace.toml from CWD upward (" + cwd + ")");
+        return 2;
+    }
+    if (outputDir == "") {
+        ConsoleError.WriteLine("z42c build --workspace: --output-dir <flat-dist> required (milestone 1)");
+        return 2;
+    }
+    Directory.Create(outputDir);
+    string[] ordered = WorkspaceBuild.Plan(wsToml);
+    Console.WriteLine("workspace: " + wsToml + " (" + ordered.Length.ToString() + " members, topo order)");
+    int i = 0;
+    while (i < ordered.Length) {
+        Console.WriteLine("  [" + (i + 1).ToString() + "/" + ordered.Length.ToString() + "] " + ordered[i]);
+        int rc = _build(ordered[i], isRelease, outputDir, outputDir);
+        if (rc != 0) {
+            ConsoleError.WriteLine("z42c build --workspace: member build failed: " + ordered[i]);
+            return rc;
+        }
+        i = i + 1;
+    }
+    Console.WriteLine("workspace build OK -> " + outputDir);
+    return 0;
+}
+
+// 从 startDir 向上找 z42.workspace.toml；返回路径或 ""（镜像 C# DiscoverWorkspaceRoot）。
+string _findWorkspaceToml(string startDir) {
+    string dir = startDir;
+    while (dir.Length > 0) {
+        string cand = Path.Join(dir, "z42.workspace.toml");
+        if (File.Exists(cand)) { return cand; }
+        string parent = Path.GetDirectoryName(dir);
+        if (parent == dir || parent == "") { break; }
+        dir = parent;
+    }
+    return "";
+}
+
+// `z42c clean [<dir>]`：删 <dir>/dist 与 <dir>/cache 产物子树（默认 CWD）。
+int _clean(string dir) {
+    int removed = 0;
+    string[] subs = new string[2];
+    subs[0] = Path.Join(dir, "dist");
+    subs[1] = Path.Join(dir, "cache");
+    int i = 0;
+    while (i < subs.Length) {
+        if (Directory.Exists(subs[i])) {
+            Directory.Delete(subs[i], true);
+            Console.WriteLine("removed " + subs[i]);
+            removed = removed + 1;
+        }
+        i = i + 1;
+    }
+    if (removed == 0) { Console.WriteLine("clean: nothing to remove under " + dir); }
+    return 0;
+}
+
 void _usage() {
     Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse/typecheck front-end)");
     Console.WriteLine("usage:");
@@ -183,5 +266,7 @@ void _usage() {
     Console.WriteLine("  z42c --dump-ir     <file.z42>          .zasm-like IR text");
     Console.WriteLine("  z42c --emit-zbc    <file.z42> <out>    compile to .zbc (subset)");
     Console.WriteLine("  z42c build         <project.z42.toml>  build packed .zpkg -> dist/");
+    Console.WriteLine("  z42c build --workspace --output-dir <d> build all members (topo order) -> <d>");
+    Console.WriteLine("  z42c clean         [<dir>]             remove <dir>/{dist,cache}");
     Console.WriteLine("  z42c test          <file.zbc|project>  run [Test] methods (0.3.13, not yet)");
 }

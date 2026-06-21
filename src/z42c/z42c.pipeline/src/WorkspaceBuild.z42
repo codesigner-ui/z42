@@ -1,0 +1,197 @@
+// Workspace build planning (z42c-build-workspace, 2026-06-21).
+//
+// 端口 C# z42.Pipeline.WorkspaceBuildOrchestrator + MemberDependencyGraph 的
+// 「成员发现 + dep 拓扑序」核心。z42c 受限子集：无交错数组 → flat 平行数组；
+// 无 enum → 颜色/状态用 int/bool。
+//
+// `Plan(wsToml)` 返回**拓扑序的成员 manifest 路径**（叶子在前），driver 据此
+// 逐个 `_build`。同层（互不依赖）按 member 名 Ordinal 排序，与 C#
+// TopologicalLayers（层内 name-sort）逐字节一致。
+//
+// 当前仅支持 `members = ["*"]`（z42c + stdlib 唯一用法）：workspace 目录下每个
+// 「恰含一份 *.z42.toml」的子目录 = 一个 member。显式 path / 多 pattern 留 follow-up。
+namespace Z42.Pipeline;
+
+using Std;
+using Std.IO;
+using Z42.Project;
+
+// 成员发现结果：flat 平行数组（z42 无交错数组）。
+//   Tomls[i] / Names[i] = 成员 i 的 manifest 路径 / [project].name
+//   Deps 为 flat：成员 i 的依赖名 = DepFlat[DepOff[i] .. DepOff[i]+DepLen[i]]
+public sealed class WsMembers {
+    public string[] Tomls;
+    public string[] Names;
+    public string[] DepFlat;
+    public int[]    DepOff;
+    public int[]    DepLen;
+    public int      Count;
+    public WsMembers(string[] tomls, string[] names, string[] depFlat,
+                     int[] depOff, int[] depLen, int count) {
+        this.Tomls = tomls; this.Names = names; this.DepFlat = depFlat;
+        this.DepOff = depOff; this.DepLen = depLen; this.Count = count;
+    }
+}
+
+public static class WorkspaceBuild {
+
+    // wsToml → 拓扑序的成员 manifest 路径数组（叶子在前；环 → 抛 Exception）。
+    public static string[] Plan(string wsToml) {
+        WorkspaceManifest ws = ManifestLoader.LoadWorkspace(wsToml);
+        string wsDir = Path.GetDirectoryName(wsToml);
+        if (wsDir == "") { wsDir = "."; }
+
+        WsMembers m = WorkspaceBuild.DiscoverMembers(wsDir, ws);
+        int[] order = WorkspaceBuild.TopoOrder(m);   // 成员索引的拓扑序
+        string[] ordered = new string[m.Count];
+        int i = 0;
+        while (i < m.Count) { ordered[i] = m.Tomls[order[i]]; i = i + 1; }
+        return ordered;
+    }
+
+    // members=["*"]：wsDir 下每个「恰含一份 *.z42.toml」的子目录 = member。
+    // 子目录按 Ordinal 排序迭代（确定性，common-pitfalls §1）。
+    public static WsMembers DiscoverMembers(string wsDir, WorkspaceManifest ws) {
+        string[] entries = WorkspaceBuild.SortStrings(Directory.Enumerate(wsDir));
+        // 第一遍：收集 member toml + name。
+        string[] tomls = new string[entries.Length];
+        string[] names = new string[entries.Length];
+        int count = 0;
+        int e = 0;
+        while (e < entries.Length) {
+            string dir = entries[e];
+            e = e + 1;
+            if (!Directory.Exists(dir)) { continue; }
+            string[] manifests = Path.Glob(dir, "*.z42.toml");
+            if (manifests.Length != 1) { continue; }   // 0 = 非 member；>1 = WS005（暂跳过）
+            ProjectManifest pm = ManifestLoader.Load(manifests[0]);
+            tomls[count] = manifests[0];
+            names[count] = pm.Name;
+            count = count + 1;
+        }
+        // 第二遍：每 member 的 workspace 内依赖（flat）。
+        string[] depFlat = new string[count * count];   // 上界：每对一条边
+        int[]    depOff  = new int[count];
+        int[]    depLen  = new int[count];
+        int flat = 0;
+        int i = 0;
+        while (i < count) {
+            ProjectManifest pm = ManifestLoader.Load(tomls[i]);
+            depOff[i] = flat;
+            int len = 0;
+            int d = 0;
+            while (d < pm.DepCount) {
+                string dn = pm.Deps[d].Name;
+                d = d + 1;
+                // 仅保留指向本 workspace 内成员的边。
+                if (WorkspaceBuild.IndexOfName(names, count, dn) >= 0) {
+                    depFlat[flat] = dn;
+                    flat = flat + 1;
+                    len = len + 1;
+                }
+            }
+            depLen[i] = len;
+            i = i + 1;
+        }
+        return new WsMembers(tomls, names, depFlat, depOff, depLen, count);
+    }
+
+    // O(N²) 拓扑：每轮发射「全部依赖已发射」的成员（按 member 名 Ordinal 排序），
+    // 等价 C# TopologicalLayers（层内 name-sort）。无进展但未全发射 → 环。
+    public static int[] TopoOrder(WsMembers m) {
+        int n = m.Count;
+        bool[] done = new bool[n];
+        int[]  order = new int[n];
+        int    oc = 0;
+        // 预排序的成员索引（按 name Ordinal）—— 保证就绪集发射序确定。
+        int[] byName = WorkspaceBuild.IndicesByName(m.Names, n);
+        while (oc < n) {
+            bool progress = false;
+            int k = 0;
+            while (k < n) {
+                int idx = byName[k];
+                k = k + 1;
+                if (done[idx]) { continue; }
+                if (WorkspaceBuild.AllDepsDone(m, idx, done)) {
+                    order[oc] = idx;
+                    oc = oc + 1;
+                    done[idx] = true;
+                    progress = true;
+                }
+            }
+            if (!progress) {
+                throw new Exception("z42c build --workspace: circular member dependency");
+            }
+        }
+        return order;
+    }
+
+    // 成员 idx 的全部 workspace 内依赖是否都已发射。
+    public static bool AllDepsDone(WsMembers m, int idx, bool[] done) {
+        int off = m.DepOff[idx];
+        int len = m.DepLen[idx];
+        int j = 0;
+        while (j < len) {
+            string dn = m.DepFlat[off + j];
+            j = j + 1;
+            int di = WorkspaceBuild.IndexOfName(m.Names, m.Count, dn);
+            if (di < 0) { continue; }       // 外部 dep（理论上已过滤）
+            if (!done[di]) { return false; }
+        }
+        return true;
+    }
+
+    // names[0..count) 中 name 的索引；无 → -1。
+    public static int IndexOfName(string[] names, int count, string name) {
+        int i = 0;
+        while (i < count) {
+            if (names[i] == name) { return i; }
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    // 0..n-1 按 names[i] Ordinal 升序的索引数组（插入排序，n 小）。
+    public static int[] IndicesByName(string[] names, int n) {
+        int[] idx = new int[n];
+        int i = 0;
+        while (i < n) { idx[i] = i; i = i + 1; }
+        int a = 1;
+        while (a < n) {
+            int cur = idx[a];
+            int b = a - 1;
+            while (b >= 0 && WorkspaceBuild.StrLess(names[cur], names[idx[b]])) {
+                idx[b + 1] = idx[b];
+                b = b - 1;
+            }
+            idx[b + 1] = cur;
+            a = a + 1;
+        }
+        return idx;
+    }
+
+    // x < y（Ordinal）。z42 string.CompareTo 是 Ordinal（DepScan._sortedZpkgs 同款）。
+    public static bool StrLess(string x, string y) {
+        return x.CompareTo(y) < 0;
+    }
+
+    // 字符串数组 Ordinal 升序（插入排序，确定性）。
+    public static string[] SortStrings(string[] arr) {
+        int n = arr.Length;
+        string[] r = new string[n];
+        int i = 0;
+        while (i < n) { r[i] = arr[i]; i = i + 1; }
+        int a = 1;
+        while (a < n) {
+            string cur = r[a];
+            int b = a - 1;
+            while (b >= 0 && WorkspaceBuild.StrLess(cur, r[b])) {
+                r[b + 1] = r[b];
+                b = b - 1;
+            }
+            r[b + 1] = cur;
+            a = a + 1;
+        }
+        return r;
+    }
+}
