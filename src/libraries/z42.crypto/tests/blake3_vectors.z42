@@ -102,7 +102,7 @@ void test_blake3_multi_chunk_reference_vector() {
     int i = 0;
     while (i < 2049) { data[i] = (byte)(i % 251); i = i + 1; }
     Assert.Equal(
-        "a4283937885ad619723bcfa9f93d4e10b7b6536f2b661f80683ca1dbbef6dc99",
+        "5f4d72f40d7a5f82b15ca2b2e44b1de3c2ef86c426c95c1af0b6879522563030",
         Blake3.HashHex(data)
     );
 }

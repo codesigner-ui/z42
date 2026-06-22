@@ -404,6 +404,14 @@ public sealed class ExprEmitter {
     // 赋值：local（copy 回写）/ 裸字段（field_set reg0）/ obj.field（field_set obj）/ arr[i]（array_set）。
     private TypedReg _emitAssign(BoundAssign a) {
         TypedReg val = this.Emit(a.Value);
+        // 限定静态字段赋值 `Class.staticField = v`（LHS 绑为 BoundStaticGet）→ static_set。
+        // 否则落到末尾 return val 静默丢弃 → 静态字段 mutation 不持久（Log.SetMinLevel 等）。
+        // 镜像 static_get 发射（QualifyClass + "." + Field）+ __static_init__ 的 StaticSetInstr。
+        if (a.Target is BoundStaticGet) {
+            BoundStaticGet st = a.Target as BoundStaticGet;
+            this._ctx.Emit(new StaticSetInstr(this._ctx.QualifyClass(st.ClassName) + "." + st.FieldName, val));
+            return val;
+        }
         if (a.Target is BoundIdent) {
             BoundIdent tid = a.Target as BoundIdent;
             if (this._ctx.Locals.ContainsKey(tid.Name)) {
