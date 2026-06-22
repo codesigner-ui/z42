@@ -140,37 +140,46 @@ public sealed class TypeChecker {
         }
         Z42Type ret = env.ResolveType(md.RetType);
         BoundStmt body = this._bindStmt(md.Body, env, ret);
-        // base ctor call：ctor + BaseArgCount > 0 → 在体首插入 call @BaseCls.CtorKey %0, ...args
+        // ctor 初始化调用：ctor + BaseArgCount > 0 → 在体首插入 call @TargetCls.CtorKey %0, ...args。
+        // IsThisInit → `: this(args)` 委托同类 ctor（TargetCls = curCls）；
+        // 否则 → `: base(args)` 调用基类 ctor（TargetCls = baseCls）。镜像 C# FunctionEmitter
+        // BoundThisCtorArgs / BoundBaseCtorArgs 两分支。
         if (md.IsCtor && md.BaseArgCount > 0) {
             Z42Type thisType = env.LookupVar("this");
             if (thisType is Z42ClassType) {
                 Z42ClassType curCls = thisType as Z42ClassType;
-                if (curCls.HasBase && curCls.BaseName != "") {
-                    Z42ClassType baseCls = symbols.GetClass(curCls.BaseName);
-                    if (baseCls != null) {
-                        string bKey = this._ctorKey(baseCls, md.BaseArgCount);
-                        BoundExpr[] callArgs = new BoundExpr[md.BaseArgCount + 1];
-                        callArgs[0] = new BoundIdent("this", thisType, md.Span);
-                        int ba = 0;
-                        while (ba < md.BaseArgCount) { callArgs[ba + 1] = this._bindExpr(md.BaseArgs[ba], env); ba = ba + 1; }
-                        BoundCall baseCall = new BoundCall("base_ctor", false, null, curCls.BaseName, bKey,
-                                                            callArgs, md.BaseArgCount + 1, new Z42VoidType(), md.Span);
-                        BoundExprStmt baseStmt = new BoundExprStmt(baseCall, md.Span);
-                        BoundStmt[] stmts = null;
-                        int sc = 0;
-                        if (body is BoundBlock) {
-                            BoundBlock bb = body as BoundBlock;
-                            stmts = new BoundStmt[bb.Count + 1];
-                            stmts[0] = baseStmt;
-                            int si = 0;
-                            while (si < bb.Count) { stmts[si + 1] = bb.Stmts[si]; si = si + 1; }
-                            sc = bb.Count + 1;
-                        } else {
-                            stmts = new BoundStmt[2];
-                            stmts[0] = baseStmt; stmts[1] = body; sc = 2;
-                        }
-                        return new BoundBlock(stmts, sc, md.Span);
+                Z42ClassType targetCls = null;
+                string targetName = "";
+                if (md.IsThisInit) {
+                    targetCls = curCls;
+                    targetName = curCls.Name();
+                } else if (curCls.HasBase && curCls.BaseName != "") {
+                    targetCls = symbols.GetClass(curCls.BaseName);
+                    targetName = curCls.BaseName;
+                }
+                if (targetCls != null) {
+                    string bKey = this._ctorKey(targetCls, md.BaseArgCount);
+                    BoundExpr[] callArgs = new BoundExpr[md.BaseArgCount + 1];
+                    callArgs[0] = new BoundIdent("this", thisType, md.Span);
+                    int ba = 0;
+                    while (ba < md.BaseArgCount) { callArgs[ba + 1] = this._bindExpr(md.BaseArgs[ba], env); ba = ba + 1; }
+                    BoundCall baseCall = new BoundCall("base_ctor", false, null, targetName, bKey,
+                                                        callArgs, md.BaseArgCount + 1, new Z42VoidType(), md.Span);
+                    BoundExprStmt baseStmt = new BoundExprStmt(baseCall, md.Span);
+                    BoundStmt[] stmts = null;
+                    int sc = 0;
+                    if (body is BoundBlock) {
+                        BoundBlock bb = body as BoundBlock;
+                        stmts = new BoundStmt[bb.Count + 1];
+                        stmts[0] = baseStmt;
+                        int si = 0;
+                        while (si < bb.Count) { stmts[si + 1] = bb.Stmts[si]; si = si + 1; }
+                        sc = bb.Count + 1;
+                    } else {
+                        stmts = new BoundStmt[2];
+                        stmts[0] = baseStmt; stmts[1] = body; sc = 2;
                     }
+                    return new BoundBlock(stmts, sc, md.Span);
                 }
             }
         }

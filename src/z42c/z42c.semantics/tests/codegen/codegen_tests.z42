@@ -384,6 +384,17 @@ void test_ctor_lowering() {
                  IrDump.DumpFunc(src, "C.C"));
 }
 
+// ── ctor 委托 `: this(args)`（fix-z42c-ctor-this-delegation）──────────────────────
+// `: this(args)` 委托同类的另一 ctor（curCls，arity-mangle key），区别于 `: base(args)`
+// 调用基类 ctor。回归 bug：parser 丢弃 base/this 区分 → this 误编为 base ctor 调用
+// （curCls 无显式基类 → 调 Std.Object 2-arg ctor → 运行期 VCall null / 字段保持默认）。
+[Test]
+void test_ctor_this_delegation() {
+    string src = "class C { public int X; public C() : this(5) {} public C(int x) { this.X = x; } }";
+    Assert.Equal("fn @C.C$0(1) -> void {\nentry:\n  %1 = const.i64 5\n  %2 = call @C.C$1(%0, %1)\n  ret\n}",
+                 IrDump.DumpFunc(src, "C.C$0"));
+}
+
 // ── new T[n] 元素类型名 FQ 化（port-z42c-self-compile G16）─────────────────────────
 // 用户类元素名须经 QualifyClass → FQ（镜像 C# Z42TypeName）；prim 元素名保留短名。
 // 默认 gate 语料只含 prim 数组（new int[n]），故此处显式覆盖用户类数组回归。

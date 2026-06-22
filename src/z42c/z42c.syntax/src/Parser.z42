@@ -1018,12 +1018,17 @@ public sealed class Parser {
     private Decl _parseMethodTail(string mods, bool isFree, bool isCtor, TypeExpr retType, string name, TypeParamList typeParams, Span sp) {
         ParamList pl = this._parseParamList();
         WhereList wl = this._parseWhereClause();
-        // ctor 基类构造器调用 `: base(args)` — 解析并存储（isCtor；base/this 关键字消费后丢弃）。
+        // ctor 构造器初始化 `: base(args)` / `: this(args)` — 解析并存储（isCtor；
+        // 记录 base vs this：this 委托同类 ctor，base 调用基类 ctor）。
         Expr[] baseArgs = new Expr[0];
         int baseArgCount = 0;
+        bool isThisInit = false;
         if (isCtor && this._peek().Kind == TokenKind.Colon) {
             this._advance();   // :
-            if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }  // base / this
+            if (this._peek().Kind == TokenKind.Identifier) {
+                if (this._peek().Text == "this") { isThisInit = true; }
+                this._advance();
+            }  // base / this
             if (this._peek().Kind == TokenKind.LParen) {
                 this._advance();   // (
                 Expr[] ba = new Expr[4];
@@ -1048,7 +1053,7 @@ public sealed class Parser {
         Stmt body = new BlockStmt(new Stmt[0], 0, sp);
         if (this._peek().Kind == TokenKind.LBrace) { body = this._parseBlock(); hasBody = true; }
         else { this._expectSemi(); }
-        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body, baseArgs, baseArgCount, sp);
+        return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body, baseArgs, baseArgCount, isThisInit, sp);
     }
 
     private TypeParamList _emptyTypeParams() { return new TypeParamList(new string[0], 0, this._peek().Span); }

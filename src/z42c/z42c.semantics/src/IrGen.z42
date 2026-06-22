@@ -170,7 +170,7 @@ public sealed class IrGen {
                                     TypeParamList emptyTpP = new TypeParamList(new string[0], 0, pd.Span);
                                     MethodDecl synthPd = new MethodDecl("", false, false, pd.Type, "get_" + pd.Name,
                                                                          emptyTpP, new WhereClause[0], 0,
-                                                                         new Param[0], 0, false, null, new Expr[0], 0, pd.Span);
+                                                                         new Param[0], 0, false, null, new Expr[0], 0, false, pd.Span);
                                     IrFunction pstub = this._emitNativeStub(this._q(this._classIrShortName(c)) + ".get_" + pd.Name,
                                                                              synthPd, nat2, pdStatic);
                                     funcs = this._pushFunc(funcs, fc, pstub); fc = fc + 1;
@@ -202,7 +202,7 @@ public sealed class IrGen {
                                 if (model.HasBody(getKey)) {
                                     MethodDecl synthGet = new MethodDecl("", false, false, idx.RetType, "get_Item",
                                                                           emptyTpI, new WhereClause[0], 0,
-                                                                          idx.Params, idx.ParamCount, true, idx.GetBody, new Expr[0], 0, idx.Span);
+                                                                          idx.Params, idx.ParamCount, true, idx.GetBody, new Expr[0], 0, false, idx.Span);
                                     var feGet = new FunctionEmitter(model.Symbols, this);
                                     IrFunction getIrf = feGet.EmitFunction(getIrName, synthGet, model.GetBody(getKey),
                                                                             true, false, idxOwner, c.TypeParams.Names, c.TypeParams.Count);
@@ -219,7 +219,7 @@ public sealed class IrGen {
                                     setPs[idx.ParamCount] = new Param(idx.RetType, "value", idx.Span);
                                     MethodDecl synthSet = new MethodDecl("", false, false, voidRet, "set_Item",
                                                                           emptyTpI, new WhereClause[0], 0,
-                                                                          setPs, idx.ParamCount + 1, true, idx.SetBody, new Expr[0], 0, idx.Span);
+                                                                          setPs, idx.ParamCount + 1, true, idx.SetBody, new Expr[0], 0, false, idx.Span);
                                     var feSet = new FunctionEmitter(model.Symbols, this);
                                     IrFunction setIrf = feSet.EmitFunction(setIrName, synthSet, model.GetBody(setKey),
                                                                             true, false, idxOwner, c.TypeParams.Names, c.TypeParams.Count);
