@@ -13,6 +13,7 @@ z42 标准库三层架构、包划分规则、缺失包排期。
 | 文件 | 职责 |
 |------|------|
 | [`overview.md`](overview.md) | 三层架构 + Script-First 规则 + Per-Package extern 预算（**架构权威**）|
+| [`api-guidelines.md`](api-guidelines.md) | **接口面设计准则**：Source×Operation 漏斗（避免 m×n）+ 正交轴收敛 + 便利糖薄委托 |
 | [`organization.md`](organization.md) | 包边界 + 现状 5 包（z42.core / z42.io / z42.collections 等）|
 | [`roadmap.md`](roadmap.md) | P0–P3 排期：time / fs / threading / encoding / net 等缺失包 |
 

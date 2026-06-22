@@ -1318,6 +1318,46 @@ z42 publish desktop <project.z42.toml>                       [--output <publish_
 
 详细设计见 [`docs/design/toolchain/export.md`](../toolchain/export.md)。
 
+## 条件配置：类型化轴子表（前瞻设计，未实施）
+
+> ⚠️ 前瞻设计（未实施）。决策见 [build-orchestrator.md](../toolchain/build-orchestrator.md) Decision #8。
+
+z42.toml **不引入 csproj 式 `Condition` 表达式求值**。沿已知变化轴（profile / platform / rid）
+的条件内容，用**类型化轴子表 + 确定性合并**表达，而非字符串布尔表达式——"条件"靠表键匹配，
+不靠表达式求值：
+
+```toml
+[dependencies]                      # 公共依赖
+http = "1.0"
+
+[platform.ios.dependencies]         # 仅 ios 目标合入
+swift-bridge = "0.3"
+
+[profile.release.defines]           # 仅 release profile
+NDEBUG = true
+```
+
+**合并优先级**（低 → 高，后者覆盖前者；按 key 合并，dep/define 同名取高优先级值）：
+
+```
+base（[dependencies] / [build] / 顶层）
+  → [profile.<profile>].*           # 当前 profile（debug/release）
+  → [platform.<family>].*           # 当前目标平台族（由 --rid 分类）
+  → CLI 标志                         # 最高
+```
+
+**为什么不引入 condition 表达式引擎**：
+
+- 类型化 + 可校验（轴段字段有 schema）；condition 的 `'$(X)'=='true'` 是字符串，拼错静默变 false。
+- **顺序无关**；MSBuild condition 依赖 property 自上而下求值的状态（"为什么这值不对"调试地狱）。
+- 无需解析器 / 求值器 / property 作用域引擎。
+
+**组合条件**（如 windows ∧ release）多轴嵌套若过于啰嗦，可后续评估 cargo 式**有界 `cfg()` 谓词**
+（封闭 key 集 + `all()`/`any()`/`not()`，仍可校验，**非**任意表达式）——见 build-orchestrator.md Deferred。
+
+**任意逻辑**（超出已知轴的条件判断 / 计算）→ 归 [`build/` hooks](#build-构建扩展目录z42b-自定义流程build-orchestrator)
+（z42 代码里 `if` 判断），**不进 config**。即「声明式变化用封闭类型化轴 + 确定性合并；任意逻辑用代码」。
+
 ## `build/` 构建扩展目录（z42b 自定义流程，build-orchestrator）
 
 > ⚠️ 前瞻设计（未实施）。完整设计见 [`docs/design/toolchain/build-orchestrator.md`](../toolchain/build-orchestrator.md)。

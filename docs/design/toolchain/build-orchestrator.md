@@ -146,6 +146,7 @@ z42b 发现 `build/` 后生成一次性 driver，其 Main 约等于：
 | 5 | 相位封闭，自定义只走 Hooks / Workload override | 确定性 + 缓存模型；不开放新相位 |
 | 6 | `PipelineContext` 暂置 `z42.build`；`ICompiler` 后抽中立微库 | 减 churn；最终让编译器核心不依赖 build 框架 |
 | 7 | 框架库 `z42.build` 不改名；编排器包 `z42.builder` | 框架是公共扩展 API（`z42.<domain>` 族）；包名同构 `z42.launcher` |
+| 8 | 条件配置用**类型化轴子表 + 确定性合并**，**不引入 csproj `Condition` 表达式引擎** | 已知轴（profile/platform/rid）用 typed 段更优（类型化/可校验/顺序无关）；任意逻辑归 `build/` hooks（代码）。与 Decision #5「相位封闭」同一「声明式封闭 + 代码兜底任意逻辑」哲学。详见 [project.md 条件配置段](../compiler/project.md#条件配置类型化轴子表前瞻设计未实施) |
 
 ## Deferred / 待 spec 细化
 
@@ -162,6 +163,8 @@ z42b 发现 `build/` 后生成一次性 driver，其 Main 约等于：
 - `build` 动词的停点（仅 head 跑、产 app.zpkg、不跑 workload tail）：用「不注入 workload
   （`WorkloadBase` no-op 兜底）」约定，还是给 `BuildMode` 加 `Build`（当前仅 Export/Publish，
   `Pipeline.Run` 仅在 Export 停于 GenerateProject）—— 落地 spec 时定。
+- 条件配置组合轴若过于啰嗦：评估 cargo 式**有界 `cfg()` 谓词**（封闭 key 集 + `all/any/not`，
+  仍可校验，非任意表达式）作为类型化轴子表的补充（见 [project.md 条件配置段](../compiler/project.md#条件配置类型化轴子表前瞻设计未实施)）。
 - driver 生成的源码模板形态 + 输入 hash 缓存键设计。
 - `PipelineContext` 各 native 原语（Sign/Archive/Hash/ProbeVersion/Download）的 Rust builtin 契约。
 - 各 workload 现有 `export.z42` / `apphost.z42` 真实逻辑接进 `WorkloadBase` 相位的迁移。
