@@ -618,6 +618,8 @@ public sealed class Parser {
                 if (dk == TokenKind.Struct) { kind = "struct"; }
                 else if (dk == TokenKind.Interface) { kind = "interface"; }
                 d = this._parseTypeDecl(mods, kind);
+            } else if (dk == TokenKind.Impl) {
+                d = this._parseImplDecl(mods);
             } else if (dk == TokenKind.Enum) {
                 d = this._parseEnum(mods);
             } else if (dk == TokenKind.Record) {
@@ -741,6 +743,27 @@ public sealed class Parser {
         }
         this._expect(TokenKind.RBrace, "}");
         return new ClassDecl(kind, mods, name, typeParams, bases, bc, wl.Items, wl.Count, members, mc, sp);
+    }
+
+    // impl <Trait> for <Target> { methods }  —— 跨包 trait 实现（port-z42c-impl-block）。
+    // 镜像 C# ParseImplDecl：消费 impl → trait 类型 → for → target 类型 → 成员块（方法）。
+    // 方法经 _parseMember（owner = target 简名）解析；extern 校验留给 semantics。
+    private Decl _parseImplDecl(string mods) {
+        Span sp = this._peek().Span;
+        this._advance();   // impl
+        TypeExpr traitTy = this._parseType();
+        this._expect(TokenKind.For, "for");
+        TypeExpr target = this._parseType();
+        string targetName = "";
+        if (target is NamedType) { targetName = (target as NamedType).Name; }
+        this._expect(TokenKind.LBrace, "{");
+        Decl[] methods = new Decl[8];
+        int mc = 0;
+        while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+            methods = this._growDecls(methods, mc); methods[mc] = this._parseMember(targetName); mc = mc + 1;
+        }
+        this._expect(TokenKind.RBrace, "}");
+        return new ImplDecl(traitTy, target, methods, mc, sp);
     }
 
     // enum Color [: int] { Red, Green = 5, Blue }  —— 成员 name [= [-]int]；值仅捕获文本，自增/校验留给后端。
