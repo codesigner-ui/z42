@@ -1,18 +1,127 @@
 // packed `.zpkg` 写入器（port-z42c-zpkg-build BP-3）。镜像 C# ZpkgWriter.WritePacked（七段子集）。
 // 段序铁律：META → STRS → NSPC → EXPT → DEPS → SIGS → MODS；intern 序 1:1 C#
 // （zpkg 元串[namespaces→exports→deps] → 逐模块[ns→src→hash→InternPoolStrings]）。
-// 延后：indexed/FILE、sidecar/MDBG/BLID。
+// strip-symbols（split-debug，port-z42c-strip-symbols）：release 时主 zpkg MODS dbug_len=0
+// + 末尾 BLID（BLAKE3-128 build_id）+ 配套 .zsym sidecar（META+STRS(symPool)+MDBG+BLID）。
+// 延后：indexed/FILE。
 namespace Z42.Project;
 
+using Std.Crypto;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
+
+// 写入结果：主 zpkg 字节 + 可选 .zsym sidecar（release strip 模式才有）。
+public sealed class ZpkgWriteResult {
+    public byte[] Main;
+    public bool   HasSidecar;
+    public byte[] Sidecar;   // 仅 HasSidecar 时有效
+    public ZpkgWriteResult(byte[] main, bool hasSidecar, byte[] sidecar) {
+        this.Main = main; this.HasSidecar = hasSidecar; this.Sidecar = sidecar;
+    }
+}
+
+// 主 zpkg 段列表（tags/datas 并行数组 + 计数 + flags）。WritePacked / WritePackedWithSidecar 共用。
+public sealed class ZpkgSectionList {
+    public string[]     Tags;
+    public ByteWriter[] Datas;
+    public int          SecCount;
+    public int          Flags;
+    public ZpkgSectionList(string[] tags, ByteWriter[] datas, int secCount, int flags) {
+        this.Tags = tags; this.Datas = datas; this.SecCount = secCount; this.Flags = flags;
+    }
+}
 
 public static class ZpkgWriterZ {
     // 版本（须与 C# ZpkgWriter.VersionMajor/Minor 一致；strict-pin。bump 同步见 version-bumping.md 第 5 步）。
     public static int Major = 0;
     public static int Minor = 22;   // 2026-06-16 add-reflection-assignable-from：随内嵌 zbc 1.20 联动（接口块存 FQ 名）
 
+    // 主 zpkg（不含 BLID/sidecar）。debug 单包 / 测试用；release strip 走 WritePackedWithSidecar。
     public static ByteWriter WritePacked(ZpkgFileZ zpkg, bool isRelease) {
+        ZpkgSectionList s = ZpkgWriterZ._buildSectionList(zpkg, isRelease);
+        return ZpkgWriterZ._assemble(s.Tags, s.Datas, s.SecCount, s.Flags);
+    }
+
+    // release → strip：主 zpkg MODS dbug_len=0（_buildSectionList isRelease 已保证）+ 末尾 BLID +
+    // 配套 .zsym sidecar。debug → 主包内联 DBUG、无 sidecar。镜像 C# ZpkgWriter.WritePacked(stripSymbols)。
+    public static ZpkgWriteResult WritePackedWithSidecar(ZpkgFileZ zpkg, bool isRelease) {
+        ZpkgSectionList s = ZpkgWriterZ._buildSectionList(zpkg, isRelease);
+        if (!isRelease) {
+            byte[] mainDbg = ZpkgWriterZ._assemble(s.Tags, s.Datas, s.SecCount, s.Flags).ToBytes();
+            return new ZpkgWriteResult(mainDbg, false, null);
+        }
+        // ── strip：追加 BLID 占位段（恒最后）→ 装配 → 算 build_id → 回填末尾 16B ──
+        int n = s.SecCount;
+        string[]     stags  = new string[n + 1];
+        ByteWriter[] sdatas = new ByteWriter[n + 1];
+        int i = 0;
+        while (i < n) { stags[i] = s.Tags[i]; sdatas[i] = s.Datas[i]; i = i + 1; }
+        stags[n] = "BLID"; sdatas[n] = ZpkgWriterZ._zeros(16);
+        byte[] mainBytes = ZpkgWriterZ._assemble(stags, sdatas, n + 1, s.Flags).ToBytes();
+        // build_id = BLAKE3-128 over 主字节（末尾 16B BLID 占位为零，等价 C# BuildId.Compute）。
+        byte[] buildId = Blake3.HashLen(mainBytes, 16);
+        int k = 0;
+        while (k < 16) { mainBytes[mainBytes.Length - 16 + k] = buildId[k]; k = k + 1; }
+        // ── sidecar（META + STRS(symPool) + MDBG + BLID）──
+        byte[] sidecar = ZpkgWriterZ._buildSidecar(zpkg, buildId);
+        return new ZpkgWriteResult(mainBytes, true, sidecar);
+    }
+
+    // 16 个零字节（BLID 占位）。
+    private static ByteWriter _zeros(int count) {
+        var w = new ByteWriter();
+        int i = 0;
+        while (i < count) { w.WriteU8(0); i = i + 1; }
+        return w;
+    }
+
+    // sidecar zpkg：独立 symPool（namespace + DBUG 串）+ MDBG（per-module DBUG）+ BLID。
+    // flags = Packed|SymOnly（1|4=5）。不可作工程包加载（ZpkgReader.ReadSidecar 专读）。
+    private static byte[] _buildSidecar(ZpkgFileZ zpkg, byte[] buildId) {
+        var symPool = new ZbcStringPool();
+        // namespaces（全模块）→ DBUG 串（file 路径 + 局部变量名），镜像 C# 顺序。
+        int mi = 0;
+        while (mi < zpkg.ModuleCount) { symPool.Intern(zpkg.Modules[mi].Namespace); mi = mi + 1; }
+        mi = 0;
+        while (mi < zpkg.ModuleCount) {
+            IrModule irm = zpkg.Modules[mi].Module;
+            int fi = 0;
+            while (fi < irm.FuncCount) {
+                IrFunction f = irm.Functions[fi];
+                int le = 0;
+                while (le < f.LineCount) { if (f.LineTable[le].HasFile) { symPool.Intern(f.LineTable[le].File); } le = le + 1; }
+                int lv = 0;
+                while (lv < f.LocalVarCount) { symPool.Intern(f.LocalVars[lv].Name); lv = lv + 1; }
+                fi = fi + 1;
+            }
+            mi = mi + 1;
+        }
+        // MDBG：u32 module_count；每模块 u32 ns_idx + u32 dbug_len + dbug 体（用 symPool）。
+        var mdbg = new ByteWriter();
+        mdbg.WriteU32(zpkg.ModuleCount);
+        mi = 0;
+        while (mi < zpkg.ModuleCount) {
+            IrModule irm = zpkg.Modules[mi].Module;
+            mdbg.WriteU32(symPool.Idx(zpkg.Modules[mi].Namespace));
+            ByteWriter d = ZbcWriter.BuildDbug(irm.Functions, irm.FuncCount, symPool);
+            mdbg.WriteU32(d.Len());
+            if (d.Len() > 0) { mdbg.AppendWriter(d); }
+            mi = mi + 1;
+        }
+        var blid = new ByteWriter();
+        int b = 0;
+        while (b < 16) { blid.WriteU8((int)buildId[b]); b = b + 1; }
+        string[]     stags  = new string[4];
+        ByteWriter[] sdatas = new ByteWriter[4];
+        stags[0] = "META"; sdatas[0] = ZpkgWriterZ._buildMeta(zpkg);
+        stags[1] = "STRS"; sdatas[1] = ZbcWriter.BuildStrs(symPool);
+        stags[2] = "MDBG"; sdatas[2] = mdbg;
+        stags[3] = "BLID"; sdatas[3] = blid;
+        int sidecarFlags = 1 | 4;   // Packed | SymOnly
+        return ZpkgWriterZ._assemble(stags, sdatas, 4, sidecarFlags).ToBytes();
+    }
+
+    private static ZpkgSectionList _buildSectionList(ZpkgFileZ zpkg, bool isRelease) {
         var pool = new ZbcStringPool();
         // ── intern：zpkg 元串（镜像 InternZpkgStrings：namespaces → exports → deps）──
         int i = 0;
@@ -70,7 +179,7 @@ public static class ZpkgWriterZ {
 
         int flags = 1;                       // FlagPacked
         if (zpkg.IsExe) { flags = flags | 2; }   // FlagExe
-        return ZpkgWriterZ._assemble(tags, datas, secCount, flags);
+        return new ZpkgSectionList(tags, datas, secCount, flags);
     }
 
     // META：name + version + entry（各 u16 长 + UTF-8；lib entry 空串）。

@@ -193,8 +193,15 @@ int _build(string tomlPath, bool isRelease, string outputDirOverride, string[] l
     string distDir = outputDirOverride.Length > 0 ? outputDirOverride : Path.Join(projectDir, "dist");
     Directory.Create(distDir);
     string outPath = Path.Join(distDir, pm.Name + ".zpkg");
-    File.WriteAllBytes(outPath, ZpkgWriterZ.WritePacked(z, isRelease).ToBytes());
+    // release → strip-symbols：主 zpkg（MODS dbug_len=0 + BLID）+ .zsym sidecar（split-debug）。
+    ZpkgWriteResult wres = ZpkgWriterZ.WritePackedWithSidecar(z, isRelease);
+    File.WriteAllBytes(outPath, wres.Main);
     Console.WriteLine("wrote -> " + outPath);
+    if (wres.HasSidecar) {
+        string symPath = Path.Join(distDir, pm.Name + ".zsym");
+        File.WriteAllBytes(symPath, wres.Sidecar);
+        Console.WriteLine("wrote -> " + symPath);
+    }
     return 0;
 }
 

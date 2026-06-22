@@ -362,6 +362,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | z42c 裸脚本→Exe-zpkg | 原 launcher phase 0.5；现以 mini-project(`kind="exe"` toml) workaround，ROI 低 | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | z42c stdlib 构建 jit 加速 | S3（z42c 接管 build stdlib，当前阻塞未落地）落地后：interp 重编 ~30s，jit 加速待实测 22 库 jit==interp 等价 | [compiler/self-hosting.md](design/compiler/self-hosting.md#deferred--future-work) |
 | z42c 继承默认参数方法 TSIG arity | 直接定义方法已修（requiredCount 读 Param.Default）；继承自其它包的默认参数方法 re-export 需 `Z42FuncType.MinArgCount`（import 时丢失），当前 stdlib 未触发 | [compiler/self-hosting.md](design/compiler/self-hosting.md#deferred--future-work) |
+| z42c-built compression `[Native]` 解析 | S3 dogfood：z42c-built（strip）z42.compression `_CompressRaw` 等 native extern 运行时 undefined（18 test）；S3 唯一剩余阻塞 | [compiler/self-hosting.md](design/compiler/self-hosting.md#deferred--future-work) |
 | apphost self-contained | `--self-contained`：VM+libs 随 app 本地化（P1 仅 framework-dependent）| [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | apphost single-file | 链 `libz42_vm` + 内嵌 zpkg/libs，经 embedding C ABI 内存加载；依赖 C ABI + 碰 runtime | [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |
 | apphost Windows checksum/Authenticode + 跨平台交叉签名 | Windows PE checksum / 在 Linux 上签 macOS apphost（需内建 Mach-O 签名器；P1 用 host codesign）| [runtime/launcher.md](design/runtime/launcher.md#deferred--future-work) |

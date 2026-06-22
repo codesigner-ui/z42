@@ -12,8 +12,12 @@ S3 实现（`_buildStdlibCore` 改 z42c）+ `build stdlib` 验证成功，但 fu
 1. ✅ **TSIG 可选参数**（fix-z42c-tsig-optional-params，已归档）—— optional param → minArgCount 错。
 2. ✅ **multicast aggregate**（fix-z42c-generic-ctor-arity，已归档）—— **根因 = z42c `new C<T>()` 对 arity-overloaded 同名类误取 arity-0 base**（`MulticastException<TResult>` → 抛非泛型 base，catch 失配）。修 `SymbolTable.ResolveTypeP` 优先 `Name$N`。两 aggregate golden 现 MATCH。
 
-**剩余阻塞（z42c 待补 feature，唯一）**：
-- 🔴 **BLID/.zsym split-debug（strip-symbols）**：z42c 只 emit 内联 DBUG，不拆 sidecar → C# `StdlibSidecarPairingTests` 失败。需 z42c writer 算 BLAKE3-128 build_id + 拆 `.zsym`（format-level feature），或调整 release 打包策略让内联-DBUG 被门接受。**这是 S3 落地唯一剩余前置。**
+**已解（独立归档）**：
+3. ✅ **strip-symbols（BLID/.zsym）**：port-z42c-strip-symbols —— z42c 发行构建产 `.zsym` sidecar + BLID；StdlibSidecarPairingTests 过。
+4. ✅ **blake3 多块哈希**：fix-blake3-multichunk-root-flag —— strip 的 build_id 暴露 z42.crypto >1024B BLAKE3 错误；修后 z42c.driver build_id == C# nuget 逐字节一致。
+
+**剩余阻塞（S3 唯一剩余，独立 follow-up）**：
+- 🔴 **z42c-built z42.compression `[Native]` extern**：z42c-built（strip）z42.compression 运行时 `_CompressRaw` 等报 `undefined function`（18 compression test）。其余 full gate 全绿（C# tests 含 sidecar+multicast / vm goldens / cross-zpkg / 254/272 stdlib）。见 self-hosting-future-z42c-compression-native-binding。**这是 S3 翻转 `_buildStdlibCore` 的唯一剩余前置。**
 
 ## 进度概览
 - [x] 0. 可行性验证（z42c M2 编 22 库 + 272/272 + TSIG bug 修复）
