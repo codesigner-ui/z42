@@ -18,11 +18,12 @@ S3 实现（`_buildStdlibCore` 改 z42c）+ `build stdlib` 验证成功，但 fu
 
 5. ✅ **compression `[Native]` named-entry**：fix-z42c-native-named-entry —— z42c 不识别 named `[Native(lib=,entry=)]` → compression extern undefined。修后 18→8。
 
-**剩余阻塞（3 个**新** z42c codegen bug，8 stdlib test，独立 follow-up，self-hosting-future-s3-remaining-codegen-bugs）**：full gate 其余全绿（C# 1571 含 sidecar+multicast / vm goldens 334 / cross-zpkg 2 / 264/272 stdlib）。
-- 🔴 **cross-ns 静态调用**（4× ZipWrite）：Zip→Deflate 误限定当前 ns
-- 🔴 **blake3 多块 z42c codegen**（1×）：z42c miscompiles 多块树代码（源 fix 正确，C#-built 过）
-- 🔴 **diagnostics min-level/color**（3×）：z42c codegen 偏差
-- **前置**：3 bug 全解后翻转 `_buildStdlibCore` 重跑 full gate → S3 完成。
+6. ✅ **cross-ns 静态调用**：fix-z42c-static-call-cross-ns —— Zip→Deflate 误限定当前 ns；修 ExprEmitter 用 QualifyClass。8→4。
+
+**剩余阻塞（2 个**新** z42c codegen bug，4 stdlib test，self-hosting-future-s3-remaining-codegen-bugs）**：full gate 其余全绿（C# 1571 含 sidecar+multicast / vm goldens 334 / cross-zpkg 2 / ~268/272 stdlib）。
+- 🔴 **blake3 多块 z42c codegen**（1×）：z42c miscompiles 多块树代码（源 fix 正确，C#-built 过；疑 `cvList=next` 重赋参数数组 / `(p/2)*8` 索引）
+- 🔴 **静态字段 mutation 不持久**（3× diagnostics）：`SetMinLevel(3)` 后 `GetMinLevel()` 返默认 2
+- **前置**：2 bug 全解后翻转 `_buildStdlibCore` 重跑 full gate → S3 完成。
 
 ## 进度概览
 - [x] 0. 可行性验证（z42c M2 编 22 库 + 272/272 + TSIG bug 修复）

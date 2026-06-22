@@ -27,8 +27,9 @@
   - ✅ **BLID sidecar**：port-z42c-strip-symbols（归档，z42c 产 `.zsym`+BLID；z42c.driver FULLY byte-identical 含 BLID）
   - ✅ **blake3 多块**：fix-blake3-multichunk-root-flag（归档，strip build_id 暴露 z42.crypto >1024B BLAKE3 错误）
   - ✅ **compression `[Native]` named-entry**：fix-z42c-native-named-entry（归档；18→8）
-  - 🔴 **剩 3 个 z42c codegen bug（8 test）**：① cross-ns 静态调用误限定（Zip→Deflate，4×）② blake3 多块 z42c codegen（1×）③ diagnostics min-level/color（3×）。其余全绿（C# 1571/vm 334/cross-zpkg 2/264-272 stdlib）。见 self-hosting-future-s3-remaining-codegen-bugs
-- **前置**：3 bug 全解后翻转 `_buildStdlibCore` + 重跑 full gate → S3 完成
+  - ✅ **cross-ns 静态调用**：fix-z42c-static-call-cross-ns（归档；Zip→Deflate；8→4）
+  - 🔴 **剩 2 个 z42c codegen bug（4 test）**：① blake3 多块 z42c codegen（1×）② 静态字段 mutation 不持久（diagnostics，3×）。其余全绿（C# 1571/vm 334/cross-zpkg 2/~268-272 stdlib）。见 self-hosting-future-s3-remaining-codegen-bugs
+- **前置**：2 bug 全解后翻转 `_buildStdlibCore` + 重跑 full gate → S3 完成
 
 ## S1：z42c apphost（分发）
 - [ ] S1.1 `_produceApphost` 复用 → 产 `z42c` 原生（payload=z42c.driver.zpkg + colocated z42c.* deps）

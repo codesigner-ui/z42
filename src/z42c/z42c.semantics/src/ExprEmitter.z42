@@ -537,9 +537,12 @@ public sealed class ExprEmitter {
                 return ddst;
             }
         }
-        // 调用目标限定（BP-0）：自由函数/静态类经 ns 前缀（函数表/类表名是 FQ）
+        // 调用目标限定（BP-0）：自由函数经当前 ns 前缀；静态类用 QualifyClass（imported/
+        // 同包跨-ns aware，查 ImportedClassNs；镜像 C# QualifyClassName）——否则同包跨-ns
+        // 静态调用（如 Std.Archive.Zip → Std.Compression.Deflate.Compress）被误限定当前 ns。
+        // 未命中 ImportedClassNs → QualifyClass 回落 Qualify（当前 ns），同-ns 调用不变。
         string func = this._ctx.Qualify(c.MethodName);
-        if (c.Kind == "static") { func = this._ctx.Qualify(c.OwnerClass) + "." + c.MethodName; }
+        if (c.Kind == "static") { func = this._ctx.QualifyClass(c.OwnerClass) + "." + c.MethodName; }
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
         this._ctx.Emit(new CallInstr(dst, func, args, c.ArgCount));
         return dst;
