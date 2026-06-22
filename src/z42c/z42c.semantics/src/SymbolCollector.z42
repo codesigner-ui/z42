@@ -67,7 +67,43 @@ public sealed class SymbolCollector {
         this._mergeImports(table, imported);
         c = 0;
         while (c < cuCount) { this._passMembers(table, cus[c]); c = c + 1; }
+        // impl-block merge (port-z42c-impl-block)：成员收集后，把 `impl Trait for Target`
+        // 的方法并入 target.Methods + Trait 并入 target.InterfaceNames（target 可本地或
+        // imported；_mergeImports 已 seed）。镜像 C# SymbolCollector.CollectImpls。
+        c = 0;
+        while (c < cuCount) { this._passImpls(table, cus[c]); c = c + 1; }
         return table;
+    }
+
+    // impl-block 收集（port-z42c-impl-block，镜像 C# CollectImpls）：
+    // 解析 target（NamedType→已注册类）+ trait（接口名）→ 把方法并入 target.Methods、
+    // trait 并入 target.InterfaceNames。严格校验（接口方法齐备/arity）留待后续。
+    private void _passImpls(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = cu.Decls[i];
+            if (d is ImplDecl) {
+                ImplDecl implD = d as ImplDecl;
+                string targetName = "";
+                if (implD.TargetType is NamedType) { targetName = (implD.TargetType as NamedType).Name; }
+                if (targetName != "" && table.HasClass(targetName)) {
+                    Z42ClassType target = table.GetClass(targetName);
+                    string traitName = "";
+                    if (implD.TraitType is NamedType) { traitName = (implD.TraitType as NamedType).Name; }
+                    if (traitName != "") { target.AddInterfaceName(traitName); }
+                    int m = 0;
+                    while (m < implD.MethodCount) {
+                        if (implD.Methods[m] is MethodDecl) {
+                            MethodDecl md = implD.Methods[m] as MethodDecl;
+                            target.Methods.Put(md.Name, this._methodSymbol(table, md, targetName, new string[0], 0));
+                            target.AddOwnMethod(md.Name, this._hasWord(md.Mods, "virtual"), false);
+                        }
+                        m = m + 1;
+                    }
+                }
+            }
+            i = i + 1;
+        }
     }
 
     public SymbolTable Collect(CompilationUnit cu) {
@@ -76,6 +112,7 @@ public sealed class SymbolCollector {
         this._passEnums(table, cu);
         this._passClassStubs(table, cu);
         this._passMembers(table, cu);
+        this._passImpls(table, cu);   // port-z42c-impl-block
         return table;
     }
 

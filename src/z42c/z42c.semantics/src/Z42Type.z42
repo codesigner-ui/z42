@@ -102,6 +102,19 @@ public sealed class Z42ClassType : Z42Type {
         this.OwnMethodIsAbstract[this.OwnMethodCount] = isAbstract;
         this.OwnMethodCount = this.OwnMethodCount + 1;
     }
+    // 追加一个实现的接口名（port-z42c-impl-block：`impl Trait for Target` 把 Trait 并入 target 接口集）。
+    public void AddInterfaceName(string name) {
+        if (this.InterfaceCount == this.InterfaceNames.Length) {
+            int cap = this.InterfaceNames.Length * 2;
+            if (cap == 0) { cap = 4; }
+            string[] nn = new string[cap];
+            int i = 0;
+            while (i < this.InterfaceCount) { nn[i] = this.InterfaceNames[i]; i = i + 1; }
+            this.InterfaceNames = nn;
+        }
+        this.InterfaceNames[this.InterfaceCount] = name;
+        this.InterfaceCount = this.InterfaceCount + 1;
+    }
     public override string Name() { return this._name; }
     // IR 名：arity-mangled 时返回 Name$N（镜像 C# Z42ClassType.IrName）。
     public string IrName() {

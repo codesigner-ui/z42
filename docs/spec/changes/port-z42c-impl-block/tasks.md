@@ -9,7 +9,7 @@
 
 ## 进度概览
 - [x] 1. Parser：`impl <Trait> for <Target> { methods }` → ImplDecl AST
-- [ ] 2. Binder/SymbolCollector：trait 并入 target 接口集 + methods 并入 target 方法表
+- [~] 2. Binder：2a SymbolCollector 合并 ✅（trait→target.InterfaceNames + methods→target.Methods）；2b TypeChecker 绑方法体 + 2c IrGen 发 `<Target>.<m>` 函数 待做
 - [ ] 3. IMPL section 发射（z42c.ir，镜像 C# 格式）+ 方法体进 MODS（func 名 `<Target>.<m>`）
 - [ ] 4. byte-identical：z42c-built impl_propagation == C#-built（逐字节，ignore BLID）
 - [ ] 5. extern-in-impl 校验（C# 禁止）+ 文档 + 归档
