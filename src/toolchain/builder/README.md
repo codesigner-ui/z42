@@ -30,7 +30,8 @@ src/toolchain/builder/core/*.z42  →  z42b.zpkg  →  apphost z42b
 
 | 文件 | 职责 |
 |------|------|
-| `core/builder.z42` | z42b 命令入口 + 编排骨架：解析动词/toml/--rid → 构造 `Pipeline`（注入 `ICompiler` + workload + hooks）→ 跑。展示**标准路径**（进程内组合，零子进程/零代码生成）与**自定义路径**（项目带 `build/` → 生成一次性 driver）两条骨架 |
+| `core/builder.z42` | **编排核心**：`_orchestrate` 选路径 → 构造 `Pipeline`（注入 `ICompiler` + workload + hooks）→ 跑。展示**标准路径**（进程内组合，零子进程/零代码生成）与**自定义路径**（项目带 `build/` → 生成一次性 driver）|
+| `core/builder_cli.z42` | **命令层**（对照 `launcher_cli.z42`）：`Std.Cli` 嵌套 router 解析 build/publish/export/run/test（每层 `-h`），dispatch → 解析 toml + Target → 调编排核心 |
 
 ## 计划模块（实现期补全）
 

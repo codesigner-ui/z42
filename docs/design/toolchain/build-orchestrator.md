@@ -81,6 +81,44 @@ myapp/
 > 相位**封闭**（八个，线性，不可增删改序）；所有自定义落在 Hooks / Workload override 上，
 > 不开放注册新相位（确定性 + 缓存模型）。
 
+### 示例：编译前/后 hook + 平台 override
+
+```z42
+// build/ProjectHooks.z42 —— 平台无关的编译前/后扩展
+using Z42.Build;
+
+public class ProjectHooks : BuildHooks {
+    // 编译前：代码生成，把构建元数据写成 z42 源纳入本次编译
+    public override void BeforeCompile(IPipelineContext ctx) {
+        string gen = ctx.Dirs.Intermediate + "/gen/BuildInfo.z42";
+        ctx.WriteText(gen,
+            "namespace App; public static class BuildInfo {"
+          + " public const string Rid = \"" + ctx.Target.Rid + "\"; }");
+        ctx.Log("generated " + gen);
+    }
+    // 编译后（资产收集后）：例如校验/盖戳产物
+    public override void AfterAssets(IPipelineContext ctx) {
+        ctx.Log("post-assets check");
+    }
+}
+```
+
+```z42
+// build/iOSBuild.z42 —— iOS 平台尾相位定制（override + base.X）
+using Z42.Build;
+using Z42.Workload;
+
+public class iOSBuild : iOSWorkload {
+    public override void Package(IPipelineContext ctx) {
+        base.Package(ctx);                      // 先跑标准 .ipa 打包
+        ctx.Log("custom post-package step");    // 再叠加自定义（额外签名/校验/上传准备）
+    }
+}
+```
+
+z42b 发现 `build/` 后生成一次性 driver，其 Main 约等于：
+`new Pipeline{ Compiler=hostCompiler, Hooks=new ProjectHooks(), Workload=new iOSBuild() }.Run(ctx)`。
+
 ## `IPipelineContext` 实现归属
 
 `PipelineContext`（`IPipelineContext` 的 SDK 实现：受限 fs / exec / 平台原语 / 产物登记）
@@ -121,6 +159,9 @@ myapp/
 
 ### 其他待 spec 细化
 
+- `build` 动词的停点（仅 head 跑、产 app.zpkg、不跑 workload tail）：用「不注入 workload
+  （`WorkloadBase` no-op 兜底）」约定，还是给 `BuildMode` 加 `Build`（当前仅 Export/Publish，
+  `Pipeline.Run` 仅在 Export 停于 GenerateProject）—— 落地 spec 时定。
 - driver 生成的源码模板形态 + 输入 hash 缓存键设计。
 - `PipelineContext` 各 native 原语（Sign/Archive/Hash/ProbeVersion/Download）的 Rust builtin 契约。
 - 各 workload 现有 `export.z42` / `apphost.z42` 真实逻辑接进 `WorkloadBase` 相位的迁移。

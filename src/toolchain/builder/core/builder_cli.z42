@@ -1,0 +1,112 @@
+// z42b 命令层（PARKED 骨架）—— 对照 launcher_cli.z42 的 Std.Cli 模式。
+//
+// launcher 把 build/publish/export/run/test 透传给 z42b；本层用 Std.Cli 嵌套 router
+// 解析（每层 -h 自动生成），dispatch 到各 handler → 解析 toml + target → 调编排核心
+// （builder.z42 的 _orchestrate）。动词语义裁决见 platform-export-lifecycle.md：
+//   build   平台无关 app.zpkg（不选 workload；tail 全 no-op）
+//   publish 一路到 Package（可分发件；--rid 选平台）
+//   export  到 GenerateProject 停（IDE 工程；仅 ios/android）
+//   run     双形态：<app.zpkg> 跑字节码 / <toml> --rid 跑平台部署形态
+//   test    host + 平台上跑 [Test]（--device sim|emulator|hw）
+namespace Z42Builder;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+using Z42.Build;
+using Z42.Project;
+
+// 入口：launcher 透传的 argv（已去掉 `z42` 前缀的动词起）。
+int _runBuilder(string[] argv) {
+    if (argv.Length == 0) { Console.WriteLine(_builderRoot().HelpText()); return 0; }
+
+    SubcommandRouter root = _builderRoot();
+    CommandResolution res;
+    try { res = root.Resolve(argv); }
+    catch (CliException e) {
+        ConsoleError.WriteLine("z42b: " + e.Message);
+        return 2;
+    }
+    if (res.IsHelp())    { Console.WriteLine(res.HelpText()); return 0; }
+    if (res.IsUnknown()) { ConsoleError.WriteLine(res.ErrorMessage()); return 2; }
+    return _dispatchBuilder(res);
+}
+
+SubcommandRouter _builderRoot() {
+    SubcommandRouter root = new SubcommandRouter("z42b", "z42 build orchestrator");
+
+    ArgParser build = new ArgParser("z42b build", "compile to a platform-agnostic app.zpkg");
+    build.AddOptionalPositional("project", "<project.z42.toml> (default ./z42.toml)");
+    build.AddOption("rid", "", "target RID (default: host)", "");
+    build.AddOption("output", "", "output dir", "");
+    build.AddFlag("release", "", "release profile");
+    build.AddFlag("strip-symbols", "", "strip debug symbols → .zsym sidecar");
+    root.Add("build", "compile to a platform-agnostic app.zpkg", build);
+
+    ArgParser pub = new ArgParser("z42b publish", "produce a release deployable (--rid selects platform)");
+    pub.AddOptionalPositional("project", "<project.z42.toml>");
+    pub.AddOption("rid", "", "target RID (e.g. macos-arm64 / ios-arm64)", "");
+    pub.AddOption("output", "", "output dir (overrides [platform.*].publish_dir)", "");
+    pub.AddFlag("release", "", "release profile");
+    root.Add("publish", "produce a release deployable", pub);
+
+    ArgParser exp = new ArgParser("z42b export", "generate a native IDE project (ios/android)");
+    exp.AddOptionalPositional("project", "<project.z42.toml>");
+    exp.AddOption("rid", "", "target RID (ios-arm64 / android-arm64)", "");
+    exp.AddOption("output", "", "output directory", "");
+    root.Add("export", "generate a native IDE project", exp);
+
+    ArgParser runP = new ArgParser("z42b run", "run app.zpkg (host) or platform deploy form (--rid)");
+    runP.AllowExtras();
+    runP.AddOptionalPositional("target", "<app.zpkg> | <project.z42.toml> [-- args]");
+    runP.AddOption("rid", "", "deploy form RID (omit → run zpkg on host vm)", "");
+    root.Add("run", "run app.zpkg or platform deploy form", runP);
+
+    ArgParser test = new ArgParser("z42b test", "run [Test] on host and/or platform");
+    test.AddOptionalPositional("plat", "<ios|android|wasm> (omit → host)");
+    test.AddOption("device", "", "sim | emulator | hw", "");
+    root.Add("test", "run [Test] on host and/or platform", test);
+
+    return root;
+}
+
+// ── dispatch ──────────────────────────────────────────────────────────────
+
+int _dispatchBuilder(CommandResolution res) {
+    string[] p = res.Path();
+    if (p.Length == 0) { return 0; }
+    ParseResult r = res.Result();
+    string top = p[0];
+    if (top == "build")   { return _cmdBuild(r); }
+    if (top == "publish") { return _cmdPublish(r); }
+    if (top == "export")  { return _cmdExport(r); }
+    if (top == "run")     { return _cmdRun(r); }
+    if (top == "test")    { return _cmdTest(r); }
+    return 0;
+}
+
+// build：不选 workload（tail no-op）→ 仅 head 产 app.zpkg。
+int _cmdBuild(ParseResult r) {
+    // 实现期：解析 project toml → manifest；rid→Target(Mode=build)；_orchestrate(manifest, target)
+    return 0;
+}
+
+int _cmdPublish(ParseResult r) {
+    // 实现期：Target(Mode=BuildMode.Publish, Family=rid 分类) → _orchestrate
+    return 0;
+}
+
+int _cmdExport(ParseResult r) {
+    // 实现期：Target(Mode=BuildMode.Export) → _orchestrate（跑到 GenerateProject 停）
+    return 0;
+}
+
+int _cmdRun(ParseResult r) {
+    // 实现期：有 --rid → 平台部署形态；否则 run app.zpkg 于 host vm
+    return 0;
+}
+
+int _cmdTest(ParseResult r) {
+    // 实现期：host test-runner；有 plat → 导出 test-harness 工程上设备跑
+    return 0;
+}

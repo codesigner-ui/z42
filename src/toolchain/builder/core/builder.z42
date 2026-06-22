@@ -11,19 +11,19 @@
 //
 // ⚠️ 未接编译：无 z42.builder.z42.toml，未登记 workspace/xtask/CI，不影响现有构建。
 //   落地走 spec-first（设计文档 docs/design/toolchain/build-orchestrator.md，待建）。
+// 编排核心（命令层在 builder_cli.z42）。
 namespace Z42Builder;
 
 using Std;
 using Z42.Build;
 using Z42.Project;
 
-// 命令入口骨架：launcher 透传 build/publish/export/run/test 的 argv。
-int _runBuilder(string[] argv) {
-    // 1. 解析动词 + 工程 toml 路径 + --rid + mode（build/export/publish）
-    // 2. 解析 z42.toml → ProjectManifest（z42.project）
-    // 3. 按 rid 选目标 + workload（标准平台库 / 项目 build/ 自定义子类）
-    // 4. 构造管线并跑（标准路径见 _runStandard；自定义见 _runWithProjectBuild）
-    return 0;
+// 编排入口：按项目是否带自定义 build/ 选路径。命令层（builder_cli.z42）解析出
+// manifest + target 后调本函数。
+int _orchestrate(ProjectManifest manifest, Target target) {
+    // 实现期：探测工程 build/ 目录是否存在且非空
+    // if (_hasProjectBuild(manifest)) { return _runWithProjectBuild(manifest, target); }
+    return _runStandard(manifest, target);
 }
 
 // 标准路径（项目无自定义 build/）：全在进程内组合 —— 零子进程、零代码生成。

@@ -1317,3 +1317,32 @@ z42 publish desktop <project.z42.toml>                       [--output <publish_
 ```
 
 详细设计见 [`docs/design/toolchain/export.md`](../toolchain/export.md)。
+
+## `build/` 构建扩展目录（z42b 自定义流程，build-orchestrator）
+
+> ⚠️ 前瞻设计（未实施）。完整设计见 [`docs/design/toolchain/build-orchestrator.md`](../toolchain/build-orchestrator.md)。
+
+项目可选地用一个 **`build/` 目录**（与 `src/` 平级）放构建流程的**自定义扩展** z42 源；
+`z42b` 编排器发现并编译它们进一次性 driver（约定优于配置，类比 `build.rs`）。
+
+```
+myapp/
+  z42.toml
+  src/                       # 应用代码
+  build/                     # ← 可选；构建扩展（z42b 编译进自定义 driver）
+    ProjectHooks.z42         #   class ProjectHooks : BuildHooks   —— 平台无关编译前后 hook
+    iOSBuild.z42             #   class iOSBuild : iOSWorkload      —— 平台尾相位 override
+```
+
+- **固定类名约定**（静态绑定、不需反射）：
+  - `ProjectHooks`（`: BuildHooks`）→ 注入 `Pipeline.Hooks`；
+  - `<Family>Build`（如 `iOSBuild` / `DesktopBuild`，`: <Platform>Workload`）→ 覆盖该平台标准 workload。
+  - 缺则用默认（空 Hooks / 标准 workload）。
+- **编译前 / 编译后**自定义 = `ProjectHooks` override `BeforeCompile` / `AfterCompile`
+  （及 `Before/After` × `Trim` / `Assets`，共 6 个 hook）；平台专属定制走 `<Family>Build`
+  override + `base.X(ctx)`。
+- **`build/` 不存在或为空** → 标准路径（z42b 进程内组合，无 driver 生成）。
+- **相位封闭**（八个，线性，不可增删改序）：所有自定义只落在 Hooks / Workload override 上，
+  不开放注册新相位（保证构建确定性与缓存模型）。
+
+扩展点基类（`BuildHooks` / `WorkloadBase`）住 [`src/libraries/z42.build/`](../../../src/libraries/z42.build/)。
