@@ -112,7 +112,7 @@ public static class IrDump {
             r[i] = IrDump._compileCu(cus[i], symbols, deps, imported, classNs, localClasses, isRelease);
             string ns2 = "main";                                 // no-ns build 路径缺省（C# 字节实证）
             if (cus[i].HasNamespace) { ns2 = cus[i].Namespace; }
-            r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc, pkgClassMap);
+            r[i].Exported = ExportedTypeExtractor.ExtractP(cus[i], symbols, ns2, allFuncs, afc, pkgClassMap, classNs);
             i = i + 1;
         }
         return r;

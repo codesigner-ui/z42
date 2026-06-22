@@ -10,8 +10,9 @@
 ## 进度概览
 - [x] 1. Parser：`impl <Trait> for <Target> { methods }` → ImplDecl AST
 - [~] 2. Binder ✅ in-package：2a 合并 + 2b TypeChecker 绑体 + 2c IrGen 发 `<qualTarget>.<m>`（_qClass 跨包 ns 解析）。单包 impl 端到端跑通（oracle exit 0）。剩 3 IMPL section（跨包）
-- [ ] 3. IMPL section 发射（z42c.ir，镜像 C# 格式）+ 方法体进 MODS（func 名 `<Target>.<m>`）
-- [ ] 4. byte-identical：z42c-built impl_propagation == C#-built（逐字节，ignore BLID）
+- [x] 3. IMPL section 发射（5 组件 A-E 全实现）：A 数据模型 ExportedImplZ + ExportedModuleZ.Impls；B 提取 _extractImpls（classNs FQ 化）；C intern（functions↔delegates 之间）；D emit _buildImpl；E read _readImpl + 消费端 _mergeImpl（Phase3）。**emit 结构 byte-identical 已验证**（z42c-built greeter IMPL 段 35B，布局/编码逐字段 == C#，仅 pool 索引值因上游串池漂移而异）。fixpoint 通过（z42c 自举不受影响）。
+- [~] 4. byte-identical：**未达成**。根因已定位 → C# `ExtractInterfaces` emit **全部** `sem.Interfaces`（含 impl 引入的 imported trait `IGreet`），故 greeter TSIG 携带 re-export 的本地接口 `IGreet`（方法 Hello）；z42c 只 emit 内建+本地声明接口，且 imported 接口仅作**无方法骨架**载入 → 无法 re-export。差异：STRS 1245 vs 1342（缺 97B）、缺 bare `IGreet`、TSIG ifaceCount 11 vs 12。**修复需**：z42c (a) 载入 imported 接口方法，(b) 提取期把 impl trait 当本地接口 emit（去重内建/本地）。属较深改动，独立子任务。
+- [ ] 4b. 🟠 **正交 pre-existing 阻断**（非本 change 引入，seed z42c 同样复现）：z42c 编译**含显式 `[dependencies]` 的 exe** 时，prelude（z42.core）未激活 → `undefined: Console`。`Robot`（声明依赖）解析正常，仅 prelude 失活。这是 cross-zpkg→z42c（S2.3 / replace-csharp B）真正阻断项，须独立 change 修（exe import-loading 路径 prelude 激活）。consumer merge（Hello 解析）端到端验证被此阻断；probe2（无 Console，return r.Hello()）仍报 `no method Hello` → merge 待 4 的接口 re-export 落地后复验。
 - [ ] 5. extern-in-impl 校验（C# 禁止）+ 文档 + 归档
 
 ## 1. Parser ✅

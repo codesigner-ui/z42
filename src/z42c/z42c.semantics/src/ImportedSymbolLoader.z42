@@ -100,7 +100,61 @@ public static class ImportedSymbolLoader {
             }
             i = i + 1;
         }
+        // ── Phase3：impl 合并（L3-Impl2；镜像 C# MergeImpls）——方法并入 imported target，trait 入其接口集 ──
+        i = 0;
+        while (i < exportedCount) {
+            if (active[i]) {
+                ExportedModuleZ em = exported[i];
+                int c = 0;
+                while (c < em.ImplCount) {
+                    ImportedSymbolLoader._mergeImpl(r, em.Impls[c]);
+                    c = c + 1;
+                }
+            }
+            i = i + 1;
+        }
         return r;
+    }
+
+    // 单条 impl 合并到 imported target class（镜像 C# MergeImpls 内层）。
+    private static void _mergeImpl(ImportedSymbols r, ExportedImplZ im) {
+        string targetShort = ImportedSymbolLoader._shortName(im.TargetFq);
+        if (targetShort == "") { return; }
+        if (!r.Classes.ContainsKey(targetShort)) { return; }      // target 不在 import 集 → 跳过
+        Z42ClassType ct = r.Classes.Get(targetShort) as Z42ClassType;
+        string traitShort = ImportedSymbolLoader._shortName(im.TraitFq);
+        if (traitShort == "") { return; }
+        if (!r.Interfaces.ContainsKey(traitShort)) { return; }    // trait 接口未知 → 跳过
+        // 方法并入 target.Methods（first-wins）+ 实例方法入 OwnMethod 有序元数据
+        int m = 0;
+        while (m < im.MethodCount) {
+            ExportedMethodZ me = im.Methods[m];
+            if (!ct.Methods.ContainsKey(me.Name)) {
+                Z42Type[] ps = new Z42Type[me.ParamCount];
+                int j = 0;
+                while (j < me.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, me.Params[j].TypeName); j = j + 1; }
+                var sig = new Z42FuncType(ps, me.ParamCount, ImportedSymbolLoader._resolve(r, me.ReturnType));
+                var sym = new MethodSymbol(me.Name, me.Visibility, sig, me.IsStatic, ct.Name(), false, null);
+                ct.Methods.Put(me.Name, sym);
+                if (!me.IsStatic) { ct.AddOwnMethod(me.Name, me.IsVirtual, me.IsAbstract); }
+            }
+            m = m + 1;
+        }
+        // trait 并入 target 接口集（去重：AddInterfaceName 不查重 → 此处先查）
+        bool seen = false;
+        int ix = 0;
+        while (ix < ct.InterfaceCount) { if (ct.InterfaceNames[ix] == traitShort) { seen = true; } ix = ix + 1; }
+        if (!seen) { ct.AddInterfaceName(traitShort); }
+    }
+
+    // FQ "Demo.Target.Robot" → 短名 "Robot"（无点 → 原串）。镜像 C# SplitFqName 取 ShortName。
+    private static string _shortName(string fq) {
+        if (fq == "") { return ""; }
+        int dot = 0 - 1;
+        int i = 0;
+        while (i < fq.Length) { if (fq.CharAt(i) == '.') { dot = i; } i = i + 1; }
+        if (dot < 0) { return fq; }
+        return fq.Substring(dot + 1, fq.Length - dot - 1);
     }
 
     private static void _fillClass(ImportedSymbols r, Z42ClassType ct, ExportedClassZ cl) {

@@ -313,7 +313,40 @@ public static class ZpkgReader {
                                         new ExportedDelegateZ[0], 0);
             mi = mi + 1;
         }
+        // ── IMPL 段（L3-Impl2：跨 zpkg impl 块；位置匹配 TSIG 模块序）──
+        ZpkgReader._readImpl(z, r, modCount);
         return r;
+    }
+
+    // 读 IMPL → 按位置挂到 r[mi].Impls（镜像 C# ReadImplSection；老 zpkg 无 IMPL → 留空）。
+    private static void _readImpl(ZpkgInfo z, ExportedModuleZ[] r, int modCount) {
+        ZpkgSection s = z.Section("IMPL");
+        if (s == null) { return; }
+        var c = new ZpkgCursor(z.Data, s.Offset);
+        int imc = c.U16();
+        int mi = 0;
+        while (mi < imc) {
+            c.U32();                              // ns idx（位置匹配，不用）
+            int implCount = c.U16();
+            ExportedImplZ[] impls = new ExportedImplZ[implCount];
+            int ii = 0;
+            while (ii < implCount) {
+                string targetFq = z.Pool[c.U32()];
+                string traitFq = z.Pool[c.U32()];
+                int argc = c.U8();
+                string[] args = new string[argc];
+                int a = 0;
+                while (a < argc) { args[a] = z.Pool[c.U32()]; a = a + 1; }
+                int mthCount = c.U16();
+                ExportedMethodZ[] ms = new ExportedMethodZ[mthCount];
+                int m = 0;
+                while (m < mthCount) { ms[m] = ZpkgReader._method(c, z); m = m + 1; }
+                impls[ii] = new ExportedImplZ(targetFq, traitFq, args, argc, ms, mthCount);
+                ii = ii + 1;
+            }
+            if (mi < r.Length && implCount > 0) { r[mi].Impls = impls; r[mi].ImplCount = implCount; }
+            mi = mi + 1;
+        }
     }
 
     // ── 私有助手 ─────────────────────────────────────────────────────────────

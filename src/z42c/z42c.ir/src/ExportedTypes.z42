@@ -114,6 +114,23 @@ public sealed class ExportedDelegateZ {
     }
 }
 
+// 跨 zpkg `impl Trait for Type { ... }` 声明（L3-Impl2；镜像 C# ExportedImplDef）。
+// target/trait 为 FQ 名（经 ImportedClassNs 解析），使消费端跨包合并 trait 进 imported target。
+// 方法体不在此（在 MODS 段 func 名 "<TargetFq>.<m>"），此处仅签名供消费端 TypeChecker。
+public sealed class ExportedImplZ {
+    public string            TargetFq;
+    public string            TraitFq;
+    public string[]          TypeArgs;   public int TypeArgCount;
+    public ExportedMethodZ[] Methods;    public int MethodCount;
+    public ExportedImplZ(string targetFq, string traitFq,
+                         string[] typeArgs, int typeArgCount,
+                         ExportedMethodZ[] methods, int methodCount) {
+        this.TargetFq = targetFq; this.TraitFq = traitFq;
+        this.TypeArgs = typeArgs; this.TypeArgCount = typeArgCount;
+        this.Methods = methods; this.MethodCount = methodCount;
+    }
+}
+
 public sealed class ExportedModuleZ {
     public string               Namespace;
     public ExportedClassZ[]     Classes;     public int ClassCount;
@@ -121,6 +138,7 @@ public sealed class ExportedModuleZ {
     public ExportedEnumZ[]      Enums;       public int EnumCount;
     public ExportedFuncZ[]      Functions;   public int FunctionCount;
     public ExportedDelegateZ[]  Delegates;   public int DelegateCount;
+    public ExportedImplZ[]      Impls;       public int ImplCount;   // L3-Impl2（IMPL 段；提取后回填）
     public ExportedModuleZ(string ns,
                            ExportedClassZ[] classes, int classCount,
                            ExportedInterfaceZ[] interfaces, int interfaceCount,
@@ -133,5 +151,6 @@ public sealed class ExportedModuleZ {
         this.Enums = enums; this.EnumCount = enumCount;
         this.Functions = functions; this.FunctionCount = functionCount;
         this.Delegates = delegates; this.DelegateCount = delegateCount;
+        this.Impls = new ExportedImplZ[0]; this.ImplCount = 0;
     }
 }

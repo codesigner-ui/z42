@@ -335,6 +335,17 @@ public static class ZpkgWriterZ {
             while (i < fz.ParamCount) { pool.Intern(fz.Params[i].Name); pool.Intern(fz.Params[i].TypeName); i = i + 1; }
             c = c + 1;
         }
+        // L3-Impl2：impl 串 intern（C# InternTsigStrings 顺序：functions 之后、delegates 之前）。
+        c = 0;
+        while (c < em.ImplCount) {
+            ExportedImplZ im = em.Impls[c];
+            pool.Intern(im.TargetFq); pool.Intern(im.TraitFq);
+            int a = 0;
+            while (a < im.TypeArgCount) { pool.Intern(im.TypeArgs[a]); a = a + 1; }
+            int mi = 0;
+            while (mi < im.MethodCount) { ZpkgWriterZ._internMethod(pool, im.Methods[mi]); mi = mi + 1; }
+            c = c + 1;
+        }
         c = 0;
         while (c < em.DelegateCount) {
             ExportedDelegateZ dz = em.Delegates[c];
@@ -475,14 +486,28 @@ public static class ZpkgWriterZ {
         }
     }
 
-    // IMPL 段（z42c 无 impl 块 → 每模块 0 条；镜像 C# BuildImplSection）
+    // IMPL 段（L3-Impl2 跨 zpkg `impl Trait for Type`；布局 1:1 C# BuildImplSection）
     private static ByteWriter _buildImpl(ZpkgFileZ zpkg, ZbcStringPool pool) {
         var w = new ByteWriter();
         w.WriteU16(zpkg.ExportedCount);
         int mi = 0;
         while (mi < zpkg.ExportedCount) {
-            w.WriteU32(pool.Idx(zpkg.Exported[mi].Namespace));
-            w.WriteU16(0);
+            ExportedModuleZ em = zpkg.Exported[mi];
+            w.WriteU32(pool.Idx(em.Namespace));
+            w.WriteU16(em.ImplCount);
+            int c = 0;
+            while (c < em.ImplCount) {
+                ExportedImplZ im = em.Impls[c];
+                w.WriteU32(pool.Idx(im.TargetFq));
+                w.WriteU32(pool.Idx(im.TraitFq));
+                w.WriteU8(im.TypeArgCount);
+                int a = 0;
+                while (a < im.TypeArgCount) { w.WriteU32(pool.Idx(im.TypeArgs[a])); a = a + 1; }
+                w.WriteU16(im.MethodCount);
+                int m = 0;
+                while (m < im.MethodCount) { ZpkgWriterZ._writeMethod(w, im.Methods[m], pool); m = m + 1; }
+                c = c + 1;
+            }
             mi = mi + 1;
         }
         return w;

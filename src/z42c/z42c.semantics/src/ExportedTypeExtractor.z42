@@ -30,22 +30,29 @@ public static class ExportedTypeExtractor {
     }
 
     // 带全包 classMap 的版本（G18 部分修复：同包跨文件 base 类构造器继承）。
+    // classNs：短类名→声明 ns 图（imported + 同包跨-ns），用于 impl target/trait FQ 化。
     public static ExportedModuleZ ExtractP(CompilationUnit cu, SymbolTable symbols, string ns,
-                                           ExportedFuncZ[] allFuncs, int allFuncCount, StrMap pkgClassMap) {
-        ExportedModuleZ em = ExportedTypeExtractor.Extract(cu, symbols, ns, pkgClassMap);
-        return new ExportedModuleZ(em.Namespace,
+                                           ExportedFuncZ[] allFuncs, int allFuncCount, StrMap pkgClassMap, StrMap classNs) {
+        ExportedModuleZ em = ExportedTypeExtractor.Extract(cu, symbols, ns, pkgClassMap, classNs);
+        ExportedModuleZ r = new ExportedModuleZ(em.Namespace,
             em.Classes, em.ClassCount,
             em.Interfaces, em.InterfaceCount,
             em.Enums, em.EnumCount,
             allFuncs, allFuncCount,
             em.Delegates, em.DelegateCount);
+        r.Impls = em.Impls; r.ImplCount = em.ImplCount;   // L3-Impl2：保留提取的 impls
+        return r;
     }
 
     public static ExportedModuleZ Extract(CompilationUnit cu, SymbolTable symbols, string ns) {
-        return ExportedTypeExtractor.Extract(cu, symbols, ns, null);
+        return ExportedTypeExtractor.Extract(cu, symbols, ns, null, null);
     }
 
     public static ExportedModuleZ Extract(CompilationUnit cu, SymbolTable symbols, string ns, StrMap pkgClassMap) {
+        return ExportedTypeExtractor.Extract(cu, symbols, ns, pkgClassMap, null);
+    }
+
+    public static ExportedModuleZ Extract(CompilationUnit cu, SymbolTable symbols, string ns, StrMap pkgClassMap, StrMap classNs) {
         // 短类名 → ClassDecl（本 CU 内；TSIG 继承方法合并走 base 链需祖先 ClassDecl 取自有方法 AST 序+签名）。
         // z42c.syntax/ir 继承均同文件（Expr+子类 / IrInstr+子类）→ per-CU 图足够；跨文件继承待扩展为包级图。G18。
         // arity-mangle 检测（同 SymbolCollector._passClassStubs）：泛型类以 Name$N 键存入 classMap。
@@ -153,12 +160,102 @@ public static class ExportedTypeExtractor {
             if (!foundBuiltin) { allIfs[allIfCount] = localIfs[i]; allIfCount = allIfCount + 1; }
             i = i + 1;
         }
-        return new ExportedModuleZ(ns,
+        ExportedModuleZ emr = new ExportedModuleZ(ns,
             classes, cc,
             allIfs, allIfCount,
             ExportedTypeExtractor._builtinEnums(), 1,
             funcs, fc,
             ExportedTypeExtractor._builtinDelegates(), 11);
+        // ── impl 块（L3-Impl2 跨 zpkg `impl Trait for Type`；CU 声明序）──
+        ExportedImplZ[] impls = ExportedTypeExtractor._extractImpls(cu, ns, classNs);
+        emr.Impls = impls; emr.ImplCount = impls.Length;
+        return emr;
+    }
+
+    // 提取 `impl Trait for Target { methods }`（镜像 C# ExtractImpls）。
+    // target/trait 短名经 classNs FQ 化：命中 imported/同包跨-ns 图 → "<declNs>.<name>"，否则 "<currentNs>.<name>"。
+    private static ExportedImplZ[] _extractImpls(CompilationUnit cu, string currentNs, StrMap classNs) {
+        ExportedImplZ[] result = new ExportedImplZ[4];
+        int rc = 0;
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = ExportedTypeExtractor._unwrap(cu.Decls[i]);
+            if (d is ImplDecl) {
+                ImplDecl implD = d as ImplDecl;
+                string targetName = ExportedTypeExtractor._typeShortName(implD.TargetType);
+                string traitName = ExportedTypeExtractor._typeShortName(implD.TraitType);
+                if (targetName != "" && traitName != "") {
+                    string targetFq = ExportedTypeExtractor._fqOf(targetName, currentNs, classNs);
+                    string traitFq = ExportedTypeExtractor._fqOf(traitName, currentNs, classNs);
+                    // trait 泛型实参（NamedType.Args → TsigTypeName）
+                    string[] argStrs = new string[0];
+                    int argc = 0;
+                    if (implD.TraitType is NamedType) {
+                        NamedType tnt = implD.TraitType as NamedType;
+                        argStrs = new string[tnt.ArgCount];
+                        while (argc < tnt.ArgCount) { argStrs[argc] = ExportedTypeExtractor.TsigTypeName(tnt.Args[argc]); argc = argc + 1; }
+                    }
+                    // impl 方法签名（AST 直取，镜像 C#：types via TsigTypeName，vis/static/virtual/abstract via mods）
+                    ExportedMethodZ[] ms = new ExportedMethodZ[implD.MethodCount];
+                    int mc = 0;
+                    int mj = 0;
+                    while (mj < implD.MethodCount) {
+                        Decl mem = ExportedTypeExtractor._unwrap(implD.Methods[mj]);
+                        if (mem is MethodDecl) {
+                            MethodDecl md = mem as MethodDecl;
+                            ExportedParamZ[] ps = new ExportedParamZ[md.ParamCount];
+                            int pi = 0;
+                            while (pi < md.ParamCount) { ps[pi] = new ExportedParamZ(md.Params[pi].Name, ExportedTypeExtractor.TsigTypeName(md.Params[pi].Type)); pi = pi + 1; }
+                            string ret = "void";
+                            if (!md.IsCtor) { ret = ExportedTypeExtractor.TsigTypeName(md.RetType); }
+                            string vis = ExportedTypeExtractor._visFromMods(md.Mods);
+                            bool isStatic = ExportedTypeExtractor._hasWord(md.Mods, "static");
+                            bool isVirtual = ExportedTypeExtractor._hasWord(md.Mods, "virtual");
+                            bool isAbstract = ExportedTypeExtractor._hasWord(md.Mods, "abstract");
+                            int reqd = ExportedTypeExtractor._requiredCount(md.Params, md.ParamCount);
+                            ms[mc] = new ExportedMethodZ(md.Name, ret, vis, isStatic, isVirtual, isAbstract, reqd, ps, md.ParamCount);
+                            mc = mc + 1;
+                        }
+                        mj = mj + 1;
+                    }
+                    if (rc == result.Length) {
+                        ExportedImplZ[] b = new ExportedImplZ[result.Length * 2];
+                        int k = 0; while (k < rc) { b[k] = result[k]; k = k + 1; }
+                        result = b;
+                    }
+                    result[rc] = new ExportedImplZ(targetFq, traitFq, argStrs, argc, ms, mc);
+                    rc = rc + 1;
+                }
+            }
+            i = i + 1;
+        }
+        ExportedImplZ[] trimmed = new ExportedImplZ[rc];
+        int t = 0; while (t < rc) { trimmed[t] = result[t]; t = t + 1; }
+        return trimmed;
+    }
+
+    // 短名 FQ 化：classNs 命中 → "<declNs>.<name>"，否则 "<currentNs>.<name>"（镜像 C# ImportedClassNamespaces 回落）。
+    private static string _fqOf(string name, string currentNs, StrMap classNs) {
+        if (classNs != null && classNs.ContainsKey(name)) {
+            StrBox b = classNs.Get(name) as StrBox;
+            return b.Value + "." + name;
+        }
+        return currentNs + "." + name;
+    }
+
+    // TypeExpr → 短名（NamedType.Name；非 Named 形态 → ""，镜像 C# ExtractTypeName 返回 null）。
+    private static string _typeShortName(TypeExpr t) {
+        if (t is NamedType) { return (t as NamedType).Name; }
+        return "";
+    }
+
+    // impl 方法可见性：mods 显式声明取之，无修饰默认 "public"（镜像 C# AST Visibility 默认）。
+    private static string _visFromMods(string mods) {
+        if (ExportedTypeExtractor._hasWord(mods, "public"))    { return "public"; }
+        if (ExportedTypeExtractor._hasWord(mods, "private"))   { return "private"; }
+        if (ExportedTypeExtractor._hasWord(mods, "protected")) { return "protected"; }
+        if (ExportedTypeExtractor._hasWord(mods, "internal"))  { return "internal"; }
+        return "public";
     }
 
     // 本地接口导出（方法 flags=virtual|abstract，p{i} 参名——内建接口同形态）。
