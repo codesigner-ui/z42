@@ -466,6 +466,55 @@ jobs:
           # --mode jit). --jobs 4 parallelizes units across cores.
           "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- test stdlib --mode jit --jobs 4
 
+  # ── C#-free self-host bootstrap (replace-csharp-compiler S4) ──────────────
+  # Proves z42c can rebuild stdlib + z42c + xtask from CURRENT source using the
+  # DOWNLOADED nightly z42c-written seed (runtime pkg z42c/ + libs/), with NO C#.
+  # NO setup-dotnet on purpose — dotnet is absent, so "no C#" is structural, not
+  # asserted. Like the other download-bootstrap jobs, this transiently fails on an
+  # OLD nightly predating the z42c seed until publish-nightly republishes a
+  # seed-carrying nightly; then it self-heals. NOT in publish-nightly's needs (no
+  # deadlock). linux-x64 only.
+  bootstrap-no-csharp:
+    name: bootstrap-no-csharp (linux-x64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (shared key with build-and-test)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: C#-free bootstrap from nightly z42c seed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Download the nightly runtime package: z42vm + libs/ (stdlib) + z42c/ (seed).
+          gh release download nightly -p 'z42-runtime-nightly-linux-x64.tar.gz' -O /tmp/rt.tgz
+          mkdir -p /tmp/rtpkg && tar -C /tmp/rtpkg -xzf /tmp/rt.tgz
+          seed="$PWD/.nocs-seed"; rm -rf "$seed"; mkdir -p "$seed"
+          if ! ls /tmp/rtpkg/z42c/*.zpkg >/dev/null 2>&1; then
+            echo "::error::nightly runtime package has no z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals)"; exit 1
+          fi
+          cp -f /tmp/rtpkg/z42c/*.zpkg "$seed/"
+          cp -f /tmp/rtpkg/libs/*.zpkg "$seed/"
+          echo "seed: $(ls "$seed"/*.zpkg | wc -l) zpkg (z42c-written compiler + stdlib)"
+          # Structural no-C# guard: this job never installs dotnet.
+          if command -v dotnet >/dev/null 2>&1; then echo "::error::dotnet present — this job must run C#-free"; exit 1; fi
+          bash scripts/bootstrap-no-csharp.sh "$seed"
+
   # ── z42c dogfood-builds stdlib (replace-csharp-compiler S2.1) ─────────────
   # Validates the self-host compiler (z42c) can build the ENTIRE stdlib
   # workspace via `build --workspace` and that the z42c-built stdlib is

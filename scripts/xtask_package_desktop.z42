@@ -186,7 +186,24 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
     // libs/ + native/ (embed libs + include/ headers) copied verbatim from the SDK.
     Directory.Copy(Path.Join(sdkPkgDir, "libs"),   Path.Join(pkgDir, "libs"),   true);
     Directory.Copy(Path.Join(sdkPkgDir, "native"), Path.Join(pkgDir, "native"), true);
-    Console.WriteLine("  ✓ runtime package (z42vm + native/ + libs from SDK): " + pkgDir);
+
+    // z42c-written compiler seed (z42c.* 7 zpkg) → z42c/ (replace-csharp S4):
+    // the C#-free bootstrap seed. With z42vm + libs/ (stdlib), this runtime package
+    // is a complete self-host seed — `scripts/bootstrap-no-csharp.sh` uses it to
+    // rebuild stdlib + z42c + xtask from source with NO dotnet. RID-independent z42
+    // artifacts (same bytes every platform); built here via the C# driver (the only
+    // C# touch, upstream — downstream consumers rebuild z42c without C#).
+    int zc = _buildCompilerZ42(); if (zc != 0) { return zc; }
+    string z42cSeed = Path.Join(pkgDir, "z42c");
+    Directory.Create(z42cSeed);
+    string[] z42cMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    int zi = 0;
+    while (zi < z42cMembers.Length) {
+        string sp = Path.Join(root, "artifacts/build/z42c/" + z42cMembers[zi] + "/" + profile + "/dist/" + z42cMembers[zi] + ".zpkg");
+        _copyIfExists(sp, Path.Join(z42cSeed, z42cMembers[zi] + ".zpkg"));
+        zi = zi + 1;
+    }
+    Console.WriteLine("  ✓ runtime package (z42vm + native/ + libs + z42c/ seed): " + pkgDir);
     return 0;
 }
 

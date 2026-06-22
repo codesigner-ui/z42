@@ -8,10 +8,10 @@
 
 ## 进度概览
 - [x] 1. C#-free 重建脚本（本地可验证，种子=当前产物）✅ 全绿
-- [ ] 2. nightly 携带 z42c-written 种子 + install-z42 下载
-- [ ] 3. C#-free bootstrap action + CI job
-- [ ] 4. flip 种子步支持 z42c 种子
-- [ ] 5. 文档 + 归档
+- [x] 2. nightly 携带 z42c-written 种子（runtime package z42c/；download 直取，install-z42 N/A）
+- [x] 3. C#-free bootstrap CI job（gh download nightly runtime → seed → 脚本；无 dotnet）
+- [~] 4. flip 种子步 C#-free —— 移交 S5
+- [ ] 5. 文档 + 归档（+ 滚动：触发 nightly republish 自愈）
 
 ## 1. C#-free 重建脚本（先做，本地验证）✅
 - [x] 1.1 `scripts/bootstrap-no-csharp.sh`：① cargo build z42vm ② 种子 z42c 编 stdlib（源，--workspace --output-dir）→ fresh stdlib ③ 种子 z42c 单 toml 逐成员编 z42c（源，runlibs=fresh-stdlib+种子 z42c，累积 fresh siblings）→ fresh z42c ④ fresh z42c 编 xtask → xtask.zpkg。全程 z42vm only，**零 dotnet**。
@@ -19,18 +19,16 @@
 - [x] 1.3 本地验证：种子 = z42c-built selfhost-out + 当前 stdlib → 全程跑通；stdlib 22 + z42c 7 + xtask OK；**不动点 7/7 逐字节一致**（含 BLID，确定性重建）。✅ C#-free bootstrap + fixpoint OK (no dotnet)
 
 ## 2. nightly 携带 z42c 种子
-- [ ] 2.1 `xtask_package_desktop.z42`：runtime artifact 加 `z42c/`（z42c-written z42c.* 7 zpkg，源自 `artifacts/build/z42c/<m>/release/dist`，**非** C# `dotnet publish`）。
-- [ ] 2.2 `install-z42.sh`：下载 runtime 时把 `z42c/*.zpkg` 取进 `.z42/z42c/`（或 `.z42/libs` 合并）。
-- [ ] 2.3 release-index / 版本元数据若需登记 z42c 种子条目则同步。
+- [x] 2.1 `xtask_package_desktop.z42` `_buildRuntimePackage`：runtime artifact 加 `z42c/`（z42c-written z42c.* 7 zpkg，源自 `artifacts/build/z42c/<m>/release/dist`；先 `_buildCompilerZ42` 确保已建）。runtime package = z42vm + libs(stdlib) + native + **z42c/ 种子** = 完整 C#-free 自举种子。
+- [~] 2.2 install-z42.sh —— **N/A**：bootstrap job 直接 `gh release download nightly z42-runtime-nightly-<rid>.tar.gz` 取 runtime package（含 z42c/+libs/），不经 install-z42（install-z42 取 SDK 包；避免改 SDK + install 逻辑）。
+- [~] 2.3 release-index —— **N/A**：runtime package 已是既有 release asset（split-release-runtime-package），z42c/ 随包发布，无需额外条目。
 
 ## 3. C#-free bootstrap action + CI
-- [ ] 3.1 `.github/actions/xtask-bootstrap-no-csharp/action.yml`：cargo z42vm + install-z42（取种子）+ 调 `bootstrap-no-csharp.sh`。
-- [ ] 3.2 `ci.yml` job `bootstrap-no-csharp (linux-x64)`：跑该 action；断言成功 + 不动点 + **无 dotnet**（PATH 去 dotnet 或 grep 日志）。不进 publish-nightly needs。
-- [ ] 3.3 滚动：先 workflow_dispatch 触发 publish-nightly 产含 z42c 的 nightly；再让本 job 自愈转绿。
+- [x] 3.1/3.2 `ci.yml` job `bootstrap-no-csharp (linux-x64)`：**无 setup-dotnet**（dotnet 缺席 = 结构性无 C#）；`gh release download nightly` 取 runtime package → 组装 seed（z42c/+libs/）→ `bash scripts/bootstrap-no-csharp.sh <seed>`；显式 guard `command -v dotnet` 必须缺席。不进 publish-nightly needs（无死锁）。
+- [ ] 3.3 滚动：push 后本 job 在旧 nightly（无 z42c/）上 transient 失败（明确 error 提示）→ workflow_dispatch 触发 publish-nightly 产含 z42c/ 的 nightly → 自愈转绿。
 
-## 4. flip 种子步支持 z42c 种子
-- [ ] 4.1 `_buildStdlibCore` `_csharpBuildStdlibSeed`：加 env 开关（如 `Z42_SEED_Z42C=<dir>`）→ 有则用种子 z42c 编 stdlib 种子，否则 C# DLL（默认）。C#-free 路径设该 env。
-- [ ] 4.2 不回归：默认（无 env）仍 C# 种子 → 现有 gate 全绿。
+## 4. flip 种子步支持 z42c 种子 —— **延后到 S5**
+- [~] 4.1/4.2 `_buildStdlibCore` C#-free 化（env 选 z42c 种子 vs C# DLL）属生产 `xtask build stdlib` 脱 C#，是 **S5**（删 C# 时）关注点；S4 的 C#-free 闭环由 `bootstrap-no-csharp.sh` 直接建 stdlib 达成，不经 flip。移交 S5。
 
 ## 5. 文档 + 归档
 - [ ] 5.1 self-hosting.md：S4 闭环（种子来源 nightly / C#-free bootstrap 序 / 不动点 / 滚动自愈）。
