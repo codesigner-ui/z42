@@ -83,21 +83,30 @@ int _buildStdlibCore() {
     string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
     string flatDir = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
 
-    // ── 1. C# seed stdlib (per-member) — z42c.driver's runtime dependency ──
-    int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }
-
-    // ── 2. build z42c (C# driver compiles the 7 z42c.* packages) ──────────
-    //    NB: do NOT rebuild the runtime here (_buildRuntime / _ensureZ42cTooling).
-    //    xtask itself runs ON the release z42vm, and on Windows cargo cannot
-    //    replace a running .exe → 'failed to remove z42vm.exe: Access is denied'
-    //    (regen lane). The flip only needs z42vm to EXIST (it does — we're on it)
-    //    + the C# driver (already built; step 1's --no-build presupposes it). Use
-    //    the running VM via _z42vm() (Z42_PORTABLE_VM, .exe-aware) to run z42c.
-    int bc0 = _buildCompilerZ42(); if (bc0 != 0) { return bc0; }
-
-    // ── 3. run-libs = {C#-seed stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──
+    // ── 1+2. Produce the seed: stdlib + z42c, from CURRENT source ─────────
+    //    S5 Phase A — prefer the C#-FREE path: when a z42c.driver.zpkg + a stdlib
+    //    already exist (warm: prior build / S4 nightly seed), rebuild z42c via z42c
+    //    (no dotnet). COLD start (fresh checkout, no seed) falls back to the C#
+    //    driver — the last remaining build-time dotnet dependency, removed once a
+    //    seed is always present (S4 download wired into the bootstrap). `Z42_STDLIB_
+    //    CSHARP_SEED=1` forces the C# path (e.g. the byte-identical oracle lane,
+    //    which wants a C#-built z42c reference).
     string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
     string vm = _z42vm();
+    string seedDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
+    string seedStdlibCore = Path.Join(flatDir, "z42.core.zpkg");
+    bool haveSeed = File.Exists(seedDriver) && File.GetSize(seedDriver) > 0L
+                 && File.Exists(seedStdlibCore) && File.GetSize(seedStdlibCore) > 0L;
+    bool forceCs = (Environment.GetEnvironmentVariable("Z42_STDLIB_CSHARP_SEED") ?? "") == "1";
+    if (haveSeed && !forceCs) {
+        Console.WriteLine("  seed: existing z42c + stdlib → C#-free z42c self-build (S5 Phase A)");
+        int zc = _buildCompilerZ42ViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
+    } else {
+        int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }   // C# stdlib seed (cold)
+        int bc0 = _buildCompilerZ42();     if (bc0 != 0) { return bc0; } // C# z42c (cold)
+    }
+
+    // ── 3. run-libs = {stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──────
     string runDir = Path.Join(root, "artifacts/build/z42c/dogfood/run-" + profile);
     _resetDir(runDir);
     _copyAll(flatDir, runDir, "*.zpkg");
