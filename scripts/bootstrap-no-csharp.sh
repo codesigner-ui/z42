@@ -73,18 +73,37 @@ for m in $MEMBERS; do
 done
 echo "   fresh z42c: $(ls "$fresh_z42c"/*.zpkg | wc -l | tr -d ' ') zpkg"
 
-# ── 4. fresh z42c → compile xtask.zpkg ──────────────────────────────────────
-echo "── [4/5] fresh z42c builds xtask.zpkg ──"
-xtask_libs="$runlibs"
-Z42_LIBS="$xtask_libs" "$vm" "$fresh_z42c/z42c.driver.zpkg" --mode interp -- \
+# ── 4. fresh z42c (gen1) → compile xtask.zpkg ───────────────────────────────
+echo "── [4/6] gen1 z42c builds xtask.zpkg ──"
+Z42_LIBS="$runlibs" "$vm" "$fresh_z42c/z42c.driver.zpkg" --mode interp -- \
   build scripts/xtask.z42.toml --release >/dev/null
 echo "   xtask: $(ls "$ROOT/artifacts/xtask/xtask.zpkg" >/dev/null 2>&1 && echo OK || echo MISSING)"
 
-# ── 5. Fixpoint: rebuilt z42c == seed z42c (byte-identical mod BLID) ─────────
-echo "── [5/5] fixpoint check (rebuilt z42c vs seed, BLID-tolerant) ──"
+# ── 5. gen1 rebuilds z42c from source → gen2 ────────────────────────────────
+# TRUE self-host fixpoint = gen1 == gen2, NOT gen1 == seed. The downloaded nightly
+# seed is built from an OLDER z42c source; whenever current z42c source changes
+# (e.g. a new language feature), seed-built gen1 legitimately differs from the seed.
+# A correct compiler built from CURRENT source must reproduce ITSELF, so we compare
+# gen1 (seed-built) against gen2 (gen1-built) — both from current source.
+gen2="$ROOT/artifacts/build/z42c/nocs-z42c-gen2"
+echo "── [5/6] gen1 builds z42c again → gen2 ──"
+rm -rf "$gen2"; mkdir -p "$gen2"
+gen1libs="$ROOT/artifacts/build/z42c/nocs-gen1libs"
+rm -rf "$gen1libs"; mkdir -p "$gen1libs"
+cp -f "$fresh_stdlib"/*.zpkg "$gen1libs/"
+for m in $MEMBERS; do cp -f "$fresh_z42c/$m.zpkg" "$gen1libs/"; done
+for m in $MEMBERS; do
+  Z42_LIBS="$gen1libs" "$vm" "$fresh_z42c/z42c.driver.zpkg" --mode interp -- \
+    build "$ROOT/src/z42c/$m/$m.z42.toml" --release --output-dir "$gen2" >/dev/null
+  cp -f "$gen2/$m.zpkg" "$gen1libs/"
+done
+echo "   gen2 z42c: $(ls "$gen2"/*.zpkg | wc -l | tr -d ' ') zpkg"
+
+# ── 6. Fixpoint: gen1 == gen2 (byte-identical mod BLID) ─────────────────────
+echo "── [6/6] fixpoint check (gen1 == gen2, BLID-tolerant) ──"
 fail=0
 for m in $MEMBERS; do
-  a="$fresh_z42c/$m.zpkg"; b="$SEED/$m.zpkg"
+  a="$fresh_z42c/$m.zpkg"; b="$gen2/$m.zpkg"
   if cmp -s "$a" "$b"; then echo "   ✓ $m identical"; else
     # BLID is a trailing 16-byte build_id; tolerate a <=16B tail-only diff.
     sa=$(wc -c <"$a"); sb=$(wc -c <"$b")
@@ -95,4 +114,4 @@ for m in $MEMBERS; do
     fi
   fi
 done
-[ "$fail" = 0 ] && echo "✅ C#-free bootstrap + fixpoint OK (no dotnet)" || { echo "❌ fixpoint failed"; exit 1; }
+[ "$fail" = 0 ] && echo "✅ C#-free bootstrap + gen1==gen2 fixpoint OK (no dotnet)" || { echo "❌ fixpoint failed"; exit 1; }
