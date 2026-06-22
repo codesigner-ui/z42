@@ -87,12 +87,17 @@ int _buildStdlibCore() {
     int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }
 
     // ── 2. build z42c (C# driver compiles the 7 z42c.* packages) ──────────
-    int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }   // z42vm + driver
+    //    NB: do NOT rebuild the runtime here (_buildRuntime / _ensureZ42cTooling).
+    //    xtask itself runs ON the release z42vm, and on Windows cargo cannot
+    //    replace a running .exe → 'failed to remove z42vm.exe: Access is denied'
+    //    (regen lane). The flip only needs z42vm to EXIST (it does — we're on it)
+    //    + the C# driver (already built; step 1's --no-build presupposes it). Use
+    //    the running VM via _z42vm() (Z42_PORTABLE_VM, .exe-aware) to run z42c.
     int bc0 = _buildCompilerZ42(); if (bc0 != 0) { return bc0; }
 
     // ── 3. run-libs = {C#-seed stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──
     string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
-    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string vm = _z42vm();
     string runDir = Path.Join(root, "artifacts/build/z42c/dogfood/run-" + profile);
     _resetDir(runDir);
     _copyAll(flatDir, runDir, "*.zpkg");
