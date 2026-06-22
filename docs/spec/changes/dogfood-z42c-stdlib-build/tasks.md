@@ -16,8 +16,13 @@ S3 实现（`_buildStdlibCore` 改 z42c）+ `build stdlib` 验证成功，但 fu
 3. ✅ **strip-symbols（BLID/.zsym）**：port-z42c-strip-symbols —— z42c 发行构建产 `.zsym` sidecar + BLID；StdlibSidecarPairingTests 过。
 4. ✅ **blake3 多块哈希**：fix-blake3-multichunk-root-flag —— strip 的 build_id 暴露 z42.crypto >1024B BLAKE3 错误；修后 z42c.driver build_id == C# nuget 逐字节一致。
 
-**剩余阻塞（S3 唯一剩余，独立 follow-up）**：
-- 🔴 **z42c-built z42.compression `[Native]` extern**：z42c-built（strip）z42.compression 运行时 `_CompressRaw` 等报 `undefined function`（18 compression test）。其余 full gate 全绿（C# tests 含 sidecar+multicast / vm goldens / cross-zpkg / 254/272 stdlib）。见 self-hosting-future-z42c-compression-native-binding。**这是 S3 翻转 `_buildStdlibCore` 的唯一剩余前置。**
+5. ✅ **compression `[Native]` named-entry**：fix-z42c-native-named-entry —— z42c 不识别 named `[Native(lib=,entry=)]` → compression extern undefined。修后 18→8。
+
+**剩余阻塞（3 个**新** z42c codegen bug，8 stdlib test，独立 follow-up，self-hosting-future-s3-remaining-codegen-bugs）**：full gate 其余全绿（C# 1571 含 sidecar+multicast / vm goldens 334 / cross-zpkg 2 / 264/272 stdlib）。
+- 🔴 **cross-ns 静态调用**（4× ZipWrite）：Zip→Deflate 误限定当前 ns
+- 🔴 **blake3 多块 z42c codegen**（1×）：z42c miscompiles 多块树代码（源 fix 正确，C#-built 过）
+- 🔴 **diagnostics min-level/color**（3×）：z42c codegen 偏差
+- **前置**：3 bug 全解后翻转 `_buildStdlibCore` 重跑 full gate → S3 完成。
 
 ## 进度概览
 - [x] 0. 可行性验证（z42c M2 编 22 库 + 272/272 + TSIG bug 修复）

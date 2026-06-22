@@ -473,15 +473,35 @@ public sealed class IrGen {
         return cd;
     }
 
-    // legacy [Native("__name")] 的 intrinsic 名（首个字符串 attr arg；无则 ""）。
+    // [Native] 的 intrinsic（builtin）名。两形态：
+    //   ① positional `[Native("__name")]`（legacy / L1 stdlib）→ 首个字符串实参。
+    //   ② named 短形 `[Native(lib = "L", entry = "E")]`（add-z42-compression，z42.compression）
+    //      → 取 `entry =` 值。镜像 C# EmitNativeStub 短形（type= 省略 → BuiltinInstr(entry)，
+    //      经 dlopen 的 ext_builtins 注册表解析）。named args 解析为 AssignExpr（Target=ident）。
+    //   无匹配 → ""。
     private string _nativeIntrinsic(Decl rawMem) {
         if (!(rawMem is AttributedDecl)) { return ""; }
         AttributedDecl ad = rawMem as AttributedDecl;
         int a = 0;
         while (a < ad.AttrCount) {
             Attr at = ad.Attrs[a];
-            if (at.Name == "Native" && at.ArgCount >= 1 && at.Args[0] is StringLitExpr) {
-                return Lexer.DecodeString((at.Args[0] as StringLitExpr).Raw);
+            if (at.Name == "Native" && at.ArgCount >= 1) {
+                // ① positional 字符串
+                if (at.Args[0] is StringLitExpr) {
+                    return Lexer.DecodeString((at.Args[0] as StringLitExpr).Raw);
+                }
+                // ② named：扫 `entry = "..."`
+                int ai = 0;
+                while (ai < at.ArgCount) {
+                    if (at.Args[ai] is AssignExpr) {
+                        AssignExpr ae = at.Args[ai] as AssignExpr;
+                        if (ae.Target is IdentExpr && (ae.Target as IdentExpr).Name == "entry"
+                            && ae.Value is StringLitExpr) {
+                            return Lexer.DecodeString((ae.Value as StringLitExpr).Raw);
+                        }
+                    }
+                    ai = ai + 1;
+                }
             }
             a = a + 1;
         }
