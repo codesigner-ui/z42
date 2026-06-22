@@ -1,5 +1,6 @@
 namespace Demo.App;
 
+using Std.IO;        // Console（z42.io；strict-using-resolution：仅 z42.core 隐式 prelude）
 using Demo.Target;
 using Demo.Greeter;
 
