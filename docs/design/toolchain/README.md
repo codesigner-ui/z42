@@ -9,6 +9,7 @@
 | 文件 | 职责 |
 |------|------|
 | [launcher-command-dispatch.md](launcher-command-dispatch.md) | `z42` 如何分发命令：core / SDK / workload 三层 + 目录发现 + Std.Cli 统一注册 |
+| [build-orchestrator.md](build-orchestrator.md) | `z42b` 构建编排器：驱动 `z42.build` 管线（in-process `ICompiler` 共享编译 + 标准/自定义两条 driver 路径 + `build/` 扩展约定）|
 | [platform-export-lifecycle.md](platform-export-lifecycle.md) | z42 项目 → 导出平台工程（managed + eject）+ 全平台生命周期（build / export / publish / test） |
 | [runtime-workload-distribution.md](runtime-workload-distribution.md) | GitHub Releases 为后端：host runtime / workload 的安装·更新·运行 + `release-index.json` manifest 契约 + 版本解析 |
 
