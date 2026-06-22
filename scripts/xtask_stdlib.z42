@@ -50,7 +50,31 @@ int _csharpBuildStdlibSeed() {
         .Stdout(Stdio.Inherit())
         .Stderr(Stdio.Inherit())
         .Run();
-    return br.ExitCode;
+    if (br.ExitCode != 0) { return br.ExitCode; }
+    // 种子必须产出 flat view（VM 单目录查找点）：z42c.driver 运行期靠它解析 stdlib，
+    // 且 `test compiler-z42-stdlib` 的 stdlibFlat / 本函数其它独立调用方都依赖它。
+    // download-nightly bootstrap 的 CI job 不从源码建 stdlib → flat view 此前为空 →
+    // z42c.driver 运行 `undefined Std.IO.Environment.GetCommandLineArgs`（CI 暴露）。
+    _assembleStdlibFlatView(_root(), "release");
+    return 0;
+}
+
+// 把各成员 dist/*.zpkg + *.zsym hard-link 汇聚到 flat view（VM 单目录查找点）。
+// 不写 namespace index（VM 扫目录读 NSPC，嵌入解析器读 zpkg NSPC）。
+void _assembleStdlibFlatView(string root, string profile) {
+    string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
+    string flatDir = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
+    string[] libs = _stdlibList(root);
+    Directory.Create(flatDir);
+    _cleanGlob(flatDir, "*.zpkg");
+    _cleanGlob(flatDir, "*.zsym");
+    int i = 0;
+    while (i < libs.Length) {
+        string srcDir = Path.Join(buildLibsRoot, libs[i] + "/" + profile + "/dist");
+        _linkAll(srcDir, flatDir, "*.zpkg");
+        _linkAll(srcDir, flatDir, "*.zsym");
+        i = i + 1;
+    }
 }
 
 int _buildStdlibCore() {
@@ -120,22 +144,9 @@ int _buildStdlibCore() {
 
     Console.WriteLine("");
 
-    // ── Flat view (hard-link) ────────────────────────────────────────────
-    Directory.Create(flatDir);
-    _cleanGlob(flatDir, "*.zpkg");
-    _cleanGlob(flatDir, "*.zsym");
-    i = 0;
-    while (i < libs.Length) {
-        string srcDir = Path.Join(buildLibsRoot, libs[i] + "/" + profile + "/dist");
-        _linkAll(srcDir, flatDir, "*.zpkg");
-        _linkAll(srcDir, flatDir, "*.zsym");
-        i = i + 1;
-    }
+    // ── 6. Flat view (hard-link, z42c-built; overwrites step-1 C# seed view) ──
+    _assembleStdlibFlatView(root, profile);
     Console.WriteLine("  flat view: " + flatDir + "/   (VM single-dir lookup target)");
-    // No namespace index is emitted: the VM (desktop dir scan) and embedding
-    // resolvers (Bundle / Asset / wasm, via z42_zpkg_read_namespaces) both
-    // read each zpkg's NSPC section to map namespaces. See
-    // docs/spec/archive/2026-06-06-drop-index-json-self-describing/.
     return 0;
 }
 
