@@ -246,7 +246,8 @@ public static class ZpkgReader {
                 classes[ci] = new ExportedClassZ(cname, hasBase, baseName, fields, fc, methods, mc, tps, tpc);
                 ci = ci + 1;
             }
-            // interfaces（跳过——MVP 不 import 接口）
+            // interfaces（跳过 import 进符号表——会改类型解析→破坏 stdlib byte-identical；
+            // impl trait 校验改为不依赖 imported 接口表，见 ImportedSymbolLoader._mergeImpl）
             int nif = c.U16();
             int ii = 0;
             while (ii < nif) {
