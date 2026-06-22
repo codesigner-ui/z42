@@ -117,19 +117,31 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 - **2026-06-07（全自举）**：原"B 只做 4 子系统（Lexer/Project/Driver/Parser）+ 剩余推 0.5.x"→ 全 7 子系统并入本线；原"REPL 推 0.5.x"→ 本线 capstone；原"byte-identical 推 1.0"→ 本线退出标准；原"compile-perf gate 0.5.x 启用"→ 0.3.10 启用。
 - **2026-06-05（从 0.3.x 移出，仍生效）**：Golden 全 L1 覆盖 + interp/JIT 一致性 CI / 调试符号 / Profiler hooks → 0.4.x 起；热重载 VM 完整实现 → 0.5.x 起；GC v1 → 0.3.0（提前）。
 
-### 0.4.x — 标准库 v1 + test/bench/docgen 工具链
+### 0.4.x — 质量与性能线（4 流并行 + G 前置流）（2026-06-23 重定位）
 
-| 子版本 | 内容 | 估时 |
-|------|------|:----:|
-| 0.4.0 | `z42.core` 完整：Object / Convert / Assert / IEquatable / IComparable / IDisposable | 1.5 周 |
-| 0.4.1 | Exception 体系完整 + 9 标准子类 + IEnumerable<T> 完整 | 1 周 |
-| 0.4.2 | `z42.io`：文件读写 + stdin/stdout + Path 操作 | 1.5 周 |
-| 0.4.3 | `z42.math`：libm 绑定 + 常量 | 1 周 |
-| 0.4.4 | `z42.collections`：List/Dict 纯脚本替换 pseudo-class + Queue/Stack | 2 周 |
-| 0.4.5 | `z42.text`：字符串操作 + StringBuilder | 1 周 |
-| 0.4.6 | **`z42.test` v1 + `z42c test`**：注解发现 + Assert 扩展 + golden 集成 | 2 周 |
-| 0.4.7 | **`z42.bench` v1 + `z42c bench`**：warmup + 多次迭代 + JSON + baseline diff | 2 周 |
-| 0.4.8 | **`z42-doc` 文档生成器**：doc comment → HTML / markdown + stdlib 自动发布 | 1.5 周 |
+> **完整规划**见 [`plan-0.4.x-four-streams/proposal.md`](spec/changes/plan-0.4.x-four-streams/proposal.md)。原线性"填 stdlib 包"框架（0.4.0 core → … → 0.4.8 docgen）作废——24 个 stdlib 包已 ship，0.4.x 真实价值是**兑现性能杠杆 + bench 工具 GA + 补齐小语法 + 打磨已有 stdlib**，而非建包。沿用 0.3.x 子系统互斥锁的多主线并行模型。
+
+退出标准：（P）P1 JIT 算术拆箱 + P2 inline cache 落地且 bench 证明收益 + 触及库 baseline 化；（B）独立 `z42.bench` 包 + `z42c bench` GA + e2e 硬门禁 + PR 自动 diff 评论；（S）`params`/`init`+表达式体属性/索引器/命名实参/`partial` 全部 GREEN + dogfood 验证；（L）JSON `Deserialize<T>` 泛型 serde + CLI 校验/全局flag/补全 + 模块审计清零 + `z42-doc` 无错；（G）泛型实例化 + 泛型反射三件套（Invoke/MakeGenericType/CreateInstance<T>）落地。
+
+| 子版本 | P（perf：Pv VM 侧 ‖ Pc 编译器侧）| B（bench）| S（syntax）| L（lib）| G（泛型前置）|
+|:--:|------|------|------|------|------|
+| 0.4.0 | Pv0 perf 基线刻画（量化已落地的 4-slot IC / JIT I64 特化）| B1 `z42.bench` 包 + B2 `z42c bench` GA | `params` 变长参数 | L1 stdlib 模块审计 spec | G0 泛型实例化设计 spec |
+| 0.4.1 | Pv1 quickening + 超指令 ‖ Pc1 激活 IrPassManager（const-fold/DCE）| B5 perf 库 baseline 铺面 | `init` + 表达式体属性 | L2 `JsonReader`（合 add-json-streaming-reader）| G1 运行期泛型实例化 |
+| 0.4.2 | **Pv2 JIT 直接 emit 拆箱 + F64 特化（招牌）** ‖ Pc2 intrinsic 表 + devirt pass | B3 e2e 硬门禁 | 索引器 `this[i]` | L2 `JsonSerializer` 非泛型（`[JsonProperty]`）| G2 泛型方法 Invoke + `MakeGenericType` |
+| 0.4.3 | Pv3 Frame 寄存器 HashMap→Vec ‖ Pc3 大类拆分 + BindCall D-11 收尾 | B4 PR 自动评论 diff | 命名实参 | **L2 `Deserialize<T>` 泛型 serde（招牌）** | G3 `Activator.CreateInstance<T>` |
+| 0.4.4 | Pv4 非原子 refcount（profiling 门控）‖ Pc4 compile-perf phase profiling | — | `partial` class | L3 CLI 值校验 + 全局 flag | — |
+| 0.4.5 | P6 stdlib 脚本 perf 三轮（BigInt/Coll、String/IO、JSON/YAML/TOML）| bench 收尾报告 | — | L3 CLI shell 补全 + L1 审计清单执行 | — |
+| 0.4.6 | — | — | — | **`z42-doc` 文档生成器**（doc comment → HTML/markdown + stdlib 自动发布）| — |
+
+**‖ = 五流（含 G）在子版本并行**；子版本号弹性，由退出标准定义终点，按子系统锁可用性排队。
+
+> **P 流分两侧并行**：**Pv（VM 侧）**吃 `runtime` 锁——JIT 拆箱 / quickening / Frame 表示 / 非原子 refcount，与编译器侧并行；**Pc（编译器侧）**吃 `compiler`+`z42c` 锁——IrPassManager 首批 pass / intrinsic 表 / devirt / 大类拆分，**任何改 codegen 的 pass 必须 C# + z42c 双侧镜像**（否则破坏 0.3.10 byte-identical gate），故 Pc 与 S/G 串行争锁。**已落地基线**（不重复做）：4-slot 多态 IC（FieldIC/VCallIC，2026-05-28）、JIT I64 helper 特化（2026-05-28）、cross-zpkg OnceLock 缓存（2026-06-11）、Instruction enum 96B→32B（2026-06-11）、GC v1 三阶段（2026-05-22）。两侧框架与 perf 杠杆全表见 [`plan-0.4.x-four-streams/design.md`](spec/changes/plan-0.4.x-four-streams/design.md#p-流细化编译器侧--vm-侧框架与性能)。
+
+**G 流连锁（2026-06-23 User 裁决"硬上完整泛型 serde"）**：`Deserialize<T>` 自动绑定任意类型依赖运行期泛型实例化 + 泛型反射，原排 0.5.x → 提前到 0.4.x G 流作为 L 流招牌前置。代价：违反"不为单点提前半个 L3"，作显式例外登记；0.5.x 反射条目相应清空。缓解：JSON 两步交付（先非泛型 `JsonSerializer` 保产物，G 就绪再上泛型版）。
+
+**锁协调**：`stdlib` 锁被 L 流 + P6 + B5 三处争用 → 串行排队；`compiler`/`z42c` 被 S 流 + G 流同时吃 → 串行/合并节奏（详见 proposal Open Questions）。
+
+**移除项**（被本线提前，从他处删）：原 0.4.7「z42.bench」并入 B 流 0.4.0；原 0.5.x「反射泛型扩展」上移 G 流。
 
 ---
 
@@ -139,7 +151,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 版本 | 主题 | Phase | 估时 |
 |------|------|:----:|:----:|
-| **0.5.x** | 泛型完整 + Trait 静态分发 + 反射**泛型扩展**（泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>，依赖 generic instantiation；非泛型 Method.Invoke 已在 0.3.12 落地）+ LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |
+| **0.5.x** | 泛型完整 + Trait 静态分发 + OSR/deopt 框架（JIT 分层 + hot-reload 共用地基）+ LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |<br>（反射泛型扩展：泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T> 已上移 **0.4.x G 流**，2026-06-23）
 | **0.6.x** | 函数式（Lambda / 命名参数 / 模式匹配 / `let` 不可变 / LINQ）+ unmanaged + GC v2 + linter | L3 | 9–11 周 |
 | **0.7.x** | `Result<T,E>` + `?` + ADT + `match` 穷尽检查 | L3 | 6–8 周 |
 | **0.8.x** | async / await + 多线程 + GC v3（generational + concurrent）+ DAP debugger | L3 | 12–16 周 |
@@ -154,7 +166,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 ```
 0.1 ─► 0.2 ─► 0.3 ──┬──► 0.4 ──► 0.5 ──► 0.6 ──► 0.7 ──► 0.8 ──► 0.9 ──► 0.10 ──► 1.0
        │       │   │           │                                            │
-       │       │   ├── reflection C1-C3 (0.3 C ✅) ──► boxing 机制 (0.3.11) ──► Method.Invoke 非泛型 (0.3.12) ──► 泛型 Invoke/MakeGenericType (0.5.x)
+       │       │   ├── reflection C1-C3 (0.3 C ✅) ──► boxing 机制 (0.3.11) ──► Method.Invoke 非泛型 (0.3.12) ──► 泛型实例化+泛型 Invoke/MakeGenericType (0.4 G) ──► Deserialize<T> serde (0.4 L)
        │       │   │                                                        │
        │       │   ├── 编译器全自举 7 子系统 (0.3 B：Lex→Parse→Proj→Driver→Sem→TC→IR→Emit→Pipeline)
        │       │   │           ──► byte-identical gate + compile-perf ≤3× (0.3.x 退出)
@@ -175,7 +187,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 - 0.3 B 自举受限写法 ◄── 泛型 G1-G4 + 闭包核心（已提前落地）；缺 match/LINQ/Result 用 class+虚方法 / 循环 / 异常替代，真卡点才 dogfood 提前
 - 0.3 C3 Attribute reflection ◄── 用户自定义 attribute 机制（features.md §X，0.3.5 前先 spec）
 - 0.3.11 boxing 机制 ◄── 0.3.12 Method.Invoke 非泛型（auto-boxing prim→Object 是 Invoke 的直接前置）
-- 0.5 反射泛型扩展（泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>）◄── 0.5 L3-G 泛型 instantiation
+- 0.4 G 流泛型反射扩展（泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>）◄── 0.4 G 流运行期泛型 instantiation（2026-06-23 从 0.5.x 提前，支撑 0.4 L 流 Deserialize<T> serde）
+- 0.4 L 流 JSON `Deserialize<T>` 完整泛型 serde ◄── 0.4 G 流泛型实例化 + 泛型反射（User 裁决"硬上"，显式 L3 提前例外）
 - 0.5 反射 ◄── 0.10 性能数据自查（type metadata access）
 - 0.6 unmanaged ◄── 0.9.6 C ABI 头文件
 - 0.7 Result ◄── 0.8 async（async fn 通常返回 `Task<Result<T,E>>`）
@@ -195,7 +208,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | §12 Hot Reload | 0.5.x（从 0.3.2 推后；GC v1 后真热更新落地）| 🟡 设计有 |
 | §13 Execution Mode Annotations | 0.1.x（注解）→ 0.5.x（运行时切换；从 0.3.x 推后）| 🟡 注解 ✅；运行时切换待 |
 | §14 Generics + Trait | 0.5.x | ✅ G1-G4 + L3-Impl 提前落地 |
-| §15 Reflection | **0.3.x C主线**：只读元数据 + typeof/GetType + Attribute（C1-C3 ✅）；GetInterfaces / IsArray / IsAbstract 等扩展 ✅；**完整化（0.3.12）**：非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举（boxing 机制 0.3.11 为前置）；**0.5.x 泛型扩展**：泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T> | 🟡 C1-C3 + 多项扩展已落地（见 spec/archive 2026-06-09–06-17 系列）；boxing + Method.Invoke 待 0.3.11–0.3.12 |
+| §15 Reflection | **0.3.x C主线**：只读元数据 + typeof/GetType + Attribute（C1-C3 ✅）；GetInterfaces / IsArray / IsAbstract 等扩展 ✅；**完整化（0.3.12）**：非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举（boxing 机制 0.3.11 为前置）；**0.4.x G 流泛型扩展**（2026-06-23 从 0.5.x 提前）：运行期泛型实例化 + 泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>（支撑 0.4 L 流 Deserialize<T> serde）| 🟡 C1-C3 + 多项扩展已落地（见 spec/archive 2026-06-09–06-17 系列）；boxing + Method.Invoke 待 0.3.11–0.3.12；泛型扩展待 0.4.x G 流 |
 | §16 Lambda + Closure | 0.6.0 | ✅ L2-C1 + L3-C2 核心提前落地 |
 | §17 Result + ADT + match | 0.7.x | 📋 |
 | §18 可裁剪 / Tree-shaking / 200KB 子集 | 0.9.x（嵌入 / 裁剪）+ 1.0-rc（AOT 静态链接）| 📋 |
@@ -217,9 +230,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Release 自动化 | 0.2.6 | git tag → 跨平台 binary + zpkg 自动产出 |
 | 跨平台 SDK package 分发 | 0.2.6 | 13 个 per-arch SDK 包（desktop × 5 / iOS × 3 / Android × 4 / wasm × 1）；统一 `bin/libs/native/manifest.toml` 形态（examples 已于 2026-06-20 移出发行包）；详见 [embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | 跨 mode 一致性 CI | 0.3.0 | interp / JIT 同测试集结果一致 |
-| `z42c test` GREEN 门禁 | 0.4.6 | stdlib + 用户代码 z42 测试纳入 GREEN |
-| `z42c bench --diff` | 0.4.7 | z42 代码 bench 进 perf CI |
-| `z42-doc` 自动发布 | 0.4.8 | 标准库 doc comment → 静态站点 |
+| `z42c test` GREEN 门禁 | 0.3.13 | stdlib + 用户代码 z42 测试纳入 GREEN（z42c test GA，Rust test-runner 退役）|
+| `z42c bench --diff` + e2e 硬门禁 | 0.4.x（B 流）| 独立 `z42.bench` 包 + `z42c bench` GA；z42 代码 bench 进 perf CI，>10% 退化真正 fail PR + 自动 diff 评论 |
+| `z42-doc` 自动发布 | 0.4.x（L 流 0.4.6）| 标准库 doc comment → 静态站点 |
 | LSP 集成测试 | 0.5.7 | LSP server 协议级 conformance test |
 | DAP debugger conformance | 0.8.7 | VS Code / JetBrains 调试 |
 | WASM target CI | 0.9.7 | VM 编译为 WASM + headless 浏览器跑 |
@@ -245,7 +258,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | `z42c` | 编译器驱动（build/check/run/test/bench/fmt/clean/disasm/explain/new/init/doc）| 当前 | 0.4.x |
 | `z42vm` | VM 运行时 | 当前 | 0.9.x |
 | `z42-fmt` | 代码格式化 | 当前 | 0.2.4 |
-| `z42-doc` | API 文档生成 | 0.4.8 | 0.4.8 |
+| `z42-doc` | API 文档生成 | 0.4.x（L 流 0.4.6）| 0.4.x |
 | `z42-lsp` | Language Server Protocol | 0.5.7 | 0.6.7 |
 | `z42-lint` | 静态检查 | 0.6.7 | 0.7.x |
 | `z42-dap` | Debug Adapter Protocol | 0.8.7 | 0.9.x |
@@ -262,9 +275,10 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.3.10 | z42c-selfhost byte-identical gate（7 子系统逐字节对账）+ compile-perf ≤3× C# |
 | 0.3.13 | `z42c test` GA（z42 原生测试运行器，Rust test-runner 退役）+ CI 三平台 GitHub Checks（WASM / iOS Simulator / Android Emulator）全绿 |
 | 0.3.14 | workload B2 `z42 workload install/list/remove` 端到端绿 |
-| 0.4.6 | `z42c test` 100% 通过（stdlib 全量 [Test] 用例由 z42 原生 runner 执行）|
-| 0.4.7 | `z42c bench --diff` 通过 |
-| 0.4.8 | `z42-doc` 无错 |
+| 0.4.x（B 流）| `z42c bench --diff` 通过 + e2e bench >10% 退化硬门禁 fail PR |
+| 0.4.x（S 流）| `params`/`init`/索引器/命名实参/`partial` golden 全绿 |
+| 0.4.x（G+L 流）| 泛型实例化 + 泛型反射三件套绿 + JSON `Deserialize<T>` serde 用例通过 |
+| 0.4.x（L 流）| `z42-doc` 无错 + CLI 校验/补全 [Test] 通过 |
 | 0.5.0 | 跨 zpkg 反射元数据一致性 |
 | 0.5.7 | LSP conformance |
 | 0.6.7 | `z42-lint` 零警告 |
