@@ -18,28 +18,26 @@ namespace Z42Xtask;
 using Std;
 using Std.IO;
 
+// replace-csharp Phase C：z42c 自建走 C#-free 种子路径（z42c builds z42c），不再 dotnet。
+// 种子 = 现有 canonical z42c dist（self-seed；clean/CI 由 bootstrap-no-csharp / 下载 nightly 提供）。
+// 缺种子 → 明确报错指引 bootstrap，不回落 C#（C# 已删）。
 int _buildCompilerZ42() {
     string root = _root();
-    string wsDir = Path.Join(root, "src/z42c");
-
-    Console.WriteLine("  building z42c self-host compiler workspace (release, 7 members)");
-    string[] compilerLeadArgs = new string[7];
-    compilerLeadArgs[0] = "run";
-    compilerLeadArgs[1] = "--project";
-    compilerLeadArgs[2] = Path.Join(root, _driverProj());
-    compilerLeadArgs[3] = "-c";
-    compilerLeadArgs[4] = "Release";
-    compilerLeadArgs[5] = "--no-build";
-    compilerLeadArgs[6] = "--";
-    string[] buildArgs = _concat3(compilerLeadArgs,
-        new string[]{"build", "--workspace"}, new string[]{"--release"});
-    ProcessResult br = new Process("dotnet")
-        .Args(buildArgs)
-        .WorkingDirectory(wsDir)
-        .Stdout(Stdio.Inherit())
-        .Stderr(Stdio.Inherit())
-        .Run();
-    return br.ExitCode;
+    string profile = "release";
+    string seedDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
+    if (!File.Exists(seedDriver) || File.GetSize(seedDriver) <= 0L) {
+        ConsoleError.WriteLine("error: no z42c seed at " + seedDriver);
+        ConsoleError.WriteLine("       seed z42c first: scripts/bootstrap-no-csharp.sh (or `z42 install` nightly)");
+        return 1;
+    }
+    int rc = _buildRuntime(); if (rc != 0) { return rc; }   // cargo release z42vm（C#-free）跑种子 driver
+    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string stdlibFlat = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
+    if (!File.Exists(Path.Join(stdlibFlat, "z42.core.zpkg"))) {
+        int sc = _buildStdlib(); if (sc != 0) { return sc; }   // C#-free（A1 warm 种子路径）
+    }
+    string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    return _buildCompilerZ42ViaZ42c(root, profile, members, vm, stdlibFlat);
 }
 
 // C#-free z42c self-build (replace-csharp S5 Phase A): rebuild the 7 z42c.* from

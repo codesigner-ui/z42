@@ -52,7 +52,8 @@ int _testCrossZpkg(ParseResult r) {
 }
 
 int _testCrossZpkgCore(string mode) {
-    int c = _buildCompiler(); if (c != 0) { return c; }
+    // replace-csharp Phase C：cross-zpkg 全程 C#-free。debug z42vm（cargo）跑 fixtures；
+    // z42c（C#-free 种子自建）编 fixtures。不再 _buildCompiler（C# 编译器已无用）。
     int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
         .Arg("--manifest-path").Arg(_runtimeManifest()));
     if (cr != 0) { return cr; }
@@ -60,10 +61,7 @@ int _testCrossZpkgCore(string mode) {
     if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
         int cs = _buildStdlib(); if (cs != 0) { return cs; }
     }
-    // replace-csharp Phase B：cross-zpkg gate 用 z42c 编译 fixtures（脱 dotnet）→
-    // 先确保 z42c.driver.zpkg + 兄弟已构建到 canonical dist（staged：仍由 C# 建 z42c，
-    // fixture 的编译改走 z42c；删 C# 在 Phase C）。
-    int cz = _buildCompilerZ42(); if (cz != 0) { return cz; }
+    int cz = _buildCompilerZ42(); if (cz != 0) { return cz; }   // C#-free z42c 自建（种子）
     return _testCrossZpkgImpl(mode);
 }
 
