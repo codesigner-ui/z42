@@ -6,7 +6,7 @@
 ## 进度概览
 - [x] S0 `build --workspace`（z42c-build-workspace ✅ 归档 2026-06-21；含 M2 per-member drop-in）
 - [~] S2 叶子编译点切 z42c：S2.1/S2.2 ✅；S2.3（cross-zpkg/test-unit 切换）**阻塞**于 z42c 缺 impl-block 特性（独立 workstream，非 leaf switch）
-- [~] S3 stdlib dogfood（z42c 接管生产 stdlib build）：可行性已验证（M2 + 272 pass）+ 顺带修 z42c TSIG 可选参数 bug；**生产接管阻塞**于 z42c 两个 parity gap（BLID sidecar + multicast aggregate 行为）→ dogfood-z42c-stdlib-build 🔴 blocked
+- [x] S3 stdlib dogfood（z42c 接管生产 stdlib build）：✅ **已落地 2026-06-22**（dogfood-z42c-stdlib-build 归档）。`_buildStdlibCore` 翻转 z42c 接管，full gate 全绿（z42c-built stdlib 272/272）。dogfood 暴露并修复 8 个 z42c/stdlib bug（各独立归档）
 - [ ] S1 z42c apphost（分发）
 - [ ] S4 自举闭环 + committed/下载种子
 - [ ] S5 删 C# + 迁新家
@@ -17,19 +17,21 @@
 - [x] S2.2 CI job `compiler-z42-stdlib (linux-x64)`（仿 stdlib-jit-consistency；不进 publish-nightly needs）
 - [~] S2.3 切 test-unit / cross-zpkg compile 到 z42c —— **阻塞**：cross-zpkg 用 `impl Trait for Type`（跨包 trait impl），z42c 尚未端口该特性 → 需先给 z42c 端口 impl-block（parse+bind+IMPL section），非 build-invocation 切换。独立 workstream，待 z42c 特性补齐后回来。
 
-## S3：stdlib dogfood 🔴 BLOCKED（dogfood-z42c-stdlib-build；reverted，未落地）
+## S3：stdlib dogfood ✅ 完成（dogfood-z42c-stdlib-build，归档 2026-06-22）
 - [x] S3.0 可行性验证：z42c M2 per-member 编全 22 库 + z42c-built stdlib 272/272（`test stdlib --no-build`）
 - [x] S3.0b 顺带修复 z42c TSIG 可选参数 bug（fix-z42c-tsig-optional-params）：12 delegate/event/weak golden 编译失败 → 修 `ExportedTypeExtractor._requiredCount` → 全绿
-- [~] S3.1 `_buildStdlibCore` 改 z42c 接管 —— 已实现并验证 build 成功，但 **reverted**（full gate 暴露阻塞）
-- [~] S3.2 GREEN gate —— **阻塞收窄到 1 项**（解了 4 个 z42c/stdlib bug）：
+- [x] S3.1 `_buildStdlibCore` 改 z42c 接管 —— ✅ 已落地（C# 种子 → build z42c → run-libs → z42c interp 重编 per-member → verify + flat view）
+- [x] S3.2 GREEN gate —— ✅ 全绿（dogfood 暴露并修复 8 个 z42c/stdlib bug）：
   - ✅ **TSIG 可选参数**：fix-z42c-tsig-optional-params（归档）
   - ✅ **multicast aggregate**：fix-z42c-generic-ctor-arity（归档，`new C<T>()` arity-overload）
   - ✅ **BLID sidecar**：port-z42c-strip-symbols（归档，z42c 产 `.zsym`+BLID；z42c.driver FULLY byte-identical 含 BLID）
   - ✅ **blake3 多块**：fix-blake3-multichunk-root-flag（归档，strip build_id 暴露 z42.crypto >1024B BLAKE3 错误）
   - ✅ **compression `[Native]` named-entry**：fix-z42c-native-named-entry（归档；18→8）
   - ✅ **cross-ns 静态调用**：fix-z42c-static-call-cross-ns（归档；Zip→Deflate；8→4）
-  - 🔴 **剩 2 个 z42c codegen bug（4 test）**：① blake3 多块 z42c codegen（1×）② 静态字段 mutation 不持久（diagnostics，3×）。其余全绿（C# 1571/vm 334/cross-zpkg 2/~268-272 stdlib）。见 self-hosting-future-s3-remaining-codegen-bugs
-- **前置**：2 bug 全解后翻转 `_buildStdlibCore` + 重跑 full gate → S3 完成
+  - ✅ **静态字段 mutation 不持久**：fix-z42c-static-field-assign（归档；`_emitAssign` 加 StaticSetInstr 分支）
+  - ✅ **ctor `: this(...)` 委托**：fix-z42c-ctor-this-delegation（归档；MethodDecl 加 IsThisInit + TypeChecker 按位选 TargetCls）
+  - ⓘ **「blake3 多块 codegen」实为回归测试 golden 误写**——已改正，无 codegen bug
+- [x] S3 完成：full gate 全绿（C# 1571/vm 169+165/cross-zpkg 2/stdlib 272 z42c-built/compiler-z42 7/7+17 units+e2e）
 
 ## S1：z42c apphost（分发）
 - [ ] S1.1 `_produceApphost` 复用 → 产 `z42c` 原生（payload=z42c.driver.zpkg + colocated z42c.* deps）

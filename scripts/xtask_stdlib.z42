@@ -2,31 +2,39 @@
 // the former standalone scripts/build-stdlib.z42 so the LAST command that still
 // shelled out to a separate .z42 via `dotnet -- run` now runs in-process.
 //
-// Compiles the z42 stdlib workspace (z42c build --workspace, release) + verifies
-// each zpkg + assembles the flat dist view (hard-link). No namespace index is
-// written — the VM + embedding hosts read each zpkg's NSPC section.
+// Compiles the z42 stdlib workspace and assembles the flat dist view. As of
+// replace-csharp-compiler S3 (dogfood-z42c-stdlib-build, 2026-06-22) the
+// PRODUCTION stdlib is built by z42c (the self-hosting z42 compiler), NOT C#:
+//
+//   1. C# seed  — `dotnet -- build --workspace --release` builds stdlib once so
+//      z42c.driver (a z42 program that `using Std.*`) has a runtime to load.
+//      bootstrap-safe: C# stays the seed all the way to S5 (it is never deleted
+//      before an S4 self-hosting seed exists).
+//   2. build z42c — C# driver compiles the 7 z42c.* packages (finds the C# seed).
+//   3. run-libs   — assemble {C#-seed stdlib + z42c 7 pkgs} (copy) so z42c.driver
+//      can run on z42vm.
+//   4. z42c rebuild — z42vm runs z42c.driver `build --workspace --release` (M2
+//      per-member drop-in, NO --output-dir) over src/libraries; the per-member
+//      dist dirs are OVERWRITTEN with z42c-built zpkg + .zsym (strip-symbols).
+//   5. verify + flat view (hard-link) over the z42c-built products.
 //
 // Cold-bootstrap note: this runs INSIDE xtask.zpkg, so xtask (and the stdlib it
 // depends on) must already exist. The CI/local cold bootstrap therefore keeps a
 // raw `dotnet -- build --workspace` primer (the C# compiler building stdlib with
 // NO z42 program) BEFORE compiling xtask; _buildStdlibCore then re-runs the
-// workspace build (cached) + assembles the flat view afterward (no namespace index).
-// `build --workspace` itself compiles stdlib from source, so this is self-
-// sufficient — no separate primer is needed once xtask is running.
+// build (z42c-takeover) + assembles the flat view afterward (no namespace index).
 namespace Z42Xtask;
 
 using Std;
 using Std.IO;
 
-int _buildStdlibCore() {
+// Step 1 of _buildStdlibCore, factored out so _testCompilerZ42Stdlib can request
+// JUST the C# seed (without triggering the full z42c takeover recursively).
+// Builds the stdlib workspace per-member via the C# driver (bootstrap seed).
+int _csharpBuildStdlibSeed() {
     string root = _root();
-    string profile = "release";
     string wsDir = Path.Join(root, "src/libraries");
-    string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
-    string flatDir = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
-
-    // ── Workspace build (z42c via dotnet run, --no-build) ────────────────
-    Console.WriteLine("  building stdlib workspace (" + profile + ", all members)");
+    Console.WriteLine("  building stdlib workspace seed (C#, release, all members)");
     string[] compilerLeadArgs = new string[7];
     compilerLeadArgs[0] = "run";
     compilerLeadArgs[1] = "--project";
@@ -42,9 +50,52 @@ int _buildStdlibCore() {
         .Stdout(Stdio.Inherit())
         .Stderr(Stdio.Inherit())
         .Run();
-    if (br.ExitCode != 0) { return br.ExitCode; }
+    return br.ExitCode;
+}
 
-    // ── Verify zpkg products ─────────────────────────────────────────────
+int _buildStdlibCore() {
+    string root = _root();
+    string profile = "release";
+    string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
+    string flatDir = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
+
+    // ── 1. C# seed stdlib (per-member) — z42c.driver's runtime dependency ──
+    int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }
+
+    // ── 2. build z42c (C# driver compiles the 7 z42c.* packages) ──────────
+    int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }   // z42vm + driver
+    int bc0 = _buildCompilerZ42(); if (bc0 != 0) { return bc0; }
+
+    // ── 3. run-libs = {C#-seed stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──
+    string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string runDir = Path.Join(root, "artifacts/build/z42c/dogfood/run-" + profile);
+    _resetDir(runDir);
+    _copyAll(flatDir, runDir, "*.zpkg");
+    int mi = 0;
+    while (mi < members.Length) {
+        _copyAll(Path.Join(root, "artifacts/build/z42c/" + members[mi] + "/" + profile + "/dist"), runDir, "*.zpkg");
+        mi = mi + 1;
+    }
+    string z42cDriver = Path.Join(runDir, "z42c.driver.zpkg");
+    if (!File.Exists(z42cDriver) || File.GetSize(z42cDriver) <= 0L) {
+        ConsoleError.WriteLine("  ✗ z42c.driver.zpkg invalid in " + runDir);
+        return 1;
+    }
+
+    // ── 4. z42c rebuild stdlib per-member (M2 drop-in; overwrites C# seed) ──
+    //    CWD=src/libraries → workspace discovery + per-member output_dir template;
+    //    --mode interp (jit has cross-zpkg undefined-fn on compiler workloads);
+    //    Z42_LIBS=runDir for z42c.driver's own runtime imports.
+    Console.WriteLine("  z42c build --workspace (CWD=src/libraries, interp) → per-member dist");
+    int bc = new Process(vm).Arg(z42cDriver).Arg("--mode").Arg("interp").Arg("--")
+        .Arg("build").Arg("--workspace").Arg("--release")
+        .WorkingDirectory(Path.Join(root, "src/libraries"))
+        .Env("Z42_LIBS", runDir)
+        .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (bc != 0) { ConsoleError.WriteLine("  ✗ z42c build --workspace stdlib failed (" + bc.ToString() + ")"); return 1; }
+
+    // ── 5. Verify zpkg products (z42c-built) ─────────────────────────────
     string[] libs = _stdlibList(root);
     int ok = 0;
     int fail = 0;

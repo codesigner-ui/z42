@@ -131,7 +131,9 @@ int _testCompilerZ42Stdlib() {
     Console.WriteLine("══ replace-csharp-compiler S2.1: z42c dogfood-builds stdlib ══");
     // 自足：C# 建 fresh stdlib（种子；z42c 运行期依赖它，陈旧产物会缺新 extern
     // 如 GetCommandLineArgs）+ tooling + z42c。bootstrap-safe：C# 全程是种子。
-    int sc = _buildStdlibCore(); if (sc != 0) { return sc; }
+    // 用 _csharpBuildStdlibSeed（非 _buildStdlibCore）：后者 S3 起做 z42c 全接管，
+    // 这里只要 C# 种子（本函数下面自己再用 z42c 编 stdlib 到独立 dogfood 目录）。
+    int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }
     int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }
     int bc0 = _buildCompilerZ42(); if (bc0 != 0) { return bc0; }
 
