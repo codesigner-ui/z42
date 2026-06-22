@@ -1,0 +1,62 @@
+namespace Z42.Build;
+
+using Z42.Project;
+using Std.Collections;
+
+// IPipelineContext 的 SDK 具体实现 —— 相位与外界交互的落地（受限 fs / exec / 平台原语 /
+// 产物登记）。⚠️ PARKED / 接口先行：成员为骨架桩，具体逻辑留待实现期。
+//
+// 归属（2026-06-23 决策）：**暂放本库（z42.build）** —— 使编排器 z42b / 生成的 driver
+//   可 import 本类构造 ctx。代价：实现 ICompiler 的编译器库会传递依赖到本 impl —— 可接受
+//   的 interim，由下「计划重构」消解。
+//
+// 计划重构（后面）：把编译相关接口（`ICompiler` 及配套记录）**独立到一个中立微库**，
+//   z42c 与 z42b 都只依赖该微库；编译器核心不再依赖整个 build 框架。面向接口设计 → 届时
+//   「改成直接调 z42c」只需换 `ICompiler` 实现，调用方（Pipeline.Compile）一行不动。
+//
+// 能力边界（同 IPipelineContext 契约）：写仅落 Dirs.Intermediate / Dist；Dirs.Source 只读；
+//   Sign / Archive / Hash / Download / ProbeVersion 实现期经 extern 接 toolchain 侧 native builtin。
+public class PipelineContext : IPipelineContext {
+
+    // —— 只读数据（编排器构造时注入）——
+    public ProjectInfo     Project     { get; set; }
+    public ProjectManifest Manifest    { get; set; }
+    public Target          Target      { get; set; }
+    public Dirs            Dirs        { get; set; }
+    public Inputs          Inputs      { get; set; }
+    public string          WorkloadDir { get; set; }
+
+    // —— 日志 ——
+    public void Log(string msg)  { }   // 实现期：→ Console / 结构化日志
+    public void Warn(string msg) { }
+
+    // —— 能力受限 fs（实现期接 Std.IO；写操作校验落在 Intermediate / Dist 之下）——
+    public bool   Exists(string path)               { return false; }
+    public string ReadText(string path)             { return ""; }
+    public void   WriteText(string path, string content) { }
+    public void   Copy(string from, string to)      { }
+    public void   CopyTree(string from, string to)  { }
+    public void   Mkdir(string path)                { }
+    public string Hash(string path)                 { return ""; }   // 实现期：extern blake3
+
+    // —— 子进程（永久脏）——
+    public ExecResult Exec(string cmd, string[] args) { return new ExecResult(0, "", ""); }
+
+    // —— 产物登记 ——
+    public void         AddOutput(string kind, string path) { }
+    public List<Output> Outputs()                           { return new List<Output>(); }
+
+    // —— 平台编写原语（实现期：模板渲染 / plist / entitlements / 归档 / 签名）——
+    public string Template(string name)                                 { return ""; }
+    public void   RenderTemplate(string tmpl, string dest, string[] keys, string[] values) { }
+    public void   WritePlist(string dest, string[] keys, string[] values) { }
+    public void   WriteEntitlements(string dest, string[] capabilities)   { }
+    public void   Archive(string srcDir, string dest, string format)      { }   // extern
+    public void   Sign(string artifact, string identity)                  { }   // extern
+
+    // —— preflight 原语 ——
+    public void   RequireTool(string name, string range) { }
+    public void   EnsureRuntimePack(string rid)          { }
+    public string ProbeVersion(string probeCmd)          { return ""; }   // extern
+    public void   Download(string url, string sha256, string dest) { }    // extern
+}

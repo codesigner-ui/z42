@@ -16,26 +16,36 @@ src/toolchain/builder/core/*.z42  →  z42b.zpkg  →  apphost z42b
 ```
 
 **不做**：
-- **编译本身** —— 调 `z42c` 完成（Compile 相位里调用编译器，本模块只编排）。
+- **编译本身** —— 经 `z42.build` 的 `ICompiler` 接口**在进程内**调编译器库（z42c）。
+  与独立 `z42c.driver` CLI **引用同一份实现，不 fork z42c 子进程**；本模块只编排 + 注入。
 - **平台专属实现** —— 住各 workload 的 `*.workload.zpkg`（`: WorkloadBase` 子类）。
 - **管线接口/相位流程定义** —— 住 [`src/libraries/z42.build/`](../../libraries/z42.build/)
-  （`Pipeline` / `IPipelineContext` / `WorkloadBase` / `BuildHooks`）。本模块是**驱动方**。
+  （`Pipeline` / `IPipelineContext` / `ICompiler` / `WorkloadBase` / `BuildHooks`）。本模块是**驱动方**。
 
 > **取代原 `packager/` 占位**：旧 packager 设想的「把 z42 程序 + 运行时打成可分发件」
 > 只是本管线尾部 `Assets` / `Package` 两个相位的一部分；构建编排是其超集，故 packager
 > 占位并入本目录，不再单列。
 
-## 计划模块（`core/`，尚未实现）
+## 核心文件（`core/`，PARKED 骨架）
+
+| 文件 | 职责 |
+|------|------|
+| `core/builder.z42` | z42b 命令入口 + 编排骨架：解析动词/toml/--rid → 构造 `Pipeline`（注入 `ICompiler` + workload + hooks）→ 跑。展示**标准路径**（进程内组合，零子进程/零代码生成）与**自定义路径**（项目带 `build/` → 生成一次性 driver）两条骨架 |
+
+## 计划模块（实现期补全）
 
 | 模块 | 职责 |
 |------|------|
-| 命令入口 | 解析 launcher 透传的 `build`/`publish`/`export`/`run --rid`/`test` 参数 |
-| driver 装配 | 从 `z42.build` + 选中 workload + 项目 `build/` 自定义脚本组装可跑的管线 driver |
-| `IPipelineContext` 注入 | 提供 SDK 侧的上下文实现（受限 fs / exec / 产物登记 / 平台原语）|
+| driver 装配 | 项目带自定义 `build/` 时，组装一次性 driver 源码（链 `z42.build` + workload + 项目 `build/`），用**同一 `ICompiler`** 编译后运行 |
+| 共享编译实现适配 | `_hostCompiler()` 返回编译器库（z42c）的 `ICompiler` 实现 —— 与 `z42c.driver` 同一份 |
 
-> **`IPipelineContext` 具体实现的最终归属待定**：取决于 driver 装配方式
-> （生成源码+z42c 静态编译 → impl 须为可 import 的库，宜住 `src/libraries/`；
-> 固定通用 driver → impl 可住本目录）。落地 spec 时钉死。
+> **`IPipelineContext` 实现归属（2026-06-23 决策）**：暂置 `z42.build` 库
+> （[`PipelineContext.z42`](../../libraries/z42.build/src/PipelineContext.z42)），编排器 import 它构造 ctx。
+> in-process 编译让**标准路径无需生成 driver**（直接进程内组合 Pipeline 跑），仅项目带自定义
+> `build/` 的自定义路径才落 driver 生成。
+>
+> **计划重构**：`ICompiler` 等编译接口后续抽到中立微库，z42c 与 z42b 同依赖该微库——面向接口，
+> 「改成直接调 z42c」只换实现不动调用方。落地写 `build-orchestrator.md` 时入 Deferred。
 
 ## 依赖关系
 

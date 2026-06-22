@@ -1,0 +1,44 @@
+namespace Z42.Build;
+
+// 编译步骤的抽象接口 —— Compile 头相位经此调编译器库，**在进程内**，不 fork `z42c` 子进程。
+//
+// 设计动机（in-process 共享实现）：
+//   `z42b`（构建编排器）与独立 `z42c.driver` CLI **引用同一份编译实现**——编译器库（z42c）
+//   的编译入口 `: ICompiler`，两者都经本接口调用。好处：类型化、零进程开销、不依赖
+//   z42vm 在 PATH（规避 standalone-vm-path 类坑），编译诊断直接以结构返回而非解析 stdout。
+//
+// 依赖方向（DIP，依赖倒置）：
+//   z42.build **只定义接口**；编译器库（z42c）**实现**它 → z42c 依赖 z42.build（仅接口）。
+//   无环：z42.build → (z42.project, Std)；z42c → z42.build；z42b → z42.build + z42c 实现。
+//
+// ⚠️ Parked / 接口先行：本文件只定接口与请求/结果记录，无实现（NoCompiler 仅兜底空实现）。
+
+/// 一次编译请求：源码 → app.zpkg（平台无关字节码）。纯数据载体。
+public record CompileRequest(
+    string   SourceDir,       // 工程源根（只读）
+    string   OutputZpkg,      // 产物 .zpkg 落点（Dirs.Intermediate 下）
+    string[] Deps,            // 依赖 .zpkg 路径
+    string   Profile,         // debug / release
+    bool     StripSymbols,    // 发行剥符号 → 旁挂 .zsym sidecar
+    bool     Incremental);    // 增量编译（可缓存）
+
+/// 编译结果。Zsym 为 "" 表示无 split-debug sidecar；Ok=false 时 Diagnostics 含错误文本。
+public record CompileResult(
+    string Zpkg,
+    string Zsym,
+    bool   Ok,
+    string Diagnostics);
+
+/// 编译器抽象。实现住编译器库（z42c）；z42.build 只持接口。
+/// `z42b` 与 `z42c.driver` 经本接口引用同一实现。
+public interface ICompiler {
+    CompileResult Compile(CompileRequest req);
+}
+
+/// 默认空实现：未注入真实编译器时的兜底（L1「空值 + 调用方检查」idiom）。
+/// driver / 编排器注入 z42c 实现后替换。
+public class NoCompiler : ICompiler {
+    public CompileResult Compile(CompileRequest req) {
+        return new CompileResult("", "", false, "no compiler injected");
+    }
+}
