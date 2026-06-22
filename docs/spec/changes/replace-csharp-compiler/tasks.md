@@ -8,7 +8,7 @@
 - [~] S2 叶子编译点切 z42c：S2.1/S2.2 ✅；S2.3（cross-zpkg/test-unit 切换）**阻塞**于 z42c 缺 impl-block 特性（独立 workstream，非 leaf switch）
 - [x] S3 stdlib dogfood（z42c 接管生产 stdlib build）：✅ **已落地 2026-06-22**（dogfood-z42c-stdlib-build 归档）。`_buildStdlibCore` 翻转 z42c 接管，full gate 全绿（z42c-built stdlib 272/272）。dogfood 暴露并修复 8 个 z42c/stdlib bug（各独立归档）
 - [ ] S1 z42c apphost（分发）
-- [~] S4 自举闭环 + 下载种子（bootstrap-z42c-from-nightly 🟡）：✅ C#-free 闭环验证（`scripts/bootstrap-no-csharp.sh`：z42vm only 重建 stdlib+z42c+xtask，不动点 7/7 逐字节一致）+ ✅ runtime package 携 z42c/ 种子（本地 package 验证）+ ✅ CI job `bootstrap-no-csharp`（gh download nightly runtime → seed → 脚本，无 dotnet）。剩：滚动 publish-nightly 产含 z42c/ 的 nightly → CI job 自愈转绿。flip 脱 C# 移交 S5
+- [x] S4 自举闭环 + 下载种子（bootstrap-z42c-from-nightly ✅ 归档 2026-06-22）：脱 C# 重建 z42c 闭环成立。`scripts/bootstrap-no-csharp.sh`（z42vm only 重建 stdlib+z42c+xtask，不动点 7/7 逐字节一致）+ runtime package 携 z42c/ 种子 + CI job `bootstrap-no-csharp (linux-x64)` **端到端绿**（下载携种子 nightly → dotnet PATH-stub 屏蔽 → C#-free 重建 + 不动点）。滚动自愈走通。flip `_buildStdlibCore` 脱 C# 移交 S5
 - [ ] S5 删 C# + 迁新家
 
 ## S2（当前）：z42c 进 CI 验证门 + 叶子切换
