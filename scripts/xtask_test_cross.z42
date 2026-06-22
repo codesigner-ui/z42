@@ -28,8 +28,17 @@ int _testCrossZpkgImpl(string mode) {
     string root = _root();
 
     string testsDir = Path.Join(root, "src/tests/cross-zpkg");
-    string driverDll = _driverDll(root);
     string stdlibDist = _libsDir(root);
+    // replace-csharp Phase B：cross-zpkg gate 改用 z42c（z42vm + z42c.driver.zpkg），
+    // 不再依赖 dotnet。driverHome = 含 z42c.driver.zpkg + 7 个 z42c.* 兄弟的目录
+    // （z42vm 从 entry zpkg 所在目录解析其依赖；compilation 的 fixture deps + stdlib 走 Z42_LIBS）。
+    string driverHome = _assembleZ42cDriverHome(root);
+    if (driverHome.Length == 0) {
+        ConsoleError.WriteLine("error: z42c driver not built (artifacts/build/z42c/z42c.*/release/dist)");
+        ConsoleError.WriteLine("       Build it via: ./xtask test compiler-z42  (or build stdlib)");
+        return 1;
+    }
+    string driverZpkg = Path.Join(driverHome, "z42c.driver.zpkg");
     // Resolve z42vm via absolute path (same pattern as xtask_test_vm.z42:41).
     // _z42vm() returns the bare name "z42vm" which is not guaranteed to be in PATH;
     // the cross-zpkg runner builds the DEBUG runtime in _testCrossZpkgCore, so use
@@ -38,12 +47,6 @@ int _testCrossZpkgImpl(string mode) {
     if (!File.Exists(vmBin)) {
         ConsoleError.WriteLine("error: z42vm not found at " + vmBin);
         ConsoleError.WriteLine("       Build it via: cargo build --manifest-path src/runtime/Cargo.toml");
-        return 1;
-    }
-
-    if (!File.Exists(driverDll)) {
-        ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);
-        ConsoleError.WriteLine("       Build it via: dotnet build src/compiler/z42.slnx");
         return 1;
     }
 
@@ -72,7 +75,7 @@ int _testCrossZpkgImpl(string mode) {
         string mainDir   = Path.Join(dir, "main");
 
         // Stage 1: target (no deps).
-        if (!_buildPkg(driverDll, targetDir, "")) {
+        if (!_buildPkgZ42c(vmBin, driverZpkg, stdlibDist, targetDir, "")) {
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (target build)");
             failCount = failCount + 1;
@@ -81,7 +84,7 @@ int _testCrossZpkgImpl(string mode) {
         }
 
         // Stage 2: ext (deps on target/dist).
-        if (!_buildPkg(driverDll, extDir, Path.Join(Path.Join(Path.Join(targetDir, "artifacts"), "debug"), "dist"))) {
+        if (!_buildPkgZ42c(vmBin, driverZpkg, stdlibDist, extDir, Path.Join(Path.Join(Path.Join(targetDir, "artifacts"), "debug"), "dist"))) {
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (ext build)");
             failCount = failCount + 1;
@@ -97,7 +100,7 @@ int _testCrossZpkgImpl(string mode) {
         _copyZpkgs(Path.Join(Path.Join(Path.Join(targetDir, "artifacts"), "debug"), "dist"), mainLibs);
         _copyZpkgs(Path.Join(Path.Join(Path.Join(extDir,    "artifacts"), "debug"), "dist"), mainLibs);
         string mainToml = _findToml(mainDir);
-        if (mainToml.Length == 0 || !_invokeBuild(driverDll, mainToml)) {
+        if (mainToml.Length == 0 || !_invokeBuildZ42c(vmBin, driverZpkg, stdlibDist, mainDir, mainToml)) {
             Console.WriteLine("    main build failed");
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (main build)");
@@ -218,6 +221,73 @@ bool _invokeBuild(string driverDll, string toml) {
     } catch (Exception e) {
         return false;
     }
+}
+
+// ── z42c build path (replace-csharp Phase B：cross-zpkg gate 脱 dotnet) ──────
+
+// 组装 z42c driver-home：含 z42c.driver.zpkg + 7 个 z42c.* 兄弟（从 per-member dist）。
+// z42vm 从 entry zpkg 所在目录解析其依赖，故 driver 的 z42c.* 依赖放这里，与
+// compilation 的 Z42_LIBS（stdlib + fixture deps）隔离，避免单-libs 目录污染。
+// 返回 driver-home 目录路径；z42c 未构建（缺任一成员 dist）返回 ""。
+string _assembleZ42cDriverHome(string root) {
+    string baseDir = Path.Join(root, "artifacts/build/z42c");
+    string[] members = new string[7];
+    members[0] = "z42c.core"; members[1] = "z42c.ir"; members[2] = "z42c.project";
+    members[3] = "z42c.syntax"; members[4] = "z42c.semantics"; members[5] = "z42c.pipeline";
+    members[6] = "z42c.driver";
+    string home = File.CreateTempDir("z42-xpkg-driver-");
+    int i = 0;
+    while (i < members.Length) {
+        string m = members[i];
+        string src = Path.Join(Path.Join(Path.Join(Path.Join(baseDir, m), "release"), "dist"), m + ".zpkg");
+        if (!File.Exists(src)) { return ""; }
+        try { File.Copy(src, Path.Join(home, m + ".zpkg")); } catch (Exception e) { return ""; }
+        i = i + 1;
+    }
+    return home;
+}
+
+// 用 z42c 编译一个 package（z42vm 跑 z42c.driver.zpkg）。先把上一阶段产物 copy 进
+// <pkgDir>/libs，再 build → <pkgDir>/artifacts/debug/dist（与 C# 路径一致 → 下游
+// run/diff 不变）。
+bool _buildPkgZ42c(string vmBin, string driverZpkg, string stdlibDist, string pkgDir, string srcLibsDir) {
+    string pkgLibs = Path.Join(pkgDir, "libs");
+    if (Directory.Exists(pkgLibs)) { Directory.Delete(pkgLibs, true); }
+    Directory.Create(pkgLibs);
+    if (srcLibsDir.Length > 0) { _copyZpkgs(srcLibsDir, pkgLibs); }
+    string toml = _findToml(pkgDir);
+    if (toml.Length == 0) {
+        Console.WriteLine("    error: no toml in " + pkgDir);
+        return false;
+    }
+    return _invokeBuildZ42c(vmBin, driverZpkg, stdlibDist, pkgDir, toml);
+}
+
+// 单次 z42c build。outDir = <pkgDir>/artifacts/debug/dist。Z42_LIBS = temp(stdlib +
+// pkgDir/libs)；z42c.* 由 driver-home 解析。WorkingDirectory=pkgDir（镜像手验）。
+bool _invokeBuildZ42c(string vmBin, string driverZpkg, string stdlibDist, string pkgDir, string toml) {
+    string outDir = Path.Join(Path.Join(Path.Join(pkgDir, "artifacts"), "debug"), "dist");
+    Directory.Create(outDir);
+    string libs = File.CreateTempDir("z42-xpkg-libs-");
+    _copyStdlibZpkgs(stdlibDist, libs);
+    _copyZpkgs(Path.Join(pkgDir, "libs"), libs);
+    bool ok = false;
+    try {
+        ProcessResult br = new Process(vmBin)
+            .Arg(driverZpkg).Arg("--mode").Arg("interp")
+            .Arg("--").Arg("build").Arg(toml)
+            .Arg("--output-dir").Arg(outDir).Arg("--release")
+            .WorkingDirectory(pkgDir)
+            .Env("Z42_LIBS", libs)
+            .Stdout(Stdio.Null())
+            .Stderr(Stdio.Null())
+            .Run();
+        ok = br.ExitCode == 0;
+    } catch (Exception e) {
+        ok = false;
+    }
+    Directory.Delete(libs, true);
+    return ok;
 }
 
 // ── Path / file helpers (cross-specific) ─────────────────────────────────

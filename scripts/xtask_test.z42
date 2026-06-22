@@ -60,6 +60,10 @@ int _testCrossZpkgCore(string mode) {
     if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
         int cs = _buildStdlib(); if (cs != 0) { return cs; }
     }
+    // replace-csharp Phase B：cross-zpkg gate 用 z42c 编译 fixtures（脱 dotnet）→
+    // 先确保 z42c.driver.zpkg + 兄弟已构建到 canonical dist（staged：仍由 C# 建 z42c，
+    // fixture 的编译改走 z42c；删 C# 在 Phase C）。
+    int cz = _buildCompilerZ42(); if (cz != 0) { return cz; }
     return _testCrossZpkgImpl(mode);
 }
 
