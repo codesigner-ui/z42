@@ -34,10 +34,48 @@ public sealed class TypeChecker {
             } else if (d is MethodDecl) {
                 MethodDecl m = d as MethodDecl;
                 this._bindFreeFunc(model, symbols, m);
+            } else if (d is ImplDecl) {
+                this._bindImpl(model, symbols, d as ImplDecl);   // port-z42c-impl-block 2b
             }
             i = i + 1;
         }
         return model;
+    }
+
+    // impl-block 方法体绑定（port-z42c-impl-block 2b，镜像 _bindClass 的 MethodDecl 分支）：
+    // 方法 this=target、target 字段入 scope；body 键 `<target>.<mkey>`（IrGen 2c 同键发函数）。
+    private void _bindImpl(SemanticModel model, SymbolTable symbols, ImplDecl im) {
+        string targetName = "";
+        if (im.TargetType is NamedType) { targetName = (im.TargetType as NamedType).Name; }
+        if (targetName == "" || !symbols.HasClass(targetName)) { return; }
+        Z42ClassType ct = symbols.GetClass(targetName);
+        int j = 0;
+        while (j < im.MethodCount) {
+            if (im.Methods[j] is MethodDecl) {
+                MethodDecl md = im.Methods[j] as MethodDecl;
+                if (md.HasBody) {
+                    string mkey = md.Name + "$" + md.ParamCount.ToString();
+                    if (!ct.Methods.ContainsKey(mkey)) { mkey = md.Name; }
+                    MethodSymbol ms = ct.Methods.Get(mkey) as MethodSymbol;
+                    int mtpc = md.TypeParams.Count;
+                    string[] allParams = this._mergeParams(new string[0], 0, md.TypeParams.Names, mtpc);
+                    var env = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), allParams, mtpc);
+                    if (ms != null && !ms.IsStatic) {
+                        env.Define("this", ct);
+                        string[] fnames = ct.Fields.Keys();
+                        int k = 0;
+                        while (k < fnames.Length) {
+                            FieldSymbol fs = ct.Fields.Get(fnames[k]) as FieldSymbol;
+                            env.Define(fnames[k], fs.FieldType);
+                            k = k + 1;
+                        }
+                    }
+                    BoundStmt body = this._bindMethodBody(symbols, env, md);
+                    model.AddBody(targetName + "." + mkey, body);
+                }
+            }
+            j = j + 1;
+        }
     }
 
     private Decl _unwrap(Decl d) {

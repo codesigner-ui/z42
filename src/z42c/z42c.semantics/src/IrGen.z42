@@ -230,6 +230,34 @@ public sealed class IrGen {
                         j = j + 1;
                     }
                 }
+            } else if (d is ImplDecl) {
+                // port-z42c-impl-block 2c：发 impl 方法为 `<qualTarget>.<m>` 函数。
+                // _qClass(target)：imported target 解析到其声明 ns（跨包），本地回落当前 ns。
+                ImplDecl im = d as ImplDecl;
+                string itn = "";
+                if (im.TargetType is NamedType) { itn = (im.TargetType as NamedType).Name; }
+                if (itn != "" && model.Symbols.HasClass(itn)) {
+                    Z42ClassType iowner = model.Symbols.GetClass(itn) as Z42ClassType;
+                    int ij = 0;
+                    while (ij < im.MethodCount) {
+                        if (im.Methods[ij] is MethodDecl) {
+                            MethodDecl imd = im.Methods[ij] as MethodDecl;
+                            if (imd.HasBody) {
+                                string imk = imd.Name + "$" + imd.ParamCount.ToString();
+                                if (iowner == null || !iowner.Methods.ContainsKey(imk)) { imk = imd.Name; }
+                                string ikey = itn + "." + imk;
+                                if (model.HasBody(ikey)) {
+                                    bool ist = this._hasWord(imd.Mods, "static");
+                                    var ife = new FunctionEmitter(model.Symbols, this);
+                                    IrFunction iirf = ife.EmitFunction(this._qClass(itn) + "." + imk, imd,
+                                                                       model.GetBody(ikey), !ist, ist, iowner, new string[0], 0);
+                                    funcs = this._pushFunc(funcs, fc, iirf); fc = fc + 1;
+                                }
+                            }
+                        }
+                        ij = ij + 1;
+                    }
+                }
             }
             i = i + 1;
         }

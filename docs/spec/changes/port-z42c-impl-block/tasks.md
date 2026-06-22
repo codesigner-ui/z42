@@ -9,7 +9,7 @@
 
 ## 进度概览
 - [x] 1. Parser：`impl <Trait> for <Target> { methods }` → ImplDecl AST
-- [~] 2. Binder：2a SymbolCollector 合并 ✅（trait→target.InterfaceNames + methods→target.Methods）；2b TypeChecker 绑方法体 + 2c IrGen 发 `<Target>.<m>` 函数 待做
+- [~] 2. Binder ✅ in-package：2a 合并 + 2b TypeChecker 绑体 + 2c IrGen 发 `<qualTarget>.<m>`（_qClass 跨包 ns 解析）。单包 impl 端到端跑通（oracle exit 0）。剩 3 IMPL section（跨包）
 - [ ] 3. IMPL section 发射（z42c.ir，镜像 C# 格式）+ 方法体进 MODS（func 名 `<Target>.<m>`）
 - [ ] 4. byte-identical：z42c-built impl_propagation == C#-built（逐字节，ignore BLID）
 - [ ] 5. extern-in-impl 校验（C# 禁止）+ 文档 + 归档
