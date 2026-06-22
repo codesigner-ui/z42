@@ -153,9 +153,13 @@ public static class Blake3 {
     /// position counter (0 for first chunk).
     static int[] _chunkCV(byte[] data, int offset, int length, long chunkIndex) {
         int[] state = Blake3._chunkToOutputState(data, offset, length, chunkIndex, false);
+        // CV = 压缩输出前 8 word **直接取**——`_compress` 已做 feed-forward
+        // （state[i] ^= state[i+8]），CV 即 output[0..7]。再 XOR state[i]^state[i+8] = 二次
+        // feed-forward（fix-blake3-multichunk-root-flag, 2026-06-22：原 XOR 破坏所有 multi-chunk
+        // CV；单 chunk 不经此路径故小向量测不到）。
         int[] cv = new int[8];
         int i = 0;
-        while (i < 8) { cv[i] = state[i] ^ state[i + 8]; i = i + 1; }
+        while (i < 8) { cv[i] = state[i]; i = i + 1; }
         return cv;
     }
 
@@ -212,13 +216,27 @@ public static class Blake3 {
         return outputState;
     }
 
-    /// Parent compression. `left` and `right` are 8-word CVs at the given
-    /// offsets in their respective arrays. Returns parent CV.
+    /// Intermediate parent compression → 8-word CV. `left`/`right` are 8-word
+    /// CVs at the given offsets. Flags = PARENT **without ROOT** — only the
+    /// topmost parent (`_parentOutputState`, root) carries ROOT. (fix-blake3-
+    /// multichunk-root-flag, 2026-06-22: previously delegated to
+    /// `_parentOutputState`, which sets PARENT|ROOT, so every intermediate
+    /// parent in a ≥3-chunk tree was wrongly flagged ROOT → non-standard hash
+    /// for inputs >2048 bytes. Small (≤1-chunk) vectors never exercised this.)
     static int[] _parentCV(int[] leftArr, int leftOff, int[] rightArr, int rightOff) {
-        int[] outputState = Blake3._parentOutputState(leftArr, leftOff, rightArr, rightOff);
-        int[] cv = new int[8];
+        byte[] block = new byte[Blake3.BLOCK_SIZE];
         int i = 0;
-        while (i < 8) { cv[i] = outputState[i] ^ outputState[i + 8]; i = i + 1; }
+        while (i < 8) {
+            Blake3._writeLE32(block, i * 4, leftArr[leftOff + i]);
+            Blake3._writeLE32(block, 32 + i * 4, rightArr[rightOff + i]);
+            i = i + 1;
+        }
+        int[] cv0 = Blake3._iv();
+        int[] state = Blake3._compress(cv0, block, 0L, Blake3.BLOCK_SIZE, Blake3.FLAG_PARENT);
+        // CV = output[0..7] 直接取（_compress 已 feed-forward；见 _chunkCV 注释）。
+        int[] cv = new int[8];
+        int k = 0;
+        while (k < 8) { cv[k] = state[k]; k = k + 1; }
         return cv;
     }
 
