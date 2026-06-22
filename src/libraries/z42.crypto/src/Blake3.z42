@@ -124,26 +124,34 @@ public static class Blake3 {
             while (i < 8) { state[i] = cvList[i]; i = i + 1; }
             return state;
         }
-        // Iterative bottom-up Merkle. At each level we pair adjacent CVs
-        // into a parent CV. If the level has an odd count, the last CV
-        // promotes to the next level unchanged (left-merge convention).
+        // Iterative bottom-up Merkle, reduced IN PLACE within `cvList`. At
+        // each level we pair adjacent CVs into a parent CV, compacting results
+        // to the front (write index `w` always trails the read index `p`, so
+        // the parent — computed into a fresh array first — safely overwrites a
+        // slot already consumed). An odd trailing CV promotes unchanged.
+        //
+        // In-place avoids a per-level `next` array AND reassigning the `cvList`
+        // local each level — the latter pattern (loop-carried array-local
+        // reassignment) tripped a Cranelift x86-64 codegen miscompile that left
+        // the final parent reading stale CVs for ≥3-chunk inputs (interp +
+        // aarch64-JIT were correct; only linux-x64-JIT diverged → a4283937…).
         while (n > 2) {
-            int newN = (n + 1) / 2;
-            int[] next = new int[newN * 8];
+            int w = 0;
             int p = 0;
             while (p + 1 < n) {
                 int[] parent = Blake3._parentCV(cvList, p * 8, cvList, (p + 1) * 8);
                 int k = 0;
-                while (k < 8) { next[(p / 2) * 8 + k] = parent[k]; k = k + 1; }
+                while (k < 8) { cvList[w * 8 + k] = parent[k]; k = k + 1; }
+                w = w + 1;
                 p = p + 2;
             }
             if (p < n) {
-                // Odd-out CV promotes unchanged.
+                // Odd-out CV promotes unchanged (slot p is ahead of w).
                 int k = 0;
-                while (k < 8) { next[(newN - 1) * 8 + k] = cvList[p * 8 + k]; k = k + 1; }
+                while (k < 8) { cvList[w * 8 + k] = cvList[p * 8 + k]; k = k + 1; }
+                w = w + 1;
             }
-            cvList = next;
-            n = newN;
+            n = w;
         }
         // n == 2: root parent — return its full output state with ROOT flag.
         return Blake3._parentOutputState(cvList, 0, cvList, 8);
