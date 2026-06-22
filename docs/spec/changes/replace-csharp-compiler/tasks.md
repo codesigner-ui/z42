@@ -21,10 +21,11 @@
 - [x] S3.0 可行性验证：z42c M2 per-member 编全 22 库 + z42c-built stdlib 272/272（`test stdlib --no-build`）
 - [x] S3.0b 顺带修复 z42c TSIG 可选参数 bug（fix-z42c-tsig-optional-params）：12 delegate/event/weak golden 编译失败 → 修 `ExportedTypeExtractor._requiredCount` → 全绿
 - [~] S3.1 `_buildStdlibCore` 改 z42c 接管 —— 已实现并验证 build 成功，但 **reverted**（full gate 暴露阻塞）
-- [ ] S3.2 GREEN gate 全绿 —— **阻塞**：z42c-built stdlib 触发 2 类 C# test 失败
-  - 🔴 **BLID sidecar**：z42c 不 emit BLID/.zsym → `StdlibSidecarPairingTests` 失败（需 z42c emit BLID 或放宽门）
-  - 🔴 **multicast aggregate**：`multicast_func/predicate_aggregate` golden 在 C# in-process VM 抛未捕获 MulticastException（z42vm subprocess 通过）→ 需排查 z42c-built MulticastAction aggregate 路径
-- **前置**：上述 2 gap 解除后翻转 `_buildStdlibCore` + 重跑 full gate
+- [~] S3.2 GREEN gate 全绿 —— **阻塞收窄到 1 项**：
+  - ✅ **multicast aggregate**：根因 z42c `new C<T>()` arity-overloaded 误取 base → 修 fix-z42c-generic-ctor-arity（已归档），两 golden MATCH
+  - ✅ **TSIG 可选参数**：fix-z42c-tsig-optional-params（已归档）
+  - 🔴 **BLID sidecar（唯一剩余）**：z42c 无 strip-symbols（split-debug）→ `StdlibSidecarPairingTests` 失败。需 z42c emit `.zsym`+BLID（BLAKE3-128，format-level feature）或调整打包策略
+- **前置**：BLID 解除后翻转 `_buildStdlibCore` + 重跑 full gate
 
 ## S1：z42c apphost（分发）
 - [ ] S1.1 `_produceApphost` 复用 → 产 `z42c` 原生（payload=z42c.driver.zpkg + colocated z42c.* deps）

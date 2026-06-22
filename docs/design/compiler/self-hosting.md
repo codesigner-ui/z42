@@ -88,13 +88,16 @@ z42c.driver 实现了自己的 `build --workspace`（`Main._buildWorkspace` + `z
 - z42c `build --workspace`（M2 per-member drop-in）编全 22 库到 `artifacts/build/libraries/<name>/<profile>/dist/`（与 C# 同布局）。
 - z42c-built stdlib **全 272 stdlib [Test] 通过**（`test stdlib --no-build`）。
 
-**阻塞（z42c 尚未达生产 parity，需后续 self-hosting 工作）**：
-1. **BLID/`.zsym` sidecar**：z42c 不 emit BLID 段（debug 符号 sidecar，z42c 端 deferred）。C# `StdlibSidecarPairingTests` 断言每个 stdlib zpkg 有 build_id 匹配的 `.zsym` → z42c-built stdlib 全失败。
-2. **multicast aggregate 行为差异**：`multicast_func_aggregate` / `multicast_predicate_aggregate` golden 在 C# GoldenTests in-process VM 下抛未捕获 `Std.MulticastException`（z42vm subprocess 下通过）——z42c-built `MulticastAction` aggregate-exception 路径与 C#-built 行为不一致，需独立排查（codegen vs VM 差异未定）。
+**S3 dogfood 暴露并修复的 2 个 z42c bug（均已落地）**：
+1. **fix-z42c-tsig-optional-params**：z42c 导出 TSIG 把**可选参数**（`Param.Default != null`，如 `MulticastAction.Invoke(T, bool=false)`）当必填 → `minArgCount = paramCount`，消费端跨包省略默认实参报 `E0402`。修 `ExportedTypeExtractor._requiredCount`（镜像 C# `SymbolCollector.BuildFuncSignature`）。`_fromImportedMethod` 继承默认参数方法 re-export 暂留全必填（Deferred `self-hosting-future-inherited-optional-param-arity`）。
+2. **fix-z42c-generic-ctor-arity**：z42c `new C<T>()` 对 **arity-overloaded 同名类**（arity-0 base `MulticastException` shadow 着 arity-1 `MulticastException<TResult>`，泛型版注册键 `MulticastException$1`）误解析为 arity-0 base → `MulticastFunc.Invoke` 实际抛非泛型 base，消费端 `catch (MulticastException<int>)` 失配 → 异常逃逸（`multicast_func/predicate_aggregate` golden 失败）。修 `SymbolTable.ResolveTypeP`：泛型实例化优先取 `Name$N`（非 overloaded 泛型如 `Box<T>` 注册 bare，回退不受影响）。
 
-**S3 dogfood 的真实收获**——暴露并修复了一个 z42c bug（fix-z42c-tsig-optional-params，已落地）：z42c 导出 TSIG 时把**可选参数**（`Param.Default != null`，如 `MulticastAction.Invoke(T, bool=false)`）当必填 → `minArgCount = paramCount`。消费端（C# driver 或 z42c）跨包调用省略默认实参时报 `E0402: expected N–N argument(s)`。修 `ExportedTypeExtractor._requiredCount`（首个带默认值参数下标 = required count，镜像 C# `SymbolCollector.BuildFuncSignature`）。z42c 自身 7 包不用默认参数 → 旧 byte-identical 门测不到，整 stdlib build dogfood 才暴露——正是 dogfood 的价值。`_fromImportedMethod`（继承自其它包的默认参数方法 re-export）暂留全必填（见 Deferred `self-hosting-future-inherited-optional-param-arity`）。
+z42c 自身 7 包不用这些写法 → 旧 byte-identical 门（仅 z42c 自身 7 包 + 忽略 BLID）测不到，整 stdlib build dogfood 才暴露——正是 dogfood 的价值。
 
-> **S3 落地前置**：① z42c emit BLID/`.zsym`（或放宽 sidecar 门对 z42c-built stdlib）；② multicast aggregate 行为对齐。两者就位后再翻转 `_buildStdlibCore`。perf 税（z42c interp 重编 ~30s）见 Deferred `self-hosting-future-z42c-stdlib-jit`。
+**剩余阻塞（z42c 尚缺的 feature，非 bug）**：
+- **BLID/`.zsym` split-debug（strip-symbols）**：C# release build 把 DBUG 拆出主 zpkg → `.zsym` sidecar + 主 zpkg 留 BLID（BLAKE3-128 build_id）。z42c **只 emit 内联 DBUG，不做 split**（无 strip-symbols）。C# `StdlibSidecarPairingTests` 断言每 stdlib zpkg 有 build_id 匹配 sidecar → z42c-built stdlib 失败。这是 z42c 待补的 format-level feature（需在 z42c writer 算 BLAKE3-128 + 拆 sidecar），是 S3 落地的**唯一剩余前置**。
+
+> **S3 落地前置（仅剩一项）**：z42c 实现 strip-symbols（split-debug）—— 或调整 release 打包策略让 z42c-built stdlib 内联 DBUG 被 sidecar 门接受。就位后翻转 `_buildStdlibCore`。perf 税（z42c interp 重编 ~30s）见 Deferred `self-hosting-future-z42c-stdlib-jit`。
 > **铁律**：S3 不删 C#；C# 是种子。删 C# 见 S5（须先 S4 committed/下载种子）。
 
 **workspace 兄弟包解析（dogfood #1 根因修复，2026-06-07）**：

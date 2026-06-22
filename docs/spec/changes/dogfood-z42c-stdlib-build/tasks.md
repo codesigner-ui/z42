@@ -5,14 +5,15 @@
 > 变更说明：生产 stdlib 构建由 z42c 接管（C# 种子 → z42c M2 per-member 重编覆盖）。
 > 原因：replace-csharp-compiler S3；C# 全程是种子（不删 C#）。
 
-## 🔴 阻塞结论（2026-06-21）
-S3 实现（`_buildStdlibCore` 改 z42c）+ `build stdlib` 验证成功，但 full GREEN gate（z42c-built stdlib）暴露 2 个 z42c parity gap，已 **revert** `_buildStdlibCore` 回 C#（保持 gate 绿）：
-1. **BLID/.zsym sidecar**：z42c 不 emit BLID 段（deferred）→ C# `StdlibSidecarPairingTests`（断言每 stdlib zpkg 有 sidecar）失败。
-2. **multicast aggregate 行为差异**：`multicast_func/predicate_aggregate` golden 在 C# in-process VM 抛未捕获 `Std.MulticastException`（z42vm subprocess 通过）→ z42c-built MulticastAction aggregate 路径需排查。
+## 🔴 阻塞结论（2026-06-21；更新 2026-06-22）
+S3 实现（`_buildStdlibCore` 改 z42c）+ `build stdlib` 验证成功，但 full GREEN gate（z42c-built stdlib）暴露 z42c parity gap，已 **revert** `_buildStdlibCore` 回 C#（保持 gate 绿）。
 
-**收获（已落地，独立 commit）**：S3 dogfood 暴露并修复 z42c TSIG 可选参数 bug → 见 `fix-z42c-tsig-optional-params`（z42c）。
+**已修复（独立 commit，z42c bug）**：
+1. ✅ **TSIG 可选参数**（fix-z42c-tsig-optional-params，已归档）—— optional param → minArgCount 错。
+2. ✅ **multicast aggregate**（fix-z42c-generic-ctor-arity，已归档）—— **根因 = z42c `new C<T>()` 对 arity-overloaded 同名类误取 arity-0 base**（`MulticastException<TResult>` → 抛非泛型 base，catch 失配）。修 `SymbolTable.ResolveTypeP` 优先 `Name$N`。两 aggregate golden 现 MATCH。
 
-**前置（解阻塞后回来翻转 `_buildStdlibCore`）**：① z42c emit BLID（或放宽 sidecar 门）；② multicast aggregate 行为对齐。
+**剩余阻塞（z42c 待补 feature，唯一）**：
+- 🔴 **BLID/.zsym split-debug（strip-symbols）**：z42c 只 emit 内联 DBUG，不拆 sidecar → C# `StdlibSidecarPairingTests` 失败。需 z42c writer 算 BLAKE3-128 build_id + 拆 `.zsym`（format-level feature），或调整 release 打包策略让内联-DBUG 被门接受。**这是 S3 落地唯一剩余前置。**
 
 ## 进度概览
 - [x] 0. 可行性验证（z42c M2 编 22 库 + 272/272 + TSIG bug 修复）
