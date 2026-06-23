@@ -1082,6 +1082,20 @@ public sealed class Parser {
         bool hasBody = false;
         Stmt body = new BlockStmt(new Stmt[0], 0, sp);
         if (this._peek().Kind == TokenKind.LBrace) { body = this._parseBlock(); hasBody = true; }
+        else if (this._peek().Kind == TokenKind.FatArrow) {
+            // 表达式体 `=> expr;`（此前未处理 → hasBody=false → 函数被丢弃）。非 void → `return expr;`；
+            // void → `expr;`（ExprStmt）。包成单语句 block 体，下游统一走 block 路径。
+            this._advance();   // =>
+            Span esp = this._peek().Span;
+            Expr ev = this._parseExpr(0);
+            this._expectSemi();
+            bool isVoid = !isCtor && retType is NamedType && (retType as NamedType).Name == "void";
+            Stmt[] one = new Stmt[1];
+            if (isVoid) { one[0] = new ExprStmt(ev, esp); }
+            else { one[0] = new ReturnStmt(true, ev, esp); }
+            body = new BlockStmt(one, 1, esp);
+            hasBody = true;
+        }
         else { this._expectSemi(); }
         return new MethodDecl(mods, isFree, isCtor, retType, name, typeParams, wl.Items, wl.Count, pl.Items, pl.Count, hasBody, body, baseArgs, baseArgCount, isThisInit, sp);
     }
