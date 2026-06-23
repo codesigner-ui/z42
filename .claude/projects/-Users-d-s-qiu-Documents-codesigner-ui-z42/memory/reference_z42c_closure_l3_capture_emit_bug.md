@@ -53,3 +53,8 @@ xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_c
 - **null receiver**（~4）：indexer_basic（get_Item/ArrayGet on object）、gc_handle、chained_property、namespace_qualified_free_call、extern_impl（FieldGet/VCall on Null）。
 - **运行期值错**（各 1，独立）：do_while、null_conditional `?.`、enum、switch_statement、default_primitives、operator_overload、multicast、closure casts×2（closure_l3_capture/lambda_l2_basic Null→tag）、record。
 - **malformed zbc**（~2）：generic_bare_typeparam/default_generic_param_pair。
+
+---
+**reflection 子根因定位（2026-06-23 续4）**：z42c ZbcWriter.BuildType（z42c.ir）**确实**发 TYPE 段（name/base/fields/typeparams/flags/static/interfaces）。但：
+- **class custom-attr 硬编码 0**：ZbcWriter.z42:174 `WriteU16(0) // attrCount`、field attr 同（149/182）→ attributes/basic·field_attrs·methods + param_attributes "got 0/False"。需 IrClassDesc 收 AttributedDecl 的 attr + 发 attr-ref（zbc 1.10/1.14 格式，镜像 C# BuildType attr 块）。
+- **flags/interfaces 已发**（175/185）→ type predicates "true got False"（interface_class_predicates/type_flags/transitive_interfaces/array_is_instance）应查 IrGen 建 IrClassDesc 时 Flags/Interfaces 是否填对（疑 IrClassDesc.Flags=0 / Interfaces 空），非 writer。下一轮查 IrGen IrClassDesc 构建。
