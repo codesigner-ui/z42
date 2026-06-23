@@ -28,8 +28,20 @@
 - [~] B3 GREEN gate C#-free — **阻塞于 2 个 z42c 缺口**（已定位，待修，本轮已回退避免红门）：
   - 🔴 **z42c `--emit-zbc` 无跨包 dep 解析**（driver Main.z42:64 `IrDump.ZbcBytes(text,file)` 单文件编，无 DepScan）→ golden（调 Assert/Console 等 stdlib）emit 出 `<error>` 函数名 → 运行期 `undefined function <error>`。修：--emit-zbc 路径接 DepScan(Z42_LIBS)+deps-aware ZbcBytes（类比 BuildModuleD）。这是 golden regen 脱 dotnet 的前置。
   - 🔴 **z42c 编 closure_l3_capture Null deref**（见 [[reference_z42c_closure_l3_capture_emit_bug]]）。
-  - 已验证可行的部分：drop dotnet test stage + _testAll build wave C#-free 结构成立；待上述 2 缺口修复后重做 _regenGolden→z42c + _testAll。
+  - ✅ `--emit-zbc` 跨包 dep 解析已加（commit cd28c5d5，fixpoint 过）→ stdlib 调用（Assert/Console）emit 正确。
+  - 🔴🔴 **根本阻塞（关键发现 2026-06-23）**：VM golden 阶段 ~199 个 golden 须由 z42c 编译；z42c 对
+    **reflection（typeof/GetType/GetFields/FullName/Type）+ closure 组合** 等特性 **emit 缺口** → `<error>`
+    函数 → 运行期 `undefined function <error>`。即 **z42c 尚未达到「编译全部 golden」的特性 parity**。
+    C# 有全特性支持故 golden 一直 C#-编。**结论：删 C# 不可仅靠机械改线——须先让 z42c 编通所有 golden
+    （reflection emit + closure_l3_capture + 其它边缘特性），是实质 z42c 成熟度工作（多特性，独立 z42c 子系统流）。**
   - ✅ 顺带修 `_buildStdlibCore` warm 路径用绝对 release z42vm（_z42vm() 裸名不在 PATH → warm 自建 NotFound）。
+
+## 🔴 关键结论（2026-06-23）— 全删 C# 的真实前置
+两个**编译器门**（cross-zpkg、compiler-z42 自举不动点+units+e2e）已 **C#-free 验证**。但 **VM golden 门**需
+z42c 编通全部 ~199 golden，而 z42c 对 reflection/closure 等特性 emit 仍出 `<error>`/崩溃 → **z42c golden-
+compilation parity 是删 C# 的硬前置**（非 toolchain 机械改线可解）。在 z42c 补齐这些特性前，C# 仍是 golden
+编译的唯一全特性后端，**不可删**。建议：开独立 z42c 子系统流补 reflection/closure emit → 编通全 golden →
+再回到 C3 删除 + CI 清理。package/bench/cli C#-free + C# 删除 + CI/version 清理 均排在此之后。
 
 ## Phase C — 删 C# + 清 dotnet（不可逆）🔴 User 裁决「staged：先切门后删」+「移除 version/dotnet 配置 + CI」(2026-06-23)
 - [~] C1 build 站点全 C#-free：✅ `_buildCompilerZ42`→ViaZ42c（d4471a85）✅ `_ensureZ42cTooling`/units（71d13e53）✅ cross-zpkg（4192423b）。剩 ⬜ xtask.z42 `_regenCore`/_testAll · `_regenGolden` golden 编译 · xtask_package_desktop(dotnet×6) · xtask_bench · xtask_stdlib `_csharpBuildStdlibSeed` · xtask_cli `build/test compiler`。种子=self-seed 现有 dist / 下载 nightly。
