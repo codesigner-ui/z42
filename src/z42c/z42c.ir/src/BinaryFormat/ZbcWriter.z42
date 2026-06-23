@@ -54,7 +54,7 @@ public static class ZbcWriter {
         // const.str 池（z42c StringPool 1-based，[0]="" 占位 → 从 1 起）→ 记 remap。
         int s = 1;
         while (s < irm.StringCount) { strRemap[s] = pool.Intern(irm.StringPool[s]); s = s + 1; }
-        // 类（名/基类/字段名+类型）。z42c IrClassDesc 无 typeparam/attr 字段 → 不 intern。
+        // 类（名/基类/字段/static/接口/typeparam/约束）。镜像 C# InternPoolStrings 类段顺序。
         int c = 0;
         while (c < irm.ClassCount) {
             IrClassDesc cd = irm.Classes[c];
@@ -66,6 +66,22 @@ public static class ZbcWriter {
             while (sf < cd.StaticFieldCount) { pool.Intern(cd.StaticFields[sf].Name); pool.Intern(cd.StaticFields[sf].Type); sf = sf + 1; }
             int ifx = 0;   // 接口名（zbc 1.17；C# 静态字段后 intern）
             while (ifx < cd.InterfaceCount) { pool.Intern(cd.Interfaces[ifx]); ifx = ifx + 1; }
+            // TypeParams + 约束包接口名（BuildType 用 pool.Idx 写之，须在此 intern；镜像 C# 接口后
+            // typeparams→constraint bundles 顺序）。漏 intern → pool.Idx 返回 -1 → zbc 不可解析（如
+            // `where U: T` 的 T 既非字段类型也非接口、仅作约束出现时）。
+            int tpx = 0;
+            while (tpx < cd.TypeParamCount) { pool.Intern(cd.TypeParams[tpx]); tpx = tpx + 1; }
+            if (cd.TypeParamConstraints != null) {
+                int cbi = 0;
+                while (cbi < cd.TypeParamConstraints.Length) {
+                    IrConstraintDesc cb = cd.TypeParamConstraints[cbi];
+                    if (cb != null) {
+                        int cbifi = 0;
+                        while (cbifi < cb.InterfaceCount) { pool.Intern(cb.Interfaces[cbifi]); cbifi = cbifi + 1; }
+                    }
+                    cbi = cbi + 1;
+                }
+            }
             c = c + 1;
         }
         pool.Intern("?");   // SIGS 缺省 param 类型占位
