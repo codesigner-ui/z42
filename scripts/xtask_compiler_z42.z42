@@ -84,13 +84,11 @@ int _buildCompilerZ42ViaZ42c(string root, string profile, string[] members, stri
 // 故此处显式重建 runtime(z42vm+libz42) + test-runner + driver。cached 时近 no-op，
 // 仅当真有源码改动才付构建代价 —— 正是需要它的时刻。
 int _ensureZ42cTooling() {
-    Console.WriteLine("  ensuring tooling fresh (z42vm + z42-test-runner + driver; release)");
+    Console.WriteLine("  ensuring tooling fresh (z42vm + z42-test-runner; release; C#-free)");
     int c = _buildRuntime();   // z42vm + libz42（in-process VM 的实现）
     if (c != 0) { return c; }
-    c = _exec(_cargoRelease().Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
-    if (c != 0) { return c; }
-    return _exec(new Process("dotnet").Arg("build").Arg(Path.Join(_root(), _driverProj()))
-        .Arg("-c").Arg("Release").Arg("--nologo").Arg("-v").Arg("quiet"));   // 满足 _buildCompilerZ42 的 --no-build
+    // replace-csharp Phase C：不再 dotnet build C# driver——_buildCompilerZ42 已 C#-free（种子自建）。
+    return _exec(_cargoRelease().Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
 }
 
 // smoke: build + assert each z42c.<sub>.zpkg product exists & is non-empty.
@@ -251,6 +249,7 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
     }
 
     string vm     = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
     string runner = Path.Join(root, "artifacts/build/runtime/release/z42-test-runner");
     if (!File.Exists(runner)) {
         ConsoleError.WriteLine("error: z42-test-runner not found at " + runner
@@ -272,10 +271,10 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
                 totalUnits = totalUnits + 1;
                 Console.WriteLine("");
                 Console.WriteLine("── z42c test: " + members[i] + " / " + unit + " ──");
-                // compile (release/packed) with Z42_LIBS=flat
-                ProcessResult br = new Process("dotnet")
-                    .Arg("run").Arg("--no-build").Arg("--project").Arg(Path.Join(root, _driverProj()))
-                    .Arg("-c").Arg("Release").Arg("--")
+                // compile (release/packed) with z42c（C#-free）；Z42_LIBS=flat 含 stdlib+z42c.* 兄弟，
+                // z42c.driver 依赖与单元 deps 同从 flat 解析；输出落单元 toml 的 [build] output_dir 镜像。
+                ProcessResult br = new Process(vm)
+                    .Arg(driverZpkg).Arg("--mode").Arg("interp").Arg("--")
                     .Arg("build").Arg(tomls[0]).Arg("--release")
                     .Env("Z42_LIBS", flat)
                     .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run();
@@ -518,29 +517,9 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
     if (rc != 0) { Console.WriteLine("  ✗ sacheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
     Console.WriteLine("  ✓ sacheck.zbc: statics + arrays computed correctly");
 
-    string[] cmpSrcs = new string[7];
-    cmpSrcs[0] = okSrc; cmpSrcs[1] = callSrc; cmpSrcs[2] = typeSrc; cmpSrcs[3] = charSrc; cmpSrcs[4] = trySrc; cmpSrcs[5] = ifaceSrc; cmpSrcs[6] = saSrc;
-    int ci = 0;
-    while (ci < 7) {
-        string csOut = cmpSrcs[ci] + ".cs.zbc";
-        string zOut  = cmpSrcs[ci] + ".z42c.zbc";
-        rc = new Process("dotnet")
-            .Arg("run").Arg("--no-build").Arg("--project").Arg(Path.Join(root, _driverProj()))
-            .Arg("-c").Arg("Release").Arg("--")
-            .Arg(cmpSrcs[ci]).Arg("--emit").Arg("zbc").Arg("-o").Arg(csOut)
-            .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
-            .Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-        if (rc != 0) { Console.WriteLine("  ✗ C# emit failed: " + cmpSrcs[ci]); return 1; }
-        rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(cmpSrcs[ci]).Arg(zOut)
-            .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-        if (rc != 0) { Console.WriteLine("  ✗ z42c emit failed: " + cmpSrcs[ci]); return 1; }
-        if (!_bytesEqual(File.ReadAllBytes(csOut), File.ReadAllBytes(zOut))) {
-            Console.WriteLine("  ✗ byte mismatch: " + cmpSrcs[ci] + " (z42c vs C#)");
-            return 1;
-        }
-        ci = ci + 1;
-    }
-    Console.WriteLine("  ✓ byte-compare: 7/7 sources byte-identical (z42c vs C#, incl. statics/arrays)");
+    // replace-csharp Phase C：删 per-construct byte-compare-vs-C#（C# 已删，无 oracle）。
+    // 功能正确性由上方 div-by-zero e2e oracle（selfcheck/callcheck/typecheck/...）保证；
+    // z42c 自身的 byte-identical 由 self-host 不动点（gen1==gen2）覆盖（见 _testZ42cSelfHostByteIdentical）。
 
     // build e2e（port-z42c-zpkg-build）：z42c build 产 packed zpkg → z42vm 直跑（entry 烤入）。
     // zpkg 级 byte-compare 对真 C# CLI 还差 TSIG/IMPL（follow-up change）；此处验证可执行性
@@ -623,33 +602,19 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
     cmpTomls[3] = Path.Join(tdir, "text.app.z42.toml");
     cmpTomls[4] = Path.Join(cdir, "clos.app.z42.toml");
     cmpTomls[5] = Path.Join(mdir, "multi.app.z42.toml");
+    // replace-csharp Phase C：删 zpkg byte-compare-vs-C#（C# 已删）。改为 z42c build 6 工程
+    // 验可建（功能性）；z42c 自身 byte-identical 由 self-host 不动点覆盖。
     int pi = 0;
     while (pi < 6) {
         string pdir = Path.GetDirectoryName(cmpTomls[pi]);
-        // z42c build（刚跑过 check.app 也重跑一次保产物新鲜）
         rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("build").Arg(cmpTomls[pi])
             .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
         if (rc != 0) { Console.WriteLine("  ✗ z42c build failed: " + cmpTomls[pi]); return 1; }
         string[] zOut = Path.Glob(Path.Join(pdir, "dist"), "*.zpkg");
         if (zOut.Length != 1) { Console.WriteLine("  ✗ expected 1 zpkg in " + pdir + "/dist"); return 1; }
-        byte[] zBytes = File.ReadAllBytes(zOut[0]);
-        // C# build（写到同 dist，故先备走 z42c 产物字节再覆盖）
-        rc = new Process("dotnet")
-            .Arg("run").Arg("--no-build").Arg("--project").Arg(Path.Join(root, _driverProj()))
-            .Arg("-c").Arg("Release").Arg("--")
-            .Arg("build").Arg(cmpTomls[pi]).Arg("--release").Arg("--strip-symbols=false")
-            .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
-            .Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-        if (rc != 0) { Console.WriteLine("  ✗ C# build failed: " + cmpTomls[pi]); return 1; }
-        byte[] csBytes = File.ReadAllBytes(zOut[0]);
-        if (!_bytesEqual(csBytes, zBytes)) {
-            Console.WriteLine("  ✗ zpkg byte mismatch: " + cmpTomls[pi] + " (C# " + csBytes.Length.ToString()
-                + "B vs z42c " + zBytes.Length.ToString() + "B)");
-            return 1;
-        }
         pi = pi + 1;
     }
-    Console.WriteLine("  ✓ zpkg byte-compare: 6/6 projects FULL-FILE byte-identical (incl multi-file packages)");
+    Console.WriteLine("  ✓ z42c build: 6/6 projects built (multi-file packages; functional)");
     // hello-stdlib 直跑（跨包 Call 链可执行性）
     rc = new Process(vm).Arg(Path.Join(cdir, "dist/clos.app.zpkg"))
         .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
@@ -710,11 +675,10 @@ int _testZ42cSelfHostByteIdentical(string root, string vm, string flat, string[]
 
         byte[] got = File.ReadAllBytes(produced);
         byte[] want = File.ReadAllBytes(expected);
-        // Section-level compare: ignore BLID (deferred in z42c; C# adds it in release/strip mode).
-        // All other sections (META/STRS/NSPC/EXPT/DEPS/SIGS/MODS and TSIG/IMPL when present)
-        // must be byte-identical.
+        // Section-level compare: ignore BLID (16B BLAKE3-128 build_id tail).
+        // gen1 (canonical = _buildCompilerZ42 自建) vs gen2 (gen1 编 source) 全段须一致。
         if (!_sectionsEqualIgnoreBlid(got, want)) {
-            Console.WriteLine("  ✗ sections mismatch: " + member + " (z42c " + got.Length.ToString() + "B vs C# " + want.Length.ToString() + "B)");
+            Console.WriteLine("  ✗ sections mismatch: " + member + " (gen2 " + got.Length.ToString() + "B vs gen1 " + want.Length.ToString() + "B)");
             fail = fail + 1;
         } else {
             Console.WriteLine("  ✓ " + member + " (sections byte-identical, BLID ignored)");
@@ -725,10 +689,10 @@ int _testZ42cSelfHostByteIdentical(string root, string vm, string flat, string[]
 
     Console.WriteLine("");
     if (fail > 0) {
-        Console.WriteLine("❌ z42c self-host: " + fail.ToString() + "/" + members.Length.ToString() + " packages differ from C#");
+        Console.WriteLine("❌ z42c self-host 不动点: " + fail.ToString() + "/" + members.Length.ToString() + " packages gen1≠gen2");
         return 1;
     }
-    Console.WriteLine("✅ z42c self-host: " + ok.ToString() + "/" + members.Length.ToString() + " packages byte-identical to C# compiler");
+    Console.WriteLine("✅ z42c self-host 不动点: " + ok.ToString() + "/" + members.Length.ToString() + " packages gen1==gen2 (C#-free)");
     return 0;
 }
 
