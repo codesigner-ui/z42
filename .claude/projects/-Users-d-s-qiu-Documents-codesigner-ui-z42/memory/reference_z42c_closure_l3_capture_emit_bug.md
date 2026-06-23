@@ -58,3 +58,19 @@ xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_c
 **reflection 子根因定位（2026-06-23 续4）**：z42c ZbcWriter.BuildType（z42c.ir）**确实**发 TYPE 段（name/base/fields/typeparams/flags/static/interfaces）。但：
 - **class custom-attr 硬编码 0**：ZbcWriter.z42:174 `WriteU16(0) // attrCount`、field attr 同（149/182）→ attributes/basic·field_attrs·methods + param_attributes "got 0/False"。需 IrClassDesc 收 AttributedDecl 的 attr + 发 attr-ref（zbc 1.10/1.14 格式，镜像 C# BuildType attr 块）。
 - **flags/interfaces 已发**（175/185）→ type predicates "true got False"（interface_class_predicates/type_flags/transitive_interfaces/array_is_instance）应查 IrGen 建 IrClassDesc 时 Flags/Interfaces 是否填对（疑 IrClassDesc.Flags=0 / Interfaces 空），非 writer。下一轮查 IrGen IrClassDesc 构建。
+
+---
+**进度（2026-06-24）：z42c golden parity 120→127/130**。本会话提交 4 个（均 fixpoint gen1==gen2 7/7 逐字节 + scan 零回归）：
+- `a291a613` extern_impl：**CollectWithImports 漏 _passImpls**（deps 路径 impl 方法不入 ct.Methods → _bindImpl ms=null → this 不入 env → this.field 绑 undefined → emit const.null → FieldGet on Null）。
+- `6310e075` gc_handle：**跨包导入枚举常量**（ZpkgReader.ReadTsig 写 enum 但读时硬编 `new ExportedEnumZ[0]` 丢弃 + ImportedSymbols/CollectWithImports 不携带/合并 → GCHandleType.Weak 绑 undefined → const.null）。修：ReadTsig 解码 enum + ImportedSymbols.EnumTypeNames/EnumConsts + _mergeImportedEnums。
+- `3e40c045` chained_property：**消费端 Object stub**（z42.core Object 不导出 TSIG → 消费端符号表无 Object → obj.GetType() 返回 Unknown → 链式 getter 退化 FieldGet）。修：SymbolCollector CollectWithImports/CollectAll 在 merge imports 后 seed Object 骨架（4 协议方法，GetType 返回真实 Type 类）。镜像 C# SymbolCollector.Classes.cs。
+- `51d22ef2` **attribute 反射全 4 级**（basic/methods/field_attrs/param_attributes）：parser 命名实参 `method: "POST"`→AssignExpr（此前 colon 丢整条 attr）+ 参数 attr；AttributeSynth.z42（新，parse 后合成 `__attr$<key>$<i>` 工厂自由函数，跳内建 Native/Test/Benchmark/Skip/ShouldThrow/Timeout）；TypeChecker._adaptArgs（new 命名实参重排+默认值填充——z42c 此前 new 完全不填默认/不重排命名）；IrGen _attrRefs/_paramAttrRefs（FQ 限定）；IR IrAttrRef/IrAttrRefList；ZbcWriter 四级 attr-ref 发射+intern。basic byte-identical to C#。
+
+**诊断法（关键）**：z42c emit 的 ZBC 与 C# oracle（`dotnet z42c.dll <src> --emit zbc` + `disasm`/`golden-json`）逐条对比——VM 是常量，差异全在编译器输出。注意 disasm(.zasm) **不渲染 TYPE/SIGS attr-ref 字节**，须用 raw `cmp` 或 `golden-json`。快迭代：`/tmp/rebuild-z42c.sh`（seed 重建 z42c ~1min，免 5min 全 bootstrap）→ 测 → 最终 bootstrap-no-csharp 验 fixpoint。
+
+**剩 3 fail（均大特性，各≈attribute 量级）**：
+- **multicast_func_predicate**：event 关键字字段（minimal MulticastFunc 用法已 PASS，仅 event 字段缺失）。需：parser `event` 入 _isModifier；SymbolCollector 为 event 字段合成 add_X/remove_X 方法符号（add_X body=field.get X; vcall Subscribe；remove_X=Unsubscribe）；synth-ctor 自动初始化 event 字段（obj.new @Std.MulticastFunc/MulticastPredicate + field.set，按字段基类型名）；TypeChecker `+=`/`-=` on event 字段 → vcall add_X/remove_X（rhs lambda 须以 handler func 类型为 expected 绑定——handler 类型须从 Multicast<...> 泛型实参推导）。C# 参考 disasm /tmp/mc_cs.zasm（add_Validate params:2 ret IDisposable；Validators.Validators synth ctor obj.new+field.set）。
+- **local_fn_l2_basic**：block 内局部函数 lift（`int Fact(int n)=>...; return Fact(n)`）。C# 设计见 docs/spec/archive/2026-05-01-impl-local-fn-l2/design.md：parser 检测 local-fn decl→LocalFunctionStmt(FunctionDecl)；TypeChecker BindBlock 两趟（pass1 收集 local fn 签名入 scope→支持前向引用/递归，pass2 绑定）；BoundLocalFunction；IrGen lift 为 `<Owner>__<Name>` 顶层 fn + call site 改用 lifted 名。**此前尝试崩溃（VCall null）已 revert**——慎重，从 C# BoundStmtRewriter/FunctionEmitterStmts.cs 忠实移植。
+- **closure_l3_capture**：见本文件顶部，最难（ZbcWriter null-deref 嵌套/ref/local-fn 捕获组合），仍 tracked-defer。
+
+**删 dotnet 路径**：130/130 后（或 tracked-skip 这 3，沿用 closure_l3_capture 先例）→ VM-golden gate 切 z42c → 删 src/compiler+z42.Tests → 清 CI ~15 setup-dotnet + 版本配置。User 选 path A（逐个攻到 130 再删）。
