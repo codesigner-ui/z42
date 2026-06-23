@@ -201,6 +201,16 @@ public sealed class BoundIsExpr : BoundExpr {
 }
 
 // 转换（1D）：x as T → T（结果类型 = 目标）。
+// typeof(T)（make-typeof-return-type）。Target=typeof 内的解析类型；结果类型=Std.Type。
+// FQ 运行期名由 ExprEmitter 算（prim→name / array→elem[] / class·iface→QualifyClass）。
+public sealed class BoundTypeof : BoundExpr {
+    public Z42Type Target;
+    private Z42Type _t;
+    public BoundTypeof(Z42Type target, Z42Type t, Span span) { this.Span = span; this.Target = target; this._t = t; }
+    public override Z42Type Type() { return this._t; }
+    public override string Dump() { return "(typeof " + this.Target.Name() + " :" + this._t.Name() + ")"; }
+}
+
 public sealed class BoundCast : BoundExpr {
     public BoundExpr E;
     private Z42Type _type;

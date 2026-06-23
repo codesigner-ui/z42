@@ -337,6 +337,28 @@ public sealed class ObjNewInstr : IrInstr {
     }
 }
 
+// typeof(T) → reflection Std.Type 句柄（镜像 C# TypeofInstr / opcode 0x73）。
+// TypeName=FQ 类型名；TypeArgs=构造泛型实参 FQ 名（IsGenericTypeDefinition==false）。
+public sealed class TypeofInstr : IrInstr {
+    public TypedReg Dst;
+    public string   TypeName;
+    public string[] TypeArgs;
+    public int      TypeArgCount;
+    public TypeofInstr(TypedReg dst, string typeName, string[] typeArgs, int typeArgCount) {
+        this.Dst = dst; this.TypeName = typeName; this.TypeArgs = typeArgs; this.TypeArgCount = typeArgCount;
+    }
+    public override string Dump() {
+        string s = this.Dst.Dump() + " = typeof @" + this.TypeName;
+        if (this.TypeArgCount > 0) {
+            s = s + "<";
+            int t = 0;
+            while (t < this.TypeArgCount) { if (t > 0) { s = s + ", "; } s = s + this.TypeArgs[t]; t = t + 1; }
+            s = s + ">";
+        }
+        return s;
+    }
+}
+
 public sealed class ArrayGetInstr : IrInstr {
     public TypedReg Dst;
     public TypedReg Arr;

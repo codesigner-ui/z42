@@ -132,6 +132,7 @@ public sealed class ExprEmitter {
         if (e is BoundNew) { return this._emitNew(e as BoundNew); }
         if (e is BoundIndex) { return this._emitIndex(e as BoundIndex); }
         if (e is BoundIsExpr) { return this._emitIs(e as BoundIsExpr); }
+        if (e is BoundTypeof) { return this._emitTypeof(e as BoundTypeof); }
         if (e is BoundCast) { return this._emitCast(e as BoundCast); }
         if (e is BoundConvert) { return this._emitConvert(e as BoundConvert); }
         if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
@@ -602,6 +603,32 @@ public sealed class ExprEmitter {
         TypedReg dst = this._ctx.Alloc(IrType.Bool);
         this._ctx.Emit(new IsInstanceInstr(dst, obj, this._ctx.QualifyClass(e.TypeName)));
         return dst;
+    }
+
+    // typeof(T) → Typeof 指令（reflection Std.Type 句柄）。FQ 名镜像 C# Z42TypeName。
+    private TypedReg _emitTypeof(BoundTypeof e) {
+        string name = this._typeofName(e.Target);
+        string[] targs = new string[0];
+        int targc = 0;
+        if (e.Target is Z42InstantiatedType) {
+            Z42InstantiatedType it = e.Target as Z42InstantiatedType;
+            targs = new string[it.ArgCount];
+            while (targc < it.ArgCount) { targs[targc] = this._typeofName(it.TypeArgs[targc]); targc = targc + 1; }
+        }
+        TypedReg dst = this._ctx.Alloc(IrType.Ref);
+        this._ctx.Emit(new TypeofInstr(dst, name, targs, targc));
+        return dst;
+    }
+
+    // FQ 运行期类型名：prim→裸名 / array→elem[] / class·iface→QualifyClass /
+    // instantiated→QualifyClass(def)（args 另发）/ generic-param→裸名（镜像 C# Z42TypeName）。
+    private string _typeofName(Z42Type t) {
+        if (t is Z42ArrayType) { return this._typeofName((t as Z42ArrayType).Elem) + "[]"; }
+        if (t is Z42PrimType) { return t.Name(); }
+        if (t is Z42ClassType) { return this._ctx.QualifyClass(t.Name()); }
+        if (t is Z42InterfaceType) { return this._ctx.QualifyClass(t.Name()); }
+        if (t is Z42InstantiatedType) { return this._ctx.QualifyClass((t as Z42InstantiatedType).Def.Name()); }
+        return t.Name();
     }
 
     // x as T → as_cast（结果 ref；目标类型名取自 Bound 类型）。

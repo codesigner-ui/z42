@@ -73,6 +73,15 @@ public static class ZbcInstr {
             while (t < i.TypeArgCount) { w.WriteU32(pool.Idx(i.TypeArgs[t])); t = t + 1; }
             return;
         }
+        if (ins is TypeofInstr) {
+            TypeofInstr i = ins as TypeofInstr;
+            w.WriteU8(Op.Typeof); w.WriteU8(Tag.FromIrType(i.Dst.Type)); w.WriteU16(i.Dst.Id);
+            w.WriteU32(pool.Idx(i.TypeName));
+            w.WriteU8(i.TypeArgCount);
+            int t = 0;
+            while (t < i.TypeArgCount) { w.WriteU32(pool.Idx(i.TypeArgs[t])); t = t + 1; }
+            return;
+        }
         if (ins is ArrayNewInstr) {
             ArrayNewInstr an = ins as ArrayNewInstr;
             w.WriteU8(Op.ArrayNew); w.WriteU8(Tag.FromIrType(an.Dst.Type)); w.WriteU16(an.Dst.Id);
@@ -381,5 +390,12 @@ public static class ZbcInstr {
         }
         if (ins is IsInstanceInstr) { IsInstanceInstr i = ins as IsInstanceInstr; pool.Intern(i.ClassName); return; }
         if (ins is AsCastInstr) { AsCastInstr i = ins as AsCastInstr; pool.Intern(i.ClassName); return; }
+        if (ins is TypeofInstr) {
+            TypeofInstr i = ins as TypeofInstr;
+            pool.Intern(i.TypeName);
+            int t = 0;
+            while (t < i.TypeArgCount) { pool.Intern(i.TypeArgs[t]); t = t + 1; }
+            return;
+        }
     }
 }

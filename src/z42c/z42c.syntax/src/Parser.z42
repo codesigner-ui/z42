@@ -193,6 +193,13 @@ public sealed class Parser {
             this._expect(TokenKind.RParen, ")");
             return inner;
         }
+        if (k == TokenKind.Typeof) {
+            this._advance();
+            this._expect(TokenKind.LParen, "(");
+            TypeExpr tty = this._parseType();
+            this._expect(TokenKind.RParen, ")");
+            return new TypeofExpr(tty, t.Span);
+        }
         if (k == TokenKind.New) {
             this._advance();
             TypeExpr ty = this._parseType();

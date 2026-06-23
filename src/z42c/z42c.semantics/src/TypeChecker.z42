@@ -494,6 +494,13 @@ public sealed class TypeChecker {
             Z42Type target = env.ResolveType(ix.Type);
             return new BoundIsExpr(operand, target.Name(), ix.Span);
         }
+        if (e is TypeofExpr) {
+            TypeofExpr tox = e as TypeofExpr;
+            Z42Type toTarget = env.ResolveType(tox.Type);
+            // 结果类型 = Std.Type（反射 Type 类；Name/GetFields/FullName 等成员据此解析）。
+            Z42Type toType = env.ResolveType(new NamedType("Type", new TypeExpr[0], 0, tox.Span));
+            return new BoundTypeof(toTarget, toType, tox.Span);
+        }
         if (e is AsExpr) {
             AsExpr ax = e as AsExpr;
             BoundExpr operand = this._bindExpr(ax.E, env);

@@ -453,6 +453,7 @@ public static class ZbcWriter {
         if (ins is ObjNewInstr) { ObjNewInstr i = ins as ObjNewInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtArgs(rt, i.Args, i.ArgCount); return; }
         if (ins is IsInstanceInstr) { IsInstanceInstr i = ins as IsInstanceInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
         if (ins is AsCastInstr) { AsCastInstr i = ins as AsCastInstr; ZbcWriter._regtVis(rt, i.Dst); ZbcWriter._regtVis(rt, i.Obj); return; }
+        if (ins is TypeofInstr) { TypeofInstr i = ins as TypeofInstr; ZbcWriter._regtVis(rt, i.Dst); return; }
         if (ins is ArrayNewInstr) { ArrayNewInstr an2 = ins as ArrayNewInstr; ZbcWriter._regtVis(rt, an2.Dst); ZbcWriter._regtVis(rt, an2.Size); return; }
         if (ins is ArrayNewLitInstr) { ArrayNewLitInstr anl = ins as ArrayNewLitInstr; ZbcWriter._regtVis(rt, anl.Dst); ZbcWriter._regtArgs(rt, anl.Elems, anl.ElemCount); return; }
         if (ins is StaticGetInstr) { ZbcWriter._regtVis(rt, (ins as StaticGetInstr).Dst); return; }

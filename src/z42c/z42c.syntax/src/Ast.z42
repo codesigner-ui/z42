@@ -196,6 +196,13 @@ public sealed class AsExpr : Expr {
     public override string Dump() { return "(as " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 
+// typeof(T) → reflection Std.Type（make-typeof-return-type）。
+public sealed class TypeofExpr : Expr {
+    public TypeExpr Type;
+    public TypeofExpr(TypeExpr type, Span span) { this.Span = span; this.Type = type; }
+    public override string Dump() { return "(typeof " + this.Type.Dump() + ")"; }
+}
+
 // C 风格强制转换 (Type)expr（G3；数值转换，区别于 as 的引用 cast）。
 public sealed class CastExpr : Expr {
     public TypeExpr Type;
