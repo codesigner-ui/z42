@@ -189,6 +189,37 @@ public sealed class IsExpr : Expr {
     public override string Dump() { return "(is " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 
+// switch 表达式的单个 arm：`pattern => body` 或 `_ => body`（HasPattern=false）。
+public sealed class SwitchArm {
+    public Span Span;
+    public bool HasPattern;
+    public Expr Pattern;   // 仅 HasPattern 时有效
+    public Expr Body;
+    public SwitchArm(bool hasPattern, Expr pattern, Expr body, Span span) { this.Span = span;
+        this.HasPattern = hasPattern; this.Pattern = pattern; this.Body = body;
+    }
+}
+
+// `subject switch { p => b, ..., _ => d }`（postfix，bp 85）。
+public sealed class SwitchExpr : Expr {
+    public Expr        Subject;
+    public SwitchArm[] Arms;
+    public int         ArmCount;
+    public SwitchExpr(Expr subject, SwitchArm[] arms, int armCount, Span span) { this.Span = span;
+        this.Subject = subject; this.Arms = arms; this.ArmCount = armCount;
+    }
+    public override string Dump() {
+        string s = "(switch-expr " + this.Subject.Dump();
+        int i = 0;
+        while (i < this.ArmCount) {
+            if (this.Arms[i].HasPattern) { s = s + " (" + this.Arms[i].Pattern.Dump() + " => " + this.Arms[i].Body.Dump() + ")"; }
+            else { s = s + " (_ => " + this.Arms[i].Body.Dump() + ")"; }
+            i = i + 1;
+        }
+        return s + ")";
+    }
+}
+
 public sealed class AsExpr : Expr {
     public Expr     E;
     public TypeExpr Type;

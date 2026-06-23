@@ -79,6 +79,33 @@ public sealed class Parser {
                 left = new UnaryExpr(pop, left, left.Span);
                 continue;
             }
+            // switch 表达式（postfix，bp 85）：`subject switch { p => b, _ => d }`
+            if (k == TokenKind.Switch && minBp <= 85) {
+                Span swsp = this._peek().Span;
+                this._advance();
+                this._expect(TokenKind.LBrace, "{");
+                SwitchArm[] arms = new SwitchArm[8];
+                int ac = 0;
+                while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
+                    if (ac == arms.Length) {
+                        SwitchArm[] big = new SwitchArm[arms.Length * 2];
+                        int ai = 0; while (ai < ac) { big[ai] = arms[ai]; ai = ai + 1; }
+                        arms = big;
+                    }
+                    Span asp = this._peek().Span;
+                    bool hasPat = true;
+                    Expr pat = null;
+                    if (this._peek().Kind == TokenKind.Underscore) { this._advance(); hasPat = false; }
+                    else { pat = this._parseExpr(11); }
+                    this._expect(TokenKind.FatArrow, "=>");
+                    Expr armBody = this._parseExpr(11);
+                    arms[ac] = new SwitchArm(hasPat, pat, armBody, asp); ac = ac + 1;
+                    if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+                }
+                this._expect(TokenKind.RBrace, "}");
+                left = new SwitchExpr(left, arms, ac, swsp);
+                continue;
+            }
             // is / as（bp 60，右侧为类型）
             if ((k == TokenKind.Is || k == TokenKind.As) && minBp <= 60) {
                 bool isIs = (k == TokenKind.Is);

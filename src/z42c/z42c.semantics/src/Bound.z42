@@ -12,6 +12,29 @@ public class BoundExpr {
     public virtual string  Dump() { return "?bexpr"; }
 }
 
+// switch 表达式（求值版 switch）：等值比较链写入结果寄存器（镜像 C# BoundSwitchExpr）。
+public sealed class BoundSwitchArm {
+    public Span      Span;
+    public bool      HasPattern;
+    public BoundExpr Pattern;   // 仅 HasPattern 时有效
+    public BoundExpr Body;
+    public BoundSwitchArm(bool hasPattern, BoundExpr pattern, BoundExpr body, Span span) { this.Span = span;
+        this.HasPattern = hasPattern; this.Pattern = pattern; this.Body = body;
+    }
+}
+
+public sealed class BoundSwitchExpr : BoundExpr {
+    public BoundExpr       Subject;
+    public BoundSwitchArm[] Arms;
+    public int             ArmCount;
+    private Z42Type        _type;
+    public BoundSwitchExpr(BoundExpr subject, BoundSwitchArm[] arms, int armCount, Z42Type type, Span span) { this.Span = span;
+        this.Subject = subject; this.Arms = arms; this.ArmCount = armCount; this._type = type;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string Dump() { return "(switch-expr :" + this._type.Name() + ")"; }
+}
+
 public sealed class BoundLitInt : BoundExpr {
     public string Text;       // 原始字面量文本（数值解析留 codegen）
     private Z42Type _type;

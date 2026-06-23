@@ -612,6 +612,23 @@ public sealed class TypeChecker {
             BoundExpr elseE = this._bindExpr(t.Else, env);
             return new BoundConditional(cond, thenE, elseE, this._commonType(thenE.Type(), elseE.Type(), env.Symbols), t.Span);
         }
+        if (e is SwitchExpr) {
+            SwitchExpr se = e as SwitchExpr;
+            BoundExpr subj = this._bindExpr(se.Subject, env);
+            BoundSwitchArm[] arms = new BoundSwitchArm[se.ArmCount];
+            Z42Type resTy = new Z42UnknownType();
+            int ai = 0;
+            while (ai < se.ArmCount) {
+                SwitchArm a = se.Arms[ai];
+                BoundExpr pat = null;
+                if (a.HasPattern) { pat = this._bindExpr(a.Pattern, env); }
+                BoundExpr armBody = this._bindExpr(a.Body, env);
+                if (ai == 0) { resTy = armBody.Type(); }
+                arms[ai] = new BoundSwitchArm(a.HasPattern, pat, armBody, a.Span);
+                ai = ai + 1;
+            }
+            return new BoundSwitchExpr(subj, arms, se.ArmCount, resTy, se.Span);
+        }
         if (e is IndexExpr) {
             IndexExpr ix = e as IndexExpr;
             BoundExpr target = this._bindExpr(ix.Target, env);

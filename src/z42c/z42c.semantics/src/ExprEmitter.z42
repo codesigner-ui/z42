@@ -136,6 +136,7 @@ public sealed class ExprEmitter {
         if (e is BoundCast) { return this._emitCast(e as BoundCast); }
         if (e is BoundConvert) { return this._emitConvert(e as BoundConvert); }
         if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
+        if (e is BoundSwitchExpr) { return this._emitSwitchExpr(e as BoundSwitchExpr); }
         if (e is BoundInterpolatedStr) { return this._emitInterpolation(e as BoundInterpolatedStr); }
         if (e is BoundDefault) {
             BoundDefault def = e as BoundDefault;
@@ -372,6 +373,39 @@ public sealed class ExprEmitter {
     // ════ 块化表达式（CG-1E-2）：中途分块 + 结果寄存器经 copy/const 汇合 ════════════════
     // 三目 cond ? then : else → 结果寄存器在两分支各赋值（镜像 C# EmitBoundTernary：
     // cond 先求 → 3 标签 tern_then/else/end → result 在标签后 alloc）。
+    // switch 表达式 → 等值比较链写结果寄存器（镜像 C# EmitBoundSwitchExpr）。
+    private TypedReg _emitSwitchExpr(BoundSwitchExpr sw) {
+        TypedReg subj = this.Emit(sw.Subject);
+        TypedReg result = this._ctx.Alloc(this._ctx.ToIrType(sw.Type()));
+        string endL = this._ctx.Fresh("swx_end");
+        int ai = 0;
+        while (ai < sw.ArmCount) {
+            BoundSwitchArm arm = sw.Arms[ai];
+            if (!arm.HasPattern) {
+                TypedReg defR = this.Emit(arm.Body);
+                this._ctx.Emit(new CopyInstr(result, defR));
+                this._ctx.EndBlock(new BrTerm(endL));
+                ai = sw.ArmCount;
+            } else {
+                string thenL = this._ctx.Fresh("swx_arm");
+                string nextL = this._ctx.Fresh("swx_next");
+                TypedReg pat = this.Emit(arm.Pattern);
+                TypedReg cmp = this._ctx.Alloc(IrType.Bool);
+                this._ctx.Emit(new EqInstr(cmp, subj, pat));
+                this._ctx.EndBlock(new BrCondTerm(cmp, thenL, nextL));
+                this._ctx.StartBlock(thenL);
+                TypedReg bodyR = this.Emit(arm.Body);
+                this._ctx.Emit(new CopyInstr(result, bodyR));
+                this._ctx.EndBlock(new BrTerm(endL));
+                this._ctx.StartBlock(nextL);
+                ai = ai + 1;
+            }
+        }
+        if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(endL)); }
+        this._ctx.StartBlock(endL);
+        return result;
+    }
+
     private TypedReg _emitConditional(BoundConditional c) {
         TypedReg cond = this.Emit(c.Cond);
         string thenL = this._ctx.Fresh("tern_then");
