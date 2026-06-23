@@ -24,3 +24,11 @@ interim**：`scripts/xtask_regen.z42` 跳过 `closure_l3_capture`（删旧 .zbc 
 **修复方向**（dogfood：应真修非长期跳）：debug z42c 闭包 IrGen（z42c.semantics）——找出 closure env
 捕获（MkClos/CallIndirect/FieldGet on env）哪条指令的 Dst/Obj/arg 寄存器为 null 未填，补上。修后移除
 xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_capture）。属 z42c 子系统独立 change。
+
+---
+**扩展（2026-06-23 续）：z42c golden parity 全景**（删 C# 硬前置）。已修：typeof 反射 emit（c1cb7055）+ 嵌套闭包捕获编译崩溃（3552a94c）。剩余 z42c golden 编译缺口（实测 closures 类 1/6 过：仅 closure_l3_stack）：
+- **block-body 局部函数**：`int Compute(int x){ var y=x*2; ... }` → `undefined: x`（param 未入 scope）→ 该 fn 不注册 → `undefined function: Compute`。expr-body 局部 fn（`=>`）似可 emit。注：z42c parser 未见显式 local-fn 解析路径（grep 无 LocalFn/local fn），需深查 _parseVarDecl(572，无 `(` 分支)外的处理 / 或 binder lift。
+- **higher-order 自由函数 emit**：单文件 emit-zbc `Apply((int x)=>...,5)` → `undefined function Demo.Apply`（自由函数 Apply 没进 module；dump-ir 只见 Main+lambda）。可能 BuildModuleD/单文件路径漏发兄弟自由函数 OR func-type 参数函数被跳。
+- **闭包运行期强转**：closure_l3_capture/lambda_l2_basic → `InvalidCastException: Null→tag 0x04`（运行期，编译过）。
+- 全量 scan 三次因 zsh process-subst 在后台卡死失败；用 per-cat 快测代替。
+- **结论**：golden parity = 多特性 z42c 工作（local-fn/闭包 emit 完整性 + 强转 + 可能更多类别），多轮；在此之前 C# 不可删。删 C# 后续：VM-golden 切 z42c + package/bench/cli 脱 dotnet + 删 src/compiler + CI(~15 setup-dotnet)+ 版本配置。
