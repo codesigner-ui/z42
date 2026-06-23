@@ -12,6 +12,7 @@ public sealed class SymbolTable {
     public StrMap ClassConstraints; // name → ConstraintSet（2B；仅有 where 子句的泛型类登记）
     public StrMap EnumTypes;        // name → "enum" 标记（枚举类型名注册）
     public StrMap EnumConsts;       // "EnumName.MemberName" → 整数值字符串
+    public StrMap Delegates;        // name → Z42FuncType（用户 delegate，非泛型；委托类型即函数类型）
     public SymbolTable() {
         this.Classes = new StrMap();
         this.Interfaces = new StrMap();
@@ -19,6 +20,7 @@ public sealed class SymbolTable {
         this.ClassConstraints = new StrMap();
         this.EnumTypes = new StrMap();
         this.EnumConsts = new StrMap();
+        this.Delegates = new StrMap();
     }
 
     public bool          HasClass(string name) { return this.Classes.ContainsKey(name); }
@@ -99,6 +101,7 @@ public sealed class SymbolTable {
                 return new Z42FuncType(pps, 1, new Z42PrimType("bool"));
             }
             if (this.EnumTypes.ContainsKey(n)) { return new Z42ClassType(n, false, ""); }
+            if (this.Delegates.ContainsKey(n)) { return this.Delegates.Get(n) as Z42FuncType; }   // 用户 delegate → 函数类型
             if (this.Interfaces.ContainsKey(n)) { return this.Interfaces.Get(n) as Z42InterfaceType; }
             // arity-mangle：泛型实例化 `C<T...>` 对 arity-overloaded 同名类（arity-0 base
             // shadow 着 arity-N 泛型，泛型版注册键 `Name$N`，如 MulticastException$1）须取 `Name$N`，

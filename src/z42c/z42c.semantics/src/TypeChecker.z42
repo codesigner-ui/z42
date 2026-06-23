@@ -611,6 +611,11 @@ public sealed class TypeChecker {
                 if (env.Symbols.EnumTypes.ContainsKey(id.Name)) {
                     return new BoundIdent(id.Name, new Z42UnknownType(), id.Span);
                 }
+                // 方法组转换：自由函数名作值（`IntFn0 a = Helper`）→ func 引用（LoadFn）。
+                if (env.Symbols.HasFunc(id.Name)) {
+                    MethodSymbol mfs = env.Symbols.GetFunc(id.Name);
+                    return new BoundFuncRef(id.Name, mfs.Signature, id.Span);
+                }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol, "undefined: " + id.Name, id.Span);
                 return new BoundError("undefined " + id.Name, new Z42ErrorType(), id.Span);
             }

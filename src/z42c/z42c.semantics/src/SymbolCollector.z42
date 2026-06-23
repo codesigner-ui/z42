@@ -17,6 +17,7 @@ public sealed class SymbolCollector {
         this._mergeImportedInterfaces(t, imported);
         this._passClassStubs(t, cu);
         this._mergeImports(t, imported);
+        this._passDelegates(t, cu);
         this._passMembers(t, cu);
         this._passInheritFields(t, cu);
         return t;
@@ -67,6 +68,8 @@ public sealed class SymbolCollector {
         // seed imported classes + funcs（成员解析前；G18：兄弟包 imported 类字段/方法类型可解析为 Z42ClassType 而非 Unknown）。
         this._mergeImports(table, imported);
         c = 0;
+        while (c < cuCount) { this._passDelegates(table, cus[c]); c = c + 1; }
+        c = 0;
         while (c < cuCount) { this._passMembers(table, cus[c]); c = c + 1; }
         // impl-block merge (port-z42c-impl-block)：成员收集后，把 `impl Trait for Target`
         // 的方法并入 target.Methods + Trait 并入 target.InterfaceNames（target 可本地或
@@ -114,6 +117,7 @@ public sealed class SymbolCollector {
         this._passInterfaces(table, cu);
         this._passEnums(table, cu);
         this._passClassStubs(table, cu);
+        this._passDelegates(table, cu);
         this._passMembers(table, cu);
         this._passImpls(table, cu);   // port-z42c-impl-block
         this._passInheritFields(table, cu);
@@ -160,6 +164,25 @@ public sealed class SymbolCollector {
     }
 
     // Pass A-1：枚举类型 + 成员常量（先于类 stub——成员类型解析可能用到枚举）。
+    // 用户 delegate → Z42FuncType（委托类型即函数类型）。非泛型注册；泛型暂跳（运行期擦除）。
+    // _passClassStubs 后调用，使签名 prim/类类型可解析。
+    private void _passDelegates(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is DelegateDecl) {
+                DelegateDecl dd = d as DelegateDecl;
+                if (dd.TypeParams.Count == 0 && !table.Delegates.ContainsKey(dd.Name)) {
+                    Z42Type[] ps = new Z42Type[dd.ParamCount];
+                    int p = 0;
+                    while (p < dd.ParamCount) { ps[p] = table.ResolveType(dd.Params[p].Type); p = p + 1; }
+                    table.Delegates.Put(dd.Name, new Z42FuncType(ps, dd.ParamCount, table.ResolveType(dd.RetType)));
+                }
+            }
+            i = i + 1;
+        }
+    }
+
     private void _passEnums(SymbolTable table, CompilationUnit cu) {
         int i = 0;
         while (i < cu.DeclCount) {

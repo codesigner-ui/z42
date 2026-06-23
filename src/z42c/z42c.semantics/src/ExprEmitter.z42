@@ -137,6 +137,12 @@ public sealed class ExprEmitter {
         if (e is BoundConvert) { return this._emitConvert(e as BoundConvert); }
         if (e is BoundConditional) { return this._emitConditional(e as BoundConditional); }
         if (e is BoundSwitchExpr) { return this._emitSwitchExpr(e as BoundSwitchExpr); }
+        if (e is BoundFuncRef) {   // 方法组：LoadFn @<qualified 自由函数名>（与 free-call 同名限定）
+            BoundFuncRef fr = e as BoundFuncRef;
+            TypedReg frdst = this._ctx.Alloc(IrType.Ref);
+            this._ctx.Emit(new LoadFnInstr(frdst, this._ctx.Qualify(fr.FuncName)));
+            return frdst;
+        }
         if (e is BoundInterpolatedStr) { return this._emitInterpolation(e as BoundInterpolatedStr); }
         if (e is BoundDefault) {
             BoundDefault def = e as BoundDefault;

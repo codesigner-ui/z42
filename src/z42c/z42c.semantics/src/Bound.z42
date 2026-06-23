@@ -114,6 +114,15 @@ public sealed class BoundIdent : BoundExpr {
     public override string  Dump() { return "(ident " + this.Name + " :" + this._type.Name() + ")"; }
 }
 
+// 方法组转换：自由函数名作值（`IntFn0 a = Helper`）→ LoadFn @<qualified>（func 引用）。
+public sealed class BoundFuncRef : BoundExpr {
+    public string FuncName;
+    private Z42Type _type;
+    public BoundFuncRef(string funcName, Z42Type type, Span span) { this.Span = span; this.FuncName = funcName; this._type = type; }
+    public override Z42Type Type() { return this._type; }
+    public override string Dump() { return "(func-ref " + this.FuncName + ")"; }
+}
+
 public sealed class BoundAssign : BoundExpr {
     public BoundExpr Target;
     public BoundExpr Value;
