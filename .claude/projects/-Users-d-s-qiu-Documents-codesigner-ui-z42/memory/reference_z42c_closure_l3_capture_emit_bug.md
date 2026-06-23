@@ -43,3 +43,13 @@ xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_c
 - **prefix ++/--**（prefix_increment "1 vs 0"）。**default(T)/默认值**（default_primitives true vs False）。**operator overload**（Vec2 + 运算符未派发）。**enum/null-conditional `?.`/do-while**（Main 体含这些特性→emit 失败→"Main not found"：control_flow/null_conditional·enum·do_while）。**indexer**（get_Item/set_Item ArrayGet on object）。**switch expr**（Monday vs null）。
 - **malformed zbc**（generic_bare_typeparam/default_generic_param_pair "cannot parse zbc"）。
 - 方法论：每轮 `/tmp/gscan.sh`（robust，file-based）→ 选根因 → 改 z42c → bootstrap-no-csharp（fixpoint）→ 复测 → commit。
+
+---
+**进度（2026-06-23 续3）：z42c golden parity 96/130（PASS）**。新增提交：复合赋值(216e7292)、表达式体=>(54d81538)、prefix++(b113d63b)、字段init-ctor注入(8485f715)、func-value→CallIndirect(19891ff1)。注：/tmp/gscan.sh entry 用硬编码 "Main"，对 lowercase `void main()` 或自定义 entry 误报 "Main not found"（如 null_coalesce 实际 PASS）→ 真实失败 ~33（非 34）。
+**剩 ~33 fail 按根因**（高→低 ROI）：
+- **reflection 元数据 emit**（~8，可能共根）：attributes×3（custom-attr count 2→0）+ type predicates "true got False"×5（interface_class_predicates/type_flags/transitive_interfaces/array_is_instance/param_attributes）。typeof 句柄已通但 TYPE 段 flags/interfaces/attributes 元数据 z42c 未填。**查 TYPE 段 emit**。
+- **局部函数 lifting**（~4）：Twice/Fact/fe0/f undefined（block 内 `int F(){}` 未 lift→module fn）。parser 无 local-fn stmt 路径（_parseVarDecl 不处理 `(`）。
+- **ctor-less 字段 init 合成**（~3）：class A{int x=1} 无 ctor → x=0。需合成 Class.Class ctor 跑 init（ctor-exists 已修）。
+- **null receiver**（~4）：indexer_basic（get_Item/ArrayGet on object）、gc_handle、chained_property、namespace_qualified_free_call、extern_impl（FieldGet/VCall on Null）。
+- **运行期值错**（各 1，独立）：do_while、null_conditional `?.`、enum、switch_statement、default_primitives、operator_overload、multicast、closure casts×2（closure_l3_capture/lambda_l2_basic Null→tag）、record。
+- **malformed zbc**（~2）：generic_bare_typeparam/default_generic_param_pair。
