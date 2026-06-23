@@ -869,8 +869,34 @@ public sealed class Parser {
             bases = bl.Items; bc = bl.Count;
         }
         WhereList wl = this._parseWhereClause();
+        // 记录降级（镜像 C# TopLevelParser 位置式 record）：位置参数 → public 字段
+        // + primary ctor（`this.X = X` 赋值），再接显式块成员。产出 ClassDecl(Kind="record")
+        // 让下游 SymbolCollector/TypeChecker/IrGen 复用 class 机制（含 zbc TYPE 段 record flag）。
         Decl[] members = new Decl[8];
         int mc = 0;
+        int pi = 0;
+        while (pi < pc) {
+            members = this._growDecls(members, mc);
+            members[mc] = new FieldDecl("", pos[pi].Type, pos[pi].Name, false, null, pos[pi].Span);
+            mc = mc + 1;
+            pi = pi + 1;
+        }
+        if (pc > 0) {
+            Stmt[] cstmts = new Stmt[pc];
+            int ci = 0;
+            while (ci < pc) {
+                Expr tgt = new MemberExpr(new IdentExpr("this", pos[ci].Span), pos[ci].Name, pos[ci].Span);
+                Expr val = new IdentExpr(pos[ci].Name, pos[ci].Span);
+                cstmts[ci] = new ExprStmt(new AssignExpr("=", tgt, val, pos[ci].Span), pos[ci].Span);
+                ci = ci + 1;
+            }
+            BlockStmt cbody = new BlockStmt(cstmts, pc, sp);
+            members = this._growDecls(members, mc);
+            members[mc] = new MethodDecl("", false, true, this._emptyType(), name,
+                                         this._emptyTypeParams(), new WhereClause[0], 0,
+                                         pos, pc, true, cbody, new Expr[0], 0, false, sp);
+            mc = mc + 1;
+        }
         if (this._peek().Kind == TokenKind.LBrace) {
             this._advance();
             while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
@@ -880,7 +906,7 @@ public sealed class Parser {
         } else {
             this._expectSemi();
         }
-        return new RecordDecl(mods, name, typeParams, pos, pc, bases, bc, wl.Items, wl.Count, members, mc, sp);
+        return new ClassDecl("record", mods, name, typeParams, bases, bc, wl.Items, wl.Count, members, mc, sp);
     }
 
     private Decl _parseMember(string className) {

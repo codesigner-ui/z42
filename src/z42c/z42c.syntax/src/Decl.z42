@@ -338,39 +338,8 @@ public sealed class DelegateDecl : Decl {
     }
 }
 
-// record：位置式 `record P(T a, ...)`（PosParams）+ 可选基类 + 可选块体成员。
-// 位置式 desugar（合成字段/ctor）留给后端；parser 仅捕获结构。
-public sealed class RecordDecl : Decl {
-    public string        Mods;
-    public string        Name;
-    public TypeParamList TypeParams;
-    public Param[]       PosParams;
-    public int           PosCount;
-    public TypeExpr[]    Bases;
-    public int           BaseCount;
-    public WhereClause[] Wheres;
-    public int           WhereCount;
-    public Decl[]        Members;
-    public int           MemberCount;
-    public RecordDecl(string mods, string name, TypeParamList typeParams, Param[] pos, int pc,
-                      TypeExpr[] bases, int baseCount, WhereClause[] wheres, int whereCount, Decl[] members, int mc,
-                Span span) { this.Span = span;
-        this.Mods = mods; this.Name = name; this.TypeParams = typeParams; this.PosParams = pos; this.PosCount = pc;
-        this.Bases = bases; this.BaseCount = baseCount; this.Wheres = wheres; this.WhereCount = whereCount;
-        this.Members = members; this.MemberCount = mc;
-    }
-    public override string Dump() {
-        string m = (this.Mods == "") ? "" : (this.Mods + " ");
-        string s = "(record " + m + this.Name + this.TypeParams.Dump();
-        int i = 0;
-        while (i < this.PosCount) { s = s + " (pos " + this.PosParams[i].Dump() + ")"; i = i + 1; }
-        s = s + DeclHelpers.DumpBaseList(this.Bases, this.BaseCount);
-        s = s + DeclHelpers.DumpWheres(this.Wheres, this.WhereCount);
-        int j = 0;
-        while (j < this.MemberCount) { s = s + " " + this.Members[j].Dump(); j = j + 1; }
-        return s + ")";
-    }
-}
+// 记录在 parser 阶段降级为 ClassDecl(Kind="record")（合成位置参数字段 + primary ctor），
+// 故无独立 RecordDecl 节点——下游统一走 ClassDecl 机制（含 zbc TYPE 段 record flag）。
 
 public sealed class CompilationUnit {
     public Span Span;

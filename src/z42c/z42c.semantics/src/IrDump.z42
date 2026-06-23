@@ -101,7 +101,7 @@ public static class IrDump {
                 if (pcd is AttributedDecl) { pcd = (pcd as AttributedDecl).Inner; }
                 if (pcd is ClassDecl) {
                     ClassDecl pccd = pcd as ClassDecl;
-                    if (pccd.Kind == "class" || pccd.Kind == "struct") {
+                    if (pccd.Kind == "class" || pccd.Kind == "struct" || pccd.Kind == "record") {
                         if (!pkgClassMap.ContainsKey(pccd.Name)) { pkgClassMap.Put(pccd.Name, pccd); }
                         if (pccd.TypeParams.Count > 0) {
                             string pcmk = pccd.Name + "$" + pccd.TypeParams.Count.ToString();
@@ -166,7 +166,7 @@ public static class IrDump {
                 if (dd is AttributedDecl) { dd = (dd as AttributedDecl).Inner; }
                 if (dd is ClassDecl) {
                     ClassDecl cd = dd as ClassDecl;
-                    if (cd.Kind == "class" || cd.Kind == "struct") { m.Put(cd.Name, new StrBox(cd.Name)); }
+                    if (cd.Kind == "class" || cd.Kind == "struct" || cd.Kind == "record") { m.Put(cd.Name, new StrBox(cd.Name)); }
                 }
                 d = d + 1;
             }

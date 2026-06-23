@@ -123,7 +123,7 @@ public sealed class IrGen {
             Decl d = this._unwrap(cu.Decls[i]);
             if (d is ClassDecl) {
                 ClassDecl c = d as ClassDecl;
-                if (c.Kind == "class" || c.Kind == "struct") {
+                if (c.Kind == "class" || c.Kind == "struct" || c.Kind == "record") {
                     classes = this._pushClass(classes, cc, this._classDesc(c)); cc = cc + 1;
                     // Arity-mangle：泛型类以 Name$N 键注册时从 Name$N 取 owner CT。
                     string ownerKey = c.Name;
