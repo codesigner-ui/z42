@@ -369,10 +369,27 @@ public sealed class TypeChecker {
         if (s is BlockStmt) {
             BlockStmt b = s as BlockStmt;
             TypeEnv scope = env.PushScope();
+            // impl-local-fn-l2 pre-pass：先注册块内全部局部函数签名（前向引用 + 递归）。
+            int pp = 0;
+            while (pp < b.Count) {
+                if (b.Stmts[pp] is LocalFunctionStmt) {
+                    MethodDecl lmd = (b.Stmts[pp] as LocalFunctionStmt).Decl;
+                    Z42Type[] pts = new Z42Type[lmd.ParamCount];
+                    int z = 0; while (z < lmd.ParamCount) { pts[z] = scope.ResolveType(lmd.Params[z].Type); z = z + 1; }
+                    scope.DefineLocalFn(lmd.Name, new Z42FuncType(pts, lmd.ParamCount, scope.ResolveType(lmd.RetType)));
+                }
+                pp = pp + 1;
+            }
             BoundStmt[] outs = new BoundStmt[b.Count];
             int i = 0;
             while (i < b.Count) { outs[i] = this._bindStmt(b.Stmts[i], scope, ret); i = i + 1; }
             return new BoundBlock(outs, b.Count, b.Span);
+        }
+        if (s is LocalFunctionStmt) {
+            LocalFunctionStmt lf = s as LocalFunctionStmt;
+            TypeEnv lscope = env.PushScope();   // 体内可见同级/外层局部函数（递归/前向引用）；L2 无值捕获
+            BoundStmt lbody = this._bindMethodBody(env.Symbols, lscope, lf.Decl);
+            return new BoundLocalFunction(lf.Decl.Name, lf.Decl, lbody, lf.Span);
         }
         if (s is VarDeclStmt) {
             VarDeclStmt v = s as VarDeclStmt;
@@ -1087,6 +1104,11 @@ public sealed class TypeChecker {
             if (vfn != null && (vfn is Z42FuncType)) {              // Func 值间接调用（port-z42c-closures）
                 BoundExpr callee = this._bindExpr(call.Callee, env);
                 return new BoundIndirectCall(callee, args, call.ArgCount, (vfn as Z42FuncType).Ret, call.Span);
+            }
+            // impl-local-fn-l2：局部函数调用 → BoundCall "free"（local 名；emit 期改写为 lifted 名）。
+            Z42FuncType lfsig = env.LookupLocalFn(id.Name);
+            if (lfsig != null) {
+                return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, lfsig.Ret, call.Span);
             }
             if (env.Symbols.HasFunc(id.Name)) {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);

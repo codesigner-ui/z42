@@ -5,6 +5,7 @@
 namespace Z42.Semantics;
 
 using Z42.Core;
+using Z42.Syntax;
 
 public class BoundExpr {
     public Span Span;
@@ -345,6 +346,17 @@ public sealed class BoundExprStmt : BoundStmt {
     public BoundExpr E;
     public BoundExprStmt(BoundExpr e, Span span) { this.Span = span; this.E = e; }
     public override string Dump() { return "(expr " + this.E.Dump() + ")"; }
+}
+
+// 局部函数（impl-local-fn-l2，L2 无捕获）：Decl 提供 params/ret（emit 复用 FunctionEmitter），Body 为已绑定体。
+public sealed class BoundLocalFunction : BoundStmt {
+    public string     Name;
+    public MethodDecl Decl;
+    public BoundStmt  Body;
+    public BoundLocalFunction(string name, MethodDecl decl, BoundStmt body, Span span) {
+        this.Span = span; this.Name = name; this.Decl = decl; this.Body = body;
+    }
+    public override string Dump() { return "(localfn " + this.Name + " " + this.Body.Dump() + ")"; }
 }
 
 public sealed class BoundBlock : BoundStmt {

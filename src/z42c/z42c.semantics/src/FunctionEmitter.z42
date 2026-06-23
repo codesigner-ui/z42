@@ -11,8 +11,12 @@ public sealed class FunctionEmitter {
     private IrGen       _gen;
     private EmitContext _ctx;
     private ExprEmitter _expr;
+    private StrMap      _seedLocalFns;   // impl-local-fn-l2：lifted 体继承父函数的 local-fn→lifted 名映射（兄弟/递归调用解析）
 
-    public FunctionEmitter(SymbolTable symbols, IrGen gen) { this._symbols = symbols; this._gen = gen; }
+    public FunctionEmitter(SymbolTable symbols, IrGen gen) { this._symbols = symbols; this._gen = gen; this._seedLocalFns = null; }
+
+    // lifted 局部函数体 emit 前注入兄弟 local-fn 映射（递归/前向引用解析为 Call <lifted>）。
+    public void SeedLocalFns(StrMap m) { this._seedLocalFns = m; }
 
     // 入口：方法/自由函数 + 其 Bound 体 → IrFunction。
     // isInstance = 有 this（实例方法；驱动 reg0=this / paramOffset）。
@@ -27,6 +31,11 @@ public sealed class FunctionEmitter {
         this._ctx.ImportedClassNs = this._gen.ImportedClassNs;   // IC-1
         this._ctx.LocalClasses = this._gen.LocalClasses;
         this._ctx.CurFnName = name;                               // lift 命名（port-z42c-closures）
+        if (this._seedLocalFns != null) {                          // impl-local-fn-l2：继承父函数 local-fn 映射
+            string[] sk = this._seedLocalFns.Keys();
+            int si = 0;
+            while (si < sk.Length) { this._ctx.LocalFnNames.Put(sk[si], this._seedLocalFns.Get(sk[si])); si = si + 1; }
+        }
         this._expr = new ExprEmitter(this._ctx);
         string[] tp = this._mergeTp(classTp, classTpCount, md.TypeParams.Names, md.TypeParams.Count);
         int tpc = classTpCount + md.TypeParams.Count;
@@ -65,6 +74,7 @@ public sealed class FunctionEmitter {
         // 嵌套 block 仍走 _emitStmt → 正常 track）。
         if (body is BoundBlock) {
             BoundBlock bb = body as BoundBlock;
+            this._registerLocalFns(bb.Stmts, bb.Count);   // impl-local-fn-l2：先注册 lifted 名（兄弟/递归解析）
             int bi = 0;
             while (bi < bb.Count) { this._emitStmt(bb.Stmts[bi]); bi = bi + 1; }
         } else {
@@ -306,10 +316,38 @@ public sealed class FunctionEmitter {
     }
 
     // ════ 语句（集中 if-is）═══════════════════════════════════════════════════════
+    // impl-local-fn-l2：块内 BoundLocalFunction 预注册 lifted 名（CurFnName__localName）→ 兄弟/递归
+    // 调用先于体 emit 解析为 Call <lifted>。镜像 C# EmitBoundBlock sibling pre-pass。
+    private void _registerLocalFns(BoundStmt[] stmts, int count) {
+        int i = 0;
+        while (i < count) {
+            if (stmts[i] is BoundLocalFunction) {
+                BoundLocalFunction lfn = stmts[i] as BoundLocalFunction;
+                if (!this._ctx.LocalFnNames.ContainsKey(lfn.Name)) {
+                    this._ctx.LocalFnNames.Put(lfn.Name, new StrBox(this._ctx.CurFnName + "__" + lfn.Name));
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    // 局部函数 lift（L2 无捕获）：以 lifted 名发为自由函数（isInstance=false/isStaticMethod=false，镜像
+    // 顶层自由函数），并把当前 local-fn 映射注入 sub-emitter 供其体内兄弟/递归调用解析。AddLifted 追加模块尾。
+    private void _emitLocalFn(BoundLocalFunction lfn) {
+        string lifted = (this._ctx.LocalFnNames.Get(lfn.Name) as StrBox).Value;
+        var fe = new FunctionEmitter(this._symbols, this._gen);
+        fe.SeedLocalFns(this._ctx.LocalFnNames);
+        IrFunction f = fe.EmitFunction(lifted, lfn.Decl, lfn.Body, false, false, null, new string[0], 0);
+        this._gen.AddLifted(f);
+    }
+
     private void _emitStmt(BoundStmt s) {
         this._ctx.TrackLine(s.Span);   // 每语句记源码行（镜像 C# EmitBoundStmt 入口；同行去重在 ctx）
-        if (s is BoundBlock) {
+        if (s is BoundLocalFunction) {
+            this._emitLocalFn(s as BoundLocalFunction);
+        } else if (s is BoundBlock) {
             BoundBlock b = s as BoundBlock;
+            this._registerLocalFns(b.Stmts, b.Count);   // impl-local-fn-l2：嵌套块同样先注册
             int i = 0;
             while (i < b.Count) { this._emitStmt(b.Stmts[i]); i = i + 1; }
         } else if (s is BoundVarDeclStmt) {

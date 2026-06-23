@@ -17,6 +17,14 @@ public sealed class ExprStmt : Stmt {
     public override string Dump() { return "(expr " + this.E.Dump() + ")"; }
 }
 
+// 局部函数声明语句（impl-local-fn-l2）：block 内 `int F(int x) => ...` / `{ ... }`。
+// 包裹一个 MethodDecl（复用方法体语法）；IrGen lift 为 `<Owner>__<F>` 顶层函数。
+public sealed class LocalFunctionStmt : Stmt {
+    public MethodDecl Decl;
+    public LocalFunctionStmt(MethodDecl decl, Span span) { this.Span = span; this.Decl = decl; }
+    public override string Dump() { return "(localfn " + this.Decl.Dump() + ")"; }
+}
+
 public sealed class VarDeclStmt : Stmt {
     public TypeExpr Type;     // `var` 推断 → NamedType("var")
     public string   Name;

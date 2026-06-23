@@ -353,6 +353,7 @@ public sealed class Parser {
         if (k == TokenKind.Break)   { this._advance(); this._expectSemi(); return new BreakStmt(st.Span); }
         if (k == TokenKind.Continue){ this._advance(); this._expectSemi(); return new ContinueStmt(st.Span); }
         if (k == TokenKind.Throw)   { this._advance(); Expr te = this._parseExpr(0); this._expectSemi(); return new ThrowStmt(te, st.Span); }
+        if (this._isLocalFnStart()) { return this._parseLocalFn(); }   // impl-local-fn-l2：先于 var-decl 判别
         if (this._isVarDeclStart()) { return this._parseVarDecl(); }
         Expr e = this._parseExpr(0);
         this._expectSemi();
@@ -622,6 +623,53 @@ public sealed class Parser {
             }
         }
         return false;
+    }
+
+    // 局部函数起始判别（impl-local-fn-l2）：跳过返回类型表达式后紧跟 `Identifier (`。
+    // 区别于 var-decl（`type ident =/;`）与调用（`ident(` / `obj.m(`）。
+    private bool _isLocalFnStart() {
+        int k = this._peek().Kind;
+        if (!this._isTypeKeyword(k) && k != TokenKind.Identifier) { return false; }
+        int o = this._skipTypeOffset(0);
+        if (o <= 0) { return false; }
+        return this._peekAt(o).Kind == TokenKind.Identifier && this._peekAt(o + 1).Kind == TokenKind.LParen;
+    }
+
+    // 从 offset start 跳过一个类型表达式，返回其后的 offset（-1 = 非类型）。
+    // 处理：类型关键字 / 标识符类型 + 可选泛型 `<...>` + 点路径 `.Ident` + 数组 `[]`。
+    private int _skipTypeOffset(int start) {
+        int first = this._peekAt(start).Kind;
+        if (!this._isTypeKeyword(first) && first != TokenKind.Identifier) { return 0 - 1; }
+        int o = start + 1;
+        // 泛型 `<...>`（GtGt 计 2 个闭合）
+        if (this._peekAt(o).Kind == TokenKind.Lt) {
+            int depth = 1; o = o + 1;
+            while (depth > 0 && this._peekAt(o).Kind != TokenKind.Eof) {
+                int kk = this._peekAt(o).Kind;
+                if (kk == TokenKind.Lt) { depth = depth + 1; }
+                else if (kk == TokenKind.Gt) { depth = depth - 1; }
+                else if (kk == TokenKind.GtGt) { depth = depth - 2; }
+                o = o + 1;
+            }
+            if (depth != 0) { return 0 - 1; }
+        }
+        // 点路径 `.Ident`
+        while (this._peekAt(o).Kind == TokenKind.Dot && this._peekAt(o + 1).Kind == TokenKind.Identifier) { o = o + 2; }
+        // 可选 `[]`
+        if (this._peekAt(o).Kind == TokenKind.LBracket && this._peekAt(o + 1).Kind == TokenKind.RBracket) { o = o + 2; }
+        return o;
+    }
+
+    // 解析局部函数语句（已确认 _isLocalFnStart）：type + name + 方法尾（params + body）→ LocalFunctionStmt。
+    private Stmt _parseLocalFn() {
+        Span sp = this._peek().Span;
+        TypeExpr type = this._parseType();
+        string name = this._peek().Text;
+        if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+        else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected local function name", this._peek().Span); }
+        TypeParamList tps = this._parseTypeParams();
+        Decl md = this._parseMethodTail("", true, false, type, name, tps, sp);
+        return new LocalFunctionStmt(md as MethodDecl, sp);
     }
 
     private Stmt _parseVarDecl() {

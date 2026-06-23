@@ -10,6 +10,7 @@ public sealed class TypeEnv {
     public bool        HasParent;
     public TypeEnv     Parent;
     public StrMap      Vars;
+    public StrMap      LocalFns;   // impl-local-fn-l2：本层局部函数签名（name → Z42FuncType）；LookupLocalFn 走父链
     public SymbolTable Symbols;
     public bool        ClassFlag;
     public string      ClassName;
@@ -22,6 +23,7 @@ public sealed class TypeEnv {
         this.HasParent = hasParent;
         this.Parent = parent;
         this.Vars = new StrMap();
+        this.LocalFns = new StrMap();
         this.ClassFlag = classFlag;
         this.ClassName = className;
         this.TypeParamNames = typeParamNames;
@@ -51,6 +53,18 @@ public sealed class TypeEnv {
     }
 
     public void Define(string name, Z42Type type) { this.Vars.Put(name, type); }
+
+    // impl-local-fn-l2：局部函数签名注册 / 父链查找（null = 非局部函数）。
+    public void DefineLocalFn(string name, Z42FuncType sig) { this.LocalFns.Put(name, sig); }
+    public Z42FuncType LookupLocalFn(string name) {
+        TypeEnv e = this;
+        bool more = true;
+        while (more) {
+            if (e.LocalFns.ContainsKey(name)) { return e.LocalFns.Get(name) as Z42FuncType; }
+            if (e.HasParent) { e = e.Parent; } else { more = false; }
+        }
+        return null;
+    }
 
     // 本层 → 父链查找；未找到返回 null。
     // 迭代（非递归）：z42 无法在自身方法内对 self-type 字段调自身方法（编译中类型未就绪）→ 走字段读循环。

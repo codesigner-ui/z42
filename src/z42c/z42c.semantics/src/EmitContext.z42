@@ -30,6 +30,7 @@ public sealed class EmitContext {
     public int LambdaIdx;                                     // 本函数 lambda 计数（镜像 NextLambdaIndex）
     public bool InLambdaEnv;                                  // lift env 版：BoundCapturedIdent → array_get env(reg0)
     public string[] CaptureNames; public int CaptureNameCount;  // 当前 lifted lambda 的捕获名（env 布局序）→ 嵌套 lambda 解析外层捕获
+    public StrMap LocalFnNames;     // impl-local-fn-l2：局部函数 local 名 → lifted 名（free call emit 改写）
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
         this.Symbols = symbols; this.Gen = gen;
@@ -46,6 +47,7 @@ public sealed class EmitContext {
         this.ExcTable = new IrExcEntry[2]; this.ExcCount = 0;
         this.CurFnName = ""; this.LambdaIdx = 0; this.InLambdaEnv = false;
         this.CaptureNames = new string[0]; this.CaptureNameCount = 0;
+        this.LocalFnNames = new StrMap();
     }
 
     public void AddExc(IrExcEntry e) {

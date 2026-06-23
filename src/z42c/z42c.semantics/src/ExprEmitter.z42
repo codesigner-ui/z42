@@ -664,7 +664,10 @@ public sealed class ExprEmitter {
         // 静态调用（如 Std.Archive.Zip → Std.Compression.Deflate.Compress）被误限定当前 ns。
         // 未命中 ImportedClassNs → QualifyClass 回落 Qualify（当前 ns），同-ns 调用不变。
         string func = this._ctx.Qualify(c.MethodName);
-        if (c.Kind == "static") { func = this._ctx.QualifyClass(c.OwnerClass) + "." + c.MethodName; }
+        // impl-local-fn-l2：局部函数调用 → lifted 名（StrBox 包装；已 FQ，不再 Qualify）。
+        if (c.Kind != "static" && this._ctx.LocalFnNames.ContainsKey(c.MethodName)) {
+            func = (this._ctx.LocalFnNames.Get(c.MethodName) as StrBox).Value;
+        } else if (c.Kind == "static") { func = this._ctx.QualifyClass(c.OwnerClass) + "." + c.MethodName; }
         TypedReg dst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
         this._ctx.Emit(new CallInstr(dst, func, args, c.ArgCount));
         return dst;
