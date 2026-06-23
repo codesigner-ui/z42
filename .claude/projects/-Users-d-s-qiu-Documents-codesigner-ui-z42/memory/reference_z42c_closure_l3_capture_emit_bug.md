@@ -74,3 +74,14 @@ xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_c
 - **closure_l3_capture**：见本文件顶部，最难（ZbcWriter null-deref 嵌套/ref/local-fn 捕获组合），仍 tracked-defer。
 
 **删 dotnet 路径**：130/130 后（或 tracked-skip 这 3，沿用 closure_l3_capture 先例）→ VM-golden gate 切 z42c → 删 src/compiler+z42.Tests → 清 CI ~15 setup-dotnet + 版本配置。User 选 path A（逐个攻到 130 再删）。
+
+---
+**进度（2026-06-24 续）：z42c golden parity 127→129/130**。再提交 3 个（均 fixpoint gen1==gen2 7/7 + scan 零回归）：
+- `0bbf507a` multicast：event 修饰 + 字段自动 init（合成 `new <type>()` 复用字段 init 注入）+ `+=`/`-=` on event 字段 → recv.E.Subscribe/Unsubscribe 脱糖（Z42ClassType.EventFields 判别）。
+- `ba7f013c` local_fn L2 lifting：parser _isLocalFnStart（跳类型后 Ident `(`）+ LocalFunctionStmt + TypeEnv.LocalFns（DefineLocalFn/LookupLocalFn 父链）+ block bind 两趟（pre-pass 收签名→前向引用/递归）+ FunctionEmitter lifted 名 `<Owner>__<name>` 经 **StrBox** 入 EmitContext.LocalFnNames（**关键坑：StrMap string 值必须 StrBox 包装，`Get() as string` 对裸 string 返 null → lifted 名 null → BuildStrs 池含 null 崩溃**；镜像 ImportedClassNs/EnumConsts）+ Gen.AddLifted（同 lambda）+ free 调用改写 lifted 名 + SeedLocalFns 注入 sub-emitter（递归/兄弟解析）。
+
+**剩 1 fail：closure_l3_capture（最难，仍 tracked-defer）**。深查（2026-06-24）：5 个 case，已破解前 4 个所需机制但**无法安全落地**：
+- **case 2（ref 捕获 `c.n = c.n+1`）**：lambda 体赋值优先级 bug——`() => c.n = c.n+1` 被解析为 `(()=>c.n) = (c.n+1)`（lambda 体只取 `c.n`，RHS 漏到外层）。Parser.z42:1490 lambda 体 `_parseExpr(11)`（赋值层之上）→ 应含赋值。**但改 11→10 灾难性：scan 73 EMITFAIL**（根因未明，Pratt 分析说只应影响赋值体 lambda 但实测广泛炸；勿轻改）。已 revert。
+- **case 5（local-fn 捕获 `Helper(x)=>x+prefix` 捕 prefix）**：L2 lifting 把 Helper 发自由函数 → prefix undefined（Null）。需 L3：捕获分析（复用 _lambdaActive）+ 合成 BoundLambda 复用 EmitLambdaLifted（env 版）+ MkClos + Locals 存闭包（call 经 func-typed Locals → CallIndirect）。已实现但因 case-2 bp 阻断未能整体验证，连同 bp 一起 revert。
+- **结论**：closure_l3 需 ① 安全的 lambda 赋值体优先级修（先查清 bp-10 73-炸根因）② case-4 嵌套捕获 ③ case-5 L3 local-fn 捕获，三者齐活方过。是整个 L3 闭包系统的集成测试，工作量大、bp 改动高危。建议：要么继续深挖（多轮），要么 tracked-skip（沿用先例）后推进删 dotnet。
+- 复现/诊断：`/tmp/refcap.z42`（case2 最小）、`/tmp/lfmin.z42`（local-fn 最小）；oracle diff 见 case-2 lifted lambda 缺 field.set + RHS 漏到 Main。
