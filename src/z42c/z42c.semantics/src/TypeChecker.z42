@@ -15,15 +15,18 @@ public sealed class TypeChecker {
     private StrMap _lambdaLocals;
     private BoundCapture[] _lambdaCaps; private int _lambdaCapCount;
     private ConstraintChecker _constraints;  // 泛型 where 约束解析 + call-site 校验（2B）
+    private string _currentNs;               // 当前 CU 命名空间（namespace-qualified free call 用）
     public TypeChecker(DiagnosticBag diags) {
         this._diags = diags;
         this._loopDepth = 0;
         this._lambdaActive = false;
         this._constraints = new ConstraintChecker(diags);
+        this._currentNs = "";
     }
 
     public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols) {
         var model = new SemanticModel(symbols);
+        this._currentNs = cu.HasNamespace ? cu.Namespace : "";
         this._constraints.Resolve(cu, symbols);   // Pass 0.5：泛型 where 约束解析（2B，镜像 C# ResolveAllWhereConstraints）
         int i = 0;
         while (i < cu.DeclCount) {
@@ -1075,6 +1078,16 @@ public sealed class TypeChecker {
     }
 
     private BoundExpr _bindMemberCall(MemberExpr mem, BoundExpr[] args, int argCount, TypeEnv env, Span sp) {
+        // fix-namespace-qualified-free-call：`ns.func()` 当 ns=当前命名空间且 func 是自由函数
+        // → 自由调用（否则被误当类 ns 的静态调用 → 双限定 ns.ns.func → 运行期 undefined）。
+        if (mem.Target is IdentExpr) {
+            IdentExpr nsId = mem.Target as IdentExpr;
+            if (this._currentNs != "" && nsId.Name == this._currentNs
+                && env.LookupVar(nsId.Name) == null && env.Symbols.HasFunc(mem.Name)) {
+                MethodSymbol nfs = env.Symbols.GetFunc(mem.Name);
+                return new BoundCall("free", false, null, "", mem.Name, args, argCount, nfs.Signature.Ret, sp);
+            }
+        }
         // 静态：target 是裸类名（非局部变量）→ Class.m(args)
         if (mem.Target is IdentExpr) {
             IdentExpr tid = mem.Target as IdentExpr;
