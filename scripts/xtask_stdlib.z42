@@ -105,8 +105,8 @@ int _buildStdlibCore() {
         Console.WriteLine("  seed: existing z42c + stdlib → C#-free z42c self-build (S5 Phase A)");
         int zc = _buildCompilerZ42ViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
     } else {
-        int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }   // C# stdlib seed (cold)
-        int bc0 = _buildCompilerZ42();     if (bc0 != 0) { return bc0; } // C# z42c (cold)
+        int sc = _csharpBuildStdlibSeed();        if (sc != 0)  { return sc; }  // C# stdlib seed (cold)
+        int bc0 = _csharpBuildCompilerZ42Seed();  if (bc0 != 0) { return bc0; } // C# z42c seed (cold)
     }
 
     // ── 3. run-libs = {stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──────
