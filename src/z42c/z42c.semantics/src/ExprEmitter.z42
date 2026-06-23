@@ -589,6 +589,15 @@ public sealed class ExprEmitter {
                 return ddst;
             }
         }
+        // func-typed 局部/参数值调用：`f(x)` where f 是 Locals 中的 Func 值（含泛型
+        // where T:Func 约束参 + 委托局部 + lambda 局部）→ CallIndirect 经寄存器，而非
+        // Call @f 按名（后者 undefined）。镜像 C# 对 func-valued callee 的间接派发。
+        if (c.Kind != "static" && this._ctx.Locals.ContainsKey(c.MethodName)) {
+            TypedReg callee = this._ctx.Locals.Get(c.MethodName) as TypedReg;
+            TypedReg cidst = this._ctx.Alloc(this._ctx.ToIrType(c.Type()));
+            this._ctx.Emit(new CallIndirectInstr(cidst, callee, args, c.ArgCount));
+            return cidst;
+        }
         // 调用目标限定（BP-0）：自由函数经当前 ns 前缀；静态类用 QualifyClass（imported/
         // 同包跨-ns aware，查 ImportedClassNs；镜像 C# QualifyClassName）——否则同包跨-ns
         // 静态调用（如 Std.Archive.Zip → Std.Compression.Deflate.Compress）被误限定当前 ns。
