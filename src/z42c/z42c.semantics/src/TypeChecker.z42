@@ -120,6 +120,10 @@ public sealed class TypeChecker {
                         }
                     }
                     BoundStmt body = this._bindMethodBody(symbols, env, md);
+                    // 实例 ctor：注入实例字段初始化器（`int x=1`）到体首（base 调用后、用户体前）。
+                    // 此前完全未注入 → 字段停留类型默认值（got 0/null）。仅 ctor-exists 路径；
+                    // ctor-less 类的合成 ctor 待 follow-up。
+                    if (md.IsCtor && !ms.IsStatic && !md.IsThisInit) { body = this._injectFieldInits(c, ct, env, body); }
                     model.AddBody(ctKey + "." + mkey, body);   // GS3：body 键用 mkey（重载时=Name$arity）；arity-mangle 时用 ctKey（Name$N）
                 }
             } else if (mem is IndexerDecl) {
@@ -168,6 +172,37 @@ public sealed class TypeChecker {
         int j = 0;
         while (j < bc) { r[ac + j] = b[j]; j = j + 1; }
         return r;
+    }
+
+    // 实例字段初始化器注入：把 `this.field = init`（声明序）绑定后前置到 ctor 体首。
+    // env 已含 this + 字段（调用方 ctor 绑定时建立）。空则返回原体。
+    private BoundStmt _injectFieldInits(ClassDecl c, Z42ClassType ct, TypeEnv env, BoundStmt body) {
+        BoundStmt[] inits = new BoundStmt[c.MemberCount];
+        int ic = 0;
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[j]);
+            if (mem is FieldDecl) {
+                FieldDecl fd = mem as FieldDecl;
+                FieldSymbol fsym = ct.Fields.Get(fd.Name) as FieldSymbol;
+                if (fd.HasInit && fsym != null && !fsym.IsStatic) {
+                    Expr tgt = new MemberExpr(new IdentExpr("this", fd.Span), fd.Name, fd.Span);
+                    Expr asn = new AssignExpr("=", tgt, fd.Init, fd.Span);
+                    inits[ic] = new BoundExprStmt(this._bindExpr(asn, env), fd.Span);
+                    ic = ic + 1;
+                }
+            }
+            j = j + 1;
+        }
+        if (ic == 0) { return body; }
+        BoundStmt[] orig = new BoundStmt[1]; orig[0] = body; int origN = 1;
+        if (body is BoundBlock) { BoundBlock bb = body as BoundBlock; orig = bb.Stmts; origN = bb.Count; }
+        BoundStmt[] merged = new BoundStmt[ic + origN];
+        int m = 0;
+        while (m < ic) { merged[m] = inits[m]; m = m + 1; }
+        int k = 0;
+        while (k < origN) { merged[ic + k] = orig[k]; k = k + 1; }
+        return new BoundBlock(merged, ic + origN, body.Span);
     }
 
     private BoundStmt _bindMethodBody(SymbolTable symbols, TypeEnv env, MethodDecl md) {
