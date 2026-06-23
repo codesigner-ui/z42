@@ -129,19 +129,11 @@ int _regen(ParseResult r) {
 }
 
 int _regenCore(bool release, bool rebuildStdlib) {
-    string root = _root();
+    // replace-csharp Phase C：golden 编译走 z42c（不再 dotnet build C# driver）。
+    // _buildStdlib（warm C#-free 路径）顺带把 z42c per-member dist 建好，_regenGolden 据此组 driver-home。
     if (rebuildStdlib) { int c = _buildStdlib(); if (c != 0) { return c; } }
-    // build the compiler driver only if z42c.dll is absent (avoids MSB3492 on slnx)
-    if (!File.Exists(_driverDll(root))) {
-        string cfg = release ? "Release" : "Debug";
-        int c = _exec(new Process("dotnet").Arg("build").Arg("-q")
-            .Arg("src/compiler/z42.Driver/z42.Driver.csproj").Arg("-c").Arg(cfg));
-        if (c != 0) { return c; }
-    }
     int cr = _buildRuntime(); if (cr != 0) { return cr; }   // cargo build --release (launcher runtime needs z42vm)
-    // in-process (unify-scripts-into-xtask): regen logic folded into xtask_regen.z42
-    // (_regenGolden); the driver is already built above, so the old `--release`
-    // passthrough (only affected the standalone's driver-build) is moot.
+    // in-process (unify-scripts-into-xtask): regen logic folded into xtask_regen.z42（_regenGolden，z42c）。
     return _regenGolden();
 }
 

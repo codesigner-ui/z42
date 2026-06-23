@@ -18,9 +18,20 @@ using Std.IO;
 
 int _regenGolden() {
     string root = _root();
-    string driverDll = _driverDll(root);
-    if (!File.Exists(driverDll)) {
-        ConsoleError.WriteLine("error: driver DLL not found at " + driverDll);
+    // replace-csharp Phase C：golden 编译改用 z42c（z42vm + z42c.driver.zpkg），不再 dotnet。
+    // driverHome = 含 z42c.driver.zpkg + 7 个 z42c.* 兄弟；golden 的 stdlib 依赖走 Z42_LIBS=stdlibDist。
+    string driverHome = _assembleZ42cDriverHome(root);
+    if (driverHome.Length == 0) {
+        ConsoleError.WriteLine("error: z42c driver not built (artifacts/build/z42c/z42c.*/release/dist)");
+        ConsoleError.WriteLine("       Build it via stdlib/compiler-z42 build first.");
+        return 1;
+    }
+    string driverZpkg = Path.Join(driverHome, "z42c.driver.zpkg");
+    string stdlibDist = _libsDir(root);
+    string vmBin = Path.Join(root, "artifacts/build/runtime/debug/z42vm");
+    if (!File.Exists(vmBin)) { vmBin = Path.Join(root, "artifacts/build/runtime/release/z42vm"); }
+    if (!File.Exists(vmBin)) {
+        ConsoleError.WriteLine("error: z42vm not found (build via cargo build --manifest-path src/runtime/Cargo.toml)");
         return 1;
     }
 
@@ -140,7 +151,7 @@ int _regenGolden() {
         string name = caseNames[k];
         string src  = caseSources[k];
         string outPath = caseOutputs[k];
-        bool ok = _compileCase(driverDll, src, outPath);
+        bool ok = _compileCase(vmBin, driverZpkg, stdlibDist, src, outPath);
         if (ok) {
             Console.WriteLine("  OK:   " + name);
             pass = pass + 1;
@@ -179,13 +190,14 @@ bool _isNonRegenCat(string cat) {
     return cat == "errors" || cat == "parse" || cat == "cross-zpkg";
 }
 
-bool _compileCase(string driverDll, string source, string output) {
+// z42c 编译单个 golden（z42vm 跑 z42c.driver.zpkg --emit-zbc）。golden 的 stdlib 依赖
+// （Assert/Console 等）经 Z42_LIBS=stdlibDist 解析；driver 自身 z42c.* 依赖从 driverHome 解析。
+bool _compileCase(string vmBin, string driverZpkg, string stdlibDist, string source, string output) {
     try {
-        ProcessResult r = new Process("dotnet")
-            .Arg(driverDll)
-            .Arg(source)
-            .Arg("--emit").Arg("zbc")
-            .Arg("-o").Arg(output)
+        ProcessResult r = new Process(vmBin)
+            .Arg(driverZpkg).Arg("--mode").Arg("interp")
+            .Arg("--").Arg("--emit-zbc").Arg(source).Arg(output)
+            .Env("Z42_LIBS", stdlibDist)
             .Stdout(Stdio.Null())
             .Stderr(Stdio.Null())
             .Run();
