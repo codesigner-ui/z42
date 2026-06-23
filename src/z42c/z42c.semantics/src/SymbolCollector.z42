@@ -18,6 +18,7 @@ public sealed class SymbolCollector {
         this._passClassStubs(t, cu);
         this._mergeImports(t, imported);
         this._passMembers(t, cu);
+        this._passInheritFields(t, cu);
         return t;
     }
 
@@ -72,6 +73,8 @@ public sealed class SymbolCollector {
         // imported；_mergeImports 已 seed）。镜像 C# SymbolCollector.CollectImpls。
         c = 0;
         while (c < cuCount) { this._passImpls(table, cus[c]); c = c + 1; }
+        c = 0;
+        while (c < cuCount) { this._passInheritFields(table, cus[c]); c = c + 1; }
         return table;
     }
 
@@ -113,7 +116,47 @@ public sealed class SymbolCollector {
         this._passClassStubs(table, cu);
         this._passMembers(table, cu);
         this._passImpls(table, cu);   // port-z42c-impl-block
+        this._passInheritFields(table, cu);
         return table;
+    }
+
+    // 继承字段合并（_passMembers 后）：把基类链上的实例字段并入派生类 Fields（own-wins，跳 static）。
+    // Z42ClassType.Fields 供 binder env（裸 ident → 字段类型）+ FunctionEmitter（裸 ident → field_get reg0）
+    // 读取；此前仅含自有字段 → 派生类裸访问继承字段（`name = n`）解析失败 → 写入幻影局部 → 运行期 null。
+    // _classDesc 用 AST c.Members 发 TYPE 段字段，不读此表 → 合并不污染字段布局。
+    private void _passInheritFields(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if (c.Kind == "class" || c.Kind == "struct" || c.Kind == "record") {
+                    string ctKey = c.Name;
+                    if (c.TypeParams.Count > 0) { string mk = c.Name + "$" + c.TypeParams.Count.ToString(); if (table.Classes.ContainsKey(mk)) { ctKey = mk; } }
+                    Z42ClassType ct = table.Classes.Get(ctKey) as Z42ClassType;
+                    if (ct != null) {
+                        Z42ClassType cur = ct;
+                        while (cur != null && cur.HasBase && cur.BaseName != "" && table.Classes.ContainsKey(cur.BaseName)) {
+                            Z42ClassType baseCt = table.Classes.Get(cur.BaseName) as Z42ClassType;
+                            if (baseCt == null) { cur = null; }
+                            else {
+                                string[] bfns = baseCt.Fields.Keys();
+                                int k = 0;
+                                while (k < bfns.Length) {
+                                    FieldSymbol bfs = baseCt.Fields.Get(bfns[k]) as FieldSymbol;
+                                    if (bfs != null && !bfs.IsStatic && !ct.Fields.ContainsKey(bfns[k])) {
+                                        ct.Fields.Put(bfns[k], bfs);
+                                    }
+                                    k = k + 1;
+                                }
+                                cur = baseCt;
+                            }
+                        }
+                    }
+                }
+            }
+            i = i + 1;
+        }
     }
 
     // Pass A-1：枚举类型 + 成员常量（先于类 stub——成员类型解析可能用到枚举）。
