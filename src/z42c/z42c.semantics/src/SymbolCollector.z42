@@ -14,6 +14,7 @@ public sealed class SymbolCollector {
         var t = new SymbolTable();
         this._passInterfaces(t, cu);
         this._passEnums(t, cu);
+        this._mergeImportedEnums(t, imported);
         this._mergeImportedInterfaces(t, imported);
         this._passClassStubs(t, cu);
         this._mergeImports(t, imported);
@@ -33,6 +34,24 @@ public sealed class SymbolCollector {
         int i = 0;
         while (i < ifs.Length) {
             if (!table.Interfaces.ContainsKey(ifs[i])) { table.Interfaces.Put(ifs[i], imported.Interfaces.Get(ifs[i])); }
+            i = i + 1;
+        }
+    }
+
+    // imported 枚举 seed（imported `EnumType.Member` 常量解析；local 同名枚举 local-wins）。
+    // 必须在 typecheck 前进表，否则跨包枚举常量 `GCHandleType.Weak` 绑成 undefined → emit const.null。
+    private void _mergeImportedEnums(SymbolTable table, ImportedSymbols imported) {
+        if (imported == null) { return; }
+        string[] ets = imported.EnumTypeNames.Keys();
+        int i = 0;
+        while (i < ets.Length) {
+            if (!table.EnumTypes.ContainsKey(ets[i])) { table.EnumTypes.Put(ets[i], "enum"); }
+            i = i + 1;
+        }
+        string[] ecs = imported.EnumConsts.Keys();
+        i = 0;
+        while (i < ecs.Length) {
+            if (!table.EnumConsts.ContainsKey(ecs[i])) { table.EnumConsts.Put(ecs[i], imported.EnumConsts.Get(ecs[i])); }
             i = i + 1;
         }
     }
@@ -63,6 +82,7 @@ public sealed class SymbolCollector {
         while (c < cuCount) { this._passInterfaces(table, cus[c]); c = c + 1; }
         c = 0;
         while (c < cuCount) { this._passEnums(table, cus[c]); c = c + 1; }
+        this._mergeImportedEnums(table, imported);
         // imported 接口必须在 _passClassStubs 前 seed（基表判别：查 table.Interfaces 区分 iface vs class base）。
         this._mergeImportedInterfaces(table, imported);
         c = 0;

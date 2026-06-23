@@ -18,11 +18,15 @@ public sealed class ImportedSymbols {
     public StrMap Functions;        // 名 → MethodSymbol（自由函数）
     public StrMap ClassNamespaces;  // 短名 → 原 ns（QualifyClassName / 诊断用；值存 StrBox）
     public StrMap Interfaces;       // 短名 → Z42InterfaceType（接口骨架；供 _passClassStubs 基表判别）
+    public StrMap EnumTypeNames;    // 枚举类型短名 → "enum"（镜像 SymbolTable.EnumTypes；imported 枚举常量解析用）
+    public StrMap EnumConsts;       // "EnumType.Member" → StrBox(long 值)（镜像 SymbolTable.EnumConsts）
     public ImportedSymbols() {
         this.Classes = new StrMap();
         this.Functions = new StrMap();
         this.ClassNamespaces = new StrMap();
         this.Interfaces = new StrMap();
+        this.EnumTypeNames = new StrMap();
+        this.EnumConsts = new StrMap();
     }
 }
 
@@ -65,6 +69,21 @@ public static class ImportedSymbolLoader {
                         r.Interfaces.Put(iz.Name, new Z42InterfaceType(iz.Name));
                     }
                     ic = ic + 1;
+                }
+                // 枚举常量（imported `EnumType.Member` → BoundLitInt；镜像 _passEnums 填 EnumTypes/EnumConsts）。
+                int ec = 0;
+                while (ec < em.EnumCount) {
+                    ExportedEnumZ ez = em.Enums[ec];
+                    if (!r.EnumTypeNames.ContainsKey(ez.Name)) {
+                        r.EnumTypeNames.Put(ez.Name, "enum");
+                        int emi = 0;
+                        while (emi < ez.MemberCount) {
+                            ExportedEnumMemberZ emem = ez.Members[emi];
+                            r.EnumConsts.Put(ez.Name + "." + emem.Name, new StrBox(emem.Value.ToString()));
+                            emi = emi + 1;
+                        }
+                    }
+                    ec = ec + 1;
                 }
             }
             i = i + 1;

@@ -260,14 +260,22 @@ public static class ZpkgReader {
                 while (x < itp) { c.U32(); x = x + 1; }
                 ii = ii + 1;
             }
-            // enums（跳过）
+            // enums（解码：imported `EnumType.Member` 常量跨包解析；ImportedSymbolLoader 消费）
             int nen = c.U16();
+            ExportedEnumZ[] enums = new ExportedEnumZ[nen];
             ii = 0;
             while (ii < nen) {
-                c.U32();
+                string enName = z.Pool[c.U32()];
                 int emc = c.U16();
+                ExportedEnumMemberZ[] emems = new ExportedEnumMemberZ[emc];
                 int x = 0;
-                while (x < emc) { c.U32(); c.I64(); x = x + 1; }
+                while (x < emc) {
+                    string memName = z.Pool[c.U32()];
+                    long memVal = c.I64();
+                    emems[x] = new ExportedEnumMemberZ(memName, memVal);
+                    x = x + 1;
+                }
+                enums[ii] = new ExportedEnumZ(enName, emems, emc);
                 ii = ii + 1;
             }
             // functions
@@ -309,7 +317,7 @@ public static class ZpkgReader {
             }
             r[mi] = new ExportedModuleZ(ns, classes, cc,
                                         new ExportedInterfaceZ[0], 0,
-                                        new ExportedEnumZ[0], 0,
+                                        enums, nen,
                                         funcs, nfn,
                                         new ExportedDelegateZ[0], 0);
             mi = mi + 1;
