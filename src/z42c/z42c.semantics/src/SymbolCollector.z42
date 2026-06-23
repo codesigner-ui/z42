@@ -18,6 +18,7 @@ public sealed class SymbolCollector {
         this._mergeImportedInterfaces(t, imported);
         this._passClassStubs(t, cu);
         this._mergeImports(t, imported);
+        this._seedObjectStub(t);   // imported Type 已入表后；GetType 返回真实 Type 类（链式 getter 分派）
         this._passDelegates(t, cu);
         this._passMembers(t, cu);
         this._passImpls(t, cu);   // port-z42c-impl-block：deps 路径同样须并 impl 方法入 target.Methods，
@@ -36,6 +37,31 @@ public sealed class SymbolCollector {
             if (!table.Interfaces.ContainsKey(ifs[i])) { table.Interfaces.Put(ifs[i], imported.Interfaces.Get(ifs[i])); }
             i = i + 1;
         }
+    }
+
+    // Object stub seed（镜像 C# SymbolCollector.CollectClasses）：CU 未自声明 Object 时，
+    // 预注册 Object 骨架 + 四协议方法（ToString/Equals/GetHashCode/GetType），使
+    // `obj.GetType()` / 链式 `obj.GetType().BaseType.Name` 在消费端解析出真实返回类型。
+    // 关键：GetType 返回类型解析为 imported `Type` 类（若已在表中），否则 Unknown——
+    // 否则 GetType 返回 Unknown → 链式 getter 退化为 FieldGet → 运行期 FieldGet on Null。
+    // 必须在 imported 类（含 Type）合并入表后调用。stdlib 编 z42.core 时自声明 Object → 跳过。
+    private void _seedObjectStub(SymbolTable table) {
+        if (table.Classes.ContainsKey("Object")) { return; }   // 本地自声明 Object（z42.core）→ local-wins
+        Z42ClassType obj = new Z42ClassType("Object", false, "");
+        Z42Type getTypeRet = new Z42UnknownType();
+        if (table.Classes.ContainsKey("Type")) { getTypeRet = table.GetClass("Type"); }
+        Z42Type objParam = new Z42PrimType("object");
+        Z42Type[] noParams = new Z42Type[0];
+        Z42Type[] eqParams = new Z42Type[1]; eqParams[0] = objParam;
+        obj.Methods.Put("ToString", new MethodSymbol("ToString", "public",
+            new Z42FuncType(noParams, 0, new Z42PrimType("string")), false, "Object", false, null));
+        obj.Methods.Put("Equals", new MethodSymbol("Equals", "public",
+            new Z42FuncType(eqParams, 1, new Z42PrimType("bool")), false, "Object", false, null));
+        obj.Methods.Put("GetHashCode", new MethodSymbol("GetHashCode", "public",
+            new Z42FuncType(noParams, 0, new Z42PrimType("int")), false, "Object", false, null));
+        obj.Methods.Put("GetType", new MethodSymbol("GetType", "public",
+            new Z42FuncType(noParams, 0, getTypeRet), false, "Object", false, null));
+        table.Classes.Put("Object", obj);
     }
 
     // imported 枚举 seed（imported `EnumType.Member` 常量解析；local 同名枚举 local-wins）。
@@ -89,6 +115,7 @@ public sealed class SymbolCollector {
         while (c < cuCount) { this._passClassStubs(table, cus[c]); c = c + 1; }
         // seed imported classes + funcs（成员解析前；G18：兄弟包 imported 类字段/方法类型可解析为 Z42ClassType 而非 Unknown）。
         this._mergeImports(table, imported);
+        this._seedObjectStub(table);   // imported Type 已入表后；GetType 返回真实 Type 类（链式 getter 分派）
         c = 0;
         while (c < cuCount) { this._passDelegates(table, cus[c]); c = c + 1; }
         c = 0;
