@@ -18,7 +18,8 @@ public sealed class IrFieldDesc {
 public sealed class IrConstraintDesc {
     public string[] Interfaces;
     public int      InterfaceCount;
-    public IrConstraintDesc() { this.Interfaces = new string[0]; this.InterfaceCount = 0; }
+    public string   TypeParamConstraint;   // `where U: T` 的 T（裸类型形参名）；"" 表无（zbc flags bit3）
+    public IrConstraintDesc() { this.Interfaces = new string[0]; this.InterfaceCount = 0; this.TypeParamConstraint = ""; }
 }
 
 // 类/结构描述：名 + 基类 + 字段（slot 序）。

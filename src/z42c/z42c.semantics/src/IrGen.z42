@@ -498,7 +498,13 @@ public sealed class IrGen {
                         WhereConstraint wcon = wc.Constraints[ci];
                         if (wcon.IsType && wcon.Type is NamedType) {
                             NamedType wnt = wcon.Type as NamedType;
-                            ifaces[ifc] = wnt.Name; ifc = ifc + 1;   // bare name（同 C# i.Name）
+                            // `where U: T`：T 是本类型形参 → type-param-ref 约束（zbc bit3），
+                            // 否则按接口/基类约束（裸名进 Interfaces，镜像 C# i.Name）。
+                            bool isTpRef = false;
+                            int tk = 0;
+                            while (tk < c.TypeParams.Count) { if (c.TypeParams.Names[tk] == wnt.Name) { isTpRef = true; } tk = tk + 1; }
+                            if (isTpRef) { descs[tpi].TypeParamConstraint = wnt.Name; }
+                            else { ifaces[ifc] = wnt.Name; ifc = ifc + 1; }
                         }
                         ci = ci + 1;
                     }

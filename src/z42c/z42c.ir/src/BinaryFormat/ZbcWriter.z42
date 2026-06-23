@@ -78,6 +78,7 @@ public static class ZbcWriter {
                     if (cb != null) {
                         int cbifi = 0;
                         while (cbifi < cb.InterfaceCount) { pool.Intern(cb.Interfaces[cbifi]); cbifi = cbifi + 1; }
+                        if (cb.TypeParamConstraint != "") { pool.Intern(cb.TypeParamConstraint); }   // 镜像 C# InternConstraintBundle：iface 后 intern tp 约束
                     }
                     cbi = cbi + 1;
                 }
@@ -177,7 +178,12 @@ public static class ZbcWriter {
                 if (cd.TypeParamConstraints != null && tpi < cd.TypeParamConstraints.Length) {
                     cDesc = cd.TypeParamConstraints[tpi];
                 }
-                w.WriteU8(0);   // flags（仅接口约束；bit0-5 = 0）
+                // 约束 flags：bit3 = type-param-ref（`where U: T`）；其余 z42c 暂仅接口约束。
+                bool hasTpRef = (cDesc != null) && cDesc.TypeParamConstraint != "";
+                int cflags = 0;
+                if (hasTpRef) { cflags = cflags + 8; }   // bit3 has_type_param
+                w.WriteU8(cflags);
+                if (hasTpRef) { w.WriteU32(pool.Idx(cDesc.TypeParamConstraint)); }   // 读取序：flags 后、iface_count 前
                 int ifc = (cDesc != null) ? cDesc.InterfaceCount : 0;
                 w.WriteU8(ifc);
                 int ifi = 0;
