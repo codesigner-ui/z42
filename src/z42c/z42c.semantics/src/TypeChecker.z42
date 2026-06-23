@@ -914,8 +914,22 @@ public sealed class TypeChecker {
             Z42ClassType ct = tt as Z42ClassType;
             FieldSymbol fs = this._findField(env.Symbols, ct, m.Name);
             if (fs != null) { return new BoundMember(target, m.Name, fs.FieldType, m.Span); }
+            // 属性 getter 派发：无字段但有 get_<Name>(0 参) → 虚调用 getter（镜像 C#）。
+            MethodSymbol getter = this._findMethod(env.Symbols, ct, "get_" + m.Name);
+            if (getter != null && getter.Signature != null) {
+                return new BoundCall("instance", true, target, ct.Name(), "get_" + m.Name, new BoundExpr[0], 0, getter.Signature.Ret, m.Span);
+            }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                 "no field `" + m.Name + "` on `" + ct.Name() + "`", m.Span);
+            return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
+        }
+        // 接口收者属性访问：get_<Name>() 虚调用（接口 getter 已注册为 get_X 方法符号）。
+        if (tt is Z42InterfaceType) {
+            Z42InterfaceType it = tt as Z42InterfaceType;
+            MethodSymbol ig = it.Methods.Get("get_" + m.Name) as MethodSymbol;
+            if (ig != null && ig.Signature != null) {
+                return new BoundCall("instance", true, target, it.Name(), "get_" + m.Name, new BoundExpr[0], 0, ig.Signature.Ret, m.Span);
+            }
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);
         }
         // Length on array OR string → int；Count → int（镜像 C# TypeChecker.Exprs.Members 行 161-164：
