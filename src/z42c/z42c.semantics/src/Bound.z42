@@ -348,13 +348,16 @@ public sealed class BoundExprStmt : BoundStmt {
     public override string Dump() { return "(expr " + this.E.Dump() + ")"; }
 }
 
-// 局部函数（impl-local-fn-l2，L2 无捕获）：Decl 提供 params/ret（emit 复用 FunctionEmitter），Body 为已绑定体。
+// 局部函数（impl-local-fn-l2 + L3 捕获）：Decl 提供 params/ret，Body 为已绑定体。
+// Captures 非空 → 闭包路径（env lift + MkClos + CallIndirect）；空 → L2 自由函数 lift（支持递归）。
 public sealed class BoundLocalFunction : BoundStmt {
     public string     Name;
     public MethodDecl Decl;
     public BoundStmt  Body;
-    public BoundLocalFunction(string name, MethodDecl decl, BoundStmt body, Span span) {
+    public BoundCapture[] Captures; public int CaptureCount;
+    public BoundLocalFunction(string name, MethodDecl decl, BoundStmt body, BoundCapture[] captures, int captureCount, Span span) {
         this.Span = span; this.Name = name; this.Decl = decl; this.Body = body;
+        this.Captures = captures; this.CaptureCount = captureCount;
     }
     public override string Dump() { return "(localfn " + this.Name + " " + this.Body.Dump() + ")"; }
 }

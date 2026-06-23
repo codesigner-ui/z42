@@ -387,9 +387,26 @@ public sealed class TypeChecker {
         }
         if (s is LocalFunctionStmt) {
             LocalFunctionStmt lf = s as LocalFunctionStmt;
-            TypeEnv lscope = env.PushScope();   // 体内可见同级/外层局部函数（递归/前向引用）；L2 无值捕获
-            BoundStmt lbody = this._bindMethodBody(env.Symbols, lscope, lf.Decl);
-            return new BoundLocalFunction(lf.Decl.Name, lf.Decl, lbody, lf.Span);
+            MethodDecl lmd = lf.Decl;
+            TypeEnv lscope = env.PushScope();   // 体内可见同级/外层局部函数（递归/前向引用）+ 外层局部变量（L3 捕获）
+            int lpi = 0;
+            while (lpi < lmd.ParamCount) { lscope.Define(lmd.Params[lpi].Name, env.ResolveType(lmd.Params[lpi].Type)); lpi = lpi + 1; }
+            // 捕获分析（复用 lambda 机制）：体内引用外层非参变量 → BoundCapturedIdent + 记 _lambdaCaps。
+            bool savedActive = this._lambdaActive; StrMap savedLocals = this._lambdaLocals;
+            BoundCapture[] savedCaps = this._lambdaCaps; int savedCapCount = this._lambdaCapCount;
+            this._lambdaActive = true;
+            this._lambdaLocals = new StrMap();
+            lpi = 0;
+            while (lpi < lmd.ParamCount) { this._lambdaLocals.Put(lmd.Params[lpi].Name, lscope.LookupVar(lmd.Params[lpi].Name)); lpi = lpi + 1; }
+            this._lambdaCaps = new BoundCapture[2]; this._lambdaCapCount = 0;
+            Z42Type lret = env.ResolveType(lmd.RetType);
+            BoundStmt lbody = this._bindStmt(lmd.Body, lscope, lret);
+            BoundCapture[] lcaps = new BoundCapture[this._lambdaCapCount];
+            int lci = 0; while (lci < this._lambdaCapCount) { lcaps[lci] = this._lambdaCaps[lci]; lci = lci + 1; }
+            int lcapN = this._lambdaCapCount;
+            this._lambdaActive = savedActive; this._lambdaLocals = savedLocals;
+            this._lambdaCaps = savedCaps; this._lambdaCapCount = savedCapCount;
+            return new BoundLocalFunction(lmd.Name, lmd, lbody, lcaps, lcapN, lf.Span);
         }
         if (s is VarDeclStmt) {
             VarDeclStmt v = s as VarDeclStmt;

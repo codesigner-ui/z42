@@ -1487,7 +1487,7 @@ public sealed class Parser {
             Stmt blk = this.ParseStatement();
             return new LambdaExpr(ps, pc, true, null, blk, sp);
         }
-        Expr body = this._parseExpr(11);                            // 赋值层之上（逗号停）
+        Expr body = this._parseExpr(10);                            // 含赋值层（lambda 体 `=> x = y` = `=> (x=y)`，镜像 C#；逗号仍停）
         return new LambdaExpr(ps, pc, false, body, null, sp);
     }
 

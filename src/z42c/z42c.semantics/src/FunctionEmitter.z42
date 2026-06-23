@@ -331,14 +331,40 @@ public sealed class FunctionEmitter {
         }
     }
 
-    // 局部函数 lift（L2 无捕获）：以 lifted 名发为自由函数（isInstance=false/isStaticMethod=false，镜像
-    // 顶层自由函数），并把当前 local-fn 映射注入 sub-emitter 供其体内兄弟/递归调用解析。AddLifted 追加模块尾。
+    // 局部函数 lift。无捕获（L2）→ 自由函数（支持递归；call → Call <lifted>）；有捕获（L3）→
+    // 合成 BoundLambda 复用 EmitLambdaLifted（env 版）+ MkClos + Locals 存闭包（call → CallIndirect）。
     private void _emitLocalFn(BoundLocalFunction lfn) {
         string lifted = (this._ctx.LocalFnNames.Get(lfn.Name) as StrBox).Value;
-        var fe = new FunctionEmitter(this._symbols, this._gen);
-        fe.SeedLocalFns(this._ctx.LocalFnNames);
-        IrFunction f = fe.EmitFunction(lifted, lfn.Decl, lfn.Body, false, false, null, new string[0], 0);
-        this._gen.AddLifted(f);
+        if (lfn.CaptureCount == 0) {
+            var fe = new FunctionEmitter(this._symbols, this._gen);
+            fe.SeedLocalFns(this._ctx.LocalFnNames);
+            IrFunction f = fe.EmitFunction(lifted, lfn.Decl, lfn.Body, false, false, null, new string[0], 0);
+            this._gen.AddLifted(f);
+            return;
+        }
+        // L3 捕获：镜像 C# EmitBoundLocalFunctionWithEnv。
+        MethodDecl md = lfn.Decl;
+        string[] pn = new string[md.ParamCount];
+        Z42Type[] pt = new Z42Type[md.ParamCount];
+        int i = 0;
+        while (i < md.ParamCount) { pn[i] = md.Params[i].Name; pt[i] = this._symbols.ResolveTypeP(md.Params[i].Type, new string[0], 0); i = i + 1; }
+        Z42Type lret = this._symbols.ResolveTypeP(md.RetType, new string[0], 0);
+        Z42FuncType ft = new Z42FuncType(pt, md.ParamCount, lret);
+        BoundLambda synth = new BoundLambda(pn, pt, md.ParamCount, true, null, lfn.Body, lfn.Captures, lfn.CaptureCount, ft, lfn.Span);
+        var fe2 = new FunctionEmitter(this._symbols, this._gen);
+        IrFunction lf = fe2.EmitLambdaLifted(lifted, synth);
+        this._gen.AddLifted(lf);
+        TypedReg[] caps = new TypedReg[lfn.CaptureCount];
+        int ci = 0;
+        while (ci < lfn.CaptureCount) {
+            string cn = lfn.Captures[ci].Name;
+            if (this._ctx.Locals.ContainsKey(cn)) { caps[ci] = this._ctx.Locals.Get(cn) as TypedReg; }
+            else { TypedReg ph = this._ctx.Alloc(IrType.Ref); this._ctx.Emit(new ConstNullInstr(ph)); caps[ci] = ph; }
+            ci = ci + 1;
+        }
+        TypedReg clos = this._ctx.Alloc(IrType.Ref);
+        this._ctx.Emit(new MkClosInstr(clos, lifted, caps, lfn.CaptureCount, false));
+        this._ctx.Locals.Put(lfn.Name, clos);
     }
 
     private void _emitStmt(BoundStmt s) {
