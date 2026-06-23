@@ -550,6 +550,19 @@ public sealed class Parser {
         int k = this._peek().Kind;
         if (k == TokenKind.Var) { return true; }
         if (this._isTypeKeyword(k)) { return true; }
+        // 函数类型 var-decl：`(T,...) -> R name = ...`。判别：`(...)` 后紧跟 `->`（Arrow 仅
+        // 出现在函数类型；lambda 用 `=>` FatArrow），故 `)->` 是干净的函数类型 var-decl 信号。
+        if (k == TokenKind.LParen) {
+            int depth = 0; int o = 0;
+            while (o < 64) {
+                int kk = this._peekAt(o).Kind;
+                if (kk == TokenKind.LParen) { depth = depth + 1; }
+                else if (kk == TokenKind.RParen) { depth = depth - 1; if (depth == 0) { o = o + 1; break; } }
+                else if (kk == TokenKind.Eof || kk == TokenKind.Semicolon || kk == TokenKind.LBrace) { return false; }
+                o = o + 1;
+            }
+            if (this._peekAt(o).Kind == TokenKind.Arrow) { return true; }
+        }
         if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Identifier) { return true; }
         // 数组类型注解 var-decl：`Name[] name`（用户类数组局部声明；`int[]` 等关键字数组已走 _isTypeKeyword 路径）。
         // 空括号 `[]` + 紧跟标识符区分类型 `Diagnostic[] x` 与下标表达式 `Diagnostic[i]`（后者括号内非空）。
@@ -1265,6 +1278,8 @@ public sealed class Parser {
     // 结构化类型（incr 6d）：限定名 + 泛型 <...>（递归，含 >>/>>> 拆分）+ 数组 [] + nullable ?。
     private TypeExpr _parseType() {
         Span sp = this._peek().Span;
+        // 函数类型 `(T1,...) -> R`（类型位 `(` 只可能是函数类型）。
+        if (this._peek().Kind == TokenKind.LParen) { return this._parseFuncType(); }
         string name = this._peek().Text;
         this._advance();
         while (this._peek().Kind == TokenKind.Dot) {
@@ -1299,6 +1314,30 @@ public sealed class Parser {
         }
         if (this._peek().Kind == TokenKind.Question) { this._advance(); t = new NullableType(t, sp); }
         return t;
+    }
+
+    // 函数类型 `(T1, T2, ...) -> R`。调用时 peek 在 `(`。
+    private TypeExpr _parseFuncType() {
+        Span sp = this._peek().Span;
+        this._expect(TokenKind.LParen, "(");
+        TypeExpr[] ps = new TypeExpr[4];
+        int pc = 0;
+        if (this._peek().Kind != TokenKind.RParen) {
+            while (true) {
+                if (pc == ps.Length) {
+                    TypeExpr[] b = new TypeExpr[ps.Length * 2];
+                    int i = 0; while (i < pc) { b[i] = ps[i]; i = i + 1; }
+                    ps = b;
+                }
+                ps[pc] = this._parseType(); pc = pc + 1;
+                if (this._peek().Kind == TokenKind.Comma) { this._advance(); continue; }
+                break;
+            }
+        }
+        this._expect(TokenKind.RParen, ")");
+        this._expect(TokenKind.Arrow, "->");
+        TypeExpr ret = this._parseType();
+        return new FuncTypeExpr(ps, pc, ret, sp);
     }
 
     // 消费一个类型实参闭合 `>`：优先用 pending（来自上层 GtGt 拆分），否则吃 Gt，或把 GtGt 拆成两个 `>`。

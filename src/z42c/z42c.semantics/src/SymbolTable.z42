@@ -169,6 +169,13 @@ public sealed class SymbolTable {
             NullableType nt = te as NullableType;
             return this.ResolveTypeP(nt.Inner, paramNames, paramCount);   // nullable → inner（Option 延后）
         }
+        if (te is FuncTypeExpr) {                                          // `(T,...) -> R` → Z42FuncType
+            FuncTypeExpr ft = te as FuncTypeExpr;
+            Z42Type[] fps = new Z42Type[ft.ParamCount];
+            int fi = 0;
+            while (fi < ft.ParamCount) { fps[fi] = this.ResolveTypeP(ft.Params[fi], paramNames, paramCount); fi = fi + 1; }
+            return new Z42FuncType(fps, ft.ParamCount, this.ResolveTypeP(ft.Ret, paramNames, paramCount));
+        }
         return new Z42UnknownType();
     }
 

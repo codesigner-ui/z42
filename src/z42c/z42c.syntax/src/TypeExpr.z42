@@ -49,6 +49,22 @@ public sealed class NullableType : TypeExpr {
     public override string Dump() { return this.Inner.Dump() + "?"; }
 }
 
+// 函数类型 `(T1, T2, ...) -> R`（闭包/委托类型位）→ 解析为 Z42FuncType（同 Func<>/Action<>）。
+public sealed class FuncTypeExpr : TypeExpr {
+    public TypeExpr[] Params;
+    public int        ParamCount;
+    public TypeExpr   Ret;
+    public FuncTypeExpr(TypeExpr[] ps, int pc, TypeExpr ret, Span span) { this.Span = span;
+        this.Params = ps; this.ParamCount = pc; this.Ret = ret;
+    }
+    public override string Dump() {
+        string s = "(";
+        int i = 0;
+        while (i < this.ParamCount) { if (i > 0) { s = s + ","; } s = s + this.Params[i].Dump(); i = i + 1; }
+        return s + ")->" + this.Ret.Dump();
+    }
+}
+
 // ── 类型形参声明 & 泛型约束（incr 6d-3）──────────────────────────────────────
 
 // 类型形参声明列表 <T> / <K, V>（仅名字；variance/约束分离）。Dump → "<K,V>" 或 ""。
