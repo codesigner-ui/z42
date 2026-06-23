@@ -336,6 +336,20 @@ public sealed class ExprEmitter {
         if (op == "-") { TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(u.Type())); this._ctx.Emit(new NegInstr(d, x)); return d; }
         if (op == "~") { TypedReg d = this._ctx.Alloc(this._ctx.ToIrType(u.Type())); this._ctx.Emit(new BitNotInstr(d, x)); return d; }
         if (op == "+") { return x; }
+        // 前置 ++/--（"pre++"/"pre--"）：x = x ± 1，返回**新值**（区别于后置返回旧值）。
+        // 仅 BoundIdent 操作数（`++i`）写回 Locals 活寄存器；非 ident 暂不增量。
+        if (op == "pre++" || op == "pre--") {
+            if (u.Operand is BoundIdent) {
+                TypedReg one = this._ctx.Alloc(IrType.I64);
+                TypedReg nv  = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
+                this._ctx.Emit(new ConstI64Instr(one, "1"));
+                if (op == "pre++") { this._ctx.Emit(new AddInstr(nv, x, one)); }
+                else                { this._ctx.Emit(new SubInstr(nv, x, one)); }
+                this._ctx.Emit(new CopyInstr(x, nv));
+                return x;
+            }
+            return x;
+        }
         // post-increment / post-decrement（镜像 C# EmitBoundPostfix）：
         // 1. savedOld = copy x（表达式返回旧值）
         // 2. newVal = x ± 1

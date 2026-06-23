@@ -154,6 +154,13 @@ public sealed class Parser {
             Expr operand = this._parseExpr(85);
             return new UnaryExpr(t.Text, operand, t.Span);
         }
+        // 前置 ++/--（此前 prefix 解析未处理 → ++i 无法解析）。用 "pre++"/"pre--" 区别于
+        // 后置 "++"/"--"（emitter 据此返回新值 vs 旧值）。
+        if (k == TokenKind.PlusPlus || k == TokenKind.MinusMinus) {
+            this._advance();
+            Expr operand = this._parseExpr(85);
+            return new UnaryExpr("pre" + t.Text, operand, t.Span);
+        }
         // C 风格强制转换 `(Type)expr`：`( 类型关键字 )` 无歧义（类型关键字不能作值）。
         // 用户类 cast `(C)x` 留 `as`（避免与 `(expr)` 歧义）。操作数按一元优先级（85）绑定。
         if (k == TokenKind.LParen && this._isTypeKeyword(this._peekAt(1).Kind)
