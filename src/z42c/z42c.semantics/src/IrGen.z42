@@ -43,6 +43,7 @@ public sealed class IrGen {
     public StrMap LocalClasses;        // 本包自有声明类名集（G18：ChainHasMethod 反劫持守卫仅认本地类）
     public bool IsRelease;   // release 模式：strip debug info（不 emit .locals/.linetable），镜像 C# stripSymbols=true
     public IrFunction[] Lifted; public int LiftedCount;   // lambda lift（port-z42c-closures；模块尾追加）
+    public StrMap IfaceDecls;   // 接口名 → 其 ClassDecl（add-reflection-transitive-interfaces：接口传递闭包展开）
 
     public void AddLifted(IrFunction f) {
         if (this.Lifted == null) { this.Lifted = new IrFunction[2]; this.LiftedCount = 0; }
@@ -102,6 +103,17 @@ public sealed class IrGen {
 
     public IrModule Generate(CompilationUnit cu, SemanticModel model) {
         this._symbols = model.Symbols;
+        // 接口名 → ClassDecl 映射（接口传递闭包展开用：IB:IA → Widget:IB 也含 IA）。
+        this.IfaceDecls = new StrMap();
+        int ifd = 0;
+        while (ifd < cu.DeclCount) {
+            Decl dfd = this._unwrap(cu.Decls[ifd]);
+            if (dfd is ClassDecl) {
+                ClassDecl cfd = dfd as ClassDecl;
+                if (cfd.Kind == "interface") { this.IfaceDecls.Put(cfd.Name, cfd); }
+            }
+            ifd = ifd + 1;
+        }
         if (this.UsedDepNs == null) { this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0; }
         if (this.Lifted == null) { this.Lifted = new IrFunction[2]; this.LiftedCount = 0; }
         this.Ns = "";
@@ -365,6 +377,46 @@ public sealed class IrGen {
     }
 
     // 类 → IrClassDesc（名 + 基类 + 字段 slot 序）。CG-1A 描述就绪，字段访问 codegen 在 CG-1C 用。
+    // 接口名集合 → 传递闭包（含间接继承的接口）。裸名（无泛型实参）。BFS over IfaceDecls。
+    private string[] _expandIfaces(string[] direct, int count) {
+        string[] result = new string[count + 4]; int rc = 0;
+        StrMap seen = new StrMap();
+        string[] queue = new string[count + 4]; int qh = 0; int qt = 0;
+        int i = 0;
+        while (i < count) { queue[qt] = direct[i]; qt = qt + 1; i = i + 1; }
+        while (qh < qt) {
+            string name = queue[qh]; qh = qh + 1;
+            // 裸名（去泛型实参）查 IfaceDecls + 去重
+            string bare = name;
+            int lt = name.IndexOf("<");
+            if (lt >= 0) { bare = name.Substring(0, lt); }
+            if (seen.ContainsKey(bare)) { continue; }
+            seen.Put(bare, "1");
+            if (rc == result.Length) {
+                string[] b2 = new string[result.Length * 2];
+                int z = 0; while (z < rc) { b2[z] = result[z]; z = z + 1; }
+                result = b2;
+            }
+            result[rc] = name; rc = rc + 1;
+            if (this.IfaceDecls != null && this.IfaceDecls.ContainsKey(bare)) {
+                ClassDecl idecl = this.IfaceDecls.Get(bare) as ClassDecl;
+                int bi = 0;
+                while (bi < idecl.BaseCount) {
+                    if (qt == queue.Length) {
+                        string[] q2 = new string[queue.Length * 2];
+                        int z = 0; while (z < qt) { q2[z] = queue[z]; z = z + 1; }
+                        queue = q2;
+                    }
+                    queue[qt] = idecl.Bases[bi].Dump(); qt = qt + 1;
+                    bi = bi + 1;
+                }
+            }
+        }
+        string[] trimmed = new string[rc];
+        int t = 0; while (t < rc) { trimmed[t] = result[t]; t = t + 1; }
+        return trimmed;
+    }
+
     private bool _hasExplicitInstanceCtor(ClassDecl c) {
         int j = 0;
         while (j < c.MemberCount) {
@@ -462,11 +514,13 @@ public sealed class IrGen {
         IrClassDesc cd2 = new IrClassDesc(this._q(this._classIrShortName(c)), hasBase, baseName, fields, fcount);
         cd2.StaticFields = sfields; cd2.StaticFieldCount = sfcount;
         if (ctd != null && ctd.InterfaceCount > 0) {   // TYPE 接口块（zbc 1.20：FQ 名，镜像 C# InterfaceTypeName→QualifyClassName）
-            string[] ifqs = new string[ctd.InterfaceCount];
+            // add-reflection-transitive-interfaces：展开间接继承（IB:IA → 类含 IA）。
+            string[] expanded = this._expandIfaces(ctd.InterfaceNames, ctd.InterfaceCount);
+            string[] ifqs = new string[expanded.Length];
             int ifi = 0;
-            while (ifi < ctd.InterfaceCount) { ifqs[ifi] = this._qClass(ctd.InterfaceNames[ifi]); ifi = ifi + 1; }
+            while (ifi < expanded.Length) { ifqs[ifi] = this._qClass(expanded[ifi]); ifi = ifi + 1; }
             cd2.Interfaces = ifqs;
-            cd2.InterfaceCount = ctd.InterfaceCount;
+            cd2.InterfaceCount = expanded.Length;
         }
         // class-shape flags（zbc 1.12，G12）：从修饰符/kind 推导（镜像 C# cls.IsAbstract/IsSealed/IsStruct/IsRecord）。
         int flags = 0;
@@ -525,6 +579,18 @@ public sealed class IrGen {
         IrFieldDesc[] empty = new IrFieldDesc[0];
         IrClassDesc cd = new IrClassDesc(this._q(c.Name), false, "", empty, 0);
         cd.Flags = 17;
+        // 传递基接口（add-reflection-transitive-interfaces）：typeof(IB).GetInterfaces() 含 IA。
+        if (c.BaseCount > 0) {
+            string[] directBases = new string[c.BaseCount];
+            int dbi = 0;
+            while (dbi < c.BaseCount) { directBases[dbi] = c.Bases[dbi].Dump(); dbi = dbi + 1; }
+            string[] expanded = this._expandIfaces(directBases, c.BaseCount);
+            string[] ifqs = new string[expanded.Length];
+            int ei = 0;
+            while (ei < expanded.Length) { ifqs[ei] = this._qClass(expanded[ei]); ei = ei + 1; }
+            cd.Interfaces = ifqs;
+            cd.InterfaceCount = expanded.Length;
+        }
         if (c.TypeParams.Count > 0) {
             cd.TypeParams = c.TypeParams.Names;
             cd.TypeParamCount = c.TypeParams.Count;
