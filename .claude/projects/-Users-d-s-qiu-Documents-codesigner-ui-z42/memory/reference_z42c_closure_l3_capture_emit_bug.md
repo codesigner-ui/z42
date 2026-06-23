@@ -85,3 +85,10 @@ xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_c
 - **case 5（local-fn 捕获 `Helper(x)=>x+prefix` 捕 prefix）**：L2 lifting 把 Helper 发自由函数 → prefix undefined（Null）。需 L3：捕获分析（复用 _lambdaActive）+ 合成 BoundLambda 复用 EmitLambdaLifted（env 版）+ MkClos + Locals 存闭包（call 经 func-typed Locals → CallIndirect）。已实现但因 case-2 bp 阻断未能整体验证，连同 bp 一起 revert。
 - **结论**：closure_l3 需 ① 安全的 lambda 赋值体优先级修（先查清 bp-10 73-炸根因）② case-4 嵌套捕获 ③ case-5 L3 local-fn 捕获，三者齐活方过。是整个 L3 闭包系统的集成测试，工作量大、bp 改动高危。建议：要么继续深挖（多轮），要么 tracked-skip（沿用先例）后推进删 dotnet。
 - 复现/诊断：`/tmp/refcap.z42`（case2 最小）、`/tmp/lfmin.z42`（local-fn 最小）；oracle diff 见 case-2 lifted lambda 缺 field.set + RHS 漏到 Main。
+
+---
+**🎉 完成（2026-06-24）：z42c golden parity 130/130！** closure_l3_capture 攻克（commit `ebb301c4`）：
+- **case-2 lambda 赋值体优先级**：Parser lambda 体 `_parseExpr(11)→(10)`（含赋值层）。**重要更正：曾报"bp 10 灾难性 73 EMITFAIL"是并发竞态产物（多 zombie wait-loop + 重叠 rebuild 污染 GL/gfails），干净隔离重测零回归**。教训：scan 异常先疑并发竞态（pkill gscan/rebuild + 单序 rebuild→scan 复核）再下结论；勿同时跑多 gscan（共享 /tmp/gfails.txt + GL）。
+- **case-5 L3 局部函数捕获**：捕获分析（复用 _lambdaActive）→ BoundLocalFunction.Captures；_emitLocalFn 分流：无捕获=L2 自由函数 lift（递归 OK）/ 有捕获=合成 BoundLambda 复用 EmitLambdaLifted env 版 + MkClos + Locals 存闭包（call→CallIndirect）。
+本会话累计 8 提交（extern_impl/gc_handle/chained_property/attribute×4/multicast/local_fn/closure_l3），全 fixpoint gen1==gen2 + 零回归。**130/130 PASS=130 EMITFAIL=0 RUNFAIL=0，z42c 全量编译 src/tests goldens C#-free。删 dotnet 硬前置已满足。**
+下一步：remove-dotnet-from-builds（VM-golden gate 切 z42c + 删 src/compiler + 清 CI setup-dotnet）。
