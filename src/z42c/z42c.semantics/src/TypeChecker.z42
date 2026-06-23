@@ -473,6 +473,12 @@ public sealed class TypeChecker {
             AssignExpr a = e as AssignExpr;
             BoundExpr target = this._bindExpr(a.Target, env);
             BoundExpr value = this._bindExpr(a.Value, env);
+            // 复合赋值 `x op= v` desugar → `x = x op v`（原 binder 忽略 a.Op 直存 value →
+            // `+=` 退化成 `=`，丢旧值；arr[0]+=5 得 5 非 15）。binop = 去掉末尾 '='。
+            if (a.Op != "=") {
+                string binop = a.Op.Substring(0, a.Op.Length - 1);
+                value = new BoundBinary(binop, target, value, target.Type(), a.Span);
+            }
             if (!this._isAssignable(value.Type(), target.Type(), env.Symbols)) {
                 this._diags.Error(DiagnosticCodes.TypeMismatch,
                     "cannot assign " + value.Type().Name() + " to " + target.Type().Name(), a.Value.Span);
