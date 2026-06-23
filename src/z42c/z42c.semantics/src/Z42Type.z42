@@ -53,6 +53,7 @@ public sealed class Z42ClassType : Z42Type {
     public string BaseName;
     public StrMap Fields;    // name → FieldSymbol（1A-3 收集时回填）
     public StrMap Methods;   // name → MethodSymbol
+    public StrMap EventFields;   // add-event-keyword-multicast：event 字段名集（`+=`/`-=` desugar 判别）
     public string[] InterfaceNames; public int InterfaceCount;   // 实现的接口（port-z42c-interface）
     // 本类**自有实例字段**（声明序 + AST 源拼写 + 可见性），供 TSIG 继承字段展开走 base 链按序读取
     // （Fields 是 hashed StrMap，迭代非确定；TSIG 需确定序 + 源拼写 → 单独有序元数据）。G18。
@@ -67,6 +68,7 @@ public sealed class Z42ClassType : Z42Type {
         this._name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = new StrMap();
         this.Methods = new StrMap();
+        this.EventFields = new StrMap();
         this.InterfaceNames = new string[0]; this.InterfaceCount = 0;
         this.OwnFieldNames = new string[0]; this.OwnFieldSpellings = new string[0]; this.OwnFieldVis = new string[0]; this.OwnFieldCount = 0;
         this.OwnMethodNames = new string[0]; this.OwnMethodIsVirtual = new bool[0]; this.OwnMethodIsAbstract = new bool[0]; this.OwnMethodCount = 0;

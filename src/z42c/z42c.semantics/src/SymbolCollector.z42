@@ -424,6 +424,8 @@ public sealed class SymbolCollector {
                 Z42Type ft = table.ResolveTypeP(fd.Type, tp, tpc);
                 bool fstatic = this._hasWord(fd.Mods, "static");
                 ct.Fields.Put(fd.Name, new FieldSymbol(fd.Name, this._vis(fd.Mods), ft, fstatic, c.Name));
+                if (this._hasWord(fd.Mods, "event")) { ct.EventFields.Put(fd.Name, "1"); }   // add-event-keyword-multicast
+
                 // G18：实例字段记有序元数据（声明序 + TSIG 规范拼写）供 TSIG 继承字段展开；static 不入（C# 不继承合并 static）。
                 // 用 resolved Z42Type.Name() 镜像 C# TypeToString(sym.Type)：接口→裸名、Predicate<T>→Func<T,bool>、
                 // Func/Action 规范化；Unknown/Error → AST fallback（imported 包 interface 未进 ImportedSymbols 时降级）。

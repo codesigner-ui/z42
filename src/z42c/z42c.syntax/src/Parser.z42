@@ -788,7 +788,16 @@ public sealed class Parser {
         if (k == TokenKind.Public || k == TokenKind.Private || k == TokenKind.Protected || k == TokenKind.Internal) { return true; }
         if (k == TokenKind.Static || k == TokenKind.Abstract || k == TokenKind.Sealed || k == TokenKind.Override) { return true; }
         if (k == TokenKind.Virtual || k == TokenKind.Extern || k == TokenKind.Async || k == TokenKind.New) { return true; }
+        if (k == TokenKind.Event) { return true; }   // add-event-keyword-multicast：event 作字段修饰（Mods 含 "event"）
         return false;
+    }
+
+    // mods 串（空格分隔）是否含指定修饰词。
+    private bool _modsHas(string mods, string w) {
+        if (mods == w) { return true; }
+        if (mods.StartsWith(w + " ")) { return true; }
+        if (mods.EndsWith(" " + w)) { return true; }
+        return mods.IndexOf(" " + w + " ") >= 0;
     }
 
     // class / struct / interface 共用：消费关键字 + 名字 + 基类/接口列表 + 成员块。
@@ -1014,6 +1023,10 @@ public sealed class Parser {
         Expr init = new NullLitExpr(sp);
         if (this._peek().Kind == TokenKind.Eq) { this._advance(); init = this._parseExpr(0); hasInit = true; }
         this._expectSemi();
+        // add-event-keyword-multicast：event 字段无显式 init → 合成 `new <type>()`（复用字段 init 注入自动初始化）。
+        if (!hasInit && this._modsHas(mods, "event")) {
+            init = new ObjNewExpr(type, new Expr[0], 0, sp); hasInit = true;
+        }
         return new FieldDecl(mods, type, name, hasInit, init, sp);
     }
 
