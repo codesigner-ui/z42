@@ -34,6 +34,13 @@ public static class IrDump {
         return ZbcWriter.Write(IrDump._buildF(src, file)).ToBytes();
     }
 
+    // deps-aware 单文件 emit（replace-csharp Phase C：golden regen 脱 dotnet 需跨包 dep 解析，
+    // 否则调 stdlib（Assert/Console）的源 emit 出 `<error>` 函数名）。镜像 build 路径用 BuildModuleD。
+    public static byte[] ZbcBytesD(string src, string file, DependencyIndex deps, ImportedSymbols imported) {
+        CompiledModuleZ cm = IrDump.BuildModuleD(src, file, deps, imported);
+        return ZbcWriter.Write(cm.Module).ToBytes();
+    }
+
     // golden-hex 断言用：指定文件名（DBUG file 串须与 C# 同源 capture 一致）。
     public static string DumpZbcHexF(string src, string file) {
         return ZbcWriter.WriteHex(IrDump._buildF(src, file));
