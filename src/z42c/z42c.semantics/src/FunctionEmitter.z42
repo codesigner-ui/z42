@@ -185,6 +185,12 @@ public sealed class FunctionEmitter {
         this._ctx.NextReg = totalParams;                     // 参数区之后分配（漏此则 const 撞 reg0）
         this._ctx.MaxReg = this._ctx.NextReg;
         this._ctx.InLambdaEnv = hasEnv;
+        // 记录本 lifted lambda 的捕获名（env 布局序 = lam.Captures 序）→ 嵌套 lambda 的
+        // _emitLambda 可把"外层捕获"解析为 array_get env[idx]（修嵌套捕获 MkClos null 捕获崩溃）。
+        string[] capNames = new string[lam.CaptureCount];
+        int ci = 0;
+        while (ci < lam.CaptureCount) { capNames[ci] = lam.Captures[ci].Name; ci = ci + 1; }
+        this._ctx.CaptureNames = capNames; this._ctx.CaptureNameCount = lam.CaptureCount;
         this._ctx.StartBlock("entry");
         if (lam.HasBlock) {
             this._emitBlockChildren(lam.BlockBody);

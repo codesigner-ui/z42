@@ -236,11 +236,40 @@ public sealed class ExprEmitter {
         TypedReg[] caps = new TypedReg[lam.CaptureCount];
         int i = 0;
         while (i < lam.CaptureCount) {
-            caps[i] = this._ctx.Locals.Get(lam.Captures[i].Name) as TypedReg;
+            string cname = lam.Captures[i].Name;
+            if (this._ctx.Locals.ContainsKey(cname)) {
+                caps[i] = this._ctx.Locals.Get(cname) as TypedReg;
+            } else {
+                // 嵌套捕获：cname 是**外层 lambda 的捕获**（不在 Locals，经 env 访问）。
+                // 物化 array_get env(reg0)[envIdx] 成寄存器，作内层 lambda 的捕获实参。
+                // 修：原 Locals.Get → null → MkClos null 捕获 → ZbcWriter._args 崩溃。
+                int envIdx = this._captureEnvIdx(cname);
+                if (envIdx >= 0) {
+                    TypedReg idxReg = this._ctx.Alloc(IrType.I32);
+                    this._ctx.Emit(new ConstI32Instr(idxReg, envIdx.ToString()));
+                    TypedReg mat = this._ctx.Alloc(this._ctx.ToIrType(lam.Captures[i].CapType));
+                    this._ctx.Emit(new ArrayGetInstr(mat, new TypedReg(0, IrType.Ref), idxReg));
+                    caps[i] = mat;
+                } else {
+                    TypedReg ph = this._ctx.Alloc(IrType.Ref);
+                    this._ctx.Emit(new ConstNullInstr(ph));
+                    caps[i] = ph;
+                }
+            }
             i = i + 1;
         }
         this._ctx.Emit(new MkClosInstr(dst, liftName, caps, lam.CaptureCount, false));
         return dst;
+    }
+
+    // 当前 lifted lambda 的捕获名 → env 槽位（嵌套 lambda 解析外层捕获）；非捕获返回 -1。
+    private int _captureEnvIdx(string name) {
+        int i = 0;
+        while (i < this._ctx.CaptureNameCount) {
+            if (this._ctx.CaptureNames[i] == name) { return i; }
+            i = i + 1;
+        }
+        return 0 - 1;
     }
 
     // ident：local/param → 寄存器；裸自身字段 → field_get(reg0=this)；静态字段/未解析 → 占位。

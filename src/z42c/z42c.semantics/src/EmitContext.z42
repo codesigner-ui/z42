@@ -29,6 +29,7 @@ public sealed class EmitContext {
     public string CurFnName;                                  // lift 命名用（port-z42c-closures）
     public int LambdaIdx;                                     // 本函数 lambda 计数（镜像 NextLambdaIndex）
     public bool InLambdaEnv;                                  // lift env 版：BoundCapturedIdent → array_get env(reg0)
+    public string[] CaptureNames; public int CaptureNameCount;  // 当前 lifted lambda 的捕获名（env 布局序）→ 嵌套 lambda 解析外层捕获
 
     public EmitContext(SymbolTable symbols, IrGen gen) {
         this.Symbols = symbols; this.Gen = gen;
@@ -44,6 +45,7 @@ public sealed class EmitContext {
         this.UsedDepNs = new string[4]; this.UsedDepNsCount = 0;
         this.ExcTable = new IrExcEntry[2]; this.ExcCount = 0;
         this.CurFnName = ""; this.LambdaIdx = 0; this.InLambdaEnv = false;
+        this.CaptureNames = new string[0]; this.CaptureNameCount = 0;
     }
 
     public void AddExc(IrExcEntry e) {
