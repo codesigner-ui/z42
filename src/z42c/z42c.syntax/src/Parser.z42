@@ -64,6 +64,14 @@ public sealed class Parser {
                 left = new MemberExpr(left, name, left.Span);
                 continue;
             }
+            if (k == TokenKind.QuestionDot) {
+                this._advance();
+                string nname = this._peek().Text;
+                if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+                else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name after '?.'", this._peek().Span); }
+                left = new NullCondMemberExpr(left, nname, left.Span);
+                continue;
+            }
             if (k == TokenKind.LParen) { this._advance(); left = this._parseCall(left); continue; }
             if (k == TokenKind.LBracket) {
                 this._advance();

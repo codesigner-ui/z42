@@ -340,6 +340,7 @@ public sealed class Lexer {
         if (c == '&' && d == '&') { this._adv2(); this._emit(TokenKind.AmpAmp, "&&"); return; }
         if (c == '|' && d == '|') { this._adv2(); this._emit(TokenKind.PipePipe, "||"); return; }
         if (c == '?' && d == '?') { this._adv2(); this._emit(TokenKind.QuestionQuestion, "??"); return; }
+        if (c == '?' && d == '.') { this._adv2(); this._emit(TokenKind.QuestionDot, "?."); return; }
         if (c == ':' && d == ':') { this._adv2(); this._emit(TokenKind.ColonColon, "::"); return; }
         if (c == '.' && d == '.') { this._adv2(); this._emit(TokenKind.DotDot, ".."); return; }
         if (c == '+' && d == '+') { this._adv2(); this._emit(TokenKind.PlusPlus, "++"); return; }

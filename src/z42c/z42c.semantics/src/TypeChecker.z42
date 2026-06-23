@@ -648,6 +648,17 @@ public sealed class TypeChecker {
         if (e is MemberExpr) {
             return this._bindMember(e as MemberExpr, env);
         }
+        if (e is NullCondMemberExpr) {
+            // obj?.member 脱糖：(recv != null) ? recv.member : null（复用 BoundConditional）。
+            // 简单接收者双求值无副作用；goldens 均为局部接收者。
+            NullCondMemberExpr nc = e as NullCondMemberExpr;
+            BoundExpr access = this._bindMember(new MemberExpr(nc.Target, nc.Name, nc.Span), env);
+            Z42Type mt = access.Type();
+            BoundExpr recv = this._bindExpr(nc.Target, env);
+            BoundExpr cond = new BoundBinary("!=", recv, new BoundLitNull(mt, nc.Span), new Z42PrimType("bool"), nc.Span);
+            BoundExpr elseE = new BoundLitNull(mt, nc.Span);
+            return new BoundConditional(cond, access, elseE, mt, nc.Span);
+        }
         if (e is IsExpr) {
             IsExpr ix = e as IsExpr;
             BoundExpr operand = this._bindExpr(ix.E, env);
