@@ -160,13 +160,10 @@ int _testCompilerZ42Stdlib() {
     string profile = "release";
     Console.WriteLine("");
     Console.WriteLine("══ replace-csharp-compiler S2.1: z42c dogfood-builds stdlib ══");
-    // 自足：C# 建 fresh stdlib（种子；z42c 运行期依赖它，陈旧产物会缺新 extern
-    // 如 GetCommandLineArgs）+ tooling + z42c。bootstrap-safe：C# 全程是种子。
-    // 用 _csharpBuildStdlibSeed（非 _buildStdlibCore）：后者 S3 起做 z42c 全接管，
-    // 这里只要 C# 种子（本函数下面自己再用 z42c 编 stdlib 到独立 dogfood 目录）。
-    int sc = _csharpBuildStdlibSeed(); if (sc != 0) { return sc; }
+    // replace-csharp Phase C：C# 已删——用 C#-free warm 路径建 fresh stdlib + z42c（种子来自
+    // bootstrap-no-csharp / 现有 dist）。_buildStdlib 顺带 z42c 自建；下面再用 z42c 编到独立 dogfood 目录。
     int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }
-    int bc0 = _buildCompilerZ42(); if (bc0 != 0) { return bc0; }
+    int sc = _buildStdlib(); if (sc != 0) { return sc; }
 
     string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
     string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");

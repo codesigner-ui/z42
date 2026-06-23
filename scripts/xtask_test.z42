@@ -74,7 +74,7 @@ int _testCrossZpkgCore(string mode) {
 // compile + zpkg spawn. Not in the default GREEN gate (run on demand).
 int _testDist(ParseResult r) {
     string root = _root();
-    int c = _buildCompiler(); if (c != 0) { return c; }
+    int c = _buildCompilerZ42(); if (c != 0) { return c; }   // C#-free 自举编译器（C# _buildCompiler 已删）
     c = _exec(_cargoRelease().Arg("-q")
         .Arg("--manifest-path").Arg(_runtimeManifest())); if (c != 0) { return c; }
     if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
