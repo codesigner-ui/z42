@@ -39,7 +39,99 @@ public sealed class TypeChecker {
             }
             i = i + 1;
         }
+        this._synthCtors(model, symbols, cu);
         return model;
+    }
+
+    // 合成隐式 ctor 体（镜像 C# EmitImplicitCtor + CollectChainFieldInits）：
+    // 类无显式实例 ctor 但本类或本地祖先有实例字段 init 时，发 `<ctKey>.<Name>` 体——
+    // 沿基类链（root→self）的 `this.field = init` 赋值（无 base 调用，整链内联）。IrGen 据此发函数。
+    private void _synthCtors(SemanticModel model, SymbolTable symbols, CompilationUnit cu) {
+        StrMap clsMap = new StrMap();   // 简单名 → ClassDecl（本地 class/struct/record）
+        int i0 = 0;
+        while (i0 < cu.DeclCount) {
+            Decl d0 = this._unwrap(cu.Decls[i0]);
+            if (d0 is ClassDecl) {
+                ClassDecl cc = d0 as ClassDecl;
+                if (cc.Kind == "class" || cc.Kind == "struct" || cc.Kind == "record") { clsMap.Put(cc.Name, cc); }
+            }
+            i0 = i0 + 1;
+        }
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if ((c.Kind == "class" || c.Kind == "struct" || c.Kind == "record") && !this._hasExplicitInstanceCtor(c)) {
+                    string ctKey = c.Name;
+                    if (c.TypeParams.Count > 0) { string mk = c.Name + "$" + c.TypeParams.Count.ToString(); if (symbols.HasClass(mk)) { ctKey = mk; } }
+                    Z42ClassType ct = symbols.GetClass(ctKey);
+                    if (ct != null) {
+                        // 收集祖先链（self→root）
+                        ClassDecl[] chain = new ClassDecl[8]; int chainN = 0;
+                        StrMap seen = new StrMap();
+                        ClassDecl cur = c;
+                        Z42ClassType curCt = ct;
+                        while (cur != null && !seen.ContainsKey(cur.Name)) {
+                            seen.Put(cur.Name, "1");
+                            if (chainN == chain.Length) { ClassDecl[] b = new ClassDecl[chain.Length * 2]; int z = 0; while (z < chainN) { b[z] = chain[z]; z = z + 1; } chain = b; }
+                            chain[chainN] = cur; chainN = chainN + 1;
+                            if (curCt == null || !curCt.HasBase || curCt.BaseName == "" || !clsMap.ContainsKey(curCt.BaseName)) { cur = null; }
+                            else { cur = clsMap.Get(curCt.BaseName) as ClassDecl; curCt = symbols.GetClass(curCt.BaseName); }
+                        }
+                        // 绑定环境：this + 全部字段（含继承，_passInheritFields 已并入）
+                        var env = TypeEnv.Root(symbols).WithClassGeneric(ct.Name(), c.TypeParams.Names, c.TypeParams.Count);
+                        env.Define("this", ct);
+                        string[] fnames = ct.Fields.Keys();
+                        int fk = 0;
+                        while (fk < fnames.Length) { FieldSymbol fs = ct.Fields.Get(fnames[fk]) as FieldSymbol; env.Define(fnames[fk], fs.FieldType); fk = fk + 1; }
+                        // root→self 顺序绑定字段 init 赋值
+                        BoundStmt[] inits = new BoundStmt[16]; int ic = 0;
+                        int chx = chainN - 1;
+                        while (chx >= 0) {
+                            ClassDecl cd = chain[chx];
+                            Z42ClassType cdCt = symbols.GetClass(cd.Name);
+                            int mj = 0;
+                            while (mj < cd.MemberCount) {
+                                Decl mem = this._unwrap(cd.Members[mj]);
+                                if (mem is FieldDecl) {
+                                    FieldDecl fd = mem as FieldDecl;
+                                    FieldSymbol fsym = (cdCt != null) ? (cdCt.Fields.Get(fd.Name) as FieldSymbol) : null;
+                                    if (fd.HasInit && fsym != null && !fsym.IsStatic) {
+                                        Expr tgt = new MemberExpr(new IdentExpr("this", fd.Span), fd.Name, fd.Span);
+                                        Expr asn = new AssignExpr("=", tgt, fd.Init, fd.Span);
+                                        if (ic == inits.Length) { BoundStmt[] b2 = new BoundStmt[inits.Length * 2]; int z = 0; while (z < ic) { b2[z] = inits[z]; z = z + 1; } inits = b2; }
+                                        inits[ic] = new BoundExprStmt(this._bindExpr(asn, env), fd.Span); ic = ic + 1;
+                                    }
+                                }
+                                mj = mj + 1;
+                            }
+                            chx = chx - 1;
+                        }
+                        if (ic > 0) { model.AddBody(ctKey + "." + c.Name, new BoundBlock(inits, ic, c.Span)); }
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    private bool _hasExplicitInstanceCtor(ClassDecl c) {
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl m = this._unwrap(c.Members[j]);
+            if (m is MethodDecl) {
+                MethodDecl md = m as MethodDecl;
+                if (md.IsCtor && !this._hasWordTc(md.Mods, "static")) { return true; }
+            }
+            j = j + 1;
+        }
+        return false;
+    }
+
+    private bool _hasWordTc(string mods, string w) {
+        if (mods == "") { return false; }
+        return (" " + mods + " ").IndexOf(" " + w + " ") >= 0;
     }
 
     // impl-block 方法体绑定（port-z42c-impl-block 2b，镜像 _bindClass 的 MethodDecl 分支）：
