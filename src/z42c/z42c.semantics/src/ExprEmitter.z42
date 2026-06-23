@@ -349,6 +349,15 @@ public sealed class ExprEmitter {
                 this._ctx.Emit(new CopyInstr(x, nv));
                 return x;
             }
+            if (u.Operand is BoundStaticGet) {   // ++Class.staticField → static_set 写回
+                BoundStaticGet st = u.Operand as BoundStaticGet;
+                TypedReg one = this._ctx.Alloc(IrType.I64);
+                TypedReg nv  = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
+                this._ctx.Emit(new ConstI64Instr(one, "1"));
+                if (op == "pre++") { this._ctx.Emit(new AddInstr(nv, x, one)); } else { this._ctx.Emit(new SubInstr(nv, x, one)); }
+                this._ctx.Emit(new StaticSetInstr(this._ctx.QualifyClass(st.ClassName) + "." + st.FieldName, nv));
+                return nv;
+            }
             return x;
         }
         // post-increment / post-decrement（镜像 C# EmitBoundPostfix）：
@@ -366,6 +375,13 @@ public sealed class ExprEmitter {
             if (op == "++") { this._ctx.Emit(new AddInstr(nv, x, one)); }
             else             { this._ctx.Emit(new SubInstr(nv, x, one)); }
             this._ctx.Emit(new CopyInstr(x, nv));
+        } else if (u.Operand is BoundStaticGet) {   // Class.staticField++ → static_set 写回（返回旧值 ph）
+            BoundStaticGet st = u.Operand as BoundStaticGet;
+            TypedReg one = this._ctx.Alloc(IrType.I64);
+            TypedReg nv  = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
+            this._ctx.Emit(new ConstI64Instr(one, "1"));
+            if (op == "++") { this._ctx.Emit(new AddInstr(nv, x, one)); } else { this._ctx.Emit(new SubInstr(nv, x, one)); }
+            this._ctx.Emit(new StaticSetInstr(this._ctx.QualifyClass(st.ClassName) + "." + st.FieldName, nv));
         }
         return ph;
     }
