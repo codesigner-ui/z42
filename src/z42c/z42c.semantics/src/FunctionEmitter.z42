@@ -354,6 +354,10 @@ public sealed class FunctionEmitter {
             this._emitFor(s as BoundFor);
         } else if (s is BoundWhile) {
             this._emitWhile(s as BoundWhile);
+        } else if (s is BoundDoWhile) {
+            this._emitDoWhile(s as BoundDoWhile);
+        } else if (s is BoundSwitch) {
+            this._emitSwitch(s as BoundSwitch);
         } else if (s is BoundBreak) {
             if (this._ctx.InLoop()) { this._ctx.EndBlock(new BrTerm(this._ctx.CurBreak())); }
         } else if (s is BoundContinue) {
@@ -422,6 +426,59 @@ public sealed class FunctionEmitter {
         this._emitStmt(w.Body);
         if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(condL)); }
         this._ctx.PopLoop();
+        this._ctx.StartBlock(endL);
+    }
+
+    // do { body } while (cond) → body 块先执行，再 cond 块判定回跳（镜像 C# EmitBoundDoWhile）。
+    // continue → condL（重判条件）；break → endL。
+    private void _emitDoWhile(BoundDoWhile dw) {
+        string bodyL = this._ctx.Fresh("do_body");
+        string condL = this._ctx.Fresh("do_cond");
+        string endL = this._ctx.Fresh("do_end");
+        this._ctx.EndBlock(new BrTerm(bodyL));
+        this._ctx.PushLoop(condL, endL);
+        this._ctx.StartBlock(bodyL);
+        this._emitStmt(dw.Body);
+        if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(condL)); }
+        this._ctx.PopLoop();
+        this._ctx.StartBlock(condL);
+        TypedReg cond = this._expr.Emit(dw.Cond);
+        this._ctx.EndBlock(new BrCondTerm(cond, bodyL, endL));
+        this._ctx.StartBlock(endL);
+    }
+
+    // switch (subject) { case P: body; default: body }（镜像 C# EmitBoundSwitchStmt）：
+    // 等值比较链；break → sw_end，continue 透传外层 loop。
+    private void _emitSwitch(BoundSwitch sw) {
+        TypedReg subj = this._expr.Emit(sw.Subject);
+        string endL = this._ctx.Fresh("sw_end");
+        string outerCont = this._ctx.InLoop() ? this._ctx.CurContinue() : endL;
+        this._ctx.PushLoop(outerCont, endL);
+        int ci = 0;
+        while (ci < sw.CaseCount) {
+            BoundSwitchCase c = sw.Cases[ci];
+            if (!c.HasPattern) {
+                int bi = 0;
+                while (bi < c.BodyCount) { if (this._ctx.Ended) { break; } this._emitStmt(c.Body[bi]); bi = bi + 1; }
+                if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(endL)); }
+                ci = sw.CaseCount;   // default 视作最后一条（break out）
+            } else {
+                string bodyL = this._ctx.Fresh("sw_case");
+                string nextL = this._ctx.Fresh("sw_next");
+                TypedReg pat = this._expr.Emit(c.Pattern);
+                TypedReg cmp = this._ctx.Alloc(IrType.Bool);
+                this._ctx.Emit(new EqInstr(cmp, subj, pat));
+                this._ctx.EndBlock(new BrCondTerm(cmp, bodyL, nextL));
+                this._ctx.StartBlock(bodyL);
+                int bi2 = 0;
+                while (bi2 < c.BodyCount) { if (this._ctx.Ended) { break; } this._emitStmt(c.Body[bi2]); bi2 = bi2 + 1; }
+                if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(endL)); }
+                this._ctx.StartBlock(nextL);
+                ci = ci + 1;
+            }
+        }
+        this._ctx.PopLoop();
+        if (!this._ctx.Ended) { this._ctx.EndBlock(new BrTerm(endL)); }
         this._ctx.StartBlock(endL);
     }
 

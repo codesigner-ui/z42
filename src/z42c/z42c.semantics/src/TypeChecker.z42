@@ -351,6 +351,33 @@ public sealed class TypeChecker {
             this._loopDepth = this._loopDepth - 1;
             return new BoundWhile(cond, body, w.Span);
         }
+        if (s is DoWhileStmt) {
+            DoWhileStmt dw = s as DoWhileStmt;
+            this._loopDepth = this._loopDepth + 1;
+            BoundStmt dwBody = this._bindStmt(dw.Body, env, ret);
+            this._loopDepth = this._loopDepth - 1;
+            BoundExpr dwCond = this._bindExpr(dw.Cond, env);
+            this._requireBool(dwCond.Type(), "do-while", dw.Cond.Span);
+            return new BoundDoWhile(dwBody, dwCond, dw.Span);
+        }
+        if (s is SwitchStmt) {
+            SwitchStmt sw = s as SwitchStmt;
+            BoundExpr subj = this._bindExpr(sw.Subject, env);
+            BoundSwitchCase[] cases = new BoundSwitchCase[sw.CaseCount];
+            int ci = 0;
+            while (ci < sw.CaseCount) {
+                SwitchCase sc = sw.Cases[ci];
+                BoundExpr pat = null;
+                if (sc.HasPattern) { pat = this._bindExpr(sc.Pattern, env); }
+                TypeEnv caseScope = env.PushScope();
+                BoundStmt[] cbody = new BoundStmt[sc.BodyCount];
+                int bi = 0;
+                while (bi < sc.BodyCount) { cbody[bi] = this._bindStmt(sc.Body[bi], caseScope, ret); bi = bi + 1; }
+                cases[ci] = new BoundSwitchCase(sc.HasPattern, pat, cbody, sc.BodyCount, sc.Span);
+                ci = ci + 1;
+            }
+            return new BoundSwitch(subj, cases, sw.CaseCount, sw.Span);
+        }
         if (s is BreakStmt) {
             if (this._loopDepth == 0) {
                 this._diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", s.Span);
