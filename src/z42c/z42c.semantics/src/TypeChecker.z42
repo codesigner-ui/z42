@@ -129,6 +129,16 @@ public sealed class TypeChecker {
         return false;
     }
 
+    // 运算符符号 → 重载方法名（与 Parser._operatorMethodName 一致；"" 表不可重载）。
+    private string _operatorMethodNameTc(string op) {
+        if (op == "+") { return "op_Add"; }
+        if (op == "-") { return "op_Subtract"; }
+        if (op == "*") { return "op_Multiply"; }
+        if (op == "/") { return "op_Divide"; }
+        if (op == "%") { return "op_Modulo"; }
+        return "";
+    }
+
     private bool _hasWordTc(string mods, string w) {
         if (mods == "") { return false; }
         return (" " + mods + " ").IndexOf(" " + w + " ") >= 0;
@@ -806,6 +816,19 @@ public sealed class TypeChecker {
         if (bin.Op == "+") {
             if (lt.Name() == "string" || rt.Name() == "string") {
                 return new BoundBinary(bin.Op, left, right, new Z42PrimType("string"), bin.Span);
+            }
+        }
+        // L3 运算符重载：左操作数为 class/struct（Z42ClassType）且有静态 op_X(2 参) →
+        // 派发为 Class.op_X(a, b) 静态调用（镜像 C# TryBindOperatorCall）。原始数值对走下方表。
+        string opMethod = this._operatorMethodNameTc(bin.Op);
+        if (opMethod != "" && lt is Z42ClassType) {
+            Z42ClassType lct = lt as Z42ClassType;
+            string opKey = this._overloadKey(env.Symbols, lct, opMethod, 2);
+            MethodSymbol opMs = this._findMethod(env.Symbols, lct, opKey);
+            if (opMs != null) {
+                BoundExpr[] opArgs = new BoundExpr[2];
+                opArgs[0] = left; opArgs[1] = right;
+                return new BoundCall("static", false, null, lct.Name(), opKey, opArgs, 2, opMs.Signature.Ret, bin.Span);
             }
         }
         BinaryRule rule = BinaryTypeTable.Lookup(bin.Op);

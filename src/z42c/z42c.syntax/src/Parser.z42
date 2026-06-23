@@ -967,6 +967,14 @@ public sealed class Parser {
             && this._peekAt(1).Kind == TokenKind.LBracket) {
             return this._parseIndexer(mods, type, sp);
         }
+        // 运算符重载 `public static T operator +(...)` → 方法名 op_Add 等（镜像 C#）。
+        if (this._peek().Kind == TokenKind.Operator) {
+            this._advance();   // 'operator'
+            string opSym = this._peek().Text;
+            this._advance();   // 运算符符号 token（+ - * / %）
+            string opName = Parser._operatorMethodName(opSym);
+            return this._parseMethodTail(mods, false, false, type, opName, this._emptyTypeParams(), sp);
+        }
         string name = this._peek().Text;
         if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
         else { this._diags.Error(DiagnosticCodes.ExpectedToken, "expected member name", this._peek().Span); }
@@ -1110,6 +1118,16 @@ public sealed class Parser {
     }
 
     // ctor 占位返回类型（永不 Dump）。
+    // 运算符符号 → 重载方法名（镜像 C#：op_Add/op_Subtract/op_Multiply/op_Divide/op_Modulo）。
+    public static string _operatorMethodName(string op) {
+        if (op == "+") { return "op_Add"; }
+        if (op == "-") { return "op_Subtract"; }
+        if (op == "*") { return "op_Multiply"; }
+        if (op == "/") { return "op_Divide"; }
+        if (op == "%") { return "op_Modulo"; }
+        return "op_" + op;
+    }
+
     private TypeExpr _emptyType() { return new NamedType("", new TypeExpr[0], 0, this._peek().Span); }
 
     // method / ctor / 顶层 func 尾部：参数列表 + 可选 where + body（`{}`）或无体（`;`）。
