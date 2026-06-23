@@ -672,8 +672,12 @@ public sealed class TypeChecker {
         if (e is IsExpr) {
             IsExpr ix = e as IsExpr;
             BoundExpr operand = this._bindExpr(ix.E, env);
-            Z42Type target = env.ResolveType(ix.Type);
-            return new BoundIsExpr(operand, target.Name(), ix.Span);
+            // 用 AST 原始类型名（镜像 C# bin.Right ident → QualifyClassName），不用 resolved 类型：
+            // Array/Object 等内建类 ResolveType 得 Unknown → "<unknown>"，致 is_instance 失配。
+            string tn;
+            if (ix.Type is NamedType) { tn = (ix.Type as NamedType).Name; }
+            else { tn = env.ResolveType(ix.Type).Name(); }
+            return new BoundIsExpr(operand, tn, ix.Span);
         }
         if (e is TypeofExpr) {
             TypeofExpr tox = e as TypeofExpr;
