@@ -19,6 +19,8 @@ public sealed class SymbolCollector {
         this._mergeImports(t, imported);
         this._passDelegates(t, cu);
         this._passMembers(t, cu);
+        this._passImpls(t, cu);   // port-z42c-impl-block：deps 路径同样须并 impl 方法入 target.Methods，
+                                  // 否则 _bindImpl 的 ms=null → "this" 不入 env → `this.field` 绑成 undefined → emit const.null
         this._passInheritFields(t, cu);
         return t;
     }
