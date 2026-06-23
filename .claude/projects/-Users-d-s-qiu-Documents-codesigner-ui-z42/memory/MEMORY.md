@@ -40,4 +40,5 @@
 - [reference_z42_path_join_arity.md](reference_z42_path_join_arity.md) — z42 Path.Join 只接受 2 个参数；多段路径必须嵌套 Path.Join(Path.Join(a,b),c)，误用多参数报 E0402
 - [project_jit_perf_progress.md](project_jit_perf_progress.md) — JIT 自跑性能优化进度：z42c 编译 ~6.5× C#（interp 17s→jit 6.15s），已落地分配优化，剩余杠杆=内联/typed-codegen/非原子refcount
 - [project_csharp_to_z42c_replacement.md](project_csharp_to_z42c_replacement.md) — C#→z42c 替换进度：S0 build --workspace ✅ + S2 验证门 ✅(CI green)；下一步 S3 stdlib dogfood；铁律 S5 删 C# 前须有 S4 种子；踩坑(私有目录+copy/--mode interp/fresh stdlib)
+- [reference_z42c_closure_l3_capture_emit_bug.md](reference_z42c_closure_l3_capture_emit_bug.md) — z42c 编 closure_l3_capture(嵌套/ref/local-fn 捕获组合)ZbcWriter Null deref;C# 能编 z42c 不能;C#-free golden regen 暂跳(tracked,xtask_regen.z42),待真修(z42c 闭包 IrGen 补 null 寄存器)
 - [project_z42c_impl_block_byte_identical.md](project_z42c_impl_block_byte_identical.md) — z42c impl-block IMPL 段已实现+结构 byte-identical(commit 37904a9d)；full byte-identical 缺口=C# re-export imported trait 接口而 z42c imported 接口仅骨架；正交阻断=exe-with-deps 时 prelude(Console)失活(seed 同样复现,是 cross-zpkg→z42c 真阻断)
