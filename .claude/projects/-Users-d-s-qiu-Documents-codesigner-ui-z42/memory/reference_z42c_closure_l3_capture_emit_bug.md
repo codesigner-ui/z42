@@ -32,3 +32,14 @@ xtask_regen.z42 的跳过 + 复跑 `xtask test`（vm goldens 应含 closure_l3_c
 - **闭包运行期强转**：closure_l3_capture/lambda_l2_basic → `InvalidCastException: Null→tag 0x04`（运行期，编译过）。
 - 全量 scan 三次因 zsh process-subst 在后台卡死失败；用 per-cat 快测代替。
 - **结论**：golden parity = 多特性 z42c 工作（local-fn/闭包 emit 完整性 + 强转 + 可能更多类别），多轮；在此之前 C# 不可删。删 C# 后续：VM-golden 切 z42c + package/bench/cli 脱 dotnet + 删 src/compiler + CI(~15 setup-dotnet)+ 版本配置。
+
+---
+**进度（2026-06-23 续2）：z42c golden parity 90/130（PASS）。已修+提交**：typeof(c1cb7055)、嵌套捕获(3552a94c)、复合赋值 +=（216e7292，binder 忽略 op）、表达式体 `=>` 函数/方法（54d81538，parser 整体丢弃）。**剩 40 fail 按根因分类**（src/tests per-cat 快测 /tmp/gscan.sh）：
+- **实例字段初始化器**（`int x=1` 未注入 ctor；z42c 仅 static-init）→ class_field_default_init/inherited_fields/static_fields/record 等"got 0/null"。C# 见 FunctionEmitter.cs:76 instanceFieldInits 注入 ctor + 无 ctor 时合成。**高影响，下一个修**。
+- **局部函数**（block 内 `int Fact(){}` 未 lift→module fn，被丢）→ local_fn_l2_basic/closure_l3_loops(fe0)/mono(f)。需 parse local-fn stmt + lift。
+- **func-typed 值调用→CallIndirect**（`f(x)` where f=Func 参/泛型约束 emit `Call @f` 而非 CallIndirect）→ func_constraint_*(f/handler/pred/Twice)。
+- **委托 method-group**（`Demo.a/h` undefined）→ delegate_d1b/nested_delegate。
+- **反射 custom-attributes**（"2 vs 0"）→ attributes/* + param_attributes/type_flags/transitive_interfaces（typeof 已通但 attr/flags 元数据 emit 缺）。
+- **prefix ++/--**（prefix_increment "1 vs 0"）。**default(T)/默认值**（default_primitives true vs False）。**operator overload**（Vec2 + 运算符未派发）。**enum/null-conditional `?.`/do-while**（Main 体含这些特性→emit 失败→"Main not found"：control_flow/null_conditional·enum·do_while）。**indexer**（get_Item/set_Item ArrayGet on object）。**switch expr**（Monday vs null）。
+- **malformed zbc**（generic_bare_typeparam/default_generic_param_pair "cannot parse zbc"）。
+- 方法论：每轮 `/tmp/gscan.sh`（robust，file-based）→ 选根因 → 改 z42c → bootstrap-no-csharp（fixpoint）→ 复测 → commit。
