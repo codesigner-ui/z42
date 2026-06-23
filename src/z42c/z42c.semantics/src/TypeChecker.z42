@@ -643,6 +643,21 @@ public sealed class TypeChecker {
         }
         if (e is AssignExpr) {
             AssignExpr a = e as AssignExpr;
+            // 类索引器写 obj[i] = v → set_Item(i, v) 虚调用（仅简单 `=`；否则落普通路径）。
+            if (a.Op == "=" && a.Target is IndexExpr) {
+                IndexExpr aix = a.Target as IndexExpr;
+                BoundExpr arecv = this._bindExpr(aix.Target, env);
+                Z42Type att = arecv.Type();
+                Z42ClassType aCls = null;
+                if (att is Z42ClassType) { aCls = att as Z42ClassType; }
+                else if (att is Z42InstantiatedType) { aCls = (att as Z42InstantiatedType).Def; }
+                if (aCls != null && aCls.Methods.ContainsKey("set_Item")) {
+                    BoundExpr aidx = this._bindExpr(aix.Index, env);
+                    BoundExpr aval = this._bindExpr(a.Value, env);
+                    BoundExpr[] sa = new BoundExpr[2]; sa[0] = aidx; sa[1] = aval;
+                    return new BoundCall("instance", true, arecv, aCls.Name(), "set_Item", sa, 2, new Z42VoidType(), a.Span);
+                }
+            }
             BoundExpr target = this._bindExpr(a.Target, env);
             BoundExpr value = this._bindExpr(a.Value, env);
             // 复合赋值 `x op= v` desugar → `x = x op v`（原 binder 忽略 a.Op 直存 value →
@@ -762,6 +777,17 @@ public sealed class TypeChecker {
             if (tt is Z42ArrayType) {
                 Z42ArrayType at = tt as Z42ArrayType;
                 return new BoundIndex(target, index, at.Elem, ix.Span);
+            }
+            // 类索引器读 obj[i] → get_Item(i) 虚调用（泛型返回类型擦除为 Unknown）。
+            Z42ClassType ixCls = null;
+            if (tt is Z42ClassType) { ixCls = tt as Z42ClassType; }
+            else if (tt is Z42InstantiatedType) { ixCls = (tt as Z42InstantiatedType).Def; }
+            if (ixCls != null && ixCls.Methods.ContainsKey("get_Item")) {
+                MethodSymbol gm = ixCls.Methods.Get("get_Item") as MethodSymbol;
+                Z42Type gret = gm.Signature.Ret;
+                if (gret is Z42GenericParamType) { gret = new Z42UnknownType(); }
+                BoundExpr[] ia = new BoundExpr[1]; ia[0] = index;
+                return new BoundCall("instance", true, target, ixCls.Name(), "get_Item", ia, 1, gret, ix.Span);
             }
             if ((tt is Z42ErrorType) || (tt is Z42UnknownType)) {
                 return new BoundIndex(target, index, new Z42ErrorType(), ix.Span);
