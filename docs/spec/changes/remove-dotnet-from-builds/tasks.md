@@ -66,6 +66,20 @@ C 阶段进展（2026-06-24，commit 49ed1dfb + a65be8eb）：
   5. CI（ci.yml + bench-pr + bench-update + release.yml）setup-dotnet → bootstrap-no-csharp 种子流。
   方法：commit-no-push，User push 前复审 CI（本地不可验 packaging/CI）。
 
+## 🔧 回归修复（2026-06-24，commit f8a16812）：cold-start C# z42c 种子兜底
+**症状**：1e933950 推送后 CI 全红——所有建 stdlib 的 job（build-and-test ×4 OS +
+package-{android,ios,wasm} + download-bootstrap gate vm/stdlib-jit-consistency +
+compiler-z42-stdlib）同一错误 `error: no z42c seed at .../z42c.driver.zpkg`。
+**根因**：d4471a85 把 `_buildCompilerZ42` 改成 C#-free 自种子（缺种子即 return 1），
+但 `_buildStdlibCore` 冷启动分支仍调它当「C# z42c 兜底」。CI fresh checkout 无 z42c
+种子 → 报错。即 tasks.md A1 文档化的「cold → C# 兜底」被 d4471a85 误删。
+**教训**：**冷启动 C# 兜底删除 与 CI seed-provisioning 是耦合的原子步**——不能单独删
+cold C#（必须同时让 CI 提供种子，否则 fresh checkout 无路可走）。d4471a85 越过了这个耦合。
+**修复**：新增 `_csharpBuildCompilerZ42Seed`（镜像 `_csharpBuildStdlibSeed`，dotnet run
+C# driver `build --workspace src/z42c`），冷分支改调它。warm 路径
+（`_buildCompilerZ42ViaZ42c`）保持 C#-free。本地验证：z42c 重建 xtask.zpkg 成功
+（warm 路径字节不变，改动隔离于 cold 分支）。**这是删 C# 前剩余原子步 #1 的正确边界确认**。
+
 ## Phase C — 删 C# + 清 dotnet（不可逆）🔴 User 裁决「staged：先切门后删」+「移除 version/dotnet 配置 + CI」(2026-06-23)
 - [~] C1 build 站点全 C#-free：✅ `_buildCompilerZ42`→ViaZ42c（d4471a85）✅ `_ensureZ42cTooling`/units（71d13e53）✅ cross-zpkg（4192423b）。剩 ⬜ xtask.z42 `_regenCore`/_testAll · `_regenGolden` golden 编译 · xtask_package_desktop(dotnet×6) · xtask_bench · xtask_stdlib `_csharpBuildStdlibSeed` · xtask_cli `build/test compiler`。种子=self-seed 现有 dist / 下载 nightly。
 - [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj` + cross-zpkg 残留 C# helpers。
