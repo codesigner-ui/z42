@@ -11,7 +11,9 @@ public sealed class Param {
     public string   Name;
     public bool     IsRef;     // ref/out 修饰（调用方传地址，VM 处理间接；callee 寄存器类型不变）
     public Expr     Default;   // GS1：可选参数默认值（`int x = 5`）；无默认值 = null。镜像 C# Param.Default。
-    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; this.IsRef = false; this.Default = null; }
+    public Attr[]   Attrs;     // add-parameter-attribute-reflection：参数前置 attribute（默认空）
+    public int      AttrCount;
+    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; this.IsRef = false; this.Default = null; this.Attrs = new Attr[0]; this.AttrCount = 0; }
     // Dump 不含 Default（镜像 C# AstDumper.VisitParam：仅 `Param {mod}{name} {span}`，不输出默认值）→ 无默认值参数 Dump 不变。
     public string Dump() { return this.Type.Dump() + " " + this.Name; }
 }
@@ -38,8 +40,9 @@ public sealed class Attr {
     public string Name;
     public Expr[] Args;
     public int    ArgCount;
+    public string FactoryFunc;   // add-attribute-reflection：合成工厂函数名（AttributeFactorySynthesizer 填；"" = 无/builtin）
     public Attr(string name, Expr[] args, int argCount, Span span) { this.Span = span;
-        this.Name = name; this.Args = args; this.ArgCount = argCount;
+        this.Name = name; this.Args = args; this.ArgCount = argCount; this.FactoryFunc = "";
     }
     public string Dump() {
         string s = "[" + this.Name;

@@ -61,9 +61,19 @@ public static class ZbcWriter {
             pool.Intern(cd.Name);
             if (cd.HasBase) { pool.Intern(cd.BaseName); }
             int f = 0;
-            while (f < cd.FieldCount) { pool.Intern(cd.Fields[f].Name); pool.Intern(cd.Fields[f].Type); f = f + 1; }
+            while (f < cd.FieldCount) {
+                pool.Intern(cd.Fields[f].Name); pool.Intern(cd.Fields[f].Type);
+                int fattr = 0;
+                while (fattr < cd.Fields[f].AttrCount) { pool.Intern(cd.Fields[f].Attrs[fattr].TypeName); pool.Intern(cd.Fields[f].Attrs[fattr].FactoryFunc); fattr = fattr + 1; }
+                f = f + 1;
+            }
             int sf = 0;   // 静态字段名/类型（zbc 1.13；C# InternPoolStrings 实例字段后——字节实证）
-            while (sf < cd.StaticFieldCount) { pool.Intern(cd.StaticFields[sf].Name); pool.Intern(cd.StaticFields[sf].Type); sf = sf + 1; }
+            while (sf < cd.StaticFieldCount) {
+                pool.Intern(cd.StaticFields[sf].Name); pool.Intern(cd.StaticFields[sf].Type);
+                int sfattr = 0;
+                while (sfattr < cd.StaticFields[sf].AttrCount) { pool.Intern(cd.StaticFields[sf].Attrs[sfattr].TypeName); pool.Intern(cd.StaticFields[sf].Attrs[sfattr].FactoryFunc); sfattr = sfattr + 1; }
+                sf = sf + 1;
+            }
             int ifx = 0;   // 接口名（zbc 1.17；C# 静态字段后 intern）
             while (ifx < cd.InterfaceCount) { pool.Intern(cd.Interfaces[ifx]); ifx = ifx + 1; }
             // TypeParams + 约束包接口名（BuildType 用 pool.Idx 写之，须在此 intern；镜像 C# 接口后
@@ -83,6 +93,9 @@ public static class ZbcWriter {
                     cbi = cbi + 1;
                 }
             }
+            // attr-ref 串（add-attribute-reflection）：TypeName + FactoryFunc 须先入池供 BuildType pool.Idx。
+            int cax = 0;
+            while (cax < cd.AttrCount) { pool.Intern(cd.Attrs[cax].TypeName); pool.Intern(cd.Attrs[cax].FactoryFunc); cax = cax + 1; }
             c = c + 1;
         }
         pool.Intern("?");   // SIGS 缺省 param 类型占位
@@ -93,6 +106,16 @@ public static class ZbcWriter {
             pool.Intern(fdef.RetType);
             int p = 0;
             while (p < fdef.ParamTypeCount) { pool.Intern(fdef.ParamTypes[p]); p = p + 1; }
+            // SIGS attr-ref 串（add-attribute-reflection）：函数级 + 每参数级。
+            int fax = 0;
+            while (fax < fdef.AttrCount) { pool.Intern(fdef.Attrs[fax].TypeName); pool.Intern(fdef.Attrs[fax].FactoryFunc); fax = fax + 1; }
+            int pax = 0;
+            while (pax < fdef.ParamAttrsLen) {
+                IrAttrRefList pal = fdef.ParamAttrs[pax];
+                int paj = 0;
+                while (paj < pal.Count) { pool.Intern(pal.Items[paj].TypeName); pool.Intern(pal.Items[paj].FactoryFunc); paj = paj + 1; }
+                pax = pax + 1;
+            }
             // 镜像 C#：每块先 label 再该块指令引用串（Call.Func/VCall.Method/Field/ObjNew 类名+ctor 等）。
             int b = 0;
             while (b < fdef.BlockCount) {
@@ -148,6 +171,17 @@ public static class ZbcWriter {
         return w;
     }
 
+    // 字段 attr-ref 块（add-attribute-reflection）：count u16 +（typeName, factoryFunc）对。
+    private static void _writeFieldAttrs(ByteWriter w, IrFieldDesc fd, ZbcStringPool pool) {
+        w.WriteU16(fd.AttrCount);
+        int a = 0;
+        while (a < fd.AttrCount) {
+            w.WriteU32(pool.Idx(fd.Attrs[a].TypeName));
+            w.WriteU32(pool.Idx(fd.Attrs[a].FactoryFunc));
+            a = a + 1;
+        }
+    }
+
     // ── TYPE：count + 每类描述（ZW-1A trivial 无类 → count 0）─────────────────────────
     public static ByteWriter BuildType(IrClassDesc[] classes, int classCount, ZbcStringPool pool) {
         var w = new ByteWriter();
@@ -163,7 +197,7 @@ public static class ZbcWriter {
                 w.WriteU32(pool.Idx(cd.Fields[f].Name));
                 w.WriteU8(Tag.FromName(cd.Fields[f].Type));
                 w.WriteU32(pool.Idx(cd.Fields[f].Type));
-                w.WriteU16(0);   // per-field attrCount（zbc 1.14；z42c IrFieldDesc 无 attr → 0）
+                ZbcWriter._writeFieldAttrs(w, cd.Fields[f], pool);   // per-field attrCount + refs（zbc 1.14）
                 f = f + 1;
             }
             // TypeParams + per-tp constraint bundles（zbc L3-G1/G3a，镜像 C# BuildType tpCount+WriteConstraintBundle）
@@ -193,7 +227,13 @@ public static class ZbcWriter {
                 }
                 tpi = tpi + 1;
             }
-            w.WriteU16(0);    // attrCount（zbc 1.10）
+            w.WriteU16(cd.AttrCount);    // attrCount（zbc 1.10，add-attribute-reflection）
+            int cai = 0;
+            while (cai < cd.AttrCount) {
+                w.WriteU32(pool.Idx(cd.Attrs[cai].TypeName));
+                w.WriteU32(pool.Idx(cd.Attrs[cai].FactoryFunc));
+                cai = cai + 1;
+            }
             w.WriteU8(cd.Flags);   // class-shape flags（zbc 1.12，G12）：abstract/sealed/struct/record
             w.WriteU16(cd.StaticFieldCount);   // static-fields count（zbc 1.13；SA-3）
             int sf = 0;
@@ -201,7 +241,7 @@ public static class ZbcWriter {
                 w.WriteU32(pool.Idx(cd.StaticFields[sf].Name));
                 w.WriteU8(Tag.FromName(cd.StaticFields[sf].Type));
                 w.WriteU32(pool.Idx(cd.StaticFields[sf].Type));
-                w.WriteU16(0);   // per-field attrCount（zbc 1.14）
+                ZbcWriter._writeFieldAttrs(w, cd.StaticFields[sf], pool);   // per-field attrCount + refs（zbc 1.14）
                 sf = sf + 1;
             }
             w.WriteU16(cd.InterfaceCount);   // 接口块（zbc 1.17：bare 名 idx[]）
@@ -239,12 +279,28 @@ public static class ZbcWriter {
                 p = p + 1;
             }
             w.WriteU8(0);    // tpCount（z42c IrFunction 无 typeparam → ZW-2 补）
-            w.WriteU16(0);   // attrCount（zbc 1.11）
-            // zbc 1.15 add-parameter-attribute-reflection：每参数 attr-ref 块。
-            // z42c IrFunction 无 param attr → 每参数恒 count=0。
+            w.WriteU16(f.AttrCount);   // attrCount（zbc 1.11，add-attribute-reflection）
+            int fai = 0;
+            while (fai < f.AttrCount) {
+                w.WriteU32(pool.Idx(f.Attrs[fai].TypeName));
+                w.WriteU32(pool.Idx(f.Attrs[fai].FactoryFunc));
+                fai = fai + 1;
+            }
+            // zbc 1.15 add-parameter-attribute-reflection：每参数 attr-ref 块（按 SIGS 参数序对齐，含 this 槽）。
             int pa = 0;
             while (pa < f.ParamCount) {
-                w.WriteU16(0);   // 该参数 attrCount = 0
+                if (pa < f.ParamAttrsLen) {
+                    IrAttrRefList pl = f.ParamAttrs[pa];
+                    w.WriteU16(pl.Count);
+                    int pj = 0;
+                    while (pj < pl.Count) {
+                        w.WriteU32(pool.Idx(pl.Items[pj].TypeName));
+                        w.WriteU32(pool.Idx(pl.Items[pj].FactoryFunc));
+                        pj = pj + 1;
+                    }
+                } else {
+                    w.WriteU16(0);
+                }
                 pa = pa + 1;
             }
             fi = fi + 1;

@@ -744,7 +744,18 @@ public sealed class Parser {
                                 int i = 0; while (i < ac) { b[i] = args[i]; i = i + 1; }
                                 args = b;
                             }
-                            args[ac] = this._parseExpr(0); ac = ac + 1;
+                            // 命名实参 `name: value` → AssignExpr(ident, value)（镜像 C# 属性命名参数；
+                            // bind 期 _adaptArgs 按形参名重排）。peek 两 token：ident 紧跟 ':'。
+                            if (this._peek().Kind == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Colon) {
+                                Span nsp = this._peek().Span;
+                                string argName = this._peek().Text;
+                                this._advance(); this._advance();   // name :
+                                Expr nval = this._parseExpr(0);
+                                args[ac] = new AssignExpr("=", new IdentExpr(argName, nsp), nval, nsp);
+                            } else {
+                                args[ac] = this._parseExpr(0);
+                            }
+                            ac = ac + 1;
                             if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
                         }
                     }
@@ -1086,6 +1097,9 @@ public sealed class Parser {
         int pc = 0;
         if (this._peek().Kind != TokenKind.RParen) {
             while (true) {
+                // add-parameter-attribute-reflection：参数前置 `[Attr(...)]`（在 ref/type 之前）。
+                AttrList pattrs = null;
+                if (this._peek().Kind == TokenKind.LBracket) { pattrs = this._parseAttributes(); }
                 bool isRef = false;
                 if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out) { this._advance(); isRef = true; }
                 TypeExpr pt = this._parseType();
@@ -1099,6 +1113,7 @@ public sealed class Parser {
                 }
                 Param prm = new Param(pt, pn, pt.Span);
                 prm.IsRef = isRef;
+                if (pattrs != null) { prm.Attrs = pattrs.Items; prm.AttrCount = pattrs.Count; }
                 if (this._peek().Kind == TokenKind.Eq) {   // GS1：默认参数值 `int x = expr`
                     this._advance();
                     prm.Default = this._parseExpr(0);

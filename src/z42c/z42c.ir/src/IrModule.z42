@@ -8,10 +8,26 @@
 //   的 BoundStmt[]）。容器引用叶子的 Dump，故叶子必须先定义。
 namespace Z42.IR;
 
+// 属性引用（add-attribute-reflection）：TYPE/SIGS 段每条 attr-ref =（属性类型短名, 工厂函数名）。
+public sealed class IrAttrRef {
+    public string TypeName;
+    public string FactoryFunc;
+    public IrAttrRef(string typeName, string factoryFunc) { this.TypeName = typeName; this.FactoryFunc = factoryFunc; }
+}
+
+// 单参数的 attr-ref 列表（IrFunction.ParamAttrs 按 SIGS 参数序对齐，含实例方法的 this 槽=空）。
+public sealed class IrAttrRefList {
+    public IrAttrRef[] Items; public int Count;
+    public IrAttrRefList(IrAttrRef[] items, int count) { this.Items = items; this.Count = count; }
+}
+
 public sealed class IrFieldDesc {
     public string Name;
     public string Type;   // 类型名文本（Z42Type.Name）
-    public IrFieldDesc(string name, string type) { this.Name = name; this.Type = type; }
+    public IrAttrRef[] Attrs; public int AttrCount;   // zbc 1.14：字段 attr-ref（默认空）
+    public IrFieldDesc(string name, string type) { this.Name = name; this.Type = type;
+        this.Attrs = new IrAttrRef[0]; this.AttrCount = 0;
+    }
 }
 
 // 类型参数约束描述（仅接口约束列表；足以覆盖 z42.core where 子句）。
@@ -34,6 +50,7 @@ public sealed class IrClassDesc {
     public int Flags;   // class-shape flags（zbc 1.12）：bit0 abstract / bit1 sealed / bit2 struct / bit3 record
     public string[]           TypeParams;           public int TypeParamCount;        // zbc L3-G1
     public IrConstraintDesc[] TypeParamConstraints; // aligned with TypeParams（null = empty bundles）
+    public IrAttrRef[] Attrs; public int AttrCount;   // zbc 1.10：类 attr-ref（默认空）
     public IrClassDesc(string name, bool hasBase, string baseName, IrFieldDesc[] fields, int fieldCount) {
         this.Name = name; this.HasBase = hasBase; this.BaseName = baseName;
         this.Fields = fields; this.FieldCount = fieldCount;
@@ -42,6 +59,7 @@ public sealed class IrClassDesc {
         this.Flags = 0;
         this.TypeParams = new string[0]; this.TypeParamCount = 0;
         this.TypeParamConstraints = new IrConstraintDesc[0];
+        this.Attrs = new IrAttrRef[0]; this.AttrCount = 0;
     }
 }
 
@@ -123,6 +141,8 @@ public sealed class IrFunction {
     public int       RegTypeCount;
     public IrLineEntry[]     LineTable;  public int LineCount;       // DBUG 行表（add-z42c-source-spans）
     public IrLocalVarEntry[] LocalVars;  public int LocalVarCount;   // DBUG 局部变量表
+    public IrAttrRef[] Attrs; public int AttrCount;                  // zbc 1.11：SIGS 函数 attr-ref（默认空）
+    public IrAttrRefList[] ParamAttrs; public int ParamAttrsLen;     // zbc 1.15：每参数 attr-ref（SIGS 参数序对齐）
     public IrFunction(string name, int paramCount, string retType, bool isStatic,
                       IrBlock[] blocks, int blockCount, int maxReg,
                       string execMode, string[] paramTypes, int paramTypeCount,
@@ -136,6 +156,8 @@ public sealed class IrFunction {
         this.ExcTable = new IrExcEntry[0]; this.ExcCount = 0;
         this.LineTable = lineTable; this.LineCount = lineCount;
         this.LocalVars = localVars; this.LocalVarCount = localVarCount;
+        this.Attrs = new IrAttrRef[0]; this.AttrCount = 0;
+        this.ParamAttrs = new IrAttrRefList[0]; this.ParamAttrsLen = 0;
     }
     public string Dump() {
         string s = "fn @" + this.Name + "(" + this.ParamCount.ToString() + ") -> " + this.RetType + " {";

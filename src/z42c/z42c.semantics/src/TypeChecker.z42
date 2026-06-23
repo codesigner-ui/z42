@@ -1342,9 +1342,6 @@ public sealed class TypeChecker {
 
     // new T(args)（1D）：解析 T（须为已知类型）+ 绑定实参 + ctor 重载解析。
     private BoundExpr _bindNew(ObjNewExpr n, TypeEnv env) {
-        BoundExpr[] args = new BoundExpr[n.ArgCount];
-        int i = 0;
-        while (i < n.ArgCount) { args[i] = this._bindExpr(n.Args[i], env); i = i + 1; }
         Z42Type t = env.ResolveType(n.Type);
         if (t is Z42UnknownType) {
             this._diags.Error(DiagnosticCodes.UndefinedSymbol, "unknown type in `new`: " + n.Type.Dump(), n.Span);
@@ -1357,7 +1354,57 @@ public sealed class TypeChecker {
         if (t is Z42ClassType) { cls = t as Z42ClassType; }
         if (t is Z42InstantiatedType) { cls = (t as Z42InstantiatedType).Def; }
         string ctorName = cls != null ? this._ctorKey(cls, n.ArgCount) : "";
+        // GS1/named-arg：命名实参重排 + 可选参数默认值填充（镜像 C#——工厂体 `new Route("/u", method:"POST")`
+        // 及省略可选实参 `new Route("/h")` 须在调用点解析为完整位置实参序）。仅本地有 Decl 的 ctor 适配。
+        MethodSymbol cms = null;
+        if (cls != null) { cms = this._findMethod(env.Symbols, cls, ctorName); }
+        if (cms != null && cms.HasDecl && cms.Decl != null) {
+            BoundExpr[] adapted = this._adaptArgs(cms.Decl, n.Args, n.ArgCount, env);
+            if (adapted != null) { return new BoundNew(t.Name(), ctorName, adapted, cms.Decl.ParamCount, t, n.Span); }
+        }
+        BoundExpr[] args = new BoundExpr[n.ArgCount];
+        int i = 0;
+        while (i < n.ArgCount) { args[i] = this._bindExpr(n.Args[i], env); i = i + 1; }
         return new BoundNew(t.Name(), ctorName, args, n.ArgCount, t, n.Span);
+    }
+
+    // 命名实参重排 + 默认值填充（镜像 C# 调用绑定）：
+    //   位置实参按序填；命名实参 `name: val`（AssignExpr，Target=ident）按形参名定位；
+    //   未填形参用其 Default 表达式（无默认 → 绑定失败返回 null，回落旧 1:1 路径报常规错误）。
+    // 返回长度 = md.ParamCount 的已绑定实参数组；不可适配（实参多于形参/缺默认/命名未匹配）→ null。
+    private BoundExpr[] _adaptArgs(MethodDecl md, Expr[] callArgs, int callArgCount, TypeEnv env) {
+        int pc = md.ParamCount;
+        if (callArgCount > pc) { return null; }
+        BoundExpr[] slots = new BoundExpr[pc];
+        bool[] filled = new bool[pc];
+        int pos = 0;
+        int i = 0;
+        while (i < callArgCount) {
+            Expr a = callArgs[i];
+            if (a is AssignExpr && (a as AssignExpr).Target is IdentExpr) {
+                AssignExpr ae = a as AssignExpr;
+                string nm = (ae.Target as IdentExpr).Name;
+                int idx = 0 - 1;
+                int p = 0;
+                while (p < pc) { if (md.Params[p].Name == nm) { idx = p; } p = p + 1; }
+                if (idx < 0) { return null; }                 // 命名实参无匹配形参 → 不可适配
+                if (filled[idx]) { return null; }
+                slots[idx] = this._bindExpr(ae.Value, env); filled[idx] = true;
+            } else {
+                if (pos >= pc) { return null; }
+                slots[pos] = this._bindExpr(a, env); filled[pos] = true; pos = pos + 1;
+            }
+            i = i + 1;
+        }
+        int k = 0;
+        while (k < pc) {
+            if (!filled[k]) {
+                if (md.Params[k].Default == null) { return null; }   // 缺实参且无默认 → 不可适配
+                slots[k] = this._bindExpr(md.Params[k].Default, env);
+            }
+            k = k + 1;
+        }
+        return slots;
     }
 
     // ctor 方法键：重载存 Name$argCount，唯一 ctor 存 bare Name，无显式 ctor → bare Name。
