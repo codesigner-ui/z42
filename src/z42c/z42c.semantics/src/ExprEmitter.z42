@@ -166,6 +166,11 @@ public sealed class ExprEmitter {
                 this._ctx.Emit(new ConstF64Instr(drf, "0.0"));
                 return drf;
             }
+            if (dtag == IrType.Char) {
+                TypedReg drc = this._ctx.Alloc(IrType.Char);
+                this._ctx.Emit(new ConstCharInstr(drc, '\0'));   // default(char) = '\0'
+                return drc;
+            }
             TypedReg drn = this._ctx.Alloc(IrType.Ref);
             this._ctx.Emit(new ConstNullInstr(drn));
             return drn;
