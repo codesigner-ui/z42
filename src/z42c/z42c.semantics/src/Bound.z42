@@ -124,6 +124,21 @@ public sealed class BoundFuncRef : BoundExpr {
     public override string Dump() { return "(func-ref " + this.FuncName + ")"; }
 }
 
+// 实例方法组 `obj.Method` 作 delegate 值（D-1b）：emit 期合成 thunk(__mg_thunk_...) +
+// MkClos 捕获 receiver。Receiver=接收者表达式；ClassName=接收者类（thunk 名/VCall 限定）；
+// MethodName=方法名；Type=方法签名（delegate 形）。
+public sealed class BoundMethodGroup : BoundExpr {
+    public BoundExpr Receiver;
+    public string    ClassName;
+    public string    MethodName;
+    private Z42Type _type;
+    public BoundMethodGroup(BoundExpr receiver, string className, string methodName, Z42Type sig, Span span) {
+        this.Span = span; this.Receiver = receiver; this.ClassName = className; this.MethodName = methodName; this._type = sig;
+    }
+    public override Z42Type Type() { return this._type; }
+    public override string Dump() { return "(method-group " + this.ClassName + "." + this.MethodName + ")"; }
+}
+
 public sealed class BoundAssign : BoundExpr {
     public BoundExpr Target;
     public BoundExpr Value;

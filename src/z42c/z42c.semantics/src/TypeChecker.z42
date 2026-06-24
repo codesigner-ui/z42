@@ -1016,6 +1016,11 @@ public sealed class TypeChecker {
             if (getter != null && getter.Signature != null) {
                 return new BoundCall("instance", true, target, ct.Name(), "get_" + m.Name, new BoundExpr[0], 0, getter.Signature.Ret, m.Span);
             }
+            // 实例方法组（D-1b）：`obj.Method` 作值（非调用）→ BoundMethodGroup（emit 合成 thunk+MkClos）。
+            MethodSymbol mg = this._findMethod(env.Symbols, ct, m.Name);
+            if (mg != null && mg.Signature != null) {
+                return new BoundMethodGroup(target, ct.Name(), m.Name, mg.Signature, m.Span);
+            }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                 "no field `" + m.Name + "` on `" + ct.Name() + "`", m.Span);
             return new BoundMember(target, m.Name, new Z42ErrorType(), m.Span);

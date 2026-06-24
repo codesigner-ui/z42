@@ -44,6 +44,7 @@ public sealed class IrGen {
     public bool IsRelease;   // release 模式：strip debug info（不 emit .locals/.linetable），镜像 C# stripSymbols=true
     public IrFunction[] Lifted; public int LiftedCount;   // lambda lift（port-z42c-closures；模块尾追加）
     public StrMap IfaceDecls;   // 接口名 → 其 ClassDecl（add-reflection-transitive-interfaces：接口传递闭包展开）
+    public StrMap MgThunks;     // 实例方法组 thunk 去重（cacheKey "<qualClass>.<method>$<arity>" → "1"）
 
     public void AddLifted(IrFunction f) {
         if (this.Lifted == null) { this.Lifted = new IrFunction[2]; this.LiftedCount = 0; }
@@ -105,6 +106,7 @@ public sealed class IrGen {
         this._symbols = model.Symbols;
         // 接口名 → ClassDecl 映射（接口传递闭包展开用：IB:IA → Widget:IB 也含 IA）。
         this.IfaceDecls = new StrMap();
+        this.MgThunks = new StrMap();
         int ifd = 0;
         while (ifd < cu.DeclCount) {
             Decl dfd = this._unwrap(cu.Decls[ifd]);

@@ -143,6 +143,7 @@ public sealed class ExprEmitter {
             this._ctx.Emit(new LoadFnInstr(frdst, this._ctx.Qualify(fr.FuncName)));
             return frdst;
         }
+        if (e is BoundMethodGroup) { return this._emitMethodGroup(e as BoundMethodGroup); }
         if (e is BoundInterpolatedStr) { return this._emitInterpolation(e as BoundInterpolatedStr); }
         if (e is BoundDefault) {
             BoundDefault def = e as BoundDefault;
@@ -703,6 +704,59 @@ public sealed class ExprEmitter {
         string fqCtor = qualCls + "." + n.CtorName;
         this._ctx.Emit(new ObjNewInstr(dst, qualCls, fqCtor, targs, tcount, args, n.ArgCount));
         return dst;
+    }
+
+    // 实例方法组 `obj.M`（D-1b，镜像 C# GetOrCreateInstanceMethodThunk + MkClos）：
+    // 合成 static thunk(__mg_thunk_<safeClass>_<M>$<arity>__)：env[0]=receiver，body
+    // `recv = env[0]; ret recv.M(args)`；use 处 MkClos 捕获 receiver。thunk 按
+    // (qualClass, M, arity) 去重（IrGen.MgThunks）。
+    private TypedReg _emitMethodGroup(BoundMethodGroup mg) {
+        Z42FuncType sig = mg.Type() as Z42FuncType;
+        int arity = sig.ParamCount;
+        string qualClass = this._ctx.QualifyClass(mg.ClassName);
+        string safeClass = ExprEmitter._dotsToUnderscore(qualClass);
+        string cacheKey = qualClass + "." + mg.MethodName + "$" + arity.ToString();
+        string thunkName = this._ctx.Qualify("__mg_thunk_" + safeClass + "_" + mg.MethodName + "$" + arity.ToString() + "__");
+        if (!this._ctx.Gen.MgThunks.ContainsKey(cacheKey)) {
+            bool isVoid = sig.Ret is Z42VoidType;
+            TypedReg idxReg  = new TypedReg(arity + 1, IrType.I32);
+            TypedReg recvReg = new TypedReg(arity + 2, IrType.Ref);
+            int retTag = isVoid ? IrType.Void : this._ctx.ToIrType(sig.Ret);
+            TypedReg retReg  = new TypedReg(arity + 3, retTag);
+            TypedReg[] argRegs = new TypedReg[arity];
+            int ai = 0;
+            while (ai < arity) { argRegs[ai] = new TypedReg(1 + ai, this._ctx.ToIrType(sig.ParamTypes[ai])); ai = ai + 1; }
+            IrInstr[] tinstrs = new IrInstr[3];
+            tinstrs[0] = new ConstI32Instr(idxReg, "0");
+            tinstrs[1] = new ArrayGetInstr(recvReg, new TypedReg(0, IrType.Ref), idxReg);
+            tinstrs[2] = new VCallInstr(retReg, recvReg, mg.MethodName, argRegs, arity);
+            IrTerminator term = isVoid ? new RetTerm(false, retReg) : new RetTerm(true, retReg);
+            IrBlock[] blks = new IrBlock[1];
+            blks[0] = new IrBlock("entry", tinstrs, 3, term, true);
+            string retName = isVoid ? "void" : sig.Ret.Name();
+            IrFunction thunk = new IrFunction(thunkName, 1 + arity, retName, true,
+                blks, 1, arity + 4, "Interp", new string[0], 0, new int[0], 0,
+                new IrLineEntry[0], 0, new IrLocalVarEntry[0], 0);
+            this._ctx.Gen.AddLifted(thunk);
+            this._ctx.Gen.MgThunks.Put(cacheKey, "1");
+        }
+        TypedReg recv = this.Emit(mg.Receiver);
+        TypedReg[] caps = new TypedReg[1];
+        caps[0] = recv;
+        TypedReg dst = this._ctx.Alloc(IrType.Ref);
+        this._ctx.Emit(new MkClosInstr(dst, thunkName, caps, 1, false));
+        return dst;
+    }
+
+    private static string _dotsToUnderscore(string s) {
+        string r = "";
+        int i = 0;
+        while (i < s.Length) {
+            string ch = s.Substring(i, 1);
+            if (ch == ".") { r = r + "_"; } else { r = r + ch; }
+            i = i + 1;
+        }
+        return r;
     }
 
     // arr[i] 读 → array_get（元素类型）。
