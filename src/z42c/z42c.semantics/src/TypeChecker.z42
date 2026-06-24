@@ -805,8 +805,15 @@ public sealed class TypeChecker {
         }
         if (e is RefArgExpr) {
             RefArgExpr ra = e as RefArgExpr;
+            // `out var n` 内联声明：先在 env 声明（调用后可见，如 Assert.Equal(42, n)），再绑 inner。
+            if (ra.IsVarDecl) {
+                env.Define(ra.VarName, new Z42UnknownType());
+                if (this._lambdaActive) { this._lambdaLocals.Put(ra.VarName, new Z42UnknownType()); }
+            }
             BoundExpr inner = this._bindExpr(ra.Inner, env);
-            return new BoundRefArg(inner, new Z42UnknownType(), ra.Span);
+            BoundRefArg bra = new BoundRefArg(inner, new Z42UnknownType(), ra.Span);
+            bra.IsVarDecl = ra.IsVarDecl; bra.VarName = ra.VarName;
+            return bra;
         }
         if (e is ObjNewExpr) {
             return this._bindNew(e as ObjNewExpr, env);

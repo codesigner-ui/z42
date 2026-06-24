@@ -25,7 +25,9 @@ public sealed class ArrayNewExpr : Expr {
 // ref 实参（ref var）→ 传变量地址（load_local_addr）。Inner 必须是 lvalue 局部变量。
 public sealed class RefArgExpr : Expr {
     public Expr Inner;
-    public RefArgExpr(Expr inner, Span span) { this.Span = span; this.Inner = inner; }
+    public bool IsVarDecl;   // `out var n` 内联声明（n 在调用处声明，调用后可见）
+    public string VarName;   // IsVarDecl 时的变量名
+    public RefArgExpr(Expr inner, Span span) { this.Span = span; this.Inner = inner; this.IsVarDecl = false; this.VarName = ""; }
     public override string Dump() { return "(ref " + this.Inner.Dump() + ")"; }
 }
 

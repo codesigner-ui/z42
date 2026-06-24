@@ -85,7 +85,15 @@ public sealed class ExprEmitter {
         }
         if (e is BoundRefArg) {
             BoundRefArg ra = e as BoundRefArg;
-            TypedReg slotReg = this.Emit(ra.Inner);
+            TypedReg slotReg;
+            // `out var n` 内联声明：先为 n 分配槽寄存器 + 登记 Locals（调用后读 n 命中），
+            // 镜像 C#（%1=n; load_local_addr %1）。否则 Emit inner 取其活寄存器。
+            if (ra.IsVarDecl && !this._ctx.Locals.ContainsKey(ra.VarName)) {
+                slotReg = this._ctx.Alloc(IrType.Unknown);
+                this._ctx.Locals.Put(ra.VarName, slotReg);
+            } else {
+                slotReg = this.Emit(ra.Inner);
+            }
             TypedReg dst = this._ctx.Alloc(IrType.Unknown);
             this._ctx.Emit(new LoadLocalAddrInstr(dst, slotReg));
             return dst;
@@ -353,11 +361,17 @@ public sealed class ExprEmitter {
         // 仅 BoundIdent 操作数（`++i`）写回 Locals 活寄存器；非 ident 暂不增量。
         if (op == "pre++" || op == "pre--") {
             if (u.Operand is BoundIdent) {
+                BoundIdent pbid = u.Operand as BoundIdent;
                 TypedReg one = this._ctx.Alloc(IrType.I64);
                 TypedReg nv  = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
                 this._ctx.Emit(new ConstI64Instr(one, "1"));
                 if (op == "pre++") { this._ctx.Emit(new AddInstr(nv, x, one)); }
                 else                { this._ctx.Emit(new SubInstr(nv, x, one)); }
+                // 实例字段（裸名）写回 field_set(reg0)；否则 Locals 活寄存器 copy。
+                if (this._ctx.Fields.ContainsKey(pbid.Name)) {
+                    this._ctx.Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), pbid.Name, nv));
+                    return nv;
+                }
                 this._ctx.Emit(new CopyInstr(x, nv));
                 return x;
             }
@@ -381,12 +395,18 @@ public sealed class ExprEmitter {
         TypedReg ph = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
         this._ctx.Emit(new CopyInstr(ph, x));
         if (u.Operand is BoundIdent) {
+            BoundIdent bid = u.Operand as BoundIdent;
             TypedReg one = this._ctx.Alloc(IrType.I64);
             TypedReg nv  = this._ctx.Alloc(this._ctx.ToIrType(u.Type()));
             this._ctx.Emit(new ConstI64Instr(one, "1"));
             if (op == "++") { this._ctx.Emit(new AddInstr(nv, x, one)); }
             else             { this._ctx.Emit(new SubInstr(nv, x, one)); }
-            this._ctx.Emit(new CopyInstr(x, nv));
+            // 实例字段（裸名）写回 field_set(reg0)；否则 Locals 活寄存器 copy（返回旧值 ph）。
+            if (this._ctx.Fields.ContainsKey(bid.Name)) {
+                this._ctx.Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), bid.Name, nv));
+            } else {
+                this._ctx.Emit(new CopyInstr(x, nv));
+            }
         } else if (u.Operand is BoundStaticGet) {   // Class.staticField++ → static_set 写回（返回旧值 ph）
             BoundStaticGet st = u.Operand as BoundStaticGet;
             TypedReg one = this._ctx.Alloc(IrType.I64);

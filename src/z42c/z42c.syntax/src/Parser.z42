@@ -172,9 +172,18 @@ public sealed class Parser {
                     args = bigger;
                 }
                 Expr arg = null;
-                if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out) {
+                if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out || this._peek().Kind == TokenKind.In) {
                     Token refTok = this._peek(); this._advance();
-                    arg = new RefArgExpr(this._parseExpr(0), refTok.Span);
+                    if (this._peek().Kind == TokenKind.Var) {   // `out var n` 内联声明
+                        this._advance();   // var
+                        string vn = this._peek().Text;
+                        if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
+                        RefArgExpr ova = new RefArgExpr(new IdentExpr(vn, refTok.Span), refTok.Span);
+                        ova.IsVarDecl = true; ova.VarName = vn;
+                        arg = ova;
+                    } else {
+                        arg = new RefArgExpr(this._parseExpr(0), refTok.Span);
+                    }
                 } else { arg = this._parseExpr(0); }
                 args[n] = arg; n = n + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); }
@@ -1286,7 +1295,7 @@ public sealed class Parser {
                 AttrList pattrs = null;
                 if (this._peek().Kind == TokenKind.LBracket) { pattrs = this._parseAttributes(); }
                 bool isRef = false;
-                if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out) { this._advance(); isRef = true; }
+                if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out || this._peek().Kind == TokenKind.In) { this._advance(); isRef = true; }
                 TypeExpr pt = this._parseType();
                 string pn = this._peek().Text;
                 if (this._peek().Kind == TokenKind.Identifier) { this._advance(); }
