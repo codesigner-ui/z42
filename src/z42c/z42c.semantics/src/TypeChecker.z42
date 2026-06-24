@@ -1131,7 +1131,7 @@ public sealed class TypeChecker {
             }
             if (env.Symbols.HasFunc(id.Name)) {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);
-                BoundExpr[] fa = this._withDefaults(ms, args, call.Args, call.ArgCount, env);
+                BoundExpr[] fa = this._withDefaults(ms, args, call.Args, call.ArgCount, env, call.Span);
                 return new BoundCall("free", false, null, "", id.Name, fa, fa.Length, ms.Signature.Ret, call.Span);
             }
             // 同类无限定静态调用（unqualified static call within class body：OSKindValue() inside Platform）。
@@ -1188,7 +1188,7 @@ public sealed class TypeChecker {
                 string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
                 MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
                 if (ms != null) {
-                    BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env);
+                    BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env, sp);
                     return new BoundCall("static", false, null, ct.Name(), mkey, fa, fa.Length, ms.Signature.Ret, sp);
                 }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol,
@@ -1222,7 +1222,7 @@ public sealed class TypeChecker {
             string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
             MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
             if (ms != null) {
-                BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env);
+                BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env, sp);
                 return new BoundCall("instance", true, recv, ct.Name(), mkey, fa, fa.Length, ms.Signature.Ret, sp);
             }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
@@ -1250,7 +1250,8 @@ public sealed class TypeChecker {
             if (itms != null) {
                 Z42Type itRet = itms.Signature.Ret;
                 if (itRet is Z42GenericParamType) { itRet = new Z42UnknownType(); }
-                return new BoundCall("instance", true, recv, itDef2.Name(), itmkey, args, argCount, itRet, sp);
+                BoundExpr[] fa = this._withDefaults(itms, args, rawArgs, argCount, env, sp);
+                return new BoundCall("instance", true, recv, itDef2.Name(), itmkey, fa, fa.Length, itRet, sp);
             }
             return new BoundCall("instance", true, recv, itDef2.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
         }
@@ -1436,11 +1437,26 @@ public sealed class TypeChecker {
     //   未填形参用其 Default 表达式（无默认 → 绑定失败返回 null，回落旧 1:1 路径报常规错误）。
     // 返回长度 = md.ParamCount 的已绑定实参数组；不可适配（实参多于形参/缺默认/命名未匹配）→ null。
     // 默认参数填充（default_params）：实参数少于形参数且 callee 有 AST Decl（非 imported）→
-    // 用 _adaptArgs 按默认值补齐；不可适配或 imported 则原样返回已绑定实参。
-    private BoundExpr[] _withDefaults(MethodSymbol ms, BoundExpr[] args, Expr[] rawArgs, int rawArgCount, TypeEnv env) {
+    // 用 _adaptArgs 按默认值补齐。imported（无 Decl，默认表达式不在 TSIG，镜像 C#
+    // ImportedSymbolLoader.Phase2）→ 缺省实参用 default(paramType) 填充（stdlib 默认值
+    // 多为类型零值 false/0/null，故与声明默认一致，如 MulticastAction.Invoke 的
+    // continueOnException=false）。否则原样返回已绑定实参。
+    private BoundExpr[] _withDefaults(MethodSymbol ms, BoundExpr[] args, Expr[] rawArgs, int rawArgCount, TypeEnv env, Span sp) {
         if (ms.HasDecl && ms.Decl != null && rawArgCount < ms.Decl.ParamCount) {
             BoundExpr[] ad = this._adaptArgs(ms.Decl, rawArgs, rawArgCount, env);
             if (ad != null) { return ad; }
+        }
+        if ((!ms.HasDecl || ms.Decl == null) && ms.Signature != null
+            && rawArgCount < ms.Signature.ParamCount) {
+            int pc = ms.Signature.ParamCount;
+            BoundExpr[] filled = new BoundExpr[pc];
+            int i = 0;
+            while (i < rawArgCount) { filled[i] = args[i]; i = i + 1; }
+            while (i < pc) {
+                filled[i] = new BoundDefault(ms.Signature.ParamTypes[i], 0 - 1, sp);
+                i = i + 1;
+            }
+            return filled;
         }
         return args;
     }
