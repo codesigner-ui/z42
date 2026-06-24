@@ -31,7 +31,7 @@ int _buildCompilerZ42() {
         return 1;
     }
     int rc = _buildRuntime(); if (rc != 0) { return rc; }   // cargo release z42vm（C#-free）跑种子 driver
-    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string vm = _builtVm(root, "release");
     string stdlibFlat = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
     if (!File.Exists(Path.Join(stdlibFlat, "z42.core.zpkg"))) {
         int sc = _buildStdlib(); if (sc != 0) { return sc; }   // C#-free（A1 warm 种子路径）
@@ -194,7 +194,7 @@ int _testCompilerZ42Stdlib() {
     int sc = _buildStdlib(); if (sc != 0) { return sc; }
 
     string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
-    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string vm = _builtVm(root, "release");
     string stdlibFlat = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
     string dogfoodRoot = Path.Join(root, "artifacts/build/z42c/dogfood");
 
@@ -273,9 +273,9 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
         i = i + 1;
     }
 
-    string vm     = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string vm     = _builtVm(root, "release");
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
-    string runner = Path.Join(root, "artifacts/build/runtime/release/z42-test-runner");
+    string runner = _builtBin(root, "release", "z42-test-runner");
     if (!File.Exists(runner)) {
         ConsoleError.WriteLine("error: z42-test-runner not found at " + runner
             + " (cargo build --release --manifest-path src/toolchain/test-runner/Cargo.toml)");

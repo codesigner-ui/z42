@@ -185,7 +185,7 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
             .Arg("-c").Arg("Release").Arg("--nologo").Arg("-v").Arg("quiet"));
         if (c != 0) { return c; }
     }
-    string runner = Path.Join(root, "artifacts/build/runtime/release/z42-test-runner");
+    string runner = _builtBin(root, "release", "z42-test-runner");
     if (!File.Exists(runner)) {
         ConsoleError.WriteLine("error: z42-test-runner not found at " + runner + " (run without --no-build)");
         return 2;

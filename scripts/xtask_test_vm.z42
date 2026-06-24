@@ -38,7 +38,7 @@ int _runVmGoldens(string[] modes, int jobs) {
     string root = _root();
     if (jobs < 1) { jobs = 1; }
 
-    string vmBin = Path.Join(root, "artifacts/build/runtime/debug/z42vm");
+    string vmBin = _builtVm(root, "debug");
     if (!File.Exists(vmBin)) {
         ConsoleError.WriteLine("error: VM binary not found at " + vmBin);
         ConsoleError.WriteLine("       Build via: cargo build --manifest-path src/runtime/Cargo.toml");

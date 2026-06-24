@@ -94,7 +94,7 @@ int _buildStdlibCore() {
     string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
     // replace-csharp Phase C：C#-free warm 路径用绝对 release z42vm（_z42vm() 返回裸名 "z42vm"
     // 不在 PATH → warm 自建会 NotFound）。缺则 cargo 建（幂等）。
-    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string vm = _builtVm(root, "release");
     if (!File.Exists(vm)) { int rcv = _buildRuntime(); if (rcv != 0) { return rcv; } }
     string seedDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
     string seedStdlibCore = Path.Join(flatDir, "z42.core.zpkg");

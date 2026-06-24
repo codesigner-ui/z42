@@ -23,7 +23,7 @@ int _bench(ParseResult r) {
     string scenDir = Path.Join(root, "bench/scenarios");
     string resultsDir = Path.Join(root, "bench/results");
     Directory.Create(resultsDir);
-    string vm = Path.Join(root, "artifacts/build/runtime/release/z42vm");
+    string vm = _builtVm(root, "release");
     if (!File.Exists(vm)) { int rc = _buildRuntime(); if (rc != 0) { return rc; } }
     string libs = _libsDir(root);
     // 2026-06-05: bench scenarios `using Std.IO.Console` so stdlib must be

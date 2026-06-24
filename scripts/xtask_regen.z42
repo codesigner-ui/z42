@@ -28,8 +28,8 @@ int _regenGolden() {
     }
     string driverZpkg = Path.Join(driverHome, "z42c.driver.zpkg");
     string stdlibDist = _libsDir(root);
-    string vmBin = Path.Join(root, "artifacts/build/runtime/debug/z42vm");
-    if (!File.Exists(vmBin)) { vmBin = Path.Join(root, "artifacts/build/runtime/release/z42vm"); }
+    string vmBin = _builtVm(root, "debug");
+    if (!File.Exists(vmBin)) { vmBin = _builtVm(root, "release"); }
     if (!File.Exists(vmBin)) {
         ConsoleError.WriteLine("error: z42vm not found (build via cargo build --manifest-path src/runtime/Cargo.toml)");
         return 1;

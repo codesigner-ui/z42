@@ -43,7 +43,7 @@ int _testCrossZpkgImpl(string mode) {
     // _z42vm() returns the bare name "z42vm" which is not guaranteed to be in PATH;
     // the cross-zpkg runner builds the DEBUG runtime in _testCrossZpkgCore, so use
     // the debug binary path explicitly.
-    string vmBin = Path.Join(root, "artifacts/build/runtime/debug/z42vm");
+    string vmBin = _builtVm(root, "debug");
     if (!File.Exists(vmBin)) {
         ConsoleError.WriteLine("error: z42vm not found at " + vmBin);
         ConsoleError.WriteLine("       Build it via: cargo build --manifest-path src/runtime/Cargo.toml");
