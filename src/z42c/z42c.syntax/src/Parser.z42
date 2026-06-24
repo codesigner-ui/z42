@@ -872,12 +872,66 @@ public sealed class Parser {
         this._expect(TokenKind.LBrace, "{");
         Decl[] members = new Decl[16];
         int mc = 0;
+        bool isIface = (kind == "interface");
         while (this._peek().Kind != TokenKind.RBrace && this._peek().Kind != TokenKind.Eof) {
             Decl mem = this._parseMember(name);
-            members = this._growDecls(members, mc); members[mc] = mem; mc = mc + 1;
+            // event 字段 → 合成 add_X/remove_X 访问器（镜像 C# SynthesizeClassEvent）。
+            // multicast（MulticastAction/Func/Predicate）：add 体 `return this.X.Subscribe(h)`、
+            // remove 体 `this.X.Unsubscribe(h)`。interface：丢 backing field，仅留签名（无 body）。
+            if ((mem is FieldDecl) && this._modsHas((mem as FieldDecl).Mods, "event")
+                && this._isMulticastEventType((mem as FieldDecl).Type)) {
+                FieldDecl ev = mem as FieldDecl;
+                if (!isIface) { members = this._growDecls(members, mc); members[mc] = ev; mc = mc + 1; }
+                MethodDecl addM = this._synthEventAccessor(ev, true, !isIface);
+                MethodDecl rmM  = this._synthEventAccessor(ev, false, !isIface);
+                members = this._growDecls(members, mc); members[mc] = addM; mc = mc + 1;
+                members = this._growDecls(members, mc); members[mc] = rmM;  mc = mc + 1;
+            } else {
+                members = this._growDecls(members, mc); members[mc] = mem; mc = mc + 1;
+            }
         }
         this._expect(TokenKind.RBrace, "}");
         return new ClassDecl(kind, mods, name, typeParams, bases, bc, wl.Items, wl.Count, members, mc, sp);
+    }
+
+    // event 字段类型是否多播（MulticastAction/Func/Predicate）→ 走 Subscribe/Unsubscribe 访问器合成。
+    private bool _isMulticastEventType(TypeExpr t) {
+        if (!(t is NamedType)) { return false; }
+        string n = (t as NamedType).Name;
+        return n == "MulticastAction" || n == "MulticastFunc" || n == "MulticastPredicate";
+    }
+
+    // 合成单个 event 访问器（add_X / remove_X），multicast（镜像 C# SynthesizeClassEvent）：
+    //   add_X(h): IDisposable { return this.X.Subscribe(h); }
+    //   remove_X(h): void     { this.X.Unsubscribe(h); }
+    // hasBody=false（interface）→ 仅签名。handler 类型 = Action/Func/Predicate<同型参>。
+    private MethodDecl _synthEventAccessor(FieldDecl ev, bool isAdd, bool hasBody) {
+        Span sp = ev.Span;
+        NamedType evt = ev.Type as NamedType;
+        string handlerName = "Action";
+        if (evt.Name == "MulticastFunc") { handlerName = "Func"; }
+        else if (evt.Name == "MulticastPredicate") { handlerName = "Predicate"; }
+        TypeExpr handlerT = new NamedType(handlerName, evt.Args, evt.ArgCount, sp);
+        Param[] ps = new Param[1];
+        ps[0] = new Param(handlerT, "h", sp);
+        string mname = (isAdd ? "add_" : "remove_") + ev.Name;
+        TypeExpr ret = isAdd ? new NamedType("IDisposable", new TypeExpr[0], 0, sp)
+                             : new NamedType("void", new TypeExpr[0], 0, sp);
+        bool body = hasBody;
+        Stmt bodyStmt = null;
+        if (hasBody) {
+            Expr fieldRead = new MemberExpr(new IdentExpr("this", sp), ev.Name, sp);
+            Expr subMember = new MemberExpr(fieldRead, isAdd ? "Subscribe" : "Unsubscribe", sp);
+            Expr[] callArgs = new Expr[1];
+            callArgs[0] = new IdentExpr("h", sp);
+            Expr call = new CallExpr(subMember, callArgs, 1, sp);
+            Stmt[] stmts = new Stmt[1];
+            if (isAdd) { stmts[0] = new ReturnStmt(true, call, sp); }
+            else { stmts[0] = new ExprStmt(call, sp); }
+            bodyStmt = new BlockStmt(stmts, 1, sp);
+        }
+        return new MethodDecl("public", false, false, ret, mname,
+            this._emptyTypeParams(), new WhereClause[0], 0, ps, 1, body, bodyStmt, null, 0, false, sp);
     }
 
     // impl <Trait> for <Target> { methods }  —— 跨包 trait 实现（port-z42c-impl-block）。

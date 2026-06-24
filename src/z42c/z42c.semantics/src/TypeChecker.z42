@@ -700,23 +700,30 @@ public sealed class TypeChecker {
                     return new BoundCall("instance", true, arecv, aCls.Name(), "set_Item", sa, 2, new Z42VoidType(), a.Span);
                 }
             }
-            // add-event-keyword-multicast：event 字段 `recv.E += h` / `-= h` → `recv.E.Subscribe(h)` /
-            // `.Unsubscribe(h)`（recv 类的 EventFields 含该成员名时）。须在 compound desugar 前拦截。
+            // event `recv.E += h` / `-= h` → `recv.add_E(h)` / `recv.remove_E(h)`（镜像 C#
+            // add-event-keyword：访问器在 recv 类/接口/泛型实例上，vtable 派发到实现）。须在
+            // compound desugar 前拦截。访问器由 parser SynthesizeClassEvent 合成。
             if ((a.Op == "+=" || a.Op == "-=") && a.Target is MemberExpr) {
                 MemberExpr emtgt = a.Target as MemberExpr;
                 BoundExpr erecv = this._bindExpr(emtgt.Target, env);
                 Z42Type ertype = erecv.Type();
-                Z42ClassType ecls = null;
-                if (ertype is Z42ClassType) { ecls = ertype as Z42ClassType; }
-                else if (ertype is Z42InstantiatedType) { ecls = (ertype as Z42InstantiatedType).Def; }
-                if (ecls != null && ecls.EventFields.ContainsKey(emtgt.Name)) {
-                    BoundExpr efield = this._bindMember(emtgt, env);   // field.get recv.E
+                string accName = (a.Op == "+=") ? ("add_" + emtgt.Name) : ("remove_" + emtgt.Name);
+                MethodSymbol acc = null;
+                string recvCls = "";
+                if (ertype is Z42ClassType) {
+                    Z42ClassType ec = ertype as Z42ClassType;
+                    acc = this._findMethod(env.Symbols, ec, accName); if (acc != null) { recvCls = ec.Name(); }
+                } else if (ertype is Z42InstantiatedType) {
+                    Z42ClassType ec = (ertype as Z42InstantiatedType).Def;
+                    acc = this._findMethod(env.Symbols, ec, accName); if (acc != null) { recvCls = ec.Name(); }
+                } else if (ertype is Z42InterfaceType) {
+                    Z42InterfaceType it = ertype as Z42InterfaceType;
+                    acc = it.Methods.Get(accName) as MethodSymbol; if (acc != null) { recvCls = it.Name(); }
+                }
+                if (acc != null && acc.Signature != null) {
                     BoundExpr erhs = this._bindExpr(a.Value, env);
-                    string subMethod = (a.Op == "+=") ? "Subscribe" : "Unsubscribe";
-                    string efcls = efield.Type().Name();
-                    if (efield.Type() is Z42InstantiatedType) { efcls = (efield.Type() as Z42InstantiatedType).Def.Name(); }
                     BoundExpr[] sargs = new BoundExpr[1]; sargs[0] = erhs;
-                    return new BoundCall("instance", true, efield, efcls, subMethod, sargs, 1, new Z42UnknownType(), a.Span);
+                    return new BoundCall("instance", true, erecv, recvCls, accName, sargs, 1, acc.Signature.Ret, a.Span);
                 }
             }
             BoundExpr target = this._bindExpr(a.Target, env);
