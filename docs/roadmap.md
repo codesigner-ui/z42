@@ -57,7 +57,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 > **2026-06-07 重排要点**：全端到端自举从 1.0 拉到 0.3.x 作为本线招牌；自举采用「受限写法 + dogfood 补真卡点」（不为自举强制提前整个 0.6/0.7 的 match/LINQ/Result）；REPL 从 0.5.x 拉到 0.3.x capstone。连锁影响见下文 [长期 SemVer 路线](#长期-semver-路线05--10) 重排。
 
-> **2026-06-19 扩展要点**：boxing 机制（0.3.11）作为非泛型 Method.Invoke 前置新增；Method.Invoke 非泛型从 0.5.x 拉入 0.3.12；IsEnum + 嵌套泛型反射 + 接口成员枚举并入 0.3.12；test-runner 删除（z42c test GA）新增 0.3.13；CI 三平台模拟器（WASM/iOS Simulator/Android Emulator → GitHub Checks）新增 0.3.13 并行；workload B1+B2（命令发现 + 包格式）新增 0.3.14；REPL 后移 0.3.15；soak 0.3.16。0.5.x 反射收窄为泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>。
+> **2026-06-19 扩展要点**：boxing 机制（0.3.11）作为非泛型 Method.Invoke 前置新增；Method.Invoke 非泛型从 0.5.x 拉入 0.3.12；IsEnum + 嵌套泛型反射 + 接口成员枚举并入 0.3.12；test-runner 删除（z42b test GA）新增 0.3.13；CI 三平台模拟器（WASM/iOS Simulator/Android Emulator → GitHub Checks）新增 0.3.13 并行；workload B1+B2（命令发现 + 包格式）新增 0.3.14；REPL 后移 0.3.15；soak 0.3.16。0.5.x 反射收窄为泛型方法 Invoke + MakeGenericType + Activator.CreateInstance<T>。
 
 ### 0.2.x — 工程化 & 包系统 + perf CI ✅ 收尾
 
@@ -75,7 +75,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 ### 0.3.x — 自举线（GC v1 地基 → stdlib ‖ 全自举 ‖ 反射 → REPL）（2026-06-07 重排）
 
-退出标准：（A）stdlib 重组完成 + 每包 bench baseline + 三轮 perf 攻坚；（B）**编译器 7 子系统全部用 z42 重写**，byte-identical CI gate 7 日零飘移 + end-to-end compile-perf median ≤ 3× C#；（C）**反射完整化**（非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举）；（D）**test-runner 删除**（`z42c test` 端到端 GA）；（E）**CI 三平台模拟器**（WASM / iOS Simulator / Android Emulator → JUnit → GitHub Checks 全绿）；（F）**workload B1+B2**（命令发现 + 包格式 + `z42 workload install/list/remove` GA）；（capstone）z42 原生 REPL。
+退出标准：（A）stdlib 重组完成 + 每包 bench baseline + 三轮 perf 攻坚；（B）**编译器 7 子系统全部用 z42 重写**，byte-identical CI gate 7 日零飘移 + end-to-end compile-perf median ≤ 3× C#；（C）**反射完整化**（非泛型 Method.Invoke + IsEnum + 嵌套泛型 GetGenericArguments + 接口成员枚举）；（D）**test-runner 删除**（`z42b test` 端到端 GA）；（E）**CI 三平台模拟器**（WASM / iOS Simulator / Android Emulator → JUnit → GitHub Checks 全绿）；（F）**workload B1+B2**（命令发现 + 包格式 + `z42 workload install/list/remove` GA）；（capstone）z42 原生 REPL。
 
 > **完整规划**见 [`plan-0.3.x-three-streams/proposal.md`](spec/archive/2026-06-19-plan-0.3.x-three-streams/proposal.md)（2026-06-07 重排，supersede 2026-06-05 保守版）。以下为子版本索引。
 >
@@ -105,7 +105,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.3.10 | byte-identical CI gate 全 7 子系统 7 日零飘移 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
 | 0.3.11 | **Boxing 机制**：auto-boxing（prim→Object）+ box/unbox IR 指令 + 编译器隐式转换规则（spec-first，lang/ir/vm 三层）| | |
 | 0.3.12 | **反射完整化**：Method.Invoke（非泛型）‖ IsEnum（enum 作类型实体 spec 前置）‖ 嵌套泛型 GetGenericArguments ‖ 接口成员枚举 | | |
-| 0.3.13 | **test-runner 删除**：z42.test 加 TestRunner 类（反射驱动 [Test] 发现）+ z42c.driver `test` 命令 + 退役 Rust binary ‖ **CI 三平台模拟器**：WASM(Playwright) / iOS Simulator(`xcodebuild -destination`) / Android(emulator-runner+KVM) → JUnit → GitHub Checks（stdlib+z42c ‖ toolchain 双锁并行）| | |
+| 0.3.13 | **test-runner 删除**：z42.test 加 TestRunner/BenchRunner（反射驱动 [Test]/[Benchmark] 发现）+ z42b `test`/`bench` verb + 退役 Rust binary（同替两者）‖ **CI 三平台模拟器**：WASM(Playwright) / iOS Simulator(`xcodebuild -destination`) / Android(emulator-runner+KVM) → JUnit → GitHub Checks（stdlib ‖ toolchain 双锁并行）| | |
 | 0.3.14 | **workload B1**（命令发现：launcher 扫目录 → Std.Cli 树合并）+ **B2**（workload 包格式 + `z42 workload install/list/remove`）| | |
 | 0.3.15 | **REPL capstone**（z42 原生：变量 / 表达式 / 类型声明 / 实例化 + 跨 line scope）| | |
 | 0.3.16 | 收尾：z42c-selfhost 下全 dotnet/xtask test 绿 + soak + A perf delta report | | |
@@ -121,11 +121,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 > **完整规划**见 [`plan-0.4.x-four-streams/proposal.md`](spec/changes/plan-0.4.x-four-streams/proposal.md)。原线性"填 stdlib 包"框架（0.4.0 core → … → 0.4.8 docgen）作废——24 个 stdlib 包已 ship，0.4.x 真实价值是**兑现性能杠杆 + bench 工具 GA + 补齐小语法 + 打磨已有 stdlib**，而非建包。沿用 0.3.x 子系统互斥锁的多主线并行模型。
 
-退出标准：（P）P1 JIT 算术拆箱 + P2 inline cache 落地且 bench 证明收益 + 触及库 baseline 化；（B）独立 `z42.bench` 包 + `z42c bench` GA + e2e 硬门禁 + PR 自动 diff 评论；（S）`params`/`init`+表达式体属性/索引器/命名实参/`partial` 全部 GREEN + dogfood 验证；（L）JSON `Deserialize<T>` 泛型 serde + CLI 校验/全局flag/补全 + 模块审计清零 + `z42-doc` 无错；（G）泛型实例化 + 泛型反射三件套（Invoke/MakeGenericType/CreateInstance<T>）落地。
+退出标准：（P）P1 JIT 算术拆箱 + P2 inline cache 落地且 bench 证明收益 + 触及库 baseline 化；（B）独立 `z42.bench` 包 + `z42b bench` GA + e2e 硬门禁 + PR 自动 diff 评论；（S）`params`/`init`+表达式体属性/索引器/命名实参/`partial` 全部 GREEN + dogfood 验证；（L）JSON `Deserialize<T>` 泛型 serde + CLI 校验/全局flag/补全 + 模块审计清零 + `z42-doc` 无错；（G）泛型实例化 + 泛型反射三件套（Invoke/MakeGenericType/CreateInstance<T>）落地。
 
 | 子版本 | P（perf：Pv VM 侧 ‖ Pc 编译器侧）| B（bench）| S（syntax）| L（lib）| G（泛型前置）|
 |:--:|------|------|------|------|------|
-| 0.4.0 | Pv0 perf 基线刻画（量化已落地的 4-slot IC / JIT I64 特化）| B1 `z42.bench` 包 + B2 `z42c bench` GA | `params` 变长参数 | L1 stdlib 模块审计 spec | G0 泛型实例化设计 spec |
+| 0.4.0 | Pv0 perf 基线刻画（量化已落地的 4-slot IC / JIT I64 特化）| B1 `z42.bench` 包 + B2 `z42b bench` GA | `params` 变长参数 | L1 stdlib 模块审计 spec | G0 泛型实例化设计 spec |
 | 0.4.1 | Pv1 quickening + 超指令 ‖ Pc1 激活 IrPassManager（const-fold/DCE）| B5 perf 库 baseline 铺面 | `init` + 表达式体属性 | L2 `JsonReader`（合 add-json-streaming-reader）| G1 运行期泛型实例化 |
 | 0.4.2 | **Pv2 JIT 直接 emit 拆箱 + F64 特化（招牌）** ‖ Pc2 intrinsic 表 + devirt pass | B3 e2e 硬门禁 | 索引器 `this[i]` | L2 `JsonSerializer` 非泛型（`[JsonProperty]`）| G2 泛型方法 Invoke + `MakeGenericType` |
 | 0.4.3 | Pv3 Frame 寄存器 HashMap→Vec ‖ Pc3 大类拆分 + BindCall D-11 收尾 | B4 PR 自动评论 diff | 命名实参 | **L2 `Deserialize<T>` 泛型 serde（招牌）** | G3 `Activator.CreateInstance<T>` |
@@ -230,8 +230,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Release 自动化 | 0.2.6 | git tag → 跨平台 binary + zpkg 自动产出 |
 | 跨平台 SDK package 分发 | 0.2.6 | 13 个 per-arch SDK 包（desktop × 5 / iOS × 3 / Android × 4 / wasm × 1）；统一 `bin/libs/native/manifest.toml` 形态（examples 已于 2026-06-20 移出发行包）；详见 [embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | 跨 mode 一致性 CI | 0.3.0 | interp / JIT 同测试集结果一致 |
-| `z42c test` GREEN 门禁 | 0.3.13 | stdlib + 用户代码 z42 测试纳入 GREEN（z42c test GA，Rust test-runner 退役）|
-| `z42c bench --diff` + e2e 硬门禁 | 0.4.x（B 流）| 独立 `z42.bench` 包 + `z42c bench` GA；z42 代码 bench 进 perf CI，>10% 退化真正 fail PR + 自动 diff 评论 |
+| `z42b test` GREEN 门禁 | 0.3.13 | stdlib + 用户代码 z42 测试纳入 GREEN（z42b test GA，Rust test-runner 退役）|
+| `z42b bench --diff` + e2e 硬门禁 | 0.4.x（B 流）| 独立 `z42.bench` 包 + `z42b bench` GA；z42 代码 bench 进 perf CI，>10% 退化真正 fail PR + 自动 diff 评论 |
 | `z42-doc` 自动发布 | 0.4.x（L 流 0.4.6）| 标准库 doc comment → 静态站点 |
 | LSP 集成测试 | 0.5.7 | LSP server 协议级 conformance test |
 | DAP debugger conformance | 0.8.7 | VS Code / JetBrains 调试 |
@@ -273,9 +273,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.2.3 | Perf CI |
 | 0.2.5 | 多平台 CI matrix |
 | 0.3.10 | z42c-selfhost byte-identical gate（7 子系统逐字节对账）+ compile-perf ≤3× C# |
-| 0.3.13 | `z42c test` GA（z42 原生测试运行器，Rust test-runner 退役）+ CI 三平台 GitHub Checks（WASM / iOS Simulator / Android Emulator）全绿 |
+| 0.3.13 | `z42b test` GA（z42 原生测试运行器，Rust test-runner 退役）+ CI 三平台 GitHub Checks（WASM / iOS Simulator / Android Emulator）全绿 |
 | 0.3.14 | workload B2 `z42 workload install/list/remove` 端到端绿 |
-| 0.4.x（B 流）| `z42c bench --diff` 通过 + e2e bench >10% 退化硬门禁 fail PR |
+| 0.4.x（B 流）| `z42b bench --diff` 通过 + e2e bench >10% 退化硬门禁 fail PR |
 | 0.4.x（S 流）| `params`/`init`/索引器/命名实参/`partial` golden 全绿 |
 | 0.4.x（G+L 流）| 泛型实例化 + 泛型反射三件套绿 + JSON `Deserialize<T>` serde 用例通过 |
 | 0.4.x（L 流）| `z42-doc` 无错 + CLI 校验/补全 [Test] 通过 |

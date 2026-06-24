@@ -2,15 +2,18 @@
 
 > 状态：🟡 进行中（等待前置） | 创建：2026-06-19
 > **前置**：boxing 机制（0.3.11）+ 非泛型 Method.Invoke（0.3.12）
-> **子系统**：stdlib（z42.test）+ z42c + toolchain（实施时逐个锁，按阶段）
+> **子系统**：stdlib（z42.test）+ toolchain（builder）（实施时逐个锁，按阶段）
+> **修订（2026-06-25）**：命令宿主 z42c → **z42b（builder）**；z42c 退出 scope；bench 拉入
+> （Rust runner 同跑两者，删除须同时替）。决策见 build-orchestrator.md。
 
 ## 进度概览
 
 - [ ] 阶段 1: z42.test — TestResult + TestDiscovery（无需 Method.Invoke，纯反射查询）
 - [ ] 阶段 2: z42.test — TestRunner v2（需 Method.Invoke，等 0.3.12）
-- [ ] 阶段 3: z42c.driver — `test` 子命令（需 TestRunner v2，等阶段 2）
-- [ ] 阶段 4: xtask 集成切换
-- [ ] 阶段 5: test-runner 退役 + Cargo 清理
+- [ ] 阶段 3: z42b（builder）— `test` verb（需 TestRunner v2，等阶段 2）
+- [ ] 阶段 3b: z42.test — BenchRunner + z42b `bench` verb（需 Method.Invoke）
+- [ ] 阶段 4: xtask 集成切换（test + bench）
+- [ ] 阶段 5: test-runner 退役 + Cargo 清理（同时替掉 [Test]+[Benchmark] 才能删）
 - [ ] 阶段 6: GREEN 验证
 
 ---
@@ -46,35 +49,43 @@
       — 用 v2 API 自己跑自己（bootstrap 风格测试）
       — 覆盖：pass case / fail case（预期失败捕获）/ skip via [Setup] 失败
 
-## 阶段 3: z42c.driver — `test` 子命令
+## 阶段 3: z42b（builder）— `test` verb
 > **等待**：阶段 2 完成
 
-- [ ] 3.1 新建 `src/z42c/z42c.driver/src/TestCommand.z42`
-      — `TestCommand.Run(argv: string[])` 解析参数（--filter、--format、--list）
-      — 加载 .zbc：`Std.Runtime.LoadModule(path)` → 枚举 TIDX 条目
-      — 调 `Type.GetType(fqn)` 获取 Type 对象（待 API 确认）
-      — 调 `TestRunner.Run(type)` 执行
-      — 输出 pretty / JSON（由 --format 控制）
-      — 返回 exit code（0=全通, 1=有失败, 2=参数错误）
-- [ ] 3.2 修改 `src/z42c/z42c.driver/src/Main.z42`
-      — 在命令分发中加入 `"test"` → `TestCommand.Run(argv[1:])`
-      — 更新顶部注释中已实现命令列表
-- [ ] 3.3 确认 z42.test 在 z42c.driver.z42.toml 依赖中（修改 MODIFY）
+- [ ] 3.1 修改 `src/toolchain/builder/core/builder_cli.z42`
+      — `_cmdTest`：解析参数（--filter、--format、--list）
+      — （toml 入参时）先经 Compile 相位 build；加载 .zbc：`Std.Runtime.LoadModule(path)` → 枚举 TIDX
+      — 调 `Type.GetType(fqn)` 获取 Type（待 API 确认）→ `TestRunner.Run(type)` 执行
+      — 输出 pretty / JSON（由 --format 控制）；返回 exit code（0/1/2/3）
+- [ ] 3.2 修改 `src/toolchain/builder/core/builder.z42`
+      — test 编排：build → 调 z42.test runner 库 → 报告（薄）
+- [ ] 3.3 确认 z42.test 在 `z42.builder.z42.toml` 依赖中（MODIFY）
 
-## 阶段 4: xtask 集成切换
+## 阶段 3b: z42.test BenchRunner + z42b `bench` verb
+> **等待**：阶段 2（Method.Invoke）
 
-- [ ] 4.1 确认 xtask `test lib` 命令当前调用 test-runner 的位置
-- [ ] 4.2 修改 xtask 调用：`z42-test-runner <zbc>` → `z42c test <zbc> --format json`
-- [ ] 4.3 修改 xtask JSON 解析（若 z42c test JSON 格式有差异则对齐）
+- [ ] 3b.1 新建 `src/libraries/z42.test/src/BenchRunner.z42`
+      — 发现 `[Benchmark]` 方法（复用 TestDiscovery 反射基建）+ `Bencher`（warmup/samples/median）执行
+- [ ] 3b.2 `builder_cli.z42` 加 `_cmdBench`（--diff、--baseline、--format）→ 调 BenchRunner
+- [ ] 3b.3 输出对齐 `xtask bench --diff` + `bench-baselines` 分支门禁格式
+
+## 阶段 4: xtask 集成切换（test + bench）
+
+- [ ] 4.1 确认 xtask `test lib` / bench 当前调用 test-runner 的位置
+- [ ] 4.2 修改 xtask 调用：`z42-test-runner <zbc>` → `z42b test <zbc> --format json`（bench 同理）
+- [ ] 4.3 修改 xtask JSON 解析（若 z42b test/bench JSON 格式有差异则对齐）
 - [ ] 4.4 本地跑 `z42 xtask.zpkg test lib` 验证 22/22 lib 全通
 
 ## 阶段 5: test-runner 退役
+> **删除前先 oracle 对账**：Rust runner 与 z42b test/bench **双跑结果 parity**（pass/fail/计数一致）
+> 后再删——仿 replace-csharp 的 C# oracle 门。GREEN gate 是关键基建，不容回归。
 
+- [ ] 5.0 oracle 对账：同一批 lib 用 Rust runner 与 z42b test 双跑，diff 结果一致（[Test]+[Benchmark]）
 - [ ] 5.1 删除 `src/toolchain/test-runner/`（整个目录）
 - [ ] 5.2 修改 `src/runtime/Cargo.toml`：移除 test-runner workspace member
 - [ ] 5.3 修改 CI 配置（`.github/workflows/`）：移除 cargo build -p z42-test-runner
 - [ ] 5.4 搜索并清理其余所有对 `z42-test-runner` / `test-runner` 二进制的引用
-- [ ] 5.5 更新 `docs/design/testing/testing.md`：说明 z42c test 已替代
+- [ ] 5.5 更新 `docs/design/testing/testing.md`：说明 z42b test/bench 已替代
 
 ## 阶段 6: GREEN 验证
 
@@ -82,7 +93,7 @@
 - [ ] 6.2 `cargo build --manifest-path src/runtime/Cargo.toml --release` — 无 test-runner 产物
 - [ ] 6.3 `dotnet test` — 全绿
 - [ ] 6.4 `z42 xtask.zpkg test vm` — 全绿
-- [ ] 6.5 `z42 xtask.zpkg test lib` — 22/22（z42c test 驱动）
+- [ ] 6.5 `z42 xtask.zpkg test lib` — 22/22（z42b test 驱动）
 - [ ] 6.6 `z42 xtask.zpkg test cross-zpkg` — 全绿
 - [ ] 6.7 docs/roadmap.md 0.3.13 退出标准打 ✅
 
@@ -90,4 +101,4 @@
 
 - 阶段 1 可立即实施（不需要等 Method.Invoke）
 - 阶段 3 中 `Type.GetType(fqn)` 可能需要新增到反射 API（0.3.12 阶段评估）
-- z42c.driver 目前已有 `build` 命令占位；`test` 命令结构同理
+- z42b（builder）骨架已有 `test` verb 占位（builder_cli.z42）；`bench` verb 本变更补齐

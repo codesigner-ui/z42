@@ -1,5 +1,10 @@
 # Design: 退役 z42-test-runner
 
+> **修订（2026-06-25）**：命令宿主 `z42c` → **`z42b`（builder）**；bench 与 test 同批迁移
+> （Rust runner 同跑两者，删除须同时替）。runner 逻辑仍住 `z42.test`（库，必须是库——
+> on-device test harness 要把它打进设备 app）；z42b 是薄编排 verb（build → 调库 → 报告），
+> 与 Trim 等 stage 同构。决策见 [build-orchestrator.md](../../../design/toolchain/build-orchestrator.md)。
+
 ## Architecture
 
 ```
@@ -12,11 +17,12 @@ Before (0.3.12 及之前):
 
 After (0.3.13):
   z42 xtask.zpkg test vm
-    └─ z42c test <lib.zbc> --format json            ← z42 原生
-         └─ z42.test.TestRunner (反射驱动)
+    └─ z42b test <lib.zbc> --format json            ← z42 原生（薄编排 verb）
+         └─ z42.test.TestRunner (反射驱动，住库)
               ├─ TestDiscovery.Discover(Type)         反射发现 [Test]
               ├─ MethodInfo.Invoke(obj, args)         反射执行
               └─ TestResult[] → JSON 输出
+  z42b bench <lib.zbc>                               ← 同构：发现 [Benchmark] → Bencher → stats
 ```
 
 ## TestRunner v2 API
@@ -58,29 +64,29 @@ public class TestDiscovery {
 }
 ```
 
-## `z42c test` 命令设计
+## `z42b test` / `z42b bench` 命令设计
 
 ```
-z42c test <file.zbc|file.z42.toml>
-          [--filter <substr>]
-          [--format pretty|json]
-          [--list]
-z42c test --help
+z42b test  <file.zbc|file.z42.toml> [--filter <substr>] [--format pretty|json] [--list]
+z42b bench <file.zbc|file.z42.toml> [--filter <substr>] [--format pretty|json] [--diff] [--baseline <ref>]
 ```
 
-- **`<file.zbc>`**：直接对已编译产物运行测试
-- **`<file.z42.toml>`**：先 build 再 test（等同 `z42c build` + `z42c test <zbc>`）
-- **`--filter`**：测试名子串过滤
-- **`--format pretty`**（默认，TTY 输出）：带颜色的 ✓/✗ 行
-- **`--format json`**：一行一个 JSON 对象，最后输出汇总
-- **`--list`**：只列出测试名，不执行
-- **Exit code**：0=全通，1=有失败，2=参数错误，3=编译失败
+- **`<file.zbc>`**：直接对已编译产物运行
+- **`<file.z42.toml>`**：先 build 再跑（编排器复用 Compile 相位/ICompiler，等同 `z42b build` + 运行）
+- **`--filter`**：名字子串过滤；**`--list`**：只列不执行
+- **`--format pretty`**（默认 TTY）/ **`json`**（管道/CI）
+- **test Exit code**：0=全通，1=有失败，2=参数错误，3=编译失败
+- **bench 专属**：`--diff`/`--baseline` 复用现有 `xtask bench --diff` + `bench-baselines` 分支门禁；
+  输出对齐其格式（warmup/samples/median + 阈值回归判定）
+
+> test/bench 都是 z42b 的薄 verb：解析参数 → （必要时）build → 调 `z42.test` 的
+> `TestRunner` / `BenchRunner` 库 → 格式化输出。逻辑零重复，命令仅编排。
 
 ## Decisions
 
 ### D1: TestRunner 如何获取 Type 对象
 
-**问题**：`z42c test <lib.zbc>` 加载后，如何枚举类型并找 `[Test]`？
+**问题**：`z42b test <lib.zbc>` 加载后，如何枚举类型并找 `[Test]`？
 
 **选项**：
 - A：依赖 TIDX 编译期元数据（同 test-runner），只是调用改为 z42 代码
@@ -93,7 +99,7 @@ z42c test --help
 调 `TestDiscovery.FindTests(Type)` 验证（可作 assert）。
 
 实际执行路径：
-1. z42c test 通过 `Std.Runtime.LoadModule(path)` 加载 .zbc
+1. z42b test 通过 `Std.Runtime.LoadModule(path)` 加载 .zbc
 2. 遍历 TIDX 条目得到测试方法 FQN
 3. 用 `Type.GetType(fqn)` 拿到 `Type` 对象（需新增该 API）
 4. 用 `TestDiscovery.FindTests(Type)` 拿 MethodInfo 列表
@@ -118,7 +124,7 @@ z42c test --help
 
 test-runner 在 in-process 模式下每个测试前调用 `interp::init_static_fields()`。
 
-z42c test 以 subprocess 方式调用（D3 决定），每个 subprocess 是干净进程，
+z42b test 以 subprocess 方式调用（D3 决定），每个 subprocess 是干净进程，
 天然隔离——无需显式重置。性能牺牲可接受（每测试 ~50ms 启动），与现有
 test-runner `--legacy-subprocess` 模式同级。
 
@@ -127,15 +133,15 @@ test-runner `--legacy-subprocess` 模式同级。
 ### D5: xtask 集成方式
 
 xtask 目前在 z42 中通过 `z42-test-runner <zbc>` 调 Rust 二进制。
-改为：`z42c test <zbc> --format json`，子进程输出 JSON 由 xtask 解析（同现有 JSON 格式）。
+改为：`z42b test <zbc> --format json`，子进程输出 JSON 由 xtask 解析（同现有 JSON 格式）。
 
 JSON 格式对齐：`{"name": "...", "status": "pass|fail|skip", "error": "...", "ms": N}`
 
 ## Testing Strategy
 
 - `src/libraries/z42.test/tests/runner_v2.z42` — `[Test]` 用自己跑自己（bootstrap 测试）
-- 在 xtask 里加一个 `test lib` 阶段确认 z42c test 替代品工作（22 lib 测试全通）
-- retirement 标志：`z42 xtask.zpkg test lib` 改用 z42c test 后，test-runner 二进制
+- 在 xtask 里加一个 `test lib` 阶段确认 z42b test 替代品工作（22 lib 测试全通）
+- retirement 标志：`z42 xtask.zpkg test lib` 改用 z42b test 后，test-runner 二进制
   从 cargo build 产物中消失
 
 ## Deferred
@@ -157,7 +163,7 @@ JSON 格式对齐：`{"name": "...", "status": "pass|fail|skip", "error": "...",
 - **前置依赖**：无，纯工作量
 - **触发条件**：有 CI 集成需要时
 
-### retire-test-runner-future-benchmark
-- **触发原因**：`[Benchmark]` + `Bencher` 暂不迁移
-- **前置依赖**：无
-- **触发条件**：独立 bench 工具链规划时
+### ~~retire-test-runner-future-benchmark~~ → **已拉入本变更（2026-06-25）**
+- Rust test-runner 同时跑 [Test]+[Benchmark]，删除必须同时替掉两者 → bench 不能延后。
+- `z42.test` 加 `BenchRunner`（发现 [Benchmark] + Bencher warmup/samples/stats），`z42b bench` 调用；
+  基线/diff 复用 `xtask bench --diff` + `bench-baselines` 分支。

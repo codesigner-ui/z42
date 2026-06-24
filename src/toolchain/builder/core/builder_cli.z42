@@ -1,13 +1,14 @@
 // z42b 命令层（PARKED 骨架）—— 对照 launcher_cli.z42 的 Std.Cli 模式。
 //
-// launcher 把 build/publish/export/run/test 透传给 z42b；本层用 Std.Cli 嵌套 router
+// launcher 把 build/publish/export/run/test/bench 透传给 z42b；本层用 Std.Cli 嵌套 router
 // 解析（每层 -h 自动生成），dispatch 到各 handler → 解析 toml + target → 调编排核心
 // （builder.z42 的 _orchestrate）。动词语义裁决见 platform-export-lifecycle.md：
 //   build   平台无关 app.zpkg（不选 workload；tail 全 no-op）
 //   publish 一路到 Package（可分发件；--rid 选平台）
 //   export  到 GenerateProject 停（IDE 工程；仅 ios/android）
 //   run     双形态：<app.zpkg> 跑字节码 / <toml> --rid 跑平台部署形态
-//   test    host + 平台上跑 [Test]（--device sim|emulator|hw）
+//   test    host + 平台上跑 [Test]（--plat/--device）—— 取代 Rust test-runner
+//   bench   跑 [Benchmark]（Bencher）—— 与 test 同批取代 Rust runner（retire-test-runner）
 namespace Z42Builder;
 
 using Std;
@@ -63,9 +64,21 @@ SubcommandRouter _builderRoot() {
     root.Add("run", "run app.zpkg or platform deploy form", runP);
 
     ArgParser test = new ArgParser("z42b test", "run [Test] on host and/or platform");
-    test.AddOptionalPositional("plat", "<ios|android|wasm> (omit → host)");
-    test.AddOption("device", "", "sim | emulator | hw", "");
+    test.AddOptionalPositional("target", "<file.zbc|file.z42.toml> (omit → ./z42.toml)");
+    test.AddOption("filter", "", "test name substring filter", "");
+    test.AddOption("format", "", "pretty | json (default: pretty TTY / json pipe)", "");
+    test.AddFlag("list", "", "list test names, don't run");
+    test.AddOption("plat", "", "<ios|android|wasm> on-device face (omit → host)", "");
+    test.AddOption("device", "", "sim | emulator | hw (with --plat)", "");
     root.Add("test", "run [Test] on host and/or platform", test);
+
+    ArgParser bench = new ArgParser("z42b bench", "run [Benchmark] via Bencher (warmup/samples/stats)");
+    bench.AddOptionalPositional("target", "<file.zbc|file.z42.toml>");
+    bench.AddOption("filter", "", "benchmark name substring filter", "");
+    bench.AddOption("format", "", "pretty | json", "");
+    bench.AddFlag("diff", "", "compare vs baseline, fail on >threshold regression");
+    bench.AddOption("baseline", "", "baseline ref (default: bench-baselines branch)", "");
+    root.Add("bench", "run [Benchmark] via Bencher", bench);
 
     return root;
 }
@@ -82,6 +95,7 @@ int _dispatchBuilder(CommandResolution res) {
     if (top == "export")  { return _cmdExport(r); }
     if (top == "run")     { return _cmdRun(r); }
     if (top == "test")    { return _cmdTest(r); }
+    if (top == "bench")   { return _cmdBench(r); }
     return 0;
 }
 
@@ -106,7 +120,17 @@ int _cmdRun(ParseResult r) {
     return 0;
 }
 
+// test：host 面 = build → 调 z42.test TestRunner 库（反射发现+Invoke）→ 报告（取代 Rust test-runner）。
+//   有 --plat → on-device 面：导出 test-harness 工程（打进 runner+test zpkg）→ 装设备 → 收 TAP。
+//   逻辑住 z42.test（库）；此处仅薄编排。前置：Method.Invoke(0.3.12)。见 retire-test-runner spec。
 int _cmdTest(ParseResult r) {
-    // 实现期：host test-runner；有 plat → 导出 test-harness 工程上设备跑
+    // 实现期：（toml 入参）经 Compile 相位 build → LoadModule(zbc) → TestRunner.Run → format
+    return 0;
+}
+
+// bench：build → 调 z42.test BenchRunner（发现 [Benchmark] + Bencher warmup/samples/stats）→ 报告。
+//   --diff/--baseline 复用 xtask bench + bench-baselines 门禁。与 test 共用发现/反射基建。
+int _cmdBench(ParseResult r) {
+    // 实现期：build → LoadModule(zbc) → BenchRunner.Run → stats + 基线 diff
     return 0;
 }

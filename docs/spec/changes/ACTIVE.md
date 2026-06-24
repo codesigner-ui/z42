@@ -18,7 +18,7 @@
 
 | change | 子系统（待逐个确认） |
 |--------|---------------------|
-| `retire-test-runner` | stdlib（z42.test）+ z42c + toolchain —— 🟡 SPEC READY，实施等待 boxing(0.3.11) + Method.Invoke(0.3.12)；**不持锁**，开工前重新登记 |
+| `retire-test-runner` | stdlib（z42.test）+ toolchain（builder）—— 🟡 SPEC READY，实施等待 boxing(0.3.11) + Method.Invoke(0.3.12)；命令宿主 z42c→z42b（2026-06-25，z42c 退出 scope）+ bench 拉入；**不持锁**，开工前重新登记 |
 | `add-workload-command-dispatch` | toolchain + stdlib（z42.cli）—— 🟡 SPEC READY，可立即实施（无前置）；**不持锁**，开工前重新登记 |
 | ~~restructure-publish-output-dirs~~ | compiler —— ✅ 已归档 2026-06-19 |
 | ~~scaffold-z42c-selfhost~~ | z42c + compiler —— ✅ 已归档 2026-06-19（骨架完成；实现通过 port-z42c-* 系列）|
