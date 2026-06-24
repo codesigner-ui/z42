@@ -713,13 +713,19 @@ public sealed class ExprEmitter {
         return dst;
     }
 
-    // x is T → is_instance（bool）。
+    // x is T → is_instance（bool）。is-pattern `x is T v`：另发 as-cast 把 (x as T) 存入 v 的
+    // 寄存器并登记 Locals（true 分支读 v 命中此寄存器；不匹配时 as 得 null，分支不执行无害）。
     private TypedReg _emitIs(BoundIsExpr e) {
         TypedReg obj = this.Emit(e.E);
-        TypedReg dst = this._ctx.Alloc(IrType.Bool);
         string qn = this._ctx.QualifyClass(e.TypeName);
         if (qn == "Array") { qn = "Std.Array"; }       // 内建根类（VM 硬编码 Std.Array/Std.Object）
         else if (qn == "Object") { qn = "Std.Object"; }
+        if (e.BindName != "") {
+            TypedReg vReg = this._ctx.Alloc(IrType.Ref);
+            this._ctx.Emit(new AsCastInstr(vReg, obj, qn));
+            this._ctx.Locals.Put(e.BindName, vReg);
+        }
+        TypedReg dst = this._ctx.Alloc(IrType.Bool);
         this._ctx.Emit(new IsInstanceInstr(dst, obj, qn));
         return dst;
     }

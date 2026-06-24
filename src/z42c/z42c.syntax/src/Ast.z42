@@ -193,7 +193,8 @@ public sealed class TernaryExpr : Expr {
 public sealed class IsExpr : Expr {
     public Expr     E;
     public TypeExpr Type;
-    public IsExpr(Expr e, TypeExpr type, Span span) { this.Span = span; this.E = e; this.Type = type; }
+    public string   BindName;   // is-pattern 绑定变量名（""=无绑定，如 `x is T v`）
+    public IsExpr(Expr e, TypeExpr type, string bindName, Span span) { this.Span = span; this.E = e; this.Type = type; this.BindName = bindName; }
     public override string Dump() { return "(is " + this.E.Dump() + " " + this.Type.Dump() + ")"; }
 }
 

@@ -119,7 +119,11 @@ public sealed class Parser {
                 bool isIs = (k == TokenKind.Is);
                 this._advance();
                 TypeExpr ty = this._parseType();
-                if (isIs) { left = new IsExpr(left, ty, left.Span); } else { left = new AsExpr(left, ty, left.Span); }
+                if (isIs) {
+                    string bind = "";   // is-pattern：`x is T v` → 绑定变量 v（true 分支可见）
+                    if (this._peek().Kind == TokenKind.Identifier) { bind = this._peek().Text; this._advance(); }
+                    left = new IsExpr(left, ty, bind, left.Span);
+                } else { left = new AsExpr(left, ty, left.Span); }
                 continue;
             }
             // ??（右结合，bp 25）
