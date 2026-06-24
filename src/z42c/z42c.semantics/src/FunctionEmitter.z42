@@ -267,7 +267,10 @@ public sealed class FunctionEmitter {
             string catchL = this._ctx.Fresh("catch_start");
             bool hasType = cc.HasType;
             string typeName = "";
-            if (hasType) { typeName = this._ctx.QualifyClass(cc.ExTypeName); }
+            if (hasType) {
+                typeName = this._ctx.QualifyClass(cc.ExTypeName);
+                if (cc.ExArity > 0) { typeName = typeName + "$" + cc.ExArity.ToString(); }   // 泛型异常 → Std.MulticastException$1
+            }
             this._ctx.AddExc(new IrExcEntry(tryStartL, tryEndL, catchL, hasType, typeName, catchReg));
             this._ctx.StartBlock(catchL);
             if (cc.HasVar) {
