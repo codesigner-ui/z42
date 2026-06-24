@@ -28,7 +28,7 @@ examples/       # .z42 示例源文件
 
 ## 协作工作流（必须遵守）
 
-完整流程见 [`workflow.md`](rules/workflow.md)（流程主线 / Scope / commit）+ [`philosophy.md`](rules/philosophy.md)（实现哲学 / 设计完整性 / 延后管理）+ [`version-bumping.md`](rules/version-bumping.md)（zbc / zpkg version bump checklist）+ [`parallel-development.md`](rules/parallel-development.md)（多 change 并行：子系统互斥锁 + `docs/spec/changes/ACTIVE.md` 账本）。核心要点：
+完整流程见 [`workflow.md`](rules/workflow.md)（流程主线 / Scope / commit）+ [`philosophy.md`](rules/philosophy.md)（实现哲学 / 设计完整性 / 延后管理）+ [`version-bumping.md`](rules/version-bumping.md)（zbc / zpkg version bump checklist）+ [`parallel-development.md`](rules/parallel-development.md)（多 change 并行：子系统互斥锁 + `docs/spec/changes/ACTIVE.md` 账本）+ [`bootstrap-seed.md`](rules/bootstrap-seed.md)（自举种子鸡蛋问题：删构建期种子/兜底前必须先为所有 cold-start 入口供种，删+供种是同一原子变更）。核心要点：
 
 - **每次新对话**：Claude 自动读取 `.claude/projects/<project>/memory/MEMORY.md` 和当前阶段，主动说明状态和下一步
 - **需规范先行**（lang / ir / vm 类变更）：DRAFT → User 确认 → IMPL → GREEN → COMMIT
