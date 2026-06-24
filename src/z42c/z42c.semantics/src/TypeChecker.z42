@@ -1317,14 +1317,12 @@ public sealed class TypeChecker {
         BoundCapture[] caps = new BoundCapture[this._lambdaCapCount];
         i = 0;
         while (i < this._lambdaCapCount) { caps[i] = this._lambdaCaps[i]; i = i + 1; }
-        // 返回类型推断（call-arg lambda 无 expected 时 expected.Ret=Unknown，镜像 C# 从 body 推断）：
-        // expr-body → 表达式类型（void call 得 void）；block-body action → void。否则保留 expected.Ret。
+        // 返回类型推断（call-arg lambda 无 expected 时 expected.Ret=Unknown，镜像 C#）：
+        // 仅 expr-body 从表达式类型推断（void call 得 void）；block-body 保留 Unknown
+        // （C# 对无 expected 的 block lambda 不推断，如 `=> { throw }`）。
         Z42FuncType finalSig = expected;
-        if (expected.Ret is Z42UnknownType) {
-            Z42Type retT;
-            if (exprBody != null) { retT = exprBody.Type(); }
-            else { retT = new Z42PrimType("void"); }
-            finalSig = new Z42FuncType(expected.ParamTypes, expected.ParamCount, retT);
+        if ((expected.Ret is Z42UnknownType) && exprBody != null) {
+            finalSig = new Z42FuncType(expected.ParamTypes, expected.ParamCount, exprBody.Type());
         }
         return new BoundLambda(pnames, ptypes, lam.ParamCount,
                                lam.HasBlock, exprBody, blockBody,
