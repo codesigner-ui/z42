@@ -10,10 +10,10 @@
 // main's zpkg through z42vm with a temp libs dir that bundles stdlib +
 // our two test packages, capture stdout, and diff against expected.
 //
-// Build / run sequence per test:
-//   1. dotnet z42c.dll build <target>/z42.toml          (no deps)
-//   2. dotnet z42c.dll build <ext>/z42.toml             (deps on target)
-//   3. dotnet z42c.dll build <main>/z42.toml            (deps on target + ext)
+// Build / run sequence per test (C#-free — z42c.driver.zpkg on z42vm):
+//   1. z42vm z42c.driver.zpkg build <target>/z42.toml   (no deps)
+//   2. z42vm z42c.driver.zpkg build <ext>/z42.toml      (deps on target)
+//   3. z42vm z42c.driver.zpkg build <main>/z42.toml     (deps on target + ext)
 //   4. z42vm <main>.zpkg --mode <interp|jit>            (run + capture stdout)
 //
 // `mode` arrives as the function parameter (resolved by _testCrossZpkg in
@@ -92,7 +92,7 @@ int _testCrossZpkgImpl(string mode) {
             continue;
         }
 
-        // Stage 3: main (deps on target + ext). _buildPkg only seeds from a
+        // Stage 3: main (deps on target + ext). _buildPkgZ42c only seeds from a
         // single dir; main needs both, so populate libs manually here.
         string mainLibs = Path.Join(mainDir, "libs");
         if (Directory.Exists(mainLibs)) { Directory.Delete(mainLibs, true); }
@@ -176,51 +176,6 @@ int _testCrossZpkgImpl(string mode) {
         return 1;
     }
     return 0;
-}
-
-// ── Per-stage helpers (cross-specific; not in xtask_golden.z42) ───────────
-
-bool _buildPkg(string driverDll, string pkgDir, string srcLibsDir) {
-    // Populate <pkgDir>/libs with prior-stage zpkgs.
-    string pkgLibs = Path.Join(pkgDir, "libs");
-    if (Directory.Exists(pkgLibs)) { Directory.Delete(pkgLibs, true); }
-    Directory.Create(pkgLibs);
-    if (srcLibsDir.Length > 0) {
-        _copyZpkgs(srcLibsDir, pkgLibs);
-    }
-    string toml = _findToml(pkgDir);
-    if (toml.Length == 0) {
-        Console.WriteLine("    error: no toml in " + pkgDir);
-        return false;
-    }
-    if (!_invokeBuild(driverDll, toml)) {
-        Console.WriteLine("    build failed: " + pkgDir);
-        // Re-run noisy to surface the error.
-        try {
-            ProcessResult dr = new Process("dotnet")
-                .Arg(driverDll).Arg("build").Arg(toml)
-                .Run();
-            string combined = dr.Stdout + dr.Stderr;
-            Console.WriteLine("      " + _firstLines(combined, 10));
-        } catch (Exception e) {
-            Console.WriteLine("      (re-run also failed: " + e.Message + ")");
-        }
-        return false;
-    }
-    return true;
-}
-
-bool _invokeBuild(string driverDll, string toml) {
-    try {
-        ProcessResult br = new Process("dotnet")
-            .Arg(driverDll).Arg("build").Arg(toml)
-            .Stdout(Stdio.Null())
-            .Stderr(Stdio.Null())
-            .Run();
-        return br.ExitCode == 0;
-    } catch (Exception e) {
-        return false;
-    }
 }
 
 // ── z42c build path (replace-csharp Phase B：cross-zpkg gate 脱 dotnet) ──────

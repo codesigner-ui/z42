@@ -115,7 +115,19 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
   反射）→ 检测 [Test] 可行。风险低（additive 段；z42c 成员自身无 [Test] → 其 zpkg 不变 → fixpoint 不破）。
   oracle = C#-built 单元 zpkg 的 TIDX 字节。完成后翻 loud-skip 回真 runner 调用 → z42c [Test] 覆盖恢复 + 全 C#-free。
 
-- [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj` + cross-zpkg 残留 C# helpers。
+### 🔀 协同发现（2026-06-25）：TIDX 移植被 retire-test-runner 取代 + CI 优化方向
+- **TIDX 移植不再需要**：并行 change `retire-test-runner` 删 Rust `z42-test-runner`，改 `z42.test` 反射驱动
+  `TestRunner`（`MethodInfo`/`Method.Invoke` 发现 `[Test]`，**非 TIDX**）+ `z42b test`/`z42b bench` 宿主。
+  z42c 已 emit attr-ref 反射 → 反射式 runner 落地后 z42c-built [Test] 单元自然可发现，**无需 port-z42c-tidx**。
+  ⇒ port-z42c-tidx 作废；z42c [Test] 单元的 loud-skip（commit 026d36b4）待 retire-test-runner GA 后由反射 runner 接管。
+  **边界**：test-runner / bench 的 dotnet 移除归 retire-test-runner（并行 change）；本 change 不碰这两块，避免 shared-worktree race。
+- **CI 慢的根因 + JIT 实验结论**：`test all` ~38m 主因 = z42c **解释执行**逐文件编译（golden regen ~199 / stdlib 22 /
+  z42c 自建 ×2-3）。试过把 8 处 z42c-compile `--mode interp`→jit（`_z42cMode()` helper）：单次大编译 jit 快 ~3×
+  且字节一致（fixpoint 在 x64 CI 已证 jit-built==interp-built），**但全 gate jit 反而更慢**——gate 把 z42c spawn
+  数百次短进程，每进程 jit 预热成本 > 执行节省（warmup-bound）。已 revert（未 push）。CI 真正提速杠杆 =
+  ① 批量编译（z42c.driver 一进程编多文件，摊销启动+预热）② 并行（跨核/拆 CI job）③ AOT z42c.driver。均为后续独立工作。
+- [x] C2 预备：删 cross-zpkg 残留 C# helpers（`_buildPkg`/`_invokeBuild` dead code，commit 见下）—— cross-zpkg 早已走 z42c 路径，C# 版无调用方。验证 2/2 绿。
+- [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj`。
 - [ ] C3 CI 清 dotnet：ci.yml（~15 setup-dotnet@v4 + dotnet-version '10.0.x' + build/test/run）→ z42c 种子流（复用 bootstrap-no-csharp job）；bench-update/bench-pr/release.yml 同；windows dotnet-test 腿删。
 - [ ] C4 验证 C#-free 闭包：bootstrap-no-csharp.sh（fixpoint 7/7）+ cross-zpkg（2/2）+ stdlib。CI 须 User push 后验证。
 - [ ] C5 文档：self-hosting.md S5 完成；roadmap 自举线收官。
