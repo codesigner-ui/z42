@@ -191,6 +191,39 @@ public static class IrDump {
         return base2;
     }
 
+    // 剔除被**本 CU 声明类**遮蔽的 imported 名（local-wins shadowing，ns-aware）。仅当本 CU 声明的类
+    // 名在 ImportedClassNs 中映射到**不同于本 CU ns** 的 ns 时才剔除（= 真 import 遮蔽，如用户
+    // `class Stack`@Demo 遮蔽 Std.Collections.Stack）。本包跨-ns 自有类（声明在别的 CU/ns）不在本 CU
+    // decls 中 → 不剔除 → 保留其 cross-ns 限定（避免误删致自举 emit 崩溃）。返回过滤副本，不改原表。
+    private static StrMap _filterShadowed(StrMap imported, CompilationUnit cu) {
+        if (imported == null) { return imported; }
+        string myNs = "";
+        if (cu.HasNamespace) { myNs = cu.Namespace; }
+        StrMap exclude = new StrMap();
+        int di = 0;
+        while (di < cu.DeclCount) {
+            Decl dd = cu.Decls[di];
+            if (dd is AttributedDecl) { dd = (dd as AttributedDecl).Inner; }
+            if (dd is ClassDecl) {
+                string cn = (dd as ClassDecl).Name;
+                if (imported.ContainsKey(cn)) {
+                    StrBox b = imported.Get(cn) as StrBox;
+                    if (b != null && b.Value != myNs) { exclude.Put(cn, "1"); }
+                }
+            }
+            di = di + 1;
+        }
+        if (exclude.Keys().Length == 0) { return imported; }
+        StrMap r = new StrMap();
+        string[] ks = imported.Keys();
+        int i = 0;
+        while (i < ks.Length) {
+            if (!exclude.ContainsKey(ks[i])) { r.Put(ks[i], imported.Get(ks[i])); }
+            i = i + 1;
+        }
+        return r;
+    }
+
     private static CompiledModuleZ _compileCu(CompilationUnit cu, SymbolTable symbols, DependencyIndex deps, ImportedSymbols imported, StrMap classNs, StrMap localClasses, bool isRelease) {
         var diags = new DiagnosticBag();
         var model = new TypeChecker(diags).Infer(cu, symbols);
@@ -198,7 +231,10 @@ public static class IrDump {
         gen.Deps = deps;
         gen.IsRelease = isRelease;   // 传入 release 标志（strip debug info）
         gen.SourceStem = IrDump._stem(cu);
-        gen.ImportedClassNs = classNs;   // 跨-zpkg imported + 同包跨-ns 类（G17b）；QualifyClass 用
+        // 本地声明类遮蔽同名 imported（shadowing：用户 `class Stack<T>` 遮蔽 stdlib Std.Collections.Stack）
+        // —— 在 ImportedClassNs 填充处剔除被本地遮蔽的名（而非 emit 期 QualifyClass 查 LocalClasses；
+        // 后者会触发 C# 对 z42c.semantics 的 codegen 扰动致自举 emit 半量崩溃，bootstrap-unsafe）。
+        gen.ImportedClassNs = IrDump._filterShadowed(classNs, cu);
         gen.LocalClasses = localClasses; // G18：ChainHasMethod 反劫持守卫仅认本地类
         IrModule irm = gen.Generate(cu, model);
         string[] usings = new string[8];
@@ -232,9 +268,9 @@ public static class IrDump {
         var gen = new IrGen();
         gen.Deps = deps;
         gen.SourceStem = IrDump._stem(cu);
-        if (imported != null) { gen.ImportedClassNs = imported.ClassNamespaces; }
         CompilationUnit[] one = new CompilationUnit[1]; one[0] = cu;
         gen.LocalClasses = IrDump._pkgLocalClasses(one, 1);   // G18：反劫持守卫仅认本地类
+        if (imported != null) { gen.ImportedClassNs = IrDump._filterShadowed(imported.ClassNamespaces, cu); }
         IrModule irm = gen.Generate(cu, model);
         // usings 抽取（DEPS 用）
         string[] usings = new string[4];

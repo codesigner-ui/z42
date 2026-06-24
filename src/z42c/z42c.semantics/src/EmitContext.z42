@@ -77,12 +77,7 @@ public sealed class EmitContext {
     }
 
     // 类名限定（镜像 C# QualifyClassName）：imported 类 → 其原 ns 前缀；否则按模块 ns 限定。
-    // 本地声明类优先于同名 imported（shadowing：用户类 `class Stack<T>` 遮蔽 stdlib Std.Collections.Stack）。
-    // 否则 using 引入同名时本地类的 VCall 被错误限定到 imported FQN → 方法解析失败。
     public string QualifyClass(string name) {
-        if (this.LocalClasses != null && this.LocalClasses.ContainsKey(name)) {
-            return this.Qualify(name);
-        }
         if (this.ImportedClassNs != null && this.ImportedClassNs.ContainsKey(name)) {
             StrBox b = this.ImportedClassNs.Get(name) as StrBox;
             if (b != null) { return b.Value + "." + name; }
