@@ -44,11 +44,23 @@ public static class ManifestLoader {
             if (s.ContainsKey("exclude")) { exc = ManifestLoader._strArray(s.Get("exclude")); excCount = exc.Length; }
         }
 
+        // [build]（镜像 C# ParseBuild：三目录字段原样保留，展开 + 默认级联在 driver dist 解析处）。
+        bool hasOutputDir = false; string outputDir = "";
+        bool hasCacheDir = false;  string cacheDir = "";
+        bool hasDistDir = false;   string distDir = "";
+        if (root.ContainsKey("build")) {
+            var b = root.Get("build");
+            if (b.ContainsKey("output_dir")) { outputDir = b.Get("output_dir").AsString(); hasOutputDir = true; }
+            if (b.ContainsKey("cache_dir"))  { cacheDir = b.Get("cache_dir").AsString();   hasCacheDir = true; }
+            if (b.ContainsKey("dist_dir"))   { distDir = b.Get("dist_dir").AsString();      hasDistDir = true; }
+        }
+
         // [dependencies]
         DepList dl = ManifestLoader._parseDeps(root, "dependencies");
 
         return new ProjectManifest(name, version, kind, hasEntry, entry, hasPack, pack,
-                                   inc, incCount, exc, excCount, dl.Items, dl.Count);
+                                   inc, incCount, exc, excCount, dl.Items, dl.Count,
+                                   hasOutputDir, outputDir, hasCacheDir, cacheDir, hasDistDir, distDir);
     }
 
     // z42.workspace.toml → WorkspaceManifest（incr 2）。

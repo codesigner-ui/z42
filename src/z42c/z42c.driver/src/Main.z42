@@ -203,7 +203,7 @@ int _build(string tomlPath, bool isRelease, string outputDirOverride, string[] l
         ConsoleError.WriteLine("z42c build: kind=exe but no Main() found");
         return 1;
     }
-    string distDir = outputDirOverride.Length > 0 ? outputDirOverride : Path.Join(projectDir, "dist");
+    string distDir = outputDirOverride.Length > 0 ? outputDirOverride : _resolveDistDir(pm, projectDir, isRelease);
     Directory.Create(distDir);
     string outPath = Path.Join(distDir, pm.Name + ".zpkg");
     // release → strip-symbols：主 zpkg（MODS dbug_len=0 + BLID）+ .zsym sidecar（split-debug）。
@@ -216,6 +216,28 @@ int _build(string tomlPath, bool isRelease, string outputDirOverride, string[] l
         Console.WriteLine("wrote -> " + symPath);
     }
     return 0;
+}
+
+// 解析 [build] dist_dir 的有效绝对路径（镜像 C# CentralizedBuildLayout.ResolveSingleProject）。
+// 级联：output_dir = build.output_dir ?? "${workspace_dir}/artifacts/${profile}"；
+//       dist_dir   = build.dist_dir   ?? "${output_dir}/dist"。
+// 单工程模式 ${workspace_dir} = projectDir（toml 所在目录）。projectDir 先转绝对，
+// 使 ${output_dir} 替换后保持 rooted（避免相对 dist 模板被二次 Join 重复前缀）。
+// 仅在无 --output-dir override 时调用（workspace build 仍走显式 dist 列表）。
+string _resolveDistDir(ProjectManifest pm, string projectDir, bool isRelease) {
+    string profile = isRelease ? "release" : "debug";
+    string absProj = Path.IsRooted(projectDir) ? projectDir
+        : Path.Join(Environment.GetCurrentDirectory(), projectDir);
+    // output_dir
+    TemplateContext octx = new TemplateContext(absProj, absProj, pm.Name, profile, "");
+    string outputRaw = pm.HasOutputDir ? pm.OutputDir : "${workspace_dir}/artifacts/${profile}";
+    string outputExp = PathTemplate.Expand(outputRaw, octx);
+    string outputAbs = Path.IsRooted(outputExp) ? outputExp : Path.Join(absProj, outputExp);
+    // dist_dir（${output_dir} → outputAbs；rooted 直接透传）
+    TemplateContext dctx = new TemplateContext(absProj, absProj, pm.Name, profile, outputAbs);
+    string distRaw = pm.HasDistDir ? pm.DistDir : "${output_dir}/dist";
+    string distExp = PathTemplate.Expand(distRaw, dctx);
+    return Path.IsRooted(distExp) ? distExp : Path.Join(absProj, distExp);
 }
 
 // `z42c build --workspace [--output-dir <flat>] [--release]`：从 CWD 向上找
