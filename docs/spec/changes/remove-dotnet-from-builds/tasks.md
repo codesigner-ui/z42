@@ -94,6 +94,27 @@ C# driver `build --workspace src/z42c`），冷分支改调它。warm 路径
 
 ## Phase C — 删 C# + 清 dotnet（不可逆）🔴 User 裁决「staged：先切门后删」+「移除 version/dotnet 配置 + CI」(2026-06-23)
 - [~] C1 build 站点全 C#-free：✅ `_buildCompilerZ42`→ViaZ42c（d4471a85）✅ `_ensureZ42cTooling`/units（71d13e53）✅ cross-zpkg（4192423b）✅ **xtask_package_desktop(dotnet×6 全清)**：bin/z42c 由 dotnet publish C# → apphost trampoline 跑 `programs/z42c/z42c.driver.zpkg`（7 z42c.* 种子 colocated，VM colocated-deps 解析兄弟 + stdlib via libs/）；5× `dotnet run z42.Driver build`（workloads + launcher）→ `_z42cBuildToml`（host z42vm 跑 z42c.driver.zpkg）。**正交前置修复**：z42c 此前忽略 `[build] dist_dir`/`output_dir`（恒写 `<projectDir>/dist`），致 workload/launcher/xtask 产物落错位置——补 z42c.project 解析 `[build]` 三目录字段 + Main.`_resolveDistDir` 级联（镜像 C# CentralizedBuildLayout.ResolveSingleProject + `${output_dir}` 替换）。验证：dist_dir/output_dir 正确落位 + fixpoint gen1==gen2 7/7 + C# cold-seed→z42c gen1 7/7（bootstrap-safe）。剩 ⬜ xtask.z42 `_regenCore`/_testAll · `_regenGolden` golden 编译 · xtask_bench · xtask_stdlib `_csharpBuildStdlibSeed` · xtask_cli `build/test compiler`。种子=self-seed 现有 dist / 下载 nightly。
+### 🔴 关键发现（2026-06-24，commit 026d36b4）：z42c [Test] 单元 false-green + TIDX 缺口
+package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** dist 从 `<projectDir>/dist`
+改成 C# 的 `artifacts/<profile>/dist` → CI build-and-test ×3 红（stage `test compiler-z42`）。两个根因：
+1. **默认越界**：compiler-z42 的 e2e 用 6+ 个无 `[build]` 临时工程 build 后读 `<dir>/dist`，依赖旧默认。
+   修：`_resolveDistDir` 仅在 toml **显式**设 output_dir/dist_dir 时走级联，否则保留 `<projectDir>/dist`。
+   package workload（显式 dist_dir）仍落 libs/，打包修复不受影响。
+2. **z42c [Test] 单元自 71d13e53 起从未真正运行（false-green）**：旧 z42c 忽略单元 toml 的 output_dir
+   → 写 `<projectDir>/dist`，而 runner 在 `artifacts/.../tests/<unit>/dist`（镜像）glob → 找到 0 个 zpkg
+   → run 循环 0 次 → "all passed" 假绿。dist_dir 修复让单元落到镜像后**暴露真相**：z42c-built 测试 zpkg
+   **缺 TIDX（test-index）段** —— runner 靠 TIDX 发现 [Test] 方法（仅 C# emit；z42c 把内建 [Test]/
+   [Benchmark] 仅从反射合成里排除，无任何 TIDX builder）→ runner exit 3 无输出。
+   **诚实临时处理**：z42c 仍 BUILD 每个单元（验证可编译）+ 0-zpkg 守卫（防再 false-green）+ run 段
+   loud SKIP（注明 port-z42c-tidx）。**根因待办 → 见下「z42c TIDX 移植」**。
+
+### 🆕 新增前置：z42c TIDX 段移植（port-z42c-tidx）
+- z42c 需 emit TIDX 段（[Test]/[Benchmark]/[Ignore]/[Skip]/[ShouldThrow]/[Timeout] → TestEntry → TIDX
+  section → 嵌入每模块 MODS），镜像 C# `TestEntry.cs` + `ZbcWriter.BuildTidxSection`（layout 已定义，
+  zbc reader Rust 端已能读，**无需 format bump**——只是 z42c 不发）。z42c 已有方法 attr 数据（SIGS attr-ref
+  反射）→ 检测 [Test] 可行。风险低（additive 段；z42c 成员自身无 [Test] → 其 zpkg 不变 → fixpoint 不破）。
+  oracle = C#-built 单元 zpkg 的 TIDX 字节。完成后翻 loud-skip 回真 runner 调用 → z42c [Test] 覆盖恢复 + 全 C#-free。
+
 - [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj` + cross-zpkg 残留 C# helpers。
 - [ ] C3 CI 清 dotnet：ci.yml（~15 setup-dotnet@v4 + dotnet-version '10.0.x' + build/test/run）→ z42c 种子流（复用 bootstrap-no-csharp job）；bench-update/bench-pr/release.yml 同；windows dotnet-test 腿删。
 - [ ] C4 验证 C#-free 闭包：bootstrap-no-csharp.sh（fixpoint 7/7）+ cross-zpkg（2/2）+ stdlib。CI 须 User push 后验证。
