@@ -89,17 +89,23 @@ int _platformRun(IPlatformBackend b, string root)   { return b.RunTests(root); }
 // declared destinations. The only platform variance is the destination paths
 // (and the optional browser fetch-list), captured by AssetLayout.
 int _platformAssets(IPlatformBackend b, string root) {
-    string driver = _driverDll(root);
-    if (!File.Exists(driver)) {
-        ConsoleError.WriteLine("error: z42c driver not found at " + driver + "; run build compiler");
+    // replace-csharp Phase C：fixtures 用 z42c 编（z42vm + z42c.driver.zpkg），不再 dotnet。
+    // driverHome = 含 z42c.driver.zpkg + 7 个 z42c.* 兄弟（colocated 解析）；Std.IO 依赖走 Z42_LIBS。
+    string driverHome = _assembleZ42cDriverHome(root);
+    if (driverHome.Length == 0) {
+        ConsoleError.WriteLine("error: z42c driver not built (artifacts/build/z42c/z42c.*/release/dist); run build compiler-z42");
         return 1;
     }
+    string vm = _builtVm(root, "release");
+    if (!File.Exists(vm)) { vm = _builtVm(root, "debug"); }
+    string driverZpkg = Path.Join(driverHome, "z42c.driver.zpkg");
+    string stdlibDist = _libsDir(root);
     AssetLayout layout = b.Assets(root);
 
     // (a) fixtures: examples/embedding/{hello,multi_line}.z42 → <fixturesDir>/*.zbc
     Directory.Create(layout.fixturesDir);
-    int c = _compileFixture(driver, root, "hello", layout.fixturesDir);       if (c != 0) { return c; }
-    c = _compileFixture(driver, root, "multi_line", layout.fixturesDir);      if (c != 0) { return c; }
+    int c = _compileFixture(vm, driverZpkg, stdlibDist, root, "hello", layout.fixturesDir);       if (c != 0) { return c; }
+    c = _compileFixture(vm, driverZpkg, stdlibDist, root, "multi_line", layout.fixturesDir);      if (c != 0) { return c; }
 
     // (b) stdlib zpkgs → each declared dir
     string libs = _libsDir(root);
@@ -130,7 +136,7 @@ string _reportDir(string root, string platform) {
     return d;
 }
 
-int _compileFixture(string driver, string root, string name, string destDir) {
+int _compileFixture(string vm, string driverZpkg, string stdlibDist, string root, string name, string destDir) {
     string srcFile = Path.Join(root, "examples/embedding/" + name + ".z42");
     if (!File.Exists(srcFile)) {
         ConsoleError.WriteLine("error: fixture source missing: " + srcFile);
@@ -138,8 +144,10 @@ int _compileFixture(string driver, string root, string name, string destDir) {
     }
     string outFile = Path.Join(destDir, name + ".zbc");
     Console.WriteLine("  z42c " + name + ".z42 -> " + outFile);
-    return _exec(new Process("dotnet").Arg(driver).Arg(srcFile)
-        .Arg("--emit").Arg("zbc").Arg("-o").Arg(outFile));
+    // z42vm 跑 z42c.driver.zpkg --emit-zbc（Std.IO 依赖经 Z42_LIBS 解析；driver 兄弟 colocated）。
+    return _exec(new Process(vm).Arg(driverZpkg).Arg("--mode").Arg("interp")
+        .Arg("--").Arg("--emit-zbc").Arg(srcFile).Arg(outFile)
+        .Env("Z42_LIBS", stdlibDist));
 }
 
 // Copy *.zpkg from libsDir into destDir (clearing stale zpkgs first). Unlike
