@@ -44,6 +44,29 @@ public static class ImportedSymbolLoader {
             else { active[i] = ImportedSymbolLoader._pkgProvidesUsing(exported, pkgNames, exportedCount, pkgNames[i], usings, usingCount); }
             i = i + 1;
         }
+        // ── Pre-scan：检测 imported 同名不同 arity 的类，泛型版需 arity-mangle（镜像 local
+        // SymbolCollector pre-scan + C# NeedsMangle）。否则 arity-0 base 与 arity-N 泛型
+        // （如 MulticastException / MulticastException<TResult>）撞键 → first-wins 丢泛型 →
+        // new/throw/catch `C<int>` 误取 base → 运行期类型失配。
+        StrMap impFirstArity = new StrMap();
+        StrMap impMultiArity = new StrMap();
+        i = 0;
+        while (i < exportedCount) {
+            if (active[i]) {
+                ExportedModuleZ pem = exported[i];
+                int pc = 0;
+                while (pc < pem.ClassCount) {
+                    ExportedClassZ pcl = pem.Classes[pc];
+                    string arStr = pcl.TpCount.ToString();
+                    if (impFirstArity.ContainsKey(pcl.Name)) {
+                        StrBox fa = impFirstArity.Get(pcl.Name) as StrBox;
+                        if (fa.Value != arStr) { impMultiArity.Put(pcl.Name, "1"); }
+                    } else { impFirstArity.Put(pcl.Name, new StrBox(arStr)); }
+                    pc = pc + 1;
+                }
+            }
+            i = i + 1;
+        }
         // ── Phase1：骨架（短名 → 空成员 Z42ClassType + 接口名表）──
         i = 0;
         while (i < exportedCount) {
@@ -52,12 +75,16 @@ public static class ImportedSymbolLoader {
                 int c = 0;
                 while (c < em.ClassCount) {
                     ExportedClassZ cl = em.Classes[c];
-                    if (!r.Classes.ContainsKey(cl.Name)) {        // first-wins（输入已 prelude-first 排序）
+                    bool needsMangle = cl.TpCount > 0 && impMultiArity.ContainsKey(cl.Name);
+                    string clKey = needsMangle ? (cl.Name + "$" + cl.TpCount.ToString()) : cl.Name;
+                    if (!r.Classes.ContainsKey(clKey)) {        // first-wins（输入已 prelude-first 排序）
                         string baseName = "";
                         bool hasBase = cl.HasBase && cl.BaseName != "Object";
                         if (hasBase) { baseName = cl.BaseName; }
-                        r.Classes.Put(cl.Name, new Z42ClassType(cl.Name, hasBase, baseName));
-                        r.ClassNamespaces.Put(cl.Name, new StrBox(em.Namespace));
+                        Z42ClassType nct = new Z42ClassType(cl.Name, hasBase, baseName);
+                        if (needsMangle) { nct.HasArityMangle = true; nct.ArityMangleCount = cl.TpCount; }
+                        r.Classes.Put(clKey, nct);
+                        r.ClassNamespaces.Put(clKey, new StrBox(em.Namespace));
                     }
                     c = c + 1;
                 }
@@ -96,8 +123,10 @@ public static class ImportedSymbolLoader {
                 int c = 0;
                 while (c < em.ClassCount) {
                     ExportedClassZ cl = em.Classes[c];
-                    Z42ClassType ct = r.Classes.Get(cl.Name) as Z42ClassType;
-                    StrBox owner = r.ClassNamespaces.Get(cl.Name) as StrBox;
+                    bool needsMangle = cl.TpCount > 0 && impMultiArity.ContainsKey(cl.Name);
+                    string clKey = needsMangle ? (cl.Name + "$" + cl.TpCount.ToString()) : cl.Name;
+                    Z42ClassType ct = r.Classes.Get(clKey) as Z42ClassType;
+                    StrBox owner = r.ClassNamespaces.Get(clKey) as StrBox;
                     if (ct != null && owner != null && owner.Value == em.Namespace) {
                         ImportedSymbolLoader._fillClass(r, ct, cl);
                     }

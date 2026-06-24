@@ -697,6 +697,7 @@ public sealed class ExprEmitter {
             while (k < inst.ArgCount) { targs[k] = inst.TypeArgs[k].Name(); k = k + 1; }
             tcount = inst.ArgCount;
         }
+        // className 已取自 inst.Def.IrName()（arity-overloaded 时 = Name$N）；直接 QualifyClass。
         string qualCls = this._ctx.QualifyClass(className);
         // FQ ctor = "{qualCls}.{ctorKey}"（镜像 C# fqCtor = $"{qualCls}.{n.CtorName}"）
         string fqCtor = qualCls + "." + n.CtorName;

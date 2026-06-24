@@ -269,7 +269,11 @@ public sealed class FunctionEmitter {
             string typeName = "";
             if (hasType) {
                 typeName = this._ctx.QualifyClass(cc.ExTypeName);
-                if (cc.ExArity > 0) { typeName = typeName + "$" + cc.ExArity.ToString(); }   // 泛型异常 → Std.MulticastException$1
+                // imported 泛型异常 → arity-mangled（Std.MulticastException$1）；local 泛型不加后缀。
+                if (cc.ExArity > 0
+                    && (this._ctx.LocalClasses == null || !this._ctx.LocalClasses.ContainsKey(cc.ExTypeName))) {
+                    typeName = typeName + "$" + cc.ExArity.ToString();
+                }
             }
             this._ctx.AddExc(new IrExcEntry(tryStartL, tryEndL, catchL, hasType, typeName, catchReg));
             this._ctx.StartBlock(catchL);
