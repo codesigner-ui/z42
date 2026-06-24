@@ -223,10 +223,20 @@ public sealed class FunctionEmitter {
         IrLocalVarEntry[] localVars = this._ctx.SnapshotLocals();
         this._gen._mergeUsedNsPub(this._ctx);
         // IsStatic=false（SIGS 字节实证——survey 报告与字节相左，以字节为准）
-        return new IrFunction(name, totalParams, retName, false,
+        IrFunction lifted = new IrFunction(name, totalParams, retName, false,
                               this._ctx.Blocks, this._ctx.BlockCount, this._ctx.MaxReg,
                               "Interp", paramTypes, totalParams, regTypes, this._ctx.RegTagCount,
                               lines, lineCount, localVars, localVars.Length);
+        // 异常表（lambda_try_catch）：lambda 体含 try/catch → 须把子 ctx 的 exc 表附到
+        // lifted 函数（镜像 EmitFunction:101-106）。漏此则 lifted 体无 handler → 异常不被捕获。
+        if (this._ctx.ExcCount > 0) {
+            IrExcEntry[] xs = new IrExcEntry[this._ctx.ExcCount];
+            int xi = 0;
+            while (xi < this._ctx.ExcCount) { xs[xi] = this._ctx.ExcTable[xi]; xi = xi + 1; }
+            lifted.ExcTable = xs;
+            lifted.ExcCount = this._ctx.ExcCount;
+        }
+        return lifted;
     }
 
     // 块体直循环（镜像 C# EmitBoundBlock：子语句逐条 EmitBoundStmt，块自身不 TrackLine）。
