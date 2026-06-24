@@ -14,21 +14,28 @@ using Std.IO;
 
 int _packageDesktop(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
     string cargoTarget = _ridToCargo(rid);
-    string dotnetRid = _ridToDotnet(rid);
-    string dotnetConfig = (profile == "release") ? "Release" : "Debug";
     bool rel = (profile == "release");
 
-    // [1/7] z42c via dotnet publish single-file
-    Console.WriteLine("[1/5] z42c (dotnet publish " + dotnetRid + ", " + profile + ")");
-    string pub = Directory.CreateTempDir("xtask-pub");
-    int c = _exec(new Process("dotnet").Arg("publish").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
-        .Arg("-c").Arg(dotnetConfig).Arg("-r").Arg(dotnetRid)
-        .Arg("-p:PublishSingleFile=true").Arg("-p:UseAppHost=true")
-        .Arg("-o").Arg(pub).Arg("--nologo").Arg("-v").Arg("quiet"));
-    if (c != 0) { return c; }
-    _copyIfExists(Path.Join(pub, "z42c"), Path.Join(pkgDir, "bin/z42c"));
-    _copyIfExists(Path.Join(pub, "z42c.exe"), Path.Join(pkgDir, "bin/z42c.exe"));
-    Console.WriteLine("      ✓ bin/z42c");
+    // [1/5] z42c self-host compiler (C#-free, z42c-built) → programs/z42c/.
+    // replace-csharp Phase C: the shipped compiler is z42c-built (runs on z42vm),
+    // NOT dotnet-published C#. The 7 z42c.* seed zpkgs are colocated in
+    // programs/z42c/ so the VM resolves the driver's 6 siblings next to the payload
+    // (support-colocated-zpkg-deps); stdlib resolves via libs/. The `bin/z42c`
+    // entry point is produced in [2c] as an apphost trampoline (the apphost stub
+    // is built there). _buildCompilerZ42 builds the host z42vm + stdlib + z42c seed,
+    // all C#-free (self-seeded; cold CI provisions a seed via nightly download).
+    Console.WriteLine("[1/5] z42c (z42c-built seed, C#-free)");
+    int c = _buildCompilerZ42(); if (c != 0) { return c; }
+    string z42cDir = Path.Join(pkgDir, "programs/z42c");
+    Directory.Create(z42cDir);
+    string[] z42cSeedMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    int zsi = 0;
+    while (zsi < z42cSeedMembers.Length) {
+        string zsp = Path.Join(root, "artifacts/build/z42c/" + z42cSeedMembers[zsi] + "/release/dist/" + z42cSeedMembers[zsi] + ".zpkg");
+        _copyIfExists(zsp, Path.Join(z42cDir, z42cSeedMembers[zsi] + ".zpkg"));
+        zsi = zsi + 1;
+    }
+    Console.WriteLine("      ✓ programs/z42c/ (z42c.* seed zpkgs, C#-free)");
 
     // [2/7] z42vm + libz42.* via cargo build --target + staticlib/cdylib
     Console.WriteLine("[2/5] z42vm + libz42 (cargo " + cargoTarget + ", " + profile + ")");
@@ -56,33 +63,28 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // apphost stub (z42-apphost crate) — used both by the desktop workload and
     // to produce `z42` below. Lands at cargoOut/apphost (shared target dir).
     c = _cargo(rel, "build", "src/toolchain/workload/desktop/platform/apphost/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
-    _makeExe(Path.Join(pkgDir, "bin/z42c"));
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     // apphost stub is NOT shipped in the SDK anymore (Decision 9 full gating):
     // it is delivered by the desktop workload (z42-workload-<v>-desktop-<rid>),
     // installed via `z42 workload install desktop`. See _buildDesktopWorkload.
     string libs = _libsDir(root);
+    // replace-csharp Phase C: workload + launcher packages built with z42c (z42vm +
+    // colocated z42c.driver.zpkg), NOT `dotnet run z42.Driver`. The driver's 6
+    // siblings resolve from programs/z42c/ (colocated); stdlib + prior workload
+    // zpkgs resolve via Z42_LIBS. The host z42vm (built by _buildCompilerZ42 above)
+    // runs the compiler regardless of target rid → RID-independent zpkgs.
+    string hostVm = _builtVm(root, "release");
     // desktop workload package (apphost producer) — build into Z42_LIBS first so
     // the launcher's z42c build resolves its `z42.workload.desktop` dependency.
-    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("src/toolchain/workload/desktop/appbuilder/z42.workload.desktop.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/workload/desktop/appbuilder/z42.workload.desktop.z42.toml");
     if (c != 0) { return c; }
-    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("src/toolchain/workload/ios/appbuilder/z42.workload.ios.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/workload/ios/appbuilder/z42.workload.ios.z42.toml");
     if (c != 0) { return c; }
-    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("src/toolchain/workload/android/appbuilder/z42.workload.android.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/workload/android/appbuilder/z42.workload.android.z42.toml");
     if (c != 0) { return c; }
-    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("src/toolchain/workload/wasm/appbuilder/z42.workload.wasm.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/workload/wasm/appbuilder/z42.workload.wasm.z42.toml");
     if (c != 0) { return c; }
-    c = _exec(new Process("dotnet").Arg("run").Arg("--project").Arg(_driverProj()).Arg("--verbosity").Arg("quiet")
-        .Arg("--").Arg("build").Arg("src/toolchain/launcher/core/z42.launcher.z42.toml").Arg("--release")
-        .Env("Z42_LIBS", libs));
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/launcher/core/z42.launcher.z42.toml");
     if (c != 0) { return c; }
     // launcher.zpkg → programs/launcher/ (the `z42` apphost's payload location).
     bool isWin = rid.StartsWith("windows-");
@@ -94,6 +96,12 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     string apphostStub = Path.Join(cargoOut, isWin ? "apphost.exe" : "apphost");
     string z42Out = Path.Join(pkgDir, isWin ? "z42.exe" : "z42");
     c = _produceApphost(apphostStub, z42Out, "programs/launcher/launcher.zpkg", rid); if (c != 0) { return c; }
+    // bin/z42c = apphost trampoline → programs/z42c/z42c.driver.zpkg (z42c-built,
+    // C#-free). Relative payload path from bin/ is ../programs/z42c/...; the VM
+    // resolves the 6 z42c siblings colocated in programs/z42c/ and stdlib via libs/.
+    string z42cExe = Path.Join(pkgDir, isWin ? "bin/z42c.exe" : "bin/z42c");
+    c = _produceApphost(apphostStub, z42cExe, "../programs/z42c/z42c.driver.zpkg", rid); if (c != 0) { return c; }
+    Console.WriteLine("      ✓ bin/z42c (apphost → programs/z42c/z42c.driver.zpkg)");
     Console.WriteLine("      ✓ z42 (apphost, package root)");
 
     // [3/7] C ABI headers
@@ -295,6 +303,18 @@ int _byteIndexOf(byte[] hay, byte[] needle) {
         i = i + 1;
     }
     return -1;
+}
+
+// Build one z42 package toml with z42c (z42vm + colocated z42c.driver.zpkg),
+// replacing the former `dotnet run z42.Driver -- build` (replace-csharp Phase C).
+// `vm` = host z42vm; `z42cDir` holds the 7 z42c.* seed zpkgs (driver siblings
+// resolve colocated); `libs` = Z42_LIBS (stdlib + prior workload zpkgs). The toml
+// itself carries its dist_dir, so emit location is unchanged from the C# path.
+int _z42cBuildToml(string vm, string z42cDir, string libs, string toml) {
+    return _exec(new Process(vm)
+        .Arg(Path.Join(z42cDir, "z42c.driver.zpkg")).Arg("--mode").Arg("interp")
+        .Arg("--").Arg("build").Arg(toml).Arg("--release")
+        .Env("Z42_LIBS", libs));
 }
 
 // Produce an apphost exe at `outPath` from stub `tmpl`, embedding payload path
