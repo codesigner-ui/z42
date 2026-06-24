@@ -296,6 +296,7 @@ public sealed class Parser {
         if (k == TokenKind.CharLiteral)   { this._advance(); return new CharLitExpr(Parser._unescapeChar(t.Text), t.Span); }
         if (k == TokenKind.FloatLiteral)  { this._advance(); return new FloatLitExpr(t.Text, t.Span); }
         if (k == TokenKind.StringLiteral) { this._advance(); return new StringLitExpr(t.Text, t.Span); }
+        if (k == TokenKind.RawStringLiteral) { this._advance(); return new StringLitExpr(t.Text, t.Span); }
         if (k == TokenKind.InterpolatedStringLiteral) { this._advance(); return this._parseInterpolated(t); }
         if (k == TokenKind.True)          { this._advance(); return new BoolLitExpr(true, t.Span); }
         if (k == TokenKind.False)         { this._advance(); return new BoolLitExpr(false, t.Span); }

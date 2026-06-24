@@ -297,6 +297,11 @@ public sealed class Lexer {
     // 把字符串字面量的 raw lexeme（含两端引号）解码为实际值：剥引号 + 转义还原。
     // 支持 \n \t \r \\ \" \'（常见集）；\0 / \uXXXX / \xXX 延后（见 deferred）。
     public static string DecodeString(string raw) {
+        // raw 串 """...""": 剥三引号，内容逐字保留（不处理转义）。lexer 见 3 引号即走
+        // _lexRawString，故任何以 """ 起的 lexeme 必是 raw 串。
+        if (raw.Length >= 6 && raw.Substring(0, 3) == "\"\"\"" && raw.Substring(raw.Length - 3, 3) == "\"\"\"") {
+            return raw.Substring(3, raw.Length - 6);
+        }
         if (raw.Length < 2) { return raw; }
         string inner = raw.Substring(1, raw.Length - 2);
         string result = "";

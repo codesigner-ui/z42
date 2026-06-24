@@ -1129,7 +1129,8 @@ public sealed class TypeChecker {
             }
             if (env.Symbols.HasFunc(id.Name)) {
                 MethodSymbol ms = env.Symbols.GetFunc(id.Name);
-                return new BoundCall("free", false, null, "", id.Name, args, call.ArgCount, ms.Signature.Ret, call.Span);
+                BoundExpr[] fa = this._withDefaults(ms, args, call.Args, call.ArgCount, env);
+                return new BoundCall("free", false, null, "", id.Name, fa, fa.Length, ms.Signature.Ret, call.Span);
             }
             // 同类无限定静态调用（unqualified static call within class body：OSKindValue() inside Platform）。
             if (env.HasClass()) {
@@ -1148,7 +1149,7 @@ public sealed class TypeChecker {
         }
         // 成员调用：obj.m(args) / Class.m(args)
         if (call.Callee is MemberExpr) {
-            return this._bindMemberCall(call.Callee as MemberExpr, args, call.ArgCount, env, call.Span);
+            return this._bindMemberCall(call.Callee as MemberExpr, args, call.ArgCount, call.Args, env, call.Span);
         }
         // 通用间接调用：array[i](args) / method()(args) 等 callee 是任意表达式且类型为 Z42FuncType。
         // Z42GenericParamType：泛型接口方法返回类型参数（如 ISubscription<TD>.Get()→TD）；type-erased，运行期解析。
@@ -1166,7 +1167,7 @@ public sealed class TypeChecker {
         return new BoundError("unsupported call", new Z42ErrorType(), call.Span);
     }
 
-    private BoundExpr _bindMemberCall(MemberExpr mem, BoundExpr[] args, int argCount, TypeEnv env, Span sp) {
+    private BoundExpr _bindMemberCall(MemberExpr mem, BoundExpr[] args, int argCount, Expr[] rawArgs, TypeEnv env, Span sp) {
         // fix-namespace-qualified-free-call：`ns.func()` 当 ns=当前命名空间且 func 是自由函数
         // → 自由调用（否则被误当类 ns 的静态调用 → 双限定 ns.ns.func → 运行期 undefined）。
         if (mem.Target is IdentExpr) {
@@ -1185,7 +1186,8 @@ public sealed class TypeChecker {
                 string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
                 MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
                 if (ms != null) {
-                    return new BoundCall("static", false, null, ct.Name(), mkey, args, argCount, ms.Signature.Ret, sp);
+                    BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env);
+                    return new BoundCall("static", false, null, ct.Name(), mkey, fa, fa.Length, ms.Signature.Ret, sp);
                 }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                     "no static method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
@@ -1218,7 +1220,8 @@ public sealed class TypeChecker {
             string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
             MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
             if (ms != null) {
-                return new BoundCall("instance", true, recv, ct.Name(), mkey, args, argCount, ms.Signature.Ret, sp);
+                BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env);
+                return new BoundCall("instance", true, recv, ct.Name(), mkey, fa, fa.Length, ms.Signature.Ret, sp);
             }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                 "no method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
@@ -1430,6 +1433,16 @@ public sealed class TypeChecker {
     //   位置实参按序填；命名实参 `name: val`（AssignExpr，Target=ident）按形参名定位；
     //   未填形参用其 Default 表达式（无默认 → 绑定失败返回 null，回落旧 1:1 路径报常规错误）。
     // 返回长度 = md.ParamCount 的已绑定实参数组；不可适配（实参多于形参/缺默认/命名未匹配）→ null。
+    // 默认参数填充（default_params）：实参数少于形参数且 callee 有 AST Decl（非 imported）→
+    // 用 _adaptArgs 按默认值补齐；不可适配或 imported 则原样返回已绑定实参。
+    private BoundExpr[] _withDefaults(MethodSymbol ms, BoundExpr[] args, Expr[] rawArgs, int rawArgCount, TypeEnv env) {
+        if (ms.HasDecl && ms.Decl != null && rawArgCount < ms.Decl.ParamCount) {
+            BoundExpr[] ad = this._adaptArgs(ms.Decl, rawArgs, rawArgCount, env);
+            if (ad != null) { return ad; }
+        }
+        return args;
+    }
+
     private BoundExpr[] _adaptArgs(MethodDecl md, Expr[] callArgs, int callArgCount, TypeEnv env) {
         int pc = md.ParamCount;
         if (callArgCount > pc) { return null; }
