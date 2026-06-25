@@ -127,6 +127,16 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
   数百次短进程，每进程 jit 预热成本 > 执行节省（warmup-bound）。已 revert（未 push）。CI 真正提速杠杆 =
   ① 批量编译（z42c.driver 一进程编多文件，摊销启动+预热）② 并行（跨核/拆 CI job）③ AOT z42c.driver。均为后续独立工作。
 - [x] C2 预备：删 cross-zpkg 残留 C# helpers（`_buildPkg`/`_invokeBuild` dead code，commit 见下）—— cross-zpkg 早已走 z42c 路径，C# 版无调用方。验证 2/2 绿。
+### 🟢 TIDX 落地（2026-06-25）：z42c [Test] 单元可跑 + ShouldThrow（commits cd53d0f3 + 6f91ceaf，CI 全绿）
+- **z42c emit TIDX 段**（cd53d0f3）：byte-identical to C#；17 个 z42c [Test] 单元 compile+run+pass（flip 掉 026d36b4 的 loud-skip）；fixpoint 7/7；C# cold-seed safe。顺带修 3 个 stale record-dump 测试（z42c 位置式 record 降级 field+ctor 镜像 C#，测试早于降级、因单元从不跑而漏）。
+- **z42c parse `[Attr<E>]` + emit `[ShouldThrow<E>]` chain**（6f91ceaf）：z42c 之前把 `<E>` 误当 `<` 运算符 → 垃圾 AST + 丢掉所有 ShouldThrow 函数。修 Parser 捕获 `<E>` + IrGen 建 `;`-分隔后代链（Ordinal 排序去 hash-order 不确定）。dogfood 3 个 ShouldThrow 测试过 + 匹配 C#，TIDX byte-identical。
+
+### 🔴 stdlib 单元切 z42c — 被 z42c codegen 缺口阻塞（2026-06-25，stdlib-switch WIP 已 revert）
+切换代码（xtask_test._compilePrep/_runUnitsBatched/_testLibCore + xtask_bench → z42c）已写好+验证机制正确（z42.math 13/13；z42c-编 vs C#-编单元 **byte-identical**，见 blake3/binary_basic 实测），但**全 272 跑暴露真 z42c codegen 缺口**：
+- **环境性假失败（非 z42c 问题）**：blake3 multi-chunk + 2 个 binary-stream —— 隔离实测 z42c-编 == C#-编 byte-identical 且 pass；全跑失败是**本地超载机器 + churned/stale artifacts**所致，clean CI 不会触发。
+- **真 z42c codegen 缺口（z42.test/dogfood 2 个）**：`test_testio_capture_nested_stdout`（TestIO 嵌套捕获）+ `test_bencher_stat_invariants`（Bencher 统计）—— z42c-编 fail / C#-编 pass，旧种子也 fail（pre-existing，非 ShouldThrow 引入）。
+- **下一步**：① 在**干净机器**跑全 272 拿完整真缺口清单（环境假失败需排除）② 逐个修 z42c codegen 缺口（TestIO 嵌套 / Bencher / 其它）—— 是 z42c 成熟度 grind（类比 golden parity）③ 缺口清零后 re-apply switch（代码在本对话/commit 历史可恢复）+ 全 272 C#-free 绿 → commit。这是删 src/compiler 的硬前置。
+
 - [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj`。
 - [ ] C3 CI 清 dotnet：ci.yml（~15 setup-dotnet@v4 + dotnet-version '10.0.x' + build/test/run）→ z42c 种子流（复用 bootstrap-no-csharp job）；bench-update/bench-pr/release.yml 同；windows dotnet-test 腿删。
 - [ ] C4 验证 C#-free 闭包：bootstrap-no-csharp.sh（fixpoint 7/7）+ cross-zpkg（2/2）+ stdlib。CI 须 User push 后验证。
