@@ -41,8 +41,9 @@ public sealed class Attr {
     public Expr[] Args;
     public int    ArgCount;
     public string FactoryFunc;   // add-attribute-reflection：合成工厂函数名（AttributeFactorySynthesizer 填；"" = 无/builtin）
+    public string TypeArg;       // 泛型类型实参 `[Attr<E>]`（解析器填；"" = 无）。镜像 C# Attr.TypeArg；[ShouldThrow<E>] 用。
     public Attr(string name, Expr[] args, int argCount, Span span) { this.Span = span;
-        this.Name = name; this.Args = args; this.ArgCount = argCount; this.FactoryFunc = "";
+        this.Name = name; this.Args = args; this.ArgCount = argCount; this.FactoryFunc = ""; this.TypeArg = "";
     }
     public string Dump() {
         string s = "[" + this.Name;

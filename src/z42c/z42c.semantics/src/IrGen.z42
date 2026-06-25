@@ -467,12 +467,89 @@ public sealed class IrGen {
             }
             else if (nm == "ShouldThrow") {
                 t.Flags = t.Flags | 4;                                       // bit2 ShouldThrow
-                // 简化（add-z42c-tidx-emit）：z42c 的 Attr 不捕获 `<E>` 泛型类型实参（_parseAttributes
-                // 只解析 Name + (args)），故 ExpectedThrowTypeIdx 暂留 0。C# 写 `E;descendant…` 链。
+                // [ShouldThrow<E>]：emit `E;descendant…` 链（镜像 C# BuildShouldThrowChain）。
+                // 链 = E + 全部可见类中 base 链传递到达 E 者的短名；runner split ';' 任一匹配即可
+                // （TestFailure extends Exception → [ShouldThrow<Exception>] 捕 TestFailure）。
+                // intern 必须在 new IrModule 之前（_buildTestIndex 已满足该序约束）。
+                if (at.TypeArg != "") {
+                    t.ExpectedThrowTypeIdx = this.Intern(this._buildShouldThrowChain(at.TypeArg));
+                }
             }
             a = a + 1;
         }
         return t;
+    }
+
+    // [ShouldThrow<E>] 的 `;`-分隔期望异常链（镜像 C# IrGen.Tests.BuildShouldThrowChain）。
+    // 链 = typeArg + 全部可见类（含 imported）中 base 链传递到达 typeArg 的短名。runner split ';'
+    // 任一匹配即放行 → 继承感知 ShouldThrow，无需 TIDX 布局变更或运行期跨模块类加载。
+    // 仅枚举本 CU SymbolTable.Classes 可见的类（含 using 引入的 imported 类）。
+    private string _buildShouldThrowChain(string typeArg) {
+        string chain = typeArg;
+        if (this._symbols == null) { return typeArg; }
+        // 确定序：StrMap.Keys() 是 hash-bucket 序（非确定）→ 先按 Ordinal 排序再迭代（common-pitfalls §1）。
+        string[] names = this._symbols.Classes.Keys();
+        this._sortOrdinal(names);
+        int i = 0;
+        while (i < names.Length) {
+            string name = names[i];
+            if (name != typeArg && this._isDescendantOf(name, typeArg)) {
+                chain = chain + ";" + name;
+            }
+            i = i + 1;
+        }
+        return chain;
+    }
+
+    // clsName 是否经 base 链传递派生自 ancestorShortName（剥 base 名命名空间取短名；环防护 32 跳）。
+    private bool _isDescendantOf(string clsName, string ancestorShortName) {
+        string cur = clsName;
+        int hops = 0;
+        while (hops < 32) {
+            if (!this._symbols.Classes.ContainsKey(cur)) { return false; }
+            Z42ClassType ct = this._symbols.Classes.Get(cur) as Z42ClassType;
+            if (!ct.HasBase || ct.BaseName == "") { return false; }
+            string baseShort = this._shortName(ct.BaseName);
+            if (baseShort == ancestorShortName) { return true; }
+            cur = baseShort;
+            hops = hops + 1;
+        }
+        return false;
+    }
+
+    // FQ base 名取短名（剥末段 `.` 前的命名空间；无 `.` 原样）。镜像 SymbolTable.z42 last-dot 扫描。
+    private string _shortName(string fq) {
+        int lastDot = 0 - 1;
+        int di = 0;
+        while (di < fq.Length) { if (fq.CharAt(di) == '.') { lastDot = di; } di = di + 1; }
+        if (lastDot >= 0) { return fq.Substring(lastDot + 1); }
+        return fq;
+    }
+
+    // 原地 Ordinal（按 char 码点）插入排序——名集小（可见类名），稳定确定序优先于性能。
+    private void _sortOrdinal(string[] a) {
+        int i = 1;
+        while (i < a.Length) {
+            string key = a[i];
+            int j = i - 1;
+            while (j >= 0 && this._ordLess(key, a[j])) { a[j + 1] = a[j]; j = j - 1; }
+            a[j + 1] = key;
+            i = i + 1;
+        }
+    }
+
+    // x < y（Ordinal/码点逐字符比较；前缀更短者小）。
+    private bool _ordLess(string x, string y) {
+        int n = x.Length;
+        if (y.Length < n) { n = y.Length; }
+        int i = 0;
+        while (i < n) {
+            int cx = (int)x.CharAt(i);
+            int cy = (int)y.CharAt(i);
+            if (cx != cy) { return cx < cy; }
+            i = i + 1;
+        }
+        return x.Length < y.Length;
     }
 
     // 命名字符串实参（`reason: "..."`）→ 1-based 池索引；无则 0。镜像 C# Intern(v)+1。

@@ -795,6 +795,14 @@ public sealed class Parser {
             while (true) {
                 Span asp = this._peek().Span;
                 string name = this._parseQualifiedName();
+                // 泛型类型实参 `[Attr<E>]`（镜像 C# attribute TypeArg；dogfood: [ShouldThrow<TestFailure>]）。
+                // 在 (args) 之前——`<` 出现在属性名后即类型实参，非小于运算（声明起始位置无歧义）。
+                string typeArg = "";
+                if (this._peek().Kind == TokenKind.Lt) {
+                    this._advance();   // <
+                    typeArg = this._parseQualifiedName();
+                    this._expect(TokenKind.Gt, ">");
+                }
                 Expr[] args = new Expr[4];
                 int ac = 0;
                 if (this._peek().Kind == TokenKind.LParen) {
@@ -828,7 +836,7 @@ public sealed class Parser {
                     int i = 0; while (i < n) { b[i] = items[i]; i = i + 1; }
                     items = b;
                 }
-                items[n] = new Attr(name, args, ac, asp); n = n + 1;
+                items[n] = new Attr(name, args, ac, asp); items[n].TypeArg = typeArg; n = n + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
             }
             this._expect(TokenKind.RBracket, "]");
