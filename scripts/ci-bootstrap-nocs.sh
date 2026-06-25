@@ -15,8 +15,8 @@
 # current source (verify with scripts/check-bootstrap-compat.sh before relying on it).
 #
 # Usage:  scripts/ci-bootstrap-nocs.sh [rid]
-#   rid defaults to host (macos-arm64 / linux-x64 / linux-arm64). Needs gh (auth'd)
-#   + cargo + rust. Unix only (Windows build-and-test keeps the C# bootstrap for now).
+#   rid defaults to host (macos-arm64 / linux-x64 / linux-arm64 / windows-x64).
+#   Needs gh (auth'd) + cargo + rust. Runs on all 4 OS build-and-test legs.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -31,6 +31,19 @@ if [ -z "$RID" ]; then
     *) echo "::error::unsupported host for C#-free bootstrap; pass rid"; exit 2 ;;
   esac
 fi
+
+# winpath: native z42vm is a Windows binary on windows-x64 — it cannot parse the
+# git-bash/MSYS path style (`/d/a/z42/z42/...`) that $PWD yields under Actions'
+# shell. Any ABSOLUTE path we hand to z42vm (as an argv path or via an env var it
+# reads — Z42_LIBS / Z42_PORTABLE_VM / the driver.zpkg arg) must be the native
+# `D:\a\...` form. Relative paths (resolved against cwd by z42vm itself) are fine
+# as-is, so only absolutes flow through here. No-op on Unix.
+winpath() {
+  case "$RID" in
+    windows-*) cygpath -w "$1" ;;
+    *)         printf '%s' "$1" ;;
+  esac
+}
 # nightly archive: Windows ships .zip (unzip), Unix ships .tar.gz (tar).
 case "$RID" in windows-*) EXT=zip ;; *) EXT=tar.gz ;; esac
 MEMBERS="z42c.core z42c.ir z42c.syntax z42c.project z42c.semantics z42c.pipeline z42c.driver"
@@ -79,19 +92,27 @@ for m in $MEMBERS; do
   cp -f "$seed/$m.zpkg" "$d/"
 done
 
+# Native-form (Windows D:\… on windows-x64; unchanged on Unix) copies of every
+# ABSOLUTE path z42vm must parse. The bash exec position ("$vm" …) keeps the MSYS
+# form — git-bash launches the .exe fine; only what z42vm itself reads is converted.
+seedw="$(winpath "$seed")"
+libsw="$(winpath "$libs")"
+vmw="$(winpath "$vm")"
+driverw="$(winpath "$seed/z42c.driver.zpkg")"
+
 # ── 2. seed z42c → build CURRENT xtask.zpkg ──────────────────────────────────
 echo "── [2/5] seed z42c builds current xtask.zpkg ──"
-Z42_LIBS="$seed" "$vm" "$seed/z42c.driver.zpkg" --mode interp -- \
+Z42_LIBS="$seedw" "$vm" "$driverw" --mode interp -- \
   build scripts/xtask.z42.toml --release
 [ -f "$ROOT/artifacts/xtask/xtask.zpkg" ] || { echo "::error::xtask.zpkg not produced"; exit 1; }
 
 # ── 3. xtask builds CURRENT z42c (warm self-build → standard loc) ────────────
 echo "── [3/5] xtask build compiler-z42 (warm self-build from seed) ──"
-Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build compiler-z42
+Z42_LIBS="$libsw" Z42_PORTABLE_VM="$vmw" "$vm" artifacts/xtask/xtask.zpkg -- build compiler-z42
 
 # ── 4. xtask builds CURRENT stdlib (flat dist + index.json) ──────────────────
 echo "── [4/5] xtask build stdlib ──"
-Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
+Z42_LIBS="$libsw" Z42_PORTABLE_VM="$vmw" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
 
 # ── 5. sanity: no dotnet was invoked; toolchain present ──────────────────────
 echo "── [5/5] verify C#-free toolchain ──"
