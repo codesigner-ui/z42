@@ -284,7 +284,6 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
 
     int totalFailed = 0;
     int totalUnits = 0;
-    int totalSkipped = 0;
     i = 0;
     while (i < members.Length) {
         string testsDir = Path.Join(root, "src/z42c/" + members[i] + "/tests");
@@ -328,17 +327,21 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
                     totalFailed = totalFailed + 1;
                     continue;
                 }
-                // ⊘ RUN skipped — z42c does not yet emit the TIDX (test-index)
-                // section that z42-test-runner walks to discover [Test] methods
-                // (only the C# compiler emits it; z42c built-in [Test]/[Benchmark]
-                // attrs are merely excluded from reflection synth). So z42c-built
-                // test zpkgs cannot execute through the runner yet (runner exits 3,
-                // no discovery). The COMPILE above DOES validate z42c builds every
-                // unit. Honest loud skip until the TIDX port lands (tracked:
-                // port-z42c-tidx — flips this back to a real runner invocation).
-                Console.WriteLine("  ⊘ SKIP run (" + zps.Length.ToString()
-                    + " zpkg built OK; z42c TIDX not yet emitted — port-z42c-tidx)");
-                totalSkipped = totalSkipped + 1;
+                // Run each produced test zpkg through the test-runner. z42c now
+                // emits the TIDX (test-index) section (port-z42c-tidx, 2026-06-25),
+                // so the runner discovers + executes [Test] methods just like for
+                // C#-built units. (Pre-TIDX this was a loud SKIP — z42c-built
+                // zpkgs had no TIDX → runner exit 3, no discovery.)
+                int j = 0;
+                while (j < zps.Length) {
+                    int rc = new Process(runner)
+                        .Arg(zps[j])
+                        .Env("Z42_PORTABLE_VM", vm)
+                        .Env("Z42_LIBS", flat)
+                        .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
+                    if (rc != 0) { totalFailed = totalFailed + 1; }
+                    j = j + 1;
+                }
             }
         }
         i = i + 1;
@@ -350,8 +353,7 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
             + totalUnits.ToString() + ")");
         return 1;
     }
-    Console.WriteLine("✅ z42c [Test]: " + totalUnits.ToString() + " unit(s) compiled; "
-        + totalSkipped.ToString() + " run-skipped (z42c TIDX pending — port-z42c-tidx)");
+    Console.WriteLine("✅ z42c [Test]: all " + totalUnits.ToString() + " unit(s) passed (compiled + run via TIDX)");
     int ec = _testCompilerZ42E2e(root, vm, flat);
     if (ec != 0) { return ec; }
     return _testZ42cSelfHostByteIdentical(root, vm, flat, members, profile);

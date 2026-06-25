@@ -8,6 +8,12 @@ public static class ZbcVersion {
     public static int Minor = 20;   // 2026-06-16 add-reflection-assignable-from：TYPE 段接口块存 FQ 名（原 bare）。结构不变（u16 count + str idx[]），字段语义 bare→FQ。
 }
 
+// TIDX section 版本（须与 C# ZbcWriter.TidxFormatVersion / Rust TEST_INDEX_VERSION 一致；strict-pin）。
+// v=3（add-test-timeout-attribute）：TestEntry 末尾追加 timeout_ms i32。
+public static class TidxVersion {
+    public static int Version = 3;
+}
+
 // 指令 opcode（ZW-1A 子集 + 终结符；全表后续增量补）。
 public static class Op {
     public static int ConstChar = 0x08;

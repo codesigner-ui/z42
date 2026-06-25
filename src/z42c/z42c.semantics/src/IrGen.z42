@@ -333,7 +333,203 @@ public sealed class IrGen {
         }
         string modName = "main";   // 模块名 = 根命名空间（对齐 C# `cu.Namespace ?? "main"`）
         if (cu.HasNamespace) { modName = cu.Namespace; }
-        return new IrModule(modName, this._pool, this._poolCount, classes, cc, funcs, fc);
+        // TIDX（add-z42c-tidx-emit）：先扫测试 attribute 建 TestIndex（**会 intern skip/reason 串入池**），
+        // 再构造 IrModule —— 须在 new IrModule 之前，否则后 intern 的串落在 StringCount 之外、strRemap 漏映射。
+        this._buildTestIndex(cu, funcs, fc);
+        IrModule irm = new IrModule(modName, this._pool, this._poolCount, classes, cc, funcs, fc);
+        irm.TestIndex = this._tiEntries; irm.TestCount = this._tiCount;
+        return irm;
+    }
+
+    private IrTestEntry[] _tiEntries; private int _tiCount;   // _buildTestIndex 产出
+
+    // ── TIDX 构建（add-z42c-tidx-emit；镜像 C# IrGen.Generate.BuildTestIndex）──────────────────
+    // 扫描每个携内建测试 attribute 的函数声明 → IrTestEntry。MethodId = 该函数在 funcs[] 的下标，
+    // 按 emit 时同一限定名（类方法 = _q(classShortName).methKey；顶层 = _q(name)）匹配。
+    private void _buildTestIndex(CompilationUnit cu, IrFunction[] funcs, int fc) {
+        this._tiFuncs = funcs; this._tiFc = fc;   // _lookupFnIndex 用（first-wins 线性查 funcs）
+        IrTestEntry[] entries = new IrTestEntry[4];
+        int n = 0;
+        int di = 0;
+        while (di < cu.DeclCount) {
+            Decl raw = cu.Decls[di];
+            if (raw is AttributedDecl) {
+                AttributedDecl ad = raw as AttributedDecl;
+                Decl inner = ad.Inner;
+                if (inner is MethodDecl) {
+                    // 顶层自由函数（命名空间级）：irName = _q(name)。
+                    MethodDecl md = inner as MethodDecl;
+                    if (md.IsFree && md.HasBody && this._hasTestAttr(ad)) {
+                        int mid = this._lookupFnIndex(this._q(md.Name));
+                        if (mid >= 0) {
+                            entries = this._pushTestEntry(entries, n, this._buildTestEntry(mid, ad));
+                            n = n + 1;
+                        }
+                    }
+                } else if (inner is ClassDecl) {
+                    // 类内方法：逐成员看 raw（AttributedDecl）的内建测试 attr。
+                    n = this._scanClassTests(inner as ClassDecl, entries, n);
+                    entries = this._lastEntries;   // 数组可能在内增长 → 取回（z42c 无 ref）
+                }
+            } else if (raw is ClassDecl) {
+                n = this._scanClassTests(raw as ClassDecl, entries, n);
+                entries = this._lastEntries;
+            }
+            di = di + 1;
+        }
+        this._tiEntries = entries;
+        this._tiCount = n;
+    }
+
+    private IrFunction[] _tiFuncs; private int _tiFc;   // _buildTestIndex 期间的函数表快照
+    private IrTestEntry[] _lastEntries;                 // _scanClassTests 增长后的数组回传（无 ref/out）
+
+    // 扫一个类的方法成员，追加测试条目。返回新的条目数 n；增长后的数组存 this._lastEntries。
+    private int _scanClassTests(ClassDecl c, IrTestEntry[] entries, int n) {
+        this._lastEntries = entries;
+        if (c.Kind != "class" && c.Kind != "struct" && c.Kind != "record") { return n; }
+        int j = 0;
+        while (j < c.MemberCount) {
+            Decl rawMem = c.Members[j];
+            if (rawMem is AttributedDecl) {
+                AttributedDecl ad = rawMem as AttributedDecl;
+                if (ad.Inner is MethodDecl) {
+                    MethodDecl md = ad.Inner as MethodDecl;
+                    if (md.HasBody && this._hasTestAttr(ad)) {
+                        // emit 同款限定名：_q(classIrShortName).methKey（arity-mangle 或 bare）。
+                        string methKey = md.Name + "$" + md.ParamCount.ToString();
+                        string arityIr = this._q(this._classIrShortName(c)) + "." + methKey;
+                        string bareIr = this._q(this._classIrShortName(c)) + "." + md.Name;
+                        int mid = this._lookupFnIndex(arityIr);
+                        if (mid < 0) { mid = this._lookupFnIndex(bareIr); }
+                        if (mid >= 0) {
+                            this._lastEntries = this._pushTestEntry(this._lastEntries, n, this._buildTestEntry(mid, ad));
+                            n = n + 1;
+                        }
+                    }
+                }
+            }
+            j = j + 1;
+        }
+        return n;
+    }
+
+    // funcs[] 线性查首现下标（first-wins，镜像 C# fnIndexByName.TryAdd 后查）；未命中 -1。
+    private int _lookupFnIndex(string name) {
+        int i = 0;
+        while (i < this._tiFc) {
+            if (this._tiFuncs[i].Name == name) { return i; }
+            i = i + 1;
+        }
+        return 0 - 1;
+    }
+
+    // 是否带任一内建测试 attribute（Test/Benchmark/Setup/Teardown/Ignore/Skip/ShouldThrow/Timeout）。
+    private bool _hasTestAttr(AttributedDecl ad) {
+        int a = 0;
+        while (a < ad.AttrCount) {
+            if (this._isTestAttrName(ad.Attrs[a].Name)) { return true; }
+            a = a + 1;
+        }
+        return false;
+    }
+
+    private bool _isTestAttrName(string nm) {
+        if (nm == "Test" || nm == "Benchmark" || nm == "Setup" || nm == "Teardown") { return true; }
+        if (nm == "Ignore" || nm == "Skip" || nm == "ShouldThrow" || nm == "Timeout") { return true; }
+        return false;
+    }
+
+    // 把一个函数的测试 attribute 聚合成单个 IrTestEntry（镜像 C# BuildTestEntry）。
+    private IrTestEntry _buildTestEntry(int methodId, AttributedDecl ad) {
+        IrTestEntry t = new IrTestEntry(methodId);   // 默认 Kind=Test(1)，无 flag
+        int a = 0;
+        while (a < ad.AttrCount) {
+            Attr at = ad.Attrs[a];
+            string nm = at.Name;
+            if (nm == "Test") { t.Kind = 1; }
+            else if (nm == "Benchmark") { t.Kind = 2; }
+            else if (nm == "Setup") { t.Kind = 3; }
+            else if (nm == "Teardown") { t.Kind = 4; }
+            else if (nm == "Ignore") { t.Flags = t.Flags | 2; }              // bit1 Ignored
+            else if (nm == "Timeout") {
+                int ms = this._namedIntArg(at, "milliseconds");
+                if (ms > 0) { t.TimeoutMs = ms; }
+            }
+            else if (nm == "Skip") {
+                t.Flags = t.Flags | 1;                                       // bit0 Skipped
+                int r = this._namedStrArg(at, "reason");
+                if (r > 0) { t.SkipReasonStrIdx = r; }
+                int p = this._namedStrArg(at, "platform");
+                if (p > 0) { t.SkipPlatformStrIdx = p; }
+                int fe = this._namedStrArg(at, "feature");
+                if (fe > 0) { t.SkipFeatureStrIdx = fe; }
+            }
+            else if (nm == "ShouldThrow") {
+                t.Flags = t.Flags | 4;                                       // bit2 ShouldThrow
+                // 简化（add-z42c-tidx-emit）：z42c 的 Attr 不捕获 `<E>` 泛型类型实参（_parseAttributes
+                // 只解析 Name + (args)），故 ExpectedThrowTypeIdx 暂留 0。C# 写 `E;descendant…` 链。
+            }
+            a = a + 1;
+        }
+        return t;
+    }
+
+    // 命名字符串实参（`reason: "..."`）→ 1-based 池索引；无则 0。镜像 C# Intern(v)+1。
+    private int _namedStrArg(Attr at, string key) {
+        int i = 0;
+        while (i < at.ArgCount) {
+            if (at.Args[i] is AssignExpr) {
+                AssignExpr ae = at.Args[i] as AssignExpr;
+                if (ae.Target is IdentExpr && (ae.Target as IdentExpr).Name == key
+                    && ae.Value is StringLitExpr) {
+                    string v = Lexer.DecodeString((ae.Value as StringLitExpr).Raw);
+                    return this.Intern(v);   // z42c Intern 已是 1-based（0=占位 ""）
+                }
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+
+    // 命名整型实参（`milliseconds: N`）→ int 值；无/非法则 0。
+    private int _namedIntArg(Attr at, string key) {
+        int i = 0;
+        while (i < at.ArgCount) {
+            if (at.Args[i] is AssignExpr) {
+                AssignExpr ae = at.Args[i] as AssignExpr;
+                if (ae.Target is IdentExpr && (ae.Target as IdentExpr).Name == key
+                    && ae.Value is IntLitExpr) {
+                    return this._parseDecimal((ae.Value as IntLitExpr).Value);
+                }
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+
+    // 十进制整型文本 → int（剥 `_` 分隔，遇非数字停；Timeout 值为简单正十进制）。
+    private int _parseDecimal(string s) {
+        int v = 0;
+        int i = 0;
+        bool more = i < s.Length;
+        while (more) {
+            char ch = s.CharAt(i);
+            if (ch == '_') { i = i + 1; more = i < s.Length; }
+            else if (ch >= '0' && ch <= '9') { v = v * 10 + ((int)ch - 48); i = i + 1; more = i < s.Length; }
+            else { more = false; }
+        }
+        return v;
+    }
+
+    private IrTestEntry[] _pushTestEntry(IrTestEntry[] arr, int count, IrTestEntry e) {
+        if (count == arr.Length) {
+            IrTestEntry[] b = new IrTestEntry[arr.Length * 2];
+            int k = 0; while (k < count) { b[k] = arr[k]; k = k + 1; }
+            arr = b;
+        }
+        arr[count] = e;
+        return arr;
     }
 
     // TYPE 段（IrClassDesc）字段类型名：**源拼写**（byte[]，非规范 u8[]）——whichsec/disasm 实证 C#
