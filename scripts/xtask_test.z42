@@ -181,9 +181,10 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
         c = _exec(_cargoRelease()
             .Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
         if (c != 0) { return c; }
-        c = _exec(new Process("dotnet").Arg("build").Arg("src/compiler/z42.Driver/z42.Driver.csproj")
-            .Arg("-c").Arg("Release").Arg("--nologo").Arg("-v").Arg("quiet"));
-        if (c != 0) { return c; }
+        // C#-free (remove-dotnet-from-builds): test units compile through z42c
+        // (z42vm + z42c.driver.zpkg), not `dotnet z42c.dll`. Ensure the z42c
+        // self-build seed is fresh here instead of building the C# driver.
+        c = _buildCompilerZ42(); if (c != 0) { return c; }
     }
     string runner = _builtBin(root, "release", "z42-test-runner");
     if (!File.Exists(runner)) {
@@ -195,6 +196,26 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
     // (<lib>/<profile>/tests/{dist,cache}/) instead of a throwaway temp dir, so
     // they're inspectable, incrementally cached, and visible to the CI
     // release-guard. _compileTestUnit derives the path from root + lib.
+    // C#-free compile toolchain: z42vm + z42c.driver.zpkg + a single flat
+    // Z42_LIBS dir. z42c.driver runs as a packed zpkg whose OWN siblings
+    // (z42c.project / z42c.semantics / …) must be resolvable at runtime, AND
+    // the stdlib the test units depend on must live in the SAME dir (the VM
+    // takes one dir, not a colon-list). Mirror _testCompilerZ42Units' alllibs
+    // flat: link the stdlib dist + the 7 z42c members into one dir. Computed
+    // once; threaded through _runUnitsBatched → _compilePrep so every unit
+    // compiles via z42c, not `dotnet z42c.dll`.
+    string vm = _builtVm(root, "release");
+    string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
+    string libs = Path.Join(root, "artifacts/build/z42c/alllibs/release");
+    Directory.Create(libs);
+    _cleanGlob(libs, "*.zpkg");
+    _linkAll(Path.Join(root, "artifacts/build/libraries/dist/release"), libs, "*.zpkg");
+    string[] z42cMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    int mi = 0;
+    while (mi < z42cMembers.Length) {
+        _linkAll(Path.Join(root, "artifacts/build/z42c/" + z42cMembers[mi] + "/release/dist"), libs, "*.zpkg");
+        mi = mi + 1;
+    }
     string libsRoot = Path.Join(root, "src/libraries");
     string[] libList;
     if (nReq > 0) {
@@ -243,7 +264,8 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
         // Each runner runs serially within its unit (no --jobs) so [Setup]/
         // [Teardown] still execute — the parallelism is across units, not
         // within. The per-unit z42.core bootstrap (the dominant cost) overlaps.
-        totalFailed = totalFailed + _runUnitsBatched(root, runner, lib, units, parentDeps, kind, jobsN, mode);
+        totalFailed = totalFailed + _runUnitsBatched(root, runner, lib, units, parentDeps, kind, jobsN, mode,
+                                                     vm, driverZpkg, libs);
     }
     Console.WriteLine("");
     Console.WriteLine("════════════════════════════════════════════════");
@@ -459,7 +481,8 @@ void _appendDeps(DepBundle b, TomlValue depsTable) {
 /// `_runVmBatch` (xtask_test_vm.z42). Each runner runs serially within its
 /// unit (no --jobs) so [Setup]/[Teardown] still execute.
 int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
-                     DepBundle parentDeps, string kind, int jobs, string mode) {
+                     DepBundle parentDeps, string kind, int jobs, string mode,
+                     string vm, string driverZpkg, string libs) {
     int failed = 0;
     int i = 0;
     while (i < units.Length) {
@@ -476,6 +499,7 @@ int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
             string toml = "";
             string art  = "";
             Process cp = _compilePrep(root, lib, units[i + b], parentDeps, kind,
+                                      vm, driverZpkg, libs,
                                       ref toml, ref art);
             tomls[b] = toml;
             arts[b]  = art;
@@ -503,6 +527,7 @@ int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
         while (b < bsz) {
             if (okc[b]) {
                 rh[b] = new Process(runner).Arg(arts[b]).Arg("--mode").Arg(mode)
+                    .Env("Z42_LIBS", libs)
                     .WorkingDirectory(root).Spawn();
             }
             b = b + 1;
@@ -531,6 +556,7 @@ int _runUnitsBatched(string root, string runner, string lib, TestUnit[] units,
 /// `z42c build <synthetic>` producing `<dist>/<name>.zpkg`.
 Process _compilePrep(string root, string lib, TestUnit u,
                      DepBundle parentDeps, string kind,
+                     string vm, string driverZpkg, string libs,
                      ref string outToml, ref string outArtifact) {
     // kind = "test" → <lib>.test.<unit> under tests/; "bench" → <lib>.bench.<unit>
     // under bench/. Both run through the same z42-test-runner (which dispatches
@@ -549,13 +575,14 @@ Process _compilePrep(string root, string lib, TestUnit u,
         string zbc = Path.Join(distDir, projName + ".zbc");
         outToml = "";
         outArtifact = zbc;
-        // Direct driver DLL (`dotnet z42c.dll`) — 3x faster than `dotnet run
-        // --project` and concurrency-safe (no obj/ cache race in parallel
-        // batches). Byte-identical output.
-        return new Process("dotnet")
-            .Arg(_driverDll(root))
-            .Arg(u.SourceFile)
-            .Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc);
+        // C#-free (remove-dotnet-from-builds): z42c (z42vm + z42c.driver.zpkg)
+        // emits the unit to zbc. interp mode is fastest for these many-short
+        // single-file compiles — JIT would re-warm the whole z42c closure per
+        // unit. Z42_LIBS supplies the stdlib the test references (Assert, the
+        // lib under test, …).
+        return new Process(vm).Arg(driverZpkg).Arg("--mode").Arg("interp")
+            .Arg("--").Arg("--emit-zbc").Arg(u.SourceFile).Arg(zbc)
+            .Env("Z42_LIBS", libs);
     }
     // Dir-mode: Microsoft.Extensions.FileSystemGlobbing.Matcher resolves
     // include patterns relative to the manifest's projectDir and doesn't
@@ -575,9 +602,9 @@ Process _compilePrep(string root, string lib, TestUnit u,
     // to ${output_dir}/dist; synthetic toml omits dist_dir → shared
     // <testsBase>/dist/, cache_dir overridden to a per-unit subdir).
     outArtifact = Path.Join(distDir, projName + ".zpkg");
-    return new Process("dotnet")
-        .Arg(_driverDll(root))
-        .Arg("build").Arg(syntheticToml);
+    return new Process(vm).Arg(driverZpkg).Arg("--mode").Arg("interp")
+        .Arg("--").Arg("build").Arg(syntheticToml)
+        .Env("Z42_LIBS", libs);
 }
 
 /// Serialise a synthetic mini-manifest to TOML text. Kept hand-rolled

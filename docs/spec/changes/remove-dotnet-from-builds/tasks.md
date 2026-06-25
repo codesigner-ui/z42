@@ -131,7 +131,33 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
 - **z42c emit TIDX 段**（cd53d0f3）：byte-identical to C#；17 个 z42c [Test] 单元 compile+run+pass（flip 掉 026d36b4 的 loud-skip）；fixpoint 7/7；C# cold-seed safe。顺带修 3 个 stale record-dump 测试（z42c 位置式 record 降级 field+ctor 镜像 C#，测试早于降级、因单元从不跑而漏）。
 - **z42c parse `[Attr<E>]` + emit `[ShouldThrow<E>]` chain**（6f91ceaf）：z42c 之前把 `<E>` 误当 `<` 运算符 → 垃圾 AST + 丢掉所有 ShouldThrow 函数。修 Parser 捕获 `<E>` + IrGen 建 `;`-分隔后代链（Ordinal 排序去 hash-order 不确定）。dogfood 3 个 ShouldThrow 测试过 + 匹配 C#，TIDX byte-identical。
 
-### 🔴 stdlib 单元切 z42c — 被 z42c codegen 缺口阻塞（2026-06-25，stdlib-switch WIP 已 revert）
+### 🟢 stdlib 单元切 z42c — 已落地（2026-06-25，switch + 3 codegen bug 修复全绿）
+
+**最终状态**：xtask_test.z42（`_compilePrep`/`_runUnitsBatched`/`_testLibCore`）切 z42c（z42vm + z42c.driver.zpkg
++ alllibs flat[stdlib+z42c 7 siblings]，Z42_LIBS 单目录；`dotnet z42c.dll`/`dotnet build z42.Driver` 全删）。
+全 272 跑暴露 3 个 z42c codegen bug，逐个 oracle-diff（C#-编 vs z42c-编）定位 + 修：
+
+1. **✅ nullable 局部声明 `T? x = e` 被误解析成三元**（parser `_isVarDeclStart`）：4 个类型形态（`Box? a` /
+   `Box[]? a` / `Ns.Type? a` / `Box<int>? a`）的 var-decl lookahead 全漏跳 `?` 后缀 → 落表达式路径 →
+   `Box ? a=e : …` ternary 误解析 → IR `BrCond const.null` + 读局部变 `const.null` 占位 → BrCond Null 崩。
+   修：4 个检测分支补 `?` 跳过。解 z42.net 50/50（ipaddress TryParse 3 个）等所有 nullable-local 用例。
+2. **✅ 数组字面量尾逗号多算元素**（parser `new T[]{...}` 元素循环）：消费逗号后无条件 `_parseExpr` →
+   `{1,2,3,}` 把 `}` 当表达式多解析一个 `const.null` 元素 → byte[] 长度 +1。修：吃逗号后若紧跟 `}` break。
+   解 io.binary 6/6（byte_array_constructor + reader_position）。
+3. **✅ dogfood `test_bencher_stat_invariants`**：bench body lambda 内 `Math.Sqrt` 但 dogfood **没 `using
+   Std.Math`、z42.test 也没声明 z42.math**。两编译器都不能无 import 正确解析 `Math.Sqrt`（C# 错限定成
+   `T.Math.Sqrt`；z42c 静默误编 instance-on-error → VCall-null 崩）。全量 dogfood 在 C# 下侥幸过、z42c 崩。
+   **决定（User 裁决 2026-06-25）**：给 dogfood 加 `using Std.Math`（用了就该 import；两编译器都过）。
+   **🟡 tracked z42c 健壮性 bug**：z42c `--emit-zbc` 单文件模式对**未解析的 static 调用**应像 project-build
+   那样清晰报 `E0401: undefined: <Class>`，而非静默 emit instance-on-error → VCall-null 运行期崩。根因链见下
+   「旧诊断」段（ns-末段同名导入类 `Std.Math.Math` 注册 + instance-on-error 兜底）。单独 change 修。
+
+验证：fixpoint 7/7 gen1==gen2（C#-free）+ VM goldens（interp+jit）+ 全 272 C#-free 全绿。
+
+---
+### 旧诊断（被上面取代，留作 tracked 健壮性 bug 的根因参考）
+
+> stdlib-switch WIP 已 revert（2026-06-25）—— 见上方 🟢 段，已重做并落地。
 切换代码（xtask_test._compilePrep/_runUnitsBatched/_testLibCore + xtask_bench → z42c）已写好+验证机制正确（z42.math 13/13；z42c-编 vs C#-编单元 **byte-identical**，见 blake3/binary_basic 实测），但**全 272 跑暴露真 z42c codegen 缺口**：
 - **环境性假失败（非 z42c 问题）**：blake3 multi-chunk + 2 个 binary-stream —— 隔离实测 z42c-编 == C#-编 byte-identical 且 pass；全跑失败是**本地超载机器 + churned/stale artifacts**所致，clean CI 不会触发。
 - **真 z42c codegen 缺口（z42.test/dogfood 2 个）**：`test_testio_capture_nested_stdout`（TestIO 嵌套捕获）+ `test_bencher_stat_invariants`（Bencher 统计）—— z42c-编 fail / C#-编 pass，旧种子也 fail（pre-existing，非 ShouldThrow 引入）。
