@@ -23,13 +23,16 @@ cd "$(git rev-parse --show-toplevel)"
 RID="${1:-}"
 if [ -z "$RID" ]; then
   case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64)  RID=macos-arm64 ;;
-    Linux-x86_64)  RID=linux-x64 ;;
-    Linux-aarch64) RID=linux-arm64 ;;
-    Linux-arm64)   RID=linux-arm64 ;;
+    Darwin-arm64)        RID=macos-arm64 ;;
+    Linux-x86_64)        RID=linux-x64 ;;
+    Linux-aarch64)       RID=linux-arm64 ;;
+    Linux-arm64)         RID=linux-arm64 ;;
+    MINGW*|MSYS*|CYGWIN*) RID=windows-x64 ;;
     *) echo "::error::unsupported host for C#-free bootstrap; pass rid"; exit 2 ;;
   esac
 fi
+# nightly archive: Windows ships .zip (unzip), Unix ships .tar.gz (tar).
+case "$RID" in windows-*) EXT=zip ;; *) EXT=tar.gz ;; esac
 MEMBERS="z42c.core z42c.ir z42c.syntax z42c.project z42c.semantics z42c.pipeline z42c.driver"
 ROOT="$PWD"
 
@@ -41,8 +44,9 @@ vm="$ROOT/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.ex
 # ── 1. download prev nightly → seed (z42c-written compiler + stdlib) ─────────
 echo "── [1/5] download nightly seed ($RID) ──"
 work="$(mktemp -d)"
-gh release download nightly -p "z42-runtime-nightly-${RID}.tar.gz" -O "$work/rt.tgz"
-mkdir -p "$work/rtpkg" && tar -C "$work/rtpkg" -xzf "$work/rt.tgz"
+gh release download nightly -p "z42-runtime-nightly-${RID}.${EXT}" -O "$work/rt.${EXT}"
+mkdir -p "$work/rtpkg"
+if [ "$EXT" = zip ]; then unzip -q "$work/rt.${EXT}" -d "$work/rtpkg"; else tar -C "$work/rtpkg" -xzf "$work/rt.${EXT}"; fi
 if ! ls "$work/rtpkg/z42c/"*.zpkg >/dev/null 2>&1; then
   echo "::error::nightly runtime package has no z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals on the next run)"; exit 1
 fi

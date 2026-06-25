@@ -63,15 +63,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # remove-dotnet-from-builds: only Windows still bootstraps via C# (the Unix
-      # legs download the prev nightly's z42c seed and build C#-free — see the
-      # split Bootstrap steps below). setup-dotnet + NuGet cache are Windows-only.
-      - name: Setup .NET (Windows only)
-        if: matrix.os == 'windows-latest'
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
+      # remove-dotnet-from-builds: build-and-test is fully C#-free on ALL OS — every
+      # leg downloads the prev nightly's z42c seed and bootstraps from source with
+      # it (no dotnet, no setup-dotnet, no NuGet). See the unified Bootstrap step.
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -87,25 +81,16 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-cargo-
             ${{ runner.os }}-cargo-
 
-      - name: Cache NuGet packages (Windows only)
-        if: matrix.os == 'windows-latest'
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      # remove-dotnet-from-builds: Unix legs bootstrap C#-FREE — download the prev
+      # remove-dotnet-from-builds: ALL legs bootstrap C#-FREE — download the prev
       # published nightly's z42c-written compiler seed, then build current z42c +
       # stdlib + xtask from source with it (NO dotnet). The staged-bootstrap
       # discipline (.claude/rules/bootstrap-seed.md) guarantees the prev nightly
       # compiles current source; scripts/check-bootstrap-compat.sh is the local
-      # boundary check. Logic lives in a locally-tested script (verified on a clean
-      # worktree producing z42c+stdlib+xtask+package, no dotnet). After this, every
-      # later step drives work through `z42vm xtask.zpkg …` exactly as before.
-      - name: Bootstrap C#-free (Unix — nightly z42c seed → current source)
-        if: matrix.os != 'windows-latest'
+      # boundary check. Logic lives in a locally-tested script (Unix verified on a
+      # clean worktree producing z42c+stdlib+xtask+package, no dotnet; Windows adds
+      # .zip/.exe handling — same seed contract). After this, every later step
+      # drives work through `z42vm xtask.zpkg …` exactly as before.
+      - name: Bootstrap C#-free (nightly z42c seed → current source)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -115,35 +100,10 @@ jobs:
             ubuntu-latest)    rid=linux-x64 ;;
             ubuntu-24.04-arm) rid=linux-arm64 ;;
             macos-15)         rid=macos-arm64 ;;
-            *) echo "::error::unmapped Unix os ${{ matrix.os }}"; exit 1 ;;
+            windows-latest)   rid=windows-x64 ;;
+            *) echo "::error::unmapped os ${{ matrix.os }}"; exit 1 ;;
           esac
           bash scripts/ci-bootstrap-nocs.sh "$rid"
-
-      # Windows keeps the C# bootstrap until a Windows C#-free seed path lands
-      # (install-z42.sh / the nightly download is Linux+macOS only today).
-      - name: Bootstrap (Windows — C#)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          dotnet build src/compiler/z42.slnx --nologo -v quiet
-          cargo build --locked --release --manifest-path src/runtime/Cargo.toml
-          libs="$PWD/artifacts/build/libraries/dist/release"
-          # PRIMER (raw C# compiler, no z42 program): build stdlib from source so
-          # xtask can COMPILE its `using Std.*` (z42c reads .zsym; index.json — the
-          # VM lookup index — is regenerated below by `xtask build stdlib`).
-          if [ ! -f "$libs/z42.core.zpkg" ]; then
-            ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
-            mkdir -p "$libs"
-            for d in artifacts/build/libraries/*/release/dist; do
-              cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
-            done
-          fi
-          Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
-          # build-stdlib logic folded into xtask (xtask_stdlib.z42): workspace build
-          # (cached) + flat view + index.json, in-process.
-          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
-          Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
 
       # migrate-scripts-to-z42: version-drift check via xtask (replaces the
       # feature-matrix `bash scripts/check-versions-drift.sh` step). ubuntu only —
@@ -284,15 +244,7 @@ jobs:
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
             "$runner" artifacts/xtask/xtask.zpkg -- regen --no-stdlib
 
-      # Windows: smoke test only (cargo + dotnet are cross-platform; bash scripts not)
-      # shell: pwsh (default on windows-latest) — dotnet test spawns testhost.exe,
-      # a native Windows process that crashes silently when its console handle is
-      # inherited from MSYS2/Git Bash. PowerShell gives it a proper Windows console.
-      #
-      # --blame-hang-timeout 5m: any individual test that takes >5 min triggers a
-      # process dump + fails fast. Catches stdout/stderr pipe-buffer deadlocks
-      # (the historic Windows hang root cause) instead of letting them burn the
-      # 3 h job budget. Without this the job hangs until concurrency cancel.
+      # Windows: Rust VM unit-test smoke (the C# dotnet-test is gone — see below).
       # RUST_MIN_STACK=8388608: Windows defaults test threads to a 1 MB stack
       # while Linux/macOS give 8 MB. Crypto/BigInt/JIT tests run on the test
       # thread itself (not spawned), and a single deep call (RSA ModPow,
@@ -310,12 +262,15 @@ jobs:
       # Rust unit harness), so serializing here is the targeted stopgap.
       # TODO: root-cause the race (suspect: GC region raw-pointer Send/Sync
       # unsoundness with multiple concurrent VmCores) and restore parallelism.
-      - name: Smoke test (Windows)
+      # remove-dotnet-from-builds: the C# `dotnet test z42.Tests` (compiler unit
+      # tests) is dropped — src/compiler is being retired and z42c correctness is
+      # covered C#-free by the self-host fixpoint + VM goldens + stdlib [Test] gate.
+      # cargo test (Rust VM unit harness) stays — it runs ONLY on this Windows leg.
+      - name: Smoke test (Windows — Rust VM unit tests)
         if: matrix.os == 'windows-latest'
         env:
           RUST_MIN_STACK: '8388608'
         run: |
-          dotnet test src/compiler/z42.Tests/z42.Tests.csproj --blame-hang-timeout 5m --blame-hang-dump-type mini
           cargo test --locked --manifest-path src/runtime/Cargo.toml -- --test-threads=1
 
       # ── host RID SDK package smoke ──
