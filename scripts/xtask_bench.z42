@@ -34,6 +34,23 @@ int _bench(ParseResult r) {
         int sc = _buildStdlib();
         if (sc != 0) { return sc; }
     }
+    // remove-dotnet-from-builds: scenarios compile via z42c (z42vm + driver),
+    // not `dotnet run`. Ensure the z42c seed is built, then assemble alllibs flat
+    // (stdlib + z42c 7 siblings) as the single Z42_LIBS dir for the compile —
+    // z42c.driver needs its own siblings resolvable at runtime, scenario stdlib
+    // deps resolve from the same dir.
+    int czc = _buildCompilerZ42(); if (czc != 0) { return czc; }
+    string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
+    string flat = Path.Join(root, "artifacts/build/z42c/alllibs/release");
+    Directory.Create(flat);
+    _cleanGlob(flat, "*.zpkg");
+    _linkAll(libs, flat, "*.zpkg");
+    string[] z42cMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    int zmi = 0;
+    while (zmi < z42cMembers.Length) {
+        _linkAll(Path.Join(root, "artifacts/build/z42c/" + z42cMembers[zmi] + "/release/dist"), flat, "*.zpkg");
+        zmi = zmi + 1;
+    }
     string work = Directory.CreateTempDir("xtask-bench");
 
     string benchmarks = "";
@@ -46,9 +63,8 @@ int _bench(ParseResult r) {
         string ns = _extractNamespace(File.ReadAllText(src));
         if (ns.Length == 0) { ConsoleError.WriteLine("error: no namespace in " + f); return 2; }
         string zbc = Path.Join(work, name + ".zbc");
-        int cc = _exec(new Process("dotnet")
-            .Arg("run").Arg("--project").Arg(_driverProj()).Arg("-c").Arg("Release")
-            .Arg("--").Arg(src).Arg("--emit").Arg("zbc").Arg("-o").Arg(zbc).Env("Z42_LIBS", libs));
+        int cc = _exec(new Process(vm).Arg(driverZpkg).Arg("--mode").Arg("interp").Arg("--")
+            .Arg("--emit-zbc").Arg(src).Arg(zbc).Env("Z42_LIBS", flat));
         if (cc != 0) { return cc; }
         string outJson = Path.Join(work, name + "-bench.json");
         Console.WriteLine("→ Benchmarking " + name + " (warmup=" + warmup + ", runs=" + runs + ")...");

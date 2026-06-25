@@ -27,11 +27,7 @@
 
 namespace Bench.C2P1ArithLoop;
 
-[Native("__time_now_mono_ns")]
-extern long NowNs();
-
-[Native("__println")]
-extern void PrintLn(string s);
+using Std.IO;
 
 long SumSquares(long n) {
     long total = 0L;
@@ -44,9 +40,8 @@ long SumSquares(long n) {
 }
 
 void Main() {
-    long t0 = NowNs();
+    // 计时由 hyperfine 在外部测进程墙钟；移除内部 NowNs/PrintLn（依赖非惯用的顶层
+    // extern 自由函数——z42 惯用类内 static extern，全 stdlib 如此）。负载 SumSquares 不变。
     long result = SumSquares(10000000L);
-    long t1 = NowNs();
-    PrintLn(result.ToString());
-    PrintLn((t1 - t0).ToString());
+    Console.WriteLine(result.ToString());
 }

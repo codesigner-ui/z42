@@ -18,11 +18,7 @@
 
 namespace Bench.PolymorphicDispatch;
 
-[Native("__time_now_mono_ns")]
-extern long NowNs();
-
-[Native("__println")]
-extern void PrintLn(string s);
+using Std.IO;
 
 class Animal {
     public virtual int Speak() { return 0; }
@@ -65,9 +61,7 @@ void Main() {
     arr[2] = new Cow();
     arr[3] = new Pig();
 
-    long t0 = NowNs();
+    // 计时由 hyperfine 外部测；移除内部 NowNs/PrintLn（非惯用顶层 extern 自由函数）。负载 Drive 不变。
     long result = Drive(arr, 10000000L);
-    long t1 = NowNs();
-    PrintLn(result.ToString());
-    PrintLn((t1 - t0).ToString());
+    Console.WriteLine(result.ToString());
 }
