@@ -44,7 +44,20 @@ vm="$ROOT/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.ex
 # ── 1. download prev nightly → seed (z42c-written compiler + stdlib) ─────────
 echo "── [1/5] download nightly seed ($RID) ──"
 work="$(mktemp -d)"
-gh release download nightly -p "z42-runtime-nightly-${RID}.${EXT}" -O "$work/rt.${EXT}"
+# Retry the download: publish-nightly republishes the `nightly` release with a
+# `gh release delete` → `gh release create` (a brief window where the release does
+# NOT exist → "release not found"). Concurrent runs (run N's publish-nightly vs
+# run N+1's build-and-test download) can hit that window. Retry to ride it out.
+dl_ok=0
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+  if gh release download nightly -p "z42-runtime-nightly-${RID}.${EXT}" -O "$work/rt.${EXT}" 2>"$work/dlerr"; then
+    dl_ok=1; break
+  fi
+  echo "   download attempt $attempt failed ($(head -1 "$work/dlerr")) — likely a publish-nightly delete→recreate window; retry in 15s…"
+  rm -f "$work/rt.${EXT}"
+  sleep 15
+done
+if [ "$dl_ok" != 1 ]; then echo "::error::nightly download failed after 10 attempts:"; cat "$work/dlerr"; exit 1; fi
 mkdir -p "$work/rtpkg"
 if [ "$EXT" = zip ]; then unzip -q "$work/rt.${EXT}" -d "$work/rtpkg"; else tar -C "$work/rtpkg" -xzf "$work/rt.${EXT}"; fi
 if ! ls "$work/rtpkg/z42c/"*.zpkg >/dev/null 2>&1; then
