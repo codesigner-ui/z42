@@ -63,7 +63,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
+      # remove-dotnet-from-builds: only Windows still bootstraps via C# (the Unix
+      # legs download the prev nightly's z42c seed and build C#-free — see the
+      # split Bootstrap steps below). setup-dotnet + NuGet cache are Windows-only.
+      - name: Setup .NET (Windows only)
+        if: matrix.os == 'windows-latest'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
@@ -83,7 +87,8 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-cargo-
             ${{ runner.os }}-cargo-
 
-      - name: Cache NuGet packages
+      - name: Cache NuGet packages (Windows only)
+        if: matrix.os == 'windows-latest'
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
@@ -91,12 +96,33 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # migrate-scripts-to-z42: bootstrap the native build CLI (replaces
-      # `just build`). Builds the compiler (slnx) + release z42vm + a primer
-      # stdlib, compiles xtask.zpkg, then `xtask build stdlib` for the final flat
-      # dist + index.json. After this, every other step drives work through
-      # `z42vm xtask.zpkg …`. Runs on all OSes (git-bash on Win).
-      - name: Bootstrap (compiler + runtime + stdlib + xtask.zpkg)
+      # remove-dotnet-from-builds: Unix legs bootstrap C#-FREE — download the prev
+      # published nightly's z42c-written compiler seed, then build current z42c +
+      # stdlib + xtask from source with it (NO dotnet). The staged-bootstrap
+      # discipline (.claude/rules/bootstrap-seed.md) guarantees the prev nightly
+      # compiles current source; scripts/check-bootstrap-compat.sh is the local
+      # boundary check. Logic lives in a locally-tested script (verified on a clean
+      # worktree producing z42c+stdlib+xtask+package, no dotnet). After this, every
+      # later step drives work through `z42vm xtask.zpkg …` exactly as before.
+      - name: Bootstrap C#-free (Unix — nightly z42c seed → current source)
+        if: matrix.os != 'windows-latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.os }}" in
+            ubuntu-latest)    rid=linux-x64 ;;
+            ubuntu-24.04-arm) rid=linux-arm64 ;;
+            macos-15)         rid=macos-arm64 ;;
+            *) echo "::error::unmapped Unix os ${{ matrix.os }}"; exit 1 ;;
+          esac
+          bash scripts/ci-bootstrap-nocs.sh "$rid"
+
+      # Windows keeps the C# bootstrap until a Windows C#-free seed path lands
+      # (install-z42.sh / the nightly download is Linux+macOS only today).
+      - name: Bootstrap (Windows — C#)
+        if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           set -euo pipefail

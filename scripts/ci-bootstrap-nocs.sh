@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# ci-bootstrap-nocs.sh (remove-dotnet-from-builds) — C#-free CI bootstrap into the
+# STANDARD artifact locations that build-and-test's later steps (test all / package
+# release / upload) expect. Replaces the C# bootstrap (`dotnet build z42.slnx` +
+# `dotnet run z42.Driver -- build …`) with the staged self-host loop seeded by the
+# PREVIOUS published nightly's z42c-written compiler.
+#
+# Chain: prev-nightly z42c seed  →  builds current xtask  →  xtask builds current
+# z42c (warm self-build, standard loc) + stdlib (flat dist + index).  After this,
+# `z42vm artifacts/xtask/xtask.zpkg -- test all / package release` run unchanged.
+#
+# Invariant: NEVER calls dotnet. z42vm (cargo-built Rust) is the only engine. The
+# prev nightly is the ONLY thing C# may have produced, upstream — and the staged-
+# bootstrap discipline (.claude/rules/bootstrap-seed.md) guarantees it compiles
+# current source (verify with scripts/check-bootstrap-compat.sh before relying on it).
+#
+# Usage:  scripts/ci-bootstrap-nocs.sh [rid]
+#   rid defaults to host (macos-arm64 / linux-x64 / linux-arm64). Needs gh (auth'd)
+#   + cargo + rust. Unix only (Windows build-and-test keeps the C# bootstrap for now).
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+RID="${1:-}"
+if [ -z "$RID" ]; then
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-arm64)  RID=macos-arm64 ;;
+    Linux-x86_64)  RID=linux-x64 ;;
+    Linux-aarch64) RID=linux-arm64 ;;
+    Linux-arm64)   RID=linux-arm64 ;;
+    *) echo "::error::unsupported host for C#-free bootstrap; pass rid"; exit 2 ;;
+  esac
+fi
+MEMBERS="z42c.core z42c.ir z42c.syntax z42c.project z42c.semantics z42c.pipeline z42c.driver"
+ROOT="$PWD"
+
+# ── 0. z42vm (Rust; cargo — NOT C#) ──────────────────────────────────────────
+echo "── [0/5] cargo build z42vm (release) ──"
+cargo build --locked --release --manifest-path src/runtime/Cargo.toml --bin z42vm
+vm="$ROOT/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+
+# ── 1. download prev nightly → seed (z42c-written compiler + stdlib) ─────────
+echo "── [1/5] download nightly seed ($RID) ──"
+work="$(mktemp -d)"
+gh release download nightly -p "z42-runtime-nightly-${RID}.tar.gz" -O "$work/rt.tgz"
+mkdir -p "$work/rtpkg" && tar -C "$work/rtpkg" -xzf "$work/rt.tgz"
+if ! ls "$work/rtpkg/z42c/"*.zpkg >/dev/null 2>&1; then
+  echo "::error::nightly runtime package has no z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals on the next run)"; exit 1
+fi
+seed="$ROOT/.ci-nocs-seed"; rm -rf "$seed"; mkdir -p "$seed"
+cp -f "$work/rtpkg/z42c/"*.zpkg "$seed/"
+cp -f "$work/rtpkg/libs/"*.zpkg "$seed/"
+echo "   seed: $(ls "$seed"/*.zpkg | wc -l | tr -d ' ') zpkg @ $seed"
+
+# Prime the STANDARD locations so xtask's warm self-build + `using Std.*` resolve:
+#   * stdlib dist  ← seed stdlib (current source compiles against it; replaced by
+#                    the fresh xtask-built stdlib below)
+#   * z42c per-member dist  ← seed z42c (the warm seed `_buildCompilerZ42` reuses)
+libs="$ROOT/artifacts/build/libraries/dist/release"; mkdir -p "$libs"
+cp -f "$seed"/z42.*.zpkg "$libs/" 2>/dev/null || true
+for m in $MEMBERS; do
+  d="$ROOT/artifacts/build/z42c/$m/release/dist"; mkdir -p "$d"
+  cp -f "$seed/$m.zpkg" "$d/"
+done
+
+# ── 2. seed z42c → build CURRENT xtask.zpkg ──────────────────────────────────
+echo "── [2/5] seed z42c builds current xtask.zpkg ──"
+Z42_LIBS="$seed" "$vm" "$seed/z42c.driver.zpkg" --mode interp -- \
+  build scripts/xtask.z42.toml --release
+[ -f "$ROOT/artifacts/xtask/xtask.zpkg" ] || { echo "::error::xtask.zpkg not produced"; exit 1; }
+
+# ── 3. xtask builds CURRENT z42c (warm self-build → standard loc) ────────────
+echo "── [3/5] xtask build compiler-z42 (warm self-build from seed) ──"
+Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build compiler-z42
+
+# ── 4. xtask builds CURRENT stdlib (flat dist + index.json) ──────────────────
+echo "── [4/5] xtask build stdlib ──"
+Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
+
+# ── 5. sanity: no dotnet was invoked; toolchain present ──────────────────────
+echo "── [5/5] verify C#-free toolchain ──"
+[ -f "$ROOT/artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg" ] \
+  || { echo "::error::current z42c.driver.zpkg missing after build compiler-z42"; exit 1; }
+[ -f "$libs/z42.core.zpkg" ] || { echo "::error::stdlib flat dist missing"; exit 1; }
+rm -rf "$work"
+echo "✅ C#-free CI bootstrap OK ($RID) — z42c + stdlib + xtask in standard locations, no dotnet"
