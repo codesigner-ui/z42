@@ -1224,6 +1224,18 @@ jobs:
             --title "Nightly (main @ ${short_sha} · ${today})" \
             --notes "$notes" \
             artifacts/release/SHA256SUMS artifacts/release/release-index.json artifacts/release/z42-*
+          # Defensive (fix-nightly-draft): the nightly MUST be a published (non-draft)
+          # release — a DRAFT is invisible to other runs' GITHUB_TOKEN, so every
+          # download-bootstrap job (build-and-test C#-free, bootstrap-no-csharp,
+          # vm-jit/stdlib-jit) fails with "release not found", and since build-and-test
+          # now seeds from the nightly, that DEADLOCKS the self-heal (no run can
+          # republish a fixed nightly). Some create paths (tag recreation after
+          # --cleanup-tag) can leave it draft, so force-publish + verify here.
+          gh release edit nightly --draft=false --prerelease
+          if [ "$(gh release view nightly --json isDraft -q .isDraft)" = "true" ]; then
+            echo "::error::nightly release is still a draft after edit — download-bootstrap jobs will fail"; exit 1
+          fi
+          echo "✓ nightly published (non-draft) — reachable by GITHUB_TOKEN"
 
   # ── Platform test pipeline → cross-platform CI dashboard ─────────────────
   # `z42 xtask.zpkg test platform <p>` (add-platform-test-pipeline) on real
