@@ -273,7 +273,13 @@ public sealed class Parser {
                             elems = b;
                         }
                         elems[en] = this._parseExpr(0); en = en + 1;
-                        if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
+                        // 尾逗号容忍（C# 数组/集合初始化器允许 `{1,2,3,}`）：吃掉逗号后若紧跟 `}`
+                        // 即尾逗号，break——否则会把 `}` 当表达式多解析出一个 null 元素（fix-array-trailing-comma：
+                        // 原 IR `arr.new.lit %0,%1,%2,%3` 第 4 个 const.null → byte[] 长度多 1）。
+                        if (this._peek().Kind == TokenKind.Comma) {
+                            this._advance();
+                            if (this._peek().Kind == TokenKind.RBrace) { break; }
+                        } else { break; }
                     }
                 }
                 this._expect(TokenKind.RBrace, "}");
@@ -579,11 +585,22 @@ public sealed class Parser {
             if (this._peekAt(o).Kind == TokenKind.Arrow) { return true; }
         }
         if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Identifier) { return true; }
+        // nullable 类型注解 var-decl：`Name? name`（如 `IPAddress? a = ...`）。区别于三元
+        // `cond ? a : b`——三元的 `?` 后是表达式不是「Identifier 紧跟 = / ;」。peekAt(1)=Question
+        // 且 peekAt(2)=Identifier 且 peekAt(3) ∈ {=, ;} 才是 nullable var-decl（修 fix-nullable-local-decl：
+        // `Box? a` 原 peekAt(1)=Question 不匹配 581 行 → 落表达式 → ternary 误解析 → BrCond Null）。
+        if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.Question
+            && this._peekAt(2).Kind == TokenKind.Identifier
+            && (this._peekAt(3).Kind == TokenKind.Eq || this._peekAt(3).Kind == TokenKind.Semicolon)) { return true; }
         // 数组类型注解 var-decl：`Name[] name`（用户类数组局部声明；`int[]` 等关键字数组已走 _isTypeKeyword 路径）。
         // 空括号 `[]` + 紧跟标识符区分类型 `Diagnostic[] x` 与下标表达式 `Diagnostic[i]`（后者括号内非空）。
+        // `[]?` nullable 数组（`Diagnostic[]? x`）的 `?` 也在此跳过。
         if (k == TokenKind.Identifier && this._peekAt(1).Kind == TokenKind.LBracket
-            && this._peekAt(2).Kind == TokenKind.RBracket
-            && this._peekAt(3).Kind == TokenKind.Identifier) { return true; }
+            && this._peekAt(2).Kind == TokenKind.RBracket) {
+            int an = 3;
+            if (this._peekAt(an).Kind == TokenKind.Question) { an = an + 1; }
+            if (this._peekAt(an).Kind == TokenKind.Identifier) { return true; }
+        }
         // 限定类型 var-decl：`Ns.Type name` 或 `Ns.Type[] name =`（如 Std.Attribute[] all = ...）。
         // 判别：lookahead 跳过 Identifier(Dot Identifier)+ 链，跳可选 []，检查 Identifier 后跟 = 或 ;。
         // 不与赋值 `obj.prop = val` 混淆——后者 dotted 末尾直接跟 = 无中间 Identifier。
@@ -597,8 +614,9 @@ public sealed class Parser {
                 else { qo = qo + 1; }   // advance to next Dot, continue loop
             }
             if (!qok && this._peekAt(qo - 1).Kind == TokenKind.Identifier) {
-                // qo points past last segment; skip optional []
+                // qo points past last segment; skip optional [] then optional `?` (nullable)
                 if (this._peekAt(qo).Kind == TokenKind.LBracket && this._peekAt(qo + 1).Kind == TokenKind.RBracket) { qo = qo + 2; }
+                if (this._peekAt(qo).Kind == TokenKind.Question) { qo = qo + 1; }
                 if (this._peekAt(qo).Kind == TokenKind.Identifier) {
                     int ek = this._peekAt(qo + 1).Kind;
                     if (ek == TokenKind.Eq || ek == TokenKind.Semicolon) { return true; }
@@ -617,8 +635,9 @@ public sealed class Parser {
                     depth = depth - 1;
                     if (depth == 0) {
                         int ni = o + 1;
-                        // Generic<...>[] 数组：跳过 [] 再找 name =
+                        // Generic<...>[] 数组：跳过 [] 再找 name =；`Generic<...>?` nullable 跳 `?`
                         if (this._peekAt(ni).Kind == TokenKind.LBracket && this._peekAt(ni + 1).Kind == TokenKind.RBracket) { ni = ni + 2; }
+                        if (this._peekAt(ni).Kind == TokenKind.Question) { ni = ni + 1; }
                         return this._peekAt(ni).Kind == TokenKind.Identifier
                             && this._peekAt(ni + 1).Kind == TokenKind.Eq;
                     }
@@ -628,6 +647,7 @@ public sealed class Parser {
                     if (depth == 0) {
                         int ni = o + 1;
                         if (this._peekAt(ni).Kind == TokenKind.LBracket && this._peekAt(ni + 1).Kind == TokenKind.RBracket) { ni = ni + 2; }
+                        if (this._peekAt(ni).Kind == TokenKind.Question) { ni = ni + 1; }
                         return this._peekAt(ni).Kind == TokenKind.Identifier
                             && this._peekAt(ni + 1).Kind == TokenKind.Eq;
                     }
