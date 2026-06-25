@@ -137,7 +137,19 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
 - **真 z42c codegen 缺口（z42.test/dogfood 2 个）**：`test_testio_capture_nested_stdout`（TestIO 嵌套捕获）+ `test_bencher_stat_invariants`（Bencher 统计）—— z42c-编 fail / C#-编 pass，旧种子也 fail（pre-existing，非 ShouldThrow 引入）。
 - **进度（2026-06-25 grind）**：
   - ✅ **嵌套闭包捕获**（commit feefef4d）：`_bindLambda` 不保存/恢复外层 lambda frame → 内层 lambda 清空外层捕获 → 外层被当无捕获 emit LoadFn（无 env）→ 运行期 array_get 落到实参崩溃。修：save/restore 4 个 frame 字段（同 local-function 已有模式）。dogfood `test_testio_capture_nested_stdout` 过；fixpoint 7/7；C#-built safe。
-  - 🔴 **跨包静态 extern 调用**（pinpointed，待修）：`Math.Sqrt`（`[Native] public static extern`）跨包调用被误绑成 `vcall null.Sqrt` → 运行期 "VCall: expected object, got Null"。`Console.WriteLine`（静态非 extern）正常 → **专门是跨包 static extern 解析**问题（`_bindMemberCall` 静态路径 line 1210-1224 没命中 → 落到 instance path recv=null）。阻 dogfood `test_bencher_stat_invariants`。根因在 ImportedSymbolLoader 对 extern 静态方法的加载 或 `_findMethod`/`HasClass` 对导入 Math 的识别。
+  - 🔴 **跨包 `Math.Sqrt` → vcall null**（深度 pinpoint，待修，阻 dogfood `test_bencher_stat_invariants`）：
+    精确根因链：① `Math` 类在 **namespace `Std.Math`**（全名 `Std.Math.Math`，**类名 == 命名空间末段**）
+    → z42c 未把它注册进符号表 Classes（`HasClass("Math")` = **false**；`Console`=`Std.IO.Console` 正常注册，故
+    `Console.WriteLine` 同为 static extern 却能用）② HasClass false → `_bindMemberCall`（TypeChecker:1210-1224）
+    静态路径不命中 → 落 instance path → 收者 = `_bindExpr(Math)` = **BoundError**（dump-bound: `(call-inst (error) Sqrt)`）
+    ③ emit instance-on-error 走 IC-2 兜底 `Deps.GetInstance("Sqrt", arity)`，但 DependencyIndex.AddModule
+    **只把 `!IsStatic` 方法放进 bare-name Instances 索引**（DependencyIndex.z42:76）→ static extern Sqrt 不在 →
+    GetInstance miss → `VCall recv.Sqrt`，recv=null → 崩。
+    **修复方向**：让 z42c 正确注册 namespace 末段同名的导入类（`Std.Math.Math`）进 Classes → `Math.Sqrt` 绑成
+    static → emit 走 `Deps.GetStatic("Math","Sqrt$1")`（Statics 索引**有** Sqrt）→ 正确 Call。即根在
+    imported-class 注册（SymbolCollector/ImportedSymbolLoader 对 class-name==ns-last-segment 的处理），
+    **非** DepIndex 也非 emit。注：dogfood 无 `using Std.Math` 却能编 Math.Sqrt（z42.test 声明 z42.math 依赖
+    自动引入）但仍 vcall-null —— 确认是注册/解析问题非纯 using 问题。深度 codegen，建议干净机器专注修。
 - **下一步**：① 修跨包 static extern 调用 bug ② 在**干净机器**跑全 272 拿完整真缺口清单（blake3/binary 等环境假失败需排除）③ 逐个修剩余 z42c codegen 缺口 ④ 缺口清零后 re-apply stdlib switch（代码在 commit 历史可恢复）+ 全 272 C#-free 绿 → commit。这是删 src/compiler 的硬前置。
 
 - [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj`。
