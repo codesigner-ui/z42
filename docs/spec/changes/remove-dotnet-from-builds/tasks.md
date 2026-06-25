@@ -136,7 +136,14 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
 - **环境性假失败（非 z42c 问题）**：blake3 multi-chunk + 2 个 binary-stream —— 隔离实测 z42c-编 == C#-编 byte-identical 且 pass；全跑失败是**本地超载机器 + churned/stale artifacts**所致，clean CI 不会触发。
 - **真 z42c codegen 缺口（z42.test/dogfood 2 个）**：`test_testio_capture_nested_stdout`（TestIO 嵌套捕获）+ `test_bencher_stat_invariants`（Bencher 统计）—— z42c-编 fail / C#-编 pass，旧种子也 fail（pre-existing，非 ShouldThrow 引入）。
 - **进度（2026-06-25 grind）**：
-  - ✅ **嵌套闭包捕获**（commit feefef4d）：`_bindLambda` 不保存/恢复外层 lambda frame → 内层 lambda 清空外层捕获 → 外层被当无捕获 emit LoadFn（无 env）→ 运行期 array_get 落到实参崩溃。修：save/restore 4 个 frame 字段（同 local-function 已有模式）。dogfood `test_testio_capture_nested_stdout` 过；fixpoint 7/7；C#-built safe。
+  - 🔴→↩️ **嵌套闭包捕获**（feefef4d 已 **revert** 03e08089）：`_bindLambda` 不 save/restore 外层 lambda frame
+    → 内层 lambda 清空外层捕获 → 外层被当无捕获 emit LoadFn（无 env）→ array_get 落到实参崩溃。简单 save/restore
+    修了「外层自身捕获丢失」，但**破了 `closure_l3_capture` golden**（CI 全平台红 + vm-jit）：旧共享 `_lambdaCaps`
+    意外做了 **transitive 透传**（内层捕获 enclosing 变量 → 外层继承捕获），save/restore 把它弄丢了。golden case 4
+    `f=()=>{ g=()=>k2*2; return g(); }`：f 不直接用 k2，仅 g 用 → f 必须透传捕获 k2。
+    **完整修复要二者兼顾**：① save/restore 外层 frame ② 内层捕获中**不在外层 locals** 的变量透传进外层捕获。
+    **教训**：改 z42c codegen push 前必跑 **VM goldens（test vm）**，不能只 fixpoint（fixpoint 只覆盖 z42c 自身源码，
+    无此嵌套模式 → 漏网）。见 [[reference_selfhost_change_must_verify_self_build]]（已更新）。重做留待 stdlib switch 时连 golden 一起验。
   - 🔴 **跨包 `Math.Sqrt` → vcall null**（深度 pinpoint，待修，阻 dogfood `test_bencher_stat_invariants`）：
     精确根因链：① `Math` 类在 **namespace `Std.Math`**（全名 `Std.Math.Math`，**类名 == 命名空间末段**）
     → z42c 未把它注册进符号表 Classes（`HasClass("Math")` = **false**；`Console`=`Std.IO.Console` 正常注册，故
