@@ -135,7 +135,10 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
 切换代码（xtask_test._compilePrep/_runUnitsBatched/_testLibCore + xtask_bench → z42c）已写好+验证机制正确（z42.math 13/13；z42c-编 vs C#-编单元 **byte-identical**，见 blake3/binary_basic 实测），但**全 272 跑暴露真 z42c codegen 缺口**：
 - **环境性假失败（非 z42c 问题）**：blake3 multi-chunk + 2 个 binary-stream —— 隔离实测 z42c-编 == C#-编 byte-identical 且 pass；全跑失败是**本地超载机器 + churned/stale artifacts**所致，clean CI 不会触发。
 - **真 z42c codegen 缺口（z42.test/dogfood 2 个）**：`test_testio_capture_nested_stdout`（TestIO 嵌套捕获）+ `test_bencher_stat_invariants`（Bencher 统计）—— z42c-编 fail / C#-编 pass，旧种子也 fail（pre-existing，非 ShouldThrow 引入）。
-- **下一步**：① 在**干净机器**跑全 272 拿完整真缺口清单（环境假失败需排除）② 逐个修 z42c codegen 缺口（TestIO 嵌套 / Bencher / 其它）—— 是 z42c 成熟度 grind（类比 golden parity）③ 缺口清零后 re-apply switch（代码在本对话/commit 历史可恢复）+ 全 272 C#-free 绿 → commit。这是删 src/compiler 的硬前置。
+- **进度（2026-06-25 grind）**：
+  - ✅ **嵌套闭包捕获**（commit feefef4d）：`_bindLambda` 不保存/恢复外层 lambda frame → 内层 lambda 清空外层捕获 → 外层被当无捕获 emit LoadFn（无 env）→ 运行期 array_get 落到实参崩溃。修：save/restore 4 个 frame 字段（同 local-function 已有模式）。dogfood `test_testio_capture_nested_stdout` 过；fixpoint 7/7；C#-built safe。
+  - 🔴 **跨包静态 extern 调用**（pinpointed，待修）：`Math.Sqrt`（`[Native] public static extern`）跨包调用被误绑成 `vcall null.Sqrt` → 运行期 "VCall: expected object, got Null"。`Console.WriteLine`（静态非 extern）正常 → **专门是跨包 static extern 解析**问题（`_bindMemberCall` 静态路径 line 1210-1224 没命中 → 落到 instance path recv=null）。阻 dogfood `test_bencher_stat_invariants`。根因在 ImportedSymbolLoader 对 extern 静态方法的加载 或 `_findMethod`/`HasClass` 对导入 Math 的识别。
+- **下一步**：① 修跨包 static extern 调用 bug ② 在**干净机器**跑全 272 拿完整真缺口清单（blake3/binary 等环境假失败需排除）③ 逐个修剩余 z42c codegen 缺口 ④ 缺口清零后 re-apply stdlib switch（代码在 commit 历史可恢复）+ 全 272 C#-free 绿 → commit。这是删 src/compiler 的硬前置。
 
 - [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj`。
 - [ ] C3 CI 清 dotnet：ci.yml（~15 setup-dotnet@v4 + dotnet-version '10.0.x' + build/test/run）→ z42c 种子流（复用 bootstrap-no-csharp job）；bench-update/bench-pr/release.yml 同；windows dotnet-test 腿删。
