@@ -20,8 +20,9 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 4. **🔴 format-bump 死锁**：`zbc_reader.rs` 精确匹配 major+minor（拒 older minor）。删 C# 后无
    逃生口——下次 zbc/zpkg 格式 bump，新 z42vm 读不了旧 SDK → 全 bootstrap 断 → publish-nightly
    发不出新格式 nightly → 死锁。
-5. **fixpoint 不 gate 发布**：fixpoint（gen1==gen2）只在 `bootstrap-no-csharp` 验，publish-nightly
-   的 needs 不含它 → 理论上能发出未验自洽性的 nightly。
+5. **发布门不全**：① 不动点只在 `bootstrap-no-csharp` 验、publish-nightly needs 不含它；② **测试腿也不在
+   publish needs** → 理论上能发出"未验自洽"或"行为错误"的 nightly。须补**三关**（完整/稳定/正确），其中
+   `{gen2}=={gen3}` 只证稳定**不证正确**，正确要靠测试套件单独验。
 6. **scripts/ 多个 bootstrap shell CLI**：`ci-bootstrap-nocs.sh` + `bootstrap-no-csharp.sh` 重复，
    `ci-stage-toolchain.sh` 可折进 xtask，`check-bootstrap-compat.sh` 本地工具。
 
@@ -33,15 +34,15 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 
 1. **xtask `--toolchain <dir>`**：build/test 命令据此定位 z42c+stdlib+xtask（`.z42` 布局）；
    新增 `xtask build sdk --out <dir>` 输出 Current toolchain 成 `.z42` 布局。
-2. **单一 `compile` job**：内联 host setup 3 步（cargo z42vm + 下载 SDK→`.z42/` + SDK 编 xtask +
-   `xtask --toolchain .z42 build sdk → artifacts/.z42`）+ fixpoint 交叉验证（gen1==gen2，保留 SDK）+
-   编 goldens.zbc/test-units.zbc → 上传 artifact。
+2. **单一 `compile` job**：内联 host setup（cargo z42vm + 下载 SDK set→`.z42/` + SDK 编 xtask）+ **成对分代**
+   `gen1=SDK 编{stdlib,z42c}` → `gen2=gen1 编{stdlib,z42c}`（发布对）+ 条件不动点门（gen1==gen2 跳 gen3，否则验
+   `{gen2}=={gen3}`）+ gen2 编 toolchain + 编 goldens/units → 上传 artifact。
 3. **下游 job 消费 artifact**：test-interp / test-jit / package 全部下载 `artifacts/.z42` +
    `cargo z42vm` + `--toolchain artifacts/.z42 ... --no-build`，不再各自 bootstrap。
-4. **format-bump 兜底**（A/B/C 待裁决，见 design.md Decision 2）。
-5. **cross-bootstrap 交叉验证**：`bootstrap-no-csharp` job **改造**（非删）——种子从"下载 nightly"换成
-   "本地 SDK 打包发布形态"，重跑 S2+S3+S5（编 xtask + z42c + stdlib），验 gen2==gen3 真不动点 + stdlib
-   字节确定性，进 publish-nightly needs。
+4. **format-bump 兜底**：第一版**不做**，延后到未来 format bump 变更同步落地（design.md Decision 2 已裁决）。
+5. **发布门三关（完整/稳定/正确，Decision 8）**：① 稳定=不动点门上传 gate；② 完整=cross-bootstrap（`bootstrap-no-csharp`
+   **改造**：种子换"本地 SDK set 打包发布形态"，重跑 S2-S4 编 xtask+{z42c,stdlib}，验 `{gen2}=={gen3}`）进 needs；
+   ③ **正确=test-interp/test-jit（+stdlib/cross-zpkg）进 publish-nightly needs**（修"稳定地错也能发"缺口）。
 6. **重命名 + 删冗余 job + 脚本清理**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；评估删
    `compiler-z42-stdlib`；删 `ci-bootstrap-nocs.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
    `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `bootstrap-no-csharp.sh`（已改造）**。
