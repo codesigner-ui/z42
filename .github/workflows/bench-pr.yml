@@ -59,21 +59,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - uses: ./.github/actions/xtask-bootstrap
+      # C#-free: seed from the prev nightly + build current source warm (xtask bench
+      # rebuilds stdlib via the warm self-build). Same path as CI build-and-test.
+      - name: Bootstrap C#-free (nightly z42c seed → current source)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: bash scripts/ci-bootstrap-nocs.sh linux-x64
 
       - name: Run full e2e bench (xtask)
         shell: bash
         run: |
           set -euo pipefail
-          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- bench
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- bench
 
       - name: Fetch baseline from bench-baselines branch
         id: baseline
@@ -98,7 +98,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$PWD/.z42/z42" artifacts/xtask/xtask.zpkg -- \
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- \
             bench --diff \
               --current bench/results/e2e.json \
               --baseline /tmp/baseline.json \

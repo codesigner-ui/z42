@@ -75,34 +75,6 @@ int _buildCompilerZ42ViaZ42c(string root, string profile, string[] members, stri
     return 0;
 }
 
-// COLD-start z42c seed (C#): build the 7 z42c.* via the C# driver (bootstrap-safe).
-// Mirrors _csharpBuildStdlibSeed — used ONLY by _buildStdlibCore's cold branch
-// (fresh checkout / CI with no z42c seed yet). The warm path stays C#-free
-// (_buildCompilerZ42ViaZ42c). This is the LAST build-time dotnet dependency, removed
-// once CI always provisions a seed (S5 Phase A3: download nightly / bootstrap-no-csharp).
-int _csharpBuildCompilerZ42Seed() {
-    string root = _root();
-    string wsDir = Path.Join(root, "src/z42c");
-    Console.WriteLine("  building z42c self-host compiler workspace seed (C#, release, 7 members)");
-    string[] compilerLeadArgs = new string[7];
-    compilerLeadArgs[0] = "run";
-    compilerLeadArgs[1] = "--project";
-    compilerLeadArgs[2] = Path.Join(root, _driverProj());
-    compilerLeadArgs[3] = "-c";
-    compilerLeadArgs[4] = "Release";
-    compilerLeadArgs[5] = "--no-build";
-    compilerLeadArgs[6] = "--";
-    string[] buildArgs = _concat3(compilerLeadArgs,
-        new string[]{"build", "--workspace"}, new string[]{"--release"});
-    ProcessResult br = new Process("dotnet")
-        .Args(buildArgs)
-        .WorkingDirectory(wsDir)
-        .Stdout(Stdio.Inherit())
-        .Stderr(Stdio.Inherit())
-        .Run();
-    return br.ExitCode;
-}
-
 // 防 zpkg 版本 skew 假失败（2026-06-10）：z42c 测试单元先被 C# driver 编成 zpkg，
 // 再交 z42-test-runner 的 *in-process VM*（链 libz42）运行。三者写/读的 zpkg 格式版本
 // 必须一致。完整 `xtask test` 在跑前重建 stdlib+runtime+test-runner+driver，但

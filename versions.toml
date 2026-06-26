@@ -50,11 +50,6 @@ min_version = "1.87"                    # MSRV；edition 2024 requires 1.85+; 1.
 components  = ["rustfmt", "clippy"]
 # rust_targets 由各 [platform.*] 汇总（cross-compile 时各 build.sh 单装单平台）
 
-[toolchain.dotnet]
-sdk          = "10.0.102"
-roll_forward = "latestFeature"          # 同 major.minor 任何 SDK 都通过
-# versions_check_dotnet 校 major.minor 一致
-
 [toolchain.node]
 min_version = "20"
 # wasm tests / playwright 需要；versions_check_node verify-only

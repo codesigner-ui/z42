@@ -99,12 +99,6 @@ string _libsDir(string root) {
     return Path.Join(root, "artifacts/build/libraries/dist/release");
 }
 
-// the built C# compiler driver DLL:
-//   artifacts/build/compiler/z42.Driver/bin/z42c.dll
-string _driverDll(string root) {
-    return Path.Join(root, "artifacts/build/compiler/z42.Driver/bin/z42c.dll");
-}
-
 // SDK packages output root:  artifacts/packages
 string _packagesDir(string root) {
     return Path.Join(root, "artifacts/packages");
@@ -126,10 +120,7 @@ string _builtVm(string root, string profile) {
     return _builtBin(root, profile, "z42vm");
 }
 
-// ── source paths (relative — passed to --project / --manifest-path from cwd=root) ──
-
-// the C# compiler driver project (dotnet run --project): src/compiler/z42.Driver
-string _driverProj() { return "src/compiler/z42.Driver"; }
+// ── source paths (relative — passed to --manifest-path from cwd=root) ──
 
 // the Rust VM/runtime cargo manifest (--manifest-path): src/runtime/Cargo.toml
 string _runtimeManifest() { return "src/runtime/Cargo.toml"; }

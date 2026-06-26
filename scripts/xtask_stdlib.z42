@@ -28,37 +28,6 @@ namespace Z42Xtask;
 using Std;
 using Std.IO;
 
-// Step 1 of _buildStdlibCore, factored out so _testCompilerZ42Stdlib can request
-// JUST the C# seed (without triggering the full z42c takeover recursively).
-// Builds the stdlib workspace per-member via the C# driver (bootstrap seed).
-int _csharpBuildStdlibSeed() {
-    string root = _root();
-    string wsDir = Path.Join(root, "src/libraries");
-    Console.WriteLine("  building stdlib workspace seed (C#, release, all members)");
-    string[] compilerLeadArgs = new string[7];
-    compilerLeadArgs[0] = "run";
-    compilerLeadArgs[1] = "--project";
-    compilerLeadArgs[2] = Path.Join(root, _driverProj());
-    compilerLeadArgs[3] = "-c";
-    compilerLeadArgs[4] = "Release";
-    compilerLeadArgs[5] = "--no-build";
-    compilerLeadArgs[6] = "--";
-    string[] buildArgs = _concat3(compilerLeadArgs, new string[]{"build", "--workspace"}, new string[]{"--release"});
-    ProcessResult br = new Process("dotnet")
-        .Args(buildArgs)
-        .WorkingDirectory(wsDir)
-        .Stdout(Stdio.Inherit())
-        .Stderr(Stdio.Inherit())
-        .Run();
-    if (br.ExitCode != 0) { return br.ExitCode; }
-    // 种子必须产出 flat view（VM 单目录查找点）：z42c.driver 运行期靠它解析 stdlib，
-    // 且 `test compiler-z42-stdlib` 的 stdlibFlat / 本函数其它独立调用方都依赖它。
-    // download-nightly bootstrap 的 CI job 不从源码建 stdlib → flat view 此前为空 →
-    // z42c.driver 运行 `undefined Std.IO.Environment.GetCommandLineArgs`（CI 暴露）。
-    _assembleStdlibFlatView(_root(), "release");
-    return 0;
-}
-
 // 把各成员 dist/*.zpkg + *.zsym hard-link 汇聚到 flat view（VM 单目录查找点）。
 // 不写 namespace index（VM 扫目录读 NSPC，嵌入解析器读 zpkg NSPC）。
 void _assembleStdlibFlatView(string root, string profile) {
@@ -100,14 +69,17 @@ int _buildStdlibCore() {
     string seedStdlibCore = Path.Join(flatDir, "z42.core.zpkg");
     bool haveSeed = File.Exists(seedDriver) && File.GetSize(seedDriver) > 0L
                  && File.Exists(seedStdlibCore) && File.GetSize(seedStdlibCore) > 0L;
-    bool forceCs = (Environment.GetEnvironmentVariable("Z42_STDLIB_CSHARP_SEED") ?? "") == "1";
-    if (haveSeed && !forceCs) {
-        Console.WriteLine("  seed: existing z42c + stdlib → C#-free z42c self-build (S5 Phase A)");
-        int zc = _buildCompilerZ42ViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
-    } else {
-        int sc = _csharpBuildStdlibSeed();        if (sc != 0)  { return sc; }  // C# stdlib seed (cold)
-        int bc0 = _csharpBuildCompilerZ42Seed();  if (bc0 != 0) { return bc0; } // C# z42c seed (cold)
+    if (!haveSeed) {
+        // The C# bootstrap compiler (src/compiler) has been removed — there is no
+        // cold-start fallback. A fresh checkout bootstraps C#-free by first seeding
+        // a previously-published nightly z42c (CI does this via ci-bootstrap-nocs.sh).
+        ConsoleError.WriteLine("error: no warm z42c seed (z42c.driver.zpkg + stdlib dist) found.");
+        ConsoleError.WriteLine("  Bootstrap a C#-free seed first:  bash scripts/ci-bootstrap-nocs.sh");
+        ConsoleError.WriteLine("  (downloads the previous nightly's z42c), then re-run the build.");
+        return 1;
     }
+    Console.WriteLine("  seed: existing z42c + stdlib → C#-free z42c self-build");
+    int zc = _buildCompilerZ42ViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
 
     // ── 3. run-libs = {stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──────
     string runDir = Path.Join(root, "artifacts/build/z42c/dogfood/run-" + profile);

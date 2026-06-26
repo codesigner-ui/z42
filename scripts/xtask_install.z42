@@ -55,7 +55,6 @@ int _depsInstall(ParseResult r) {
     if (mode != "print-env" && mode != "drift") {
         Console.WriteLine("── toolchain (cross-platform) ──");
         _checkRust(toml);
-        _checkDotnet(toml);
         _checkNode(toml);
     }
 
@@ -192,18 +191,6 @@ void _checkRust(TomlValue toml) {
         ConsoleError.WriteLine("         consider: rustup update " + wantChannel);
     } else {
         Console.WriteLine("  ✓ rustc " + actual + " (≥ " + wantMin + ")");
-    }
-}
-
-void _checkDotnet(TomlValue toml) {
-    if (!_have("dotnet")) { ConsoleError.WriteLine("error: dotnet not found. Install .NET 10+ (https://dotnet.microsoft.com)."); return; }
-    string want = _vget(toml, "toolchain.dotnet.sdk");
-    string actual = _cmdOut("dotnet", new string[]{ "--version" });
-    if (actual.Length == 0) { ConsoleError.WriteLine("warning: cannot read 'dotnet --version'; skip check"); return; }
-    if (_majorMinor(want) != _majorMinor(actual)) {
-        ConsoleError.WriteLine("warning: dotnet SDK " + actual + " ≠ versions.toml pin " + want + " (same major.minor required)");
-    } else {
-        Console.WriteLine("  ✓ dotnet " + actual);
     }
 }
 
