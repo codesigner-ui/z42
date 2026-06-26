@@ -270,7 +270,7 @@ int _dispatchTest(string[] p, ParseResult r) {
     if (sub == "vm")           { return _testVm(r); }
     if (sub == "cross-zpkg")   { return _testCrossZpkg(r); }
     if (sub == "dist")         { return _testDist(r); }
-    if (sub == "compiler-z42") { return _testCompilerZ42(); }   // C#-free 自举不动点（C# test compiler 已删）
+    if (sub == "compiler-z42") { return _testCompilerZ42(false); }   // C#-free 自举不动点（C# test compiler 已删）
     if (sub == "compiler-z42-stdlib") { return _testCompilerZ42Stdlib(); }
     if (sub == "changed")      { return _testChanged(r); }
     if (sub == "platform") {

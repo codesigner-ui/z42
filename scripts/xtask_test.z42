@@ -49,20 +49,25 @@ int _testVmCore(string modes, bool rebuild, string jobs, string shard) {
 int _testCrossZpkg(ParseResult r) {
     string mode = r.GetPositional(0);
     if (mode.Length == 0) { mode = "interp"; }
-    return _testCrossZpkgCore(mode);
+    return _testCrossZpkgCore(mode, false);
 }
 
-int _testCrossZpkgCore(string mode) {
+// noBuild=true: skip the debug-vm/stdlib/z42c rebuild — `test all` already prepared
+// them in its build wave (z42c was being self-built a 2nd time here). Standalone
+// `test cross-zpkg` passes false.
+int _testCrossZpkgCore(string mode, bool noBuild) {
     // replace-csharp Phase C：cross-zpkg 全程 C#-free。debug z42vm（cargo）跑 fixtures；
     // z42c（C#-free 种子自建）编 fixtures。不再 _buildCompiler（C# 编译器已无用）。
-    int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
-        .Arg("--manifest-path").Arg(_runtimeManifest()));
-    if (cr != 0) { return cr; }
-    string root = _root();
-    if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
-        int cs = _buildStdlib(); if (cs != 0) { return cs; }
+    if (!noBuild) {
+        int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
+            .Arg("--manifest-path").Arg(_runtimeManifest()));
+        if (cr != 0) { return cr; }
+        string root = _root();
+        if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
+            int cs = _buildStdlib(); if (cs != 0) { return cs; }
+        }
+        int cz = _buildCompilerZ42(); if (cz != 0) { return cz; }   // C#-free z42c 自建（种子）
     }
-    int cz = _buildCompilerZ42(); if (cz != 0) { return cz; }   // C#-free z42c 自建（种子）
     return _testCrossZpkgImpl(mode);
 }
 
@@ -140,13 +145,13 @@ int _testAll() {
     c = _testVmCore("interp", false, "4", ""); if (c != 0) { return c; }
     // stage 3: cross-zpkg
     Console.WriteLine("\n=== stage: cross-zpkg ===");
-    c = _testCrossZpkgCore("interp"); if (c != 0) { return c; }
+    c = _testCrossZpkgCore("interp", true); if (c != 0) { return c; }
     // stage 4: stdlib [Test] (no build)
     Console.WriteLine("\n=== stage: stdlib [Test] ===");
     c = _testLibCore("test", new string[0], true, "", "4", "interp"); if (c != 0) { return c; }
     // stage 5: z42c self-host byte-identical (0.3.10 gate)
     Console.WriteLine("\n=== stage: compiler-z42 ===");
-    c = _testCompilerZ42(); if (c != 0) { return c; }
+    c = _testCompilerZ42(true); if (c != 0) { return c; }
     Console.WriteLine("\n✅ GREEN — all stages passed (vm + cross-zpkg + stdlib + compiler-z42; C#-free)");
     return 0;
 }
