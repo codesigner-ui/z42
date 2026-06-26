@@ -28,7 +28,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     int c = _buildCompilerZ42(); if (c != 0) { return c; }
     string z42cDir = Path.Join(pkgDir, "programs/z42c");
     Directory.Create(z42cDir);
-    string[] z42cSeedMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string[] z42cSeedMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
     int zsi = 0;
     while (zsi < z42cSeedMembers.Length) {
         string zsp = Path.Join(root, "artifacts/build/z42c/" + z42cSeedMembers[zsi] + "/release/dist/" + z42cSeedMembers[zsi] + ".zpkg");
@@ -204,7 +204,7 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
     int zc = _buildCompilerZ42(); if (zc != 0) { return zc; }
     string z42cSeed = Path.Join(pkgDir, "z42c");
     Directory.Create(z42cSeed);
-    string[] z42cMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string[] z42cMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
     int zi = 0;
     while (zi < z42cMembers.Length) {
         string sp = Path.Join(root, "artifacts/build/z42c/" + z42cMembers[zi] + "/" + profile + "/dist/" + z42cMembers[zi] + ".zpkg");

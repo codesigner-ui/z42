@@ -60,7 +60,7 @@ int _buildStdlibCore() {
     //    seed is always present (S4 download wired into the bootstrap). `Z42_STDLIB_
     //    CSHARP_SEED=1` forces the C# path (e.g. the byte-identical oracle lane,
     //    which wants a C#-built z42c reference).
-    string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
     // replace-csharp Phase C：C#-free warm 路径用绝对 release z42vm（_z42vm() 返回裸名 "z42vm"
     // 不在 PATH → warm 自建会 NotFound）。缺则 cargo 建（幂等）。
     string vm = _builtVm(root, "release");

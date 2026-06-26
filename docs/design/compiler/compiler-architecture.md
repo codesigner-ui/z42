@@ -266,7 +266,7 @@ private readonly Dictionary<string, List<ExportedModule>> _cache;
 
 #### Workspace 兄弟成员解析（scaffold-z42c-selfhost dogfood #1, 2026-06-07）
 
-**问题（根因）**：第 1/2 条的 workspace 布局把 `artifacts/build/libraries/` **硬编码**为唯一会扫描的 workspace 输出根。stdlib 兄弟依赖能解析纯属巧合——stdlib 恰好输出到那里。引入第二个 workspace（`src/z42c/` 自举编译器，输出 `artifacts/build/z42c/`）后，`z42c.syntax` 声明依赖 `z42c.core` 却扫不到 → `E0602: no loaded package provides this namespace`。
+**问题（根因）**：第 1/2 条的 workspace 布局把 `artifacts/build/libraries/` **硬编码**为唯一会扫描的 workspace 输出根。stdlib 兄弟依赖能解析纯属巧合——stdlib 恰好输出到那里。引入第二个 workspace（`src/compiler/` 自举编译器，输出 `artifacts/build/z42c/`）后，`z42c.syntax` 声明依赖 `z42c.core` 却扫不到 → `E0602: no loaded package provides this namespace`。
 
 **修复（精准、隔离、零字节漂移）**：`WorkspaceBuildOrchestrator.Build` 收集**本 workspace** 全体成员的 `EffectiveDistDir`（排序去重），经 `CompileMember`（Func 第 3 形参）→ `RunResolved` → `BuildTarget` → `BuildLibsDirs` 的 `workspaceLibDirs` 形参透传；`BuildLibsDirs` 在第 1/2 条扫描**之后**、按**规范化 full-path 去重**追加，并**排序**（[common-pitfalls.md §1](../../../.claude/rules/common-pitfalls.md) 确定性——dirs 顺序喂给 first-wins nsMap / BuildDepIndex）。
 

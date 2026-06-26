@@ -1,9 +1,9 @@
 // xtask — `build compiler-z42` / `test compiler-z42` impl
 // (scaffold-z42c-selfhost, 2026-06-07).
 //
-// Builds the z42 self-host compiler workspace (src/z42c — 7 子包 1:1 镜像 C#
+// Builds the z42 self-host compiler workspace (src/compiler — 7 子包 1:1 镜像 C#
 // bootstrap 的 7 项目) and smoke-tests that all 7 z42c.<sub>.zpkg are produced.
-// Mirrors xtask_stdlib.z42 (_buildStdlibCore) but targets src/z42c →
+// Mirrors xtask_stdlib.z42 (_buildStdlibCore) but targets src/compiler →
 // artifacts/build/z42c.
 //
 // NO Z42_LIBS needed: the C# z42c resolves declared workspace siblings from the
@@ -36,7 +36,7 @@ int _buildCompilerZ42() {
     if (!File.Exists(Path.Join(stdlibFlat, "z42.core.zpkg"))) {
         int sc = _buildStdlib(); if (sc != 0) { return sc; }   // C#-free（A1 warm 种子路径）
     }
-    string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
     return _buildCompilerZ42ViaZ42c(root, profile, members, vm, stdlibFlat);
 }
 
@@ -64,7 +64,7 @@ int _buildCompilerZ42ViaZ42c(string root, string profile, string[] members, stri
         string m = members[i];
         string outDir = Path.Join(root, "artifacts/build/z42c/" + m + "/" + profile + "/dist");
         int rc = new Process(vm).Arg(seedDriver).Arg("--mode").Arg("interp").Arg("--")
-            .Arg("build").Arg(Path.Join(root, "src/z42c/" + m + "/" + m + ".z42.toml"))
+            .Arg("build").Arg(Path.Join(root, "src/compiler/" + m + "/" + m + ".z42.toml"))
             .Arg("--release").Arg("--output-dir").Arg(outDir)
             .Env("Z42_LIBS", runlibs)
             .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
@@ -105,7 +105,7 @@ int _testCompilerZ42() {
     string profile = "release";
     string buildRoot = Path.Join(root, "artifacts/build/z42c");
     string[] members = _vgetListFromFile(root,
-        "src/z42c/z42.workspace.toml", "workspace.default-members");
+        "src/compiler/z42.workspace.toml", "workspace.default-members");
 
     int ok = 0;
     int fail = 0;
@@ -165,7 +165,7 @@ int _testCompilerZ42Stdlib() {
     int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }
     int sc = _buildStdlib(); if (sc != 0) { return sc; }
 
-    string[] members = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
     string vm = _builtVm(root, "release");
     string stdlibFlat = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
     string dogfoodRoot = Path.Join(root, "artifacts/build/z42c/dogfood");
@@ -229,7 +229,7 @@ int _testCompilerZ42Stdlib() {
 // 都指向它（dogfood：跨包方法调用与静态字段在运行时完全可用，只要 lib 全在一个
 // flat 目录里——这正是当初误用 colon-list Z42_LIBS 导致 "VCall not found" 的根因）。
 //
-// 测试单元布局：src/z42c/<member>/tests/<unit>/{<name>.z42.toml + *.z42}。
+// 测试单元布局：src/compiler/<member>/tests/<unit>/{<name>.z42.toml + *.z42}。
 // kind=lib（runner 按 [Test] 方法 fork z42vm，不需 Main）；z42.test 自动可用。
 int _testCompilerZ42Units(string root, string profile, string[] members) {
     string flat = Path.Join(root, "artifacts/build/z42c/alllibs/" + profile);
@@ -258,7 +258,7 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
     int totalUnits = 0;
     i = 0;
     while (i < members.Length) {
-        string testsDir = Path.Join(root, "src/z42c/" + members[i] + "/tests");
+        string testsDir = Path.Join(root, "src/compiler/" + members[i] + "/tests");
         if (Directory.Exists(testsDir)) {
             foreach (var unit in _sortedStrings(Directory.Enumerate(testsDir))) {
                 string unitDir = Path.Join(testsDir, unit);
@@ -282,7 +282,7 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
                 }
                 // Build output → artifacts mirror via the unit toml's [build]
                 // output_dir (mirror-build-output-per-component, 2026-06-16):
-                //   src/z42c/<member>/tests/<unit> → artifacts/build/z42c/<member>/tests/<unit>
+                //   src/compiler/<member>/tests/<unit> → artifacts/build/z42c/<member>/tests/<unit>
                 // so the produced .zpkg lands in <mirror>/dist/, NOT beside source.
                 string mirrorDist = Path.Join(
                     Path.Join(root, "artifacts/build/z42c/" + members[i] + "/tests/" + unit),
@@ -662,7 +662,7 @@ int _testZ42cSelfHostByteIdentical(string root, string vm, string flat, string[]
     int i = 0;
     while (i < members.Length) {
         string member = members[i];
-        string tomlPath = Path.Join(root, "src/z42c/" + member + "/" + member + ".z42.toml");
+        string tomlPath = Path.Join(root, "src/compiler/" + member + "/" + member + ".z42.toml");
         string expected = Path.Join(root, "artifacts/build/z42c/" + member + "/" + profile + "/dist/" + member + ".zpkg");
 
         ProcessResult br = new Process(vm)

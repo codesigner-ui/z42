@@ -9,7 +9,7 @@
 
 > ⚠️ **Parked / 接口先行（2026-06-18）**：受限自举子集写法（sealed class + 构造函数、
 > `bool HasX` 替 nullable、`array + count` 替泛型；无 record / 无泛型 / 无 nullable），
-> 与 `src/z42c/z42c.project` 同子集，类型名对齐（`DepEntry` / `WorkspaceManifest`）便于
+> 与 `src/compiler/z42c.project` 同子集，类型名对齐（`DepEntry` / `WorkspaceManifest`）便于
 > 日后 z42c 直接引用本库（届时删 z42c 自带的 ProjectModel）。**暂不接入编译**（无清单）。
 > schema 以 `docs/design/compiler/project.md` 为准。**当前 `Z42.Project` 与 z42c.project
 > 暂并存两份**（User 决策：z42.project 按最终方案写，z42c 后续引用）。

@@ -88,7 +88,7 @@ compiler-z42-stdlib）同一错误 `error: no z42c seed at .../z42c.driver.zpkg`
 **教训**：**冷启动 C# 兜底删除 与 CI seed-provisioning 是耦合的原子步**——不能单独删
 cold C#（必须同时让 CI 提供种子，否则 fresh checkout 无路可走）。d4471a85 越过了这个耦合。
 **修复**：新增 `_csharpBuildCompilerZ42Seed`（镜像 `_csharpBuildStdlibSeed`，dotnet run
-C# driver `build --workspace src/z42c`），冷分支改调它。warm 路径
+C# driver `build --workspace src/compiler`），冷分支改调它。warm 路径
 （`_buildCompilerZ42ViaZ42c`）保持 C#-free。本地验证：z42c 重建 xtask.zpkg 成功
 （warm 路径字节不变，改动隔离于 cold 分支）。**这是删 C# 前剩余原子步 #1 的正确边界确认**。
 

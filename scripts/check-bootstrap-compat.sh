@@ -53,7 +53,7 @@ run_workspace() {  # $1=label  $2=vm  $3=driver.zpkg  $4=stdlib-dir
   out="$(mktemp -d)"
   echo "── [$label] compiling current z42c workspace ──"
   for m in $MEMBERS; do
-    if Z42_LIBS="$rl" "$vm" "$drv" --mode interp -- build "src/z42c/$m/$m.z42.toml" \
+    if Z42_LIBS="$rl" "$vm" "$drv" --mode interp -- build "src/compiler/$m/$m.z42.toml" \
          --release --output-dir "$out/$m" >"$work/$label.$m.log" 2>&1 && [ -s "$out/$m/$m.zpkg" ]; then
       echo "   ✓ $m"; cp "$out/$m/$m.zpkg" "$rl"/
     else

@@ -3,14 +3,14 @@
 ## 项目简介
 
 z42 是一门融合 C#、Rust、Python 优点的系统编程语言。
-- 编译器：z42 自举（`src/z42c`，自编译为 zpkg）；C# bootstrap 编译器已移除（2026-06-26）
+- 编译器：z42 自举（`src/compiler`，自编译为 zpkg）；C# bootstrap 编译器已移除（2026-06-26）
 - 虚拟机：Rust，支持 Interpreter / JIT / AOT 混合执行
 - 详细设计见 `docs/design/`；库推荐见 `.claude/libraries.md`
 
 ## 代码库结构
 
 ```
-src/z42c/       # z42 自举编译器（z42c.core/ir/syntax/project/semantics/pipeline/driver，编译为 zpkg）
+src/compiler/       # z42 自举编译器（z42c.core/ir/syntax/project/semantics/pipeline/driver，编译为 zpkg）
 src/runtime/    # Rust VM（interp / jit / aot）
 src/libraries/  # 标准库 .z42 源码（编译后产出 .zpkg）
 src/toolchain/  # 配套工具链（launcher / test-runner / workload；debugger·builder 占位）

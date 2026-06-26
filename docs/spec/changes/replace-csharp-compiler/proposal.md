@@ -27,7 +27,7 @@ stdlib → 由 z42c 编 → 需 z42c 先在
 | **S3** | stdlib dogfood：z42c **M2 per-member drop-in** 重编 stdlib（覆盖 canonical 布局）| 有序，C# 种子在前 | 🔴 阻塞：可行性验证 ✅（272 pass）+ 修 TSIG bug；生产接管阻塞于 z42c BLID sidecar + multicast aggregate parity |
 | **S1** | z42c apphost（原生 `z42c`，分发用）——SDK 安装布局 | 纯产物 | 待（分发阶段）|
 | **S4** | z42c 自举闭环 + **committed/下载 z42c 种子**（Rust stage0 式）| 种子就位解除 C# 构建依赖 | 待 |
-| **S5** | 删 `src/compiler/`，`src/z42c/` 迁新家（布局待定：src/compiler vs src/libraries）| 仅 S4 后 | 待 |
+| **S5** | 删 `src/compiler/`，`src/compiler/` 迁新家（布局待定：src/compiler vs src/libraries）| 仅 S4 后 | 待 |
 
 > S1（apphost）从分发链路看不阻塞管线替换（管线直接 `z42vm z42c.driver.zpkg`），故排在 S2/S3 后。
 
@@ -40,5 +40,5 @@ stdlib → 由 z42c 编 → 需 z42c 先在
 - 整包 zpkg byte-identical C#（功能正确已足够；DEPS/TSIG 对齐是独立大工程）
 
 ## Open Questions
-- [ ] S5 新家布局：`src/z42c/`→`src/compiler/` vs 进 `src/libraries/`（memory project_libraries_scope：REPL 要编译器作 zpkg）
+- [ ] S5 新家布局：`src/compiler/`→`src/compiler/` vs 进 `src/libraries/`（memory project_libraries_scope：REPL 要编译器作 zpkg）
 - [ ] S4 种子形态：committed prebuilt z42c.zpkg（离线）vs 下载 nightly

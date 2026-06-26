@@ -45,7 +45,7 @@ int _bench(ParseResult r) {
     Directory.Create(flat);
     _cleanGlob(flat, "*.zpkg");
     _linkAll(libs, flat, "*.zpkg");
-    string[] z42cMembers = _vgetListFromFile(root, "src/z42c/z42.workspace.toml", "workspace.default-members");
+    string[] z42cMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
     int zmi = 0;
     while (zmi < z42cMembers.Length) {
         _linkAll(Path.Join(root, "artifacts/build/z42c/" + z42cMembers[zmi] + "/release/dist"), flat, "*.zpkg");

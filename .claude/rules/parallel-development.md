@@ -22,7 +22,7 @@
 | `compiler` | `src/compiler/`（C# bootstrap 编译器） |
 | `runtime` | `src/runtime/`（Rust VM：interp / jit / aot / gc） |
 | `stdlib` | `src/libraries/`（.z42 标准库） |
-| `z42c` | `src/z42c/`（编译器自举源码） |
+| `z42c` | `src/compiler/`（编译器自举源码） |
 | `toolchain` | `src/toolchain/` + xtask dispatch |
 | `docs` | `docs/` —— **不进互斥锁**，见下 |
 

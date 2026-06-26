@@ -67,7 +67,7 @@ echo "── [3/5] seed z42c builds z42c from source (single-toml topo) → $fre
 rm -rf "$fresh_z42c"; mkdir -p "$fresh_z42c"
 for m in $MEMBERS; do
   Z42_LIBS="$runlibs" "$vm" "$seed_driver" --mode interp -- \
-    build "$ROOT/src/z42c/$m/$m.z42.toml" --release --output-dir "$fresh_z42c" >/dev/null
+    build "$ROOT/src/compiler/$m/$m.z42.toml" --release --output-dir "$fresh_z42c" >/dev/null
   # accumulate freshly-built member so later members link against fresh siblings
   cp -f "$fresh_z42c/$m.zpkg" "$runlibs/"
 done
@@ -94,7 +94,7 @@ cp -f "$fresh_stdlib"/*.zpkg "$gen1libs/"
 for m in $MEMBERS; do cp -f "$fresh_z42c/$m.zpkg" "$gen1libs/"; done
 for m in $MEMBERS; do
   Z42_LIBS="$gen1libs" "$vm" "$fresh_z42c/z42c.driver.zpkg" --mode interp -- \
-    build "$ROOT/src/z42c/$m/$m.z42.toml" --release --output-dir "$gen2" >/dev/null
+    build "$ROOT/src/compiler/$m/$m.z42.toml" --release --output-dir "$gen2" >/dev/null
   cp -f "$gen2/$m.zpkg" "$gen1libs/"
 done
 echo "   gen2 z42c: $(ls "$gen2"/*.zpkg | wc -l | tr -d ' ') zpkg"

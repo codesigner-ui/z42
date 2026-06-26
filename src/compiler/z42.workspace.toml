@@ -1,0 +1,46 @@
+# z42c — z42 自举编译器 workspace（B0 / scaffold-z42c-selfhost, 2026-06-07）
+#
+# 7 子包 1:1 镜像 C# bootstrap 的 7 个项目（src/compiler/）。骨架阶段仅占位类型，
+# 真实逻辑（Lexer/Parser/Semantics/IR/Pipeline）由 0.3.3 起的后续 spec 落地。
+# 产物：artifacts/build/z42c/<pkg>/<profile>/{dist,cache}/，按 build profile 分级。
+#
+# 与 src/libraries/（stdlib workspace）解耦：A 主线 stdlib 重组不冲击本树。
+# 包间依赖经 `z42c build --workspace` 拓扑序 + 同 workspace dist 自动发现解析
+# （与 stdlib z42.collections → z42.core 同机制）。
+#
+# member 逻辑名 = 各 member manifest 的 [project].name（WS001）；default-members
+# 与 ${member_name} 模板均用该名（= zpkg basename），故子目录名（core/ 等）只是
+# 布局，下游一律按 z42c.<sub> 解析。
+#
+# 设计：docs/design/compiler/self-hosting.md
+[workspace]
+members = ["*"]
+# 注：<member>/tests/<unit>/*.z42.toml 是独立 lib 项目（由 `xtask test compiler-z42`
+# 用显式 toml 路径单独构建 + z42-test-runner 运行），非 workspace member。
+# workspace build 会对其报 WS007（orphan manifest）—— 非致命、纯提示，已知可忽略。
+# 拓扑序（叶子 core/ir 在前；z42c 也会 topo-sort，显式序作 fallback）：
+#   z42c.core / z42c.ir   → (无兄弟依赖)
+#   z42c.syntax           → core
+#   z42c.project          → ir
+#   z42c.semantics        → core, syntax, ir
+#   z42c.pipeline         → core, syntax, semantics, ir, project
+#   z42c.driver           → pipeline, ir, core
+default-members = [
+    "z42c.core",
+    "z42c.ir",
+    "z42c.syntax",
+    "z42c.project",
+    "z42c.semantics",
+    "z42c.pipeline",
+    "z42c.driver",
+]
+
+[workspace.project]
+version = "0.1.0"
+license = "MIT"
+
+[workspace.build]
+# output_dir 是 workspace-root-relative（src/compiler/ → ../../ = repo root）；
+# cache_dir 由 CentralizedBuildLayout 相对 output_dir 解析，故用 ${output_dir} 模板。
+output_dir = "../../artifacts/build/z42c/${project_name}/${profile}"
+cache_dir  = "${output_dir}/cache"

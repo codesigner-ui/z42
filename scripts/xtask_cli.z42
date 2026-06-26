@@ -103,7 +103,7 @@ SubcommandRouter _buildRouter() {
     SubcommandRouter b = new SubcommandRouter("xtask build", "build components");
     b.Add("runtime", "cargo build z42vm + libz42 (--release)",
         new ArgParser("xtask build runtime", "cargo build z42vm + libz42"));
-    b.Add("compiler-z42", "build z42 self-host compiler (src/z42c, C#-free)",
+    b.Add("compiler-z42", "build z42 self-host compiler (src/compiler, C#-free)",
         new ArgParser("xtask build compiler-z42", "build z42 self-host compiler"));
     ArgParser stdlib = new ArgParser("xtask build stdlib", "build stdlib (all)");
     stdlib.AddOptionalPositional("lib", "(currently builds all)");

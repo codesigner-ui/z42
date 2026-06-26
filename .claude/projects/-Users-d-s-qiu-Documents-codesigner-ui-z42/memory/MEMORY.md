@@ -32,7 +32,7 @@
 - [project_mobile_no_compiler.md](project_mobile_no_compiler.md) — pre-1.0 mobile/WASM 只 ship VM；1.0 自举后 z42-written compiler 作为 zpkg 全平台分发（路径 2b）
 - [project_supported_platforms.md](project_supported_platforms.md) — 只支持厂商官方维护的架构；不支持 macos-x64 / ios-x64-sim
 - [project_scripts_z42_port.md](project_scripts_z42_port.md) — scripts/ z42 移植进度 + stdlib 缺口清单（P1: 多行字符串/finally/DateTime/Tar streaming/String.ToLower）
-- [project_z42c_selfhosting.md](project_z42c_selfhosting.md) — 编译器自举 src/z42c 进度 + 受限写法（无enum/无泛型字段→typed array）+ 🔴运行期 Z42_LIBS 单目录陷阱
+- [project_z42c_selfhosting.md](project_z42c_selfhosting.md) — 编译器自举 src/compiler 进度 + 受限写法（无enum/无泛型字段→typed array）+ 🔴运行期 Z42_LIBS 单目录陷阱
 - [project_repo_split_direction.md](project_repo_split_direction.md) — 拆库方向:臃肿真因是 .git 历史(604MB)非 examples(216KB);examples 是载重夹具留仓,只外迁纯用户面 docs,优先 filter-repo 瘦身
 - [feedback_xtask_apphost_direct_run.md](feedback_xtask_apphost_direct_run.md) — 文档/示例命令优先 `./xtask <cmd>`(原生 apphost 直跑)而非 `z42 xtask.zpkg` wrapper;apphost 由 `z42 apphost build` 产仓库根 ./xtask
 - [reference_shared_worktree_git_race.md](reference_shared_worktree_git_race.md) — 并行 agent 在同一工作树 git add -A 会吞我逐文件 stage 的改动 + 取消我 CI run + 污染权威门;验证靠独立产物非共享树全量门

@@ -1,4 +1,4 @@
-# 编译器自举（self-hosting）— `src/z42c/` 架构
+# 编译器自举（self-hosting）— `src/compiler/` 架构
 
 > 状态：🚧 进行中（0.3.x B 主线）｜起点：B0 [scaffold-z42c-selfhost](../../spec/changes/scaffold-z42c-selfhost/)（2026-06-07）
 >
@@ -12,10 +12,10 @@
 
 ## 目录布局
 
-`src/z42c/` 独立顶级目录（与 `src/compiler/` C# bootstrap 平级），独立 workspace（与 `src/libraries/` stdlib 解耦）：
+`src/compiler/` 独立顶级目录（与 `src/compiler/` C# bootstrap 平级），独立 workspace（与 `src/libraries/` stdlib 解耦）：
 
 ```
-src/z42c/
+src/compiler/
 ├── z42.workspace.toml          # members=["*"]，输出 artifacts/build/z42c/<pkg>/<profile>/
 ├── z42c.core/      → z42c.core.zpkg      (lib)   镜像 z42.Core
 ├── z42c.ir/        → z42c.ir.zpkg        (lib)   镜像 z42.IR
@@ -69,7 +69,7 @@ driver    ◄── pipeline, ir, core
 
 ## 构建与依赖解析
 
-**构建**：`z42c build --workspace --release`（cwd=`src/z42c`）→ 拓扑序编译 7 子包 → `artifacts/build/z42c/<member>/<profile>/{dist,cache}/`。经 xtask：`./xtask build compiler-z42`。
+**构建**：`z42c build --workspace --release`（cwd=`src/compiler`）→ 拓扑序编译 7 子包 → `artifacts/build/z42c/<member>/<profile>/{dist,cache}/`。经 xtask：`./xtask build compiler-z42`。
 
 ### z42c driver 自有 `build --workspace`（端口 C# orchestrator，z42c-build-workspace）
 
@@ -141,7 +141,7 @@ Z42_PORTABLE_VM=<z42vm> Z42_LIBS=<flat 含 z42c.*+z42.*> z42vm z42c.driver.zpkg
 
 ### 测试通道（z42c [Test]）
 
-测试单元布局：`src/z42c/<member>/tests/<unit>/{<name>.z42.toml(kind=lib) + *.z42}`。
+测试单元布局：`src/compiler/<member>/tests/<unit>/{<name>.z42.toml(kind=lib) + *.z42}`。
 `xtask test compiler-z42` = build 7 子包 smoke + 组装 flat 目录 + 逐单元 `z42c build <toml>
 --release`（Z42_LIBS=flat）+ `z42-test-runner <zpkg>`（Z42_PORTABLE_VM + Z42_LIBS=flat）。
 `z42.test` 是 stdlib 自动可用（**不**在 toml 声明，避免 WS013）。z42c-selfhost 仍为

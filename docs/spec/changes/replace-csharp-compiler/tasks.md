@@ -43,7 +43,7 @@
 
 ## S5：删 C#
 - [ ] S5.1 全调用点迁 z42c（~11 xtask 脚本）+ C# Tests 去留决策
-- [ ] S5.2 删 src/compiler/ + src/z42c/ 迁新家 + CI 更新
+- [ ] S5.2 删 src/compiler/ + src/compiler/ 迁新家 + CI 更新
 
 ## 备注
 - 铁律：S5 前必须有 S4 种子（脱离 C# 重建 z42c）。
