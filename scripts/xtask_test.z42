@@ -129,9 +129,14 @@ int _testAll() {
     c = _exec(_cargoRelease().Arg("-q").Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml")); if (c != 0) { return c; }
     // replace-csharp Phase C：删除 dotnet build/test stage——z42c 编译器正确性由 stage「compiler-z42」
     // （自举不动点 gen1==gen2 + units）保证，golden 编译已全程 z42c（_regenGolden）。GREEN gate C#-free。
-    // stage 2: VM goldens (both modes, no rebuild)
-    Console.WriteLine("\n=== stage: VM goldens ===");
-    c = _testVmCore("interp jit", false, "4"); if (c != 0) { return c; }
+    // stage 2: VM goldens — INTERP only. JIT is gated by the dedicated
+    // vm-jit-consistency CI job (linux-x64): cranelift JIT behaviour is
+    // host-independent, so running jit here on every build-and-test OS leg was
+    // redundant (5× the slow per-case cranelift compile). Splitting interp (here,
+    // all OS) from jit (one linux job) keeps full coverage while taking the slow
+    // jit stage off every host leg's critical path.
+    Console.WriteLine("\n=== stage: VM goldens (interp; jit → vm-jit-consistency) ===");
+    c = _testVmCore("interp", false, "4"); if (c != 0) { return c; }
     // stage 3: cross-zpkg
     Console.WriteLine("\n=== stage: cross-zpkg ===");
     c = _testCrossZpkgCore("interp"); if (c != 0) { return c; }

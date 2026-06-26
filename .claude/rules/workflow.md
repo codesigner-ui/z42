@@ -530,7 +530,7 @@ z42 xtask.zpkg test lib
 - ✅ dotnet build
 - ✅ cargo build (release)
 - ✅ dotnet test: N/N
-- ✅ z42 xtask.zpkg test vm: M/M（interp + JIT）
+- ✅ z42 xtask.zpkg test vm: M/M（GREEN gate `test all` 跑 interp；JIT 由 CI vm-jit-consistency 专腿 / 本地 `test vm jit` 覆盖）
 - ✅ z42 xtask.zpkg test cross-zpkg: K/K
 - ✅ z42 xtask.zpkg test lib: 22/22 lib
 - （可选）✅ z42 xtask.zpkg test dist: P/P

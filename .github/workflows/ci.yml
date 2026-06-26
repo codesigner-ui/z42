@@ -514,12 +514,13 @@ jobs:
           if-no-files-found: error
 
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
-  # `just test` in build-and-test only exercises interp mode (test-vm + test-cross-zpkg
-  # default = interp). This job re-runs both golden suites under JIT mode to
-  # catch interp/JIT divergence (different opcode handling, codegen bugs, etc.)
-  # before they reach main. Single linux-x64 lane is enough — cranelift JIT
-  # behaviour is the same across desktop hosts; reproducing on every OS would
-  # be wasted CI minutes.
+  # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in
+  # INTERP only (on every host OS). This job is the SOLE JIT gate — it runs the VM
+  # goldens + cross-zpkg under JIT here, catching interp/JIT divergence (opcode
+  # handling, codegen bugs) before main. Single linux-x64 lane is enough — cranelift
+  # JIT behaviour is host-independent, so running jit on every build-and-test OS leg
+  # was redundant (5× the slow per-case cranelift compile) and is now removed from the
+  # host legs' critical path.
   vm-jit-consistency:
     name: vm-jit-consistency (linux-x64)
     runs-on: ubuntu-latest
@@ -1164,8 +1165,8 @@ jobs:
     # host-package unix pkgs, package-* mobile); do NOT add the pure download-bootstrap
     # gates (vm-jit / stdlib-jit / bench-e2e) — they transiently fail on a bump until a
     # compatible nightly exists and self-heal next run, and gating publish on them
-    # would add a needless deadlock edge. JIT correctness is gated via build-and-test's
-    # `xtask test all` (vm goldens in interp+jit).
+    # would add a needless deadlock edge. JIT correctness is gated by the dedicated
+    # vm-jit-consistency job (build-and-test's `xtask test all` is interp-only).
     needs:
       - build-and-test
       - host-package
