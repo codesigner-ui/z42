@@ -37,4 +37,13 @@ void Main() {
     Console.WriteLine(Path.GetDirectoryName("/foo/bar/"));     // /foo
     Console.WriteLine(Path.GetDirectoryName("foo.txt"));       // ""
     Console.WriteLine(Path.GetDirectoryName("/foo"));          // /
+
+    // ── Windows 根识别（z42c 在 Windows 自举所需）─────────────────────────────
+    Console.WriteLine(Path.IsRooted("C:\\x") ? "rooted" : "rel");  // rooted
+    Console.WriteLine(Path.IsRooted("D:/x") ? "rooted" : "rel");   // rooted
+    Console.WriteLine(Path.IsRooted("/u") ? "rooted" : "rel");     // rooted
+    Console.WriteLine(Path.IsRooted("rel") ? "rooted" : "rel");    // rel
+    Console.WriteLine(Path.Join("D:\\a", "b"));                    // D:\a/b
+    Console.WriteLine(Path.Join("/foo", "C:\\abs"));               // C:\abs  (b 是 Windows 根)
+    Console.WriteLine(Path.Join("D:/a/scripts", "D:/a/out"));      // D:/a/out (b 根 → 不二次拼接)
 }

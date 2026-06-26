@@ -20,3 +20,10 @@ foo
 /foo
 
 /
+rooted
+rooted
+rooted
+rel
+D:\a/b
+C:\abs
+D:/a/out

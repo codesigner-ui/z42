@@ -5,7 +5,10 @@ namespace Std.IO;
 // 2026-04-27 wave1-path-script: 5 个方法从 [Native] 迁纯脚本（BCL/Rust 对标 —
 // `System.IO.Path` / `std::path::Path` 都是字符串扫描）。
 //
-// **L1 限定 Unix 语义**：只识别 `/` 作为分隔符，Windows `\\` 留给 L3+。
+// **分隔符**：内部统一用 `/`（Windows 原生 API 也接受 `/`）。`IsRooted`/`Join`
+// 额外识别 Windows 根（盘符 `X:\`/`X:/` 与反斜杠），因为自举编译器 z42c 现在要在
+// Windows 上跑——`Environment.GetCurrentDirectory()` 返回 `D:\...`，若 rooted 检测
+// 漏判会被二次拼接成 `…/D:\…`（中间 `:`）→ 原生 create_dir 报 error 123。
 public static class Path {
     // 平台分隔符常量（对应 BCL `Path.DirectorySeparatorChar`）。
     // L1 硬编码 `/`；L3+ 引入 Windows 支持时，可改由 platform HAL 注入。
@@ -19,18 +22,28 @@ public static class Path {
         return Path.Join(a, b);
     }
 
-    // 返回路径是否为绝对路径（Unix：以 `/` 开头）。
+    // 返回路径是否为绝对路径：Unix `/` 开头，或 Windows 根
+    // （盘符 `X:\`/`X:/`/`X:` 与反斜杠 `\` 开头的 UNC/当前盘根）。
     public static bool IsRooted(string path) {
-        return path.Length > 0 && path.CharAt(0) == '/';
+        if (path.Length == 0) { return false; }
+        char c0 = path.CharAt(0);
+        if (c0 == '/' || c0 == '\\') { return true; }
+        // Windows 盘符根：字母 + ':'（C:\、D:/、E:foo）
+        if (path.Length >= 2 && path.CharAt(1) == ':'
+            && ((c0 >= 'A' && c0 <= 'Z') || (c0 >= 'a' && c0 <= 'z'))) {
+            return true;
+        }
+        return false;
     }
 
-    // 拼接两段路径。如果 b 是绝对路径（以 `/` 开头）则替换 a；
-    // 否则用 `/` 分隔（已有尾随 `/` 时不重复）。
+    // 拼接两段路径。如果 b 是绝对路径（Unix `/` 或 Windows 根）则替换 a；
+    // 否则用 `/` 分隔（a 已有尾随 `/` 或 `\` 时不重复）。
     public static string Join(string a, string b) {
         if (b.Length == 0) return a;
-        if (b.CharAt(0) == '/') return b;
+        if (Path.IsRooted(b)) return b;
         if (a.Length == 0) return b;
-        if (a.CharAt(a.Length - 1) == '/') return a + b;
+        char last = a.CharAt(a.Length - 1);
+        if (last == '/' || last == '\\') return a + b;
         return a + "/" + b;
     }
 
