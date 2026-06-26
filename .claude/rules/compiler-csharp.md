@@ -5,6 +5,11 @@ paths:
 
 # C# 编译器开发规范
 
+> **历史文档（2026-06-26）**：C# bootstrap 编译器（旧 `src/compiler/*.cs`）已移除，z42 完成自举、
+> dotnet 依赖彻底清除。以下 AST / Parser / Lexer / Pratt 约定大体已转移到 z42c 自举编译器
+> （现 `src/compiler/`，用 z42 语法写）；保留本文件作为 AST 结构 + Pratt 绑定优先级表的参考。
+> 新编译器代码一律用 z42（非 C#）。
+
 ## AST 节点
 
 - 所有 AST 节点必须是 `sealed record`，继承对应的抽象基类（`Item`、`Expr`、`Stmt`、`TypeExpr`、`Pattern`）

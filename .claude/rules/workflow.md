@@ -314,7 +314,7 @@ docs/spec/changes/<change-name>/
 ## Testing Strategy
 - 单元测试：[覆盖点]
 - Golden test：[新增场景]
-- VM 验证：dotnet test + z42 xtask.zpkg test vm
+- VM 验证：z42 xtask.zpkg test（cargo build z42vm + z42c 自建 + vm/cross-zpkg/stdlib/compiler-z42）
 ```
 
 ---
@@ -344,8 +344,8 @@ docs/spec/changes/<change-name>/
 - [ ] 2.7 examples/ 示例文件
 
 ## 阶段 3: 验证
-- [ ] 3.1 dotnet build && cargo build —— 无编译错误
-- [ ] 3.2 dotnet test —— 全绿
+- [ ] 3.1 cargo build (z42vm) —— 无编译错误（z42c + stdlib 由 xtask test 用 z42c 自建）
+- [ ] 3.2 z42 xtask.zpkg test compiler-z42 —— z42c 自举全绿（替代旧 dotnet test）
 - [ ] 3.3 z42 xtask.zpkg test vm —— 全绿
 - [ ] 3.4 spec scenarios 逐条覆盖确认
 - [ ] 3.5 docs/design/ 文档同步（新语法 / IR / VM 行为）
@@ -485,26 +485,27 @@ iteration 期可用 `--scope=runtime|compiler|stdlib|auto` 缩窄 scope 跳过
 `z42 xtask.zpkg test` 等价于按顺序跑（任一 stage 失败立刻停）：
 
 ```bash
-# 1. 编译验证（无编译错误）
-dotnet build src/compiler/z42.slnx
+# 1. 编译验证（无编译错误）—— z42vm（Rust VM）。z42c（编译器）+ stdlib 由 xtask 在下面的
+#    test stage 内用 z42c 自建（C#-free，dotnet 已彻底移除 2026-06-26）
 cargo build --manifest-path src/runtime/Cargo.toml --release
 
-# 2. 编译器测试（必须 100% 通过）
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj
-
-# 3. VM 测试（必须 100% 通过）
+# 2. VM goldens（interp；JIT 由 CI vm-jit-consistency 专腿覆盖，见 split-interp-jit）
 z42 xtask.zpkg test vm
 
-# 4. 跨 zpkg 端到端（catch / vcall / 元数据跨包行为）
+# 3. 跨 zpkg 端到端（catch / vcall / 元数据跨包行为）
 z42 xtask.zpkg test cross-zpkg
 
-# 5. stdlib [Test] dogfood（22 lib 全量 [Test] 用例）
+# 4. stdlib [Test] dogfood（全量 [Test] 用例）
 z42 xtask.zpkg test lib
+
+# 5. z42c 自举（编译器正确性：build 7 子包 + 产物存在 + [Test] units）
+z42 xtask.zpkg test compiler-z42
 ```
 
-> **不要单独只跑 1-3**。historic regression：cross-zpkg subclass catch
-> bug 之所以一直没被发现，就是 4 / 5 不在默认 GREEN 路径里 —— 每次 spec
-> 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。
+> **不要漏跑 cross-zpkg / lib / compiler-z42**。historic regression：cross-zpkg
+> subclass catch bug 之所以一直没被发现，就是 3 / 4 不在默认 GREEN 路径里 —— 每次
+> spec 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。编译器正确性
+> 现由 stage 5（z42c 自举）保证，不再有 C# `dotnet test`。
 
 打包发行验证：发行版变更（z42 xtask.zpkg build package / 跨平台 / 嵌入接口）追加跑
 `z42 xtask.zpkg test dist`（要求先跑 `z42 xtask.zpkg build package release`
@@ -527,12 +528,11 @@ z42 xtask.zpkg test lib
 ### z42 xtask.zpkg test 状态：✅ 全绿（N stages）/ ❌ 失败 at <stage>
 
 逐 stage（出现失败时展开）：
-- ✅ dotnet build
-- ✅ cargo build (release)
-- ✅ dotnet test: N/N
+- ✅ cargo build (release) —— z42vm
 - ✅ z42 xtask.zpkg test vm: M/M（GREEN gate `test all` 跑 interp；JIT 由 CI vm-jit-consistency 专腿 / 本地 `test vm jit` 覆盖）
 - ✅ z42 xtask.zpkg test cross-zpkg: K/K
 - ✅ z42 xtask.zpkg test lib: 22/22 lib
+- ✅ z42 xtask.zpkg test compiler-z42: 7/7 zpkg + units（z42c 自举，替代旧 C# `dotnet test`）
 - （可选）✅ z42 xtask.zpkg test dist: P/P
 
 ### Spec 覆盖（若有 spec）
@@ -693,7 +693,7 @@ tasks.md 顶部：
 - **验证未全绿时 commit / push**
   - 🔴 **任何测试失败都不得进入 commit**
   - 包括 pre-existing 失败：发现后必须修复，或新建单独 issue + 说明
-  - 验证命令必须完整运行：`dotnet build && cargo build && dotnet test && z42 xtask.zpkg test vm`
+  - 验证命令必须完整运行：`cargo build && z42 xtask.zpkg test`（C#-free 全 stage gate）
   - 全绿的定义：所有编译无错，所有测试 100% 通过
 
 - **顺手修复 Scope 外问题**
