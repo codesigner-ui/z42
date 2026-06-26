@@ -19,11 +19,13 @@ runs:
       shell: bash
       run: bash scripts/install-z42.sh
 
-    - name: Compile xtask.zpkg against the downloaded stdlib (.z42/libs)
+    - name: Compile xtask.zpkg with the downloaded native z42c (.z42/bin/z42c)
       shell: bash
       run: |
         set -euo pipefail
-        # z42c's BuildLibsDirs honors Z42_LIBS as a fallback search path, so the
-        # downloaded prebuilt stdlib satisfies xtask's `using Std.*` deps without
-        # rebuilding stdlib from source. `build` is compile-only — no z42vm needed.
-        Z42_LIBS="$PWD/.z42/libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
+        # remove-dotnet: compile xtask via the DOWNLOADED native z42c apphost
+        # (.z42/bin/z42c, shipped by install-z42) — no dotnet, no src/compiler. z42c's
+        # BuildLibsDirs honors Z42_LIBS as a fallback search path, so the downloaded
+        # prebuilt stdlib satisfies xtask's `using Std.*` without rebuilding it.
+        z42c=".z42/bin/z42c"; [ -f "$z42c.exe" ] && z42c="$z42c.exe"
+        Z42_LIBS="$PWD/.z42/libs" "$z42c" build scripts/xtask.z42.toml --release

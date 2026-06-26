@@ -30,11 +30,6 @@ jobs:
           # Need full history so we can switch to bench-baselines branch.
           fetch-depth: 0
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
