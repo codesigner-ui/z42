@@ -1,17 +1,22 @@
-# Tasks: remove-dotnet-from-builds (replace-csharp S5 Phase A)
+# Tasks: remove-dotnet-from-builds (replace-csharp S5 Phase A→C)
 
-> 状态：🟡 进行中 | 创建：2026-06-22
+> 状态：🟢 已完成 | 创建：2026-06-22 | 完成：2026-06-26
 > 子系统：`toolchain`
-> 变更说明：把 BUILD 调用点从 C# driver（dotnet）切到 z42c（z42vm + z42c.driver.zpkg），
-> 使构建不再依赖 dotnet。保留 C# 作 byte-identical oracle 门（Phase B/C 再替换 + 删 C#）。
-> 原因：replace-csharp S5；User 选 Phase A（先切构建、gate 不可逆的删除）。
-> 文档影响：self-hosting.md（S5 Phase A）。
+> 变更说明：把 BUILD 调用点从 C# driver（dotnet）切到 z42c，并最终删除 C# 编译器
+> （src/compiler 旧 C#）+ 全 CI/bench/release setup-dotnet。保留 z42c 自举 fixpoint 作为正确性门。
+> 原因：replace-csharp S5；User 选 Phase A（先切构建）→ z42c golden parity 满足后走完 C（删 C#）。
+> 文档影响：self-hosting.md（S5 Phase A→C）。
+>
+> **归档事实核实（2026-06-26）**：src/compiler 现为 z42c 源（旧 C# 已删，无 .cs/.slnx/z42.Tests 源）；
+> 全部 5 个 workflow 无真实 setup-dotnet / dotnet-version / dotnet build/test（仅注释 + C#-free guard stub）；
+> stdlib/bench/build-and-test 全 4 OS C#-free（commit 9d489854/b36da336/17e342fc/4dc2896b/08ef874d）；
+> bootstrap-no-csharp 闭环绿。**dotnet 已实质完全移除，/loop 目标达成。**
 
 ## 进度概览
 - [x] A1 生产 stdlib flip C#-free（warm：种子存在用 z42c 自建；cold：C# 兜底）
-- [ ] A2 其余 build 站点切 z42c（xtask self-build / package / regen / bench / test-unit）
-- [ ] A3 bootstrap 提供种子（S4 download）→ CI 默认 warm C#-free（非 cold C#）
-- [ ] A4 文档 + 归档
+- [x] A2 其余 build 站点切 z42c（golden regen / test-lib unit / bench / package / platform 均 C#-free；C 阶段 da0d547b + 后续 commit）
+- [x] A3 bootstrap 提供种子（CI cold-seed 切 nightly 下载，4 平台 runtime 包带 z42c/ 种子；bootstrap-no-csharp job 全绿）
+- [x] A4 文档 + 归档（self-hosting.md S5 段同步；本次归档）
 
 ## A1 — 生产 stdlib flip C#-free ✅
 - [x] `_buildCompilerZ42ViaZ42c`（xtask_compiler_z42.z42）：用现有 z42c.driver.zpkg 作种子，
@@ -25,7 +30,7 @@
 - [x] B1 cross-zpkg gate 用 z42c 编 fixtures（commit 4192423b）：`_buildPkgZ42c`/`_invokeBuildZ42c`
   经 z42vm 跑 z42c.driver.zpkg；`_testCrossZpkgCore` 先 `_buildCompilerZ42` 备 z42c。验证 2/2 绿。
 - [x] B2 oracle→不动点（commit 71d13e53）：C1 使 canonical=z42c-built(gen1)，`_testZ42cSelfHostByteIdentical` 自动变 gen1==gen2；units 编译改 z42c；删 e2e byte-compare-vs-C#。验证 0 dotnet、7/7 不动点、17 units 绿。
-- [~] B3 GREEN gate C#-free — **阻塞于 2 个 z42c 缺口**（已定位，待修，本轮已回退避免红门）：
+- [x] B3 GREEN gate C#-free —（✅ 已解：硬前置「z42c golden parity」于 da0d547b 全清，z42c 编通全部 golden；下列历史诊断留作根因参考）阻塞曾在 2 个 z42c 缺口：
   - 🔴 **z42c `--emit-zbc` 无跨包 dep 解析**（driver Main.z42:64 `IrDump.ZbcBytes(text,file)` 单文件编，无 DepScan）→ golden（调 Assert/Console 等 stdlib）emit 出 `<error>` 函数名 → 运行期 `undefined function <error>`。修：--emit-zbc 路径接 DepScan(Z42_LIBS)+deps-aware ZbcBytes（类比 BuildModuleD）。这是 golden regen 脱 dotnet 的前置。
   - 🔴 **z42c 编 closure_l3_capture Null deref**（见 [[reference_z42c_closure_l3_capture_emit_bug]]）。
   - ✅ `--emit-zbc` 跨包 dep 解析已加（commit cd28c5d5，fixpoint 过）→ stdlib 调用（Assert/Console）emit 正确。
@@ -93,7 +98,7 @@ C# driver `build --workspace src/compiler`），冷分支改调它。warm 路径
 （warm 路径字节不变，改动隔离于 cold 分支）。**这是删 C# 前剩余原子步 #1 的正确边界确认**。
 
 ## Phase C — 删 C# + 清 dotnet（不可逆）🔴 User 裁决「staged：先切门后删」+「移除 version/dotnet 配置 + CI」(2026-06-23)
-- [~] C1 build 站点全 C#-free：✅ `_buildCompilerZ42`→ViaZ42c（d4471a85）✅ `_ensureZ42cTooling`/units（71d13e53）✅ cross-zpkg（4192423b）✅ **xtask_package_desktop(dotnet×6 全清)**：bin/z42c 由 dotnet publish C# → apphost trampoline 跑 `programs/z42c/z42c.driver.zpkg`（7 z42c.* 种子 colocated，VM colocated-deps 解析兄弟 + stdlib via libs/）；5× `dotnet run z42.Driver build`（workloads + launcher）→ `_z42cBuildToml`（host z42vm 跑 z42c.driver.zpkg）。**正交前置修复**：z42c 此前忽略 `[build] dist_dir`/`output_dir`（恒写 `<projectDir>/dist`），致 workload/launcher/xtask 产物落错位置——补 z42c.project 解析 `[build]` 三目录字段 + Main.`_resolveDistDir` 级联（镜像 C# CentralizedBuildLayout.ResolveSingleProject + `${output_dir}` 替换）。验证：dist_dir/output_dir 正确落位 + fixpoint gen1==gen2 7/7 + C# cold-seed→z42c gen1 7/7（bootstrap-safe）。剩 ⬜ xtask.z42 `_regenCore`/_testAll · `_regenGolden` golden 编译 · xtask_bench · xtask_stdlib `_csharpBuildStdlibSeed` · xtask_cli `build/test compiler`。种子=self-seed 现有 dist / 下载 nightly。
+- [x] C1 build 站点全 C#-free（剩余 ⬜ 项均由 C2/C3 + da0d547b 后续 commit 完成）：✅ `_buildCompilerZ42`→ViaZ42c（d4471a85）✅ `_ensureZ42cTooling`/units（71d13e53）✅ cross-zpkg（4192423b）✅ **xtask_package_desktop(dotnet×6 全清)**：bin/z42c 由 dotnet publish C# → apphost trampoline 跑 `programs/z42c/z42c.driver.zpkg`（7 z42c.* 种子 colocated，VM colocated-deps 解析兄弟 + stdlib via libs/）；5× `dotnet run z42.Driver build`（workloads + launcher）→ `_z42cBuildToml`（host z42vm 跑 z42c.driver.zpkg）。**正交前置修复**：z42c 此前忽略 `[build] dist_dir`/`output_dir`（恒写 `<projectDir>/dist`），致 workload/launcher/xtask 产物落错位置——补 z42c.project 解析 `[build]` 三目录字段 + Main.`_resolveDistDir` 级联（镜像 C# CentralizedBuildLayout.ResolveSingleProject + `${output_dir}` 替换）。验证：dist_dir/output_dir 正确落位 + fixpoint gen1==gen2 7/7 + C# cold-seed→z42c gen1 7/7（bootstrap-safe）。剩 ⬜ xtask.z42 `_regenCore`/_testAll · `_regenGolden` golden 编译 · xtask_bench · xtask_stdlib `_csharpBuildStdlibSeed` · xtask_cli `build/test compiler`。种子=self-seed 现有 dist / 下载 nightly。
 ### 🔴 关键发现（2026-06-24，commit 026d36b4）：z42c [Test] 单元 false-green + TIDX 缺口
 package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** dist 从 `<projectDir>/dist`
 改成 C# 的 `artifacts/<profile>/dist` → CI build-and-test ×3 红（stage `test compiler-z42`）。两个根因：
@@ -185,10 +190,10 @@ package_desktop 的 dist_dir 修复（7870db60）把 z42c 单工程**默认** di
     自动引入）但仍 vcall-null —— 确认是注册/解析问题非纯 using 问题。深度 codegen，建议干净机器专注修。
 - **下一步**：① 修跨包 static extern 调用 bug ② 在**干净机器**跑全 272 拿完整真缺口清单（blake3/binary 等环境假失败需排除）③ 逐个修剩余 z42c codegen 缺口 ④ 缺口清零后 re-apply stdlib switch（代码在 commit 历史可恢复）+ 全 272 C#-free 绿 → commit。这是删 src/compiler 的硬前置。
 
-- [ ] C2 删 `src/compiler/`（280 .cs/6.7M）+ `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj`。
-- [ ] C3 CI 清 dotnet：ci.yml（~15 setup-dotnet@v4 + dotnet-version '10.0.x' + build/test/run）→ z42c 种子流（复用 bootstrap-no-csharp job）；bench-update/bench-pr/release.yml 同；windows dotnet-test 腿删。
-- [ ] C4 验证 C#-free 闭包：bootstrap-no-csharp.sh（fixpoint 7/7）+ cross-zpkg（2/2）+ stdlib。CI 须 User push 后验证。
-- [ ] C5 文档：self-hosting.md S5 完成；roadmap 自举线收官。
+- [x] C2 删 `src/compiler/` 旧 C# + `z42.Tests` + `z42.slnx` + `_driverDll`/`_driverProj`；src/z42c 重命名为 src/compiler（产物路径 artifacts/build/z42c/ 解耦）。核实：无 .cs/.slnx 源。
+- [x] C3 CI 清 dotnet：全部 5 workflow（ci/bench-pr/bench-update/release）无 setup-dotnet/dotnet-version/真实 dotnet 调用；cold-seed 走 nightly 下载（复用 bootstrap-no-csharp 种子流）。核实：grep 无真实 setup-dotnet。
+- [x] C4 验证 C#-free 闭包：bootstrap-no-csharp（fixpoint）+ cross-zpkg + stdlib 全 4 OS CI 绿（多次绿 run 确认）。
+- [x] C5 文档：self-hosting.md S5 段 + bootstrap-and-testing.md 操作流程落地；roadmap 自举线收官。
 
 ## 备注
 - A1 默认 warm→C#-free，但 CI fresh = cold → 仍 C#；A3（bootstrap 种子）后 CI 才默认 C#-free。

@@ -247,13 +247,34 @@ xtask 绝不能依赖本提交新加的语法/stdlib API。
 
 **鸡蛋滚动**：种子由 source-bootstrapped publish-nightly（用 C# 造）产 —— S4 期允许（C# 造种子，下游重建不用 C#）。新 nightly 携 z42c/ 前，bootstrap-no-csharp 在旧 nightly transient 失败（明确 error）→ publish-nightly republish 后自愈。S5 删 C# 后 publish-nightly 自身改用前夜种子（自持闭环，S5 收尾）；生产 `xtask build stdlib`（flip `_buildStdlibCore`）的 C# 种子步亦移交 S5 脱 C#。
 
+## C# 彻底移除（replace-csharp S5，✅ 完成 2026-06-26）
+
+S5 走完 Phase A（切构建站点）→ B（gate 切 z42c 不动点）→ C（删 C# + 清 dotnet）。**硬前置**是
+z42c 达到 golden 编译 parity（编通全部 ~333 golden，含 reflection/closure 等边缘特性）—— 于 commit
+`da0d547b` 全清。随后：
+
+- **删 C# 源**：`src/compiler/`（旧 280 .cs C# 编译器）+ `z42.Tests` + `z42.slnx` 全删；`src/z42c/`
+  重命名为 `src/compiler/`（产物路径 `artifacts/build/z42c/` 与包名 `z42c.*` 解耦保留）。仓库无 `.cs`/`.slnx`。
+- **清 dotnet**：全部 5 个 workflow（ci / bench-pr / bench-update / release）无 `setup-dotnet` /
+  `dotnet-version` / 真实 `dotnet build|test|run`；保留一处 C#-free guard stub（PATH 注入假 `dotnet` →
+  被调即 `exit 97`），结构性保证「无 C#」。
+- **cold-start 种子**：CI fresh runner 不再 C# 现编 z42c，改 `gh release download nightly` 解包 z42c/
+  种子（4 平台 runtime 包均携带）。warm 路径 z42c 自建。
+- **闭环验证**：stdlib / bench / build-and-test 全 4 OS C#-free（commit 9d489854 / b36da336 /
+  17e342fc / 4dc2896b / 08ef874d）+ bootstrap-no-csharp fixpoint + cross-zpkg + jit-consistency 多次绿 run。
+
+> 操作层流程（SDK/Current 两套 toolchain、共享 host SDK、边界不变量、CI 冗余清单）见
+> [`docs/workflow/bootstrap-and-testing.md`](../../workflow/bootstrap-and-testing.md)。后续 CI 去冗余
+> （compile-once：编一次全下游复用 + fixpoint gate 发布 + format-bump 兜底）规划见
+> `docs/spec/changes/compile-once-toolchain/`。
+
 ## compile-perf gate
 
 最终目标：z42c-selfhost（z42-JIT）编译同一 corpus wall time ≤ 3× dotnet z42c.dll（median ≤ 3.0 / P99 ≤ 5.0）。0.3.3–0.3.9 铺设期 per-subsystem micro-bench 入 bench-baselines、不设硬阈值；0.3.10 起 end-to-end gate 启用。
 
 ## 1.0 切换路径
 
-0.3.x 完成全自举 + byte-identical 后，1.0 仅剩 `git rm -r src/compiler/`（待 regression 跑稳）+ launcher 内置 `z42c` 短命令指向 `z42c.driver.zpkg` + 跨架构 NativeAOT + SemVer 启用。
+0.3.x 完成全自举 + byte-identical + **C# 彻底移除（S5，2026-06-26 ✅）** 后，1.0 仅剩 launcher 内置 `z42c` 短命令指向 `z42c.driver.zpkg` + 跨架构 NativeAOT + SemVer 启用。（旧 `git rm -r src/compiler/` C# 删除已于 S5 完成。）
 
 ## Deferred / Future Work
 
