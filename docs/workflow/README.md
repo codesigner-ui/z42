@@ -4,9 +4,10 @@
 
 ## 前置：先拿到 z42
 
-**前置工具**：git + .NET 10 SDK + Rust stable（`dotnet --version && rustc --version` 自检）。
+**前置工具**：git + Rust stable（`rustc --version` 自检）+ `gh`（auth'd，下载 SDK 用）。
+**dotnet 已彻底移除（2026-06-26）**——工具链 100% z42 自举。
 
-所有命令都经 `z42` launcher 跑，而 z42 的工具链本身用 z42 写（`xtask`）——所以先下载一个预编译 launcher 引导（鸡生蛋的唯一原生 primer）：
+所有命令都经 `z42` launcher 跑，而 z42 的工具链本身用 z42 写（`xtask`）——所以先下载一个预编译 launcher 引导（鸡生蛋的唯一原生 primer）。**自举 + 本地/CI 测试验证的完整流程**（SDK vs Current 两套 toolchain、交叉验证、边界不变量、冗余清单）见 [`bootstrap-and-testing.md`](bootstrap-and-testing.md)：
 
 ```bash
 ./scripts/install-z42.sh                       # → ./.z42/（z42 launcher + z42c + z42vm + stdlib）；Windows: install-z42.bat
