@@ -5,24 +5,47 @@
 
 ## Architecture
 
+### 命名与角色
+
+| 名 | 是什么 | 位置 | 进 SDK 发布? |
+|----|--------|------|------|
+| **SDK** | 下载的上一版 nightly（launcher + z42c + z42vm + stdlib，**无 xtask**）| `.z42/` | — |
+| **本地 SDK / Current** | 当前源码编出 | `artifacts/.z42/` | ✅（成为下一个 nightly）|
+| **xtask** | 项目构建工具（`scripts/xtask*.z42`）；既是构建驱动、也是交叉验证靶子 | `artifacts/xtask/` | ❌ 永不进 SDK / 不分发 |
+| **z42vm** | Rust 原生 VM | 各 host `cargo build` | ❌ 不在 zpkg 链里 |
+
+**代际**：`gen1` = SDK 编当前 z42c 源（**行为**新、**字节**由 SDK codegen 出）；`gen2` = gen1 再编自己（**字节也新** = 当前 codegen）。**发布的是 gen2**。
+
+### 主构建（linux，一次；zpkg 平台无关）
+
 ```
-[compile job — linux，一次；zpkg 平台无关]
-  1. cargo z42vm(release+debug)              (Rust，自包含)
-  2. 下载 SDK → .z42/                         (install-z42；保留供交叉验证)
-  3. SDK z42c.driver → current z42c (gen1)   ← SDK 唯一用处（gen1 行为新；codegen 改时字节旧）
-  4. gen1 → current z42c (gen2)               ← gen2 = 完全 current（新行为 + 新 codegen emit）
-  5. fixpoint: gen2 → gen3; assert gen2==gen3 (逐字节, mod BLID)  ← gen2 自洽，配做下一轮 SDK
-  6. gen2 → current stdlib + current xtask     ← 用 gen2（非 gen1、非 SDK）编一切
-     → Current toolchain = z42c(gen2) + stdlib + xtask  在 artifacts/.z42
-  7. xtask --toolchain artifacts/.z42 regen-goldens + compile test-units → *.zbc
-  → upload artifact "current-sdk" = artifacts/.z42（z42c=gen2）+ goldens.zbc + units.zbc
-        │  [gate: 5 通过才上传 → 不变量"fixpoint gate 发布"]
-        ├─ test-interp (per OS)  下载 + cargo z42vm + xtask --toolchain artifacts/.z42 test --no-build (interp)
-        ├─ test-jit (linux, 4-shard)  同上 + jit + --shard k/4
-        ├─ host-package (per OS) 下载 + cargo z42vm + package
-        ├─ package-{ios,android,wasm}  下载 + cross-target
-        └─ test-{platform}       下载 + 平台测试
-  publish-nightly  needs ← host-package + package-*  (Current → 下一个 nightly)
+S0  cargo z42vm(release+debug)                          (Rust 原生，不在 SDK 的 zpkg 链)
+S1  install-z42 → 下载 SDK → .z42/                       (打破 chicken-egg；保留供交叉验证/差分)
+S2  SDK z42c + SDK stdlib → 编 xtask 源 → artifacts/xtask/   (构建驱动；xtask 不进 SDK)
+S3  (xtask 驱动) SDK z42c → 编当前 z42c 源 → gen1          (SDK stdlib 仅作解析 libs；SDK 最后用处)
+S4  gen1 → 再编 z42c 源 → gen2                            (gen2 = 当前 codegen = 发布件)
+    ┌ 条件不动点门（见 Decision 6）：比较 gen1 vs gen2
+    │   == → 没改 codegen，gen2 自动是不动点 → 跳过 gen3
+    └   ≠ → 改了 codegen → 编 gen3，断言 gen2==gen3（逐字节 mod BLID）
+S5  gen2 → 编 当前 stdlib + 当前 toolchain(src/toolchain: launcher/test-runner…) → artifacts/.z42/
+    → 本地 SDK = z42c(gen2) + stdlib(gen2编) + toolchain(gen2编)
+S6  xtask --toolchain artifacts/.z42 regen goldens + 编 test-units → *.zbc（供下游 --no-build）
+→ 上传 artifact "current-sdk" = artifacts/.z42 + goldens.zbc + units.zbc
+      [gate：S4 不动点通过才上传 → 不变量"不动点 gate 发布"]
+```
+
+### 下游（消费 artifact）
+
+```
+current-sdk ─┬─ test-interp (per OS)   下载 + cargo z42vm + --toolchain artifacts/.z42 test --no-build (interp)
+             ├─ test-jit (linux,4-shard)  同上 + jit + --shard k/4
+             ├─ host-package (per OS)  下载 + cargo z42vm + package
+             ├─ package-{ios,android,wasm} / test-{platform}  下载 + cross/平台
+             └─ cross-bootstrap（交叉验证，独立 job；见 Decision 7）
+                  用"打包发布形态的本地 SDK"当种子，重跑 S2+S3+S5：编 xtask + z42c + stdlib
+                  验：z42c 逐字节==本地SDK自带(gen2==gen3 真不动点) / stdlib 逐字节==发布 / xtask 编成功
+                  = 提前演一遍"下一周期 bootstrap"，证发布的 SDK 自洽可用
+publish-nightly  needs ← package-* + cross-bootstrap  (本地 SDK → 下一个 nightly)
 ```
 
 ## Decisions
@@ -78,31 +101,58 @@ seed），保持现状（删 C# 后无逃生口的 §5.3 现实）。**等后续
 z42vm 是原生二进制——各下游 job 自己 `cargo build`（per host OS）。
 **验证 cross-arch 消费可行**：4d 的 ubuntu-24.04-arm 消费 x64 toolchain artifact 已绿。
 
-### Decision 4：fixpoint 进 compile job → gate 一切
+### Decision 4：不动点进 compile job → gate 一切
 
-**问题**：fixpoint 现在只在 `bootstrap-no-csharp` 验，不 gate 发布。
-**决定**：把 fixpoint（gen1==gen2）移进 compile job 步 5，作为**上传 artifact 的前置 gate**。
-fixpoint 不过 → 不上传 → 所有下游（含 publish-nightly 链）拿不到 artifact → 不发布。
-于是 `bootstrap-no-csharp` job 可删（其唯一独特价值 fixpoint 已被吸收；dotnet PATH-mask 在
-compile job 里保留一行即可）。
+**问题**：不动点现在只在 `bootstrap-no-csharp` 验，不 gate 发布。
+**决定**：把不动点门移进 compile job S4，作为**上传 artifact 的前置 gate**。
+不过 → 不上传 → 所有下游（含 publish-nightly 链）拿不到 artifact → 不发布。
+（`bootstrap-no-csharp` job 不删而是**改造**成 cross-bootstrap 交叉验证 job，见 Decision 7。）
 
-### Decision 5：SDK 只编 z42c gen1 → gen2，用 **gen2** 编其余一切（codegen 改动同轮生效）
+### Decision 5：SDK 只编 gen1，用 **gen2** 编其余一切（codegen 改动同轮生效）
 
-**问题**：compile 序列里 SDK 编到哪步、用哪一代 z42c 编 stdlib/xtask/测试？
+**问题**：compile 序列里 SDK 编到哪步、用哪一代 z42c 编 stdlib/toolchain/测试？
 **背景（自举的微妙点）**：`gen1 = SDK 编当前 z42c 源`。gen1 的**行为**=当前源（改动立即生效），
 但 gen1 **自身字节**是 SDK（旧 z42c）emit 的。若改的是 z42c **codegen**，gen1 行为新、自身字节旧——
-要让被测/被发布的工具链**完全**是当前 codegen，必须用 `gen2 = gen1 再编自己`（gen2 由 gen1 用新
-codegen emit）。否则 codegen 改动要到下一次 nightly 才在 z42c 字节里完全体现。
+要让被测/被发布的工具链**完全**是当前 codegen，必须用 `gen2 = gen1 再编自己`。否则 codegen 改动要到
+下一次 nightly 才在 z42c 字节里完全体现。
 **决定**：
-- SDK **只**编 gen1（唯一用处，打破 chicken-egg）。
-- **gen1 编 gen2**；fixpoint 验 `gen2 == gen3`（gen2 自洽，配做下一轮 SDK）。
-- **用 gen2** 编 stdlib + xtask + goldens + 跑测试 + 打包/发布。被测/被发布的是端到端、完全
-  current（含 codegen）的工具链。SDK 影响面收缩到"仅产出 gen1 这个中间体"。
-- 步 3-6 直接 `z42vm <driver>.zpkg -- build …` 调 z42c.driver（SDK→gen1→gen2），**xtask 到步 6 才由
-  gen2 编出**。
-- 代价：z42c 多编 1 代（gen2）+ fixpoint 再 1 代（gen3），~2-4min，换"codegen 改动同轮完全生效"+
-  发布的是真 fixpoint。
-- 保留 SDK 还可**差分验证**：同源用 SDK 与 gen2 各编比对（z42c 未改时字节一致 = 回归探测）。
+- SDK **只**编 gen1（唯一用处，打破 chicken-egg；此外仅留作交叉验证/差分）。
+- **gen1 编 gen2**（S4）；**发布的是 gen2**。
+- **用 gen2** 编 stdlib + toolchain(src/toolchain) + goldens + 跑测试 + 打包/发布。被测/被发布的是
+  端到端、完全 current（含 codegen）的工具链。
+- **xtask 例外**：xtask 不进 SDK，是构建驱动——S2 由 **SDK** 先编出来驱动全程；其"gen2 形态"在
+  cross-bootstrap（Decision 7）里由本地 SDK 重编，落 `artifacts/xtask/`。
+- **stdlib 由 gen2 编（裁决 A）**：下载 SDK 的 stdlib 仅在 S3/S4 自举时当解析 libs，不发布。理由：
+  ① format 一致性——若本周期 bump 了 zpkg 格式，SDK 编出的 stdlib 是旧格式、新 z42vm 读不了；
+  ② "发的 stdlib == 当前 z42c 产出的"；③ 只有 gen2 编的 stdlib 才能被 cross-bootstrap 逐字节验证。
+  （备选 B = SDK 编 stdlib，省一次重编但 format bump 周期会坏 + 只能验"编成功"不能验字节——未采用。）
+
+### Decision 6：gen3 条件触发（不固定第三代）
+
+**问题**：gen2==gen3 这个真不动点要不要每轮都编 gen3？
+**洞察**：`gen1 == gen2 ⟹ gen2 == gen3`（可证：gen1==gen2 则二者同一程序，gen3:=gen2(源)=gen1(源)=gen2）。
+即**只要 gen1==gen2 成立，gen3 就是冗余的，不用真编**。而 `gen1 == gen2` 仅在"本周期没改 z42c
+codegen"时成立——改了 codegen 时 gen1≠gen2（正常，非 bug），此时**只有 gen2==gen3 能当门**。
+**决定**：gen3 **条件触发**，不固定跑——
+- S4 比较 gen1 vs gen2（gen1/gen2 本就都要编，比较免费）：
+  - **==** → 没改 codegen → gen2 自动是不动点 → **跳过 gen3**（稳态：绝大多数 nightly 走这条）。
+  - **≠** → 改了 codegen → **编 gen3，断言 gen2==gen3**（专抓"自编自不稳定"= 非确定性 / 非语义保持的
+    codegen 改动）。
+- **不能无条件删 gen3**：改 codegen 那轮它是唯一不动点验证。也**不能把门改成 gen1==gen2**：那在改
+  codegen 时会"假失败"。
+- 代价：稳态省一代（仅编 gen1+gen2）；只在真改 codegen 时多编 gen3。
+
+### Decision 7：cross-bootstrap 交叉验证（本地 SDK 当种子重跑 S2+S3+S5）
+
+**问题**：怎么证"将发布的 SDK 真能当下一周期种子用"？
+**决定**：把现有 `bootstrap-no-csharp` job **改造**（非删除）成 cross-bootstrap——种子来源从"下载上一版
+nightly"换成"**本地刚编出、打包成发布形态的 SDK**"，重跑 S2+S3+S5：
+- 用本地 SDK 的 z42c+stdlib 编 **xtask**（验"SDK 能编真实项目"，编成功即可，不字节比）。
+- 用本地 SDK 编 **z42c** → 逐字节 == 本地 SDK 自带的 z42c（即 gen2==gen3 真不动点）。
+- 用本地 SDK 编 **stdlib** → 逐字节 == 发布的 stdlib（确定性；依赖 stdlib=gen2 编，Decision 5）。
+- = 提前演一遍"下一周期 bootstrap"，证发布的 SDK 自洽可用。
+- **独立 job**（成本 ≈ 二次完整构建），进 `publish-nightly` 的 needs → 不自洽就不发布。
+- 用**打包/发布形态**（apphost z42c + `.z42` 布局），验的才是真要发出去的东西。
 
 ## Implementation Notes
 

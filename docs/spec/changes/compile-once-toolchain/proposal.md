@@ -39,11 +39,12 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 3. **下游 job 消费 artifact**：test-interp / test-jit / package 全部下载 `artifacts/.z42` +
    `cargo z42vm` + `--toolchain artifacts/.z42 ... --no-build`，不再各自 bootstrap。
 4. **format-bump 兜底**（A/B/C 待裁决，见 design.md Decision 2）。
-5. **重命名 + 删冗余 job**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；删
-   `bootstrap-no-csharp`（fixpoint 进 compile job）+ 评估删 `compiler-z42-stdlib`。
-6. **脚本清理**：删 `ci-bootstrap-nocs.sh`/`bootstrap-no-csharp.sh`（内联进 compile job）+
-   `ci-stage-toolchain.sh`（折进 xtask）+ `check-bootstrap-compat.sh`（边界由 compile job 隐式强制）；
-   **保留 `install-z42.sh`**。
+5. **cross-bootstrap 交叉验证**：`bootstrap-no-csharp` job **改造**（非删）——种子从"下载 nightly"换成
+   "本地 SDK 打包发布形态"，重跑 S2+S3+S5（编 xtask + z42c + stdlib），验 gen2==gen3 真不动点 + stdlib
+   字节确定性，进 publish-nightly needs。
+6. **重命名 + 删冗余 job + 脚本清理**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；评估删
+   `compiler-z42-stdlib`；删 `ci-bootstrap-nocs.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
+   `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `bootstrap-no-csharp.sh`（已改造）**。
 7. **文档**：`bootstrap-and-testing.md` 随各 Phase 落地更新；同步 self-hosting.md/ci.md。
 
 ## Scope（允许改动的文件）
@@ -58,7 +59,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 | `scripts/xtask_common.z42` | MODIFY | toolchain-dir 解析 helper |
 | `scripts/xtask_package*.z42` | MODIFY | 消费 `--toolchain artifacts/.z42` |
 | `scripts/ci-bootstrap-nocs.sh` | DELETE | 逻辑内联进 compile job |
-| `scripts/bootstrap-no-csharp.sh` | DELETE | 同上 + fixpoint 进 compile job |
+| `scripts/bootstrap-no-csharp.sh` | MODIFY | **改造**成 cross-bootstrap：种子来源换成本地 SDK（不删）|
 | `scripts/ci-stage-toolchain.sh` | DELETE | 折进 `xtask build sdk` |
 | `scripts/check-bootstrap-compat.sh` | DELETE | 边界由 compile job 隐式强制 |
 | `.github/workflows/ci.yml` | MODIFY | compile job + 下游消费 + 重命名 + 删冗余 job |
