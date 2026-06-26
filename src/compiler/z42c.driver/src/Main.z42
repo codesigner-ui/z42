@@ -5,8 +5,9 @@
 //   z42c --dump-bound  <file.z42>          类型检查后的 Bound 树（含类型注解 + 诊断数）
 //   z42c --emit-zbc    <file.z42> <out>    编译到 .zbc（ZW-1A/1B opcode 子集；无 DBUG）
 //   z42c build         <project.z42.toml>  编译整包 → dist/<name>.zpkg
-// 未实现（占位）：
-//   z42c test          <file.zbc|project.z42.toml>  运行 [Test] 方法（0.3.13：依赖 Method.Invoke）
+// 注：z42c 只编译，不跑测试。`test` / `bench` 是构建编排（build+run+report），宿主 = z42b
+//     （编排器），runner 逻辑住 z42.test 库。见 docs/design/toolchain/build-orchestrator.md
+//     Decision #9 + retire-test-runner spec。
 namespace Z42.Driver;
 
 using Std;
@@ -47,12 +48,6 @@ void Main() {
     if (cmd == "clean") {
         string target = (argv.Length >= 2 && !file.StartsWith("--")) ? file : ".";
         Environment.Exit(_clean(target));
-        return;
-    }
-    if (cmd == "test") {
-        // 0.3.13 占位：等待 Method.Invoke（0.3.12）+ z42.test.TestRunner v2
-        ConsoleError.WriteLine("z42c test: not yet implemented (requires Method.Invoke, 0.3.13)");
-        Environment.Exit(2);
         return;
     }
     if (cmd == "--emit-zbc") {
@@ -372,5 +367,5 @@ void _usage() {
     Console.WriteLine("  z42c build --workspace [--output-dir <d>] build all members (topo order);");
     Console.WriteLine("                                          omit --output-dir for per-member layout");
     Console.WriteLine("  z42c clean         [<dir>]             remove <dir>/{dist,cache}");
-    Console.WriteLine("  z42c test          <file.zbc|project>  run [Test] methods (0.3.13, not yet)");
+    Console.WriteLine("  (test / bench are run by z42b, not z42c — the compiler only compiles)");
 }

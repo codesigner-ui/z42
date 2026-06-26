@@ -7,6 +7,10 @@
 > z42b。runner 逻辑仍住 `z42.test`（库），z42b 是薄 verb。**bench 拉入本变更**：Rust test-runner
 > 同时跑 [Test] 和 [Benchmark]，删它必须同时替掉两者，bench 不能滞后于删除。命令归属决策见
 > [build-orchestrator.md](../../../design/toolchain/build-orchestrator.md)。
+>
+> **修订（2026-06-27）**：z42c.driver 里的 `test` 占位命令已**单独摘除**（独立 refactor commit，
+> 不依赖本变更前置）——编译器只编译、不再宣称拥有 test。故本变更 Scope **不含** z42c.driver；
+> 实施本变更时不需从 z42c 删任何东西，也不得把 test 重新加回 z42c。
 
 ## Why
 
