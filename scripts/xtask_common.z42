@@ -91,12 +91,52 @@ string _join(string[] a, int from) {
     return s;
 }
 
+// ── toolchain selector (--toolchain <dir>) ───────────────────────────────────
+
+// The active toolchain dir in `.z42` layout (libs/ + programs/z42c/*.zpkg + bin/),
+// or "" when unset. Set from the global `--toolchain` option (stored in the
+// Z42_TOOLCHAIN env var so every helper + spawned child sees it). When "", callers
+// fall back to the build-tree artifacts paths (backward-compatible default). A
+// relative value resolves against the repo root.
+//   .z42 = SDK (downloaded), artifacts/.z42 = local SDK (built) — Decision 1.
+string _toolchainDir(string root) {
+    string tc = Environment.GetEnvironmentVariable("Z42_TOOLCHAIN") ?? "";
+    if (tc.Length == 0) { return ""; }
+    if (Path.IsRooted(tc)) { return tc; }
+    return Path.Join(root, tc);
+}
+
+// stdlib flat libs dir inside a `.z42` toolchain: <dir>/libs
+string _toolchainLibs(string tcDir) {
+    return Path.Join(tcDir, "libs");
+}
+
+// the z42c.driver.zpkg inside a `.z42` toolchain: <dir>/programs/z42c/z42c.driver.zpkg
+// (Path.Join is 2-arg — nest. The 6 sibling z42c.* live alongside it.)
+string _toolchainDriver(string tcDir) {
+    string progs = Path.Join(tcDir, "programs");
+    return Path.Join(Path.Join(progs, "z42c"), "z42c.driver.zpkg");
+}
+
 // ── artifact paths (absolute, repo-root-relative) ────────────────────────────
 
 // stdlib flat dist (= the Z42_LIBS value the compiler + VM load stdlib from):
-//   artifacts/build/libraries/dist/release
+//   artifacts/build/libraries/dist/release.
+// This is the CANONICAL build-tree path — where producer commands (build stdlib /
+// build sdk) WRITE. Consumer commands (test) that should READ from an active
+// `--toolchain` use _activeLibsDir() instead (which falls back here when unset).
 string _libsDir(string root) {
     return Path.Join(root, "artifacts/build/libraries/dist/release");
+}
+
+// stdlib libs to READ for the current command: the active --toolchain's libs/
+// when set, else the canonical build-tree _libsDir. Consumer paths (test, and
+// build steps that resolve against an existing toolchain) call this; producers
+// keep writing to _libsDir.
+string _activeLibsDir(string root) {
+    string tc = _toolchainDir(root);
+    if (tc.Length > 0) { return _toolchainLibs(tc); }
+    return _libsDir(root);
 }
 
 // SDK packages output root:  artifacts/packages

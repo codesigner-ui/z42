@@ -1,6 +1,6 @@
 # Tasks: compile-once toolchain
 
-> 状态：🟡 DRAFT（spec 留待后续实施；User 2026-06-27 决定先归档 remove-dotnet，本 change 暂不开工）| 创建：2026-06-27
+> 状态：🟡 进行中（P1 开工 2026-06-27，User "开工"）| 创建：2026-06-27
 > 子系统占用：`toolchain`（xtask）+ docs（**不含 runtime**——format 兜底已延后，第一版不改 reader）
 > 🟢 Decision 2 已裁决（2026-06-27）：**第一版不做 format 兜底**，延后到未来 format bump 变更里同步落地（见 design.md）。
 
@@ -20,8 +20,8 @@
 - [ ] 0.3 阶段 6.5 确认 gate 通过（User 明确"可以开始"）
 
 ## P1：xtask `--toolchain` + `build sdk`（toolchain 子系统）
-- [ ] 1.1 `scripts/xtask_common.z42`：toolchain-dir 解析 helper（默认 `artifacts/.z42`；校验 `programs/z42c/*.zpkg` 存在，缺失明确报错）
-- [ ] 1.2 `scripts/xtask_cli.z42`：注册 `--toolchain <dir>` 全局选项 + `build sdk [--out <dir>]` 子命令
+- [x] 1.1 `scripts/xtask_common.z42`：toolchain 解析 helper——`_toolchainDir`（读 Z42_TOOLCHAIN，相对路径对 root 解析）/ `_toolchainLibs` / `_toolchainDriver`（programs/z42c/z42c.driver.zpkg）/ `_activeLibsDir`（consumer 读：toolchain libs 或回退 canonical）。`_libsDir` 保持 canonical（producer 写）。本地重建 xtask 编过。
+- [~] 1.2 `scripts/xtask_cli.z42`：✅ 全局 `--toolchain <dir>` 拦截（`_applyToolchainOpt`：_runCli 入口剥离两-token 形式 + 设 Z42_TOOLCHAIN，last-wins，向后兼容）。验证：`--toolchain /tmp/probe build -h` 干净通过、argv 被剥离。⬜ `build sdk [--out]` 子命令（待 P1.3 实现 handler 后注册）
 - [ ] 1.3 `scripts/xtask_stdlib.z42`：`build sdk` 组装 `.z42` 布局（成对分代 gen1/gen2 编 {stdlib, z42c} + gen2 编 toolchain；复用 package 的 SDK 组装逻辑，无 apphost trampoline）
 - [ ] 1.4 `scripts/xtask_compiler_z42.z42`：z42c 定位据 `--toolchain`；**条件不动点 helper**——gen1=SDK 编{stdlib,z42c}→gen2=gen1 编{stdlib,z42c}，比较 gen1 vs gen2 对：等则跳过 gen3，不等则编 gen3 断言 {gen2}=={gen3}（逐字节 mod BLID）
 - [ ] 1.5 `scripts/xtask_test.z42` / `xtask_test_vm.z42`：build/test 定位据 `--toolchain`；确认 `--no-build` 全链（vm/stdlib/cross-zpkg）尊重预编译 .zbc

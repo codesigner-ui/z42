@@ -18,7 +18,11 @@ using Std.Cli;
 
 // ── entry: the whole Main body (shims + resolve + dispatch) → exit code ──────
 
-int _runCli(string[] argv) {
+int _runCli(string[] argvIn) {
+    // Pull the global `--toolchain <dir>` out of argv before routing (the nested
+    // router models only per-leaf options). Sets Z42_TOOLCHAIN → every locator
+    // (_toolchainDir / _libsDir / ...) redirects to that `.z42` toolchain.
+    string[] argv = _applyToolchainOpt(argvIn);
     string c0 = argv.Length > 0 ? argv[0] : "";
     string c1 = argv.Length > 1 ? argv[1] : "";
 
@@ -58,6 +62,39 @@ int _runCli(string[] argv) {
 
 bool _isFlag(string a) { return a.Length >= 1 && a.CharAt(0) == '-'; }
 bool _isHelpFlag(string a) { return a == "-h" || a == "--help"; }
+
+// Strip a global `--toolchain <dir>` (two-token form) from argv and stash <dir>
+// in Z42_TOOLCHAIN (read by _toolchainDir). Last occurrence wins. Returns argv
+// unchanged when absent. Two passes (count survivors, then fill) — no List type.
+string[] _applyToolchainOpt(string[] argv) {
+    int n = argv.Length;
+    string tc = "";
+    int keep = 0;
+    int i = 0;
+    while (i < n) {
+        if (argv[i] == "--toolchain") {
+            if (i + 1 < n) { tc = argv[i + 1]; i = i + 2; } else { i = i + 1; }
+            continue;
+        }
+        keep = keep + 1;
+        i = i + 1;
+    }
+    if (tc.Length == 0) { return argv; }
+    Environment.SetEnvironmentVariable("Z42_TOOLCHAIN", tc);
+    string[] kept = new string[keep];
+    int j = 0;
+    i = 0;
+    while (i < n) {
+        if (argv[i] == "--toolchain") {
+            if (i + 1 < n) { i = i + 2; } else { i = i + 1; }
+            continue;
+        }
+        kept[j] = argv[i];
+        j = j + 1;
+        i = i + 1;
+    }
+    return kept;
+}
 
 // ── root tree ────────────────────────────────────────────────────────────────
 
