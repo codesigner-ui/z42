@@ -1,7 +1,0 @@
-// E0421 InvalidDefaultType — default(T) on unknown type only.
-// Phase 2 (add-default-generic-typeparam) lifted the generic type-param
-// gate; that case is now valid and emits DefaultOfInstr.
-
-void Main() {
-    var x = default(NoSuchType);        // E0421: type 'NoSuchType' not found
-}

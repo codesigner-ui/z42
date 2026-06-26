@@ -1,2 +1,0 @@
-*source.z42*: error E0420: *catch type 'NoSuchType' not found*
-*source.z42*: error E0420: *catch type 'NotAnException' must derive from Exception*

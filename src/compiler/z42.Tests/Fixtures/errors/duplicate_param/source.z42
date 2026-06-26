@@ -1,5 +1,0 @@
-int Add(int x, int x) {   // duplicate parameter name — should be a compile error
-    return x;
-}
-
-void Main() {}

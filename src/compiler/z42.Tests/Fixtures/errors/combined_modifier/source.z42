@@ -1,7 +1,0 @@
-namespace Demo;
-
-class Foo {
-    public private int x;
-}
-
-void Main() { }

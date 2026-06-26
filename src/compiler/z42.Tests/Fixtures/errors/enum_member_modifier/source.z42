@@ -1,8 +1,0 @@
-namespace Demo;
-
-enum Color {
-    public Red,
-    Green,
-}
-
-void Main() { }

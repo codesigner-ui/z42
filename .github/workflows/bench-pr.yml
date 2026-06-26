@@ -18,7 +18,7 @@ on:
     paths:
       - 'src/runtime/**'
       - 'src/libraries/**'
-      - 'src/compiler/**'
+      - 'src/z42c/**'
       - 'bench/**'
       - 'scripts/xtask*.z42'
       - 'scripts/xtask.z42.toml'

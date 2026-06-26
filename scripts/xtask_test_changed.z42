@@ -237,9 +237,9 @@ _MapResult _mapFile(string f) {
     if (f.StartsWith("src/tests/cross-zpkg/")) { return _mapCmds(new string[]{ "xtask test cross-zpkg" }); }
     if (f.StartsWith("src/tests/"))            { return _mapCmds(new string[]{ "xtask test vm" }); }
 
-    // C# compiler.
-    if (f.StartsWith("src/compiler/")) {
-        return _mapCmds(new string[]{ "xtask test compiler", "xtask test vm" });
+    // z42c self-host compiler (src/z42c).
+    if (f.StartsWith("src/z42c/")) {
+        return _mapCmds(new string[]{ "xtask test compiler-z42", "xtask test vm" });
     }
     // Toolchain.
     if (f.StartsWith("src/toolchain/")) {

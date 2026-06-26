@@ -1,5 +1,0 @@
-namespace Demo;
-
-void Main() {
-    int x = "hello";
-}

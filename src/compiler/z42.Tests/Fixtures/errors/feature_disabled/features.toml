@@ -1,2 +1,0 @@
-# Disable control flow to test feature-gating
-control_flow = false
