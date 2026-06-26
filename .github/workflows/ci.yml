@@ -365,8 +365,8 @@ jobs:
   # instead of each re-bootstrapping. Fast: bootstrap only, no test.
   toolchain-bootstrap:
     name: toolchain-bootstrap (${{ matrix.os }})
-    needs: changes
-    if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    # Runs unconditionally (like build-and-test) — its artifact roots the package
+    # jobs (which always run) + the platform-test jobs, so it must always be present.
     strategy:
       fail-fast: false
       matrix:
@@ -769,15 +769,12 @@ jobs:
   # macos-15 arm64) + iOS Rust targets. The source bootstrap also builds z42c.
   package-ios:
     name: package-ios
+    needs: toolchain-bootstrap
     runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
 
       - name: Setup Rust + iOS targets
         uses: dtolnay/rust-toolchain@stable
@@ -796,15 +793,8 @@ jobs:
             ${{ runner.os }}-cargo-ios-
             ${{ runner.os }}-cargo-
 
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
-      - uses: ./.github/actions/xtask-bootstrap-source
+      - uses: ./.github/actions/xtask-bootstrap-artifact
 
       - name: Package ios-arm64 + iossim-arm64 (z42 xtask.zpkg package)
         shell: bash
@@ -861,15 +851,12 @@ jobs:
   # Packages android-arm64 + android-x64 via cargo-ndk + NDK r26d.
   package-android:
     name: package-android
+    needs: toolchain-bootstrap
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
 
       - name: Setup Rust + Android targets
         uses: dtolnay/rust-toolchain@stable
@@ -901,15 +888,8 @@ jobs:
             ${{ runner.os }}-cargo-android-
             ${{ runner.os }}-cargo-
 
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
-      - uses: ./.github/actions/xtask-bootstrap-source
+      - uses: ./.github/actions/xtask-bootstrap-artifact
 
       - name: Package android-arm64 + android-x64 (z42 xtask.zpkg package)
         shell: bash
@@ -977,15 +957,12 @@ jobs:
   # pkg-nodejs/ before `xtask package` can assemble the wasm SDK package.
   package-wasm:
     name: package-wasm
+    needs: toolchain-bootstrap
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
 
       - name: Setup Rust + wasm target
         uses: dtolnay/rust-toolchain@stable
@@ -1007,15 +984,8 @@ jobs:
             ${{ runner.os }}-cargo-wasm-
             ${{ runner.os }}-cargo-
 
-      - name: Cache NuGet
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
-      - uses: ./.github/actions/xtask-bootstrap-source
+      - uses: ./.github/actions/xtask-bootstrap-artifact
 
       - name: Build wasm platform (pkg-web/ + pkg-nodejs/ via test platform wasm build)
         shell: bash
@@ -1289,7 +1259,7 @@ jobs:
   # (infra-ci-platform-test-dashboard, 2026-06-16)
   test-wasm:
     name: test-wasm (browser)
-    needs: changes
+    needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
@@ -1299,10 +1269,6 @@ jobs:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/artifacts/tools/playwright-browsers
     steps:
       - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
       - name: Setup Rust + wasm target
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -1312,7 +1278,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - uses: ./.github/actions/xtask-bootstrap-source
+      - uses: ./.github/actions/xtask-bootstrap-artifact
       - name: Prime Playwright (node deps + Chromium + OS libs)
         shell: bash
         run: |
@@ -1345,7 +1311,7 @@ jobs:
 
   test-ios:
     name: test-ios (Simulator)
-    needs: changes
+    needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-15
     permissions:
@@ -1353,15 +1319,11 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
       - name: Setup Rust + iOS targets
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,aarch64-apple-darwin
-      - uses: ./.github/actions/xtask-bootstrap-source
+      - uses: ./.github/actions/xtask-bootstrap-artifact
       - name: test platform ios (xcframework + assets + iOS Simulator R1–R7)
         shell: bash
         run: |
@@ -1389,7 +1351,7 @@ jobs:
 
   test-android:
     name: test-android (emulator)
-    needs: changes
+    needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     permissions:
@@ -1403,10 +1365,6 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
       - name: Setup Rust + Android targets
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -1423,7 +1381,7 @@ jobs:
         id: setup-ndk
         with:
           ndk-version: r26d
-      - uses: ./.github/actions/xtask-bootstrap-source
+      - uses: ./.github/actions/xtask-bootstrap-artifact
       - name: test platform android — cargo-ndk + AAR + assets
         shell: bash
         env:
