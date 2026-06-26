@@ -97,22 +97,32 @@ done
 # form — git-bash launches the .exe fine; only what z42vm itself reads is converted.
 seedw="$(winpath "$seed")"
 libsw="$(winpath "$libs")"
-vmw="$(winpath "$vm")"
 driverw="$(winpath "$seed/z42c.driver.zpkg")"
+
+# Windows can't overwrite a RUNNING .exe. Steps [3]/[4] run xtask, which calls
+# _buildRuntime → `cargo build` targeting the canonical z42vm.exe (cargo's
+# target-dir IS artifacts/build/runtime). If xtask is launched FROM that same file,
+# cargo's relink fails with "Access is denied (os error 5)". So launch xtask from a
+# COPY placed outside the cargo target dir — the canonical can then be rebuilt
+# freely, and later steps (test all / package) still use the fresh canonical. No-op-
+# safe on Unix (overwriting a running binary is fine there, but the copy is harmless).
+runvm="$ROOT/.ci-runvm/z42vm"; case "$vm" in *.exe) runvm="$runvm.exe";; esac
+mkdir -p "$ROOT/.ci-runvm"; cp -f "$vm" "$runvm"
+runvmw="$(winpath "$runvm")"
 
 # ── 2. seed z42c → build CURRENT xtask.zpkg ──────────────────────────────────
 echo "── [2/5] seed z42c builds current xtask.zpkg ──"
-Z42_LIBS="$seedw" "$vm" "$driverw" --mode interp -- \
+Z42_LIBS="$seedw" "$runvm" "$driverw" --mode interp -- \
   build scripts/xtask.z42.toml --release
 [ -f "$ROOT/artifacts/xtask/xtask.zpkg" ] || { echo "::error::xtask.zpkg not produced"; exit 1; }
 
 # ── 3. xtask builds CURRENT z42c (warm self-build → standard loc) ────────────
 echo "── [3/5] xtask build compiler-z42 (warm self-build from seed) ──"
-Z42_LIBS="$libsw" Z42_PORTABLE_VM="$vmw" "$vm" artifacts/xtask/xtask.zpkg -- build compiler-z42
+Z42_LIBS="$libsw" Z42_PORTABLE_VM="$runvmw" "$runvm" artifacts/xtask/xtask.zpkg -- build compiler-z42
 
 # ── 4. xtask builds CURRENT stdlib (flat dist + index.json) ──────────────────
 echo "── [4/5] xtask build stdlib ──"
-Z42_LIBS="$libsw" Z42_PORTABLE_VM="$vmw" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
+Z42_LIBS="$libsw" Z42_PORTABLE_VM="$runvmw" "$runvm" artifacts/xtask/xtask.zpkg -- build stdlib
 
 # ── 5. sanity: no dotnet was invoked; toolchain present ──────────────────────
 echo "── [5/5] verify C#-free toolchain ──"
