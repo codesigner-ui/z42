@@ -30,8 +30,8 @@
 
 ## P2：compile job（toolchain + ci.yml）
 - [x] 2.1 ~~format 兜底落地~~ —— 🟢 Decision 2 裁决：**第一版不做**，延后到未来 format bump 变更同步落地（§5.3 死锁仍为已知开口）。
-- [ ] 2.2 `.github/workflows/ci.yml`：新增 `compile` job（linux），内联 S0–S6：
-      S0 cargo z42vm → S1 下载 SDK→`.z42/` → S2 SDK 编 xtask → S3 SDK 编 gen1 → S4 gen1 编 gen2 + 条件不动点门 → S5 gen2 编 stdlib+toolchain→`artifacts/.z42` → S6 regen goldens + 编 units
+- [ ] 2.2 `.github/workflows/ci.yml`：新增 `compile` job（linux），内联 S0–S7：
+      S0 cargo z42vm → S1 下载 SDK→`.z42/` → S2 SDK 编 xtask → S3 SDK 编解析用 stdlib → S4 SDK 编 gen1（解析=S3）→ S5 gen1 编 gen2 + 条件不动点门 → S6 gen2 编发布 stdlib(当前格式)+toolchain→`artifacts/.z42` → S7 regen goldens + 编 units
 - [ ] 2.3 条件不动点作为上传 gate：gen1≠gen2 时编 gen3，gen2≠gen3 → job 失败、不上传
 - [ ] 2.4 上传 artifact `current-sdk`（`artifacts/.z42` + goldens.zbc + units.zbc）
 - [ ] 2.5 dotnet PATH-mask 一行保留在 compile job（防意外引入）
@@ -75,6 +75,6 @@
 ## 备注
 - Decision 2（format 兜底）第一版不做（已裁决）；全程仅占 `toolchain` 子系统（不含 runtime）。
 - **gen3 条件触发**（Decision 6）：稳态 gen1==gen2 跳过 gen3，仅改 codegen 时编 gen3。
-- **stdlib 由 gen2 编**（Decision 5 裁决 A）：下载 SDK stdlib 仅作解析 libs、不发布。
+- **stdlib 两次编译**（Decision 5）：S3 SDK 编解析用（不发布）+ S6 gen2 编发布件（当前格式才能跑——SDK 编的旧格式 format bump 轮被 z42vm strict-pin 拒）。稳态 S3==S6 时 S6 可跳过（micro-opt）。
 - **xtask 不进 SDK**（Decision 5）：S2 由 SDK 编驱动；发布形态由 cross-bootstrap 重编落 `artifacts/xtask/`。
 - jit `--shard` 机制（95e9facf）复用不改，不在本变更 Scope。

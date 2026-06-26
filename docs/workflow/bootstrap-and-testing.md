@@ -85,24 +85,27 @@ z42 xtask.zpkg build sdk             # 重建 Current toolchain
 ```
 compile (linux, 一次)
   S0  cargo z42vm(release+debug)                          (Rust 原生)
-  S1  下载 SDK → .z42/                                     (打破 chicken-egg)
+  S1  下载 SDK → .z42/                                     (打破 chicken-egg；自带上一版 stdlib)
   S2  SDK z42c + SDK stdlib → 编 xtask → artifacts/xtask/   (构建驱动；xtask 不进 SDK)
-  S3  (xtask 驱动) SDK z42c → 编 z42c 源 → gen1            (SDK stdlib 仅作解析 libs；SDK 最后用处)
-  S4  gen1 → 再编 z42c 源 → gen2  ★发布件
+  S3  (xtask 驱动) SDK z42c → 编当前 stdlib → stdlib(解析用)  (供 gen1/gen2 解析；SDK codegen，不发布)
+  S4  SDK z42c → 编 z42c 源（解析=S3 stdlib）→ gen1         (SDK 最后用处)
+  S5  gen1 → 再编 z42c 源 → gen2  ★发布件
       条件不动点门：比较 gen1 vs gen2
         == → 没改 codegen，gen2 自动是不动点 → 跳过 gen3
         ≠ → 改了 codegen → 编 gen3，断言 gen2==gen3（逐字节 mod BLID）
-  S5  gen2 → 编 stdlib + toolchain(src/toolchain) → artifacts/.z42   (用 gen2，非 SDK)
+  S6  gen2 → 编 stdlib(发布,当前格式) + toolchain(src/toolchain) → artifacts/.z42  (用 gen2)
       → 本地 SDK = z42c(gen2) + stdlib(gen2编) + toolchain(gen2编)
-  S6  xtask --toolchain artifacts/.z42 regen goldens + 编 test-units → *.zbc（供下游 --no-build）
-  → 上传 artifact "current-sdk"（artifacts/.z42 + goldens + units）；S4 不动点不过 → 不上传（gate 发布）
+      （发布的 stdlib 必须 gen2 编：S3 那份 SDK codegen 旧格式，format bump 轮被 z42vm strict-pin 拒→跑不了。
+        稳态 S3==S6 时 S6 stdlib 重编可跳过，micro-opt）
+  S7  xtask --toolchain artifacts/.z42 regen goldens + 编 test-units → *.zbc（供下游 --no-build）
+  → 上传 artifact "current-sdk"（artifacts/.z42 + goldens + units）；S5 不动点不过 → 不上传（gate 发布）
      │
      ├─ test-interp (per OS)   下载 + cargo z42vm + --toolchain artifacts/.z42 test --no-build (interp)
      ├─ test-jit (linux, 4-shard)  同上 + jit + --shard k/4
      ├─ host-package (per OS)  下载 + cargo z42vm + package
      ├─ package-{ios,android,wasm} / test-{platform}  下载 + cross/平台
      └─ cross-bootstrap（交叉验证，独立 job = 改造 bootstrap-no-csharp）
-          用"打包发布形态的本地 SDK"当种子重跑 S2+S3+S5：编 xtask + z42c + stdlib
+          用"打包发布形态的本地 SDK"当种子重跑 S2-S6：编 xtask + z42c + stdlib
           验：z42c 逐字节==本地SDK自带(gen2==gen3) / stdlib 逐字节==发布 / xtask 编成功
           = 提前演下一周期 bootstrap，证发布 SDK 自洽可用
   publish-nightly  needs ← package-* + cross-bootstrap（本地 SDK 成为下一个 nightly）

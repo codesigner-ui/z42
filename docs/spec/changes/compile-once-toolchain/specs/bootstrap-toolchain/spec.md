@@ -62,13 +62,22 @@ compile job 内验自举不动点 `gen2 == gen3`（逐字节，mod BLID），作
 - **WHEN** gen2 != gen3（自编自不稳定）
 - **THEN** 不上传 artifact → 所有下游 job 拿不到输入而失败 → publish-nightly 发不出 → 不会发出未验自洽性的 nightly
 
-### Requirement: SDK 仅产 gen1，gen2 编一切（xtask 例外）
+### Requirement: SDK 产 xtask + 解析 stdlib + gen1，gen2 编发布件
 
-compile job 用 SDK 只编 xtask（驱动）+ gen1；其后 gen1→gen2，用 gen2 编 stdlib/toolchain/goldens/测试/发布。
+compile job 用 SDK 编 xtask（驱动）+ 当前 stdlib（解析用）+ gen1；其后 gen1→gen2，用 gen2 编
+stdlib(发布) / toolchain / goldens / 测试 / 发布。
 
-#### Scenario: SDK 影响面收缩到 xtask 驱动 + gen1
+#### Scenario: SDK 影响面收缩到 xtask + 解析 stdlib + gen1
 - **WHEN** compile job 运行
-- **THEN** SDK 仅用于 S2（编 xtask 驱动）+ S3（编 gen1）；S4 起不再用 SDK；gen2 编其余一切
+- **THEN** SDK 仅用于 S2（编 xtask）+ S3（编解析用 stdlib）+ S4（编 gen1）；S5 起不再用 SDK；gen2 编其余一切
+
+#### Scenario: stdlib 两次编译（解析 vs 发布）
+- **WHEN** gen1/gen2 编 z42c 需要 stdlib 解析（z42c import Std.*），而 gen2 编的 stdlib 尚不存在
+- **THEN** S3 由 SDK 编一份当前 stdlib 供解析（不发布）；S6 由 gen2 编发布件 stdlib
+
+#### Scenario: 发布的 stdlib 必须当前格式才能跑
+- **WHEN** 本周期 bump 了 zpkg 格式
+- **THEN** S3 的 SDK 编 stdlib 是旧格式、被当前 z42vm strict-pin 拒 → 不能发；发布件必须 gen2 编（当前格式）→ 永远能跑
 
 #### Scenario: xtask 不进 SDK
 - **WHEN** 组装本地 SDK（artifacts/.z42）
