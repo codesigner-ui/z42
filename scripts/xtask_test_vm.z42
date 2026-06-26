@@ -34,7 +34,11 @@ using Std.IO;
 using Std.Text;
 
 // Returns 0 if every case in every mode passes, 1 on any failure (or setup error).
-int _runVmGoldens(string[] modes, int jobs) {
+// shardK/shardN (both > 0) split the golden set across parallel CI machines: a
+// shard keeps cases whose stable enumeration index ≡ shardK-1 (mod shardN). 0/0 =
+// run all. The empty-set guard runs on the FULL set so a (legitimately) empty shard
+// is not an error.
+int _runVmGoldens(string[] modes, int jobs, int shardK, int shardN) {
     string root = _root();
     if (jobs < 1) { jobs = 1; }
 
@@ -60,6 +64,21 @@ int _runVmGoldens(string[] modes, int jobs) {
             ConsoleError.WriteLine("❌ no runnable golden fixtures found.");
             ConsoleError.WriteLine("   Hint: run `z42 xtask.zpkg regen` first.");
             return 1;
+        }
+        if (shardN > 0) {
+            _Case[] f = new _Case[cases.Length];
+            int fc = 0;
+            int ci = 0;
+            while (ci < cases.Length) {
+                if ((ci % shardN) == (shardK - 1)) { f[fc] = cases[ci]; fc = fc + 1; }
+                ci = ci + 1;
+            }
+            _Case[] sized = new _Case[fc];
+            ci = 0;
+            while (ci < fc) { sized[ci] = f[ci]; ci = ci + 1; }
+            cases = sized;
+            Console.WriteLine(" shard " + shardK.ToString() + "/" + shardN.ToString()
+                + ": " + cases.Length.ToString() + " cases");
         }
 
         int[] pf = _runVmCases(cases, vmBin, mode, jobs);

@@ -18,10 +18,10 @@ using Std.Toml;
 int _testVm(ParseResult r) {
     string modeArg = r.GetPositional(0);         // "" | interp | jit
     string modes = modeArg.Length > 0 ? modeArg : "interp jit";
-    return _testVmCore(modes, !r.GetFlag("no-rebuild"), r.GetOption("jobs"));
+    return _testVmCore(modes, !r.GetFlag("no-rebuild"), r.GetOption("jobs"), r.GetOption("shard"));
 }
 
-int _testVmCore(string modes, bool rebuild, string jobs) {
+int _testVmCore(string modes, bool rebuild, string jobs, string shard) {
     if (jobs.Length == 0) { jobs = "1"; }
     if (rebuild) { int c = _regenCore(false, true); if (c != 0) { return c; } }
     int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
@@ -35,7 +35,8 @@ int _testVmCore(string modes, bool rebuild, string jobs) {
     string[] modeList = _splitWords(modes);
     int jobsN = 1;
     try { jobsN = int.Parse(jobs); } catch (Exception e) { jobsN = 1; }
-    return _runVmGoldens(modeList, jobsN);
+    int[] sh = _parseShard(shard);
+    return _runVmGoldens(modeList, jobsN, sh[0], sh[1]);
 }
 
 // ── test cross-zpkg ─────────────────────────────────────────────────────────
@@ -136,7 +137,7 @@ int _testAll() {
     // all OS) from jit (one linux job) keeps full coverage while taking the slow
     // jit stage off every host leg's critical path.
     Console.WriteLine("\n=== stage: VM goldens (interp; jit → vm-jit-consistency) ===");
-    c = _testVmCore("interp", false, "4"); if (c != 0) { return c; }
+    c = _testVmCore("interp", false, "4", ""); if (c != 0) { return c; }
     // stage 3: cross-zpkg
     Console.WriteLine("\n=== stage: cross-zpkg ===");
     c = _testCrossZpkgCore("interp"); if (c != 0) { return c; }
@@ -160,11 +161,83 @@ int _testAll() {
 // filter / --jobs flags (declared on the stdlib/bench leaf in xtask_cli.z42).
 // Note: the legacy multi-lib form (`test stdlib a b c`) narrows to a single
 // lib here — Std.Cli positionals are fixed-arity. Pass one lib or none (all).
+// Parse a `--shard k/n` spec → [k, n]; returns [0,0] for empty/invalid (= no
+// sharding). Used to split the slow jit suites across N parallel CI machines.
+int[] _parseShard(string s) {
+    int[] r = new int[2]; r[0] = 0; r[1] = 0;
+    if (s.Length == 0) { return r; }
+    int slash = -1;
+    int i = 0;
+    while (i < s.Length) { if (s.CharAt(i) == '/') { slash = i; break; } i = i + 1; }
+    if (slash <= 0) { return r; }
+    if (slash >= s.Length - 1) { return r; }
+    try {
+        int k = int.Parse(s.Substring(0, slash));
+        int n = int.Parse(s.Substring(slash + 1, s.Length - slash - 1));
+        if (k >= 1 && n >= 1 && k <= n) { r[0] = k; r[1] = n; }
+    } catch (Exception e) { r[0] = 0; r[1] = 0; }
+    return r;
+}
+
+// Count a lib's [Test] units (single-file tests/*.z42 + dir-mode tests/<name>/
+// source.z42) — drives shard load balancing.
+int _libUnitCount(string root, string lib) {
+    string td = Path.Join(Path.Join(root, "src/libraries/" + lib), "tests");
+    if (!Directory.Exists(td)) { return 0; }
+    int c = Path.Glob(td, "*.z42").Length;
+    string[] entries = Path.Glob(td, "*");
+    int i = 0;
+    while (i < entries.Length) {
+        if (File.Exists(Path.Join(entries[i], "source.z42"))) { c = c + 1; }
+        i = i + 1;
+    }
+    return c;
+}
+
+// Libs assigned to shard k of n, balanced by [Test] unit count: sort libs by
+// count desc, then round-robin sorted positions across shards (longest-first
+// keeps the heavy libs in distinct shards → even load).
+string[] _shardLibs(string root, int k, int n) {
+    string[] all = _stdlibList(root);
+    int m = all.Length;
+    int[] cnt = new int[m];
+    int[] idx = new int[m];
+    int i = 0;
+    while (i < m) { cnt[i] = _libUnitCount(root, all[i]); idx[i] = i; i = i + 1; }
+    int a = 0;
+    while (a < m) {
+        int best = a;
+        int b = a + 1;
+        while (b < m) { if (cnt[idx[b]] > cnt[idx[best]]) { best = b; } b = b + 1; }
+        int t = idx[a]; idx[a] = idx[best]; idx[best] = t;
+        a = a + 1;
+    }
+    string[] picked = new string[m];
+    int oc = 0;
+    int p = 0;
+    while (p < m) {
+        if ((p % n) == (k - 1)) { picked[oc] = all[idx[p]]; oc = oc + 1; }
+        p = p + 1;
+    }
+    string[] sized = new string[oc];
+    i = 0;
+    while (i < oc) { sized[i] = picked[i]; i = i + 1; }
+    return sized;
+}
+
 int _testLib(ParseResult r, string kind) {
     string lib = r.GetPositional(0);
     string[] libs;
-    if (lib.Length > 0) { libs = new string[1]; libs[0] = lib; }
-    else { libs = new string[0]; }
+    int[] sh = _parseShard(r.GetOption("shard"));
+    if (sh[1] > 0) {
+        libs = _shardLibs(_root(), sh[0], sh[1]);
+        Console.WriteLine("→ shard " + sh[0].ToString() + "/" + sh[1].ToString()
+            + ": " + libs.Length.ToString() + " libs");
+    } else if (lib.Length > 0) {
+        libs = new string[1]; libs[0] = lib;
+    } else {
+        libs = new string[0];
+    }
     return _testLibCore(kind, libs, r.GetFlag("no-build"), r.GetOption("filter"), r.GetOption("jobs"), r.GetOption("mode"));
 }
 

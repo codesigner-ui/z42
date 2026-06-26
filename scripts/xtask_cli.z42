@@ -124,11 +124,13 @@ SubcommandRouter _testRouter() {
     stdlib.AddOption("filter", "k", "test-name filter", "");
     stdlib.AddOption("jobs", "", "parallel unit batch width", "");
     stdlib.AddOption("mode", "", "interp|jit (default: interp; jit forks z42vm)", "");
+    stdlib.AddOption("shard", "", "k/n: run shard k of n libs (balanced; for parallel CI)", "");
     stdlib.AddOptionalPositional("lib", "single lib (default: all)");
     t.Add("stdlib", "stdlib [Test] (all or one)", stdlib);
     ArgParser vm = new ArgParser("xtask test vm", "golden VM tests");
     vm.AddFlag("no-rebuild", "", "skip rebuild before run");
     vm.AddOption("jobs", "", "parallel jobs", "");
+    vm.AddOption("shard", "", "k/n: run shard k of n golden cases (for parallel CI)", "");
     vm.AddOptionalPositional("mode", "interp|jit (default: both)");
     t.Add("vm", "golden VM tests", vm);
     ArgParser cross = new ArgParser("xtask test cross-zpkg", "cross-zpkg e2e");
