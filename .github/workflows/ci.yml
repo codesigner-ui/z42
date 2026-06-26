@@ -273,110 +273,22 @@ jobs:
         run: |
           cargo test --locked --manifest-path src/runtime/Cargo.toml -- --test-threads=1
 
-      # ── host RID SDK package smoke ──
-      # Host-RID package via `z42 xtask.zpkg package` (stdlib already built above).
-      # Verifies the per-arch flat SDK layout (Phase 1.1 + 1.4 + drop-android-32bit)
-      # works end-to-end on each desktop runner. Cross-platform RIDs (iOS / Android /
-      # browser-wasm) deferred to a later CI matrix.
-      #
-      # shell: bash everywhere — on windows-latest this uses Git Bash (per
-      # docs/workflow/windows.md; .gitattributes ensures LF on .sh).
 
-      # parallelize-host-package: Unix host packaging moved to the host-package job
-      # (runs in parallel with `test all`, off this leg's critical path). Windows
-      # stays inline here — it bootstraps C# / from-source on this leg and keeping
-      # its package local avoids a windows toolchain artifact.
-      - name: Package host RID (z42 xtask.zpkg package)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
-          # Windows: `package` cargo-relinks z42vm (workload crates share the z42 lib)
-          # and can't overwrite the *running* z42vm.exe → run xtask from a copy
-          # outside the cargo output dir. (No-op on Linux/macOS — they allow it.)
-          runner="$vm"
-          if [ "${RUNNER_OS:-}" = "Windows" ]; then
-            mkdir -p "$PWD/.ci-runner"; cp "$vm" "$PWD/.ci-runner/"
-            cp "$PWD"/artifacts/build/runtime/release/*.dll "$PWD/.ci-runner/" 2>/dev/null || true
-            runner="$PWD/.ci-runner/$(basename "$vm")"
-          fi
-          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            "$runner" artifacts/xtask/xtask.zpkg -- package release
-
-      - name: Verify package manifest + native artifacts
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          pkg_dir=$(ls -d artifacts/packages/z42-*-release | head -1)
-          [ -d "$pkg_dir" ] || { echo "error: no package produced"; exit 1; }
-          echo "Package: $pkg_dir"
-          test -f "$pkg_dir/manifest.toml"        || { echo "missing manifest.toml"; exit 1; }
-          test -d "$pkg_dir/libs"                 || { echo "missing libs/"; exit 1; }
-          test -d "$pkg_dir/native/include"       || { echo "missing native/include/"; exit 1; }
-          # bin/z42c (or z42c.exe) must be present + executable
-          if [ -f "$pkg_dir/bin/z42c.exe" ]; then
-              echo "✓ bin/z42c.exe ($(du -h "$pkg_dir/bin/z42c.exe" | cut -f1))"
-          elif [ -f "$pkg_dir/bin/z42c" ]; then
-              echo "✓ bin/z42c ($(du -h "$pkg_dir/bin/z42c" | cut -f1))"
-          else
-              echo "error: bin/z42c[.exe] missing"; ls -la "$pkg_dir/bin/"; exit 1
-          fi
-          # add-z42-compression (2026-05-22): libz42_compression cdylib must
-          # ship in native/ so z42vm can dlopen it from <pkg>/native/ at
-          # startup. .a counterpart is for mobile / future static-link
-          # integrators; verify it too.
-          if [ -f "$pkg_dir/native/libz42_compression.dylib" ] \
-             || [ -f "$pkg_dir/native/libz42_compression.so" ] \
-             || [ -f "$pkg_dir/native/z42_compression.dll" ]; then
-              echo "✓ native/libz42_compression.* (dlopen target)"
-          else
-              echo "error: native/libz42_compression.{dylib,so,dll} missing — z42.compression facade will fail with 'unknown builtin' at runtime"
-              ls -la "$pkg_dir/native/"; exit 1
-          fi
-          test -f "$pkg_dir/native/libz42_compression.a" \
-              && echo "✓ native/libz42_compression.a (staticlib for mobile / future bundled link)"
-          # z42.compression.zpkg must ship in libs/ — the facade resolves
-          # Std.Compression / Std.Archive through it.
-          test -f "$pkg_dir/libs/z42.compression.zpkg" \
-              || { echo "error: libs/z42.compression.zpkg missing"; exit 1; }
-          echo "✓ libs/z42.compression.zpkg"
-          # desktop workload (apphost stub — Decision 9 full gating): apphost is
-          # NO LONGER in the SDK bin/; it ships in z42-workload-<v>-desktop-<rid>/.
-          test ! -e "$pkg_dir/bin/apphost" && test ! -e "$pkg_dir/bin/apphost.exe" \
-              || { echo "error: apphost must NOT be in SDK bin/ anymore (it ships via desktop workload)"; exit 1; }
-          dt_dir=$(ls -d artifacts/packages/z42-workload-*-desktop-* 2>/dev/null | head -1)
-          [ -d "$dt_dir" ] || { echo "error: no desktop workload package produced"; exit 1; }
-          ls "$dt_dir"/apphost-* >/dev/null 2>&1 \
-              || { echo "error: desktop workload missing apphost-<rid> stub"; ls -la "$dt_dir"; exit 1; }
-          test -f "$dt_dir/manifest.toml" || { echo "missing desktop workload manifest.toml"; exit 1; }
-          echo "✓ desktop workload: $dt_dir ($(ls "$dt_dir"/apphost-* | xargs -n1 basename | tr '\n' ' '); not in SDK bin/)"
-          echo "--- manifest.toml ---"
-          cat "$pkg_dir/manifest.toml"
-
-      - name: Upload host package
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: z42-host-package-${{ matrix.os }}
-          path: artifacts/packages/
-          retention-days: 14
-          if-no-files-found: error
-
-  # ── parallelize-host-package: Unix SDK packaging, parallel to host tests ──────
-  # The Unix host package (`xtask package release`) used to run sequentially after
+  # ── parallelize-host-package: SDK packaging, parallel to host tests (all 4 OS) ──
+  # The host package (`xtask package release`) used to run sequentially after
   # `test all` on each build-and-test leg, adding ~10 min to the critical path. It's
   # independent of the tests, so it now runs as its own job off the shared toolchain-
-  # bootstrap artifact (C#-free) — ready well before the tests finish. Windows keeps
-  # its inline package on build-and-test. publish-nightly consumes these uploads.
+  # bootstrap artifact (C#-free) — ready well before the tests finish. All 4 OS, incl.
+  # windows-latest (consumes the platform-independent toolchain-ubuntu-latest zpkgs +
+  # cargo-builds its own z42vm). build-and-test is now pure test. publish-nightly
+  # consumes these uploads.
   host-package:
     name: host-package (${{ matrix.os }})
     needs: toolchain-bootstrap
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -402,9 +314,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          # Windows: `package` cargo-relinks z42vm and can't overwrite the *running*
+          # z42vm.exe → run xtask from a copy outside the cargo output dir. (No-op on
+          # Linux/macOS.)
+          runner="$vm"
+          if [ "${RUNNER_OS:-}" = "Windows" ]; then
+            mkdir -p "$PWD/.ci-runner"; cp "$vm" "$PWD/.ci-runner/"
+            cp "$PWD"/artifacts/build/runtime/release/*.dll "$PWD/.ci-runner/" 2>/dev/null || true
+            runner="$PWD/.ci-runner/$(basename "$vm")"
+          fi
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            "$vm" artifacts/xtask/xtask.zpkg -- package release
+            "$runner" artifacts/xtask/xtask.zpkg -- package release
 
       - name: Verify package manifest + native artifacts
         shell: bash
