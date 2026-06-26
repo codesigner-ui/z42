@@ -63,9 +63,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # remove-dotnet-from-builds: build-and-test is fully C#-free on ALL OS — every
-      # leg downloads the prev nightly's z42c seed and bootstraps from source with
-      # it (no dotnet, no setup-dotnet, no NuGet). See the unified Bootstrap step.
+      # fix-z42-windows-path (TEMPORARY): the Windows leg is back on the C# bootstrap
+      # for ONE nightly cycle. The C#-free Windows bootstrap needs a nightly z42c seed
+      # whose stdlib has the Windows-aware Path.IsRooted/Join fix (commit "Path.IsRooted/
+      # Join recognize Windows roots"); the currently-published nightly predates it, so
+      # its seed still crashes on D:\ paths (os error 123). Keep Windows on C# so build-
+      # and-test goes green → publish-nightly ships a fixed-Path nightly → then flip
+      # Windows back to ci-bootstrap-nocs.sh (the seed will handle Windows paths). Unix
+      # legs stay C#-free. setup-dotnet + NuGet cache are Windows-only.
+      - name: Setup .NET (Windows only)
+        if: matrix.os == 'windows-latest'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -81,16 +92,25 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-cargo-
             ${{ runner.os }}-cargo-
 
-      # remove-dotnet-from-builds: ALL legs bootstrap C#-FREE — download the prev
-      # published nightly's z42c-written compiler seed, then build current z42c +
-      # stdlib + xtask from source with it (NO dotnet). The staged-bootstrap
-      # discipline (.claude/rules/bootstrap-seed.md) guarantees the prev nightly
-      # compiles current source; scripts/check-bootstrap-compat.sh is the local
-      # boundary check. Logic lives in a locally-tested script (Unix verified on a
-      # clean worktree producing z42c+stdlib+xtask+package, no dotnet; Windows adds
-      # .zip/.exe handling — same seed contract). After this, every later step
-      # drives work through `z42vm xtask.zpkg …` exactly as before.
-      - name: Bootstrap C#-free (nightly z42c seed → current source)
+      # fix-z42-windows-path (TEMPORARY): Windows-only NuGet cache for the C# bootstrap
+      # below; removed again when Windows flips back to C#-free.
+      - name: Cache NuGet packages (Windows only)
+        if: matrix.os == 'windows-latest'
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Unix legs bootstrap C#-FREE — download the prev published nightly's z42c-written
+      # compiler seed, then build current z42c + stdlib + xtask from source with it (NO
+      # dotnet). The staged-bootstrap discipline (.claude/rules/bootstrap-seed.md)
+      # guarantees the prev nightly compiles current source; scripts/check-bootstrap-
+      # compat.sh is the local boundary check. After this, every later step drives work
+      # through `z42vm xtask.zpkg …` exactly as before.
+      - name: Bootstrap C#-free (Unix — nightly z42c seed → current source)
+        if: matrix.os != 'windows-latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -100,10 +120,35 @@ jobs:
             ubuntu-latest)    rid=linux-x64 ;;
             ubuntu-24.04-arm) rid=linux-arm64 ;;
             macos-15)         rid=macos-arm64 ;;
-            windows-latest)   rid=windows-x64 ;;
-            *) echo "::error::unmapped os ${{ matrix.os }}"; exit 1 ;;
+            *) echo "::error::unmapped Unix os ${{ matrix.os }}"; exit 1 ;;
           esac
           bash scripts/ci-bootstrap-nocs.sh "$rid"
+
+      # fix-z42-windows-path (TEMPORARY): Windows on the C# bootstrap for one nightly
+      # cycle (see the Setup .NET comment above). Restored verbatim from pre-4dc2896b.
+      - name: Bootstrap (Windows — C#)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet build src/compiler/z42.slnx --nologo -v quiet
+          cargo build --locked --release --manifest-path src/runtime/Cargo.toml
+          libs="$PWD/artifacts/build/libraries/dist/release"
+          # PRIMER (raw C# compiler, no z42 program): build stdlib from source so
+          # xtask can COMPILE its `using Std.*` (z42c reads .zsym; index.json — the
+          # VM lookup index — is regenerated below by `xtask build stdlib`).
+          if [ ! -f "$libs/z42.core.zpkg" ]; then
+            ( cd src/libraries && dotnet run --project ../compiler/z42.Driver --verbosity quiet -- build --workspace --release )
+            mkdir -p "$libs"
+            for d in artifacts/build/libraries/*/release/dist; do
+              cp -f "$d"/*.zpkg "$d"/*.zsym "$libs/" 2>/dev/null || true
+            done
+          fi
+          Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver --verbosity quiet -- build scripts/xtask.z42.toml --release
+          # build-stdlib logic folded into xtask (xtask_stdlib.z42): workspace build
+          # (cached) + flat view + index.json, in-process.
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          Z42_LIBS="$libs" Z42_PORTABLE_VM="$vm" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
 
       # migrate-scripts-to-z42: version-drift check via xtask (replaces the
       # feature-matrix `bash scripts/check-versions-drift.sh` step). ubuntu only —
