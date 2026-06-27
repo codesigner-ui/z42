@@ -198,14 +198,21 @@ string[] _concat3(string[] a, string[] b, string[] c) {
 // stdlib; it self-ensures z42vm) then assembles from the canonical build-tree
 // artifacts. Pair-gen + conditional fixpoint (gen1→gen2, Decision 5/6) layers in
 // P1.4 — here the assembled z42c/stdlib are whatever _buildStdlib produced.
-int _buildSdk(string outOpt) {
+// `noBuild` skips the rebuild and assembles from existing canonical artifacts —
+// used in CI where the bootstrap already built the warm toolchain (avoids a
+// redundant stdlib rebuild).
+int _buildSdk(string outOpt, bool noBuild) {
     string root = _root();
     string outDir = outOpt;
     if (outOpt.Length == 0) { outDir = Path.Join(root, "artifacts/.z42"); }
     else if (!Path.IsRooted(outOpt)) { outDir = Path.Join(root, outOpt); }
 
     // 1. build current toolchain (z42c 7-pkg seed + stdlib; ensures z42vm), C#-free.
-    int c = _buildStdlib(); if (c != 0) { return c; }
+    //    Skipped under --no-build (CI: bootstrap already produced warm artifacts).
+    int c = 0;
+    if (!noBuild) {
+        c = _buildStdlib(); if (c != 0) { return c; }
+    }
 
     // 2. assemble .z42 layout (reset for a clean SDK — no stale members).
     Console.WriteLine("build sdk -> " + outDir);

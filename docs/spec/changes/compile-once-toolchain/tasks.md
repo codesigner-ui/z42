@@ -32,13 +32,19 @@
 > 原 1.4/1.5 重定位到 P2/P3（各自的可验证上下文），见上。P1 视为 core-complete。
 
 ## P2：compile job（toolchain + ci.yml）
-- [x] 2.1 ~~format 兜底落地~~ —— 🟢 Decision 2 裁决：**第一版不做**，延后到未来 format bump 变更同步落地（§5.3 死锁仍为已知开口）。
-- [ ] 2.2 `.github/workflows/ci.yml`：新增 `compile` job（linux），内联 S0–S5（成对分代）：
-      S0 cargo z42vm → S1 下载 SDK set→`.z42/` → S2 SDK 编 xtask → S3 gen1=SDK 编{stdlib,z42c} → S4 gen2=gen1 编{stdlib,z42c}+条件不动点门+gen2 编 toolchain→`artifacts/.z42` → S5 regen goldens + 编 units
-- [ ] 2.3 条件不动点作为上传 gate（稳定关）：gen1≠gen2 时编 gen3，{gen2}≠{gen3} → job 失败、不上传
-- [ ] 2.4 上传 artifact `current-sdk`（`artifacts/.z42` + goldens.zbc + units.zbc）
-- [ ] 2.5 dotnet PATH-mask 一行保留在 compile job（防意外引入）
-- [ ] 2.6 commit + CI 验证 compile job 绿 + artifact 产出正确
+
+> **增量法（降低 CI 风险）**：现有 `toolchain-bootstrap` job 已是「编一次 → 上传 toolchain-<os> artifact」
+> 的雏形（package job 已消费）。不另起炉灶——先在它上**追加** `build sdk --no-build` + 上传 `current-sdk-<os>`
+> （additive，不动现有 staging/artifact，不破坏 package job），CI 验证 build sdk 在 CI 能产出 .z42；
+> 再逐步把成对分代/条件不动点/goldens 接进来。
+
+- [x] 2.1 ~~format 兜底落地~~ —— 🟢 Decision 2 裁决：**第一版不做**，延后到未来 format bump 变更同步落地。
+- [x] 2.2a `build sdk --no-build`（assemble-only，跳过 _buildStdlib，从 warm canonical 组装）+ CLI flag。本地验证：0.5s 组装出完整 .z42（vs ~2min 重建）。
+- [x] 2.2b `ci.yml` toolchain-bootstrap **追加**步骤：`build sdk --no-build → $RUNNER_TEMP/z42sdk` + 上传 `current-sdk-<os>`（additive）。YAML 校验通过。⚠️ **CI 不可本地验，待 push 后盯 run**。
+- [ ] 2.3 成对分代 gen1/gen2 + 条件不动点门（稳定关）接进 toolchain-bootstrap/compile（gen1≠gen2 编 gen3）—— 后续
+- [ ] 2.4 goldens.zbc/units.zbc 进 current-sdk artifact —— 后续（P3 下游 --no-build 需要）
+- [ ] 2.5 dotnet PATH-mask 保留（现有 bootstrap 已有）
+- [ ] 2.6 push + CI 验证 current-sdk-<os> artifact 产出正确
 
 ## P3：下游消费 artifact（ci.yml + action + bench/release）
 - [ ] 3.1 `.github/actions/xtask-bootstrap-artifact/action.yml`：改为下载 `current-sdk` + `--toolchain artifacts/.z42` 消费

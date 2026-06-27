@@ -434,6 +434,36 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+      # compile-once P2 (additive): assemble the warm toolchain into a `.z42`
+      # layout (programs/z42c + libs + bin) consumable by `xtask --toolchain
+      # <dir>`. --no-build = assemble from the canonical artifacts the bootstrap
+      # above just produced (no redundant rebuild). This is the future
+      # `current-sdk` that downstream test jobs will consume (P3) instead of each
+      # re-bootstrapping; uploaded alongside toolchain-<os> so nothing existing
+      # breaks while the consumers migrate.
+      # continue-on-error: this is an additive validation step. If `build sdk`
+      # hits a CI-only path difference, the job stays green and the existing
+      # toolchain-<os> artifact (+ package jobs) are unaffected — only current-sdk
+      # is skipped. Check whether the current-sdk-<os> artifact appears to confirm
+      # it worked; drop continue-on-error once proven (then it becomes a gate).
+      - name: Assemble .z42 toolchain (build sdk --no-build)
+        continue-on-error: true
+        shell: bash
+        run: |
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- \
+            build sdk --out "$RUNNER_TEMP/z42sdk" --no-build
+
+      - name: Upload current-sdk-${{ matrix.os }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: current-sdk-${{ matrix.os }}
+          path: ${{ runner.temp }}/z42sdk/
+          retention-days: 3
+          if-no-files-found: warn
+
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
   # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in
   # INTERP only (on every host OS). This job is the SOLE JIT gate — it runs the VM
