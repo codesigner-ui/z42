@@ -34,12 +34,12 @@ flowchart TD
 
 | 规则 | 行为 | 状态 |
 |------|------|------|
-| (a) 非代码改动（`docs/**` / `**/*.md` / `.claude/**`）| **不触发 CI**（`on.paths-ignore`）→ 不发起、不取消在跑的 CI | 🟡 |
-| (b) 未改 z42c（`src/compiler/**`）| 跳过阶段 ② 自举边界检查 | ⬜ |
-| (c) 未改 VM（`src/runtime/**`）| 跳过 Rust VM 单测（`cargo test`）| ⬜ |
+| (a) 非代码改动（`docs/**` / `**/*.md` / `.claude/**`）| **不触发 CI**（`on.paths-ignore`）→ 不发起、不取消在跑的 CI；`ci.yml` + `bench-update.yml` 都覆盖 | ✅ |
+| (b) 未改 z42c（`src/compiler/**`）| 跳过阶段 ② 自举边界检查（`verify-selfhost` job `if: compiler`）| ✅ |
+| (c) 未改 VM（`src/runtime/**`）| 跳过 Rust VM 单测（`build-and-test` Windows leg 的 `cargo test` step `if: vm`）| ✅ |
 | (现有) 未改平台相关 | 跳过 wasm/ios/android/desktop 平台测试 | ✅ |
 
-- **CI job**：`detect-changes`（`dorny/paths-filter`，输出 `platform`/`compiler`/`vm` flag；下游 `if:` gate）。
+- **CI job**：`detect-changes`（`dorny/paths-filter`，输出 `platform`/`compiler`/`vm` flag；下游 job `needs: changes` + `if:` gate）。`.github/workflows/ci.yml` 进每个 filter → CI 自身改动**保底全跑**。
 - **本地**：不适用（CI 专属；本地直接跑你要的 `xtask` 阶段）。
 
 ### ② bootstrap 边界检查

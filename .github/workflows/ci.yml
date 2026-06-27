@@ -46,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       platform: ${{ steps.filter.outputs.platform }}
+      compiler: ${{ steps.filter.outputs.compiler }}
+      vm: ${{ steps.filter.outputs.vm }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -63,9 +65,25 @@ jobs:
               - 'scripts/xtask_test_desktop.z42'
               - 'versions.toml'
               - '.github/workflows/ci.yml'
+            # change-detect rule (b): gates the bootstrap boundary check
+            # (verify-selfhost). Only a z42c change can make the prev nightly's
+            # z42c unable to compile current source. The ci.yml fallback forces a
+            # full run on any CI-config edit (保底全跑).
+            compiler:
+              - 'src/compiler/**'
+              - '.github/workflows/ci.yml'
+            # change-detect rule (c): gates the Rust VM unit harness (cargo test).
+            # Only a src/runtime change can affect it. ci.yml fallback = 保底全跑.
+            vm:
+              - 'src/runtime/**'
+              - '.github/workflows/ci.yml'
 
   build-and-test:
     name: test (${{ matrix.platform }})
+    # needs: changes so the Windows cargo-test step can gate on the `vm` filter
+    # (rule c). The job itself still runs on every non-docs push (changes always
+    # succeeds); only the Rust-unit step is conditionally skipped.
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -283,7 +301,8 @@ jobs:
       # covered by the self-host fixpoint + VM goldens + stdlib [Test] gate.
       # cargo test (Rust VM unit harness) stays — it runs ONLY on this Windows leg.
       - name: Smoke test (Windows — Rust VM unit tests)
-        if: matrix.os == 'windows-latest'
+        # rule (c): skip the Rust unit harness when src/runtime is untouched.
+        if: matrix.os == 'windows-latest' && needs.changes.outputs.vm == 'true'
         env:
           RUST_MIN_STACK: '8388608'
         run: |
@@ -708,6 +727,13 @@ jobs:
   # deadlock). linux-x64 only.
   verify-selfhost:
     name: verify-selfhost-linux-x64
+    # change-detect rule (b): the bootstrap boundary check only matters when z42c
+    # changes (a stdlib/xtask-only change can't use syntax/format the published
+    # nightly lacks without a same-window compiler change). Skip otherwise. Safe
+    # to gate: no job has verify-selfhost in its `needs:` (deliberately excluded
+    # from publish-nightly for deadlock-avoidance).
+    needs: changes
+    if: ${{ needs.changes.outputs.compiler == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

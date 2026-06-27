@@ -43,11 +43,11 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 
 ### Stage 1 — change-detect
 - [x] 1a `on.paths-ignore`：docs/`**/*.md`/.claude → 非代码不触发 CI（rule a）。**两条 push 触发 workflow 都覆盖**：`ci.yml`（1993ac06）+ `bench-update.yml`（doc-only push 不重算 bench baseline）；`bench-pr.yml` 已用窄 `paths:` allowlist，doc-only PR 天然跳过。验证：docs-only push c3c0ab77 只触发 Bench（改前），加 paths-ignore 后两者皆跳。
-- [ ] 1b CI `detect-changes` 加 `compiler`(`src/compiler/**`) + `vm`(`src/runtime/**`) 输出（含 `.github/workflows/ci.yml` 保底全跑）
-- [ ] 1c CI `verify-selfhost` gate on `compiler`（rule b；needs changes + if）
-- [ ] 1d CI `build-and-test` 的 `cargo test`(Windows leg) step gate on `vm`（rule c；needs changes + step if）
-- [ ] 1e docs：change-detect 规则表落 testing/bootstrap.md
-- [ ] 1f 验证：docs-only push 不触发 CI；compiler-only / vm-only 改动按 gate 跳过
+- [x] 1b CI `detect-changes` 加 `compiler`(`src/compiler/**`) + `vm`(`src/runtime/**`) 输出（含 `.github/workflows/ci.yml` 保底全跑）
+- [x] 1c CI `verify-selfhost` gate on `compiler`（`needs: changes` + `if: compiler`；该 job 不在任何 needs 里，skip 安全）
+- [x] 1d CI `build-and-test` 加 `needs: changes`；Windows leg `cargo test` step `if: vm`（rule c）
+- [x] 1e docs：change-detect 规则表更新——**落在 ci.md 阶段①**（非 bootstrap.md：ci.md 是 CI 拓扑唯一真相源，DOC2 分工；bootstrap.md 无 change-detect 段，重复会破坏单一真相）。规则 a/b/c 全标 ✅。
+- [~] 1f 验证：docs-only push 不触发 CI（已验 c3c0ab77/0b9b60e7 双跳过）；compiler-only / vm-only gate 跳过 **待本次 ci.yml change push 后的 CI run 观察**（ci.yml 改动 → 保底全跑，gate 真实生效要等纯 compiler / 纯 vm 改动的后续 commit）
 
 ### Stage 2 — bootstrap 边界检查
 - [ ] 2a xtask `bootstrap-check`：封装 `check-bootstrap-compat.sh`（下载上一 nightly z42c → 编当前 z42c 源 → 对比无越界），本地可跑
