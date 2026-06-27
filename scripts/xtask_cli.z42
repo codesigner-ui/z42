@@ -145,6 +145,9 @@ SubcommandRouter _buildRouter() {
     ArgParser stdlib = new ArgParser("xtask build stdlib", "build stdlib (all)");
     stdlib.AddOptionalPositional("lib", "(currently builds all)");
     b.Add("stdlib", "build stdlib -> build/libraries/dist", stdlib);
+    ArgParser sdk = new ArgParser("xtask build sdk", "assemble current toolchain into a .z42 layout (--toolchain consumable)");
+    sdk.AddOption("out", "", "output dir (default: artifacts/.z42)", "");
+    b.Add("sdk", "assemble .z42 toolchain (programs/z42c + libs + bin)", sdk);
     b.Add("launcher", "trampoline + launcher.zpkg",
         new ArgParser("xtask build launcher", "trampoline + launcher.zpkg"));
     b.Add("all", "runtime + compiler + stdlib + compiler-z42",
@@ -288,6 +291,7 @@ int _dispatchBuild(string[] p, ParseResult r) {
     if (sub == "runtime")      { return _buildRuntime(); }
     if (sub == "compiler-z42") { return _buildCompilerZ42(); }   // C#-free 自举编译器（C# build compiler 已删）
     if (sub == "stdlib")       { return _buildStdlib(); }
+    if (sub == "sdk")          { return _buildSdk(r.GetOption("out")); }
     // unify-launcher-apphost (2026-06-21): launcher trampoline crate is gone;
     // `z42` is now the per-app apphost stub. "build launcher" = build that stub.
     if (sub == "launcher")     { return _exec(_cargoRelease()

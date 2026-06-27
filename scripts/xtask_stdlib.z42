@@ -183,3 +183,57 @@ string[] _concat3(string[] a, string[] b, string[] c) {
     while (i < c.Length) { acc[idx] = c[i]; idx = idx + 1; i = i + 1; }
     return acc;
 }
+
+// ── build sdk (compile-once P1.3) ────────────────────────────────────────────
+
+// `build sdk [--out <dir>]` — assemble the current toolchain into a `.z42` layout
+// consumable by `--toolchain <dir>`:
+//   <out>/programs/z42c/*.zpkg   (z42c 7-pkg seed + 6 driver siblings)
+//   <out>/libs/*.zpkg + *.zsym   (stdlib flat)
+//   <out>/bin/z42vm[.exe]        (host VM)
+// Default --out = artifacts/.z42 (the local SDK set; Decision 1). outOpt is the
+// raw `--out` value ("" = default); a relative value resolves against repo root.
+//
+// P1.3 builds the toolchain via the warm C#-free path (_buildStdlib builds z42c +
+// stdlib; it self-ensures z42vm) then assembles from the canonical build-tree
+// artifacts. Pair-gen + conditional fixpoint (gen1→gen2, Decision 5/6) layers in
+// P1.4 — here the assembled z42c/stdlib are whatever _buildStdlib produced.
+int _buildSdk(string outOpt) {
+    string root = _root();
+    string outDir = outOpt;
+    if (outOpt.Length == 0) { outDir = Path.Join(root, "artifacts/.z42"); }
+    else if (!Path.IsRooted(outOpt)) { outDir = Path.Join(root, outOpt); }
+
+    // 1. build current toolchain (z42c 7-pkg seed + stdlib; ensures z42vm), C#-free.
+    int c = _buildStdlib(); if (c != 0) { return c; }
+
+    // 2. assemble .z42 layout (reset for a clean SDK — no stale members).
+    Console.WriteLine("build sdk -> " + outDir);
+    _resetDir(outDir);
+
+    string z42cDir = Path.Join(Path.Join(outDir, "programs"), "z42c");
+    Directory.Create(z42cDir);
+    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+    int i = 0;
+    while (i < members.Length) {
+        string m = members[i];
+        string distDir = Path.Join(root, "artifacts/build/z42c/" + m + "/release/dist");
+        _copyIfExists(Path.Join(distDir, m + ".zpkg"), Path.Join(z42cDir, m + ".zpkg"));
+        _copyIfExists(Path.Join(distDir, m + ".zsym"), Path.Join(z42cDir, m + ".zsym"));
+        i = i + 1;
+    }
+    Console.WriteLine("  ✓ programs/z42c/ (" + members.Length.ToString() + " pkgs)");
+
+    Directory.Create(Path.Join(outDir, "libs"));
+    c = _pkgCopyLibs(_libsDir(root), outDir); if (c != 0) { return c; }
+    Console.WriteLine("  ✓ libs/ (stdlib)");
+
+    string binDir = Path.Join(outDir, "bin");
+    Directory.Create(binDir);
+    string cargoOut = Path.Join(root, "artifacts/build/runtime/release");
+    _copyIfExists(Path.Join(cargoOut, "z42vm"), Path.Join(binDir, "z42vm"));
+    _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(binDir, "z42vm.exe"));
+    _makeExe(Path.Join(binDir, "z42vm"));
+    Console.WriteLine("  ✓ bin/z42vm");
+    return 0;
+}
