@@ -474,7 +474,6 @@ jobs:
   consume-current-sdk:
     name: consume-current-sdk (cross-job)
     needs: toolchain-bootstrap
-    continue-on-error: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -483,18 +482,23 @@ jobs:
         with:
           name: current-sdk-ubuntu-latest
           path: .z42-dl
-      - name: Compile xtask using ONLY the downloaded toolchain (consume smoke)
+      - name: Compile + run via ONLY the downloaded toolchain (consume smoke)
         shell: bash
         run: |
           set -euo pipefail
           TC="$PWD/.z42-dl"
           chmod +x "$TC/bin/z42vm"
           ls "$TC/programs/z42c/" "$TC/libs/" >/dev/null
+          # compile a real project (xtask) with the downloaded toolchain's z42c
           Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$TC/programs/z42c/z42c.driver.zpkg" --mode interp -- \
             build scripts/xtask.z42.toml --release --output-dir "$RUNNER_TEMP/consume-out"
           test -f "$RUNNER_TEMP/consume-out/xtask.zpkg" \
-            && echo "✅ current-sdk is a working consumable toolchain (cross-job)" \
-            || { echo "::error::current-sdk consume failed — no xtask.zpkg"; exit 1; }
+            || { echo "::error::current-sdk compile failed — no xtask.zpkg"; exit 1; }
+          # execute the just-compiled zpkg on the toolchain's z42vm (proves run, not just compile)
+          out=$(Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- build -h)
+          echo "$out" | grep -q "build sdk\|SUBCOMMANDS" \
+            && echo "✅ current-sdk compiles AND runs (cross-job, self-contained)" \
+            || { echo "::error::current-sdk run failed"; echo "$out"; exit 1; }
 
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
   # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in
