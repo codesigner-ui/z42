@@ -153,15 +153,15 @@ Observer 回调约束：**Send + Sync**（embedder 可能跨 thread 转发到 as
 
 ## 当前可用
 
-### 编译器（C#）
+### 编译器（z42 自举）
 
-VS / VS Code / Rider 设 breakpoint 后：
+z42c 是自举编译器（源码 `src/compiler/`，编译为 `z42c.driver.zpkg`），经 z42vm 跑：
 
 ```bash
-dotnet run --project src/compiler/z42.Driver -- <args>
+z42c <args>                              # 需 stdlib 时前缀 Z42_LIBS="$PWD/.z42/libs"
 ```
 
-直接附加 debugger 即可。
+要调试编译器执行本身，按 [VM（Rust）](#vmrust) 那样 lldb / gdb 附加跑 zpkg 的 z42vm 进程。
 
 ### VM（Rust）
 
@@ -203,11 +203,11 @@ VM trace 已自动显示 `<file>:<line>:<col>` + 局部变量名（DBUG section 
 
 ```bash
 # zbc 反汇编为 zasm 文本
-dotnet run --project src/compiler/z42.Driver -- disasm <file.zbc>
+z42c disasm <file.zbc>
 
-# AST dump（C# 端）
-dotnet run --project src/compiler/z42.Driver -- <file.z42> --dump-ast
+# AST dump
+z42c <file.z42> --dump-ast
 
 # Build ID
-dotnet run --project src/compiler/z42.Driver -- build-id <file.zbc | file.zpkg | file.zsym>
+z42c build-id <file.zbc | file.zpkg | file.zsym>
 ```

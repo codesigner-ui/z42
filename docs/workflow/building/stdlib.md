@@ -24,10 +24,10 @@
 与嵌入宿主都读各 zpkg 的 `NSPC` section 认领 namespace。核心编译步骤等价于：
 
 ```bash
-( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
+( cd src/libraries && z42c build --workspace --release )
 ```
 
-> **冷启动**：`xtask.zpkg` 本身依赖 stdlib 才能编译，所以冷树上先由 C# 编译器直接跑上面
+> **冷启动**：`xtask.zpkg` 本身依赖 stdlib 才能编译，所以冷树上先用已发布 nightly 种子的 z42c 直接跑上面
 > 这条 `build --workspace`（primer，无 z42 程序参与）产出 `.zpkg`/`.zsym` → 编译
 > `xtask.zpkg` → 再 `./xtask build stdlib` 补扁平视图。z42c 只读 `.zsym`、VM 扫目录
 > （读各 zpkg 的 `NSPC` section），都不需要任何 namespace 索引即可编译/运行 xtask，故此次序无死锁。
@@ -37,8 +37,8 @@
 默认开启，第二次构建跳过未变文件：
 
 ```bash
-( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )                    # cached: N/N
-( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release --no-incremental )   # 强制全量
+( cd src/libraries && z42c build --workspace --release )                    # cached: N/N
+( cd src/libraries && z42c build --workspace --release --no-incremental )   # 强制全量
 ```
 
 机制基于 SHA-256 source hash + cache zbc 存在性 + ExportedModule 可用性三重检查；命中跳过 parse + typecheck + irgen。详见 [`docs/design/compiler/project.md`](../../design/compiler/project.md) L3 build 段。

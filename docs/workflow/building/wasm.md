@@ -21,10 +21,6 @@ cargo install wasm-pack --locked
     ```bash
     cargo install miniserve --locked
     ```
-  - **.NET** — Step 2 已经装了 `dotnet`，复用即可（一次性装 global tool）：
-    ```bash
-    dotnet tool install -g dotnet-serve
-    ```
   - **Python 3** — 多数 macOS / Linux 开发机自带，零安装：
     ```bash
     python3 -m http.server 8000     # 自带正确 .wasm MIME（Python 3.7+）
@@ -38,13 +34,13 @@ cargo install wasm-pack --locked
 ## Step 2 — Build compiler + stdlib（一次性 / 改 stdlib 后重跑）
 
 ```bash
-dotnet build src/compiler/z42.slnx
+./xtask build compiler-z42      # z42c 自举（或由 ./scripts/install-z42.sh 直接提供）
 ./xtask build stdlib
 ```
 
-✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
+✅ 产出 `artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
 
-❗ `dotnet: command not found` → 装 .NET 10+：https://dotnet.microsoft.com/download
+❗ `error: z42c not built` → 先 `./scripts/install-z42.sh` 或 `./xtask build compiler-z42`
 
 ## Step 3 — Build the WASM facade
 
@@ -74,18 +70,17 @@ built:
 ```bash
 cd src/toolchain/workload/wasm/platform
 miniserve --index demo/web/index.html .          # 默认 8080，根路径直接落 index
-# 或：dotnet serve -p 8000                        # 路径 /demo/web/index.html
 # 或：python3 -m http.server 8000                 # 路径 /demo/web/index.html
 ```
 
 然后浏览器访问 `http://127.0.0.1:<port>/`（miniserve）或
-`http://127.0.0.1:<port>/demo/web/index.html`（dotnet serve / Python）。
+`http://127.0.0.1:<port>/demo/web/index.html`（Python）。
 
 ✅ 期望：页面状态条变成 **OK**，日志区出现 `[host] Hello, World!`。
 
 ❗ DevTools 看到 `Failed to load module` / MIME 报错 → 服务器没有给 `.wasm`
    送 `application/wasm`、或给 `.js` 送 `text/javascript`；换 miniserve /
-   dotnet-serve / Python 3.7+ 三者中的任意一个均可。
+   Python 3.7+ 任意一个均可。
 ❗ `Z42VMError: undefined function ...` → `js/stdlib/` 空；重跑 Step 3。
 ❗ `file://...` 直接打开 index.html 会失败（CORS + 不能 fetch wasm）。**必须** 走 HTTP。
 

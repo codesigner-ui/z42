@@ -32,14 +32,14 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → ar
 
 | 我要 | 看 |
 |------|-----|
-| 编 C# 编译器 | [`building/compiler.md`](building/compiler.md) |
+| 编 z42c 编译器（z42 自举）| [`building/compiler.md`](building/compiler.md) |
 | 编 Rust VM | [`building/vm.md`](building/vm.md) |
 | 重建 stdlib | [`building/stdlib.md`](building/stdlib.md) |
 | 桌面跨平台 build | [`building/cross-platform.md`](building/cross-platform.md) |
 | 嵌入 z42 到 **WASM** | [`building/wasm.md`](building/wasm.md) |
 | 嵌入 z42 到 **iOS** | [`building/ios.md`](building/ios.md) |
 | 嵌入 z42 到 **Android** | [`building/android.md`](building/android.md) |
-| 跑 C# xUnit | [`testing/unit-tests.md`](testing/unit-tests.md) |
+| 跑编译器单测（z42c 自举 + cargo test）| [`testing/unit-tests.md`](testing/unit-tests.md) |
 | 跑 VM golden tests | [`testing/vm-tests.md`](testing/vm-tests.md) |
 | 跑 stdlib `[Test]` | [`testing/stdlib-tests.md`](testing/stdlib-tests.md) |
 | 跑 cross-zpkg e2e | [`testing/cross-zpkg.md`](testing/cross-zpkg.md) |
@@ -55,7 +55,7 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → ar
 ```
 artifacts/
 ├── build/
-│   ├── compiler/<proj>/bin/             dotnet build 产物（z42c.dll）
+│   ├── z42c/<member>/release/dist/      z42c 自举产物（z42c.driver.zpkg + 6 siblings）
 │   ├── runtime/{debug,release}/         cargo build 产物（z42vm）
 │   └── libraries/
 │       ├── <lib>/release/dist/          per-lib workspace .zpkg

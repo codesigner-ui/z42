@@ -1,57 +1,36 @@
-# C# 编译器单元测试
+# 编译器 / VM 单元测试
 
-z42 编译器层 xUnit 测试在 [`src/compiler/z42.Tests/`](../../../src/compiler/z42.Tests/)。
+dotnet/C# 已于 2026-06-26 彻底移除——编译器 `z42c` 现为 z42 自举。原 C# `z42.Tests/` xUnit 套件随之退场，编译器正确性改由 **z42c 自举不动点 + `[Test]` units** 保证；VM（Rust）单测仍用 `cargo test`。
 
-## 命令
-
-```bash
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj
-```
-
-或经 xtask：
+## 编译器单测（z42c 自举）
 
 ```bash
-./xtask test compiler
+./xtask test compiler-z42       # 建 7 子包 + 不动点（gen1==gen2 逐字节）+ [Test] units
 ```
+
+覆盖：lexer / parser / type-check / IR-gen 经「z42c 自编译自身 + 重建产物逐字节一致」端到端验证，外加编译器源码里的 `[Test]`-注解 units。这条是 GREEN gate 的编译器关（替代旧 C# `dotnet test`）。机制见 [`../bootstrap-and-testing.md`](../bootstrap-and-testing.md) 与 [`docs/design/compiler/self-hosting.md`](../../design/compiler/self-hosting.md)。
+
+## VM 单测（Rust）
+
+```bash
+cargo test --manifest-path src/runtime/Cargo.toml
+```
+
+> 注意（memory `reference_ci_rust_unit_tests_windows_only`）：CI 只在 Windows 腿跑 `cargo test`，易静默腐烂——改 ClassDesc / 反射 / 版本相关代码后**本地必跑** `cargo test`；version bump 还要更 `zbc_reader_tests` 的 version-pin 测试。
 
 ## 跑单个 / 部分 test
 
 ```bash
-# 按完全限定名
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj \
-  --filter 'FullyQualifiedName=Z42.Tests.TypeCheckerTests.FuncConstraint_NamedDelegate_Passes'
-
-# 按子串
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj \
-  --filter 'FullyQualifiedName~FuncConstraint'
-
-# 按类（适配 partial class）
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj \
-  --filter 'FullyQualifiedName~Z42.Tests.GoldenTests'
+# Rust 侧按名字过滤
+cargo test --manifest-path src/runtime/Cargo.toml <substr>
 ```
 
-## 详细输出
-
-```bash
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj --logger 'console;verbosity=detailed'
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj --logger 'console;verbosity=normal'
-```
-
-## 测试类别
-
-| 测试类 | 覆盖 |
-|------|------|
-| `LexerTests.cs` | Lexer + token 规则 |
-| `ParserTests.*` | 各语法构造解析 |
-| `TypeCheckerTests.*` (partial) | TypeChecker（含 constraints / generics 等）|
-| `IrGenTests.cs` | IR codegen |
-| `GoldenTests.cs` | `src/tests/**` 跑 z42c 编译产物对比 |
-| `ZbcRoundTripTests.cs` | zbc 二进制 reader/writer |
-| `WorkspaceTests.*` | 工程文件 / workspace |
-| `R*Tests` / `Test*` | R 系列测试基础设施 |
+> 单个编译产物对比（golden）见 [`vm-tests.md`](vm-tests.md)。
 
 ## 加新测试
 
-参见 [`.claude/rules/workflow.md`](../../../.claude/rules/workflow.md) "测试要求" + [`docs/design/testing/testing.md`](../../design/testing/testing.md) "编写新测试" 段。
+- 编译器内部行为 → 在 `src/compiler/` 对应模块加 `[Test]`-注解 free function（经 `./xtask test compiler-z42` 发现）。
+- VM（Rust）单元 → `src/runtime/src/*_tests.rs`。
+- 端到端编译产物 → VM golden（见 [`vm-tests.md`](vm-tests.md)）。
 
-新文件命名 `<Topic>Tests.cs`，放 [`src/compiler/z42.Tests/`](../../../src/compiler/z42.Tests/)；按 `partial class TypeCheckerTests` 或类似模式合并到现有类。
+参见 [`.claude/rules/workflow.md`](../../../.claude/rules/workflow.md) "测试要求" + [`docs/design/testing/testing.md`](../../design/testing/testing.md) "编写新测试" 段。

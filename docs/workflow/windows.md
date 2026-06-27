@@ -1,6 +1,6 @@
 # Windows 开发支持
 
-> **TL;DR：** 装 **Git for Windows**（自带 Git Bash）+ .NET 10 SDK + Rust toolchain，然后 z42 build CLI（xtask）在 Git Bash 终端里直接跑。z42 不提供 PowerShell `.ps1` 镜像 —— bash 脚本是单一真相源。
+> **TL;DR：** 装 **Git for Windows**（自带 Git Bash）+ Rust toolchain + `gh`，跑 `install-z42.bat` 拿到 z42 工具链（dotnet 已彻底移除 2026-06-26），然后 z42 build CLI（xtask）在 Git Bash 终端里直接跑。z42 不提供 PowerShell `.ps1` 镜像 —— bash 脚本是单一真相源。
 
 ## 为什么 Git Bash 不是 PowerShell
 
@@ -9,10 +9,10 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 | 路径 | 优点 | 缺点 |
 |------|------|------|
 | **Git Bash**（Git for Windows 自带 MSYS2 bash + coreutils）| 零额外装东西；xtask 调用的 POSIX 工具原样跑；与 macOS/Linux 一致 | 是 emulated POSIX，少数 GUI 工具（如 Xcode，本来就 macOS-only）跑不了 |
-| WSL2（Windows Subsystem for Linux）| 完整 Linux 环境 | 装好后 dev 在 WSL 里、产物也在 WSL 文件系统里；与 Windows 原生 .NET / Rust toolchain 互操作有摩擦 |
-| 重写为 PowerShell `.ps1` | "Native" Windows 感 | 维护负担翻倍；每次 fix 要同步两边；与厂商工具链（cargo / dotnet 都是跨平台 CLI）冗余 |
+| WSL2（Windows Subsystem for Linux）| 完整 Linux 环境 | 装好后 dev 在 WSL 里、产物也在 WSL 文件系统里；与 Windows 原生 Rust toolchain 互操作有摩擦 |
+| 重写为 PowerShell `.ps1` | "Native" Windows 感 | 维护负担翻倍；每次 fix 要同步两边；与厂商工具链（cargo / gh 都是跨平台 CLI）冗余 |
 
-**z42 选 Git Bash 为推荐路径。** WSL2 也能跑（按 Linux 文档），但产 windows-x64 SDK package 时建议 Git Bash + 原生 `dotnet.exe` / `cargo.exe`。
+**z42 选 Git Bash 为推荐路径。** WSL2 也能跑（按 Linux 文档），但产 windows-x64 SDK package 时建议 Git Bash + 原生 `cargo.exe`。
 
 ## 一次性装
 
@@ -24,10 +24,11 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 - 安装时全默认即可（"Use Git from the command line and also from 3rd-party software" + "Use the OpenSSL library" + "Checkout as-is, commit Unix-style line endings"）
 - 装完后开始菜单有 "Git Bash"；右键资源管理器有 "Git Bash Here"
 
-### 2. .NET 10 SDK
+### 2. z42 工具链 primer（`install-z42.bat`）
 
-- 官网：https://dotnet.microsoft.com/download/dotnet/10.0 (Windows x64 Installer .exe)
-- 装完后 PowerShell + Git Bash 都能 `dotnet --version`
+- 在 Git Bash / CMD 跑 `scripts/install-z42.bat` 下载预编译 `z42` / `z42c` / `z42vm` / stdlib 到 `./.z42/`
+- 需要 `gh`（auth'd，下载 SDK 用）；**dotnet 已彻底移除（2026-06-26）**，无需任何 .NET
+- 仅当改了 `src/compiler/**` 才需从源码重建：`./xtask.exe build compiler-z42`
 
 ### 3. Rust toolchain (stable)
 
@@ -75,8 +76,8 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 打开 **Git Bash** 终端（不是 PowerShell / CMD），cd 到 repo：
 
 ```bash
-# 编译
-dotnet build src/compiler/z42.slnx     # z42c
+# 编译（z42c 由 install-z42.bat 提供；改了编译器才需重建）
+./xtask.exe build compiler-z42         # z42c 自举（可选）
 cargo build --manifest-path src/runtime/Cargo.toml --release   # z42vm + libz42
 
 # stdlib
@@ -95,7 +96,7 @@ xtask 调用的 POSIX 子进程都在 Git Bash 直接跑（shebang `#!/usr/bin/e
 
 ### 路径分隔
 
-Git Bash 内部把 `C:\foo\bar` 映射为 `/c/foo/bar`。但 .NET / Cargo 这种**原生 Windows** 工具看 `cargo build --manifest-path src/runtime/Cargo.toml` 时仍按 Windows 的相对路径解析。z42 脚本全用相对路径 + `cd` 切到 repo root，不易踩。
+Git Bash 内部把 `C:\foo\bar` 映射为 `/c/foo/bar`。但 Cargo / z42vm 这种**原生 Windows** 工具看 `cargo build --manifest-path src/runtime/Cargo.toml` 时仍按 Windows 的相对路径解析。z42 脚本全用相对路径 + `cd` 切到 repo root，不易踩。
 
 ### 文件名后缀
 
@@ -113,11 +114,11 @@ Git Bash 内部把 `C:\foo\bar` 映射为 `/c/foo/bar`。但 .NET / Cargo 这种
 仓库带 [`.gitattributes`](../../.gitattributes)：
 
 - `*.sh` / `Makefile` 强制 LF（Git Bash 跑 CRLF 的 .sh 会报 `bad interpreter`）
-- `*.cs` / `*.rs` / `*.md` 等用 git autocrlf 默认（Windows 用户编辑器看 CRLF，git 存 LF）
-- `*.z42` 强制 LF：编译器对源文件做 `SHA256(text)` 作为 `SourceHash` 写入 `.zpkg`；如果 Windows checkout 是 CRLF，hash 会和提交的 LF golden fixture 飘移，导致 `Z42.Tests.Zpkg.FormatGoldenTests.ByteEqual` 失败
+- `*.rs` / `*.md` 等用 git autocrlf 默认（Windows 用户编辑器看 CRLF，git 存 LF）
+- `*.z42` 强制 LF：z42c 对源文件做 `SHA256(text)` 作为 `SourceHash` 写入 `.zpkg`；如果 Windows checkout 是 CRLF，hash 会和提交的 LF 字节基线（`src/tests/zbc-format/` 的 committed baselines）飘移，导致 zbc-format golden 比对失败
 - `*.zpkg` / `*.zbc` / `*.wasm` / `*.dll` 等 binary（永不转换）
 
-防御深度：`CompilerUtils.Sha256Hex` 在内部做 `CRLF → LF` 规范化，即使 `.gitattributes` 失效，hash 也保持跨平台稳定。
+防御深度：z42c 在源码哈希时内部做 `CRLF → LF` 规范化，即使 `.gitattributes` 失效，hash 也保持跨平台稳定。
 
 如果 clone 完发现 `.sh` 含 `\r\n`，跑 `git config --global core.autocrlf input` 然后 `git rm --cached -r . && git reset --hard`。
 
@@ -152,10 +153,9 @@ iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows
 ## 测试 Windows 包
 
 ```bash
-# 1. 装好 .NET + Rust（§2 + §3）
-# 2. 编 stdlib + 编译器
+# 1. 装好 z42 工具链 + Rust（§2 + §3）
+# 2. 编 stdlib（z42c 由 install-z42.bat 提供；改了编译器才 ./xtask.exe build compiler-z42）
 ./xtask.exe build stdlib
-dotnet build src/compiler/z42.slnx
 
 # 3. 打 windows-x64 package
 ./xtask.exe package release --rid windows-x64

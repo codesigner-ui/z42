@@ -22,13 +22,13 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 ## Step 2 — Build compiler + stdlib（一次性 / 改 stdlib 后重跑）
 
 ```bash
-dotnet build src/compiler/z42.slnx
+./xtask build compiler-z42      # z42c 自举（或由 ./scripts/install-z42.sh 直接提供）
 ./xtask build stdlib
 ```
 
-✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
+✅ 产出 `artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
 
-❗ `dotnet: command not found` → 装 .NET 10+：https://dotnet.microsoft.com/download
+❗ `error: z42c not built` → 先 `./scripts/install-z42.sh` 或 `./xtask build compiler-z42`
 
 ## Step 3 — Build the iOS facade
 

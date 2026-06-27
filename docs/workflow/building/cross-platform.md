@@ -6,11 +6,11 @@
 
 ## 当前可用
 
-主开发 + 测试在 **macOS arm64**；其他平台理论可跑（dotnet / cargo 都跨平台），但未做 CI 验证。Windows 开发的具体路径（Git Bash / .NET MSI / Rust MSVC toolchain）见 [`../windows.md`](../windows.md)。
+主开发 + 测试在 **macOS arm64**；其他平台理论可跑（z42c / cargo 都跨平台），但未做 CI 验证。Windows 开发的具体路径（Git Bash / Rust MSVC toolchain）见 [`../windows.md`](../windows.md)。
 
 ```bash
 # 在任意 macOS / Linux / Windows 工作站上：
-dotnet build src/compiler/z42.slnx                    # 编译器
+./xtask build compiler-z42                            # 编译器（z42c 自举）
 cargo build --manifest-path src/runtime/Cargo.toml    # VM
 ```
 
@@ -39,9 +39,9 @@ CI matrix 将覆盖：
 
 详细 schedule 与依赖见 [`docs/roadmap.md`](../../roadmap.md) "多平台支持矩阵"。
 
-## NativeAOT
+## 原生分发
 
-z42c 当前用 `dotnet run`；release 阶段（0.2.6+）由 NativeAOT 打成单文件 binary，无需 .NET runtime。详见 [`release.md`](../release.md)。
+z42c 现为 z42 自举的 `z42c.driver.zpkg`，经原生 `z42vm`（cargo 编译，无任何 .NET runtime）执行；release 由 `z42` launcher + per-arch `z42vm` 单文件分发。详见 [`release.md`](../release.md)。
 
 ## WASM target
 

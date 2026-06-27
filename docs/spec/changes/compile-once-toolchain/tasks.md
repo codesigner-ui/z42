@@ -31,6 +31,12 @@
 3. **release-vm-jit bug：暂用 debug vm / 延后**，先理顺流程再修（见 [[reference_release_vm_jit_miscompiles_default_params]]）。
 4. **防死锁**：stage 6 不 gate 在 download-bootstrap job 上（bump 轮它们暂红，gate 上去会死锁）。
 
+**🎯 核心原则：脚本归零（统一引擎）—— User 反复强调**：
+**除 `install-z42.sh`（cold-start primer），删除 scripts/ 下所有 shell 脚本；逻辑全搬进 `xtask` 子命令；
+CI 与本地都只调 `xtask`（同一套逻辑）。** 唯一不可消除的 bootstrap primer（cargo z42vm + 下载/定位种子 +
+种子 z42c 编 xtask，~5 行）**内联进 CI 步骤，不单独成脚本文件**。这是 Layer A 的硬目标，也是"本地镜像
+CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
+
 ---
 
 ## 迭代清单（按阶段推进，一一勾选）
@@ -80,6 +86,11 @@
 ### 文档 — ci.md 全面重写（User 2026-06-28）
 - [x] DOC1 `docs/workflow/ci.md` 全面更新：**6 阶段流程图**（mermaid / ASCII）+ **每阶段详细说明**（产物 / 共享性 / 触发 / CI job / xtask 命令 / 本地复现）（6 阶段 mermaid 流程图 + 每阶段详解 + GREEN 标准去 dotnet + 本地镜像 CI + job 映射，已落地）
 - [ ] DOC2 ci.md 与 bootstrap-and-testing.md 分工：ci.md = CI 拓扑 + 阶段总览；bootstrap-and-testing.md = 自举机制深入
+- [x] DOC3 **全面更新 `docs/workflow/` 所有文档**（User 2026-06-28）——18 个文件清除完毕（dotnet/slnx/z42c.dll 命令换 `z42c`/`./xtask`、删 .NET 安装引导、unit-tests.md 重写为 z42c 自举+cargo test、wasm 删 dotnet-serve、windows 删 .NET SDK、artifacts 树/wave 表/对比表去 C#、stale 死符号 `Z42.Tests.*`/`CompilerUtils.*` 清除）：
+  - **dotnet/C#/slnx 残留**：`dotnet build src/compiler/z42.slnx` / `dotnet run --project src/compiler/z42.Driver` / `dotnet test ...csproj` / `z42c.dll` / `.NET 10+ 安装引导` → 全部换成 `./xtask` / `z42c`（z42 自举，2026-06-26 dotnet 已删）
+  - **旧 job 名**：`build-and-test` / `bootstrap-no-csharp` / `ci-bootstrap-nocs` → 新动作-平台命名（`test (<平台>)` / `verify-selfhost` / `compile`）
+  - **旧命令**：`dotnet test ...csproj` 单测、`dotnet run -- build --workspace` → `./xtask` 等价
+  - 受影响文件（grep 命中）：`building/{compiler,stdlib,android,ios,wasm,cross-platform,README}.md`、`testing/{README,unit-tests,stdlib-tests,platform-tests,vm-tests}.md`、`debugging.md`、`packaging.md`、`windows.md`、`README.md`、`bootstrap-and-testing.md`
 
 ---
 

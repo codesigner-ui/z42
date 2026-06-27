@@ -26,12 +26,12 @@ CI 接线见 [`../ci.md`](../ci.md)。
 apphost `./xtask`。从零：
 
 ```bash
-# 1. C# 编译器 + Rust VM（release）
-dotnet build src/compiler/z42.slnx
+# 1. z42c 编译器（z42 自举）+ Rust VM（release）
+./xtask build compiler-z42
 cargo build --release --manifest-path src/runtime/Cargo.toml
 
 # 2. xtask.zpkg + 原生 apphost ./xtask
-dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
+Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release
 z42 publish desktop scripts/xtask.z42.toml      # 读 [platform.desktop] → 仓库根 ./xtask
 
 # 3. stdlib dist（index.json 等）
@@ -49,7 +49,7 @@ apphost 由 `z42 publish desktop` 产出，需要 launcher。若完全没有 z42
 ```bash
 vm="$PWD/artifacts/build/runtime/release/z42vm"
 libs="$PWD/artifacts/build/libraries/dist/release"
-Z42_LIBS="$libs" dotnet run --project src/compiler/z42.Driver -- build scripts/xtask.z42.toml --release
+Z42_LIBS="$libs" z42c build scripts/xtask.z42.toml --release
 Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- build stdlib
 # 此后即可 z42 publish desktop → ./xtask，或继续用 "$vm" artifacts/xtask/xtask.zpkg -- <cmd> 形式
 ```
