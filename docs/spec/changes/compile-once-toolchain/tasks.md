@@ -1,18 +1,89 @@
-# Tasks: compile-once toolchain
+# Tasks: compile-once toolchain → 分层流水线（6 阶段）
 
-> 状态：🟡 进行中（P1 开工 2026-06-27，User "开工"）| 创建：2026-06-27
-> 子系统占用：`toolchain`（xtask）+ docs（**不含 runtime**——format 兜底已延后，第一版不改 reader）
-> 🟢 Decision 2 已裁决（2026-06-27）：**第一版不做 format 兜底**，延后到未来 format bump 变更里同步落地（见 design.md）。
+> 状态：🟡 进行中 | 创建：2026-06-27 | 重构为 6 阶段分层模型 2026-06-28（User 确认）
+> 子系统占用：`toolchain`（xtask）+ runtime（仅 stage1 rule c 的 cargo-test gate；build.rs 已改）+ docs
+> 🟢 Decision 2（format 兜底）：第一版不做，延后（见 design.md）。
 
-## 进度概览
-- [ ] **P0** spec 就绪 + User 确认（阶段 6.5 gate）
-- [x] **P1** xtask `--toolchain <dir>` 选择器 + `build sdk` 产 `.z42`（core-complete；1.4→P2、1.5→P3 重定位）
-- [ ] **P2** compile job：内联 S0–S5 + 成对分代 gen1/gen2 + 条件不动点门（gen1==gen2 跳过 gen3）+ goldens/units + 上传 current-sdk
-- [ ] **P3** 下游 job 消费 artifact（test-interp / test-jit / host-package / package-* / platform）
-- [ ] **P4** 发布门三关进 needs：cross-bootstrap(完整) + 不动点(稳定) + 测试腿(正确)
-- [ ] **P5** 重命名 + 删冗余 job + 删脚本（仅留 install-z42.sh）
+## 北极星：6 阶段分层流水线
+
+**CI / xtask / docs 三维同步——本地按阶段跑即镜像 CI。原则：先简化+明确流程，再修 bug / 换实现。**
+
+| 阶段 | 产物 | 共享性 | 触发 | xtask 命令 |
+|------|------|--------|------|-----------|
+| **1 change-detect** | 改动分类 flag | — | 总是（轻量）| —（CI 专属）|
+| **2 bootstrap 边界检查** | 上一版 nightly 能编当前 z42c 源 | — | 仅 z42c 改动 | `xtask bootstrap-check` |
+| **3 host package** | `{z42c,stdlib,toolchain}` zpkg + z42vm | **同平台共享**（zpkg 全平台；z42vm per-platform 上传复用）| 非 docs-only | `xtask build sdk` |
+| **4 测试资产** | golden/unit/fixture .zbc | **同平台共享**（.zbc 平台无关）| 非 docs-only | `xtask build test-assets` |
+| **5 运行测试** | 测试结果（消费 3+4，`--no-build`）| 每 OS/mode | 按 change-detect | `xtask test --toolchain <sdk> --no-build` |
+| **6 publish nightly** | nightly release | — | 5 全过 + main push | —（CI 专属）|
+
+## 确认的规则与约束（User 2026-06-28）
+
+**change-detect 规则**：
+- (a) 非代码改动（docs/`*.md`/.claude）→ **不触发 CI**（不发起、不取消在跑的）；doc 检查后续再加。
+- (b) 未改 z42c（`src/compiler`）→ 跳过自举边界检查（stage 2）。
+- (c) 未改 VM（`src/runtime`）→ 跳过 Rust VM 单测（cargo test）。
+- 先落地这三条，其余分类后续再拆。
+
+**约束（认清；先简化后修）**：
+1. **z42vm per-arch，同平台共享**：host package 带 z42vm，同平台下游直接用 + 上传，不重 cargo build。
+2. **test-runner native：暂保留**，`xtask test` 接口不变；后续换 `z42.build` 内部实现（本地/CI 都走 `xtask test`，只换内部）。
+3. **release-vm-jit bug：暂用 debug vm / 延后**，先理顺流程再修（见 [[reference_release_vm_jit_miscompiles_default_params]]）。
+4. **防死锁**：stage 6 不 gate 在 download-bootstrap job 上（bump 轮它们暂红，gate 上去会死锁）。
 
 ---
+
+## 迭代清单（按阶段推进，一一勾选）
+
+### Stage 1 — change-detect
+- [~] 1a CI `on.paths-ignore`：docs/`**/*.md`/.claude → 非代码不触发 CI（rule a）【🟡 进行中】
+- [ ] 1b CI `detect-changes` 加 `compiler`(`src/compiler/**`) + `vm`(`src/runtime/**`) 输出（含 `.github/workflows/ci.yml` 保底全跑）
+- [ ] 1c CI `verify-selfhost` gate on `compiler`（rule b；needs changes + if）
+- [ ] 1d CI `build-and-test` 的 `cargo test`(Windows leg) step gate on `vm`（rule c；needs changes + step if）
+- [ ] 1e docs：change-detect 规则表落 bootstrap-and-testing.md
+- [ ] 1f 验证：docs-only push 不触发 CI；compiler-only / vm-only 改动按 gate 跳过
+
+### Stage 2 — bootstrap 边界检查
+- [ ] 2a xtask `bootstrap-check`：封装 `check-bootstrap-compat.sh`（下载上一 nightly z42c → 编当前 z42c 源 → 对比无越界），本地可跑
+- [ ] 2b CI：bootstrap-check（并入或独立），gate on `compiler`（rule b）
+- [ ] 2c docs：support-before-use 纪律 + 本地复现
+
+### Stage 3 — 编译 host package（同平台共享）
+- [x] 3a xtask `build sdk [--out]` 产 `.z42`（zpkg + z42vm + toolchain）✅（原 P1）
+- [x] 3b CI compile/toolchain-bootstrap 产 `current-sdk-<os>` artifact ✅（原 P2）
+- [ ] 3c host package **带 z42vm** + 同平台下游消费它（不重 cargo build；约束1）—— 补 bin/z42vm 到 artifact、下游用
+- [ ] 3d per-OS 覆盖（现 linux+macos；按需补 arm/windows host package）
+- [ ] 3e docs：stage 3 CI + 本地（`xtask build sdk`）
+
+### Stage 4 — 编译测试资产（同平台共享）
+- [x] 4a CI：golden `.zbc` 编一次进 current-sdk（regen --no-stdlib + bundle）✅（原 P2.4）
+- [ ] 4b xtask `build test-assets [--toolchain]`：统一命令——regen goldens + 编 test-units + fixtures → 进 `.z42`/独立 artifact
+- [ ] 4c CI：test-units / fixtures 也进共享 artifact（供 stdlib/host test `--no-build`）
+- [ ] 4d docs
+
+### Stage 5 — 运行测试（消费 3+4，`--no-build`）
+- [x] 5a xtask：cross-zpkg + vm goldens 经 `--toolchain` 消费 ✅（原 P3 1.5）
+- [x] 5b CI：`test-consume` job 消费 current-sdk 跑 cross-zpkg + vm interp（169/169）✅
+- [ ] 5c xtask `test` 编排器：检测 stage3/4 产物在否，缺则补、在则默认 `--no-build` 消费（本地分阶段，不再一把梭）
+- [ ] 5d CI：迁移 `build-and-test` 为消费（needs 3+4 + `--no-build`；stdlib 段保留 `xtask test` 接口，内部待换 z42.build）
+- [ ] 5e CI：迁移 `vm-jit` / `stdlib-jit` 为消费（jit 暂用 debug vm 绕 release-jit bug，或延后）
+- [ ] 5f docs
+
+### Stage 6 — 测试通过上传 nightly
+- [x] 6a CI：`publish-nightly` 存在 ✅
+- [ ] 6b 确认三关：正确已由 `build-and-test` gate；稳定/完整（fixpoint/cross-bootstrap）**故意不进 needs**（防死锁，约束4）—— 更正 design Decision 8
+- [ ] 6c docs：发布门 + 防死锁 rationale
+
+### 跨阶段地基 — xtask 分阶段命令（Layer A）
+- [ ] LA xtask 4 个 stage 命令（bootstrap-check / build sdk / build test-assets / test --no-build）+ `test` 编排器，本地镜像 CI
+
+### 文档 — ci.md 全面重写（User 2026-06-28）
+- [x] DOC1 `docs/workflow/ci.md` 全面更新：**6 阶段流程图**（mermaid / ASCII）+ **每阶段详细说明**（产物 / 共享性 / 触发 / CI job / xtask 命令 / 本地复现）（6 阶段 mermaid 流程图 + 每阶段详解 + GREEN 标准去 dotnet + 本地镜像 CI + job 映射，已落地）
+- [ ] DOC2 ci.md 与 bootstrap-and-testing.md 分工：ci.md = CI 拓扑 + 阶段总览；bootstrap-and-testing.md = 自举机制深入
+
+---
+
+## 历史实施明细（原 P1–P5，已映射进上面阶段）
 
 ## P0：spec 就绪
 - [ ] 0.1 proposal.md / design.md / specs/bootstrap-toolchain/spec.md / tasks.md 四件齐（本目录）

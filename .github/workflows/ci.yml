@@ -1,10 +1,22 @@
 name: CI
 
 on:
+  # change-detect rule (a): non-code-only changes (docs / *.md / .claude) do NOT
+  # trigger CI — no run is started, so a running code CI is never cancelled and no
+  # compute is wasted. (Doc-specific checks land later.) A push touching BOTH docs
+  # and code still triggers (paths-ignore only skips when ALL changed paths match).
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
   # Manual trigger: force a nightly republish from the latest main WITHOUT a new
   # push. This is the escape hatch for the xtask↔nightly bootstrap cycle — after
   # a zbc/zpkg bump (or an xtask change needing a newer stdlib API), the
