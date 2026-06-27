@@ -39,9 +39,8 @@ int _testCrossZpkgImpl(string mode) {
     string vmBin;
     if (tc.Length > 0) {
         stdlibDist = _toolchainLibs(tc);
-        driverHome = Path.Join(Path.Join(tc, "programs"), "z42c");   // driver + 7 siblings colocated
-        string vmname = Platform.IsWindows() ? "z42vm.exe" : "z42vm";
-        vmBin = Path.Join(Path.Join(tc, "bin"), vmname);
+        driverHome = _toolchainDriverHome(tc);   // driver + 7 siblings colocated
+        vmBin = _toolchainVm(tc);
     } else {
         stdlibDist = _libsDir(root);
         // replace-csharp Phase B：cross-zpkg gate 改用 z42c（z42vm + z42c.driver.zpkg），

@@ -111,6 +111,28 @@ string _toolchainLibs(string tcDir) {
     return Path.Join(tcDir, "libs");
 }
 
+// z42c driver-home inside a `.z42` toolchain: <dir>/programs/z42c (driver + the 6
+// siblings colocated, so the VM resolves them next to the entry zpkg).
+string _toolchainDriverHome(string tcDir) {
+    return Path.Join(Path.Join(tcDir, "programs"), "z42c");
+}
+
+// z42vm binary inside a `.z42` toolchain: <dir>/bin/z42vm[.exe] (release).
+string _toolchainVm(string tcDir) {
+    string vmname = Platform.IsWindows() ? "z42vm.exe" : "z42vm";
+    return Path.Join(Path.Join(tcDir, "bin"), vmname);
+}
+
+// Active z42vm for compile/run: the toolchain's bin/z42vm when --toolchain is set,
+// else the build-tree binary for `profile` ("debug"/"release"). Consumer paths
+// (cross-zpkg / regen / vm goldens) call this so a downloaded current-sdk supplies
+// the VM with no cargo build.
+string _activeVm(string root, string profile) {
+    string tc = _toolchainDir(root);
+    if (tc.Length > 0) { return _toolchainVm(tc); }
+    return _builtVm(root, profile);
+}
+
 // the z42c.driver.zpkg inside a `.z42` toolchain: <dir>/programs/z42c/z42c.driver.zpkg
 // (Path.Join is 2-arg — nest. The 6 sibling z42c.* live alongside it.)
 string _toolchainDriver(string tcDir) {

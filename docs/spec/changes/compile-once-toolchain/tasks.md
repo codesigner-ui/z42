@@ -50,6 +50,7 @@
 - [x] 3.0 **consume 验证 job**（additive）：新增 `consume-current-sdk` job——下载 current-sdk-ubuntu-latest，用其自带 z42vm+driver+libs 编 xtask，证跨 job artifact 是可消费工作工具链。continue-on-error，不动现有 test 主体。YAML 校验通过，待 push 验。
 - [x] 3.1a **cross-zpkg --toolchain 接线**（第一个真 test stage 消费）：`_testCrossZpkgImpl` locator + `_testCrossZpkgCore` rebuild 跳过据 `--toolchain`（向后兼容：未设走原 debug-vm/canonical 路径）。本地双验：`--toolchain artifacts/.z42 test cross-zpkg` 2/2 绿（纯工具链零重建）+ 无 --toolchain 仍 2/2 绿。consume-current-sdk job 加跑此 gate。
 - [ ] 3.1 `.github/actions/xtask-bootstrap-artifact/action.yml`：改为下载 `current-sdk` + `--toolchain artifacts/.z42` 消费
+- [x] 3.1b **vm goldens --toolchain 接线**（第二个真 test stage）：`_runVmGoldens` vmBin + `_regenGolden` driver/libs/vm + `_testVmCore` 跳 cargo（toolchain 供 z42c+stdlib+vm；0 golden 用 compression native）。本地双验：`--toolchain artifacts/.z42 test vm interp` regen 199 + shard 10/10 绿 + 无 --toolchain --no-rebuild 10/10 绿。consume job 加跑全 interp goldens。复用 helper `_activeVm`/`_toolchainDriverHome`/`_toolchainVm`（cross-zpkg 同步重构）。
 - [ ] 3.2 test 腿（build-and-test→消费 artifact）：下载 + cargo z42vm + `--toolchain artifacts/.z42 test --no-build`（interp）
 - [ ] 3.3 jit 腿：同上 + jit + `--shard k/4`（复用 95e9facf 分片，不改机制）
 - [ ] 3.4 host-package / package-{ios,android,wasm} / platform-test：全部消费 artifact

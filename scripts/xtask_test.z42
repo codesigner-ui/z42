@@ -23,13 +23,22 @@ int _testVm(ParseResult r) {
 
 int _testVmCore(string modes, bool rebuild, string jobs, string shard) {
     if (jobs.Length == 0) { jobs = "1"; }
-    if (rebuild) { int c = _regenCore(false, true); if (c != 0) { return c; } }
-    int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
-        .Arg("--manifest-path").Arg(_runtimeManifest()));
-    if (cd != 0) { return cd; }
-    int cc = _exec(new Process("cargo").Arg("build").Arg("-q")
-        .Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
-    if (cc != 0) { return cc; }
+    // --toolchain (compile-once P3): the toolchain supplies z42c + stdlib + z42vm,
+    // so compile goldens with it directly (_regenGolden is --toolchain-aware) and
+    // skip the build-tree stdlib/runtime/compression cargo builds entirely.
+    bool haveTc = _toolchainDir(_root()).Length > 0;
+    if (rebuild) {
+        int c = haveTc ? _regenGolden() : _regenCore(false, true);
+        if (c != 0) { return c; }
+    }
+    if (!haveTc) {
+        int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
+            .Arg("--manifest-path").Arg(_runtimeManifest()));
+        if (cd != 0) { return cd; }
+        int cc = _exec(new Process("cargo").Arg("build").Arg("-q")
+            .Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
+        if (cc != 0) { return cc; }
+    }
     // modes is a space-separated token string (e.g. "interp jit"); split to the
     // string[] _runVmGoldens expects. jobs parses to int (default 1 on garbage).
     string[] modeList = _splitWords(modes);

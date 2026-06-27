@@ -42,7 +42,9 @@ int _runVmGoldens(string[] modes, int jobs, int shardK, int shardN) {
     string root = _root();
     if (jobs < 1) { jobs = 1; }
 
-    string vmBin = _builtVm(root, "debug");
+    // --toolchain (compile-once P3): run goldens on the toolchain's z42vm (release)
+    // when a toolchain is selected; else the build-tree debug binary.
+    string vmBin = _activeVm(root, "debug");
     if (!File.Exists(vmBin)) {
         ConsoleError.WriteLine("error: VM binary not found at " + vmBin);
         ConsoleError.WriteLine("       Build via: cargo build --manifest-path src/runtime/Cargo.toml");

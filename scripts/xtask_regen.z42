@@ -20,16 +20,19 @@ int _regenGolden() {
     string root = _root();
     // replace-csharp Phase C：golden 编译改用 z42c（z42vm + z42c.driver.zpkg），不再 dotnet。
     // driverHome = 含 z42c.driver.zpkg + 7 个 z42c.* 兄弟；golden 的 stdlib 依赖走 Z42_LIBS=stdlibDist。
-    string driverHome = _assembleZ42cDriverHome(root);
+    // --toolchain (compile-once P3): compile goldens with the selected toolchain's
+    // z42c + stdlib + z42vm when set; else the build-tree.
+    string tc = _toolchainDir(root);
+    string driverHome = (tc.Length > 0) ? _toolchainDriverHome(tc) : _assembleZ42cDriverHome(root);
     if (driverHome.Length == 0) {
         ConsoleError.WriteLine("error: z42c driver not built (artifacts/build/z42c/z42c.*/release/dist)");
         ConsoleError.WriteLine("       Build it via stdlib/compiler-z42 build first.");
         return 1;
     }
     string driverZpkg = Path.Join(driverHome, "z42c.driver.zpkg");
-    string stdlibDist = _libsDir(root);
-    string vmBin = _builtVm(root, "debug");
-    if (!File.Exists(vmBin)) { vmBin = _builtVm(root, "release"); }
+    string stdlibDist = (tc.Length > 0) ? _toolchainLibs(tc) : _libsDir(root);
+    string vmBin = _activeVm(root, "debug");
+    if (!File.Exists(vmBin)) { vmBin = _activeVm(root, "release"); }
     if (!File.Exists(vmBin)) {
         ConsoleError.WriteLine("error: z42vm not found (build via cargo build --manifest-path src/runtime/Cargo.toml)");
         return 1;
