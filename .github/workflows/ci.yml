@@ -499,6 +499,15 @@ jobs:
           echo "$out" | grep -q "build sdk\|SUBCOMMANDS" \
             && echo "✅ current-sdk compiles AND runs (cross-job, self-contained)" \
             || { echo "::error::current-sdk run failed"; echo "$out"; exit 1; }
+      - name: Run cross-zpkg gate via --toolchain (real test-stage consume)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TC="$PWD/.z42-dl"
+          # the just-compiled xtask drives the cross-zpkg gate entirely from the
+          # downloaded toolchain (z42c + stdlib + z42vm), no bootstrap/rebuild.
+          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- \
+            --toolchain "$TC" test cross-zpkg
 
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
   # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in

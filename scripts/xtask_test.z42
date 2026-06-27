@@ -56,9 +56,12 @@ int _testCrossZpkg(ParseResult r) {
 // them in its build wave (z42c was being self-built a 2nd time here). Standalone
 // `test cross-zpkg` passes false.
 int _testCrossZpkgCore(string mode, bool noBuild) {
+    // --toolchain (compile-once P3): an active toolchain supplies z42c+stdlib+z42vm,
+    // so skip the build-tree rebuild entirely (consume path: nothing to build).
+    bool haveTc = _toolchainDir(_root()).Length > 0;
     // replace-csharp Phase C：cross-zpkg 全程 C#-free。debug z42vm（cargo）跑 fixtures；
     // z42c（C#-free 种子自建）编 fixtures。不再 _buildCompiler（C# 编译器已无用）。
-    if (!noBuild) {
+    if (!noBuild && !haveTc) {
         int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
             .Arg("--manifest-path").Arg(_runtimeManifest()));
         if (cr != 0) { return cr; }
