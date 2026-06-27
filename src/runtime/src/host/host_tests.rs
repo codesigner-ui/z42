@@ -7,8 +7,8 @@
 //! process singleton — concurrent tests would race on `state::HOST`.
 //! The end-to-end `load_invoke_hello_world` test is gated on
 //! `cfg(z42_have_embedding_hello)` so the suite still builds when
-//! `z42c.dll` isn't available (e.g. CI agents that haven't run
-//! `dotnet build src/compiler/z42.slnx` yet).
+//! the z42c toolchain / stdlib isn't built yet (e.g. CI agents that
+//! haven't run `xtask build stdlib`).
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
@@ -339,7 +339,7 @@ fn load_invoke_hello_world() {
     let libs_dir = project_root().join("artifacts/build/libraries/dist/release/z42.core.zpkg");
     if !libs_dir.is_file() {
         eprintln!(
-            "skipping load_invoke_hello_world: {} not found (run `dotnet build src/compiler/z42.slnx`)",
+            "skipping load_invoke_hello_world: {} not found (run `xtask build stdlib`)",
             libs_dir.display()
         );
         return;
@@ -705,8 +705,7 @@ impl ZpkgResolver for AlwaysMissResolver {
 }
 
 /// Load the stdlib bytes from `artifacts/build/libraries/dist/release/`. Returns `None` if
-/// the user hasn't run `dotnet build src/compiler/z42.slnx` yet — tests
-/// skip in that case.
+/// the stdlib isn't built yet (run `xtask build stdlib`) — tests skip in that case.
 fn load_stdlib_bytes(name: &str) -> Option<Vec<u8>> {
     let path = project_root().join("artifacts/build/libraries/dist/release").join(name);
     std::fs::read(path).ok()

@@ -63,76 +63,79 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     println!("cargo:rustc-link-search=native={out_dir}");
 
-    // ── Spec C7: compile the z42 e2e fixture if z42c is built ──────────
+    // ── z42 test fixtures (C7 native e2e + embedding hello) ────────────
     //
-    // The Rust integration test `z42_source_calls_numz42_via_native_attr`
-    // needs a `.zbc` produced from `tests/data/z42_native_e2e/source.z42`.
-    // Compile it here when the .NET driver is available; otherwise emit a
-    // cargo:warning and rely on the test's own missing-fixture diagnostic.
+    // The Rust integration tests `z42_source_calls_numz42_via_native_attr`
+    // (cfg z42_have_z42c) and `host::host_tests::load_invoke_hello_world`
+    // (cfg z42_have_embedding_hello) each consume a `.zbc` compiled from a
+    // fixture source. C#/dotnet was removed (2026-06-26) — these now compile
+    // with z42c (z42vm + z42c.driver.zpkg), mirroring `xtask regen`'s
+    // _compileCase. When no warm z42c toolchain is present (e.g. the initial
+    // cold cargo build, before stdlib/z42c are built), the fixtures are
+    // skipped and their tests opt out — no hard build dependency.
     let project_root = manifest_dir.parent().and_then(Path::parent);
-    let driver = project_root
-        .map(|root| root.join("artifacts/build/compiler/z42.Driver/bin/z42c.dll"));
-    if let Some(d) = &driver {
-        println!("cargo:rerun-if-changed={}", d.display());
-    }
+    if let Some(root) = project_root {
+        // driver-home = the dogfood run dir: z42c.driver.zpkg + its 6 z42c.*
+        // siblings + the stdlib, all flat — usable as both the driver location
+        // and Z42_LIBS (built by `xtask build stdlib`).
+        let home = root.join("artifacts/build/z42c/dogfood/run-release");
+        let driver = home.join("z42c.driver.zpkg");
+        let vm = find_z42vm(root);
+        let ready = driver.is_file() && vm.as_ref().is_some_and(|v| v.is_file());
+        println!("cargo:rerun-if-changed={}", driver.display());
 
-    let driver_present = driver.as_ref().is_some_and(|d| d.is_file());
-
-    let z42_src = manifest_dir.join("tests/data/z42_native_e2e/source.z42");
-    if z42_src.is_file() {
-        println!("cargo:rerun-if-changed={}", z42_src.display());
-        if driver_present {
-            let zbc_out = PathBuf::from(&out_dir).join("z42_native_e2e_source.zbc");
-            let status = Command::new("dotnet")
-                .arg(driver.as_ref().unwrap())
-                .arg(&z42_src)
-                .arg("--emit").arg("zbc")
-                .arg("-o").arg(&zbc_out)
-                .status();
-            match status {
-                Ok(s) if s.success() => {
+        let c7_src = manifest_dir.join("tests/data/z42_native_e2e/source.z42");
+        if c7_src.is_file() {
+            println!("cargo:rerun-if-changed={}", c7_src.display());
+            if ready {
+                let out = PathBuf::from(&out_dir).join("z42_native_e2e_source.zbc");
+                if z42c_emit_zbc(vm.as_ref().unwrap(), &driver, &home, &c7_src, &out) {
                     println!("cargo:rustc-cfg=z42_have_z42c");
+                } else {
+                    println!("cargo:warning=z42c failed compiling C7 fixture; e2e test will be skipped");
                 }
-                Ok(s) => {
-                    println!("cargo:warning=z42c failed compiling C7 fixture (exit {s}); e2e test will be skipped");
-                }
-                Err(e) => {
-                    println!("cargo:warning=could not invoke dotnet for C7 fixture: {e}; e2e test will be skipped");
-                }
+            } else {
+                println!("cargo:warning=no warm z42c toolchain (run `xtask build stdlib`); C7 e2e test will be skipped");
             }
-        } else {
-            println!("cargo:warning=z42c not built; run `dotnet build src/compiler/z42.slnx` then retry tests");
         }
-    }
 
-    // ── Embedding API H2: compile the hello-world fixture if z42c is built.
-    //
-    // The Rust integration test `host::host_tests::load_invoke_hello_world`
-    // (gated behind `cfg(z42_have_embedding_hello)`) consumes a .zbc emitted
-    // here. Same skip semantics as the C7 fixture — missing driver / failed
-    // compile keeps the test out of the run instead of failing the build.
-    let embedding_src = manifest_dir.join("tests/data/embedding_hello/source.z42");
-    if embedding_src.is_file() {
-        println!("cargo:rerun-if-changed={}", embedding_src.display());
-        if driver_present {
-            let zbc_out = PathBuf::from(&out_dir).join("embedding_hello.zbc");
-            let status = Command::new("dotnet")
-                .arg(driver.as_ref().unwrap())
-                .arg(&embedding_src)
-                .arg("--emit").arg("zbc")
-                .arg("-o").arg(&zbc_out)
-                .status();
-            match status {
-                Ok(s) if s.success() => {
-                    println!("cargo:rustc-cfg=z42_have_embedding_hello");
-                }
-                Ok(s) => {
-                    println!("cargo:warning=z42c failed compiling embedding-hello fixture (exit {s}); host integration test will be skipped");
-                }
-                Err(e) => {
-                    println!("cargo:warning=could not invoke dotnet for embedding-hello fixture: {e}; host integration test will be skipped");
-                }
+        let emb_src = manifest_dir.join("tests/data/embedding_hello/source.z42");
+        if emb_src.is_file() && ready {
+            println!("cargo:rerun-if-changed={}", emb_src.display());
+            let out = PathBuf::from(&out_dir).join("embedding_hello.zbc");
+            if z42c_emit_zbc(vm.as_ref().unwrap(), &driver, &home, &emb_src, &out) {
+                println!("cargo:rustc-cfg=z42_have_embedding_hello");
             }
         }
     }
+}
+
+/// Locate a built z42vm (release preferred, then debug) under artifacts/build/runtime.
+fn find_z42vm(root: &Path) -> Option<PathBuf> {
+    let exe = if cfg!(windows) { "z42vm.exe" } else { "z42vm" };
+    for profile in ["release", "debug"] {
+        let p = root.join("artifacts/build/runtime").join(profile).join(exe);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+/// Compile a single `.z42` → `.zbc` via z42c (z42vm running z42c.driver.zpkg),
+/// mirroring `xtask regen`'s _compileCase. `driver_home` supplies the driver's
+/// z42c.* siblings AND the stdlib (flat) via Z42_LIBS. Returns true on success.
+fn z42c_emit_zbc(vm: &Path, driver: &Path, driver_home: &Path, src: &Path, out: &Path) -> bool {
+    Command::new(vm)
+        .arg(driver)
+        .arg("--mode")
+        .arg("interp")
+        .arg("--")
+        .arg("--emit-zbc")
+        .arg(src)
+        .arg(out)
+        .env("Z42_LIBS", driver_home)
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
