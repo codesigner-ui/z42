@@ -6,7 +6,7 @@
 
 ## 进度概览
 - [ ] **P0** spec 就绪 + User 确认（阶段 6.5 gate）
-- [ ] **P1** xtask `--toolchain <dir>` + `build sdk`（地基，不依赖任何裁决）
+- [x] **P1** xtask `--toolchain <dir>` 选择器 + `build sdk` 产 `.z42`（core-complete；1.4→P2、1.5→P3 重定位）
 - [ ] **P2** compile job：内联 S0–S5 + 成对分代 gen1/gen2 + 条件不动点门（gen1==gen2 跳过 gen3）+ goldens/units + 上传 current-sdk
 - [ ] **P3** 下游 job 消费 artifact（test-interp / test-jit / host-package / package-* / platform）
 - [ ] **P4** 发布门三关进 needs：cross-bootstrap(完整) + 不动点(稳定) + 测试腿(正确)
@@ -23,10 +23,13 @@
 - [x] 1.1 `scripts/xtask_common.z42`：toolchain 解析 helper——`_toolchainDir`（读 Z42_TOOLCHAIN，相对路径对 root 解析）/ `_toolchainLibs` / `_toolchainDriver`（programs/z42c/z42c.driver.zpkg）/ `_activeLibsDir`（consumer 读：toolchain libs 或回退 canonical）。`_libsDir` 保持 canonical（producer 写）。本地重建 xtask 编过。
 - [x] 1.2 `scripts/xtask_cli.z42`：✅ 全局 `--toolchain <dir>` 拦截（`_applyToolchainOpt`）+ ✅ `build sdk [--out <dir>]` 子命令注册（_buildRouter + _dispatchBuild → `_buildSdk(r.GetOption("out"))`）。
 - [x] 1.3 `scripts/xtask_stdlib.z42`：`_buildSdk(string outOpt)` 组装 `.z42` 布局——`_buildStdlib()`(warm C#-free 建 z42c+stdlib+确保 z42vm) + `_resetDir` + 拷 programs/z42c/(7 包+siblings)、libs/(stdlib)、bin/z42vm。默认 --out=artifacts/.z42。**验证：`build sdk --out artifacts/.z42` exit 0；用组装出的 .z42 自身(z42vm+driver+libs 完全自包含)编出 xtask.zpkg 554KB → 工具链功能完整**。成对分代 gen1/gen2 在 P1.4 叠加（当前 _buildStdlib warm 产出即用）。
-- [ ] 1.4 `scripts/xtask_compiler_z42.z42`：z42c 定位据 `--toolchain`；**条件不动点 helper**——gen1=SDK 编{stdlib,z42c}→gen2=gen1 编{stdlib,z42c}，比较 gen1 vs gen2 对：等则跳过 gen3，不等则编 gen3 断言 {gen2}=={gen3}（逐字节 mod BLID）
-- [ ] 1.5 `scripts/xtask_test.z42` / `xtask_test_vm.z42`：build/test 定位据 `--toolchain`；确认 `--no-build` 全链（vm/stdlib/cross-zpkg）尊重预编译 .zbc
-- [ ] 1.6 单元/本地验证：`build sdk --out artifacts/.z42` 后 `--toolchain .z42 test` 与 `--toolchain artifacts/.z42 test` 两套等价全绿
-- [ ] 1.7 commit + CI 验证（P1 不改 ci.yml 拓扑，仅 xtask 能力）
+- [→P2] 1.4 **条件不动点 helper**（gen1 vs gen2 对，等跳 gen3／不等验 {gen2}=={gen3}）——**移到 P2**：现有 `_testZ42cSelfHostByteIdentical` 已覆盖稳态 gen1==gen2；条件 gen3 的失败路径只在「改 codegen」时触发，本地无 codegen-diff 难验，落在 P2 compile job（真有 SDK→gen1→gen2 序列）里实现+验证更自然。
+- [→P3] 1.5 **test 据 `--toolchain` 定位 + `--no-build` 全链**——**移到 P3**：test consume 路径（`_testLibCore` 的 alllibs flat 单目录 + 多 stage）是 GREEN gate 关键路径，与「下游 job 消费 artifact」是同一件事，放 P3 一起做+CI 验证（避免在关键测试路径上孤立改动）。consumer helper `_activeLibsDir`/`_toolchainDriver` 已就位待接。
+- [x] 1.6（部分）`build sdk` 产出的 .z42 自包含等价验证：用 .z42 自身工具链编出 xtask（见 1.3）。两套 `test` 等价全绿随 P3 test-consume 落地。
+- [x] 1.7 commit（P1 选择器基础 8776451b + build sdk 893794be；不改 ci.yml，仅 xtask 能力）
+
+> **P1 收敛说明**：两个头部能力 ——`--toolchain` 选择器 + `build sdk` 产 `.z42`—— 已实现并本地验证。
+> 原 1.4/1.5 重定位到 P2/P3（各自的可验证上下文），见上。P1 视为 core-complete。
 
 ## P2：compile job（toolchain + ci.yml）
 - [x] 2.1 ~~format 兜底落地~~ —— 🟢 Decision 2 裁决：**第一版不做**，延后到未来 format bump 变更同步落地（§5.3 死锁仍为已知开口）。
