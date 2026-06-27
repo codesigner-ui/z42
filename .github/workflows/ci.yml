@@ -518,6 +518,19 @@ jobs:
           # from a downloaded current-sdk (the bulk of the de-dup target).
           Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- \
             --toolchain "$TC" test vm interp
+      - name: Run VM goldens (JIT, shard 1/4) via --toolchain (consume probe)
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          TC="$PWD/.z42-dl"
+          # jit via the toolchain's linux-x64 release z42vm (== what vm-jit-consistency
+          # cargo-builds). Validates jit-via-toolchain in CI (can't validate locally on
+          # arm64 — release jit differs). If green, vm-jit-consistency can convert to
+          # consume current-sdk (drop its ~12min bootstrap). --no-rebuild: interp step
+          # above already regen'd the goldens this job.
+          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- \
+            --toolchain "$TC" test vm jit --no-rebuild --shard 1/4 --jobs=4
 
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
   # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in
