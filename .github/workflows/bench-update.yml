@@ -10,6 +10,14 @@ name: Bench Baseline Update
 on:
   push:
     branches: [main]
+    # change-detect rule (a): non-code-only changes (docs / *.md / .claude) do
+    # NOT recompute the bench baseline — a doc edit can't move performance, and
+    # the full e2e bench (~compile z42c + hyperfine) is wasted compute. Mirrors
+    # ci.yml's paths-ignore so docs-only pushes are inert across all workflows.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
 
 permissions:
   # Required to push to the bench-baselines branch.

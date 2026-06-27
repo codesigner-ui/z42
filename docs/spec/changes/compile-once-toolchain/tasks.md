@@ -42,7 +42,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 ## 迭代清单（按阶段推进，一一勾选）
 
 ### Stage 1 — change-detect
-- [~] 1a CI `on.paths-ignore`：docs/`**/*.md`/.claude → 非代码不触发 CI（rule a）【🟡 进行中】
+- [x] 1a `on.paths-ignore`：docs/`**/*.md`/.claude → 非代码不触发 CI（rule a）。**两条 push 触发 workflow 都覆盖**：`ci.yml`（1993ac06）+ `bench-update.yml`（doc-only push 不重算 bench baseline）；`bench-pr.yml` 已用窄 `paths:` allowlist，doc-only PR 天然跳过。验证：docs-only push c3c0ab77 只触发 Bench（改前），加 paths-ignore 后两者皆跳。
 - [ ] 1b CI `detect-changes` 加 `compiler`(`src/compiler/**`) + `vm`(`src/runtime/**`) 输出（含 `.github/workflows/ci.yml` 保底全跑）
 - [ ] 1c CI `verify-selfhost` gate on `compiler`（rule b；needs changes + if）
 - [ ] 1d CI `build-and-test` 的 `cargo test`(Windows leg) step gate on `vm`（rule c；needs changes + step if）
