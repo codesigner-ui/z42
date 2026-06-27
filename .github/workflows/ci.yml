@@ -464,6 +464,38 @@ jobs:
           retention-days: 3
           if-no-files-found: warn
 
+  # ── compile-once P3 (additive): consume current-sdk cross-job ───────────────
+  # Proves the current-sdk `.z42` artifact, downloaded fresh in a SEPARATE job, is
+  # a working self-contained toolchain: its own bin/z42vm + programs/z42c/driver +
+  # libs/ compile a real project (xtask) with no rebuild/bootstrap. This is the
+  # downstream-consume model (test jobs will adopt it instead of each re-
+  # bootstrapping) + the seed of cross-bootstrap (Decision 7). continue-on-error
+  # while we validate — promote to a gate once proven.
+  consume-current-sdk:
+    name: consume-current-sdk (cross-job)
+    needs: toolchain-bootstrap
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download current-sdk-ubuntu-latest
+        uses: actions/download-artifact@v4
+        with:
+          name: current-sdk-ubuntu-latest
+          path: .z42-dl
+      - name: Compile xtask using ONLY the downloaded toolchain (consume smoke)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TC="$PWD/.z42-dl"
+          chmod +x "$TC/bin/z42vm"
+          ls "$TC/programs/z42c/" "$TC/libs/" >/dev/null
+          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$TC/programs/z42c/z42c.driver.zpkg" --mode interp -- \
+            build scripts/xtask.z42.toml --release --output-dir "$RUNNER_TEMP/consume-out"
+          test -f "$RUNNER_TEMP/consume-out/xtask.zpkg" \
+            && echo "✅ current-sdk is a working consumable toolchain (cross-job)" \
+            || { echo "::error::current-sdk consume failed — no xtask.zpkg"; exit 1; }
+
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
   # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in
   # INTERP only (on every host OS). This job is the SOLE JIT gate — it runs the VM

@@ -47,6 +47,7 @@
 - [ ] 2.6 push + CI 验证 current-sdk-<os> artifact 产出正确
 
 ## P3：下游消费 artifact（ci.yml + action + bench/release）
+- [x] 3.0 **consume 验证 job**（additive）：新增 `consume-current-sdk` job——下载 current-sdk-ubuntu-latest，用其自带 z42vm+driver+libs 编 xtask，证跨 job artifact 是可消费工作工具链。continue-on-error，不动现有 test 主体。YAML 校验通过，待 push 验。
 - [ ] 3.1 `.github/actions/xtask-bootstrap-artifact/action.yml`：改为下载 `current-sdk` + `--toolchain artifacts/.z42` 消费
 - [ ] 3.2 test 腿（build-and-test→消费 artifact）：下载 + cargo z42vm + `--toolchain artifacts/.z42 test --no-build`（interp）
 - [ ] 3.3 jit 腿：同上 + jit + `--shard k/4`（复用 95e9facf 分片，不改机制）
