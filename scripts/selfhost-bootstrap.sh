@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# bootstrap-no-csharp.sh (replace-csharp S4) — rebuild z42c + stdlib + xtask from
+# selfhost-bootstrap.sh (replace-csharp S4) — rebuild z42c + stdlib + xtask from
 # CURRENT SOURCE using a prebuilt z42c-written SEED, with NO C# (no dotnet) in the
-# loop. This is the C#-free self-hosting closure: the z42c compiler (written in
+# loop. This is the self-hosting closure: the z42c compiler (written in
 # z42) compiles itself + the stdlib + the dev CLI, bootstrapped from a downloaded
 # nightly seed (the only thing C# is allowed to have produced, upstream).
 #
 # Usage:
-#   scripts/bootstrap-no-csharp.sh [SEED_DIR]
+#   scripts/selfhost-bootstrap.sh [SEED_DIR]
 #     SEED_DIR  dir holding the z42c-written seed: z42c.driver.zpkg + 6 z42c.*
 #               deps + a runnable stdlib (z42.*.zpkg). Default (local dev): assemble
 #               from artifacts/build/z42c/selfhost-out (z42c-built) + current stdlib.
@@ -32,7 +32,7 @@ cargo build --locked --release --manifest-path src/runtime/Cargo.toml --bin z42v
 # ── 1. Seed (z42c-written compiler + runnable stdlib) ────────────────────────
 SEED="${1:-}"
 if [ -z "$SEED" ]; then
-  SEED="$ROOT/artifacts/build/z42c/nocs-seed"
+  SEED="$ROOT/artifacts/build/z42c/selfhost-seed"
   echo "── [1/5] assembling local seed (selfhost-out z42c + current stdlib) → $SEED ──"
   rm -rf "$SEED"; mkdir -p "$SEED"
   for m in $MEMBERS; do
@@ -48,7 +48,7 @@ echo "   seed: $(ls "$SEED"/*.zpkg | wc -l | tr -d ' ') zpkg @ $SEED"
 run_z42c() { Z42_LIBS="$2" "$vm" "$1" --mode interp -- "${@:3}"; }
 
 # ── 2. seed z42c → rebuild stdlib from source (per-member, --workspace) ──────
-fresh_stdlib="$ROOT/artifacts/build/z42c/nocs-stdlib/$PROFILE"
+fresh_stdlib="$ROOT/artifacts/build/z42c/selfhost-stdlib/$PROFILE"
 echo "── [2/5] seed z42c builds stdlib from source → $fresh_stdlib ──"
 rm -rf "$fresh_stdlib"; mkdir -p "$fresh_stdlib"
 ( cd src/libraries && Z42_LIBS="$SEED" "$vm" "$seed_driver" --mode interp -- \
@@ -56,13 +56,13 @@ rm -rf "$fresh_stdlib"; mkdir -p "$fresh_stdlib"
 echo "   fresh stdlib: $(ls "$fresh_stdlib"/*.zpkg | wc -l | tr -d ' ') zpkg"
 
 # runlibs for compiling z42c: fresh stdlib + seed z42c siblings (all present → any order)
-runlibs="$ROOT/artifacts/build/z42c/nocs-runlibs"
+runlibs="$ROOT/artifacts/build/z42c/selfhost-runlibs"
 rm -rf "$runlibs"; mkdir -p "$runlibs"
 cp -f "$fresh_stdlib"/*.zpkg "$runlibs/"
 for m in $MEMBERS; do cp -f "$SEED/$m.zpkg" "$runlibs/"; done
 
 # ── 3. seed z42c → rebuild z42c from source (single-toml per member) ─────────
-fresh_z42c="$ROOT/artifacts/build/z42c/nocs-z42c"
+fresh_z42c="$ROOT/artifacts/build/z42c/selfhost-z42c"
 echo "── [3/5] seed z42c builds z42c from source (single-toml topo) → $fresh_z42c ──"
 rm -rf "$fresh_z42c"; mkdir -p "$fresh_z42c"
 for m in $MEMBERS; do
@@ -85,10 +85,10 @@ echo "   xtask: $(ls "$ROOT/artifacts/xtask/xtask.zpkg" >/dev/null 2>&1 && echo 
 # (e.g. a new language feature), seed-built gen1 legitimately differs from the seed.
 # A correct compiler built from CURRENT source must reproduce ITSELF, so we compare
 # gen1 (seed-built) against gen2 (gen1-built) — both from current source.
-gen2="$ROOT/artifacts/build/z42c/nocs-z42c-gen2"
+gen2="$ROOT/artifacts/build/z42c/selfhost-z42c-gen2"
 echo "── [5/6] gen1 builds z42c again → gen2 ──"
 rm -rf "$gen2"; mkdir -p "$gen2"
-gen1libs="$ROOT/artifacts/build/z42c/nocs-gen1libs"
+gen1libs="$ROOT/artifacts/build/z42c/selfhost-gen1libs"
 rm -rf "$gen1libs"; mkdir -p "$gen1libs"
 cp -f "$fresh_stdlib"/*.zpkg "$gen1libs/"
 for m in $MEMBERS; do cp -f "$fresh_z42c/$m.zpkg" "$gen1libs/"; done
@@ -114,4 +114,4 @@ for m in $MEMBERS; do
     fi
   fi
 done
-[ "$fail" = 0 ] && echo "✅ C#-free bootstrap + gen1==gen2 fixpoint OK (no dotnet)" || { echo "❌ fixpoint failed"; exit 1; }
+[ "$fail" = 0 ] && echo "✅ bootstrap + gen1==gen2 fixpoint OK (no dotnet)" || { echo "❌ fixpoint failed"; exit 1; }

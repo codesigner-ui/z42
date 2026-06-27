@@ -136,7 +136,7 @@ jobs:
             windows-latest)   host=windows-x64 ;;
             *) echo "::error::unmapped host ${{ matrix.runs-on }}"; exit 1 ;;
           esac
-          bash scripts/ci-bootstrap-nocs.sh "$host"
+          bash scripts/ci-bootstrap.sh "$host"
 
       # wasm-only: pre-build pkg-web/ + pkg-nodejs/ via wasm-pack (WasmBackend)
       - name: Build wasm platform

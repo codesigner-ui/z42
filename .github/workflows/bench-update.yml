@@ -57,7 +57,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: bash scripts/ci-bootstrap-nocs.sh linux-x64
+        run: bash scripts/ci-bootstrap.sh linux-x64
 
       - name: Run full e2e bench (xtask)
         shell: bash

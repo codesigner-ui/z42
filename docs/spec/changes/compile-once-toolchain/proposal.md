@@ -10,7 +10,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 开口：
 
 1. **z42c+stdlib+xtask 被独立全量编译 ~16 次**：测试 job（build-and-test×4 / vm-jit×4 /
-   stdlib-jit×4 / compiler-z42-stdlib）各自跑 `ci-bootstrap-nocs.sh`（~12min/job），而
+   stdlib-jit×4 / compiler-z42-stdlib）各自跑 `ci-bootstrap.sh`（~12min/job），而
    `toolchain-bootstrap` 已把同样的产物上传成 artifact——只有 package/platform job 消费它。
 2. **build-wave 二次重建**：即使 bootstrap 建好，`test all` 的 `_regenCore` 又把 z42c+stdlib+
    goldens 重建一遍（~17min，build-and-test 最大块）。
@@ -23,7 +23,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 5. **发布门不全**：① 不动点只在 `bootstrap-no-csharp` 验、publish-nightly needs 不含它；② **测试腿也不在
    publish needs** → 理论上能发出"未验自洽"或"行为错误"的 nightly。须补**三关**（完整/稳定/正确），其中
    `{gen2}=={gen3}` 只证稳定**不证正确**，正确要靠测试套件单独验。
-6. **scripts/ 多个 bootstrap shell CLI**：`ci-bootstrap-nocs.sh` + `bootstrap-no-csharp.sh` 重复，
+6. **scripts/ 多个 bootstrap shell CLI**：`ci-bootstrap.sh` + `selfhost-bootstrap.sh` 重复，
    `ci-stage-toolchain.sh` 可折进 xtask，`check-bootstrap-compat.sh` 本地工具。
 
 不做的代价：CI 关键路径停在 ~40min（含大量重复编译），且 format bump 会突然死锁、无自动恢复。
@@ -44,8 +44,8 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
    **改造**：种子换"本地 SDK set 打包发布形态"，重跑 S2-S4 编 xtask+{z42c,stdlib}，验 `{gen2}=={gen3}`）进 needs；
    ③ **正确=test-interp/test-jit（+stdlib/cross-zpkg）进 publish-nightly needs**（修"稳定地错也能发"缺口）。
 6. **重命名 + 删冗余 job + 脚本清理**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；评估删
-   `compiler-z42-stdlib`；删 `ci-bootstrap-nocs.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
-   `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `bootstrap-no-csharp.sh`（已改造）**。
+   `compiler-z42-stdlib`；删 `ci-bootstrap.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
+   `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `selfhost-bootstrap.sh`（已改造）**。
 7. **文档**：`bootstrap-and-testing.md` 随各 Phase 落地更新；同步 self-hosting.md/ci.md。
 
 ## Scope（允许改动的文件）
@@ -59,8 +59,8 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 | `scripts/xtask_compiler_z42.z42` | MODIFY | `--toolchain` 定位 z42c；fixpoint helper |
 | `scripts/xtask_common.z42` | MODIFY | toolchain-dir 解析 helper |
 | `scripts/xtask_package*.z42` | MODIFY | 消费 `--toolchain artifacts/.z42` |
-| `scripts/ci-bootstrap-nocs.sh` | DELETE | 逻辑内联进 compile job |
-| `scripts/bootstrap-no-csharp.sh` | MODIFY | **改造**成 cross-bootstrap：种子来源换成本地 SDK（不删）|
+| `scripts/ci-bootstrap.sh` | DELETE | 逻辑内联进 compile job |
+| `scripts/selfhost-bootstrap.sh` | MODIFY | **改造**成 cross-bootstrap：种子来源换成本地 SDK（不删）|
 | `scripts/ci-stage-toolchain.sh` | DELETE | 折进 `xtask build sdk` |
 | `scripts/check-bootstrap-compat.sh` | DELETE | 边界由 compile job 隐式强制 |
 | `.github/workflows/ci.yml` | MODIFY | compile job + 下游消费 + 重命名 + 删冗余 job |

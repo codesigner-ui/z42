@@ -58,7 +58,7 @@
 - [ ] 3.6 commit + CI 验证全下游绿 + 关键路径时长下降（目标 ~52→~25-30min）
 
 ## P4：发布门三关进 needs（完整 / 稳定 / 正确）
-- [ ] 4.1 cross-bootstrap（完整关）：`scripts/bootstrap-no-csharp.sh` 改造——种子换成"**本地 SDK set 的打包发布形态**"（消费 current-sdk / 本地 `build package` 产物），重跑 S2-S4：编 xtask（验编成功）+ 编 {z42c,stdlib}（逐字节==自带 = {gen2}=={gen3}）
+- [ ] 4.1 cross-bootstrap（完整关）：`scripts/selfhost-bootstrap.sh` 改造——种子换成"**本地 SDK set 的打包发布形态**"（消费 current-sdk / 本地 `build package` 产物），重跑 S2-S4：编 xtask（验编成功）+ 编 {z42c,stdlib}（逐字节==自带 = {gen2}=={gen3}）
 - [ ] 4.2 正确关：**test-interp / test-jit（+ stdlib/cross-zpkg 行为覆盖）进 `publish-nightly` 的 needs**——三腿本就跑 gen2 工具链(=发布件)，直接进 needs。修"稳定地错也能发"缺口
 - [ ] 4.3 `publish-nightly` needs = package-* + cross-bootstrap + test-interp + test-jit（三关全过才发）
 - [ ] 4.4 commit + CI 验证：① 故意改 z42c codegen 制造 {gen2}≠{gen3} 验稳定关拦截 ② 故意弄挂一个 [Test] 验正确关拦截发布
@@ -66,9 +66,9 @@
 ## P5：重命名 + 评估删 job + 删脚本（ci.yml + scripts/）
 - [x] 5.1 **CI job 重命名**（动作-平台-host 约定，display name + matrix platform 标签，id 不变）：build-and-test→`test (<平台>)`、toolchain-bootstrap→`compile (<平台>)`、host-package→`package (<平台>)`、vm-jit→`test-vm-jit-linux-x64`、stdlib-jit→`test-stdlib-jit-linux-x64`、bootstrap-no-csharp→`verify-selfhost-linux-x64`、compiler-z42-stdlib→`test-compiler-stdlib`、feature-matrix→`verify-features`、package/test-{ios→-macos,android/wasm→-linux}、bench-e2e→`bench-linux-x64`、consume→`test-consume-linux-x64`。⚠️ User 需更新 branch protection required checks。
 - [ ] 5.2 评估删 `compiler-z42-stdlib` job（确认覆盖已被 compile job + test 阶段完全包含；Open Question）
-- [ ] 5.3 删 `scripts/ci-bootstrap-nocs.sh`（逻辑已内联 compile job）
+- [ ] 5.3 删 `scripts/ci-bootstrap.sh`（逻辑已内联 compile job）
 - [ ] 5.4 删 `scripts/ci-stage-toolchain.sh`（折进 `xtask build sdk`）+ `scripts/check-bootstrap-compat.sh`（边界由 compile job 隐式强制）
-- [ ] 5.5 **保留 `scripts/install-z42.sh`**（cold-start primer）+ `scripts/bootstrap-no-csharp.sh`（已改造为 cross-bootstrap，不删）
+- [ ] 5.5 **保留 `scripts/install-z42.sh`**（cold-start primer）+ `scripts/selfhost-bootstrap.sh`（已改造为 cross-bootstrap，不删）
 - [ ] 5.6 commit + CI 全绿
 
 ## 文档同步（贯穿各 P，归档前必完成）

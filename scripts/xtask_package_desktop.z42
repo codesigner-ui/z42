@@ -197,7 +197,7 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
 
     // z42c-written compiler seed (z42c.* 7 zpkg) → z42c/ (replace-csharp S4):
     // the C#-free bootstrap seed. With z42vm + libs/ (stdlib), this runtime package
-    // is a complete self-host seed — `scripts/bootstrap-no-csharp.sh` uses it to
+    // is a complete self-host seed — `scripts/selfhost-bootstrap.sh` uses it to
     // rebuild stdlib + z42c + xtask from source with NO dotnet. RID-independent z42
     // artifacts (same bytes every platform); built here via the C# driver (the only
     // C# touch, upstream — downstream consumers rebuild z42c without C#).

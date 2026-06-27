@@ -61,7 +61,7 @@ host SDK ───┼─ host-package (per OS)   下载 host-SDK + cargo z42vm +
 
 > **现状（2026-06-27）**：9 个 package/platform job 已消费 host-SDK artifact（`xtask-bootstrap-artifact`
 > action）✓。但**测试 job（build-and-test / vm-jit / stdlib-jit / compiler-z42-stdlib）仍各自全量
-> 重新自举**（`ci-bootstrap-nocs.sh`，~12min/job）——这是当前最大的冗余（见 §5）。
+> 重新自举**（`ci-bootstrap.sh`，~12min/job）——这是当前最大的冗余（见 §5）。
 
 ---
 
@@ -167,7 +167,7 @@ SDK set（下载）打破。compile job 的 S0-S2 是**不可消除的 shell 层
 | 1 | **16× 重新全量自举** | 测试 job 各自 `ci-bootstrap-nocs`（~12min）| 全消费单一 current-sdk artifact |
 | 2 | **build-wave 二次重建** | test all 的 `_regenCore` 又编 z42c+stdlib+goldens（~17min）| compile-once + `--no-build` 消除 |
 | 3 | test all 内 z42c 编 3 次 | ✅ 已修（89db08a0：cross-zpkg/compiler-z42 stage 加 noBuild）| — |
-| 4 | 两个 bootstrap 脚本 | `ci-bootstrap-nocs.sh` + `bootstrap-no-csharp.sh` 并存 | ci-bootstrap-nocs 内联进 compile job；bootstrap-no-csharp **改造**为 cross-bootstrap |
+| 4 | 两个 bootstrap 脚本 | `ci-bootstrap.sh` + `selfhost-bootstrap.sh` 并存 | ci-bootstrap-nocs 内联进 compile job；bootstrap-no-csharp **改造**为 cross-bootstrap |
 | 5 | `bootstrap-no-csharp` job | 唯一做不动点，但 needs 不 gate 发布 | 不动点门折进 compile job S4；此 job **改造**成 cross-bootstrap（种子换本地 SDK），进 publish needs |
 | 6 | `compiler-z42-stdlib` job | z42c 编全 stdlib + 功能验证 | 覆盖已在 compile job + test 阶段，评估删 |
 | 7 | scripts/ 多个 shell CLI | 5 个 .sh | 逻辑内联 CI；仅留 `install-z42.sh` |

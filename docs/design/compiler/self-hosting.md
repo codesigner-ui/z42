@@ -236,7 +236,7 @@ xtask 绝不能依赖本提交新加的语法/stdlib API。
 
 **不动点已证**：z42c-built `z42c.driver.zpkg` 与 C#-built **逐字节一致**；用 z42c-built 种子重建 z42c，7/7 包逐字节一致（含 BLID，确定性）。即 z42c（z42 写的编译器）忠实编译自身。
 
-**C#-free bootstrap 序**（`scripts/bootstrap-no-csharp.sh`，z42vm only）：
+**C#-free bootstrap 序**（`scripts/selfhost-bootstrap.sh`，z42vm only）：
 1. `cargo build z42vm`（Rust，非 C#）。
 2. 种子 z42c 编 stdlib（源，`build --workspace --output-dir`）→ fresh stdlib。
 3. 种子 z42c **单 toml 逐成员**编 z42c（源，runlibs=fresh-stdlib+种子 z42c，累积 fresh siblings）→ fresh z42c。（`build --workspace` 自建 z42c 有 E0402 wrinkle → 单 toml 拓扑绕过，待独立 change 根因修。）

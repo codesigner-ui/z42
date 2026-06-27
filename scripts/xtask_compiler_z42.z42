@@ -19,7 +19,7 @@ using Std;
 using Std.IO;
 
 // replace-csharp Phase C：z42c 自建走 C#-free 种子路径（z42c builds z42c），不再 dotnet。
-// 种子 = 现有 canonical z42c dist（self-seed；clean/CI 由 bootstrap-no-csharp / 下载 nightly 提供）。
+// 种子 = 现有 canonical z42c dist（self-seed；clean/CI 由 selfhost-bootstrap / 下载 nightly 提供）。
 // 缺种子 → 明确报错指引 bootstrap，不回落 C#（C# 已删）。
 int _buildCompilerZ42() {
     string root = _root();
@@ -27,7 +27,7 @@ int _buildCompilerZ42() {
     string seedDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
     if (!File.Exists(seedDriver) || File.GetSize(seedDriver) <= 0L) {
         ConsoleError.WriteLine("error: no z42c seed at " + seedDriver);
-        ConsoleError.WriteLine("       seed z42c first: scripts/bootstrap-no-csharp.sh (or `z42 install` nightly)");
+        ConsoleError.WriteLine("       seed z42c first: scripts/selfhost-bootstrap.sh (or `z42 install` nightly)");
         return 1;
     }
     int rc = _buildRuntime(); if (rc != 0) { return rc; }   // cargo release z42vm（C#-free）跑种子 driver
@@ -166,7 +166,7 @@ int _testCompilerZ42Stdlib() {
     Console.WriteLine("");
     Console.WriteLine("══ replace-csharp-compiler S2.1: z42c dogfood-builds stdlib ══");
     // replace-csharp Phase C：C# 已删——用 C#-free warm 路径建 fresh stdlib + z42c（种子来自
-    // bootstrap-no-csharp / 现有 dist）。_buildStdlib 顺带 z42c 自建；下面再用 z42c 编到独立 dogfood 目录。
+    // selfhost-bootstrap / 现有 dist）。_buildStdlib 顺带 z42c 自建；下面再用 z42c 编到独立 dogfood 目录。
     int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }
     int sc = _buildStdlib(); if (sc != 0) { return sc; }
 

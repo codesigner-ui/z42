@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci-bootstrap-nocs.sh (remove-dotnet-from-builds) — C#-free CI bootstrap into the
+# ci-bootstrap.sh (remove-dotnet-from-builds) — CI bootstrap (self-hosted, no dotnet) into the
 # STANDARD artifact locations that build-and-test's later steps (test all / package
 # release / upload) expect. Replaces the C# bootstrap (`dotnet build z42.slnx` +
 # `dotnet run z42.Driver -- build …`) with the staged self-host loop seeded by the
@@ -14,7 +14,7 @@
 # bootstrap discipline (.claude/rules/bootstrap-seed.md) guarantees it compiles
 # current source (verify with scripts/check-bootstrap-compat.sh before relying on it).
 #
-# Usage:  scripts/ci-bootstrap-nocs.sh [rid]
+# Usage:  scripts/ci-bootstrap.sh [rid]
 #   rid defaults to host (macos-arm64 / linux-x64 / linux-arm64 / windows-x64).
 #   Needs gh (auth'd) + cargo + rust. Runs on all 4 OS build-and-test legs.
 set -euo pipefail
@@ -28,7 +28,7 @@ if [ -z "$RID" ]; then
     Linux-aarch64)       RID=linux-arm64 ;;
     Linux-arm64)         RID=linux-arm64 ;;
     MINGW*|MSYS*|CYGWIN*) RID=windows-x64 ;;
-    *) echo "::error::unsupported host for C#-free bootstrap; pass rid"; exit 2 ;;
+    *) echo "::error::unsupported host for bootstrap; pass rid"; exit 2 ;;
   esac
 fi
 
@@ -76,7 +76,7 @@ if [ "$EXT" = zip ]; then unzip -q "$work/rt.${EXT}" -d "$work/rtpkg"; else tar 
 if ! ls "$work/rtpkg/z42c/"*.zpkg >/dev/null 2>&1; then
   echo "::error::nightly runtime package has no z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals on the next run)"; exit 1
 fi
-seed="$ROOT/.ci-nocs-seed"; rm -rf "$seed"; mkdir -p "$seed"
+seed="$ROOT/.ci-seed"; rm -rf "$seed"; mkdir -p "$seed"
 cp -f "$work/rtpkg/z42c/"*.zpkg "$seed/"
 cp -f "$work/rtpkg/libs/"*.zpkg "$seed/"
 echo "   seed: $(ls "$seed"/*.zpkg | wc -l | tr -d ' ') zpkg @ $seed"
@@ -125,9 +125,9 @@ echo "── [4/5] xtask build stdlib ──"
 Z42_LIBS="$libsw" Z42_PORTABLE_VM="$runvmw" "$runvm" artifacts/xtask/xtask.zpkg -- build stdlib
 
 # ── 5. sanity: no dotnet was invoked; toolchain present ──────────────────────
-echo "── [5/5] verify C#-free toolchain ──"
+echo "── [5/5] verify toolchain (no dotnet) ──"
 [ -f "$ROOT/artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg" ] \
   || { echo "::error::current z42c.driver.zpkg missing after build compiler-z42"; exit 1; }
 [ -f "$libs/z42.core.zpkg" ] || { echo "::error::stdlib flat dist missing"; exit 1; }
 rm -rf "$work"
-echo "✅ C#-free CI bootstrap OK ($RID) — z42c + stdlib + xtask in standard locations, no dotnet"
+echo "✅ CI bootstrap OK ($RID) — z42c + stdlib + xtask in standard locations, no dotnet"

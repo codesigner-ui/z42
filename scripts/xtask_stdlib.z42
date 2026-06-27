@@ -72,9 +72,9 @@ int _buildStdlibCore() {
     if (!haveSeed) {
         // The C# bootstrap compiler (src/compiler) has been removed — there is no
         // cold-start fallback. A fresh checkout bootstraps C#-free by first seeding
-        // a previously-published nightly z42c (CI does this via ci-bootstrap-nocs.sh).
+        // a previously-published nightly z42c (CI does this via ci-bootstrap.sh).
         ConsoleError.WriteLine("error: no warm z42c seed (z42c.driver.zpkg + stdlib dist) found.");
-        ConsoleError.WriteLine("  Bootstrap a C#-free seed first:  bash scripts/ci-bootstrap-nocs.sh");
+        ConsoleError.WriteLine("  Bootstrap a C#-free seed first:  bash scripts/ci-bootstrap.sh");
         ConsoleError.WriteLine("  (downloads the previous nightly's z42c), then re-run the build.");
         return 1;
     }
