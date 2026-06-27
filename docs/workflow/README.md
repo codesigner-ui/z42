@@ -5,9 +5,9 @@
 ## 前置：先拿到 z42
 
 **前置工具**：git + Rust stable（`rustc --version` 自检）+ `gh`（auth'd，下载 SDK 用）。
-**dotnet 已彻底移除（2026-06-26）**——工具链 100% z42 自举。
+工具链 100% z42 自举：`z42c`（编译器）用 z42 写、编译为 zpkg；`z42vm`（VM）是 Rust。
 
-所有命令都经 `z42` launcher 跑，而 z42 的工具链本身用 z42 写（`xtask`）——所以先下载一个预编译 launcher 引导（鸡生蛋的唯一原生 primer）。**自举 + 本地/CI 测试验证的完整流程**（SDK vs Current 两套 toolchain、交叉验证、边界不变量、冗余清单）见 [`bootstrap-and-testing.md`](bootstrap-and-testing.md)：
+所有命令都经 `z42` launcher 跑，而 z42 的工具链本身用 z42 写（`xtask`）——所以先下载一个预编译 launcher 引导（鸡生蛋的唯一原生 primer）。**自举 + 本地/CI 测试验证的完整流程**（SDK vs Current 两套 toolchain、交叉验证、边界不变量、冗余清单）见 [`testing/bootstrap.md`](testing/bootstrap.md)：
 
 ```bash
 ./scripts/install-z42.sh                       # → ./.z42/（z42 launcher + z42c + z42vm + stdlib）；Windows: install-z42.bat
@@ -32,6 +32,9 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → ar
 
 | 我要 | 看 |
 |------|-----|
+| 在 **macOS** 从零开发 | [`building/macos.md`](building/macos.md) |
+| 在 **Linux** 从零开发 | [`building/linux.md`](building/linux.md) |
+| 在 **Windows** 从零开发 | [`building/windows.md`](building/windows.md) |
 | 编 z42c 编译器（z42 自举）| [`building/compiler.md`](building/compiler.md) |
 | 编 Rust VM | [`building/vm.md`](building/vm.md) |
 | 重建 stdlib | [`building/stdlib.md`](building/stdlib.md) |
@@ -46,7 +49,6 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → ar
 | 只跑 git diff 影响的测试 | [`testing/changed-only.md`](testing/changed-only.md) |
 | 看 CI matrix / GREEN 标准 | [`ci.md`](ci.md) |
 | **本地打 9 个 per-arch SDK package** | [`packaging.md`](packaging.md) |
-| **在 Windows 上跑 xtask** | [`windows.md`](windows.md) |
 | 打跨平台 release | [`release.md`](release.md) |
 | lldb / gdb / dap 调试 | [`debugging.md`](debugging.md) |
 

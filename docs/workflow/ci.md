@@ -1,8 +1,8 @@
 # CI 工作流
 
-z42 CI 在 GitHub Actions 运行（[`.github/workflows/`](../../.github/workflows/)）。工具链 **100% z42 自举，无 dotnet/C#**（2026-06-26 彻底移除）。
+z42 CI 在 GitHub Actions 运行（[`.github/workflows/`](../../.github/workflows/)）。工具链 **100% z42 自举**：`z42c` 用 z42 写、编译为 zpkg；`z42vm` 是 Rust。
 
-CI 与本地测试遵循**同一个 6 阶段分层流水线**——本地按阶段跑 `xtask` 即镜像 CI。深入的自举机制（SDK/Current 两套 toolchain、成对分代、不动点）见 [`bootstrap-and-testing.md`](bootstrap-and-testing.md)；本文聚焦 **CI 拓扑 + 阶段总览**。
+CI 与本地测试遵循**同一个 6 阶段分层流水线**——本地按阶段跑 `xtask` 即镜像 CI。深入的自举机制（SDK/Current 两套 toolchain、成对分代、不动点）见 [`testing/bootstrap.md`](testing/bootstrap.md)；本文聚焦 **CI 拓扑 + 阶段总览**。
 
 > 🚧 **现状**：6 阶段模型是**目标拓扑**，迁移进行中（见 `docs/spec/changes/compile-once-toolchain/`）。阶段 3/4 已产出共享 artifact（`current-sdk`），阶段 5 的部分消费者（`test-consume`）已消费；其余测试 job 仍各自自举，逐步迁移。下文标注「✅ 已落地 / 🟡 进行中 / ⬜ 目标」。
 
@@ -46,7 +46,7 @@ flowchart TD
 **做什么**：验证「**上一版已发布 nightly 的 z42c 能编译当前 z42c 源**」——守住 support-before-use 纪律（新语法/格式分两 release 引入），确保跨版本自举不断链。
 
 - **触发**：仅 z42c（`src/compiler`）改动（rule b）。
-- **CI job**：`verify-selfhost-linux-x64`（下载上一 nightly 种子 → C#-free 重建 z42c+stdlib+xtask → 不动点 gen1==gen2 逐字节）。
+- **CI job**：`verify-selfhost-linux-x64`（下载上一 nightly 种子 → 重建 z42c+stdlib+xtask → 不动点 gen1==gen2 逐字节）。
 - **本地**：`xtask bootstrap-check`（⬜ 目标；现为 `scripts/check-bootstrap-compat.sh`）。
 - 规范：[`.claude/rules/bootstrap-seed.md`](../../.claude/rules/bootstrap-seed.md)。
 
@@ -57,7 +57,7 @@ flowchart TD
 - **共享性**：**zpkg 全平台共享**（编一次）；**z42vm 同平台共享**（每 host OS 一份，上传后同平台下游直接用，不重 `cargo build`）。
 - **CI job**：`compile (linux-x64 / macos-arm64)`（原 `toolchain-bootstrap`）。
 - **本地**：`xtask build sdk [--out artifacts/.z42]`（✅ 已落地）。
-- 边界：z42c+stdlib 是「成对分代」产物（gen2），发布的就是它；详见 bootstrap-and-testing.md。
+- 边界：z42c+stdlib 是「成对分代」产物（gen2），发布的就是它；详见 [`testing/bootstrap.md`](testing/bootstrap.md)。
 
 ### ④ 测试资产（同平台共享）
 **做什么**：把测试用的 `.zbc` **编一次**——golden（`xtask regen`）、stdlib `[Test]` 单元、fixture——`.zbc` 平台无关，全平台共享，避免每个测试 job 重复 regen。
@@ -82,7 +82,7 @@ flowchart TD
 **做什么**：测试通过 → main push → 发布 nightly（下一轮自举的种子）。
 
 - **CI job**：`publish-nightly`（`needs: build-and-test + host-package + package-*`）。
-- **防死锁**：**故意不** gate 在 download-bootstrap job（`test-vm-jit` / `test-stdlib-jit` / `verify-selfhost`）上——它们在 zbc/zpkg 格式 bump 那轮会暂时失败（要等兼容 nightly），gate 上去会死锁、无 C# 逃生口。「行为正确」由 `build-and-test`（在 needs 里）保证。
+- **防死锁**：**故意不** gate 在 download-bootstrap job（`test-vm-jit` / `test-stdlib-jit` / `verify-selfhost`）上——它们在 zbc/zpkg 格式 bump 那轮会暂时失败（要等兼容 nightly），gate 上去会死锁、无逃生口。「行为正确」由 `build-and-test`（在 needs 里）保证。
 
 ---
 
@@ -106,7 +106,7 @@ flowchart TD
 任何 commit / PR merge 前必须全绿（[`.claude/rules/workflow.md`](../../.claude/rules/workflow.md) 阶段 8）。统一入口：
 
 ```bash
-./xtask test          # 默认串联全 stage（C#-free 完整 GREEN gate）
+./xtask test          # 默认串联全 stage（完整 GREEN gate）
 ```
 
 等价于（任一失败立刻停）：
@@ -119,7 +119,7 @@ cargo build --manifest-path src/runtime/Cargo.toml --release   # z42vm（Rust）
 ./xtask test compiler-z42  # z42c 自举（build 7 子包 + 不动点 + [Test] units）
 ```
 
-> **无 dotnet**：编译器正确性由 `test compiler-z42`（z42c 自举不动点）保证，不再有 C# `dotnet build/test`。
+> 编译器正确性由 `test compiler-z42`（z42c 自举不动点）保证。
 > 任何测试失败（含 pre-existing）都不得 commit / push。
 
 ---

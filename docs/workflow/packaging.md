@@ -35,15 +35,15 @@
 
 - Desktop RID 只能在同 RID 的 host 上 build（macos-arm64 不能产 linux-x64）。需要全平台覆盖请走 CI matrix（[release.md](release.md)）。
 - iOS RID 只能在 macOS host 上 build（需要 Xcode + xcframework + Apple toolchain）。
-- Android / wasm RID 可在 macOS / Linux / Windows host 上 cross-compile（Windows 需走 Android Studio 装 SDK+NDK、Node.js 装 MSI；见 [`windows.md`](windows.md)）。
-- **Windows host 跑这些 `.sh`**：用 Git Bash（Git for Windows 自带）；见 [`windows.md`](windows.md)。
+- Android / wasm RID 可在 macOS / Linux / Windows host 上 cross-compile（Windows 需走 Android Studio 装 SDK+NDK、Node.js 装 MSI；见 [`building/windows.md`](building/windows.md)）。
+- **Windows host 跑这些 `.sh`**：用 Git Bash（Git for Windows 自带）；见 [`building/windows.md`](building/windows.md)。
 
 ## 前置工具（一次性）
 
 按你要 build 的 RID 装：
 
 ```bash
-# 必备（所有 RID）—— dotnet 已彻底移除（2026-06-26），工具链全 z42 自举
+# 必备（所有 RID）
 git --version                 # 拉源 + gh 下载 SDK
 cargo --version               # Rust stable；VM
 gh --version                  # auth'd；下载预编译 launcher / SDK

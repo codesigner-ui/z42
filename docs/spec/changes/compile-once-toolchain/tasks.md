@@ -46,7 +46,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [ ] 1b CI `detect-changes` 加 `compiler`(`src/compiler/**`) + `vm`(`src/runtime/**`) 输出（含 `.github/workflows/ci.yml` 保底全跑）
 - [ ] 1c CI `verify-selfhost` gate on `compiler`（rule b；needs changes + if）
 - [ ] 1d CI `build-and-test` 的 `cargo test`(Windows leg) step gate on `vm`（rule c；needs changes + step if）
-- [ ] 1e docs：change-detect 规则表落 bootstrap-and-testing.md
+- [ ] 1e docs：change-detect 规则表落 testing/bootstrap.md
 - [ ] 1f 验证：docs-only push 不触发 CI；compiler-only / vm-only 改动按 gate 跳过
 
 ### Stage 2 — bootstrap 边界检查
@@ -85,12 +85,18 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 
 ### 文档 — ci.md 全面重写（User 2026-06-28）
 - [x] DOC1 `docs/workflow/ci.md` 全面更新：**6 阶段流程图**（mermaid / ASCII）+ **每阶段详细说明**（产物 / 共享性 / 触发 / CI job / xtask 命令 / 本地复现）（6 阶段 mermaid 流程图 + 每阶段详解 + GREEN 标准去 dotnet + 本地镜像 CI + job 映射，已落地）
-- [ ] DOC2 ci.md 与 bootstrap-and-testing.md 分工：ci.md = CI 拓扑 + 阶段总览；bootstrap-and-testing.md = 自举机制深入
+- [ ] DOC2 ci.md 与 testing/bootstrap.md 分工：ci.md = CI 拓扑 + 阶段总览；testing/bootstrap.md = 自举机制深入
 - [x] DOC3 **全面更新 `docs/workflow/` 所有文档**（User 2026-06-28）——18 个文件清除完毕（dotnet/slnx/z42c.dll 命令换 `z42c`/`./xtask`、删 .NET 安装引导、unit-tests.md 重写为 z42c 自举+cargo test、wasm 删 dotnet-serve、windows 删 .NET SDK、artifacts 树/wave 表/对比表去 C#、stale 死符号 `Z42.Tests.*`/`CompilerUtils.*` 清除）：
   - **dotnet/C#/slnx 残留**：`dotnet build src/compiler/z42.slnx` / `dotnet run --project src/compiler/z42.Driver` / `dotnet test ...csproj` / `z42c.dll` / `.NET 10+ 安装引导` → 全部换成 `./xtask` / `z42c`（z42 自举，2026-06-26 dotnet 已删）
   - **旧 job 名**：`build-and-test` / `bootstrap-no-csharp` / `ci-bootstrap-nocs` → 新动作-平台命名（`test (<平台>)` / `verify-selfhost` / `compile`）
   - **旧命令**：`dotnet test ...csproj` 单测、`dotnet run -- build --workspace` → `./xtask` 等价
-  - 受影响文件（grep 命中）：`building/{compiler,stdlib,android,ios,wasm,cross-platform,README}.md`、`testing/{README,unit-tests,stdlib-tests,platform-tests,vm-tests}.md`、`debugging.md`、`packaging.md`、`windows.md`、`README.md`、`bootstrap-and-testing.md`
+  - 受影响文件（grep 命中）：`building/{compiler,stdlib,android,ios,wasm,cross-platform,README,windows}.md`、`testing/{README,unit-tests,stdlib-tests,platform-tests,vm-tests}.md`、`debugging.md`、`packaging.md`、`README.md`、`testing/bootstrap.md`
+- [x] DOC4 **docs/workflow 结构重组**（User 2026-06-28）：
+  - `bootstrap-and-testing.md` → `testing/bootstrap.md`（它是测试验证一环，归 testing/）
+  - `windows.md` → `building/windows.md` + 新建 `building/macos.md` / `building/linux.md`（building/ = 每平台从零开发环境，三 OS 对称）
+  - `building/README` 分三区：① 平台开发环境（macos/linux/windows）② 编译 z42 组件（compiler/vm/stdlib/cross-platform）③ 嵌入 z42 到宿主（wasm/ios/android facade）
+  - ios/android/wasm 统一三段结构：**① Host 环境准备 → ② 编译（facade + 嵌入 app）→ ③ 运行测试用例**；app 级 demo 缺的留 🚧 占位
+  - 历史框架清除（[[feedback_docs_current_state_not_history]]）：删所有「已于 2026-06-26 彻底移除 / C#-free / 替代旧 dotnet」式迁移历史，只留当前架构陈述
 
 ---
 
@@ -154,7 +160,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [ ] 5.6 commit + CI 全绿
 
 ## 文档同步（贯穿各 P，归档前必完成）
-- [ ] D.1 `docs/workflow/bootstrap-and-testing.md`：每 P 落地勾掉 §6 冗余清单对应行 + 更新 §2/§4.1 现状
+- [ ] D.1 `docs/workflow/testing/bootstrap.md`：每 P 落地勾掉 §6 冗余清单对应行 + 更新 §2/§4.1 现状
 - [ ] D.2 `docs/workflow/ci.md`：CI matrix / GREEN 标准随拓扑更新
 - [ ] D.3 `docs/design/compiler/self-hosting.md`：SDK/Current 两套 + gen2 编一切 的设计原理
 - [ ] D.4 `docs/spec/changes/ACTIVE.md`：登记 toolchain 占用；归档时释放

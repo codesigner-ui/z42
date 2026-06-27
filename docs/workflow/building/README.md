@@ -1,6 +1,16 @@
 # building/
 
-按"我要 build 什么"挑文件。每份文档都是**编号 step 配方**，从零开始可直接照抄。
+按"我要做什么"挑文件。每份文档都是**编号 step 配方**，从零开始可直接照抄。本目录分三类：
+
+## ① 平台开发环境（在某 OS 上从零开发 z42）
+
+| 文件 | 用途 |
+|------|------|
+| [`macos.md`](macos.md) | macOS（arm64，主开发平台）从零设置 + 构建 |
+| [`linux.md`](linux.md) | Linux（x64 / arm64）从零设置 + 构建 |
+| [`windows.md`](windows.md) | Windows（Git Bash + MSVC）从零设置 + 构建 |
+
+## ② 编译 z42 组件
 
 | 文件 | 用途 |
 |------|------|
@@ -8,9 +18,22 @@
 | [`vm.md`](vm.md) | Rust VM / `z42vm` + feature flag |
 | [`stdlib.md`](stdlib.md) | 22 个 stdlib 包 workspace |
 | [`cross-platform.md`](cross-platform.md) | 桌面跨平台 build matrix（placeholder 0.2.5）|
+
+## ③ 嵌入 z42 到宿主（facade）
+
+> ⚠️ 这三类是把 z42 **VM 嵌进宿主运行时**（消费者视角），不是"开发 z42 本身"。统一三段结构：① Host 环境准备 → ② 编译（facade + 嵌入 app）→ ③ 运行测试用例。
+
+| 文件 | 用途 |
+|------|------|
 | [`wasm.md`](wasm.md) | 🟢 WASM facade（`@z42/wasm` npm 包）|
 | [`ios.md`](ios.md) | 🟢 iOS facade（`Z42VM.xcframework` SwiftPM 包）|
 | [`android.md`](android.md) | 🟢 Android facade（`z42vm.aar` AAR module）|
+
+平台 facade 的源码 + 跨平台契约见 [`platform-contract.md`](../../../src/toolchain/workload/platform-contract.md)；设计与决策见 [`docs/spec/`](../../spec/)。
+
+---
+
+## 日常入口：xtask
 
 桌面日常用 **xtask**（编译产物 `artifacts/xtask/xtask.zpkg`，源码 `scripts/xtask*.z42`）：`./xtask build [all]` / `./xtask test`。
 
@@ -22,5 +45,3 @@ z42 publish desktop scripts/xtask.z42.toml                                # 读 
 ```
 
 `./xtask` 原生 + 平台相关 + 已 gitignore（重生不提交）；机制与 `[apphost].publish_dir` 配置见 [`runtime/launcher.md`](../../design/runtime/launcher.md#z42toml-配置apphost-publishapphost-out-path-2026-06-10)。
-
-平台 facade 的源码 + 跨平台契约见 [`platform-contract.md`](../../../src/toolchain/workload/platform-contract.md)；设计与决策见 [`docs/spec/`](../../spec/)。

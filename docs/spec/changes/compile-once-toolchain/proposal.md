@@ -2,7 +2,7 @@
 
 > 状态：DRAFT（前置：无硬性依赖；与已完成的 dotnet 移除衔接）
 > 子系统：`toolchain`（xtask）+ `runtime`（仅当 format 兜底选 B：zbc reader）+ docs
-> 操作流程基准：[`docs/workflow/bootstrap-and-testing.md`](../../../workflow/bootstrap-and-testing.md)
+> 操作流程基准：[`docs/workflow/testing/bootstrap.md`](../../../workflow/testing/bootstrap.md)
 
 ## Why
 
@@ -46,7 +46,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 6. **重命名 + 删冗余 job + 脚本清理**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；评估删
    `compiler-z42-stdlib`；删 `ci-bootstrap.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
    `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `selfhost-bootstrap.sh`（已改造）**。
-7. **文档**：`bootstrap-and-testing.md` 随各 Phase 落地更新；同步 self-hosting.md/ci.md。
+7. **文档**：`testing/bootstrap.md` 随各 Phase 落地更新；同步 self-hosting.md/ci.md。
 
 ## Scope（允许改动的文件）
 
@@ -68,7 +68,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 | `.github/workflows/bench-pr.yml` / `bench-update.yml` | MODIFY | 消费 artifact |
 | `.github/actions/xtask-bootstrap-artifact/action.yml` | MODIFY | 改为 `--toolchain` 消费 `.z42` |
 | `src/runtime/src/metadata/zbc_reader.rs` | MODIFY | **仅当 format 兜底选 B**（过渡窗口）|
-| `docs/workflow/bootstrap-and-testing.md` | MODIFY | 随 Phase 更新现状 |
+| `docs/workflow/testing/bootstrap.md` | MODIFY | 随 Phase 更新现状（原 `bootstrap-and-testing.md`，已挪入 testing/）|
 | `docs/workflow/ci.md` / `docs/design/compiler/self-hosting.md` | MODIFY | 同步流程 |
 
 **只读引用**：`docs/design/compiler/self-hosting.md`（设计原理）、`.claude/rules/bootstrap-seed.md`、

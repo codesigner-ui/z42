@@ -1,6 +1,6 @@
 # 编译器 / VM 单元测试
 
-dotnet/C# 已于 2026-06-26 彻底移除——编译器 `z42c` 现为 z42 自举。原 C# `z42.Tests/` xUnit 套件随之退场，编译器正确性改由 **z42c 自举不动点 + `[Test]` units** 保证；VM（Rust）单测仍用 `cargo test`。
+编译器 `z42c` 由 z42 自身编写，正确性由 **z42c 自举不动点 + `[Test]` units** 保证；VM（Rust）单测用 `cargo test`。
 
 ## 编译器单测（z42c 自举）
 
@@ -8,7 +8,7 @@ dotnet/C# 已于 2026-06-26 彻底移除——编译器 `z42c` 现为 z42 自举
 ./xtask test compiler-z42       # 建 7 子包 + 不动点（gen1==gen2 逐字节）+ [Test] units
 ```
 
-覆盖：lexer / parser / type-check / IR-gen 经「z42c 自编译自身 + 重建产物逐字节一致」端到端验证，外加编译器源码里的 `[Test]`-注解 units。这条是 GREEN gate 的编译器关（替代旧 C# `dotnet test`）。机制见 [`../bootstrap-and-testing.md`](../bootstrap-and-testing.md) 与 [`docs/design/compiler/self-hosting.md`](../../design/compiler/self-hosting.md)。
+覆盖：lexer / parser / type-check / IR-gen 经「z42c 自编译自身 + 重建产物逐字节一致」端到端验证，外加编译器源码里的 `[Test]`-注解 units。这条是 GREEN gate 的编译器关。机制见 [`bootstrap.md`](bootstrap.md) 与 [`docs/design/compiler/self-hosting.md`](../../design/compiler/self-hosting.md)。
 
 ## VM 单测（Rust）
 

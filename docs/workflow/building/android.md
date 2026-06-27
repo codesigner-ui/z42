@@ -1,10 +1,12 @@
-# Android facade — build & run
+# Android facade — 嵌入 z42 到 Android
 
 > 🟢 已落地 · facade [`android/platform/`](../../../src/toolchain/workload/android/platform/) · spec [`2026-05-12-add-platform-android/`](../../spec/archive/2026-05-12-add-platform-android/)
 
-把 z42 VM 编进 `z42vm.aar`，让 Kotlin / Compose app 引入后 `import io.z42.vm.Z42VM` 跑 `.zbc`。**从零开始按下面 4 步走**。
+把 z42 VM 编进 `z42vm.aar`，让 Kotlin / Compose app 引入后 `import io.z42.vm.Z42VM` 跑 `.zbc`。统一三段：**① Host 环境准备 → ② 编译（facade + 嵌入 app）→ ③ 运行测试用例**。
 
-## Step 1 — Install toolchain（一次性）
+## 1. Host 环境准备
+
+### 1.1 平台工具链（一次性）
 
 ```bash
 # JDK 17+
@@ -41,18 +43,21 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform
 ❗ NDK 版本与 cargo-ndk 不匹配 → 升级 NDK 到 r26+。
 ℹ️ cargo-ndk 的 C 依赖（zlib-ng 经 z42.compression）走 CMake 内建 Android 工具链 + 默认 Unix Makefiles 生成器（`make`，Xcode CLT / build-essential 自带）——**不需要 Ninja**。关键是 cmake 靠 `ANDROID_NDK` / `ANDROID_NDK_ROOT`（非 `ANDROID_NDK_HOME`）定位 NDK，backend 已一并注入。
 
-## Step 2 — Build compiler + stdlib（一次性 / 改 stdlib 后重跑）
+### 1.2 z42 工具链（编译器 + stdlib，一次性 / 改 stdlib 后重跑）
+
+facade 会把 stdlib zpkg 打进 assets，故先备好 z42 工具链：
 
 ```bash
 ./xtask build compiler-z42      # z42c 自举（或由 ./scripts/install-z42.sh 直接提供）
 ./xtask build stdlib
 ```
 
-✅ 产出 `artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg`。stdlib zpkg 由 `./xtask build stdlib` 产到 `artifacts/build/libraries/dist/release/*.zpkg`。
+✅ 产出 `artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg` + stdlib zpkg 到 `artifacts/build/libraries/dist/release/*.zpkg`。
+❗ `error: z42c not built` → 先 `./scripts/install-z42.sh` 或 `./xtask build compiler-z42`。
 
-❗ `error: z42c not built` → 先 `./scripts/install-z42.sh` 或 `./xtask build compiler-z42`
+## 2. 编译
 
-## Step 3 — Build the Android facade
+### 2.1 编 facade
 
 ```bash
 ./xtask test platform android build
@@ -68,7 +73,7 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform
 ❗ `error: linker not found for aarch64-linux-android` → `ANDROID_NDK_HOME` 错或 NDK 版本旧。
 ❗ `Could not resolve all dependencies` (Gradle) → JDK < 17 或不在 PATH。
 
-## Step 4 — Consume in your Android project
+### 2.2 嵌入到 app
 
 `app/build.gradle.kts`：
 
@@ -96,12 +101,24 @@ Z42VM(zpkgResolver = AssetZpkgResolver(assets)).use { vm ->
 
 ❗ `UnsatisfiedLinkError: dlopen failed: library "libz42_platform_android.so" not found` → 缺 ABI 的 `.so`；检查 `jniLibs/<abi>/` 与设备/模拟器 ABI 是否匹配。
 
----
+## 3. 运行测试用例
 
-**See also**
+R1–R7 嵌入契约测试，跑在**真 Android emulator** 上：
+
+```bash
+eval "$(./xtask deps install --os android --print-env)"   # 设 ANDROID_NDK_HOME / ANDROID_HOME 等
+./xtask test platform android
+# ① cargo-ndk×ABIs + gradle AAR → ② fixtures+stdlib 进 assets
+# → ③ test.sh：起 emulator + gradlew :z42vm:connectedAndroidTest（R1–R7）
+```
+
+完整三阶段（build / assets / run）+ emulator 前置见 [`../testing/platform-tests.md`](../testing/platform-tests.md)。
+
+> 🚧 **占位**：app 级 demo（独立可跑的示例 app）+ JUnit 报告 + CI 接线推迟到独立 spec（`add-platform-android-demo` / `-tests` / `-ci`），后续补。
+
+## See also
 
 - **本地打 per-ABI SDK package**（自包含 `kotlin/` + `cpp/` + `native/libz42_platform_android.{a,so}`）：[`../packaging.md`](../packaging.md) — `./xtask package release --rid android-arm64 / android-x64`
 - Kotlin API + 错误码（spec 落地后补）：`android/README.md`
 - 跨平台契约：[`platform-contract.md`](../../../src/toolchain/workload/platform-contract.md)
 - 设计 + 决策：[spec](../../spec/archive/2026-05-12-add-platform-android/)
-- Demo / JUnit / CI 推迟到独立 spec（`add-platform-android-demo` / `-tests` / `-ci`）。

@@ -264,7 +264,7 @@ z42c 达到 golden 编译 parity（编通全部 ~333 golden，含 reflection/clo
   17e342fc / 4dc2896b / 08ef874d）+ bootstrap-no-csharp fixpoint + cross-zpkg + jit-consistency 多次绿 run。
 
 > 操作层流程（SDK/Current 两套 toolchain、共享 host SDK、边界不变量、CI 冗余清单）见
-> [`docs/workflow/bootstrap-and-testing.md`](../../workflow/bootstrap-and-testing.md)。后续 CI 去冗余
+> [`docs/workflow/testing/bootstrap.md`](../../workflow/testing/bootstrap.md)。后续 CI 去冗余
 > （compile-once：编一次全下游复用 + fixpoint gate 发布 + format-bump 兜底）规划见
 > `docs/spec/changes/compile-once-toolchain/`。
 

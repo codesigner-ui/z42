@@ -1,9 +1,9 @@
 # 自举与测试流程（本地 + CI）
 
-> 权威的**操作层**流程文档：z42c 已自举、dotnet 已彻底移除（2026-06-26）后，工具链如何
-> 从一个下载的 SDK 起步、编出当前版本、并被测试/打包/发布。设计原理（src/compiler 架构、
-> 受限写法、对账策略）见 [`docs/design/compiler/self-hosting.md`](../design/compiler/self-hosting.md)；
-> CI 总览见 [`ci.md`](ci.md)；测试层级见 [`testing/README.md`](testing/README.md)。
+> 权威的**操作层**流程文档：z42c 自举的工具链如何从一个下载的 SDK 起步、编出当前版本、
+> 并被测试/打包/发布。设计原理（src/compiler 架构、
+> 受限写法、对账策略）见 [`docs/design/compiler/self-hosting.md`](../../design/compiler/self-hosting.md)；
+> CI 总览见 [`ci.md`](../ci.md)；测试层级见 [`README.md`](README.md)。
 
 ---
 
@@ -78,7 +78,7 @@ z42 xtask.zpkg test vm jit           # 单独 jit
 z42 xtask.zpkg build sdk             # 重建 Current toolchain
 ```
 
-- **无 C# 兜底**：删 src/compiler 后，fresh checkout **必须**先下载 SDK 才能起步（需 gh auth + 网络）。
+- **无非-z42 兜底**：fresh checkout **必须**先下载 SDK 才能起步（需 gh auth + 网络）——工具链没有任何非-z42 的逃生编译器。
   无 warm 种子时 `xtask build` 明确报错引导跑 `install-z42` / 下载流程。
 - **GREEN gate**：`z42 xtask.zpkg test` = cargo z42vm + 用 Current 跑 vm(interp)/cross-zpkg/stdlib/
   compiler-z42。jit 由 `test vm jit` / CI 的 jit 专腿覆盖。详见 [`.claude/rules/workflow.md` 阶段8]。
@@ -141,10 +141,10 @@ SDK set（下载）打破。compile job 的 S0-S2 是**不可消除的 shell 层
 新语法分两阶段：**support 先行**（z42c 加能力但源码不用）→ 发一版 nightly → **晚一个 release 再 use**。
 保证上一版 nightly 的 z42c 永远能编当前源。CI 的 bootstrap 本身强制（SDK 编不过当前源就红）。
 
-### 5.3 🔴 zbc/zpkg format bump 死锁（删 C# 后的开口，**待修**）
+### 5.3 🔴 zbc/zpkg format bump 死锁（**待修**）
 `zbc_reader.rs` **精确匹配 major+minor**（拒读 older + newer minor）。一旦某 commit bump 格式：
 新 z42vm 读不了旧 SDK 的 zpkg → bootstrap 全断 → publish-nightly 发不出新格式 nightly → **死锁**，
-且无 C# 逃生口。compile-once 把 bootstrap 收成单点后，此风险**更集中**。
+且无逃生口（工具链没有非-z42 的兜底编译器）。compile-once 把 bootstrap 收成单点后，此风险**更集中**。
 
 **修法（待拍板）**：
 - **A. committed seed**：`.z42/` 下载不兼容时回退**仓库内提交的当前格式种子**。最严密、零外部依赖，

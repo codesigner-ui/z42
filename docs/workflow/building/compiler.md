@@ -1,6 +1,6 @@
 # 编译器构建（z42 自举）
 
-z42 编译器 (`z42c`) 由 z42 自身写成（C# bootstrap 已于 2026-06-26 彻底移除），源码在 [`src/compiler/`](../../../src/compiler/)，自编译为 `z42c.driver.zpkg`。
+z42 编译器 (`z42c`) 由 z42 自身写成，源码在 [`src/compiler/`](../../../src/compiler/)（7 个子包：`z42c.core/ir/syntax/project/semantics/pipeline/driver`），自编译为 `z42c.driver.zpkg`（driver 入口）。
 
 ## 前置
 

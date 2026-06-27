@@ -1,6 +1,6 @@
 # Design: compile-once toolchain
 
-> 操作流程全貌见 [`docs/workflow/bootstrap-and-testing.md`](../../../workflow/bootstrap-and-testing.md)。
+> 操作流程全貌见 [`docs/workflow/testing/bootstrap.md`](../../../workflow/testing/bootstrap.md)。
 > 本文记关键架构决策。
 
 ## Architecture
