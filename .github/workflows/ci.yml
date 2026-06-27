@@ -446,7 +446,19 @@ jobs:
       # toolchain-<os> artifact (+ package jobs) are unaffected — only current-sdk
       # is skipped. Check whether the current-sdk-<os> artifact appears to confirm
       # it worked; drop continue-on-error once proven (then it becomes a gate).
-      - name: Assemble .z42 toolchain (build sdk --no-build)
+      # compile-once P2.4 (shared compiled assets): regen the golden .zbc ONCE here
+      # so downstream interp + jit jobs both consume the SAME prebuilt bytecode
+      # (.zbc is execution-mode-agnostic) via `test vm --no-build` — no N× regen,
+      # no N× bootstrap. The goldens are bundled into current-sdk below.
+      - name: Regen golden .zbc (compile shared assets once)
+        continue-on-error: true
+        shell: bash
+        run: |
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- regen --no-stdlib
+
+      - name: Assemble .z42 toolchain (build sdk --no-build) + bundle goldens
         continue-on-error: true
         shell: bash
         run: |
@@ -454,6 +466,11 @@ jobs:
           Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
             artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- \
             build sdk --out "$RUNNER_TEMP/z42sdk" --no-build
+          # bundle the prebuilt golden .zbc into current-sdk so consumers run them
+          # with --no-build (shared compiled asset across interp/jit).
+          if [ -d artifacts/build/tests ]; then
+            cp -r artifacts/build/tests "$RUNNER_TEMP/z42sdk/tests"
+          fi
 
       - name: Upload current-sdk-${{ matrix.os }}
         continue-on-error: true
@@ -508,29 +525,30 @@ jobs:
           # downloaded toolchain (z42c + stdlib + z42vm), no bootstrap/rebuild.
           Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- \
             --toolchain "$TC" test cross-zpkg
-      - name: Run VM goldens (interp) via --toolchain (real test-stage consume)
+      # compile-once P2.4: the SHARED compiled asset. current-sdk bundles the
+      # prebuilt golden .zbc (regen'd once in the compile job). Extract them to the
+      # canonical mirror so `test vm --no-rebuild` runs them with NO regen — interp
+      # and jit below execute the SAME .zbc, differing only by --mode.
+      - name: Extract bundled goldens (shared compiled asset)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d .z42-dl/tests ]; then
+            mkdir -p artifacts/build/tests
+            cp -r .z42-dl/tests/. artifacts/build/tests/
+          else
+            echo "::error::current-sdk has no bundled goldens (tests/) — P2.4 regen step?"; exit 1
+          fi
+      - name: Run VM goldens interp + jit from ONE shared asset (--no-rebuild)
         shell: bash
         run: |
           set -euo pipefail
           TC="$PWD/.z42-dl"
-          # regen goldens with the toolchain's z42c + run them on its z42vm — no
-          # bootstrap, no cargo build. Proves the VM golden suite is consumable
-          # from a downloaded current-sdk (the bulk of the de-dup target).
-          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- \
-            --toolchain "$TC" test vm interp
-      - name: Run VM goldens (JIT, shard 1/4) via --toolchain (consume probe)
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -euo pipefail
-          TC="$PWD/.z42-dl"
-          # jit via the toolchain's linux-x64 release z42vm (== what vm-jit-consistency
-          # cargo-builds). Validates jit-via-toolchain in CI (can't validate locally on
-          # arm64 — release jit differs). If green, vm-jit-consistency can convert to
-          # consume current-sdk (drop its ~12min bootstrap). --no-rebuild: interp step
-          # above already regen'd the goldens this job.
-          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$RUNNER_TEMP/consume-out/xtask.zpkg" -- \
-            --toolchain "$TC" test vm jit --no-rebuild --shard 1/4 --jobs=4
+          XT="$RUNNER_TEMP/consume-out/xtask.zpkg"
+          # interp + jit run the SAME prebuilt .zbc — no regen, no bootstrap. This is
+          # "compile shared assets once, run interp + jit separately" realised.
+          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$XT" -- --toolchain "$TC" test vm interp --no-rebuild
+          Z42_LIBS="$TC/libs" "$TC/bin/z42vm" "$XT" -- --toolchain "$TC" test vm jit --no-rebuild --shard 1/4 --jobs=4
 
   # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
   # split-interp-jit: `xtask test all` in build-and-test runs the golden suites in

@@ -42,7 +42,7 @@
 - [x] 2.2a `build sdk --no-build`（assemble-only，跳过 _buildStdlib，从 warm canonical 组装）+ CLI flag。本地验证：0.5s 组装出完整 .z42（vs ~2min 重建）。
 - [x] 2.2b `ci.yml` toolchain-bootstrap **追加**步骤：`build sdk --no-build → $RUNNER_TEMP/z42sdk` + 上传 `current-sdk-<os>`（additive）。YAML 校验通过。⚠️ **CI 不可本地验，待 push 后盯 run**。
 - [ ] 2.3 成对分代 gen1/gen2 + 条件不动点门（稳定关）接进 toolchain-bootstrap/compile（gen1≠gen2 编 gen3）—— 后续
-- [ ] 2.4 goldens.zbc/units.zbc 进 current-sdk artifact —— 后续（P3 下游 --no-build 需要）
+- [x] 2.4 **共享编译资产**：toolchain-bootstrap 加 `regen --no-stdlib`（编一次 golden .zbc）+ build sdk 后 `cp -r artifacts/build/tests` 进 current-sdk。consume job extract + `test vm interp/jit --no-rebuild`——interp/jit 跑**同一份预编译 .zbc**，零 N× regen。本地验：`--no-rebuild` 1.7s（vs regen 2min）。jit-via-toolchain CI probe 已绿。
 - [ ] 2.5 dotnet PATH-mask 保留（现有 bootstrap 已有）
 - [ ] 2.6 push + CI 验证 current-sdk-<os> artifact 产出正确
 
