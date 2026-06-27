@@ -30,7 +30,7 @@ jobs:
   # platform-relevant paths change — stops the per-commit churn + the
   # cancel-in-progress storm from frequent unrelated pushes.
   changes:
-    name: detect changes
+    name: detect-changes
     runs-on: ubuntu-latest
     outputs:
       platform: ${{ steps.filter.outputs.platform }}
@@ -53,11 +53,15 @@ jobs:
               - '.github/workflows/ci.yml'
 
   build-and-test:
-    name: build-and-test (${{ matrix.os }})
+    name: test (${{ matrix.platform }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
+        include:
+          - { os: ubuntu-latest,    platform: linux-x64 }
+          - { os: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { os: macos-15,         platform: macos-arm64 }
+          - { os: windows-latest,   platform: windows-x64 }
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -283,12 +287,16 @@ jobs:
   # cargo-builds its own z42vm). build-and-test is now pure test. publish-nightly
   # consumes these uploads.
   host-package:
-    name: host-package (${{ matrix.os }})
+    name: package (${{ matrix.platform }})
     needs: toolchain-bootstrap
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
+        include:
+          - { os: ubuntu-latest,    platform: linux-x64 }
+          - { os: ubuntu-24.04-arm, platform: linux-arm64 }
+          - { os: macos-15,         platform: macos-arm64 }
+          - { os: windows-latest,   platform: windows-x64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -383,13 +391,15 @@ jobs:
   # build their own z42vm — dropping their dotnet source-build — and run in parallel
   # instead of each re-bootstrapping. Fast: bootstrap only, no test.
   toolchain-bootstrap:
-    name: toolchain-bootstrap (${{ matrix.os }})
-    # Runs unconditionally (like build-and-test) — its artifact roots the package
+    name: compile (${{ matrix.platform }})
+    # Runs unconditionally (like the test jobs) — its artifact roots the package
     # jobs (which always run) + the platform-test jobs, so it must always be present.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15]
+        include:
+          - { os: ubuntu-latest, platform: linux-x64 }
+          - { os: macos-15,      platform: macos-arm64 }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -489,7 +499,7 @@ jobs:
   # bootstrapping) + the seed of cross-bootstrap (Decision 7). continue-on-error
   # while we validate — promote to a gate once proven.
   consume-current-sdk:
-    name: consume-current-sdk (cross-job)
+    name: test-consume-linux-x64
     needs: toolchain-bootstrap
     runs-on: ubuntu-latest
     steps:
@@ -559,7 +569,7 @@ jobs:
   # was redundant (5× the slow per-case cranelift compile) and is now removed from the
   # host legs' critical path.
   vm-jit-consistency:
-    name: vm-jit-consistency (shard ${{ matrix.shard }})
+    name: test-vm-jit-linux-x64 (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -618,7 +628,7 @@ jobs:
   # test instead of extending the critical path. linux-x64 only — cranelift
   # behaviour is host-independent (same rationale as vm-jit-consistency).
   stdlib-jit-consistency:
-    name: stdlib-jit-consistency (shard ${{ matrix.shard }})
+    name: test-stdlib-jit-linux-x64 (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -673,7 +683,7 @@ jobs:
   # seed-carrying nightly; then it self-heals. NOT in publish-nightly's needs (no
   # deadlock). linux-x64 only.
   bootstrap-no-csharp:
-    name: bootstrap-no-csharp (linux-x64)
+    name: verify-selfhost-linux-x64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -724,7 +734,7 @@ jobs:
   # bootstrap seed; products land in a private dogfood dir, production stdlib
   # untouched. Gates the C#→z42c replacement path (roadmap S2). linux-x64 only.
   compiler-z42-stdlib:
-    name: compiler-z42-stdlib (linux-x64)
+    name: test-compiler-stdlib-linux-x64
     runs-on: ubuntu-latest
 
     steps:
@@ -772,7 +782,7 @@ jobs:
   # Note: noisy CI runners make 5% gate unreliable; current smoke just verifies
   # bench infra works in CI. Manual download + `xtask bench --diff` for now.
   bench-e2e:
-    name: bench-e2e (smoke, PR only)
+    name: bench-linux-x64 (smoke, PR only)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
@@ -880,7 +890,7 @@ jobs:
   # compile on host target. P4.2/P4.3/P4.4 will add real cross-compile jobs
   # (wasm32-unknown-unknown / aarch64-apple-ios / aarch64-linux-android).
   feature-matrix:
-    name: feature-matrix (P4.1)
+    name: verify-features-linux-x64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -917,7 +927,7 @@ jobs:
   # Packages ios-arm64 + iossim-arm64. Requires Xcode (pre-installed on
   # macos-15 arm64) + iOS Rust targets. The source bootstrap also builds z42c.
   package-ios:
-    name: package-ios
+    name: package-ios-macos
     needs: toolchain-bootstrap
     runs-on: macos-15
 
@@ -999,7 +1009,7 @@ jobs:
   # ── Android packaging ───────────────────────────────────────────────────
   # Packages android-arm64 + android-x64 via cargo-ndk + NDK r26d.
   package-android:
-    name: package-android
+    name: package-android-linux
     needs: toolchain-bootstrap
     runs-on: ubuntu-latest
 
@@ -1105,7 +1115,7 @@ jobs:
   # `xtask test platform wasm build` (WasmBackend) produces pkg-web/ +
   # pkg-nodejs/ before `xtask package` can assemble the wasm SDK package.
   package-wasm:
-    name: package-wasm
+    name: package-wasm-linux
     needs: toolchain-bootstrap
     runs-on: ubuntu-latest
 
@@ -1414,7 +1424,7 @@ jobs:
   # Check via dorny/test-reporter — the 3 checks on the PR ARE the dashboard.
   # (infra-ci-platform-test-dashboard, 2026-06-16)
   test-wasm:
-    name: test-wasm (browser)
+    name: test-wasm-linux (browser)
     needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -1466,7 +1476,7 @@ jobs:
           if-no-files-found: warn
 
   test-ios:
-    name: test-ios (Simulator)
+    name: test-ios-macos (Simulator)
     needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-15
@@ -1506,7 +1516,7 @@ jobs:
           if-no-files-found: warn
 
   test-android:
-    name: test-android (emulator)
+    name: test-android-linux (emulator)
     needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
@@ -1573,7 +1583,7 @@ jobs:
           if-no-files-found: warn
 
   test-desktop:
-    name: test-desktop (C ABI)
+    name: test-desktop-linux (C ABI)
     needs: [changes, toolchain-bootstrap]
     if: ${{ needs.changes.outputs.platform == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest

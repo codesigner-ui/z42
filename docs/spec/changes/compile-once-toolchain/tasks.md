@@ -64,7 +64,7 @@
 - [ ] 4.4 commit + CI 验证：① 故意改 z42c codegen 制造 {gen2}≠{gen3} 验稳定关拦截 ② 故意弄挂一个 [Test] 验正确关拦截发布
 
 ## P5：重命名 + 评估删 job + 删脚本（ci.yml + scripts/）
-- [ ] 5.1 重命名 `build-and-test` → `test-interp`、`vm-jit-consistency`+`stdlib-jit-consistency` → `test-jit`
+- [x] 5.1 **CI job 重命名**（动作-平台-host 约定，display name + matrix platform 标签，id 不变）：build-and-test→`test (<平台>)`、toolchain-bootstrap→`compile (<平台>)`、host-package→`package (<平台>)`、vm-jit→`test-vm-jit-linux-x64`、stdlib-jit→`test-stdlib-jit-linux-x64`、bootstrap-no-csharp→`verify-selfhost-linux-x64`、compiler-z42-stdlib→`test-compiler-stdlib`、feature-matrix→`verify-features`、package/test-{ios→-macos,android/wasm→-linux}、bench-e2e→`bench-linux-x64`、consume→`test-consume-linux-x64`。⚠️ User 需更新 branch protection required checks。
 - [ ] 5.2 评估删 `compiler-z42-stdlib` job（确认覆盖已被 compile job + test 阶段完全包含；Open Question）
 - [ ] 5.3 删 `scripts/ci-bootstrap-nocs.sh`（逻辑已内联 compile job）
 - [ ] 5.4 删 `scripts/ci-stage-toolchain.sh`（折进 `xtask build sdk`）+ `scripts/check-bootstrap-compat.sh`（边界由 compile job 隐式强制）
