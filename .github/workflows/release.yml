@@ -85,17 +85,11 @@ jobs:
         with:
           targets: ${{ matrix.rust-target }}
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ matrix.rid }}-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ matrix.rid }}-
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
+          workspaces: src/runtime -> ../../artifacts/build/runtime
+          shared-key: release-${{ matrix.rid }}
 
       # Android-only: cargo-ndk + NDK r26d
       - name: Install cargo-ndk
@@ -220,16 +214,11 @@ jobs:
       # from the prev nightly seed, same as the package job. Host = linux-x64.
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo registry + git + target
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-publish-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
+          workspaces: src/runtime -> ../../artifacts/build/runtime
+          shared-key: release-publish
       - name: Provision z42vm + xtask (bootstrap from prev nightly seed)
         uses: ./.github/actions/ci-bootstrap
         with:
