@@ -1,58 +1,58 @@
 {
   "schema_version": 1,
-  "commit": "f5fde159",
+  "commit": "fd160af6",
   "branch": "main",
   "os": "linux-x86_64",
-  "timestamp": "2026-06-28T12:34:31Z",
+  "timestamp": "2026-06-28T13:36:36Z",
   "benchmarks": [
     {
       "name": "01_fibonacci",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 1108.8232991,
+      "value": 1096.59069,
       "unit": "ms",
-      "ci_lower": 1101.074811,
-      "ci_upper": 1118.073429,
+      "ci_lower": 1089.680375,
+      "ci_upper": 1108.746995,
       "samples": 10
     },
     {
       "name": "02_math_loop",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 1079.9315517,
+      "value": 1071.8670710999997,
       "unit": "ms",
-      "ci_lower": 1074.5450739999999,
-      "ci_upper": 1084.423622,
+      "ci_lower": 1065.302751,
+      "ci_upper": 1089.833122,
       "samples": 10
     },
     {
       "name": "03_startup",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 1073.5432202,
+      "value": 1068.4257144,
       "unit": "ms",
-      "ci_lower": 1069.49703,
-      "ci_upper": 1079.376354,
+      "ci_lower": 1058.996652,
+      "ci_upper": 1078.0860679999998,
       "samples": 10
     },
     {
       "name": "04_c2_p1_arith_loop",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 1757.5370626999998,
+      "value": 1730.9071317,
       "unit": "ms",
-      "ci_lower": 1728.912228,
-      "ci_upper": 1823.354969,
+      "ci_lower": 1716.893945,
+      "ci_upper": 1740.187699,
       "samples": 10
     },
     {
       "name": "05_polymorphic_dispatch",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 3242.4533921999996,
+      "value": 3230.4543338,
       "unit": "ms",
-      "ci_lower": 3208.394125,
-      "ci_upper": 3273.644194,
+      "ci_lower": 3191.340178,
+      "ci_upper": 3270.751949,
       "samples": 10
     }
   ]
