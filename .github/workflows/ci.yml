@@ -119,19 +119,9 @@ jobs:
       # .zip/.exe handling — same seed contract). After this, every later step
       # drives work through `z42vm xtask.zpkg …` exactly as before.
       - name: Bootstrap toolchain (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ matrix.os }}" in
-            ubuntu-latest)    rid=linux-x64 ;;
-            ubuntu-24.04-arm) rid=linux-arm64 ;;
-            macos-15)         rid=macos-arm64 ;;
-            windows-latest)   rid=windows-x64 ;;
-            *) echo "::error::unmapped os ${{ matrix.os }}"; exit 1 ;;
-          esac
-          bash scripts/ci-bootstrap.sh "$rid"
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       # migrate-scripts-to-z42: version-drift check via xtask (replaces the
       # feature-matrix `bash scripts/check-versions-drift.sh` step). ubuntu only —
@@ -438,17 +428,9 @@ jobs:
           shared-key: host-v2
 
       - name: Bootstrap toolchain (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ matrix.os }}" in
-            ubuntu-latest) rid=linux-x64 ;;
-            macos-15)      rid=macos-arm64 ;;
-            *) echo "::error::unmapped os ${{ matrix.os }}"; exit 1 ;;
-          esac
-          bash scripts/ci-bootstrap.sh "$rid"
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Stage toolchain (zpkg products only)
         shell: bash
@@ -651,10 +633,10 @@ jobs:
       # rebuild left artifacts/build/ empty → fell back to the C# cold seed
       # (the reason this job needed setup-dotnet).
       - name: Bootstrap toolchain (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: VM goldens — JIT mode (shard ${{ matrix.shard }}/4)
         shell: bash
@@ -703,10 +685,10 @@ jobs:
       # download-nightly `xtask-bootstrap` action whose test-time rebuild fell back
       # to the C# cold seed (the reason this job needed setup-dotnet).
       - name: Bootstrap toolchain (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: stdlib [Test] — JIT mode (shard ${{ matrix.shard }}/4)
         shell: bash
@@ -805,10 +787,10 @@ jobs:
       # download-nightly `xtask-bootstrap` action whose test-time rebuild fell back
       # to the C# cold seed (the reason this job needed setup-dotnet).
       - name: Bootstrap toolchain (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: z42c dogfood-builds stdlib (xtask)
         shell: bash
@@ -852,10 +834,10 @@ jobs:
       # build current source warm. Replaces the download-nightly `xtask-bootstrap`
       # action whose bench rebuild fell back to the C# cold seed.
       - name: Bootstrap toolchain (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run e2e bench (quick mode, xtask)
         shell: bash
@@ -1232,17 +1214,16 @@ jobs:
   publish-nightly:
     name: publish-nightly
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    # NIGHTLY-SEED DEADLOCK POSTURE (remove-dotnet / option-B): since the C# compiler
-    # was removed, EVERY bootstrap path (build-and-test, host-package, package-*, all
-    # via ci-bootstrap.sh / toolchain-bootstrap) seeds from the PREVIOUS nightly's
-    # z42c and builds current source with it — there is no longer a from-C#-source path
-    # that's independent of a prior nightly. The self-heal invariant now rests entirely
+    # NIGHTLY-SEED DEADLOCK POSTURE: EVERY bootstrap path (build-and-test, host-package,
+    # package-*, all via the ci-bootstrap action / toolchain-bootstrap) seeds from the
+    # PREVIOUS nightly's z42c and builds current source with it — every bootstrap depends
+    # on a prior nightly. The self-heal invariant rests entirely
     # on the staged-bootstrap discipline (.claude/rules/bootstrap-seed.md): the prev
     # nightly's z42c MUST always be able to compile current source (new syntax / zbc
     # bump lands "support" one release before "use"; `xtask bootstrap-check`
     # is the boundary check). If that discipline is ever violated, the prev nightly
     # can't build current source → these deps fail → publish can't republish a fixed
-    # nightly → manual recovery (there's no C# fallback). Keep `needs` to the jobs that
+    # nightly → manual recovery. Keep `needs` to the jobs that
     # build + test + package CURRENT source (build-and-test test + windows pkg,
     # host-package unix pkgs, package-* mobile); do NOT add the pure download-bootstrap
     # gates (vm-jit / stdlib-jit / bench-e2e) — they transiently fail on a bump until a

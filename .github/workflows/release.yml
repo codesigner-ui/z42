@@ -123,20 +123,10 @@ jobs:
       # seed (same path as CI build-and-test), then the package steps below run via
       # `z42vm xtask.zpkg`. The host RID is derived from the runner; the cross target
       # (matrix.rust-target) is handled by `xtask package`.
-      - name: Bootstrap C#-free (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "${{ matrix.runs-on }}" in
-            ubuntu-latest)    host=linux-x64 ;;
-            ubuntu-24.04-arm) host=linux-arm64 ;;
-            macos-15)         host=macos-arm64 ;;
-            windows-latest)   host=windows-x64 ;;
-            *) echo "::error::unmapped host ${{ matrix.runs-on }}"; exit 1 ;;
-          esac
-          bash scripts/ci-bootstrap.sh "$host"
+      - name: Bootstrap toolchain (nightly z42c seed → current source)
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       # wasm-only: pre-build pkg-web/ + pkg-nodejs/ via wasm-pack (WasmBackend)
       - name: Build wasm platform
@@ -241,10 +231,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-cargo-
       - name: Provision z42vm + xtask (bootstrap from prev nightly seed)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all archives
         uses: actions/download-artifact@v4

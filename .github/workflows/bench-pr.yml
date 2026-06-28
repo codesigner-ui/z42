@@ -61,11 +61,11 @@ jobs:
 
       # C#-free: seed from the prev nightly + build current source warm (xtask bench
       # rebuilds stdlib via the warm self-build). Same path as CI build-and-test.
-      - name: Bootstrap C#-free (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+      - name: Bootstrap toolchain (nightly z42c seed → current source)
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run full e2e bench (xtask)
         shell: bash

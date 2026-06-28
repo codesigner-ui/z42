@@ -131,4 +131,4 @@ release-time 打包胶水已搬进 `xtask release`（源 `scripts/xtask_release.
 | `xtask release assemble-desktop-workload <LABEL> [dist]` | 合并 4 个 per-RID desktop workload 产物为单一 RID-agnostic archive + manifest |
 | `xtask release gen-release-index <LABEL> [dist] [channel] [tag] [version]` | 从 `SHA256SUMS` 生成 `release-index.json`（launcher 供给契约；JSON 经 z42.json 构建）|
 
-tar/unzip/date 作外部子进程；逻辑在 z42。两条命令在 `release.yml`（tagged）+ `ci.yml` publish-nightly（rolling）调用——这两个 job 现各自 provision z42vm + xtask.zpkg（publish-nightly 经 `xtask-bootstrap-artifact` action 消费 toolchain artifact；release.yml publish 经 `ci-bootstrap.sh` 自举），再 `xtask release …`。
+tar/unzip/date 作外部子进程；逻辑在 z42。两条命令在 `release.yml`（tagged）+ `ci.yml` publish-nightly（rolling）调用——这两个 job 现各自 provision z42vm + xtask.zpkg（publish-nightly 经 `xtask-bootstrap-artifact` action 消费 toolchain artifact；release.yml publish 经 `ci-bootstrap` action 自举），再 `xtask release …`。

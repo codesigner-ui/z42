@@ -70,15 +70,14 @@ int _buildStdlibCore() {
     bool haveSeed = File.Exists(seedDriver) && File.GetSize(seedDriver) > 0L
                  && File.Exists(seedStdlibCore) && File.GetSize(seedStdlibCore) > 0L;
     if (!haveSeed) {
-        // The C# bootstrap compiler (src/compiler) has been removed — there is no
-        // cold-start fallback. A fresh checkout bootstraps C#-free by first seeding
-        // a previously-published nightly z42c (CI does this via ci-bootstrap.sh).
+        // A fresh checkout needs a warm z42c seed (the previous published nightly's
+        // z42c.driver.zpkg + stdlib dist) to self-build. CI seeds this via the
+        // ci-bootstrap action; locally, install the nightly toolchain first.
         ConsoleError.WriteLine("error: no warm z42c seed (z42c.driver.zpkg + stdlib dist) found.");
-        ConsoleError.WriteLine("  Bootstrap a C#-free seed first:  bash scripts/ci-bootstrap.sh");
-        ConsoleError.WriteLine("  (downloads the previous nightly's z42c), then re-run the build.");
+        ConsoleError.WriteLine("  Seed from the previous nightly toolchain first, then re-run the build.");
         return 1;
     }
-    Console.WriteLine("  seed: existing z42c + stdlib → C#-free z42c self-build");
+    Console.WriteLine("  seed: existing z42c + stdlib → warm z42c self-build");
     int zc = _buildCompilerZ42ViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
 
     // ── 3. run-libs = {stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──────

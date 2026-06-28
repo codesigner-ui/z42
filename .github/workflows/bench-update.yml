@@ -61,11 +61,11 @@ jobs:
       # current source warm — same path as CI build-and-test. `xtask bench` rebuilds
       # stdlib via the warm self-build, so it needs the primed seed (the old download
       # action left artifacts/build empty → bench hit the now-removed C# cold seed).
-      - name: Bootstrap C#-free (nightly z42c seed → current source)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash scripts/ci-bootstrap.sh linux-x64
+      - name: Bootstrap toolchain (nightly z42c seed → current source)
+        uses: ./.github/actions/ci-bootstrap
+        with:
+          rid: linux-x64
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run full e2e bench (xtask)
         shell: bash

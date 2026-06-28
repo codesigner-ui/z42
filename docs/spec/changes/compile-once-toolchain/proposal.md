@@ -59,7 +59,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 | `scripts/xtask_compiler_z42.z42` | MODIFY | `--toolchain` 定位 z42c；fixpoint helper |
 | `scripts/xtask_common.z42` | MODIFY | toolchain-dir 解析 helper |
 | `scripts/xtask_package*.z42` | MODIFY | 消费 `--toolchain artifacts/.z42` |
-| `scripts/ci-bootstrap.sh` | DELETE | 逻辑内联进 compile job |
+| `scripts/ci-bootstrap.sh` | DELETE ✅ | 改成 composite action `.github/actions/ci-bootstrap`（忠实搬迁；10 处调用点统一 `uses:`）|
 | `scripts/selfhost-bootstrap.sh` | MODIFY | **改造**成 cross-bootstrap：种子来源换成本地 SDK（不删）|
 | `scripts/ci-stage-toolchain.sh` | DELETE ✅ | 已折进 `xtask build stage-toolchain`（字节一致） |
 | `scripts/check-bootstrap-compat.sh` | DELETE | 边界由 compile job 隐式强制 |
