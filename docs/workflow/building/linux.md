@@ -54,5 +54,5 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # 编 de
 ## See also
 
 - 9 RID per-arch SDK 包：[`../packaging.md`](../packaging.md)
-- 桌面跨平台 build matrix：[`cross-platform.md`](cross-platform.md)
+- 跨平台 / 多 RID 打包：[`../packaging.md`](../packaging.md)
 - 测试入口：[`../testing/`](../testing/)

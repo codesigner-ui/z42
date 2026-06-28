@@ -784,7 +784,7 @@ jobs:
   # functionally correct (z42c re-runs against it). Additive — C# stays the
   # bootstrap seed; products land in a private dogfood dir, production stdlib
   # untouched. Gates the C#→z42c replacement path (roadmap S2). linux-x64 only.
-  compiler-z42-stdlib:
+  compiler-stdlib:
     name: test-compiler-stdlib-linux-x64
     runs-on: ubuntu-latest
 
@@ -825,7 +825,7 @@ jobs:
           # emit check against the z42c-built stdlib.
           vm="$PWD/artifacts/build/runtime/release/z42vm"
           libs="$PWD/artifacts/build/libraries/dist/release"
-          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test compiler-z42-stdlib
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test compiler-stdlib
 
   # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
   # uploads bench/results/e2e.json as artifact for manual inspection.

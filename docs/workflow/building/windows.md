@@ -28,7 +28,7 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 
 - 在 Git Bash / CMD 跑 `scripts/install-z42.bat` 下载预编译 `z42` / `z42c` / `z42vm` / stdlib 到 `./.z42/`
 - 需要 `gh`（auth'd，下载 SDK 用）；工具链全 z42 自举，无需安装 .NET 或任何其他运行时
-- 仅当改了 `src/compiler/**` 才需从源码重建：`./xtask.exe build compiler-z42`
+- 仅当改了 `src/compiler/**` 才需从源码重建：`./xtask.exe build compiler`
 
 ### 3. Rust toolchain (stable)
 
@@ -77,7 +77,7 @@ z42 的 build / test / package 工具链通过 z42 build CLI（xtask）驱动，
 
 ```bash
 # 编译（z42c 由 install-z42.bat 提供；改了编译器才需重建）
-./xtask.exe build compiler-z42         # z42c 自举（可选）
+./xtask.exe build compiler         # z42c 自举（可选）
 cargo build --manifest-path src/runtime/Cargo.toml --release   # z42vm + libz42
 
 # stdlib
@@ -154,7 +154,7 @@ iOS slice package 需要 Xcode，**永远只在 macOS host 上能跑**。Windows
 
 ```bash
 # 1. 装好 z42 工具链 + Rust（§2 + §3）
-# 2. 编 stdlib（z42c 由 install-z42.bat 提供；改了编译器才 ./xtask.exe build compiler-z42）
+# 2. 编 stdlib（z42c 由 install-z42.bat 提供；改了编译器才 ./xtask.exe build compiler）
 ./xtask.exe build stdlib
 
 # 3. 打 windows-x64 package
@@ -174,7 +174,6 @@ ls artifacts/packages/z42-0.1.0-windows-x64-release/
 ## See also
 
 - 9 RID per-arch SDK 包：[`packaging.md`](../packaging.md)
-- 桌面跨平台 build matrix：[`cross-platform.md`](cross-platform.md)
 - VM build feature flags：[`vm.md`](vm.md)
 - 测试入口：[`testing/`](../testing/)
 - 9 RID 白名单（含 `windows-x64`）：memory `project_supported_platforms`

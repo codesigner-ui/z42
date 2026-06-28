@@ -15,7 +15,7 @@
 # 设计：docs/design/compiler/self-hosting.md
 [workspace]
 members = ["*"]
-# 注：<member>/tests/<unit>/*.z42.toml 是独立 lib 项目（由 `xtask test compiler-z42`
+# 注：<member>/tests/<unit>/*.z42.toml 是独立 lib 项目（由 `xtask test compiler`
 # 用显式 toml 路径单独构建 + z42-test-runner 运行），非 workspace member。
 # workspace build 会对其报 WS007（orphan manifest）—— 非致命、纯提示，已知可忽略。
 # 拓扑序（叶子 core/ir 在前；z42c 也会 topo-sort，显式序作 fallback）：

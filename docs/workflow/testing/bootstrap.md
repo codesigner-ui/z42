@@ -60,7 +60,7 @@ host SDK ───┼─ host-package (per OS)   下载 host-SDK + cargo z42vm +
 ```
 
 > **现状（2026-06-27）**：9 个 package/platform job 已消费 host-SDK artifact（`xtask-bootstrap-artifact`
-> action）✓。但**测试 job（build-and-test / vm-jit / stdlib-jit / compiler-z42-stdlib）仍各自全量
+> action）✓。但**测试 job（build-and-test / vm-jit / stdlib-jit / compiler-stdlib）仍各自全量
 > 重新自举**（`ci-bootstrap.sh`，~12min/job）——这是当前最大的冗余（见 §5）。
 
 ---
@@ -81,7 +81,7 @@ z42 xtask.zpkg build sdk             # 重建 Current toolchain
 - **无非-z42 兜底**：fresh checkout **必须**先下载 SDK 才能起步（需 gh auth + 网络）——工具链没有任何非-z42 的逃生编译器。
   无 warm 种子时 `xtask build` 明确报错引导跑 `install-z42` / 下载流程。
 - **GREEN gate**：`z42 xtask.zpkg test` = cargo z42vm + 用 Current 跑 vm(interp)/cross-zpkg/stdlib/
-  compiler-z42。jit 由 `test vm jit` / CI 的 jit 专腿覆盖。详见 [`.claude/rules/workflow.md` 阶段8]。
+  compiler。jit 由 `test vm jit` / CI 的 jit 专腿覆盖。详见 [`.claude/rules/workflow.md` 阶段8]。
 
 ---
 
@@ -166,10 +166,10 @@ SDK set（下载）打破。compile job 的 S0-S2 是**不可消除的 shell 层
 |---|------|------|------|
 | 1 | **16× 重新全量自举** | 测试 job 各自 `ci-bootstrap.sh`（~12min）| 全消费单一 current-sdk artifact |
 | 2 | **build-wave 二次重建** | test all 的 `_regenCore` 又编 z42c+stdlib+goldens（~17min）| compile-once + `--no-build` 消除 |
-| 3 | test all 内 z42c 编 3 次 | ✅ 已修（89db08a0：cross-zpkg/compiler-z42 stage 加 noBuild）| — |
+| 3 | test all 内 z42c 编 3 次 | ✅ 已修（89db08a0：cross-zpkg/compiler stage 加 noBuild）| — |
 | 4 | 两个 bootstrap 脚本 | `ci-bootstrap.sh` + `selfhost-bootstrap.sh` 并存 | `ci-bootstrap.sh` 内联进 compile job；`selfhost-bootstrap.sh`（原 bootstrap-no-csharp job）**改造**为 cross-bootstrap |
 | 5 | `bootstrap-no-csharp` job | 唯一做不动点，但 needs 不 gate 发布 | 不动点门折进 compile job S4；此 job **改造**成 cross-bootstrap（种子换本地 SDK），进 publish needs |
-| 6 | `compiler-z42-stdlib` job | z42c 编全 stdlib + 功能验证 | 覆盖已在 compile job + test 阶段，评估删 |
+| 6 | `compiler-stdlib` job | z42c 编全 stdlib + 功能验证 | 覆盖已在 compile job + test 阶段，评估删 |
 | 7 | scripts/ 多个 shell CLI | 5 个 .sh | 逻辑内联 CI；仅留 `install-z42.sh` |
 
 ### 迭代（每步独立 commit + CI 验证；详见 spec tasks.md）
@@ -177,7 +177,7 @@ SDK set（下载）打破。compile job 的 S0-S2 是**不可消除的 shell 层
 - **P2** compile job（内联 S0-S5 + 条件不动点门 + goldens/units 上传 current-sdk）；format 兜底**第一版不做**（Decision 2）
 - **P3** 下游消费 artifact（test-interp / test-jit / host-package / package-* / platform）
 - **P4** cross-bootstrap：改造 bootstrap-no-csharp（种子换本地 SDK set，重跑 S2-S4）+ **三关进 publish needs**（package-* + cross-bootstrap + test-interp + test-jit 等）
-- **P5** 重命名（build-and-test→test-interp、vm-jit+stdlib-jit→test-jit）+ 评估删 compiler-z42-stdlib + 删脚本（仅留 install-z42.sh）
+- **P5** 重命名（build-and-test→test-interp、vm-jit+stdlib-jit→test-jit）+ 评估删 compiler-stdlib + 删脚本（仅留 install-z42.sh）
 
 **预期**：关键路径 ~52min → ~25-30min；`{z42c,stdlib}` 编 16 次 → 1 对（+条件 gen3）；matched-set 边界显式 +
 发布门三关（完整/稳定/正确）严密。

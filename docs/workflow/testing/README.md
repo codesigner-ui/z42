@@ -23,7 +23,7 @@ z42 测试分四层，各层独立运行：
 
 ## GREEN 门禁
 
-CI 全绿门禁（`cargo build`（z42vm）+ `./xtask test`（内部串联 vm / cross-zpkg / lib / compiler-z42））的定义见 [`../ci.md`](../ci.md)；规则在 [`.claude/rules/workflow.md`](../../../.claude/rules/workflow.md) 阶段 8。
+CI 全绿门禁（`cargo build`（z42vm）+ `./xtask test`（内部串联 vm / cross-zpkg / lib / compiler））的定义见 [`../ci.md`](../ci.md)；规则在 [`.claude/rules/workflow.md`](../../../.claude/rules/workflow.md) 阶段 8。
 
 ## 一键全跑
 
@@ -34,14 +34,14 @@ CI 全绿门禁（`cargo build`（z42vm）+ `./xtask test`（内部串联 vm / c
 ## Scope-aware test-all（add-test-split-by-area, 2026-05-21）
 
 `./xtask test` 默认跑 5 stages（cargo build (z42vm) / test vm /
-test cross-zpkg / test lib / test compiler-z42）≈ 3-5 min。iteration 期常
+test cross-zpkg / test lib / test compiler）≈ 3-5 min。iteration 期常
 只改一个 area；用 `--scope=<value>` 跳过不相关 stages：
 
 | Scope | 跑的 stages | 何时用 |
 |-------|------------|--------|
 | `full`（默认）| 全 5 | commit 前最终 GREEN，PR gate |
 | `runtime` | cargo build + test-vm + cross-zpkg + stdlib | 改 `src/runtime/**` |
-| `compiler` | test compiler-z42 + test-vm + cross-zpkg + stdlib | 改 `src/compiler/**` |
+| `compiler` | test compiler + test-vm + cross-zpkg + stdlib | 改 `src/compiler/**` |
 | `stdlib` | test-vm + cross-zpkg + stdlib | 改 `src/libraries/**` / `examples/**` |
 | `docs-only` | 0 stages（clean exit） | 仅 `docs/**` / `.claude/**` |
 | `auto` | 由 `git diff --name-only HEAD` 推断 | 让脚本判断 |
@@ -58,8 +58,8 @@ test cross-zpkg / test lib / test compiler-z42）≈ 3-5 min。iteration 期常
 例：
 
 ```bash
-./xtask test --scope=stdlib    # 跳 compiler-z42 stage，约省 30-40s
-./xtask test --scope=runtime   # 跳 compiler-z42 stage，约省 60-90s
+./xtask test --scope=stdlib    # 跳 compiler stage，约省 30-40s
+./xtask test --scope=runtime   # 跳 compiler stage，约省 60-90s
 ./xtask test --scope=auto      # 自动判断当前 diff
 ./xtask test --scope=full      # full，commit 前必走
 ```
@@ -78,9 +78,9 @@ wave 内的 stage 并发；wave 之间串行。期望加速 ~38%（scope=full）
 
 | Scope | Wave 1 | Wave 2 | Wave 3 |
 |-------|--------|--------|--------|
-| full | cargo build (z42vm) | test compiler-z42 \|\| test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
+| full | cargo build (z42vm) | test compiler \|\| test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
 | runtime | cargo build | test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
-| compiler | test compiler-z42 | test compiler-z42 \|\| test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
+| compiler | test compiler | test compiler \|\| test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
 | stdlib | test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg | — |
 | docs-only | — | — | — |
 

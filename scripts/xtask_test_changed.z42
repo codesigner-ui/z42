@@ -239,7 +239,7 @@ _MapResult _mapFile(string f) {
 
     // z42c self-host compiler (src/compiler).
     if (f.StartsWith("src/compiler/")) {
-        return _mapCmds(new string[]{ "xtask test compiler-z42", "xtask test vm" });
+        return _mapCmds(new string[]{ "xtask test compiler", "xtask test vm" });
     }
     // Toolchain.
     if (f.StartsWith("src/toolchain/")) {

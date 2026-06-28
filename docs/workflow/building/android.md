@@ -48,12 +48,12 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform
 facade 会把 stdlib zpkg 打进 assets，故先备好 z42 工具链：
 
 ```bash
-./xtask build compiler-z42      # z42c 自举（或由 ./scripts/install-z42.sh 直接提供）
+./xtask build compiler      # z42c 自举（或由 ./scripts/install-z42.sh 直接提供）
 ./xtask build stdlib
 ```
 
 ✅ 产出 `artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg` + stdlib zpkg 到 `artifacts/build/libraries/dist/release/*.zpkg`。
-❗ `error: z42c not built` → 先 `./scripts/install-z42.sh` 或 `./xtask build compiler-z42`。
+❗ `error: z42c not built` → 先 `./scripts/install-z42.sh` 或 `./xtask build compiler`。
 
 ## 2. 编译
 

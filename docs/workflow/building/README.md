@@ -17,7 +17,8 @@
 | [`compiler.md`](compiler.md) | z42c 编译器（z42 自举）/ `z42c` 命令 |
 | [`vm.md`](vm.md) | Rust VM / `z42vm` + feature flag |
 | [`stdlib.md`](stdlib.md) | 22 个 stdlib 包 workspace |
-| [`cross-platform.md`](cross-platform.md) | 桌面跨平台 build matrix（placeholder 0.2.5）|
+
+> 跨平台 / 多 RID 打包见 [`../packaging.md`](../packaging.md)；平台支持矩阵设计见 [`docs/design/runtime/cross-platform.md`](../../design/runtime/cross-platform.md)。
 
 ## ③ 嵌入 z42 到宿主（facade）
 

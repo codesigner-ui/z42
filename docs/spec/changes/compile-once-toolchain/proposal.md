@@ -10,7 +10,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 开口：
 
 1. **z42c+stdlib+xtask 被独立全量编译 ~16 次**：测试 job（build-and-test×4 / vm-jit×4 /
-   stdlib-jit×4 / compiler-z42-stdlib）各自跑 `ci-bootstrap.sh`（~12min/job），而
+   stdlib-jit×4 / compiler-stdlib）各自跑 `ci-bootstrap.sh`（~12min/job），而
    `toolchain-bootstrap` 已把同样的产物上传成 artifact——只有 package/platform job 消费它。
 2. **build-wave 二次重建**：即使 bootstrap 建好，`test all` 的 `_regenCore` 又把 z42c+stdlib+
    goldens 重建一遍（~17min，build-and-test 最大块）。
@@ -44,7 +44,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
    **改造**：种子换"本地 SDK set 打包发布形态"，重跑 S2-S4 编 xtask+{z42c,stdlib}，验 `{gen2}=={gen3}`）进 needs；
    ③ **正确=test-interp/test-jit（+stdlib/cross-zpkg）进 publish-nightly needs**（修"稳定地错也能发"缺口）。
 6. **重命名 + 删冗余 job + 脚本清理**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；评估删
-   `compiler-z42-stdlib`；删 `ci-bootstrap.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
+   `compiler-stdlib`；删 `ci-bootstrap.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
    `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `selfhost-bootstrap.sh`（已改造）**。
 7. **文档**：`testing/bootstrap.md` 随各 Phase 落地更新；同步 self-hosting.md/ci.md。
 
@@ -83,6 +83,6 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 ## Open Questions
 
 - [x] **Decision 2（format-bump 兜底 A/B/C）** —— 🟢 User 裁决 2026-06-27：**第一版不做兜底**，延后到未来 format bump 变更里同步落地（倾向 A committed seed）。§5.3 死锁仍是已知开口。
-- [ ] `compiler-z42-stdlib` 是否确认删（覆盖是否被 compile job + test 阶段完全包含）—— 留待 P4 实施时确认。
+- [ ] `compiler-stdlib` 是否确认删（覆盖是否被 compile job + test 阶段完全包含）—— 留待 P4 实施时确认。
 
 > 状态：spec 定稿存档；User 2026-06-27 决定**先归档 remove-dotnet-from-builds**、本 change 暂不开工，实施留待后续。

@@ -140,8 +140,8 @@ SubcommandRouter _buildRouter() {
     SubcommandRouter b = new SubcommandRouter("xtask build", "build components");
     b.Add("runtime", "cargo build z42vm + libz42 (--release)",
         new ArgParser("xtask build runtime", "cargo build z42vm + libz42"));
-    b.Add("compiler-z42", "build z42 self-host compiler (src/compiler, C#-free)",
-        new ArgParser("xtask build compiler-z42", "build z42 self-host compiler"));
+    b.Add("compiler", "build z42 self-host compiler (src/compiler)",
+        new ArgParser("xtask build compiler", "build z42 self-host compiler"));
     ArgParser stdlib = new ArgParser("xtask build stdlib", "build stdlib (all)");
     stdlib.AddOptionalPositional("lib", "(currently builds all)");
     b.Add("stdlib", "build stdlib -> build/libraries/dist", stdlib);
@@ -151,7 +151,7 @@ SubcommandRouter _buildRouter() {
     b.Add("sdk", "assemble .z42 toolchain (programs/z42c + libs + bin)", sdk);
     b.Add("launcher", "trampoline + launcher.zpkg",
         new ArgParser("xtask build launcher", "trampoline + launcher.zpkg"));
-    b.Add("all", "runtime + compiler + stdlib + compiler-z42",
+    b.Add("all", "runtime + compiler + stdlib",
         new ArgParser("xtask build all", "runtime + compiler + stdlib"));
     return b;
 }
@@ -180,10 +180,10 @@ SubcommandRouter _testRouter() {
     ArgParser dist = new ArgParser("xtask test dist", "distribution verification");
     dist.AddOptionalPositional("mode", "interp|jit (default: interp)");
     t.Add("dist", "distribution verification", dist);
-    t.Add("compiler-z42", "z42c 自举不动点 + smoke（C#-free）",
-        new ArgParser("xtask test compiler-z42", "z42c fixpoint"));
-    t.Add("compiler-z42-stdlib", "z42c dogfood-builds stdlib + functional check",
-        new ArgParser("xtask test compiler-z42-stdlib", "z42c builds stdlib"));
+    t.Add("compiler", "z42c 自举不动点 + smoke",
+        new ArgParser("xtask test compiler", "z42c fixpoint"));
+    t.Add("compiler-stdlib", "z42c dogfood-builds stdlib + functional check",
+        new ArgParser("xtask test compiler-stdlib", "z42c builds stdlib"));
     ArgParser changed = new ArgParser("xtask test changed", "only changed-area tests");
     changed.AddFlag("dry-run", "", "print the plan, don't run");
     changed.AddOptionalPositional("base", "git base ref (default: HEAD)");
@@ -290,7 +290,7 @@ int _dispatch(CommandResolution res) {
 int _dispatchBuild(string[] p, ParseResult r) {
     string sub = p.Length > 1 ? p[1] : "";
     if (sub == "runtime")      { return _buildRuntime(); }
-    if (sub == "compiler-z42") { return _buildCompilerZ42(); }   // C#-free 自举编译器（C# build compiler 已删）
+    if (sub == "compiler")     { return _buildCompilerZ42(); }   // z42 自举编译器（src/compiler）
     if (sub == "stdlib")       { return _buildStdlib(); }
     if (sub == "sdk")          { return _buildSdk(r.GetOption("out"), r.GetFlag("no-build")); }
     // unify-launcher-apphost (2026-06-21): launcher trampoline crate is gone;
@@ -299,7 +299,7 @@ int _dispatchBuild(string[] p, ParseResult r) {
                                      .Arg("--manifest-path").Arg("src/toolchain/workload/desktop/platform/apphost/Cargo.toml")); }
     if (sub == "all") {
         int c = _buildRuntime();  if (c != 0) { return c; }
-        c = _buildStdlib();       if (c != 0) { return c; }   // C#-free warm（z42c builds stdlib + z42c）
+        c = _buildStdlib();       if (c != 0) { return c; }   // warm（z42c builds stdlib + z42c）
         return _buildCompilerZ42();
     }
     return 2;
@@ -312,8 +312,8 @@ int _dispatchTest(string[] p, ParseResult r) {
     if (sub == "vm")           { return _testVm(r); }
     if (sub == "cross-zpkg")   { return _testCrossZpkg(r); }
     if (sub == "dist")         { return _testDist(r); }
-    if (sub == "compiler-z42") { return _testCompilerZ42(false); }   // C#-free 自举不动点（C# test compiler 已删）
-    if (sub == "compiler-z42-stdlib") { return _testCompilerZ42Stdlib(); }
+    if (sub == "compiler") { return _testCompilerZ42(false); }   // C#-free 自举不动点（C# test compiler 已删）
+    if (sub == "compiler-stdlib") { return _testCompilerZ42Stdlib(); }
     if (sub == "changed")      { return _testChanged(r); }
     if (sub == "platform") {
         string plat = p.Length > 2 ? p[2] : "";

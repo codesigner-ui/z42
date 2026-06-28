@@ -18,7 +18,7 @@
 #   rid defaults to the host (macos-arm64 / linux-x64 / …). Needs `gh` (auth'd)
 #   to download the nightly, cargo+rust to build the repo z42vm, and a built
 #   repo z42c (artifacts/build/z42c/.../release/dist) for leg (B) — run
-#   `z42 xtask.zpkg build compiler-z42` first if absent.
+#   `z42 xtask.zpkg build compiler` first if absent.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -77,7 +77,7 @@ if [ -f "$REPO_DRV" ] && [ -f "$REPO_VM" ]; then
   rdh="$(mktemp -d)"; for m in $MEMBERS; do cp "artifacts/build/z42c/$m/release/dist/$m.zpkg" "$rdh"/ 2>/dev/null || true; done
   run_workspace "repo" "$PWD/$REPO_VM" "$rdh/z42c.driver.zpkg" "$PWD/$REPO_STD" || B=1
 else
-  echo "── [repo] skipped: repo z42c not built (run \`z42 xtask.zpkg build compiler-z42\` first) ──"; B=2
+  echo "── [repo] skipped: repo z42c not built (run \`z42 xtask.zpkg build compiler\` first) ──"; B=2
 fi
 
 # ── verdict ───────────────────────────────────────────────────────────────────

@@ -107,7 +107,7 @@ SDK set 过渡到本地 SDK set。
 
 ### Requirement: CI 自举不再 per-job 重复
 
-**Before:** 测试 job（build-and-test×4 / vm-jit×4 / stdlib-jit×4 / compiler-z42-stdlib）各自跑
+**Before:** 测试 job（build-and-test×4 / vm-jit×4 / stdlib-jit×4 / compiler-stdlib）各自跑
 `ci-bootstrap.sh`（~12min/job），z42c+stdlib+xtask 被独立全量编 ~16 次。
 
 **After:** compile job 编一次 → 上传 artifact → 测试 job 下载 + `cargo z42vm` +

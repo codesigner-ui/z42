@@ -194,5 +194,5 @@ nightly"换成"**本地刚编出、打包成发布形态的 SDK set**"，重跑 
 - **每 Phase 独立 CI 验证**：P1 本地 + CI 验 `--toolchain` 两套等价；P2 compile job 产 artifact +
   fixpoint gate；P3 下游消费全绿且时长下降；P4/P5 重命名/删 job/删脚本后全绿。
 - **交叉验证**：compile job 的 fixpoint（gen1==gen2）是核心新增门。
-- **回归**：现有 GREEN gate（vm/cross-zpkg/stdlib/compiler-z42）覆盖不减——只是改为消费预编译 Current。
+- **回归**：现有 GREEN gate（vm/cross-zpkg/stdlib/compiler）覆盖不减——只是改为消费预编译 Current。
 - **本地**：`xtask --toolchain .z42 build sdk` + `--toolchain artifacts/.z42 test` 可复现 CI 链路。

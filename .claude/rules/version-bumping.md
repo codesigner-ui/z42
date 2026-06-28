@@ -29,7 +29,7 @@ paths:
 5. **z42c 自举 writer 同步（port-z42c-zbc-writer 起，2026-06-10）**：
    - `src/compiler/z42c.ir/src/BinaryFormat/ZbcFormat.z42` — `ZbcVersion.Minor` 同步到新值（+注释）；若 bump 改了 ZW 已实现的 section 布局（TYPE/SIGS/FUNC/REGT 等），`ZbcWriter.z42` 的对应 BuildXxx 同步镜像
    - `src/compiler/z42c.semantics/tests/zbc/zbc_tests.z42` — golden hex 随 fixture regen 更新（test_zbc_empty_byte_identical 的 247B 串重截自 regen 后的 `src/tests/zbc-format/empty/source.zbc`：`xxd -p src/tests/zbc-format/empty/source.zbc | tr -d '\n'`）
-   - 验证：`z42 xtask.zpkg test compiler-z42`（z42c zbc 单元须绿）
+   - 验证：`z42 xtask.zpkg test compiler`（z42c zbc 单元须绿）
 
 提交前自检：
 

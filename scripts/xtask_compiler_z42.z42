@@ -1,4 +1,4 @@
-// xtask — `build compiler-z42` / `test compiler-z42` impl
+// xtask — `build compiler` / `test compiler` impl
 // (scaffold-z42c-selfhost, 2026-06-07).
 //
 // Builds the z42 self-host compiler workspace (src/compiler — 7 子包 1:1 镜像 C#
@@ -78,7 +78,7 @@ int _buildCompilerZ42ViaZ42c(string root, string profile, string[] members, stri
 // 防 zpkg 版本 skew 假失败（2026-06-10）：z42c 测试单元先被 C# driver 编成 zpkg，
 // 再交 z42-test-runner 的 *in-process VM*（链 libz42）运行。三者写/读的 zpkg 格式版本
 // 必须一致。完整 `xtask test` 在跑前重建 stdlib+runtime+test-runner+driver，但
-// `test compiler-z42` 原本只检查 runner 存在、从不重建 —— 一旦某并行变更 bump 了 zpkg
+// `test compiler` 原本只检查 runner 存在、从不重建 —— 一旦某并行变更 bump 了 zpkg
 // 格式（如 add-attribute-reflection-methods 把 minor 撞到 0.13），停在旧版的 test-runner
 // 会在加载期把每个 unit 全判 "cannot read zpkg metadata"（空输出＝假失败）。
 // 故此处显式重建 runtime(z42vm+libz42) + test-runner + driver。cached 时近 no-op，
@@ -97,7 +97,7 @@ int _ensureZ42cTooling() {
 // basename, so the product path is build/z42c/<name>/release/dist/<name>.zpkg.
 // noBuild=true: skip the tooling + z42c rebuild (the caller — `test all` — already
 // built z42c fresh in its build wave; rebuilding here was z42c's 2nd/3rd full
-// self-build in one gate run). Standalone `test compiler-z42` passes false.
+// self-build in one gate run). Standalone `test compiler` passes false.
 int _testCompilerZ42(bool noBuild) {
     if (!noBuild) {
         int tc = _ensureZ42cTooling();   // 重建 runtime+runner+driver，防版本 skew 假失败
@@ -130,7 +130,7 @@ int _testCompilerZ42(bool noBuild) {
     }
 
     Console.WriteLine("");
-    Console.WriteLine("test compiler-z42: " + ok.ToString() + "/"
+    Console.WriteLine("test compiler: " + ok.ToString() + "/"
         + members.Length.ToString() + " zpkg present");
     if (fail > 0) { return 1; }
 

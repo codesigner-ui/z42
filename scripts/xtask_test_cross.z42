@@ -51,7 +51,7 @@ int _testCrossZpkgImpl(string mode) {
     }
     if (driverHome.Length == 0) {
         ConsoleError.WriteLine("error: z42c driver not built (artifacts/build/z42c/z42c.*/release/dist)");
-        ConsoleError.WriteLine("       Build it via: ./xtask test compiler-z42  (or build stdlib)");
+        ConsoleError.WriteLine("       Build it via: ./xtask test compiler  (or build stdlib)");
         return 1;
     }
     string driverZpkg = Path.Join(driverHome, "z42c.driver.zpkg");

@@ -21,4 +21,4 @@
 Z42_LIBS=<flat> z42vm <flat>/z42c.driver.zpkg -- --emit-zbc <file.z42> <out.zbc>
 Z42_LIBS=<flat> z42vm <out.zbc> Main        # 执行自举编译器产物
 ```
-端到端冒烟由 `xtask test compiler-z42` 的 e2e 步骤覆盖（自检程序 + div-by-zero oracle）。
+端到端冒烟由 `xtask test compiler` 的 e2e 步骤覆盖（自检程序 + div-by-zero oracle）。

@@ -117,8 +117,8 @@ Z42_LIBS="$seedw" "$runvm" "$driverw" --mode interp -- \
 [ -f "$ROOT/artifacts/xtask/xtask.zpkg" ] || { echo "::error::xtask.zpkg not produced"; exit 1; }
 
 # ── 3. xtask builds CURRENT z42c (warm self-build → standard loc) ────────────
-echo "── [3/5] xtask build compiler-z42 (warm self-build from seed) ──"
-Z42_LIBS="$libsw" Z42_PORTABLE_VM="$runvmw" "$runvm" artifacts/xtask/xtask.zpkg -- build compiler-z42
+echo "── [3/5] xtask build compiler (warm self-build from seed) ──"
+Z42_LIBS="$libsw" Z42_PORTABLE_VM="$runvmw" "$runvm" artifacts/xtask/xtask.zpkg -- build compiler
 
 # ── 4. xtask builds CURRENT stdlib (flat dist + index.json) ──────────────────
 echo "── [4/5] xtask build stdlib ──"
@@ -127,7 +127,7 @@ Z42_LIBS="$libsw" Z42_PORTABLE_VM="$runvmw" "$runvm" artifacts/xtask/xtask.zpkg 
 # ── 5. sanity: no dotnet was invoked; toolchain present ──────────────────────
 echo "── [5/5] verify toolchain (no dotnet) ──"
 [ -f "$ROOT/artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg" ] \
-  || { echo "::error::current z42c.driver.zpkg missing after build compiler-z42"; exit 1; }
+  || { echo "::error::current z42c.driver.zpkg missing after build compiler"; exit 1; }
 [ -f "$libs/z42.core.zpkg" ] || { echo "::error::stdlib flat dist missing"; exit 1; }
 rm -rf "$work"
 echo "✅ CI bootstrap OK ($RID) — z42c + stdlib + xtask in standard locations, no dotnet"

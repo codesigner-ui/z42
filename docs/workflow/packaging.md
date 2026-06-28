@@ -49,7 +49,7 @@ cargo --version               # Rust stable；VM
 gh --version                  # auth'd；下载预编译 launcher / SDK
 ./scripts/install-z42.sh      # z42 launcher + z42c + z42vm + stdlib → ./.z42/
 ./xtask build stdlib          # stdlib zpkg → artifacts/build/libraries/dist/release/
-./xtask build compiler-z42    # z42c 自举 → artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg（多数用户由 install-z42.sh 直接提供）
+./xtask build compiler    # z42c 自举 → artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg（多数用户由 install-z42.sh 直接提供）
 
 # iOS RID（macOS only）
 xcode-select --install        # Xcode + xcrun
@@ -147,7 +147,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 | `rid '<x>' not in supported whitelist` | 你给的 RID 不在 9 个白名单内；见 memory `project_supported_platforms` |
 | `cross-compiling to '<x>' from host '<y>' not supported` | host RID 不能 cross-compile 到目标 RID；换 host 或走 CI |
 | `error: stdlib not built at artifacts/build/libraries/dist/release` | 先 `./xtask build stdlib` |
-| `error: z42c not built ...` | 先 `./scripts/install-z42.sh` 或 `./xtask build compiler-z42` |
+| `error: z42c not built ...` | 先 `./scripts/install-z42.sh` 或 `./xtask build compiler` |
 | `cargo-ndk not found` | `cargo install cargo-ndk --locked` |
 | `$ANDROID_NDK_HOME unset and NDK not found locally` | `./xtask deps install --os android` 或 `export ANDROID_NDK_HOME=<path>` |
 | iOS `xcframework not created` | Xcode 没装或 `xcode-select -p` 指错 |
@@ -156,7 +156,7 @@ file artifacts/packages/z42-0.1.0-browser-wasm-release/native/z42_wasm_bg.wasm
 
 ## See also
 
-- 平台 build 详细 step：[`building/ios.md`](building/ios.md) / [`building/android.md`](building/android.md) / [`building/wasm.md`](building/wasm.md) / [`building/cross-platform.md`](building/cross-platform.md)
+- 平台 build 详细 step：[`building/ios.md`](building/ios.md) / [`building/android.md`](building/android.md) / [`building/wasm.md`](building/wasm.md)
 - Release 自动化（CI matrix）：[`release.md`](release.md)
 - 9 RID 白名单理由：memory `project_supported_platforms`
 - 包结构契约：[`docs/spec/archive/2026-05-13-define-package-layout/`](../spec/archive/2026-05-13-define-package-layout/)

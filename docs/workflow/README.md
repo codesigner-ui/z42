@@ -38,7 +38,6 @@ Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → ar
 | 编 z42c 编译器（z42 自举）| [`building/compiler.md`](building/compiler.md) |
 | 编 Rust VM | [`building/vm.md`](building/vm.md) |
 | 重建 stdlib | [`building/stdlib.md`](building/stdlib.md) |
-| 桌面跨平台 build | [`building/cross-platform.md`](building/cross-platform.md) |
 | 嵌入 z42 到 **WASM** | [`building/wasm.md`](building/wasm.md) |
 | 嵌入 z42 到 **iOS** | [`building/ios.md`](building/ios.md) |
 | 嵌入 z42 到 **Android** | [`building/android.md`](building/android.md) |

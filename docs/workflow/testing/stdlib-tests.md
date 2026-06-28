@@ -80,5 +80,5 @@ public static void test_throws_on_invalid_input() {
 |------|---|---|
 | 写在 | z42c 源码 `[Test]` units / Rust `*_tests.rs` | z42 `*Tests.z42` |
 | 测什么 | 编译器内部（lexer / parser / TC / IR），经 z42c 自举不动点 | stdlib 源码（运行时行为）|
-| Runner | `./xtask test compiler-z42` / `cargo test` | z42-test-runner |
+| Runner | `./xtask test compiler` / `cargo test` | z42-test-runner |
 | 加入 GREEN | ✅ | ✅ |

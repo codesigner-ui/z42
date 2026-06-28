@@ -80,7 +80,7 @@ int _buildStdlib() {
 // ── test ──────────────────────────────────────────────────────────────────
 //
 // The test command tree (vm / cross-zpkg / dist / stdlib / compiler /
-// compiler-z42 / changed / all) + the "no subcommand = full gate" default
+// compiler / changed / all) + the "no subcommand = full gate" default
 // live in xtask_cli.z42 (_runCli / _dispatchTest). The leaf handlers
 // (_testVm / _testLib / _testCrossZpkg / _testDist / _testChanged) read
 // their args from a Std.Cli ParseResult.

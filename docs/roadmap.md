@@ -93,7 +93,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 子版本 | B 自举（招牌）| A stdlib | C 反射 |
 |:--:|------|------|------|
-| 0.3.1 | B0 架构 spec + 建 `src/compiler/` 7 子包骨架 + xtask `build/test compiler-z42`（[scaffold-z42c-selfhost](spec/changes/scaffold-z42c-selfhost/)）| A0 包审计 spec | C0 反射 API spec（新建 `reflection.md`）|
+| 0.3.1 | B0 架构 spec + 建 `src/compiler/` 7 子包骨架 + xtask `build/test compiler`（[scaffold-z42c-selfhost](spec/changes/scaffold-z42c-selfhost/)）| A0 包审计 spec | C0 反射 API spec（新建 `reflection.md`）|
 | 0.3.2 | — | A1 包重组（先行，稳定 B 引用路径）| — |
 | 0.3.3 | core + syntax（Lexer/Parser/AST）+ bit-identical gate | A2 bench baseline | C1 metadata 暴露 + 4 反射对象 + `GetMembers` 系列 |
 | 0.3.4 | project + driver（lex/parse/manifest-check 可跑）| A3 perf #1 BigInt/Coll | C2 `typeof(T)` + `obj.GetType()` + z42.reflection 包公开 |

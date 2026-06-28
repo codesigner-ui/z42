@@ -11,7 +11,7 @@ z42 编译器 (`z42c`) 由 z42 自身写成，源码在 [`src/compiler/`](../../
 ## 从源码构建编译器
 
 ```bash
-./xtask build compiler-z42      # z42c 自举建 7 子包
+./xtask build compiler      # z42c 自举建 7 子包
 ```
 
 产物：`artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg` 是 driver 入口。多数用户由 `install-z42.sh` 直接提供 `z42c`，无需此步。
@@ -67,7 +67,7 @@ z42c errors                               # 列全部错误码
 ## 单元测试
 
 ```bash
-./xtask test compiler-z42       # z42c 自举单测
+./xtask test compiler       # z42c 自举单测
 ```
 
 见 [`../testing/unit-tests.md`](../testing/unit-tests.md)。

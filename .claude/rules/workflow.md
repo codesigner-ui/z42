@@ -314,7 +314,7 @@ docs/spec/changes/<change-name>/
 ## Testing Strategy
 - 单元测试：[覆盖点]
 - Golden test：[新增场景]
-- VM 验证：z42 xtask.zpkg test（cargo build z42vm + z42c 自建 + vm/cross-zpkg/stdlib/compiler-z42）
+- VM 验证：z42 xtask.zpkg test（cargo build z42vm + z42c 自建 + vm/cross-zpkg/stdlib/compiler）
 ```
 
 ---
@@ -345,7 +345,7 @@ docs/spec/changes/<change-name>/
 
 ## 阶段 3: 验证
 - [ ] 3.1 cargo build (z42vm) —— 无编译错误（z42c + stdlib 由 xtask test 用 z42c 自建）
-- [ ] 3.2 z42 xtask.zpkg test compiler-z42 —— z42c 自举全绿（替代旧 dotnet test）
+- [ ] 3.2 z42 xtask.zpkg test compiler —— z42c 自举全绿（替代旧 dotnet test）
 - [ ] 3.3 z42 xtask.zpkg test vm —— 全绿
 - [ ] 3.4 spec scenarios 逐条覆盖确认
 - [ ] 3.5 docs/design/ 文档同步（新语法 / IR / VM 行为）
@@ -499,10 +499,10 @@ z42 xtask.zpkg test cross-zpkg
 z42 xtask.zpkg test lib
 
 # 5. z42c 自举（编译器正确性：build 7 子包 + 产物存在 + [Test] units）
-z42 xtask.zpkg test compiler-z42
+z42 xtask.zpkg test compiler
 ```
 
-> **不要漏跑 cross-zpkg / lib / compiler-z42**。historic regression：cross-zpkg
+> **不要漏跑 cross-zpkg / lib / compiler**。historic regression：cross-zpkg
 > subclass catch bug 之所以一直没被发现，就是 3 / 4 不在默认 GREEN 路径里 —— 每次
 > spec 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。编译器正确性
 > 现由 stage 5（z42c 自举）保证，不再有 C# `dotnet test`。
@@ -532,7 +532,7 @@ z42 xtask.zpkg test compiler-z42
 - ✅ z42 xtask.zpkg test vm: M/M（GREEN gate `test all` 跑 interp；JIT 由 CI vm-jit-consistency 专腿 / 本地 `test vm jit` 覆盖）
 - ✅ z42 xtask.zpkg test cross-zpkg: K/K
 - ✅ z42 xtask.zpkg test lib: 22/22 lib
-- ✅ z42 xtask.zpkg test compiler-z42: 7/7 zpkg + units（z42c 自举，替代旧 C# `dotnet test`）
+- ✅ z42 xtask.zpkg test compiler: 7/7 zpkg + units（z42c 自举，替代旧 C# `dotnet test`）
 - （可选）✅ z42 xtask.zpkg test dist: P/P
 
 ### Spec 覆盖（若有 spec）

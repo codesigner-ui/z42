@@ -15,7 +15,7 @@
 | `src/CoreSkeleton.z42` | **过渡占位**：尚未移植的 syntax/semantics/pipeline/driver 仍引用它；各自移植到真实 core 时移除 |
 
 > 受限写法（无 enum / 类字段无泛型 / List 约束 → typed array）见 [self-hosting.md](../../../docs/design/compiler/self-hosting.md)。
-> 测试：`tests/diag/`（11 例：诊断 7 + 特性 4），经 `xtask test compiler-z42`。
+> 测试：`tests/diag/`（11 例：诊断 7 + 特性 4），经 `xtask test compiler`。
 > 待移植：DiagnosticRenderer·Catalog·Category（CLI 渲染，driver 需要时）/ PreludePackages。
 
 ## 入口点

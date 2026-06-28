@@ -27,7 +27,7 @@ apphost `./xtask`。从零：
 
 ```bash
 # 1. z42c 编译器（z42 自举）+ Rust VM（release）
-./xtask build compiler-z42
+./xtask build compiler
 cargo build --release --manifest-path src/runtime/Cargo.toml
 
 # 2. xtask.zpkg + 原生 apphost ./xtask
