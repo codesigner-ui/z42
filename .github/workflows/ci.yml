@@ -79,7 +79,7 @@ jobs:
               - '.github/workflows/ci.yml'
 
   build-and-test:
-    name: test(${{ matrix.platform }})
+    name: test-host(${{ matrix.platform }})
     # needs: changes so the Windows cargo-test step can gate on the `vm` filter
     # (rule c). The job itself still runs on every non-docs push (changes always
     # succeeds); only the Rust-unit step is conditionally skipped.
@@ -323,7 +323,7 @@ jobs:
   # cargo-builds its own z42vm). build-and-test is now pure test. publish-nightly
   # consumes these uploads.
   host-package:
-    name: package(${{ matrix.platform }})
+    name: package-host(${{ matrix.platform }})
     needs: toolchain-bootstrap
     strategy:
       fail-fast: false
@@ -427,7 +427,7 @@ jobs:
   # build their own z42vm — dropping their dotnet source-build — and run in parallel
   # instead of each re-bootstrapping. Fast: bootstrap only, no test.
   toolchain-bootstrap:
-    name: compile(${{ matrix.platform }})
+    name: compile-toolchain(${{ matrix.platform }})
     # Runs unconditionally (like the test jobs) — its artifact roots the package
     # jobs (which always run) + the platform-test jobs, so it must always be present.
     strategy:
@@ -493,7 +493,7 @@ jobs:
   # continue-on-error per step: additive validation — if regen/build sdk hits a
   # CI-only path diff, the gating jobs are unaffected (only current-sdk is skipped).
   assemble-current-sdk:
-    name: assemble-sdk(${{ matrix.platform }})
+    name: compile-test-assets(${{ matrix.platform }})
     needs: toolchain-bootstrap
     strategy:
       fail-fast: false
