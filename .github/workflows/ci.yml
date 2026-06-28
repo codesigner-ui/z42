@@ -1243,6 +1243,16 @@ jobs:
       - package-wasm
       - toolchain-bootstrap   # provides the toolchain-<os> artifact for `xtask release`
     runs-on: ubuntu-latest
+    # Serialize publish-nightly across ALL events/runs: it does `gh release delete
+    # nightly` → `gh release create nightly`, which two concurrent runs (e.g. a push
+    # and the daily schedule, now in separate top-level concurrency groups) would
+    # race on — one deletes the release out from under the other's edit → HTTP 403 /
+    # stuck-draft. cancel-in-progress: false queues the newer run so the in-flight
+    # publish finishes cleanly, then the newer SHA republishes. Job-level group, so
+    # only publish-nightly is serialized — build/test stay decoupled per event.
+    concurrency:
+      group: publish-nightly-${{ github.ref }}
+      cancel-in-progress: false
     permissions:
       contents: write   # gh release create / delete
     steps:
