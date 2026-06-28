@@ -156,7 +156,8 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [x] 5.1 **CI job 重命名**（动作-平台-host 约定，display name + matrix platform 标签，id 不变）：build-and-test→`test (<平台>)`、toolchain-bootstrap→`compile (<平台>)`、host-package→`package (<平台>)`、vm-jit→`test-vm-jit-linux-x64`、stdlib-jit→`test-stdlib-jit-linux-x64`、bootstrap-no-csharp→`verify-selfhost-linux-x64`、compiler-stdlib→`test-compiler-stdlib`、feature-matrix→`verify-features`、package/test-{ios→-macos,android/wasm→-linux}、bench-e2e→`bench-linux-x64`、consume→`test-consume-linux-x64`。⚠️ User 需更新 branch protection required checks。
 - [ ] 5.2 评估删 `compiler-stdlib` job（确认覆盖已被 compile job + test 阶段完全包含；Open Question）
 - [ ] 5.3 删 `scripts/ci-bootstrap.sh`（逻辑已内联 compile job）
-- [x] 5.4 删 `scripts/check-bootstrap-compat.sh`（已折进 `xtask bootstrap-check`，Stage 2a）。`scripts/ci-stage-toolchain.sh`：不存在（已无此文件，无需删）。
+- [x] 5.4（部分）删 `scripts/check-bootstrap-compat.sh`（已折进 `xtask bootstrap-check`，Stage 2a）。
+  > **`scripts/ci-stage-toolchain.sh` 仍在**（ci.yml:468 stage `toolchain-<os>` artifact）——**不单独折叠**：它产的是 OLD `toolchain-<os>`（raw artifacts 树），与 NEW `current-sdk`（`.z42`，`build sdk`）并存。随 **Stage 3c**（下游统一消费 `current-sdk` 带 z42vm）把 `toolchain-<os>` 退役时一并删，避免抛光将弃之物。同理 `ci-bootstrap.sh`（5.3）的内联也属 Stage 3-5 拓扑迁移。
 - [ ] 5.5 **保留 `scripts/install-z42.sh`**（cold-start primer）+ `scripts/selfhost-bootstrap.sh`（已改造为 cross-bootstrap，不删）
 - [ ] 5.6 commit + CI 全绿
 
