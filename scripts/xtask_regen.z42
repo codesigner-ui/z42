@@ -144,27 +144,50 @@ int _regenGolden() {
         ci = ci + 1;
     }
 
-    // ── Compile each case ────────────────────────────────────────────────
+    // ── Compile each case (parallel batches) ─────────────────────────────
+    // Each case spawns z42vm + z42c.driver to compile one source.z42 — the cost
+    // is dominated by per-process driver startup (load driver.zpkg + 7 members +
+    // stdlib), not the compile itself, so the ~333 cases parallelize well.
+    // Batches of `jobs`: spawn jobs compiles → wait → collect. Outputs are
+    // independent .zbc files, so order doesn't matter. Mirrors _runUnitsBatched.
+    int jobs = 8;
     int pass = 0;
     int fail = 0;
     string[] failures = new string[8];
     int      failCount = 0;
     int k = 0;
     while (k < caseCount) {
-        string name = caseNames[k];
-        string src  = caseSources[k];
-        string outPath = caseOutputs[k];
-        bool ok = _compileCase(vmBin, driverZpkg, stdlibDist, src, outPath);
-        if (ok) {
-            Console.WriteLine("  OK:   " + name);
-            pass = pass + 1;
-        } else {
-            Console.WriteLine("  FAIL: " + name);
-            fail = fail + 1;
-            failures = _append(failures, failCount, name);
-            failCount = failCount + 1;
+        int bsz = jobs;
+        if (k + bsz > caseCount) { bsz = caseCount - k; }
+        ProcessHandle[] hs = new ProcessHandle[bsz];
+        int b = 0;
+        while (b < bsz) {
+            hs[b] = _compileCaseSpawn(vmBin, driverZpkg, stdlibDist,
+                                      caseSources[k + b], caseOutputs[k + b]);
+            b = b + 1;
         }
-        k = k + 1;
+        b = 0;
+        while (b < bsz) {
+            string name = caseNames[k + b];
+            bool ok = false;
+            try {
+                ProcessResult r = hs[b].Wait();
+                ok = (r.ExitCode == 0);
+            } catch (Exception e) {
+                ok = false;
+            }
+            if (ok) {
+                Console.WriteLine("  OK:   " + name);
+                pass = pass + 1;
+            } else {
+                Console.WriteLine("  FAIL: " + name);
+                fail = fail + 1;
+                failures = _append(failures, failCount, name);
+                failCount = failCount + 1;
+            }
+            b = b + 1;
+        }
+        k = k + bsz;
     }
 
     Console.WriteLine("");
@@ -195,17 +218,14 @@ bool _isNonRegenCat(string cat) {
 
 // z42c 编译单个 golden（z42vm 跑 z42c.driver.zpkg --emit-zbc）。golden 的 stdlib 依赖
 // （Assert/Console 等）经 Z42_LIBS=stdlibDist 解析；driver 自身 z42c.* 依赖从 driverHome 解析。
-bool _compileCase(string vmBin, string driverZpkg, string stdlibDist, string source, string output) {
-    try {
-        ProcessResult r = new Process(vmBin)
-            .Arg(driverZpkg).Arg("--mode").Arg("interp")
-            .Arg("--").Arg("--emit-zbc").Arg(source).Arg(output)
-            .Env("Z42_LIBS", stdlibDist)
-            .Stdout(Stdio.Null())
-            .Stderr(Stdio.Null())
-            .Run();
-        return r.ExitCode == 0;
-    } catch (Exception e) {
-        return false;
-    }
+// Spawn (don't wait) the z42c compile of one golden case; caller batches the
+// Wait() across `jobs` concurrent handles. Output .zbc paths are unique per case.
+ProcessHandle _compileCaseSpawn(string vmBin, string driverZpkg, string stdlibDist, string source, string output) {
+    return new Process(vmBin)
+        .Arg(driverZpkg).Arg("--mode").Arg("interp")
+        .Arg("--").Arg("--emit-zbc").Arg(source).Arg(output)
+        .Env("Z42_LIBS", stdlibDist)
+        .Stdout(Stdio.Null())
+        .Stderr(Stdio.Null())
+        .Spawn();
 }
