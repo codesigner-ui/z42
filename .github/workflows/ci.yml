@@ -480,22 +480,52 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-      # compile-once P2 (additive): assemble the warm toolchain into a `.z42`
-      # layout (programs/z42c + libs + bin) consumable by `xtask --toolchain
-      # <dir>`. --no-build = assemble from the canonical artifacts the bootstrap
-      # above just produced (no redundant rebuild). This is the future
-      # `current-sdk` that downstream test jobs will consume (P3) instead of each
-      # re-bootstrapping; uploaded alongside toolchain-<os> so nothing existing
-      # breaks while the consumers migrate.
-      # continue-on-error: this is an additive validation step. If `build sdk`
-      # hits a CI-only path difference, the job stays green and the existing
-      # toolchain-<os> artifact (+ package jobs) are unaffected — only current-sdk
-      # is skipped. Check whether the current-sdk-<os> artifact appears to confirm
-      # it worked; drop continue-on-error once proven (then it becomes a gate).
+  # ── compile-once P2 (additive): assemble current-sdk in a SEPARATE job ──────
+  # Builds the `.z42` current-sdk layout (programs/z42c + libs + bin) + bundles
+  # the golden .zbc, consumable by `xtask --toolchain <dir>`. SPLIT OUT of
+  # toolchain-bootstrap on purpose: the golden regen takes ~9 min and used to run
+  # AFTER the toolchain-<os> upload but INSIDE toolchain-bootstrap — so every
+  # `needs: toolchain-bootstrap` job (host-package → publish-nightly critical
+  # path) waited those ~9 min for an artifact it doesn't use. As its own job
+  # (consuming the toolchain artifact via xtask-bootstrap-artifact + a host cargo
+  # z42vm) it runs fully in PARALLEL, off the critical path, and packages start as
+  # soon as the toolchain zpkgs are up. Nothing gating publish needs current-sdk.
+  # continue-on-error per step: additive validation — if regen/build sdk hits a
+  # CI-only path diff, the gating jobs are unaffected (only current-sdk is skipped).
+  assemble-current-sdk:
+    name: assemble-sdk(${{ matrix.platform }})
+    needs: toolchain-bootstrap
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, platform: linux-x64 }
+          - { os: macos-15,      platform: macos-arm64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + git + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+            ${{ runner.os }}-cargo-
+
+      # cargo build z42vm + restore z42c/stdlib/xtask zpkgs at canonical paths
+      - uses: ./.github/actions/xtask-bootstrap-artifact
+
       # compile-once P2.4 (shared compiled assets): regen the golden .zbc ONCE here
-      # so downstream interp + jit jobs both consume the SAME prebuilt bytecode
-      # (.zbc is execution-mode-agnostic) via `test vm --no-build` — no N× regen,
-      # no N× bootstrap. The goldens are bundled into current-sdk below.
+      # so downstream interp + jit consumers run the SAME prebuilt bytecode
+      # (.zbc is execution-mode-agnostic) via `test vm --no-build`.
       - name: Regen golden .zbc (compile shared assets once)
         continue-on-error: true
         shell: bash
@@ -536,7 +566,7 @@ jobs:
   # while we validate — promote to a gate once proven.
   consume-current-sdk:
     name: test-consume(linux-x64)
-    needs: toolchain-bootstrap
+    needs: assemble-current-sdk
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

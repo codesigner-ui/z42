@@ -58,6 +58,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 ### Stage 3 — 编译 host package（同平台共享）
 - [x] 3a xtask `build sdk [--out]` 产 `.z42`（zpkg + z42vm + toolchain）✅（原 P1）
 - [x] 3b CI compile/toolchain-bootstrap 产 `current-sdk-<os>` artifact ✅（原 P2）
+- [x] 3b-fix current-sdk 组装拆出独立 `assemble-current-sdk` job（consume xtask-bootstrap-artifact + 本机 cargo z42vm）✅：原本 regen+build-sdk（~9min）排在 toolchain-`<os>` 上传**之后**但仍在 toolchain-bootstrap job 内，使所有 `needs: toolchain-bootstrap` 的 package→publish-nightly 关键路径白等 9min；拆成并行 job 后 package 在 toolchain zpkg 就绪即启动，关键路径 ~47→~38min。current-sdk 非任何 publish gating 依赖。
 - [ ] 3c host package **带 z42vm** + 同平台下游消费它（不重 cargo build；约束1）—— 补 bin/z42vm 到 artifact、下游用
 - [ ] 3d per-OS 覆盖（现 linux+macos；按需补 arm/windows host package）
 - [ ] 3e docs：stage 3 CI + 本地（`xtask build sdk`）
