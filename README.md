@@ -57,10 +57,11 @@ export PATH="$PWD/.z42:$PWD/.z42/bin:$PATH"     # put z42 / z42c / z42vm on PATH
 ```bash
 # build the dev CLI against the downloaded stdlib (Z42_LIBS points z42c at .z42/libs):
 Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → artifacts/xtask/xtask.zpkg
+z42 publish desktop scripts/xtask.z42.toml                              # → ./xtask  (native apphost)
 
-z42 xtask.zpkg build all     # compiler + runtime + stdlib (from source)
-z42 xtask.zpkg test          # full gate (compiler + vm + cross-zpkg + stdlib)
-z42 xtask.zpkg --help        # all commands (build / test / deps / regen / bench / package)
+./xtask build all     # compiler + runtime + stdlib (from source)
+./xtask test          # full gate (compiler + vm + cross-zpkg + stdlib)
+./xtask help          # all commands (build / test / deps / regen / bench / package)
 ```
 
 ### 3. Compile + run a z42 program
@@ -70,10 +71,10 @@ z42c build path/to/app.z42.toml --release   # → <out_dir>/<name>.zpkg  (see ex
 z42 <out_dir>/<name>.zpkg                    # run it via the launcher
 ```
 
-A green `z42 xtask.zpkg test` already proves the toolchain compiles and runs z42
+A green `./xtask test` already proves the toolchain compiles and runs z42
 end-to-end. See [examples/](examples/) for project layouts.
 
-> **Prerequisites:** git + .NET 10 SDK + Rust stable (`dotnet --version && rustc --version`).
+> **Prerequisites:** git + Rust stable (`rustc --version`) + [`gh`](https://github.com/cli/cli) (authed — downloads the prebuilt primer). A C toolchain (`build-essential` / Xcode CLT) is needed for C-backed stdlib deps.
 > **Building the whole toolchain from source** (no prebuilt download) and the full
 > bootstrap details live in [docs/workflow/building/](docs/workflow/building/).
 > Full build / test / packaging / CI / release workflows: [docs/workflow/](docs/workflow/).
@@ -103,10 +104,10 @@ Start here based on what you want to know:
 ```
 z42/
 ├── src/
-│   ├── compiler/          # C# bootstrap compiler
+│   ├── compiler/          # z42 self-hosting compiler (.z42 source → zpkg)
 │   ├── runtime/           # Rust VM (interp / JIT / AOT)
 │   ├── libraries/         # Standard library (.z42 source)
-│   └── toolchain/         # Companion toolchain (host / debugger / packager / workload)
+│   └── toolchain/         # Companion toolchain (launcher / test-runner / builder / debugger / workload)
 ├── scripts/               # xtask dev CLI (build / test / package) + install primers
 ├── docs/design/           # Language design documents
 ├── examples/              # Example programs
