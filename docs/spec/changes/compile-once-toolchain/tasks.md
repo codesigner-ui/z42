@@ -158,7 +158,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [ ] 5.2 评估删 `compiler-stdlib` job（确认覆盖已被 compile job + test 阶段完全包含；Open Question）
 - [ ] 5.3 删 `scripts/ci-bootstrap.sh`（逻辑已内联 compile job）
 - [x] 5.4（部分）删 `scripts/check-bootstrap-compat.sh`（已折进 `xtask bootstrap-check`，Stage 2a）。
-  > **`scripts/ci-stage-toolchain.sh` 仍在**（ci.yml:468 stage `toolchain-<os>` artifact）——**不单独折叠**：它产的是 OLD `toolchain-<os>`（raw artifacts 树），与 NEW `current-sdk`（`.z42`，`build sdk`）并存。随 **Stage 3c**（下游统一消费 `current-sdk` 带 z42vm）把 `toolchain-<os>` 退役时一并删，避免抛光将弃之物。同理 `ci-bootstrap.sh`（5.3）的内联也属 Stage 3-5 拓扑迁移。
+  > **`scripts/ci-stage-toolchain.sh` 已折进 `xtask build stage-toolchain`**（script-zero；compile-toolchain job 调用，输出与原 .sh 字节一致已本地 dogfood 验证）。`ci-bootstrap.sh`（5.3）的内联仍待做（cold-start 引导，xtask 尚未存在，须内联进 compile job 的 run 块）。
 - [ ] 5.5 **保留 `scripts/install-z42.sh`**（cold-start primer）+ `scripts/selfhost-bootstrap.sh`（已改造为 cross-bootstrap，不删）
 - [ ] 5.6 commit + CI 全绿
 

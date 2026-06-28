@@ -452,7 +452,10 @@ jobs:
 
       - name: Stage toolchain (zpkg products only)
         shell: bash
-        run: bash scripts/ci-stage-toolchain.sh "$RUNNER_TEMP/tc"
+        run: |
+          vm="$PWD/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- build stage-toolchain "$RUNNER_TEMP/tc"
 
       - name: Upload toolchain-${{ matrix.os }}
         uses: actions/upload-artifact@v4

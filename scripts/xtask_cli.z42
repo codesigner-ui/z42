@@ -170,6 +170,9 @@ SubcommandRouter _buildRouter() {
     sdk.AddOption("out", "", "output dir (default: artifacts/.z42)", "");
     sdk.AddFlag("no-build", "", "assemble from existing artifacts (skip rebuild; for CI warm)");
     b.Add("sdk", "assemble .z42 toolchain (programs/z42c + libs + bin)", sdk);
+    ArgParser stage = new ArgParser("xtask build stage-toolchain", "stage z42c+stdlib+xtask zpkgs → <dest> for the CI toolchain-<os> artifact");
+    stage.AddOptionalPositional("dest", "destination dir (required)");
+    b.Add("stage-toolchain", "stage toolchain zpkgs → <dest> (CI artifact)", stage);
     b.Add("launcher", "trampoline + launcher.zpkg",
         new ArgParser("xtask build launcher", "trampoline + launcher.zpkg"));
     b.Add("all", "runtime + compiler + stdlib",
@@ -325,6 +328,7 @@ int _dispatchBuild(string[] p, ParseResult r) {
     if (sub == "compiler")     { return _buildCompilerZ42(); }   // z42 自举编译器（src/compiler）
     if (sub == "stdlib")       { return _buildStdlib(); }
     if (sub == "sdk")          { return _buildSdk(r.GetOption("out"), r.GetFlag("no-build")); }
+    if (sub == "stage-toolchain") { return _stageToolchain(r.GetPositional(0)); }
     // unify-launcher-apphost (2026-06-21): launcher trampoline crate is gone;
     // `z42` is now the per-app apphost stub. "build launcher" = build that stub.
     if (sub == "launcher")     { return _exec(_cargoRelease()

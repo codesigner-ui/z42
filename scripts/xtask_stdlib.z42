@@ -244,3 +244,64 @@ int _buildSdk(string outOpt, bool noBuild) {
     Console.WriteLine("  ✓ bin/z42vm");
     return 0;
 }
+
+// ── stage toolchain (script-zero: replaces scripts/ci-stage-toolchain.sh) ─────
+// Stage ONLY the .zpkg/.zsym products (z42c per-member dist + stdlib flat dist +
+// per-member dist + xtask.zpkg) into <dest> for upload as the `toolchain-<os>` CI
+// artifact. NOT z42vm or cargo intermediates — consuming jobs cargo-build their
+// own host z42vm. Byte-for-byte the same layout the former bash script produced.
+int _stageToolchain(string dest) {
+    if (dest.Length == 0) {
+        ConsoleError.WriteLine("usage: xtask build stage-toolchain <dest-dir>");
+        return 2;
+    }
+    string root = _root();
+    // 1. stdlib flat dist (Z42_LIBS lookup): every file in dist/release/
+    string flatSrc = _libsDir(root);
+    string flatDst = Path.Join(dest, "artifacts/build/libraries/dist/release");
+    Directory.Create(flatDst);
+    string[] flat = Path.Glob(flatSrc, "*");
+    int fi = 0;
+    while (fi < flat.Length) {
+        _copyIfExists(flat[fi], Path.Join(flatDst, Path.GetFileName(flat[fi])));
+        fi = fi + 1;
+    }
+    // 2. stdlib per-member dist (warm-seed self-build inputs)
+    _stageMembers(Path.Join(root, "artifacts/build/libraries"), dest, "artifacts/build/libraries");
+    // 3. z42c compiler per-member dist (7 zpkgs incl z42c.driver.zpkg = warm seed)
+    _stageMembers(Path.Join(root, "artifacts/build/z42c"), dest, "artifacts/build/z42c");
+    // 4. xtask dev CLI
+    string xtDst = Path.Join(dest, "artifacts/xtask");
+    Directory.Create(xtDst);
+    _copyIfExists(Path.Join(root, "artifacts/xtask/xtask.zpkg"), Path.Join(xtDst, "xtask.zpkg"));
+    Console.WriteLine("staged C#-free toolchain -> " + dest);
+    return 0;
+}
+
+// Copy <baseSrc>/<m>/release/dist/*.{zpkg,zsym} → <dest>/<relBase>/<m>/release/dist/
+// for every member dir <m> that has a release/dist (the flat `dist` dir has none).
+void _stageMembers(string baseSrc, string dest, string relBase) {
+    if (!Directory.Exists(baseSrc)) { return; }
+    string[] members = _enumDirsSorted(baseSrc);
+    int i = 0;
+    while (i < members.Length) {
+        string m = members[i];
+        string srcDist = Path.Join(Path.Join(baseSrc, m), "release/dist");
+        if (Directory.Exists(srcDist)) {
+            string dstDist = Path.Join(Path.Join(Path.Join(dest, relBase), m), "release/dist");
+            Directory.Create(dstDist);
+            _stageCopyExt(srcDist, dstDist, "*.zpkg");
+            _stageCopyExt(srcDist, dstDist, "*.zsym");
+        }
+        i = i + 1;
+    }
+}
+
+void _stageCopyExt(string srcDir, string dstDir, string pattern) {
+    string[] fs = Path.Glob(srcDir, pattern);
+    int i = 0;
+    while (i < fs.Length) {
+        _copyIfExists(fs[i], Path.Join(dstDir, Path.GetFileName(fs[i])));
+        i = i + 1;
+    }
+}
