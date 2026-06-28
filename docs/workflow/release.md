@@ -122,17 +122,13 @@ cd z42-0.2.0-macos-arm64-release/
 
 `z42up` 跨平台安装器（rustup 等价物）启用，用户走 `z42up install stable` 而非手工下载 tarball。详见 [`docs/roadmap.md`](../roadmap.md) §1.0.x charter。
 
-## Deferred
+## 发布打包：release 子命令（脚本归零，2026-06-28）
 
-### migrate-future-release-scripts（2026-06-19）
+release-time 打包胶水已搬进 `xtask release`（源 `scripts/xtask_release.z42`），原 `scripts/release/*.sh` 已删：
 
-`release.yml` 中仍有 2 处 bash 调用未接线到 xtask：
+| 命令 | 功能 |
+|------|------|
+| `xtask release assemble-desktop-workload <LABEL> [dist]` | 合并 4 个 per-RID desktop workload 产物为单一 RID-agnostic archive + manifest |
+| `xtask release gen-release-index <LABEL> [dist] [channel] [tag] [version]` | 从 `SHA256SUMS` 生成 `release-index.json`（launcher 供给契约；JSON 经 z42.json 构建）|
 
-| 行 | 脚本 | 功能 |
-|----|------|------|
-| 240 | `scripts/release/assemble-desktop-workload.sh` | 合并 4 个 per-RID desktop workload 产物为单一 archive |
-| 254 | `scripts/release/gen-release-index.sh` | 从 `SHA256SUMS` 生成 `release-index.json` |
-
-**移植方向**：分别实现为 `./xtask release assemble-desktop-workload` 和 `./xtask release gen-release-index`；移植完成后删除对应 `.sh` 并修改 `release.yml` 中对应步骤。
-
-**触发条件**：下次 release CI 维护窗口，或 bash 兼容性问题出现时。
+tar/unzip/date 作外部子进程；逻辑在 z42。两条命令在 `release.yml`（tagged）+ `ci.yml` publish-nightly（rolling）调用——这两个 job 现各自 provision z42vm + xtask.zpkg（publish-nightly 经 `xtask-bootstrap-artifact` action 消费 toolchain artifact；release.yml publish 经 `ci-bootstrap.sh` 自举），再 `xtask release …`。

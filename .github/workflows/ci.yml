@@ -1285,11 +1285,32 @@ jobs:
       - package-ios
       - package-android
       - package-wasm
+      - toolchain-bootstrap   # provides the toolchain-<os> artifact for `xtask release`
     runs-on: ubuntu-latest
     permissions:
       contents: write   # gh release create / delete
     steps:
       - uses: actions/checkout@v4
+
+      # Provision z42vm + xtask.zpkg so the release-packaging steps run as
+      # `xtask release …` (script-zero — no scripts/release/*.sh). Consumes the
+      # toolchain-ubuntu-latest artifact (z42c + stdlib + xtask.zpkg) + cargo
+      # builds z42vm. The action requires `needs: toolchain-bootstrap` (added).
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry + git + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+            ${{ runner.os }}-cargo-
+      - name: Provision z42vm + xtask (consume toolchain artifact)
+        uses: ./.github/actions/xtask-bootstrap-artifact
 
       - name: Download all package artifacts
         uses: actions/download-artifact@v4
@@ -1388,7 +1409,11 @@ jobs:
       # z42-workload-nightly-desktop.tar.gz (every RID's apphost-<rid>) → cross-output.
       - name: Assemble single desktop workload (nightly)
         shell: bash
-        run: scripts/release/assemble-desktop-workload.sh nightly artifacts/release
+        run: |
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- \
+            release assemble-desktop-workload nightly artifacts/release
 
       - name: Generate SHA256SUMS
         shell: bash
@@ -1401,7 +1426,11 @@ jobs:
 
       - name: Generate release-index.json
         shell: bash
-        run: scripts/release/gen-release-index.sh nightly artifacts/release nightly nightly nightly
+        run: |
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- \
+            release gen-release-index nightly artifacts/release nightly nightly nightly
 
       - name: Force-replace nightly release
         shell: bash

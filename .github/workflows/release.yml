@@ -225,6 +225,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Provision z42vm + xtask.zpkg so the release-packaging steps run as
+      # `xtask release …` (script-zero — no scripts/release/*.sh). C#-free bootstrap
+      # from the prev nightly seed, same as the package job. Host = linux-x64.
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo registry + git + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-publish-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+      - name: Provision z42vm + xtask (bootstrap from prev nightly seed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: bash scripts/ci-bootstrap.sh linux-x64
+
       - name: Download all archives
         uses: actions/download-artifact@v4
         with:
@@ -241,7 +262,11 @@ jobs:
       # per-RID intermediates so only the merged archive ships in the release.
       - name: Assemble single desktop workload
         shell: bash
-        run: scripts/release/assemble-desktop-workload.sh "${{ needs.verify.outputs.version }}" dist
+        run: |
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- \
+            release assemble-desktop-workload "${{ needs.verify.outputs.version }}" dist
 
       - name: Generate SHA256SUMS
         shell: bash
@@ -255,7 +280,10 @@ jobs:
         shell: bash
         run: |
           v="${{ needs.verify.outputs.version }}"
-          scripts/release/gen-release-index.sh "$v" dist stable "v$v" "$v"
+          Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
+          Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- \
+            release gen-release-index "$v" dist stable "v$v" "$v"
 
       - name: Create GitHub Release
         shell: bash
