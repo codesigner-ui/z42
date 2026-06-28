@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   update-baseline:
-    name: update bench baseline (ubuntu)
+    name: bench-baseline-update(linux-x64)
     runs-on: ubuntu-latest
 
     steps:

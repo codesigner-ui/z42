@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   bench-regression:
-    name: bench regression (ubuntu)
+    name: bench-regression(linux-x64)
     runs-on: ubuntu-latest
 
     steps:
