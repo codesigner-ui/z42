@@ -26,19 +26,23 @@ src/toolchain/builder/core/*.z42  →  z42b.zpkg  →  apphost z42b
 > 只是本管线尾部 `Assets` / `Package` 两个相位的一部分；构建编排是其超集，故 packager
 > 占位并入本目录，不再单列。
 
-## 核心文件（`core/`，PARKED 骨架）
+## 核心文件（`core/`，PARKED）
 
 | 文件 | 职责 |
 |------|------|
-| `core/builder.z42` | **编排核心**：`_orchestrate` 选路径 → 构造 `Pipeline`（注入 `ICompiler` + workload + hooks）→ 跑。展示**标准路径**（进程内组合，零子进程/零代码生成）与**自定义路径**（项目带 `build/` → 生成一次性 driver）|
-| `core/builder_cli.z42` | **命令层**（对照 `launcher_cli.z42`）：`Std.Cli` 嵌套 router 解析 build/publish/export/run/test（每层 `-h`），dispatch → 解析 toml + Target → 调编排核心 |
+| `core/builder.z42` | **编排核心**：`_orchestrate` 选路径 → 构造 `Pipeline`（注入 `ICompiler` + workload + hooks）+ `PipelineContext`（填 Project/Manifest/Target/Dirs/Inputs）→ `Run`。含 `_computeDirs` / `_hostRid` / `_familyOfRid` 辅助。标准路径进程内组合（零子进程/零代码生成）；自定义路径（项目带 `build/`）骨架待 spec |
+| `core/builder_cli.z42` | **CLI 路由**（对照 `launcher_cli.z42`）：`Std.Cli` 嵌套 router 定义 new/build/publish/export/run/test/bench（每层 `-h`）+ dispatch |
+| `core/builder_commands.z42` | **命令处理**：build/publish/export 共用 `_runVerb`（ManifestLoader → Target → `_orchestrate`）；run 双形态；test/bench 待 retire-test-runner（反射前置）|
+| `core/builder_new.z42` | **`new` 脚手架**：生成 z42.toml + src 模板（exe/lib/test）+ .gitignore + README。纯 `Std.IO`，无编译器依赖 |
 
 ## 计划模块（实现期补全）
 
 | 模块 | 职责 |
 |------|------|
+| 共享编译实现适配 | `_hostCompiler()` 暂返 `NoCompiler`；待 `extract-compile-pipeline-api` 落地 `PackageCompiler`/`CompileResult` 后封装为 `Z42cCompiler : ICompiler`（与 `z42c.driver` 同一份）|
 | driver 装配 | 项目带自定义 `build/` 时，组装一次性 driver 源码（链 `z42.build` + workload + 项目 `build/`），用**同一 `ICompiler`** 编译后运行 |
-| 共享编译实现适配 | `_hostCompiler()` 返回编译器库（z42c）的 `ICompiler` 实现 —— 与 `z42c.driver` 同一份 |
+| 平台 workload | `_selectWorkload()` 暂返 `WorkloadBase` no-op；待各 `*.workload` 库的 `: WorkloadBase` 子类（desktop/ios/android/wasm）|
+| test/bench | 见 `retire-test-runner` spec（前置 boxing 0.3.11 + Method.Invoke 0.3.12）|
 
 > **`IPipelineContext` 实现归属（2026-06-23 决策）**：暂置 `z42.build` 库
 > （[`PipelineContext.z42`](../../libraries/z42.build/src/PipelineContext.z42)），编排器 import 它构造 ctx。

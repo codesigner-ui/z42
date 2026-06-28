@@ -1,0 +1,92 @@
+// z42b 命令处理层（build / publish / export / run / test / bench）。⚠️ PARKED。
+//
+// 每个 verb 是薄编排：解析参数 → ManifestLoader.Load → 构造 Target → _orchestrate
+// （builder.z42）。动词语义见 platform-export-lifecycle.md：
+//   build   平台无关 app.zpkg（Mode="" → tail 全 no-op）
+//   publish 一路到 Package（Mode=Publish；--rid 选平台）
+//   export  到 GenerateProject 停（Mode=Export；仅 ios/android）
+//   run     双形态：<app.zpkg> 跑字节码（host）/ <toml> --rid 跑平台部署形态
+//   test    host + 平台上跑 [Test]（取代 Rust test-runner）—— 待 retire-test-runner（反射前置）
+//   bench   跑 [Benchmark]（Bencher）—— 同上
+namespace Z42Builder;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+using Z42.Build;
+using Z42.Project;
+
+// ── build / publish / export：共用 _runVerb（仅 Mode 不同）──────────────────────
+
+int _cmdBuild(ParseResult r)   { return _runVerb(r, ""); }
+int _cmdPublish(ParseResult r) { return _runVerb(r, BuildMode.Publish); }
+int _cmdExport(ParseResult r)  { return _runVerb(r, BuildMode.Export); }
+
+int _runVerb(ParseResult r, string mode) {
+    string tomlPath = r.GetPositional(0);
+    if (tomlPath.Length == 0) { tomlPath = "z42.toml"; }
+    if (!File.Exists(tomlPath)) {
+        ConsoleError.WriteLine("z42b: project manifest not found: " + tomlPath);
+        return 2;
+    }
+    if (mode == BuildMode.Export) {
+        string rid = r.GetOption("rid");
+        if (rid.Length == 0) {
+            ConsoleError.WriteLine("z42b export: --rid required (ios-arm64 / android-arm64 / browser-wasm)");
+            return 2;
+        }
+    }
+    ProjectManifest m = ManifestLoader.Load(tomlPath);
+    string sourceDir = Path.GetDirectoryName(tomlPath);
+    if (sourceDir.Length == 0) { sourceDir = "."; }
+    Target t = _makeTarget(r, mode);
+    if (t.Rid.Length == 0) {
+        ConsoleError.WriteLine("z42b: unsupported host (" + Platform.OS() + "/" + Platform.Arch() + "); pass --rid");
+        return 2;
+    }
+    return _orchestrate(m, t, sourceDir);
+}
+
+// 从 CLI 选项构造 Target。--rid 缺省 = host RID；profile 由 --release 决定。
+Target _makeTarget(ParseResult r, string mode) {
+    string rid = r.GetOption("rid");
+    if (rid.Length == 0) { rid = _hostRid(); }
+    string family = _familyOfRid(rid);
+    string profile = r.GetFlag("release") ? "release" : "debug";
+    return new Target(rid, family, profile, mode);
+}
+
+// ── run：双形态 ───────────────────────────────────────────────────────────────
+
+// <app.zpkg|.zbc>（无 --rid）→ host VM 跑字节码（运行时执行，归 launcher：z42b 透传/委托）。
+// <toml> --rid → 平台部署形态（build→pack→run）。
+int _cmdRun(ParseResult r) {
+    string target = r.GetPositional(0);
+    string rid = r.GetOption("rid");
+    if (target.Length == 0) {
+        ConsoleError.WriteLine("z42b run: missing <app.zpkg> | <project.z42.toml>");
+        return 2;
+    }
+    if (rid.Length == 0 && (target.EndsWith(".zpkg") || target.EndsWith(".zbc"))) {
+        // host 直跑：运行时执行语义，由 launcher 持有（z42 run <zpkg>）。z42b 不重复实现。
+        ConsoleError.WriteLine("z42b run: host bytecode run is served by the launcher (z42 run " + target + ")");
+        return 2;
+    }
+    // 部署形态：build → workload package → 启动。骨架待 spec（platform-export-lifecycle）。
+    ConsoleError.WriteLine("z42b run: platform deploy-form (--rid) not yet implemented");
+    return 1;
+}
+
+// ── test / bench：待 retire-test-runner（前置 boxing 0.3.11 + Method.Invoke 0.3.12）──────
+
+int _cmdTest(ParseResult r) {
+    // 实现见 retire-test-runner spec：build → z42.test.TestRunner（反射发现 [Test] + Invoke）→ 报告。
+    ConsoleError.WriteLine("z42b test: pending retire-test-runner (needs reflection Method.Invoke, 0.3.12)");
+    return 1;
+}
+
+int _cmdBench(ParseResult r) {
+    // 实现见 retire-test-runner spec：build → z42.test.BenchRunner（发现 [Benchmark] + Bencher）→ stats。
+    ConsoleError.WriteLine("z42b bench: pending retire-test-runner (needs reflection Method.Invoke, 0.3.12)");
+    return 1;
+}
