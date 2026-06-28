@@ -103,17 +103,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry + git + target
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       # remove-dotnet-from-builds: ALL legs bootstrap from the prev nightly seed — download the prev
       # published nightly's z42c-written compiler seed, then build current z42c +
@@ -340,17 +334,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry + git + target
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
 
@@ -443,17 +431,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry + git + target
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       - name: Bootstrap toolchain (nightly z42c seed → current source)
         env:
@@ -508,17 +490,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo registry + git + target
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       # cargo build z42vm + restore z42c/stdlib/xtask zpkgs at canonical paths
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -660,17 +636,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo (shared key with build-and-test)
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       # seed the toolchain from the prev nightly's z42c-written compiler
       # (NO dotnet) and build current source warm — same path as build-and-test.
@@ -719,17 +689,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo (shared key with build-and-test)
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
       # build current source warm — same path as build-and-test. Replaces the
@@ -780,17 +744,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo (shared key with build-and-test)
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       - name: Bootstrap from nightly z42c seed
         env:
@@ -833,17 +791,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo (shared key with build-and-test)
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
       # build current source warm — same path as build-and-test. Replaces the
@@ -887,16 +839,11 @@ jobs:
           wget -q https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine_1.20.0_amd64.deb
           sudo dpkg -i hyperfine_1.20.0_amd64.deb
 
-      - name: Cache cargo (shared key with build-and-test)
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
       # build current source warm. Replaces the download-nightly `xtask-bootstrap`
@@ -1030,17 +977,11 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-cargo-ios-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-ios-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: ios
 
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -1125,17 +1066,11 @@ jobs:
           ndk-version: r26d
           local-cache: false
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-cargo-android-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-android-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: android
 
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -1221,17 +1156,11 @@ jobs:
       - name: Install wasm-pack + wasm-tools
         run: cargo install wasm-pack wasm-tools --locked
 
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-wasm-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: wasm
 
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -1337,17 +1266,11 @@ jobs:
       # builds z42vm. The action requires `needs: toolchain-bootstrap` (added).
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo registry + git + target
-        uses: actions/cache@v4
+      - name: Cache Rust deps (Swatinem)
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src/runtime/target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
-            ${{ runner.os }}-cargo-
+          workspaces: src/runtime
+          shared-key: host
       - name: Provision z42vm + xtask (consume toolchain artifact)
         uses: ./.github/actions/xtask-bootstrap-artifact
 
