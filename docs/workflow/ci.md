@@ -47,7 +47,7 @@ flowchart TD
 
 - **触发**：仅 z42c（`src/compiler`）改动（rule b）。
 - **CI job**：`verify-selfhost-linux-x64`（下载上一 nightly 种子 → 重建 z42c+stdlib+xtask → 不动点 gen1==gen2 逐字节）。
-- **本地**：`xtask bootstrap-check`（⬜ 目标；现为 `scripts/check-bootstrap-compat.sh`）。
+- **本地**：`xtask bootstrap-check [rid]`（✅ 下载上一 nightly 种子 → 用它 + 仓库 z42c 双编当前 z42c 源 → 越界即红；gh/tar 作外部子进程，逻辑在 xtask）。
 - 规范：[`.claude/rules/bootstrap-seed.md`](../../.claude/rules/bootstrap-seed.md)。
 
 ### ③ host package（同平台共享）

@@ -12,7 +12,7 @@
 # Invariant: NEVER calls dotnet. z42vm (cargo-built Rust) is the only engine. The
 # prev nightly is the ONLY thing C# may have produced, upstream — and the staged-
 # bootstrap discipline (.claude/rules/bootstrap-seed.md) guarantees it compiles
-# current source (verify with scripts/check-bootstrap-compat.sh before relying on it).
+# current source (verify with `xtask bootstrap-check` before relying on it).
 #
 # Usage:  scripts/ci-bootstrap.sh [rid]
 #   rid defaults to host (macos-arm64 / linux-x64 / linux-arm64 / windows-x64).

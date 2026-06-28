@@ -119,7 +119,7 @@ jobs:
       # published nightly's z42c-written compiler seed, then build current z42c +
       # stdlib + xtask from source with it (NO dotnet). The staged-bootstrap
       # discipline (.claude/rules/bootstrap-seed.md) guarantees the prev nightly
-      # compiles current source; scripts/check-bootstrap-compat.sh is the local
+      # compiles current source; `xtask bootstrap-check` is the local
       # boundary check. Logic lives in a locally-tested script (Unix verified on a
       # clean worktree producing z42c+stdlib+xtask+package, no dotnet; Windows adds
       # .zip/.exe handling — same seed contract). After this, every later step
@@ -1268,7 +1268,7 @@ jobs:
     # that's independent of a prior nightly. The self-heal invariant now rests entirely
     # on the staged-bootstrap discipline (.claude/rules/bootstrap-seed.md): the prev
     # nightly's z42c MUST always be able to compile current source (new syntax / zbc
-    # bump lands "support" one release before "use"; scripts/check-bootstrap-compat.sh
+    # bump lands "support" one release before "use"; `xtask bootstrap-check`
     # is the boundary check). If that discipline is ever violated, the prev nightly
     # can't build current source → these deps fail → publish can't republish a fixed
     # nightly → manual recovery (there's no C# fallback). Keep `needs` to the jobs that

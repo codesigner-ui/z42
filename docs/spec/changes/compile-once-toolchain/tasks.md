@@ -51,9 +51,9 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
   > **副产物（已知 pre-existing）**：`test (windows-x64)` 的 `cargo test` smoke step flaky（`native_interop_e2e.rs:361 z42_source_calls_numz42_via_native_attr`）——cd3df566 绿、dd29c912/4f85fc78 红，无相关代码改动 = 间歇。根因疑 GC region raw-ptr Send/Sync（见 [[reference_ci_rust_unit_tests_windows_only]]），独立 VM 议题，rule(c) gate 已缩小其触发面。
 
 ### Stage 2 — bootstrap 边界检查
-- [ ] 2a xtask `bootstrap-check`：封装 `check-bootstrap-compat.sh`（下载上一 nightly z42c → 编当前 z42c 源 → 对比无越界），本地可跑
-- [ ] 2b CI：bootstrap-check（并入或独立），gate on `compiler`（rule b）
-- [ ] 2c docs：support-before-use 纪律 + 本地复现
+- [x] 2a xtask `bootstrap-check [rid]`：**脚本归零端口** of `check-bootstrap-compat.sh`（新建 `scripts/xtask_bootstrap_check.z42`；gh/tar/unzip/chmod 作外部子进程，编排逻辑在 z42）。下载上一 nightly 种子 → 用它 + 仓库 z42c 双编当前 7-member z42c workspace → 越界即红。**本地 real-run 验证：nightly leg 7/7 ✓（boundary 通过）+ repo leg**。删 `scripts/check-bootstrap-compat.sh`。
+- [x] 2b CI：bootstrap-check gate on `compiler` —— **由 Stage 1c `verify-selfhost` job（`if: compiler`）覆盖**（CI 边界检查 = verify-selfhost 下载 nightly 重建+不动点；xtask bootstrap-check 是其本地快速等价）。
+- [x] 2c docs：`xtask bootstrap-check` 落 ci.md 阶段② + bootstrap-seed.md 边界检查段 + self-hosting.md 快门表；ci.yml/ci-bootstrap.sh 注释指向新命令。
 
 ### Stage 3 — 编译 host package（同平台共享）
 - [x] 3a xtask `build sdk [--out]` 产 `.z42`（zpkg + z42vm + toolchain）✅（原 P1）
@@ -156,7 +156,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [x] 5.1 **CI job 重命名**（动作-平台-host 约定，display name + matrix platform 标签，id 不变）：build-and-test→`test (<平台>)`、toolchain-bootstrap→`compile (<平台>)`、host-package→`package (<平台>)`、vm-jit→`test-vm-jit-linux-x64`、stdlib-jit→`test-stdlib-jit-linux-x64`、bootstrap-no-csharp→`verify-selfhost-linux-x64`、compiler-stdlib→`test-compiler-stdlib`、feature-matrix→`verify-features`、package/test-{ios→-macos,android/wasm→-linux}、bench-e2e→`bench-linux-x64`、consume→`test-consume-linux-x64`。⚠️ User 需更新 branch protection required checks。
 - [ ] 5.2 评估删 `compiler-stdlib` job（确认覆盖已被 compile job + test 阶段完全包含；Open Question）
 - [ ] 5.3 删 `scripts/ci-bootstrap.sh`（逻辑已内联 compile job）
-- [ ] 5.4 删 `scripts/ci-stage-toolchain.sh`（折进 `xtask build sdk`）+ `scripts/check-bootstrap-compat.sh`（边界由 compile job 隐式强制）
+- [x] 5.4 删 `scripts/check-bootstrap-compat.sh`（已折进 `xtask bootstrap-check`，Stage 2a）。`scripts/ci-stage-toolchain.sh`：不存在（已无此文件，无需删）。
 - [ ] 5.5 **保留 `scripts/install-z42.sh`**（cold-start primer）+ `scripts/selfhost-bootstrap.sh`（已改造为 cross-bootstrap，不删）
 - [ ] 5.6 commit + CI 全绿
 

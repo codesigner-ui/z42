@@ -1,0 +1,146 @@
+// xtask — `bootstrap-check`: staged-bootstrap boundary check.
+//
+// Script-zero port of the former scripts/check-bootstrap-compat.sh. Enforces the
+// staged-bootstrap discipline (.claude/rules/bootstrap-seed.md): the LAST PUBLISHED
+// nightly's z42c must be able to compile the CURRENT repo source. If it can't, the
+// source uses syntax / a zbc·zpkg format newer than the published nightly supports
+// — a boundary violation that would break the bootstrap (build-and-test seeds from
+// the previous nightly). The boundary CI gate is the `verify-selfhost` job; this is
+// the fast local equivalent.
+//
+// gh / tar / unzip are driven as EXTERNAL subprocesses (same as cargo) — the
+// orchestration logic lives here in xtask, not in a shell script.
+//
+// Dual-compiles the z42c workspace and reports:
+//   (A) nightly z42c → current source   ← the boundary check (must PASS)
+//   (B) repo  z42c   → current source   ← the normal self-build (sanity)
+// (A) fails but (B) passes ⇒ you used something newer than the published nightly:
+// split into "support first (old-syntax-written), use later" per the discipline.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+int _bootstrapCheck(string ridArg) {
+    string root = _root();
+    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+
+    string rid = ridArg;
+    if (rid.Length == 0) { rid = _detectHostRid(); }
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("error: cannot detect host RID — pass it explicitly (e.g. macos-arm64)");
+        return 2;
+    }
+    if (!_have("gh")) {
+        ConsoleError.WriteLine("error: `gh` (authenticated) is required to download the nightly seed");
+        return 2;
+    }
+
+    string work = Path.Join(root, "artifacts/build/z42c/bootstrap-check");
+    _resetDir(work);
+
+    // ── fetch the latest nightly runtime package (z42vm + libs/ + z42c/ seed) ──
+    string ext = "tar.gz";
+    if (rid == "windows-x64") { ext = "zip"; }
+    string asset = "z42-runtime-nightly-" + rid + "." + ext;
+    string archive = Path.Join(work, "rt." + ext);
+    Console.WriteLine("→ downloading nightly runtime package (" + rid + ") …");
+    int dc = _exec(new Process("gh").Arg("release").Arg("download").Arg("nightly")
+        .Arg("-p").Arg(asset).Arg("-O").Arg(archive));
+    if (dc != 0) {
+        ConsoleError.WriteLine("error: `gh release download nightly` failed for asset " + asset);
+        return 1;
+    }
+
+    string nightly = Path.Join(work, "nightly");
+    Directory.Create(nightly);
+    int xc;
+    if (ext == "zip") {
+        if (!_have("unzip")) { ConsoleError.WriteLine("error: `unzip` required to extract the windows nightly"); return 2; }
+        xc = _exec(new Process("unzip").Arg("-q").Arg(archive).Arg("-d").Arg(nightly));
+    } else {
+        xc = _exec(new Process("tar").Arg("-C").Arg(nightly).Arg("-xzf").Arg(archive));
+    }
+    if (xc != 0) { ConsoleError.WriteLine("error: failed to extract " + archive); return 1; }
+
+    string nvm = Path.Join(nightly, "z42vm");
+    if (File.Exists(nvm + ".exe")) { nvm = nvm + ".exe"; }
+    if (!File.Exists(nvm)) { ConsoleError.WriteLine("error: nightly z42vm missing after extract"); return 1; }
+    // tar/unzip drop the executable bit — restore it (windows .exe needs none).
+    if (ext != "zip") { _exec(new Process("chmod").Arg("+x").Arg(nvm)); }
+    string nDriver = Path.Join(Path.Join(nightly, "z42c"), "z42c.driver.zpkg");
+    if (!File.Exists(nDriver)) {
+        ConsoleError.WriteLine("error: nightly package has no z42c/ seed — needs a publish-nightly run carrying the z42c seed");
+        return 1;
+    }
+
+    // ── (A) nightly z42c → current source (the boundary check) ──
+    int a = _bcRunWorkspace(root, "nightly", nvm, nDriver, Path.Join(nightly, "libs"), members, work);
+
+    // ── (B) repo z42c → current source (normal self-build sanity) ──
+    int b = 2;
+    string repoDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
+    string repoVm = _builtVm(root, "release");
+    string repoStd = Path.Join(root, "artifacts/build/libraries/dist/release");
+    if (File.Exists(repoDriver) && File.Exists(repoVm)) {
+        // colocate the repo z42c siblings into one dir (per-member dist isn't colocated)
+        string rdh = Path.Join(work, "repo-driver-home");
+        _resetDir(rdh);
+        int mi = 0;
+        while (mi < members.Length) {
+            _copyAll(Path.Join(root, "artifacts/build/z42c/" + members[mi] + "/release/dist"), rdh, members[mi] + ".zpkg");
+            mi = mi + 1;
+        }
+        b = _bcRunWorkspace(root, "repo", repoVm, Path.Join(rdh, "z42c.driver.zpkg"), repoStd, members, work);
+    } else {
+        Console.WriteLine("── [repo] skipped: repo z42c not built (run `xtask build compiler` first) ──");
+    }
+
+    // ── verdict ──
+    Console.WriteLine("");
+    if (a == 0) {
+        Console.WriteLine("✅ nightly z42c compiles current source — NO staged-bootstrap boundary violation");
+    } else {
+        ConsoleError.WriteLine("❌ BOUNDARY VIOLATION: the published nightly z42c CANNOT compile current source.");
+        ConsoleError.WriteLine("   Current source uses syntax / zbc·zpkg format newer than the last nightly.");
+        ConsoleError.WriteLine("   Fix per bootstrap-seed.md: land the SUPPORT (old-syntax-written) first, publish");
+        ConsoleError.WriteLine("   a nightly, THEN use the new syntax. Or revert the premature use.");
+    }
+    if (b == 0) { Console.WriteLine("✅ repo z42c self-build OK"); }
+    else if (b == 2) { Console.WriteLine("ℹ repo self-build skipped (z42c not built)"); }
+    return a;
+}
+
+// Compile the current z42c workspace (members in topo order) with a given seed
+// (vm + driver + stdlib). Accumulates each freshly-built sibling into a runlibs dir
+// so later members resolve earlier ones. Returns 0 if all members built, else 1.
+int _bcRunWorkspace(string root, string label, string vm, string driver, string stdlibDir, string[] members, string work) {
+    Console.WriteLine("── [" + label + "] compiling current z42c workspace ──");
+    string runlibs = Path.Join(work, label + "-runlibs");
+    _resetDir(runlibs);
+    _copyAll(stdlibDir, runlibs, "*.zpkg");
+    _copyAll(Path.GetDirectoryName(driver), runlibs, "*.zpkg");
+    string outRoot = Path.Join(work, label + "-out");
+    _resetDir(outRoot);
+    int fail = 0;
+    int i = 0;
+    while (i < members.Length) {
+        string m = members[i];
+        string outDir = Path.Join(outRoot, m);
+        int rc = new Process(vm).Arg(driver).Arg("--mode").Arg("interp").Arg("--")
+            .Arg("build").Arg(Path.Join(root, "src/compiler/" + m + "/" + m + ".z42.toml"))
+            .Arg("--release").Arg("--output-dir").Arg(outDir)
+            .Env("Z42_LIBS", runlibs)
+            .Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
+        string produced = Path.Join(outDir, m + ".zpkg");
+        if (rc == 0 && File.Exists(produced) && File.GetSize(produced) > 0L) {
+            Console.WriteLine("   ✓ " + m);
+            _copyAll(outDir, runlibs, m + ".zpkg");   // accumulate fresh sibling for later members
+        } else {
+            Console.WriteLine("   ✗ " + m + " FAILED");
+            fail = 1;
+        }
+        i = i + 1;
+    }
+    return fail;
+}
