@@ -173,7 +173,7 @@ public sealed class IrGen {
                                 string nat = this._nativeIntrinsic(rawMem);
                                 if (nat != "") {
                                     IrFunction stub = this._emitNativeStub(irName, md, nat,
-                                                                           this._hasWord(md.Mods, "static"));
+                                                                           this._hasWord(md.Mods, "static"), rawMem);
                                     funcs = this._pushFunc(funcs, fc, stub); fc = fc + 1;
                                 }
                             }
@@ -190,7 +190,7 @@ public sealed class IrGen {
                                                                          emptyTpP, new WhereClause[0], 0,
                                                                          new Param[0], 0, false, null, new Expr[0], 0, false, pd.Span);
                                     IrFunction pstub = this._emitNativeStub(this._q(this._classIrShortName(c)) + ".get_" + pd.Name,
-                                                                             synthPd, nat2, pdStatic);
+                                                                             synthPd, nat2, pdStatic, rawMem);
                                     funcs = this._pushFunc(funcs, fc, pstub); fc = fc + 1;
                                 }
                             } else if (pd.HasGet && !pdExtern) {
@@ -961,10 +961,39 @@ public sealed class IrGen {
         return "";
     }
 
+    // `[Native(lib="L", type="T", ...)]` named 形的 lib + type。返回 [lib, type]，缺则 ""。
+    // type != "" → typed native call（CallNative）；否则 builtin 桩。
+    private string[] _nativeLibType(Decl rawMem) {
+        string[] r = new string[2]; r[0] = ""; r[1] = "";
+        if (!(rawMem is AttributedDecl)) { return r; }
+        AttributedDecl ad = rawMem as AttributedDecl;
+        int a = 0;
+        while (a < ad.AttrCount) {
+            Attr at = ad.Attrs[a];
+            if (at.Name == "Native") {
+                int ai = 0;
+                while (ai < at.ArgCount) {
+                    if (at.Args[ai] is AssignExpr) {
+                        AssignExpr ae = at.Args[ai] as AssignExpr;
+                        if (ae.Target is IdentExpr && ae.Value is StringLitExpr) {
+                            string key = (ae.Target as IdentExpr).Name;
+                            string val = Lexer.DecodeString((ae.Value as StringLitExpr).Raw);
+                            if (key == "lib")  { r[0] = val; }
+                            if (key == "type") { r[1] = val; }
+                        }
+                    }
+                    ai = ai + 1;
+                }
+            }
+            a = a + 1;
+        }
+        return r;
+    }
+
     // native 桩函数（镜像 C# EmitNativeStub legacy 路径）：单块 entry，体 = builtin(__name) + ret。
     // args r0..r(N-1)、dst rN（void→Void 否则 Unknown）；RetType="object"/"void"、ExecMode="Interp"、
     // ParamTypes 空（SIGS 补 "?"，镜像 C# ParamTypes=null）；MaxReg=N+1。
-    private IrFunction _emitNativeStub(string name, MethodDecl md, string nat, bool isStatic) {
+    private IrFunction _emitNativeStub(string name, MethodDecl md, string nat, bool isStatic, Decl rawMem) {
         int totalParams = md.ParamCount;
         if (!isStatic) { totalParams = totalParams + 1; }
         bool isVoid = this._symbols.ResolveType(md.RetType).Name() == "void";
@@ -975,7 +1004,14 @@ public sealed class IrGen {
         if (isVoid) { dstTag = IrType.Void; }
         TypedReg dst = new TypedReg(totalParams, dstTag);
         IrInstr[] instrs = new IrInstr[1];
-        instrs[0] = new BuiltinInstr(dst, nat, args, totalParams);
+        // `[Native(lib="L", type="T", entry="E")]` 带 type= → typed native call（CallNative，Tier 1 C ABI
+        // 经 z42_register_type 直接符号分派）；否则（positional / 仅 entry=）→ builtin 桩（ext_builtins 表）。
+        string[] lt = this._nativeLibType(rawMem);
+        if (lt[1] != "") {
+            instrs[0] = new CallNativeInstr(dst, lt[0], lt[1], nat, args, totalParams);
+        } else {
+            instrs[0] = new BuiltinInstr(dst, nat, args, totalParams);
+        }
         RetTerm term = new RetTerm(!isVoid, dst);
         IrBlock[] blocks = new IrBlock[1];
         blocks[0] = new IrBlock("entry", instrs, 1, term, true);

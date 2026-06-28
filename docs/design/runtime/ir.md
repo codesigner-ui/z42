@@ -221,6 +221,14 @@ vtable-indexed path: the source generator picks `vtable_slot` at compile
 time so no name lookup happens at runtime, matching C# 11+
 `[LibraryImport]` semantics.
 
+> **z42c codegen — two `[Native]` forms (port-z42c-typed-native-call):** an `extern`
+> method's stub body is emitted from its `[Native]` attribute. The **typed** named
+> form `[Native(lib="L", type="T", entry="E")]` lowers to `call.native L::T::E(...)`
+> (this opcode). The **positional / `entry=`-only** form `[Native("__name")]` lowers
+> to `builtin __name(...)` (`0x51`), resolved via the VM's `dispatch_table` /
+> `ext_builtins` registry. (The self-hosted z42c originally only carried the builtin
+> path; the typed path was restored after the C# compiler's removal exposed the gap.)
+
 `pin` borrows the raw buffer of a `String` (and, in a follow-up spec,
 blittable-element byte arrays) for FFI use; `unpin` returns it to normal
 use. Pinned regions cannot be mutated or relocated until unpinned. The
