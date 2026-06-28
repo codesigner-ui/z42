@@ -19,38 +19,25 @@
 | 文件 | 职责 |
 |------|------|
 | `<fixture>/source.z42`（或 `mod_a.z42` + `mod_b.z42`） | z42 源（check in）|
-| `<fixture>/source.zpkg`     | ZpkgWriter 输出字节（check in；regen 后 git diff = 实际格式变化）|
-| `<fixture>/expected.json`   | `z42c golden-json` 归一化输出（check in；语义层 invariant 比对）|
-| `generate-fixtures.sh`      | 一键 regen — 调用 C# test harness 的 regen mode |
+| `<fixture>/source.zpkg`     | z42c 输出字节基线（check in；regen 后 git diff = 实际格式变化）|
 
 ## 维护流程
 
-正当 wire format 变化时（minor bump）：
+正当 wire format 变化时（minor bump）：用 z42c 重新 `build` 各 fixture 源、覆写 `source.zpkg`，`git diff` review 后连同 fixture 一起 commit。
 
-```bash
-z42 xtask.zpkg build stdlib         # 必要 — fixture 用 stdlib 解析 namespace
-./src/tests/zpkg-format/generate-fixtures.sh
-git diff src/tests/zpkg-format/     # review 哪些 fixture 受影响
-```
-
-每次 bump 必须把 fixture 一同 commit。CI `FormatGoldenTests` 跑 in-process 现场重生与 check-in 对账，diff 即 fail。
+> **TODO（regen 命令）**：尚无 z42-native 一键 regen（旧 C# harness regen 已随 dotnet 移除）。format bump 时暂需手工用 `z42c build` 重生每个 fixture 的 `source.zpkg`，或补一个 `xtask` 子命令统一处理（见 `.claude/rules/version-bumping.md`）。
 
 ## 测试 harness
 
 | 测试 | 检查内容 |
 |------|---------|
-| `FormatGoldenTests.ByteEqual` | 现场 ZpkgWriter 输出 == 该 fixture 的 `source.zpkg` |
-| `FormatGoldenTests.JsonEqual` | 现场 ZpkgGoldenJsonFormatter 输出 == 该 fixture 的 `expected.json` |
-| `FormatGoldenTests.WriterDeterministic` | 同输入两次写入 == 字节等 |
+| `lazy_loader_tests.rs` | Rust 加载这些 check-in 的 `source.zpkg` 字节基线，验证 reader 兼容当前 wire format |
 
-详见 [`src/compiler/z42.Tests/Zpkg/FormatGoldenTests.cs`](../../../src/compiler/z42.Tests/Zpkg/FormatGoldenTests.cs)。
-
-环境变量 `Z42_ZPKG_REGEN=1` 让 harness 进 regen 模式（在原地重写 fixture 文件而非断言）。
+详见 [`src/runtime/src/metadata/lazy_loader_tests.rs`](../../../src/runtime/src/metadata/lazy_loader_tests.rs)。
 
 ## 入口点
 
-- 维护命令：`./generate-fixtures.sh`
-- 测试 harness：`dotnet test --filter Z42.Tests.Zpkg.FormatGoldenTests`
+- 测试 harness：`cargo test lazy_loader`
 
 ## 依赖关系
 

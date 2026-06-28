@@ -11,6 +11,12 @@ paths:
 
 # `.zbc` / `.zpkg` minor version bump checklist
 
+> ⚠️ **本文件待重写（dotnet 已移除 2026-06-26）**：下文多处引用已删除的 C# 路径
+> （`src/compiler/z42.IR/BinaryFormat/ZbcWriter.cs`、`z42.Project/ZpkgWriter.cs`、
+> `dotnet test z42.Tests`）。当前 writer 是 z42c（`src/compiler/z42c.ir/`、`z42c.project/`），
+> fixture regen 经 `z42 xtask.zpkg regen`（zbc-format 已覆盖；zpkg-format regen 命令待补），
+> 测试经 Rust（`zbc_compat.rs` / `lazy_loader_tests.rs`）。整体重写为独立 change 跟踪。
+
 > z42 pre-1.0 strict-pin 政策：reader 精确匹配 writer 的 major + minor。
 > 兼容性原则（"不为旧版本提供兼容"）见 [philosophy.md](philosophy.md#不为旧版本提供兼容2026-04-26-强化)。
 >
@@ -25,7 +31,7 @@ paths:
 1. **`src/compiler/z42.IR/BinaryFormat/ZbcWriter.cs`** — `VersionMinor++` 并在常量旁注释本次 bump 的内容（参考已有行的格式）
 2. **`src/runtime/src/metadata/zbc_reader.rs`** — `ZBC_VERSION_MINOR` 同步到新值
 3. **`docs/design/runtime/zbc.md`** — "Minor changelog" 表加一行（minor / 日期 / 触发 spec / 引入内容）
-4. **`src/tests/zbc-format/generate-fixtures.sh`** 跑一遍 — 6 个 fixture 的 `source.zbc` + `expected.json` 全部 regen，git diff 显示出格式 delta
+4. **`z42 xtask.zpkg regen`** 跑一遍 — zbc-format 6 个 fixture 的 `source.zbc` 原地 regen（z42c），git diff 显示出格式 delta
 5. **z42c 自举 writer 同步（port-z42c-zbc-writer 起，2026-06-10）**：
    - `src/compiler/z42c.ir/src/BinaryFormat/ZbcFormat.z42` — `ZbcVersion.Minor` 同步到新值（+注释）；若 bump 改了 ZW 已实现的 section 布局（TYPE/SIGS/FUNC/REGT 等），`ZbcWriter.z42` 的对应 BuildXxx 同步镜像
    - `src/compiler/z42c.semantics/tests/zbc/zbc_tests.z42` — golden hex 随 fixture regen 更新（test_zbc_empty_byte_identical 的 247B 串重截自 regen 后的 `src/tests/zbc-format/empty/source.zbc`：`xxd -p src/tests/zbc-format/empty/source.zbc | tr -d '\n'`）
@@ -35,8 +41,8 @@ paths:
 
 ```bash
 z42 xtask.zpkg deps check    # （未来扩展时校 ZbcWriter/Reader 一致性）
-./src/tests/zbc-format/generate-fixtures.sh
-dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc"
+z42 xtask.zpkg regen         # zbc-format fixture 原地 regen
+cargo test --test zbc_compat # zbc 字节基线兼容
 ```
 
 由于 strict-pin 政策（reader 精确匹配 writer 的 major + minor），minor bump 必然让所有现存 `.zbc` artifacts 失效；常配套跑 `z42 xtask.zpkg regen` 把 stdlib + 测试 zbc 一并 regen。这是预期行为，不需要兼容代码。
@@ -50,14 +56,14 @@ zbc minor bump **必须**同步 bump zpkg minor。除上述 4 步外加：
 5. **`src/compiler/z42.Project/ZpkgWriter.cs`** — `VersionMinor++` 且注释更新内嵌 zbc 版本
 6. **`src/runtime/src/metadata/zbc_reader.rs`** — `ZPKG_VERSION_MINOR` 同步
 7. **`docs/design/runtime/zpkg.md`** — Minor changelog 加一行（指明触发 spec = 同次 zbc bump 的 spec）
-8. **`src/tests/zpkg-format/generate-fixtures.sh`** 跑一遍 regen
+8. **zpkg-format fixture regen**（z42c 重 build 各 fixture 源覆写 `source.zpkg`；统一 regen 命令待补——见 `src/tests/zpkg-format/README.md` TODO）
 
 提交前自检扩展：
 
 ```bash
-./src/tests/zbc-format/generate-fixtures.sh
-./src/tests/zpkg-format/generate-fixtures.sh
-dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc|FullyQualifiedName~Z42.Tests.Zpkg"
+z42 xtask.zpkg regen         # zbc-format fixture 原地 regen（zpkg-format regen 命令待补）
+cargo test --test zbc_compat
+cargo test lazy_loader
 ```
 
 ---

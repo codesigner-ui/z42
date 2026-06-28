@@ -21,9 +21,7 @@
 | 文件 | 职责 |
 |------|------|
 | `<fixture>/source.z42`     | z42 源（check in）|
-| `<fixture>/source.zbc`     | ZbcWriter 输出字节（check in；regen 后 git diff = 实际格式变化）|
-| `<fixture>/expected.json`  | `z42c golden-json` 归一化输出（check in；语义层 invariant 比对）|
-| `generate-fixtures.sh`     | 一键 regen — 跑 .z42 → .zbc → .json |
+| `<fixture>/source.zbc`     | z42c 输出字节（check in；regen 后 git diff = 实际格式变化）|
 
 ## 维护流程
 
@@ -31,27 +29,26 @@
 
 ```bash
 z42 xtask.zpkg build stdlib         # 必要 — fixture 用 stdlib 解析
-./src/tests/zbc-format/generate-fixtures.sh
+z42 xtask.zpkg regen                # 用 z42c 重生全部 golden（含本目录的 source.zbc，in-place）
 git diff src/tests/zbc-format/      # review 哪些 fixture 受影响
 ```
 
-每次 bump 必须把 fixture 一同 commit；不允许"代码改了 fixture 没 regen"或"fixture regen 了但 git diff 没 review"。CI `FormatGoldenTests` 跑 in-process 现场重生与 check-in 对账，diff 即 fail。
+`xtask regen` 对 `zbc-format` 目录特判：直接覆写各 fixture 的 `source.zbc`（其余 run-golden 落 artifacts 镜像）。每次 bump 必须把 fixture 一同 commit。
 
 ## 测试 harness
 
 | 测试 | 检查内容 |
 |------|---------|
-| `FormatGoldenTests.ByteEqual` | 现场 ZbcWriter 输出 == 该 fixture 的 `source.zbc` |
-| `FormatGoldenTests.JsonEqual` | 现场 ZbcGoldenJsonFormatter 输出 == 该 fixture 的 `expected.json` |
+| `zbc_compat.rs` | Rust 解码这些 check-in 的 `source.zbc` 字节基线，验证 reader 兼容当前 wire format |
 
-详见 [`src/compiler/z42.Tests/Zbc/FormatGoldenTests.cs`](../../../src/compiler/z42.Tests/Zbc/FormatGoldenTests.cs)。
+详见 [`src/runtime/tests/zbc_compat.rs`](../../../src/runtime/tests/zbc_compat.rs)。
 
 ## 入口点
 
-- 维护命令：`./generate-fixtures.sh`
-- 测试 harness：`dotnet test --filter FormatGoldenTests`
+- 维护命令：`z42 xtask.zpkg regen`
+- 测试 harness：`cargo test --test zbc_compat`
 
 ## 依赖关系
 
 - 上游：`z42 xtask.zpkg build stdlib` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— `cross-import-token` / `with-tidx` 需要 stdlib 才能解析
-- 下游：`FormatGoldenTests` harness（`src/compiler/z42.Tests/Zbc/`）
+- 下游：`zbc_compat.rs`（`src/runtime/tests/`）
