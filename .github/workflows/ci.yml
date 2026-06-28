@@ -106,7 +106,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       # remove-dotnet-from-builds: ALL legs bootstrap from the prev nightly seed — download the prev
@@ -337,7 +337,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -434,7 +434,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       - name: Bootstrap toolchain (nightly z42c seed → current source)
@@ -493,7 +493,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       # cargo build z42vm + restore z42c/stdlib/xtask zpkgs at canonical paths
@@ -639,7 +639,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       # seed the toolchain from the prev nightly's z42c-written compiler
@@ -692,7 +692,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
@@ -747,7 +747,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       - name: Bootstrap from nightly z42c seed
@@ -794,7 +794,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
@@ -842,7 +842,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
@@ -980,7 +980,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: ios
 
 
@@ -1069,7 +1069,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: android
 
 
@@ -1159,7 +1159,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: wasm
 
 
@@ -1269,7 +1269,7 @@ jobs:
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src/runtime
+          workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host
       - name: Provision z42vm + xtask (consume toolchain artifact)
         uses: ./.github/actions/xtask-bootstrap-artifact
