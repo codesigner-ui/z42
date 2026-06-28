@@ -47,7 +47,8 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [x] 1c CI `verify-selfhost` gate on `compiler`（`needs: changes` + `if: compiler`；该 job 不在任何 needs 里，skip 安全）
 - [x] 1d CI `build-and-test` 加 `needs: changes`；Windows leg `cargo test` step `if: vm`（rule c）
 - [x] 1e docs：change-detect 规则表更新——**落在 ci.md 阶段①**（非 bootstrap.md：ci.md 是 CI 拓扑唯一真相源，DOC2 分工；bootstrap.md 无 change-detect 段，重复会破坏单一真相）。规则 a/b/c 全标 ✅。
-- [~] 1f 验证：docs-only push 不触发 CI（已验 c3c0ab77/0b9b60e7 双跳过）；compiler-only / vm-only gate 跳过 **待本次 ci.yml change push 后的 CI run 观察**（ci.yml 改动 → 保底全跑，gate 真实生效要等纯 compiler / 纯 vm 改动的后续 commit）
+- [x] 1f 验证：① docs-only push 不触发 CI（c3c0ab77/0b9b60e7 双跳过 ✓）；② `detect-changes` job CI 实跑 **success**（run 28305973690）；③ `verify-selfhost` 在 ci.yml 改动时**确实运行**（compiler filter 命中保底全跑，证 gate 接线正确）。纯 compiler-only / 纯 vm-only 改动的跳过将在后续单一子系统 commit 自然观察。
+  > **副产物（已知 pre-existing）**：`test (windows-x64)` 的 `cargo test` smoke step flaky（`native_interop_e2e.rs:361 z42_source_calls_numz42_via_native_attr`）——cd3df566 绿、dd29c912/4f85fc78 红，无相关代码改动 = 间歇。根因疑 GC region raw-ptr Send/Sync（见 [[reference_ci_rust_unit_tests_windows_only]]），独立 VM 议题，rule(c) gate 已缩小其触发面。
 
 ### Stage 2 — bootstrap 边界检查
 - [ ] 2a xtask `bootstrap-check`：封装 `check-bootstrap-compat.sh`（下载上一 nightly z42c → 编当前 z42c 源 → 对比无越界），本地可跑
