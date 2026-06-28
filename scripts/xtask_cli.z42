@@ -114,6 +114,7 @@ SubcommandRouter _cliRoot() {
 
     root.AddRouter("test", "run tests", _testRouter());
     root.AddRouter("deps", "toolchain deps", _depsRouter());
+    root.AddRouter("release", "release packaging (assemble workloads / gen index)", _releaseRouter());
     root.AddRouter("bench", "benchmarks (no subcommand = e2e; see `bench -h`)", _benchRouter());
 
     ArgParser regen = new ArgParser("xtask regen", "regenerate golden .zbc fixtures");
@@ -138,6 +139,22 @@ SubcommandRouter _cliRoot() {
     root.Add("run", "run a zpkg / .z42 via the launcher", run);
 
     return root;
+}
+
+SubcommandRouter _releaseRouter() {
+    SubcommandRouter rel = new SubcommandRouter("xtask release", "release packaging");
+    ArgParser asm = new ArgParser("xtask release assemble-desktop-workload", "merge the 4 per-RID desktop workloads into one RID-agnostic archive");
+    asm.AddOptionalPositional("label", "<LABEL> (e.g. 0.3.0 or nightly)");
+    asm.AddOptionalPositional("dist", "dist dir (default: dist)");
+    rel.Add("assemble-desktop-workload", "merge per-RID desktop workloads → one archive", asm);
+    ArgParser idx = new ArgParser("xtask release gen-release-index", "generate release-index.json from SHA256SUMS");
+    idx.AddOptionalPositional("label", "<LABEL> (e.g. 0.3.0 or nightly)");
+    idx.AddOptionalPositional("dist", "dist dir (default: dist)");
+    idx.AddOptionalPositional("channel", "channel (default: stable)");
+    idx.AddOptionalPositional("tag", "tag (default: v<LABEL>)");
+    idx.AddOptionalPositional("version", "version (default: <LABEL>)");
+    rel.Add("gen-release-index", "generate release-index.json (launcher supply contract)", idx);
+    return rel;
 }
 
 SubcommandRouter _buildRouter() {
@@ -273,6 +290,13 @@ int _benchE2e(string[] argv) {
 
 // ── dispatch (resolved command → handler) ─────────────────────────────────────
 
+int _dispatchRelease(string[] p, ParseResult r) {
+    string sub = p.Length > 1 ? p[1] : "";
+    if (sub == "assemble-desktop-workload") { return _releaseAssembleDesktop(r.GetPositional(0), r.GetPositional(1)); }
+    if (sub == "gen-release-index") { return _releaseGenIndex(r.GetPositional(0), r.GetPositional(1), r.GetPositional(2), r.GetPositional(3), r.GetPositional(4)); }
+    return 2;
+}
+
 int _dispatch(CommandResolution res) {
     string[] p = res.Path();
     if (p.Length == 0) { return 2; }
@@ -283,6 +307,7 @@ int _dispatch(CommandResolution res) {
     if (top == "feature-matrix") { return _featureMatrix(); }
     if (top == "test")           { return _dispatchTest(p, r); }
     if (top == "deps")           { return _dispatchDeps(p, r); }
+    if (top == "release")        { return _dispatchRelease(p, r); }
     if (top == "bench")          { return _dispatchBench(p, r); }
     if (top == "regen")          { return _regen(r); }
     if (top == "bootstrap-check") { return _bootstrapCheck(r.GetPositional(0)); }

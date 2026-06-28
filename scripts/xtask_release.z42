@@ -1,0 +1,224 @@
+// xtask — `release` subcommands (script-zero port of scripts/release/*.sh).
+//
+// Release-time packaging glue, shared by release.yml (tagged) + ci.yml
+// publish-nightly (rolling). tar / unzip are driven as external subprocesses
+// (same as cargo elsewhere); the orchestration logic lives here in z42.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+using Std.Json;
+
+// `xtask release assemble-desktop-workload <LABEL> [<dist>]`
+// Merge the 4 per-RID desktop-workload pieces (each carries its apphost-<rid>)
+// into ONE RID-agnostic z42-workload-<LABEL>-desktop.tar.gz so any host can
+// `publish --rid <target>`. Removes the per-RID intermediates.
+int _releaseAssembleDesktop(string label, string dist) {
+    if (label.Length == 0) {
+        ConsoleError.WriteLine("usage: xtask release assemble-desktop-workload <LABEL> [dist]");
+        return 2;
+    }
+    if (dist.Length == 0) { dist = "dist"; }
+    string root = _root();
+    string distDir = Path.IsRooted(dist) ? dist : Path.Join(root, dist);
+
+    string work = Path.Join(distDir, ".asm-desktop-work");
+    _resetDir(work);
+    string merged = Path.Join(work, "z42-workload-" + label + "-desktop");
+    Directory.Create(merged);
+
+    string[] rids = new string[4];
+    rids[0] = "linux-x64"; rids[1] = "linux-arm64"; rids[2] = "macos-arm64"; rids[3] = "windows-x64";
+    int i = 0;
+    while (i < rids.Length) {
+        string rid = rids[i];
+        string ar = Path.Join(distDir, "z42-workload-" + label + "-desktop-" + rid + ".tar.gz");
+        bool isZip = false;
+        if (!File.Exists(ar)) {
+            ar = Path.Join(distDir, "z42-workload-" + label + "-desktop-" + rid + ".zip");
+            isZip = true;
+        }
+        if (!File.Exists(ar)) {
+            ConsoleError.WriteLine("assemble-desktop-workload: missing piece for " + rid);
+            return 1;
+        }
+        string tmp = Path.Join(work, "x-" + rid);
+        Directory.Create(tmp);
+        int xc;
+        if (isZip) { xc = _exec(new Process("unzip").Arg("-q").Arg(ar).Arg("-d").Arg(tmp)); }
+        else { xc = _exec(new Process("tar").Arg("-xzf").Arg(ar).Arg("-C").Arg(tmp)); }
+        if (xc != 0) { ConsoleError.WriteLine("extract failed: " + ar); return 1; }
+        string[] hosts = Path.Glob(tmp, "apphost-" + rid + "*");
+        int h = 0;
+        while (h < hosts.Length) {
+            File.Copy(hosts[h], Path.Join(merged, Path.GetFileName(hosts[h])));
+            h = h + 1;
+        }
+        i = i + 1;
+    }
+
+    File.WriteAllText(Path.Join(merged, "manifest.toml"),
+        "[package]\n"
+        + "name        = \"z42-workload-desktop\"\n"
+        + "kind        = \"workload-tooling\"\n"
+        + "version     = \"" + label + "\"\n"
+        + "abi-version = 1\n"
+        + "[contents.platform]\n"
+        + "apphost-prefix = \"apphost-\"\n"
+        + "host           = [\"*\"]\n"
+        + "runtime-pack   = \"\"\n"
+        + "[compat]\n"
+        + "host-min-version = \"" + label + "\"\n");
+
+    // remove per-RID intermediates (NOT the merged output — no trailing -rid)
+    _deleteGlob(distDir, "z42-workload-" + label + "-desktop-*.tar.gz");
+    _deleteGlob(distDir, "z42-workload-" + label + "-desktop-*.zip");
+
+    string outTar = Path.Join(distDir, "z42-workload-" + label + "-desktop.tar.gz");
+    int tc = _exec(new Process("tar").Arg("-C").Arg(merged).Arg("-czf").Arg(outTar).Arg("."));
+    if (tc != 0) { ConsoleError.WriteLine("tar failed: " + outTar); return 1; }
+    Directory.Delete(work, true);
+    Console.WriteLine("✓ merged desktop workload → " + Path.GetFileName(outTar));
+    return 0;
+}
+
+void _deleteGlob(string dir, string pattern) {
+    string[] hits = Path.Glob(dir, pattern);
+    int i = 0;
+    while (i < hits.Length) { File.Delete(hits[i]); i = i + 1; }
+}
+
+// `xtask release gen-release-index <LABEL> [<dist>] [<channel>] [<tag>] [<version>]`
+// Generate <dist>/release-index.json from <dist>/SHA256SUMS — the launcher's supply
+// contract (z42 install / workload install read it). Shared by release.yml (tagged)
+// and ci.yml publish-nightly (rolling), so the schema lives in ONE place.
+int _releaseGenIndex(string label, string dist, string channel, string tag, string version) {
+    if (label.Length == 0) {
+        ConsoleError.WriteLine("usage: xtask release gen-release-index <LABEL> [dist] [channel] [tag] [version]");
+        return 2;
+    }
+    if (dist.Length == 0)    { dist = "dist"; }
+    if (channel.Length == 0) { channel = "stable"; }
+    if (tag.Length == 0)     { tag = "v" + label; }
+    if (version.Length == 0) { version = label; }
+    string root = _root();
+    string distDir = Path.IsRooted(dist) ? dist : Path.Join(root, dist);
+    string sumsPath = Path.Join(distDir, "SHA256SUMS");
+    if (!File.Exists(sumsPath)) { ConsoleError.WriteLine("error: missing " + sumsPath); return 1; }
+    string sums = File.ReadAllText(sumsPath);
+    string ts = new Process("date").Arg("-u").Arg("+%Y-%m-%dT%H:%M:%SZ").Run().Stdout.Trim();
+
+    // desktop ext: windows = .zip, others = .tar.gz
+    string[] dRids = new string[4];
+    dRids[0] = "linux-x64"; dRids[1] = "linux-arm64"; dRids[2] = "macos-arm64"; dRids[3] = "windows-x64";
+    string[] pRids = new string[5];
+    pRids[0] = "ios-arm64"; pRids[1] = "iossim-arm64"; pRids[2] = "android-arm64"; pRids[3] = "android-x64"; pRids[4] = "browser-wasm";
+    string[] wls = new string[4];
+    wls[0] = "ios"; wls[1] = "android"; wls[2] = "wasm"; wls[3] = "desktop";
+
+    // ── validate: every required archive has a sha in SHA256SUMS ──
+    int missing = 0;
+    int i = 0;
+    while (i < dRids.Length) {
+        if (_shaOf(sums, _sdkName(label, dRids[i])).Length == 0)     { ConsoleError.WriteLine("release-index: missing sha for " + _sdkName(label, dRids[i])); missing = missing + 1; }
+        if (_shaOf(sums, _rtName(label, dRids[i])).Length == 0)      { ConsoleError.WriteLine("release-index: missing sha for " + _rtName(label, dRids[i])); missing = missing + 1; }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < pRids.Length) {
+        if (_shaOf(sums, _rtName(label, pRids[i])).Length == 0)      { ConsoleError.WriteLine("release-index: missing sha for " + _rtName(label, pRids[i])); missing = missing + 1; }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < wls.Length) {
+        if (_shaOf(sums, "z42-workload-" + label + "-" + wls[i] + ".tar.gz").Length == 0) { ConsoleError.WriteLine("release-index: missing sha for workload " + wls[i]); missing = missing + 1; }
+        i = i + 1;
+    }
+    if (missing > 0) { return 1; }
+
+    // ── build the index JSON ──
+    JsonValue runtimes = JsonValue.OfObject();
+    i = 0;
+    while (i < dRids.Length) {
+        string rid = dRids[i];
+        JsonValue e = JsonValue.OfObject();
+        e.Set("sdk",     _jArch(_sdkName(label, rid), _shaOf(sums, _sdkName(label, rid))));
+        e.Set("runtime", _jArch(_rtName(label, rid),  _shaOf(sums, _rtName(label, rid))));
+        runtimes.Set(rid, e);
+        i = i + 1;
+    }
+    i = 0;
+    while (i < pRids.Length) {
+        string rid = pRids[i];
+        JsonValue e = JsonValue.OfObject();
+        e.Set("runtime", _jArch(_rtName(label, rid), _shaOf(sums, _rtName(label, rid))));
+        runtimes.Set(rid, e);
+        i = i + 1;
+    }
+
+    JsonValue workloads = JsonValue.OfObject();
+    workloads.Set("ios",     _jWorkload(label, sums, "ios",     _strArr1("macos-arm64"),                                       _strArr2("ios-arm64", "iossim-arm64")));
+    workloads.Set("android", _jWorkload(label, sums, "android", _strArr4("macos-arm64", "linux-x64", "linux-arm64", "windows-x64"), _strArr2("android-arm64", "android-x64")));
+    workloads.Set("wasm",    _jWorkload(label, sums, "wasm",    _strArr1("*"),                                                 _strArr1("browser-wasm")));
+    workloads.Set("desktop", _jWorkload(label, sums, "desktop", _strArr1("*"),                                                 JsonValue.OfArray()));
+
+    JsonValue idx = JsonValue.OfObject();
+    idx.Set("schema",    JsonValue.OfLong(1L));
+    idx.Set("version",   JsonValue.OfString(version));
+    idx.Set("channel",   JsonValue.OfString(channel));
+    idx.Set("tag",       JsonValue.OfString(tag));
+    idx.Set("published", JsonValue.OfString(ts));
+    idx.Set("runtimes",  runtimes);
+    idx.Set("workloads", workloads);
+
+    string outPath = Path.Join(distDir, "release-index.json");
+    File.WriteAllText(outPath, JsonValue.StringifyPretty(idx));
+    Console.WriteLine("✓ wrote " + outPath);
+    return 0;
+}
+
+string _sdkName(string label, string rid) {
+    string ext = (rid == "windows-x64") ? ".zip" : ".tar.gz";
+    return "z42-sdk-" + label + "-" + rid + ext;
+}
+string _rtName(string label, string rid) {
+    string ext = (rid == "windows-x64") ? ".zip" : ".tar.gz";
+    return "z42-runtime-" + label + "-" + rid + ext;
+}
+
+// first non-empty token of the SHA256SUMS line whose last token == archive.
+string _shaOf(string sums, string archive) {
+    string[] lines = sums.Split("\n");
+    int i = 0;
+    while (i < lines.Length) {
+        string ln = lines[i].Trim();
+        if (ln.Length > 0) {
+            string[] parts = ln.Split(" ");
+            string name = "";
+            int k = parts.Length - 1;
+            while (k >= 0) { if (parts[k].Length > 0) { name = parts[k]; break; } k = k - 1; }
+            if (name == archive) { return parts[0]; }
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+JsonValue _jArch(string archive, string sha) {
+    JsonValue o = JsonValue.OfObject();
+    o.Set("archive", JsonValue.OfString(archive));
+    o.Set("sha256",  JsonValue.OfString(sha));
+    return o;
+}
+JsonValue _jWorkload(string label, string sums, string name, JsonValue host, JsonValue rts) {
+    string archive = "z42-workload-" + label + "-" + name + ".tar.gz";
+    JsonValue o = JsonValue.OfObject();
+    o.Set("archive",  JsonValue.OfString(archive));
+    o.Set("sha256",   JsonValue.OfString(_shaOf(sums, archive)));
+    o.Set("host",     host);
+    o.Set("runtimes", rts);
+    return o;
+}
+JsonValue _strArr1(string a) { JsonValue r = JsonValue.OfArray(); r.Add(JsonValue.OfString(a)); return r; }
+JsonValue _strArr2(string a, string b) { JsonValue r = JsonValue.OfArray(); r.Add(JsonValue.OfString(a)); r.Add(JsonValue.OfString(b)); return r; }
+JsonValue _strArr4(string a, string b, string c, string d) { JsonValue r = JsonValue.OfArray(); r.Add(JsonValue.OfString(a)); r.Add(JsonValue.OfString(b)); r.Add(JsonValue.OfString(c)); r.Add(JsonValue.OfString(d)); return r; }
