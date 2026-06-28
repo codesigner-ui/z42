@@ -1,0 +1,267 @@
+// `z42.toml` 单清单加载器 —— 把 TOML 文本解析为组合式 ProjectManifest。
+//
+// 这是 z42c 与 z42.build / z42b **共享的唯一 manifest 真相源**的加载入口：
+//   - 用 stdlib Std.Toml 解析（不 hand-roll TOML）。
+//   - 产出 z42.project 的组合式模型（ProjectInfo / Sources / BuildConfig / Profile[] /
+//     DepEntry[] / ExeTarget[] / PlatformSet），比 z42c.project 的扁平模型更完整：额外解析
+//     `[profile.*]` / `[[exe]]` / `[platform.*]`（平台配置 z42c 解析后忽略，z42.build 消费）。
+//
+// 数组段用 `Keys().Length` / `Length()` 预定大小，免去 grow/trim 与 holder 类型（无泛型子集）。
+// 缺省平台配置传 null（HasX 标志守卫，消费方先查 HasX —— L1「空值 + 调用方检查」idiom）。
+namespace Z42.Project;
+
+using Std.IO;
+using Std.Toml;
+
+public static class ManifestLoader {
+
+    /// 从文件路径加载单项目清单。
+    public static ProjectManifest Load(string tomlPath) {
+        return ManifestLoader.ParseText(File.ReadAllText(tomlPath));
+    }
+
+    /// 从 TOML 文本解析单项目清单（fs-free —— REPL / playground 可复用）。
+    public static ProjectManifest ParseText(string text) {
+        var root = TomlValue.Parse(text);
+        ProjectInfo project  = ManifestLoader._parseProject(root);
+        Sources     sources  = ManifestLoader._parseSources(root);
+        BuildConfig build    = ManifestLoader._parseBuild(root);
+        Profile[]   profiles = ManifestLoader._parseProfiles(root);
+        DepEntry[]  deps     = ManifestLoader._parseDeps(root, "dependencies");
+        ExeTarget[] exes     = ManifestLoader._parseExes(root);
+        PlatformSet platform = ManifestLoader._parsePlatform(root);
+        return new ProjectManifest(project, sources, build,
+                                   profiles, profiles.Length,
+                                   deps, deps.Length,
+                                   exes, exes.Length,
+                                   platform);
+    }
+
+    /// 从文件路径加载 workspace 清单。
+    public static WorkspaceManifest LoadWorkspace(string tomlPath) {
+        return ManifestLoader.ParseWorkspaceText(File.ReadAllText(tomlPath));
+    }
+
+    /// 从 TOML 文本解析 workspace 清单（`[workspace]`）。
+    public static WorkspaceManifest ParseWorkspaceText(string text) {
+        var root = TomlValue.Parse(text);
+        string[] members = new string[0];
+        string[] exclude = new string[0];
+        string[] defMembers = new string[0];
+        bool hasVer = false; string ver = "";
+        bool hasLic = false; string lic = "";
+        bool hasOut = false; string outDir = "";
+        bool hasCache = false; string cacheDir = "";
+        DepEntry[] wdeps = new DepEntry[0];
+        if (root.ContainsKey("workspace")) {
+            var w = root.Get("workspace");
+            if (w.ContainsKey("members"))         { members = ManifestLoader._strArray(w.Get("members")); }
+            if (w.ContainsKey("exclude"))         { exclude = ManifestLoader._strArray(w.Get("exclude")); }
+            if (w.ContainsKey("default-members")) { defMembers = ManifestLoader._strArray(w.Get("default-members")); }
+            if (w.ContainsKey("project")) {
+                var wp = w.Get("project");
+                if (wp.ContainsKey("version")) { ver = wp.Get("version").AsString(); hasVer = true; }
+                if (wp.ContainsKey("license")) { lic = wp.Get("license").AsString(); hasLic = true; }
+            }
+            if (w.ContainsKey("build")) {
+                var wb = w.Get("build");
+                if (wb.ContainsKey("output_dir")) { outDir = wb.Get("output_dir").AsString(); hasOut = true; }
+                if (wb.ContainsKey("cache_dir"))  { cacheDir = wb.Get("cache_dir").AsString(); hasCache = true; }
+            }
+            wdeps = ManifestLoader._parseDeps(w, "dependencies");
+        }
+        return new WorkspaceManifest(members, members.Length, exclude, exclude.Length,
+                                     defMembers, defMembers.Length,
+                                     hasVer, ver, hasLic, lic, hasOut, outDir, hasCache, cacheDir,
+                                     wdeps, wdeps.Length);
+    }
+
+    // ── [project] ──────────────────────────────────────────────────────────
+    private static ProjectInfo _parseProject(TomlValue root) {
+        string name = ""; string version = ""; string kind = "lib";
+        bool hasEntry = false; string entry = "";
+        bool hasPack = false; bool pack = false;
+        if (root.ContainsKey("project")) {
+            var p = root.Get("project");
+            if (p.ContainsKey("name"))    { name = p.Get("name").AsString(); }
+            if (p.ContainsKey("version")) { version = p.Get("version").AsString(); }
+            if (p.ContainsKey("kind"))    { kind = p.Get("kind").AsString(); }
+            if (p.ContainsKey("entry"))   { entry = p.Get("entry").AsString(); hasEntry = true; }
+            if (p.ContainsKey("pack"))    { pack = p.Get("pack").AsBool(); hasPack = true; }
+        }
+        return new ProjectInfo(name, version, kind, hasEntry, entry, hasPack, pack);
+    }
+
+    // ── [sources] ──────────────────────────────────────────────────────────
+    // 默认 include = ["src/**/*.z42"]（段缺失或无 include 键时回落），exclude 默认 []。
+    private static Sources _parseSources(TomlValue root) {
+        string[] inc = new string[1]; inc[0] = "src/**/*.z42";
+        string[] exc = new string[0];
+        if (root.ContainsKey("sources")) {
+            var s = root.Get("sources");
+            if (s.ContainsKey("include")) { inc = ManifestLoader._strArray(s.Get("include")); }
+            if (s.ContainsKey("exclude")) { exc = ManifestLoader._strArray(s.Get("exclude")); }
+        }
+        return new Sources(inc, inc.Length, exc, exc.Length);
+    }
+
+    // ── [build] ────────────────────────────────────────────────────────────
+    private static BuildConfig _parseBuild(TomlValue root) {
+        bool hasOut = false; string outDir = "";
+        bool hasCache = false; string cacheDir = "";
+        bool hasDist = false; string distDir = "";
+        bool incremental = true;
+        if (root.ContainsKey("build")) {
+            var b = root.Get("build");
+            if (b.ContainsKey("output_dir"))  { outDir = b.Get("output_dir").AsString(); hasOut = true; }
+            if (b.ContainsKey("cache_dir"))   { cacheDir = b.Get("cache_dir").AsString(); hasCache = true; }
+            if (b.ContainsKey("dist_dir"))    { distDir = b.Get("dist_dir").AsString(); hasDist = true; }
+            if (b.ContainsKey("incremental")) { incremental = b.Get("incremental").AsBool(); }
+        }
+        return new BuildConfig(hasOut, outDir, hasCache, cacheDir, hasDist, distDir, incremental);
+    }
+
+    // ── [profile.<name>] ─────────────────────────────────────────────────────
+    private static Profile[] _parseProfiles(TomlValue root) {
+        if (!root.ContainsKey("profile")) { return new Profile[0]; }
+        var pt = root.Get("profile");
+        string[] names = pt.Keys();
+        Profile[] r = new Profile[names.Length];
+        int i = 0;
+        while (i < names.Length) {
+            var pv = pt.Get(names[i]);
+            bool pack = false; bool strip = false; string mode = "interp";
+            int opt = 0; bool debug = false;
+            if (pv.ContainsKey("pack"))     { pack = pv.Get("pack").AsBool(); }
+            if (pv.ContainsKey("strip"))    { strip = pv.Get("strip").AsBool(); }
+            if (pv.ContainsKey("mode"))     { mode = pv.Get("mode").AsString(); }
+            if (pv.ContainsKey("optimize")) { opt = (int)pv.Get("optimize").AsLong(); }
+            if (pv.ContainsKey("debug"))    { debug = pv.Get("debug").AsBool(); }
+            r[i] = new Profile(names[i], pack, strip, mode, opt, debug);
+            i = i + 1;
+        }
+        return r;
+    }
+
+    // ── [dependencies] / [workspace.dependencies] ────────────────────────────
+    // 值可为字符串版本，或表 { version, path }。键集大小已知 → 直接定长。
+    private static DepEntry[] _parseDeps(TomlValue parent, string key) {
+        if (!parent.ContainsKey(key)) { return new DepEntry[0]; }
+        var d = parent.Get(key);
+        string[] keys = d.Keys();
+        DepEntry[] deps = new DepEntry[keys.Length];
+        int i = 0;
+        while (i < keys.Length) {
+            var dv = d.Get(keys[i]);
+            string ver = "";
+            if (dv.IsTable()) { if (dv.ContainsKey("version")) { ver = dv.Get("version").AsString(); } }
+            else { ver = dv.AsString(); }
+            deps[i] = new DepEntry(keys[i], ver);
+            i = i + 1;
+        }
+        return deps;
+    }
+
+    // ── [[exe]] （array-of-tables）───────────────────────────────────────────
+    private static ExeTarget[] _parseExes(TomlValue root) {
+        if (!root.ContainsKey("exe")) { return new ExeTarget[0]; }
+        var arr = root.Get("exe");
+        int n = arr.Length();
+        ExeTarget[] r = new ExeTarget[n];
+        int i = 0;
+        while (i < n) {
+            var e = arr.At(i);
+            string name = ""; string entry = "";
+            string[] src = new string[0];
+            if (e.ContainsKey("name"))  { name = e.Get("name").AsString(); }
+            if (e.ContainsKey("entry")) { entry = e.Get("entry").AsString(); }
+            if (e.ContainsKey("src"))   { src = ManifestLoader._strArray(e.Get("src")); }
+            r[i] = new ExeTarget(name, entry, src, src.Length);
+            i = i + 1;
+        }
+        return r;
+    }
+
+    // ── [platform.*] ─────────────────────────────────────────────────────────
+    private static PlatformSet _parsePlatform(TomlValue root) {
+        bool hasIOS = false;     iOSConfig     ios     = null;
+        bool hasAndroid = false; AndroidConfig android = null;
+        bool hasDesktop = false; DesktopConfig desktop = null;
+        bool hasWasm = false;    WasmConfig    wasm    = null;
+        if (root.ContainsKey("platform")) {
+            var pf = root.Get("platform");
+            if (pf.ContainsKey("desktop")) { desktop = ManifestLoader._parseDesktop(pf.Get("desktop")); hasDesktop = true; }
+            if (pf.ContainsKey("ios"))     { ios     = ManifestLoader._parseIOS(pf.Get("ios"));         hasIOS = true; }
+            if (pf.ContainsKey("android")) { android = ManifestLoader._parseAndroid(pf.Get("android")); hasAndroid = true; }
+            if (pf.ContainsKey("wasm"))    { wasm    = ManifestLoader._parseWasm(pf.Get("wasm"));       hasWasm = true; }
+        }
+        return new PlatformSet(hasIOS, ios, hasAndroid, android, hasDesktop, desktop, hasWasm, wasm);
+    }
+
+    private static DesktopConfig _parseDesktop(TomlValue d) {
+        string publishDir = "";
+        bool hasIcon = false; string icon = "";
+        bool hasBundleId = false; string bundleId = "";
+        if (d.ContainsKey("publish_dir")) { publishDir = d.Get("publish_dir").AsString(); }
+        if (d.ContainsKey("icon"))        { icon = d.Get("icon").AsString(); hasIcon = true; }
+        if (d.ContainsKey("bundle_id"))   { bundleId = d.Get("bundle_id").AsString(); hasBundleId = true; }
+        return new DesktopConfig(publishDir, hasIcon, icon, hasBundleId, bundleId);
+    }
+
+    private static iOSConfig _parseIOS(TomlValue d) {
+        string bundleId = ""; string displayName = "";
+        bool hasVersion = false; string version = "";
+        string minIOS = "";
+        bool hasTeamId = false; string teamId = "";
+        int[] fams = new int[0];
+        string[] caps = new string[0];
+        if (d.ContainsKey("bundle_id"))      { bundleId = d.Get("bundle_id").AsString(); }
+        if (d.ContainsKey("display_name"))   { displayName = d.Get("display_name").AsString(); }
+        if (d.ContainsKey("version"))        { version = d.Get("version").AsString(); hasVersion = true; }
+        if (d.ContainsKey("min_ios"))        { minIOS = d.Get("min_ios").AsString(); }
+        if (d.ContainsKey("team_id"))        { teamId = d.Get("team_id").AsString(); hasTeamId = true; }
+        if (d.ContainsKey("device_families")){ fams = ManifestLoader._intArray(d.Get("device_families")); }
+        if (d.ContainsKey("capabilities"))   { caps = ManifestLoader._strArray(d.Get("capabilities")); }
+        return new iOSConfig(bundleId, displayName, hasVersion, version, minIOS, hasTeamId, teamId,
+                             fams, fams.Length, caps, caps.Length);
+    }
+
+    private static AndroidConfig _parseAndroid(TomlValue d) {
+        string appId = ""; string displayName = "";
+        int versionCode = 0; string versionName = "";
+        int minSdk = 0; int targetSdk = 0;
+        string[] perms = new string[0];
+        if (d.ContainsKey("app_id"))       { appId = d.Get("app_id").AsString(); }
+        if (d.ContainsKey("display_name")) { displayName = d.Get("display_name").AsString(); }
+        if (d.ContainsKey("version_code")) { versionCode = (int)d.Get("version_code").AsLong(); }
+        if (d.ContainsKey("version_name")) { versionName = d.Get("version_name").AsString(); }
+        if (d.ContainsKey("min_sdk"))      { minSdk = (int)d.Get("min_sdk").AsLong(); }
+        if (d.ContainsKey("target_sdk"))   { targetSdk = (int)d.Get("target_sdk").AsLong(); }
+        if (d.ContainsKey("permissions"))  { perms = ManifestLoader._strArray(d.Get("permissions")); }
+        return new AndroidConfig(appId, displayName, versionCode, versionName, minSdk, targetSdk,
+                                 perms, perms.Length);
+    }
+
+    private static WasmConfig _parseWasm(TomlValue d) {
+        bool hasTitle = false; string title = "";
+        if (d.ContainsKey("title")) { title = d.Get("title").AsString(); hasTitle = true; }
+        return new WasmConfig(hasTitle, title);
+    }
+
+    // ── 数组辅助 ─────────────────────────────────────────────────────────────
+    private static string[] _strArray(TomlValue a) {
+        int n = a.Length();
+        string[] r = new string[n];
+        int i = 0;
+        while (i < n) { r[i] = a.At(i).AsString(); i = i + 1; }
+        return r;
+    }
+
+    private static int[] _intArray(TomlValue a) {
+        int n = a.Length();
+        int[] r = new int[n];
+        int i = 0;
+        while (i < n) { r[i] = (int)a.At(i).AsLong(); i = i + 1; }
+        return r;
+    }
+}
