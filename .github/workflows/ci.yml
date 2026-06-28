@@ -107,7 +107,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       # remove-dotnet-from-builds: ALL legs bootstrap from the prev nightly seed — download the prev
       # published nightly's z42c-written compiler seed, then build current z42c +
@@ -338,7 +338,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
 
@@ -435,7 +435,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       - name: Bootstrap toolchain (nightly z42c seed → current source)
         env:
@@ -494,7 +494,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       # cargo build z42vm + restore z42c/stdlib/xtask zpkgs at canonical paths
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -640,7 +640,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       # seed the toolchain from the prev nightly's z42c-written compiler
       # (NO dotnet) and build current source warm — same path as build-and-test.
@@ -693,7 +693,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
       # build current source warm — same path as build-and-test. Replaces the
@@ -748,7 +748,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       - name: Bootstrap from nightly z42c seed
         env:
@@ -795,7 +795,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
       # build current source warm — same path as build-and-test. Replaces the
@@ -843,7 +843,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
 
       # seed from the prev nightly's z42c-written compiler (NO dotnet) and
       # build current source warm. Replaces the download-nightly `xtask-bootstrap`
@@ -981,7 +981,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: ios
+          shared-key: ios-v2
 
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -1070,7 +1070,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: android
+          shared-key: android-v2
 
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -1160,7 +1160,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: wasm
+          shared-key: wasm-v2
 
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
@@ -1270,7 +1270,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host
+          shared-key: host-v2
       - name: Provision z42vm + xtask (consume toolchain artifact)
         uses: ./.github/actions/xtask-bootstrap-artifact
 
