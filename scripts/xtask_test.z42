@@ -138,9 +138,19 @@ string _latestReleasePkg(string root) {
 // compiler + VM goldens + cross-zpkg + stdlib, short-circuiting on first
 // failure. Mirrors the former scripts/test-all.sh's stage set (the --parallel wave +
 // --scope auto-narrow optimizations are a later increment).
-int _testAll() {
-    // build wave (once): stdlib + compiler driver + release runtime + golden zbc
-    int c = _regenCore(false, true); if (c != 0) { return c; }
+int _testAll(bool noBuild) {
+    // build wave (once): stdlib + compiler driver + release runtime + golden zbc.
+    // compile-once consume: skip the redundant z42c+stdlib rebuild when they're
+    // already present — either a --toolchain is set (CI downloads current-sdk) OR
+    // --no-build is passed (the CI bootstrap step already built the canonical
+    // z42c+stdlib). In both cases only regen the goldens (the bootstrap doesn't
+    // produce them); the stages below already run --no-build. This removes the CI
+    // build-wave redundancy (~12-15 min/leg) — `xtask test all` locally still does
+    // the full build by default (noBuild=false).
+    bool haveTc = _toolchainDir(_root()).Length > 0;
+    int c;
+    if (haveTc || noBuild) { c = _regenGolden(); } else { c = _regenCore(false, true); }
+    if (c != 0) { return c; }
     // extra tooling the test stages need
     c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg(_runtimeManifest())); if (c != 0) { return c; }            // debug z42vm
     c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml")); if (c != 0) { return c; }

@@ -179,8 +179,9 @@ SubcommandRouter _buildRouter() {
 
 SubcommandRouter _testRouter() {
     SubcommandRouter t = new SubcommandRouter("xtask test", "run tests");
-    t.Add("all", "compiler + vm + cross-zpkg + stdlib",
-        new ArgParser("xtask test all", "full gate"));
+    ArgParser allP = new ArgParser("xtask test all", "full gate");
+    allP.AddFlag("no-build", "", "skip z42c+stdlib rebuild — consume what the bootstrap/toolchain already built");
+    t.Add("all", "compiler + vm + cross-zpkg + stdlib", allP);
     ArgParser stdlib = new ArgParser("xtask test stdlib", "stdlib [Test] (all or one)");
     stdlib.AddFlag("no-build", "", "skip tooling rebuild");
     stdlib.AddOption("filter", "k", "test-name filter", "");
@@ -337,7 +338,7 @@ int _dispatchBuild(string[] p, ParseResult r) {
 
 int _dispatchTest(string[] p, ParseResult r) {
     string sub = p.Length > 1 ? p[1] : "";
-    if (sub == "all")          { return _testAll(); }
+    if (sub == "all")          { return _testAll(r.GetFlag("no-build")); }
     if (sub == "stdlib")       { return _testLib(r, "test"); }
     if (sub == "vm")           { return _testVm(r); }
     if (sub == "cross-zpkg")   { return _testCrossZpkg(r); }

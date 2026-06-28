@@ -227,7 +227,12 @@ jobs:
       # (to run xtask.zpkg) + compile xtask.zpkg; then `xtask test all` (which
       # itself rebuilds stdlib/compiler/zbc + runs compiler+vm+cross-zpkg+stdlib,
       # parallelized via --jobs=4). z42c/stdlib from the prior steps are reused.
-      - name: Test (z42 xtask.zpkg test all)
+      # --no-build: the Bootstrap step already built z42c+stdlib+xtask, so `test
+      # all` skips its redundant build-wave rebuild (_regenCore) and only regens
+      # the goldens against those canonical artifacts (~12-15 min/leg saved). The
+      # consume path (_regenGolden + --no-build stages) is the same one the
+      # test-consume job already exercises green.
+      - name: Test (z42 xtask.zpkg test all --no-build)
         if: matrix.os != 'windows-latest'
         shell: bash
         run: |
@@ -235,7 +240,7 @@ jobs:
           mkdir -p artifacts/ci-logs
           Z42_PORTABLE_VM="$PWD/artifacts/build/runtime/release/z42vm" \
           Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- test all 2>&1 | tee artifacts/ci-logs/test-all.log
+            artifacts/build/runtime/release/z42vm artifacts/xtask/xtask.zpkg -- test all --no-build 2>&1 | tee artifacts/ci-logs/test-all.log
           exit "${PIPESTATUS[0]}"
 
       # diag-ci-test-log-upload (2026-05-30): the wave-failed stage prints
