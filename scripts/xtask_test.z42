@@ -18,17 +18,19 @@ using Std.Toml;
 int _testVm(ParseResult r) {
     string modeArg = r.GetPositional(0);         // "" | interp | jit
     string modes = modeArg.Length > 0 ? modeArg : "interp jit";
-    return _testVmCore(modes, !r.GetFlag("no-rebuild"), r.GetOption("jobs"), r.GetOption("shard"));
+    return _testVmCore(modes, !r.GetFlag("no-rebuild"), r.GetFlag("no-build"), r.GetOption("jobs"), r.GetOption("shard"));
 }
 
-int _testVmCore(string modes, bool rebuild, string jobs, string shard) {
+int _testVmCore(string modes, bool rebuild, bool noBuild, string jobs, string shard) {
     if (jobs.Length == 0) { jobs = "1"; }
     // --toolchain (compile-once P3): the toolchain supplies z42c + stdlib + z42vm,
     // so compile goldens with it directly (_regenGolden is --toolchain-aware) and
     // skip the build-tree stdlib/runtime/compression cargo builds entirely.
+    // --no-build (compile-once A1): the CI bootstrap already built z42c+stdlib —
+    // regen goldens only (_regenGolden), skip the redundant z42c+stdlib rebuild.
     bool haveTc = _toolchainDir(_root()).Length > 0;
     if (rebuild) {
-        int c = haveTc ? _regenGolden() : _regenCore(false, true);
+        int c = (haveTc || noBuild) ? _regenGolden() : _regenCore(false, true);
         if (c != 0) { return c; }
     }
     if (!haveTc) {
@@ -164,7 +166,7 @@ int _testAll(bool noBuild) {
     // all OS) from jit (one linux job) keeps full coverage while taking the slow
     // jit stage off every host leg's critical path.
     Console.WriteLine("\n=== stage: VM goldens (interp; jit → vm-jit-consistency) ===");
-    c = _testVmCore("interp", false, "4", ""); if (c != 0) { return c; }
+    c = _testVmCore("interp", false, false, "4", ""); if (c != 0) { return c; }
     // stage 3: cross-zpkg
     Console.WriteLine("\n=== stage: cross-zpkg ===");
     c = _testCrossZpkgCore("interp", true); if (c != 0) { return c; }
