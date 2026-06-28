@@ -16,9 +16,14 @@
 → z42c.syntax, z42c.semantics, z42c.core。stdlib（Std / Std.IO）自动可用。
 
 ## 运行（自举产物）
-需把 z42c 7 包 + stdlib 合并到**单个** flat 目录再 `Z42_LIBS=<该目录>`（见 self-hosting.md 的 Z42_LIBS 单目录陷阱）：
+z42c 跨包 dep 解析读 `Z42_LIBS`。**通常无需手动设置**：z42vm 会把它解析出的 libs 目录
+（`<binary>/../libs` SDK 布局 / dev flat view）回写进 `$Z42_LIBS`，z42c 透明读到（见
+vm-architecture.md 的「VM 启动流程」`libs_env_to_publish`）。SDK 安装后直接：
 ```
-Z42_LIBS=<flat> z42vm <flat>/z42c.driver.zpkg -- --emit-zbc <file.z42> <out.zbc>
-Z42_LIBS=<flat> z42vm <out.zbc> Main        # 执行自举编译器产物
+z42vm <programs/z42c>/z42c.driver.zpkg -- --emit-zbc <file.z42> <out.zbc>
+z42vm <out.zbc> Main        # 执行自举编译器产物
 ```
-端到端冒烟由 `xtask test compiler` 的 e2e 步骤覆盖（自检程序 + div-by-zero oracle）。
+仅当 libs 不在 VM 的默认搜索路径（如把 z42c 7 包 + stdlib 临时合到自定义 flat 目录）时，
+才需显式 `Z42_LIBS=<flat>` 覆盖——此时**必须是单个**目录含全部依赖（见 self-hosting.md 的
+Z42_LIBS 单目录陷阱）。端到端冒烟由 `xtask test compiler` 的 e2e 步骤覆盖（自检程序 +
+div-by-zero oracle）。

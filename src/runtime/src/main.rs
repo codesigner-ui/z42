@@ -104,6 +104,23 @@ fn resolve_libs_dir() -> Option<PathBuf> {
     None
 }
 
+/// Decide the value to publish into `$Z42_LIBS` so an in-process program
+/// (notably the z42c compiler) resolves stdlib/deps from the same directory the
+/// VM resolved — no manual `Z42_LIBS=` needed in SDK layout.
+///
+/// Rule: fill only an unset/empty var with the VM-resolved dir. An explicit
+/// value is left untouched (a valid one is already what `resolve_libs_dir`
+/// returns; an explicit-but-broken one is the caller's deliberate choice).
+/// Empty string counts as unset (mirrors `RuntimeConfig` env handling).
+fn libs_env_to_publish(current: Option<&str>, resolved: Option<&std::path::Path>) -> Option<String> {
+    let unset = current.map_or(true, |v| v.trim().is_empty());
+    if unset {
+        resolved.map(|p| p.to_string_lossy().into_owned())
+    } else {
+        None
+    }
+}
+
 /// Log discovered stdlib modules in libs_dir (verbose mode only).
 fn log_libs(libs_dir: &PathBuf) {
     tracing::info!("libs dir: {}", libs_dir.display());
@@ -460,6 +477,19 @@ fn main() -> Result<()> {
     // Locate stdlib libs directory.
     let libs_dir = resolve_libs_dir();
 
+    // Publish the resolved dir into $Z42_LIBS so an in-process program (notably
+    // the z42c compiler, which reads $Z42_LIBS directly for cross-package dep
+    // resolution) sees the same libs dir the VM uses — SDK layout works with no
+    // manual `Z42_LIBS=` set. Only fills an unset/empty var; explicit values
+    // are respected.
+    if let Some(val) = libs_env_to_publish(
+        std::env::var("Z42_LIBS").ok().as_deref(),
+        libs_dir.as_deref(),
+    ) {
+        // Safety: z42 is single-threaded; no concurrent env reads during boot.
+        unsafe { std::env::set_var("Z42_LIBS", &val); }
+    }
+
     // Dependency search dirs (support-colocated-zpkg-deps, 2026-06-20): resolve
     // a dep zpkg from the ENTRY zpkg's own directory first, then the stdlib
     // `libs/`. This lets an apphost ship its payload + that payload's package
@@ -708,3 +738,6 @@ fn main() -> Result<()> {
 
     result
 }
+
+#[cfg(test)]
+mod main_tests;

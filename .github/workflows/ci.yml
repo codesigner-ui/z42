@@ -30,9 +30,13 @@ on:
   schedule:
     - cron: '0 7 * * *'
 
-# Cancel in-progress runs on the same ref when a new one starts
+# Cancel superseded in-progress runs of the SAME event on the same ref. The
+# event_name in the group keeps push / schedule / workflow_dispatch independent:
+# the daily `schedule` nightly and a `push` near 07:00 UTC no longer cancel each
+# other (that produced spurious "cancelled" reds + a wasted re-run). Within one
+# event type, a newer run still supersedes the older (new push cancels old push).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

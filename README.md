@@ -55,8 +55,8 @@ export PATH="$PWD/.z42:$PWD/.z42/bin:$PATH"     # put z42 / z42c / z42vm on PATH
 ### 2. Build the xtask CLI, then drive everything through it
 
 ```bash
-# build the dev CLI against the downloaded stdlib (Z42_LIBS points z42c at .z42/libs):
-Z42_LIBS="$PWD/.z42/libs" z42c build scripts/xtask.z42.toml --release   # → artifacts/xtask/xtask.zpkg
+# build the dev CLI against the downloaded stdlib (z42c finds .z42/libs automatically):
+z42c build scripts/xtask.z42.toml --release                            # → artifacts/xtask/xtask.zpkg
 z42 publish desktop scripts/xtask.z42.toml                              # → ./xtask  (native apphost)
 
 ./xtask build all     # compiler + runtime + stdlib (from source)
