@@ -164,7 +164,9 @@ signal-hook-registry = "1.4"
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }
 z42-rs     = { path = "crates/z42-rs" }
-criterion  = { version = "0.5", features = ["html_reports"] }
+# html_reports pulls the whole plotters subtree (SVG/area/line series); CI bench
+# jobs read the numeric output, never the HTML — drop it to lighten bench builds.
+criterion  = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
 
 [[bench]]
 name = "smoke_bench"
