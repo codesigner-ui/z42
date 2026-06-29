@@ -56,11 +56,11 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 | `scripts/xtask_test.z42` | MODIFY | build/test 据 `--toolchain` 定位工具链；`--no-build` 全链 |
 | `scripts/xtask_test_vm.z42` | MODIFY | 同上（vm goldens 定位）|
 | `scripts/xtask_stdlib.z42` | MODIFY | `build sdk` 输出 `.z42` 布局；`--toolchain` |
-| `scripts/xtask_compiler_z42.z42` | MODIFY | `--toolchain` 定位 z42c；fixpoint helper |
+| `scripts/xtask_compiler.z42` | MODIFY | `--toolchain` 定位 z42c；fixpoint helper |
 | `scripts/xtask_common.z42` | MODIFY | toolchain-dir 解析 helper |
 | `scripts/xtask_package*.z42` | MODIFY | 消费 `--toolchain artifacts/.z42` |
 | `scripts/ci-bootstrap.sh` | DELETE ✅ | 改成 composite action `.github/actions/ci-bootstrap`（忠实搬迁；10 处调用点统一 `uses:`）|
-| `scripts/selfhost-bootstrap.sh` | DELETE ✅ | 删除——其逻辑(从种子重建+gen1==gen2 不动点)已是 xtask 既有能力(`_buildCompilerZ42` + `_testZ42cSelfHostByteIdentical`)。verify-selfhost 改用 `ci-bootstrap action + xtask test compiler`。未来 cross-bootstrap(gen2==gen3 从本地 SDK)如需则新写命令 |
+| `scripts/selfhost-bootstrap.sh` | DELETE ✅ | 删除——其逻辑(从种子重建+gen1==gen2 不动点)已是 xtask 既有能力(`_buildCompiler` + `_testSelfHostByteIdentical`)。verify-selfhost 改用 `ci-bootstrap action + xtask test compiler`。未来 cross-bootstrap(gen2==gen3 从本地 SDK)如需则新写命令 |
 | `scripts/ci-stage-toolchain.sh` | DELETE ✅ | 已折进 `xtask build stage-toolchain`（字节一致） |
 | `scripts/check-bootstrap-compat.sh` | DELETE | 边界由 compile job 隐式强制 |
 | `.github/workflows/ci.yml` | MODIFY | compile job + 下游消费 + 重命名 + 删冗余 job |

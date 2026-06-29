@@ -78,7 +78,7 @@ int _buildStdlibCore() {
         return 1;
     }
     Console.WriteLine("  seed: existing z42c + stdlib → warm z42c self-build");
-    int zc = _buildCompilerZ42ViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
+    int zc = _buildCompilerViaZ42c(root, profile, members, vm, flatDir); if (zc != 0) { return zc; }
 
     // ── 3. run-libs = {stdlib + z42c 7 pkgs} (copy; runs z42c.driver) ──────
     string runDir = Path.Join(root, "artifacts/build/z42c/dogfood/run-" + profile);

@@ -47,8 +47,8 @@ int _buildRuntime() {
         .Arg("--manifest-path").Arg(_runtimeManifest()));
 }
 
-// replace-csharp Phase C：_buildCompiler（dotnet build z42.slnx）已删——C# 编译器移除。
-// 自举编译器用 _buildCompilerZ42（C#-free 种子自建）。
+// 编译器自举：用 _buildCompiler（z42c 种子自建，src/compiler）。
+// 自举编译器用 _buildCompiler（C#-free 种子自建）。
 
 // feature-matrix (CI P4.1): verify each Cargo feature combo compiles (host target).
 int _featureMatrix() {

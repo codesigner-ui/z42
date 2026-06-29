@@ -22,10 +22,10 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // programs/z42c/ so the VM resolves the driver's 6 siblings next to the payload
     // (support-colocated-zpkg-deps); stdlib resolves via libs/. The `bin/z42c`
     // entry point is produced in [2c] as an apphost trampoline (the apphost stub
-    // is built there). _buildCompilerZ42 builds the host z42vm + stdlib + z42c seed,
+    // is built there). _buildCompiler builds the host z42vm + stdlib + z42c seed,
     // all C#-free (self-seeded; cold CI provisions a seed via nightly download).
     Console.WriteLine("[1/5] z42c (z42c-built seed, C#-free)");
-    int c = _buildCompilerZ42(); if (c != 0) { return c; }
+    int c = _buildCompiler(); if (c != 0) { return c; }
     string z42cDir = Path.Join(pkgDir, "programs/z42c");
     Directory.Create(z42cDir);
     string[] z42cSeedMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
@@ -71,7 +71,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // replace-csharp Phase C: workload + launcher packages built with z42c (z42vm +
     // colocated z42c.driver.zpkg), NOT `dotnet run z42.Driver`. The driver's 6
     // siblings resolve from programs/z42c/ (colocated); stdlib + prior workload
-    // zpkgs resolve via Z42_LIBS. The host z42vm (built by _buildCompilerZ42 above)
+    // zpkgs resolve via Z42_LIBS. The host z42vm (built by _buildCompiler above)
     // runs the compiler regardless of target rid → RID-independent zpkgs.
     string hostVm = _builtVm(root, "release");
     // desktop workload package (apphost producer) — build into Z42_LIBS first so
@@ -200,7 +200,7 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
     // fixpoint via `xtask test compiler`). RID-independent z42
     // artifacts (same bytes every platform); built here via the C# driver (the only
     // C# touch, upstream — downstream consumers rebuild z42c without C#).
-    int zc = _buildCompilerZ42(); if (zc != 0) { return zc; }
+    int zc = _buildCompiler(); if (zc != 0) { return zc; }
     string z42cSeed = Path.Join(pkgDir, "z42c");
     Directory.Create(z42cSeed);
     string[] z42cMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");

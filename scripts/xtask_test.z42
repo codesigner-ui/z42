@@ -71,7 +71,7 @@ int _testCrossZpkgCore(string mode, bool noBuild) {
     // so skip the build-tree rebuild entirely (consume path: nothing to build).
     bool haveTc = _toolchainDir(_root()).Length > 0;
     // replace-csharp Phase C：cross-zpkg 全程 C#-free。debug z42vm（cargo）跑 fixtures；
-    // z42c（C#-free 种子自建）编 fixtures。不再 _buildCompiler（C# 编译器已无用）。
+    // z42c（C#-free 种子自建）编 fixtures。
     if (!noBuild && !haveTc) {
         int cr = _exec(new Process("cargo").Arg("build").Arg("-q")
             .Arg("--manifest-path").Arg(_runtimeManifest()));
@@ -80,7 +80,7 @@ int _testCrossZpkgCore(string mode, bool noBuild) {
         if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
             int cs = _buildStdlib(); if (cs != 0) { return cs; }
         }
-        int cz = _buildCompilerZ42(); if (cz != 0) { return cz; }   // C#-free z42c 自建（种子）
+        int cz = _buildCompiler(); if (cz != 0) { return cz; }   // C#-free z42c 自建（种子）
     }
     return _testCrossZpkgImpl(mode);
 }
@@ -94,7 +94,7 @@ int _testCrossZpkgCore(string mode, bool noBuild) {
 // compile + zpkg spawn. Not in the default GREEN gate (run on demand).
 int _testDist(ParseResult r) {
     string root = _root();
-    int c = _buildCompilerZ42(); if (c != 0) { return c; }   // C#-free 自举编译器（C# _buildCompiler 已删）
+    int c = _buildCompiler(); if (c != 0) { return c; }   // C#-free 自举编译器（z42c 种子自建）
     c = _exec(_cargoRelease().Arg("-q")
         .Arg("--manifest-path").Arg(_runtimeManifest())); if (c != 0) { return c; }
     if (!File.Exists(Path.Join(_libsDir(root), "z42.core.zpkg"))) {
@@ -175,7 +175,7 @@ int _testAll(bool noBuild) {
     c = _testLibCore("test", new string[0], true, "", "4", "interp"); if (c != 0) { return c; }
     // stage 5: z42c self-host byte-identical (0.3.10 gate)
     Console.WriteLine("\n=== stage: compiler ===");
-    c = _testCompilerZ42(true); if (c != 0) { return c; }
+    c = _testCompiler(true); if (c != 0) { return c; }
     Console.WriteLine("\n✅ GREEN — all stages passed (vm + cross-zpkg + stdlib + compiler; C#-free)");
     return 0;
 }
@@ -291,7 +291,7 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
         // C#-free (remove-dotnet-from-builds): test units compile through z42c
         // (z42vm + z42c.driver.zpkg), not `dotnet z42c.dll`. Ensure the z42c
         // self-build seed is fresh here instead of building the C# driver.
-        c = _buildCompilerZ42(); if (c != 0) { return c; }
+        c = _buildCompiler(); if (c != 0) { return c; }
     }
     string runner = _builtBin(root, "release", "z42-test-runner");
     if (!File.Exists(runner)) {
@@ -307,7 +307,7 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
     // Z42_LIBS dir. z42c.driver runs as a packed zpkg whose OWN siblings
     // (z42c.project / z42c.semantics / …) must be resolvable at runtime, AND
     // the stdlib the test units depend on must live in the SAME dir (the VM
-    // takes one dir, not a colon-list). Mirror _testCompilerZ42Units' alllibs
+    // takes one dir, not a colon-list). Mirror _testCompilerUnits' alllibs
     // flat: link the stdlib dist + the 7 z42c members into one dir. Computed
     // once; threaded through _runUnitsBatched → _compilePrep so every unit
     // compiles via z42c, not `dotnet z42c.dll`.

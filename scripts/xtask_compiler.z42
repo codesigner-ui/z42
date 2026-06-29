@@ -21,7 +21,7 @@ using Std.IO;
 // z42c 自建走自种子路径（z42c builds z42c）。
 // 种子 = 现有 canonical z42c dist（self-seed；clean/CI 由下载 nightly 提供）。
 // 缺种子 → 明确报错指引 bootstrap。
-int _buildCompilerZ42() {
+int _buildCompiler() {
     string root = _root();
     string profile = "release";
     string seedDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
@@ -37,7 +37,7 @@ int _buildCompilerZ42() {
         int sc = _buildStdlib(); if (sc != 0) { return sc; }   // C#-free（A1 warm 种子路径）
     }
     string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
-    return _buildCompilerZ42ViaZ42c(root, profile, members, vm, stdlibFlat);
+    return _buildCompilerViaZ42c(root, profile, members, vm, stdlibFlat);
 }
 
 // C#-free z42c self-build (replace-csharp S5 Phase A): rebuild the 7 z42c.* from
@@ -47,7 +47,7 @@ int _buildCompilerZ42() {
 // Writes to the canonical dist (artifacts/build/z42c/<m>/release/dist), overwriting
 // the seed. `stdlibFlat` (existing stdlib) is needed at runtime to run the seed z42c.
 // Precondition: caller verified the seed driver + stdlib exist.
-int _buildCompilerZ42ViaZ42c(string root, string profile, string[] members, string vm, string stdlibFlat) {
+int _buildCompilerViaZ42c(string root, string profile, string[] members, string vm, string stdlibFlat) {
     Console.WriteLine("  building z42c via z42c (C#-free, single-toml topo)");
     string seedDriver = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
     // runlibs = stdlib (run z42c.driver) + seed z42c siblings; fresh members accumulate here.
@@ -83,11 +83,11 @@ int _buildCompilerZ42ViaZ42c(string root, string profile, string[] members, stri
 // 会在加载期把每个 unit 全判 "cannot read zpkg metadata"（空输出＝假失败）。
 // 故此处显式重建 runtime(z42vm+libz42) + test-runner + driver。cached 时近 no-op，
 // 仅当真有源码改动才付构建代价 —— 正是需要它的时刻。
-int _ensureZ42cTooling() {
+int _ensureCompilerTooling() {
     Console.WriteLine("  ensuring tooling fresh (z42vm + z42-test-runner; release; C#-free)");
     int c = _buildRuntime();   // z42vm + libz42（in-process VM 的实现）
     if (c != 0) { return c; }
-    // replace-csharp Phase C：不再 dotnet build C# driver——_buildCompilerZ42 已 C#-free（种子自建）。
+    // replace-csharp Phase C：不再 dotnet build C# driver——_buildCompiler 已 C#-free（种子自建）。
     return _exec(_cargoRelease().Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
 }
 
@@ -98,11 +98,11 @@ int _ensureZ42cTooling() {
 // noBuild=true: skip the tooling + z42c rebuild (the caller — `test all` — already
 // built z42c fresh in its build wave; rebuilding here was z42c's 2nd/3rd full
 // self-build in one gate run). Standalone `test compiler` passes false.
-int _testCompilerZ42(bool noBuild) {
+int _testCompiler(bool noBuild) {
     if (!noBuild) {
-        int tc = _ensureZ42cTooling();   // 重建 runtime+runner+driver，防版本 skew 假失败
+        int tc = _ensureCompilerTooling();   // 重建 runtime+runner+driver，防版本 skew 假失败
         if (tc != 0) { return tc; }
-        int bc = _buildCompilerZ42();
+        int bc = _buildCompiler();
         if (bc != 0) { return bc; }
     }
 
@@ -135,7 +135,7 @@ int _testCompilerZ42(bool noBuild) {
     if (fail > 0) { return 1; }
 
     // ── z42c [Test] units ────────────────────────────────────────────────
-    return _testCompilerZ42Units(root, profile, members);
+    return _testCompilerUnits(root, profile, members);
 }
 
 // reset 一个私有目录（删后建）。
@@ -160,14 +160,14 @@ void _copyAll(string srcDir, string dstDir, string pattern) {
 // replace-csharp-compiler S2.1：z42c dogfood 编 stdlib + 功能验证（additive，C# 不动）。
 // 全私有目录 + 拷贝（不碰 alllibs / 不 hard-link），bootstrap-safe：z42c 运行靠
 // C#-built stdlib，产物落独立 dogfood 目录。
-int _testCompilerZ42Stdlib() {
+int _testCompilerStdlib() {
     string root = _root();
     string profile = "release";
     Console.WriteLine("");
     Console.WriteLine("══ replace-csharp-compiler S2.1: z42c dogfood-builds stdlib ══");
     // replace-csharp Phase C：C# 已删——用 C#-free warm 路径建 fresh stdlib + z42c（种子来自
     // 下载 nightly / 现有 dist）。_buildStdlib 顺带 z42c 自建；下面再用 z42c 编到独立 dogfood 目录。
-    int tc = _ensureZ42cTooling(); if (tc != 0) { return tc; }
+    int tc = _ensureCompilerTooling(); if (tc != 0) { return tc; }
     int sc = _buildStdlib(); if (sc != 0) { return sc; }
 
     string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
@@ -236,7 +236,7 @@ int _testCompilerZ42Stdlib() {
 //
 // 测试单元布局：src/compiler/<member>/tests/<unit>/{<name>.z42.toml + *.z42}。
 // kind=lib（runner 按 [Test] 方法 fork z42vm，不需 Main）；z42.test 自动可用。
-int _testCompilerZ42Units(string root, string profile, string[] members) {
+int _testCompilerUnits(string root, string profile, string[] members) {
     string flat = Path.Join(root, "artifacts/build/z42c/alllibs/" + profile);
     Directory.Create(flat);
     _cleanGlob(flat, "*.zpkg");
@@ -331,16 +331,16 @@ int _testCompilerZ42Units(string root, string profile, string[] members) {
         return 1;
     }
     Console.WriteLine("✅ z42c [Test]: all " + totalUnits.ToString() + " unit(s) passed (compiled + run via TIDX)");
-    int ec = _testCompilerZ42E2e(root, vm, flat);
+    int ec = _testCompilerE2e(root, vm, flat);
     if (ec != 0) { return ec; }
-    return _testZ42cSelfHostByteIdentical(root, vm, flat, members, profile);
+    return _testSelfHostByteIdentical(root, vm, flat, members, profile);
 }
 
 // e2e（port-z42c-zbc-writer ZW-1B）：z42c 自举编译器产 .zbc → z42vm 真实执行。
 // 自检程序用 div-by-zero oracle：算术/比较/分支全对 → ok=1 → 100/1 干净退出 0；
 // 任一字节编码错 → ok=0 → DivideByZeroException → 非零退出。负向用例验证 oracle 本身有效
 //（防"VM 不管对错都退 0"的假绿）。功能性验证（非 byte-identical——DBUG 阻塞见 zbc-writer tasks）。
-int _testCompilerZ42E2e(string root, string vm, string flat) {
+int _testCompilerE2e(string root, string vm, string flat) {
     Console.WriteLine("");
     Console.WriteLine("── z42c e2e: self-compiled .zbc runs on z42vm ──");
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
@@ -536,7 +536,7 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
 
     // replace-csharp Phase C：删 per-construct byte-compare-vs-C#（C# 已删，无 oracle）。
     // 功能正确性由上方 div-by-zero e2e oracle（selfcheck/callcheck/typecheck/...）保证；
-    // z42c 自身的 byte-identical 由 self-host 不动点（gen1==gen2）覆盖（见 _testZ42cSelfHostByteIdentical）。
+    // z42c 自身的 byte-identical 由 self-host 不动点（gen1==gen2）覆盖（见 _testSelfHostByteIdentical）。
 
     // build e2e（port-z42c-zpkg-build）：z42c build 产 packed zpkg → z42vm 直跑（entry 烤入）。
     // zpkg 级 byte-compare 对真 C# CLI 还差 TSIG/IMPL（follow-up change）；此处验证可执行性
@@ -653,7 +653,7 @@ int _testCompilerZ42E2e(string root, string vm, string flat) {
 // 0.3.10 gate：z42c driver (built by C#) recompiles each of the 7 z42c packages;
 // output must be byte-identical to the C#-built artifacts.
 // Z42_LIBS=flat (stdlib + C#-built z42c) for dep resolution of each build.
-int _testZ42cSelfHostByteIdentical(string root, string vm, string flat, string[] members, string profile) {
+int _testSelfHostByteIdentical(string root, string vm, string flat, string[] members, string profile) {
     Console.WriteLine("");
     Console.WriteLine("── z42c self-host byte-identical: z42c compiles z42c packages ──");
 
@@ -693,7 +693,7 @@ int _testZ42cSelfHostByteIdentical(string root, string vm, string flat, string[]
         byte[] got = File.ReadAllBytes(produced);
         byte[] want = File.ReadAllBytes(expected);
         // Section-level compare: ignore BLID (16B BLAKE3-128 build_id tail).
-        // gen1 (canonical = _buildCompilerZ42 自建) vs gen2 (gen1 编 source) 全段须一致。
+        // gen1 (canonical = _buildCompiler 自建) vs gen2 (gen1 编 source) 全段须一致。
         if (!_sectionsEqualIgnoreBlid(got, want)) {
             Console.WriteLine("  ✗ sections mismatch: " + member + " (gen2 " + got.Length.ToString() + "B vs gen1 " + want.Length.ToString() + "B)");
             fail = fail + 1;

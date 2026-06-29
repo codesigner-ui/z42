@@ -23,7 +23,7 @@ int _regenGolden() {
     // --toolchain (compile-once P3): compile goldens with the selected toolchain's
     // z42c + stdlib + z42vm when set; else the build-tree.
     string tc = _toolchainDir(root);
-    string driverHome = (tc.Length > 0) ? _toolchainDriverHome(tc) : _assembleZ42cDriverHome(root);
+    string driverHome = (tc.Length > 0) ? _toolchainDriverHome(tc) : _assembleDriverHome(root);
     if (driverHome.Length == 0) {
         ConsoleError.WriteLine("error: z42c driver not built (artifacts/build/z42c/z42c.*/release/dist)");
         ConsoleError.WriteLine("       Build it via stdlib/compiler build first.");

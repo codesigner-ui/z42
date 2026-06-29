@@ -39,7 +39,7 @@ int _bench(ParseResult r) {
     // (stdlib + z42c 7 siblings) as the single Z42_LIBS dir for the compile —
     // z42c.driver needs its own siblings resolvable at runtime, scenario stdlib
     // deps resolve from the same dir.
-    int czc = _buildCompilerZ42(); if (czc != 0) { return czc; }
+    int czc = _buildCompiler(); if (czc != 0) { return czc; }
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
     string flat = Path.Join(root, "artifacts/build/z42c/alllibs/release");
     Directory.Create(flat);

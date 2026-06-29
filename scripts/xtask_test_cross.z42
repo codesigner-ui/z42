@@ -46,7 +46,7 @@ int _testCrossZpkgImpl(string mode) {
         // replace-csharp Phase B：cross-zpkg gate 改用 z42c（z42vm + z42c.driver.zpkg），
         // 不再依赖 dotnet。driverHome = 含 z42c.driver.zpkg + 7 个 z42c.* 兄弟的目录
         // （z42vm 从 entry zpkg 所在目录解析其依赖；compilation 的 fixture deps + stdlib 走 Z42_LIBS）。
-        driverHome = _assembleZ42cDriverHome(root);
+        driverHome = _assembleDriverHome(root);
         vmBin = _builtVm(root, "debug");
     }
     if (driverHome.Length == 0) {
@@ -86,7 +86,7 @@ int _testCrossZpkgImpl(string mode) {
         string mainDir   = Path.Join(dir, "main");
 
         // Stage 1: target (no deps).
-        if (!_buildPkgZ42c(vmBin, driverZpkg, stdlibDist, targetDir, "")) {
+        if (!_buildCompilerPkg(vmBin, driverZpkg, stdlibDist, targetDir, "")) {
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (target build)");
             failCount = failCount + 1;
@@ -95,7 +95,7 @@ int _testCrossZpkgImpl(string mode) {
         }
 
         // Stage 2: ext (deps on target/dist).
-        if (!_buildPkgZ42c(vmBin, driverZpkg, stdlibDist, extDir, Path.Join(Path.Join(Path.Join(targetDir, "artifacts"), "debug"), "dist"))) {
+        if (!_buildCompilerPkg(vmBin, driverZpkg, stdlibDist, extDir, Path.Join(Path.Join(Path.Join(targetDir, "artifacts"), "debug"), "dist"))) {
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (ext build)");
             failCount = failCount + 1;
@@ -103,7 +103,7 @@ int _testCrossZpkgImpl(string mode) {
             continue;
         }
 
-        // Stage 3: main (deps on target + ext). _buildPkgZ42c only seeds from a
+        // Stage 3: main (deps on target + ext). _buildCompilerPkg only seeds from a
         // single dir; main needs both, so populate libs manually here.
         string mainLibs = Path.Join(mainDir, "libs");
         if (Directory.Exists(mainLibs)) { Directory.Delete(mainLibs, true); }
@@ -111,7 +111,7 @@ int _testCrossZpkgImpl(string mode) {
         _copyZpkgs(Path.Join(Path.Join(Path.Join(targetDir, "artifacts"), "debug"), "dist"), mainLibs);
         _copyZpkgs(Path.Join(Path.Join(Path.Join(extDir,    "artifacts"), "debug"), "dist"), mainLibs);
         string mainToml = _findToml(mainDir);
-        if (mainToml.Length == 0 || !_invokeBuildZ42c(vmBin, driverZpkg, stdlibDist, mainDir, mainToml)) {
+        if (mainToml.Length == 0 || !_invokeBuildCompiler(vmBin, driverZpkg, stdlibDist, mainDir, mainToml)) {
             Console.WriteLine("    main build failed");
             fail = fail + 1;
             failures = _append(failures, failCount, name + " (main build)");
@@ -195,7 +195,7 @@ int _testCrossZpkgImpl(string mode) {
 // z42vm 从 entry zpkg 所在目录解析其依赖，故 driver 的 z42c.* 依赖放这里，与
 // compilation 的 Z42_LIBS（stdlib + fixture deps）隔离，避免单-libs 目录污染。
 // 返回 driver-home 目录路径；z42c 未构建（缺任一成员 dist）返回 ""。
-string _assembleZ42cDriverHome(string root) {
+string _assembleDriverHome(string root) {
     string baseDir = Path.Join(root, "artifacts/build/z42c");
     string[] members = new string[7];
     members[0] = "z42c.core"; members[1] = "z42c.ir"; members[2] = "z42c.project";
@@ -216,7 +216,7 @@ string _assembleZ42cDriverHome(string root) {
 // 用 z42c 编译一个 package（z42vm 跑 z42c.driver.zpkg）。先把上一阶段产物 copy 进
 // <pkgDir>/libs，再 build → <pkgDir>/artifacts/debug/dist（与 C# 路径一致 → 下游
 // run/diff 不变）。
-bool _buildPkgZ42c(string vmBin, string driverZpkg, string stdlibDist, string pkgDir, string srcLibsDir) {
+bool _buildCompilerPkg(string vmBin, string driverZpkg, string stdlibDist, string pkgDir, string srcLibsDir) {
     string pkgLibs = Path.Join(pkgDir, "libs");
     if (Directory.Exists(pkgLibs)) { Directory.Delete(pkgLibs, true); }
     Directory.Create(pkgLibs);
@@ -226,12 +226,12 @@ bool _buildPkgZ42c(string vmBin, string driverZpkg, string stdlibDist, string pk
         Console.WriteLine("    error: no toml in " + pkgDir);
         return false;
     }
-    return _invokeBuildZ42c(vmBin, driverZpkg, stdlibDist, pkgDir, toml);
+    return _invokeBuildCompiler(vmBin, driverZpkg, stdlibDist, pkgDir, toml);
 }
 
 // 单次 z42c build。outDir = <pkgDir>/artifacts/debug/dist。Z42_LIBS = temp(stdlib +
 // pkgDir/libs)；z42c.* 由 driver-home 解析。WorkingDirectory=pkgDir（镜像手验）。
-bool _invokeBuildZ42c(string vmBin, string driverZpkg, string stdlibDist, string pkgDir, string toml) {
+bool _invokeBuildCompiler(string vmBin, string driverZpkg, string stdlibDist, string pkgDir, string toml) {
     string outDir = Path.Join(Path.Join(Path.Join(pkgDir, "artifacts"), "debug"), "dist");
     Directory.Create(outDir);
     string libs = File.CreateTempDir("z42-xpkg-libs-");
