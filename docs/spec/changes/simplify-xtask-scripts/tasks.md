@@ -16,9 +16,9 @@
 
 ## 进度概览
 - [x] ① compiler e2e 表驱动（单文件，碰撞面最小）— `test compiler` GREEN（exit 0；e2e 8/8 + 不动点 7/7）
+- [x] ② `_compilerMembers` accessor（收敛 10 处字面量）— 与③合并提交
+- [x] ③ `_assembleAllLibs` flat 视图抽取（compiler/test/bench 3 处）— GREEN
 - [ ] ⑤ `_sortedStrings`/`_splitWords` 移到 xtask_common（无调用方改动）
-- [ ] ③ `_assembleAllLibs` flat 视图抽取（compiler/test/bench）
-- [ ] ② `_compilerMembers` accessor（收敛 9 处字面量）
 - [ ] ④ `_ensureTestPrereqs` 构建前置收敛 + 命名统一
 - [ ] ⑥ 文件拆分（xtask_test_lib / compiler build·test）——碰撞最大，放最后/视情况
 
@@ -30,13 +30,18 @@
 ## ⑤ util 归位
 - [ ] 5.1 `_sortedStrings` / `_splitWords` 定义移至 xtask_common.z42（同 namespace，调用方零改动）
 
-## ③ flat 视图抽取
-- [ ] 3.1 `_assembleAllLibs(root, profile) → dir`（reset + link stdlib + link 各 member dist）入 xtask_common.z42
-- [ ] 3.2 替换 compiler/test/bench 三处手写组装
+## ③ flat 视图抽取 ✅
+- [x] 3.1 `_assembleAllLibs(root, profile) → dir`（reset + link stdlib + link 各 member dist）入 xtask_stdlib.z42（与 _compilerMembers/_assembleStdlibFlatView 同处）
+- [x] 3.2 替换 compiler(_testCompilerUnits)/test(_testLibCore)/bench 三处手写组装；修 compiler `i` 复用声明
 
-## ② compiler member accessor
-- [ ] 2.1 `_compilerMembers(root)` 入 xtask_common.z42（对称 `_stdlibMembers`）
-- [ ] 2.2 替换 9 处字面量
+## ② compiler member accessor ✅
+- [x] 2.1 `_compilerMembers(root)` 入 xtask_stdlib.z42（对称 `_stdlibList`）
+- [x] 2.2 替换 10 处字面量（compiler×3 / test / bench / bootstrap_check / package_desktop×2 / stdlib×2）
+
+## 验证（②③）
+- [x] `test compiler` GREEN：7/7 zpkg + 17 units + e2e + 不动点 7/7
+- [x] `test stdlib z42.math` GREEN（_assembleAllLibs test-lib 路径）
+- 备注：首次 `test compiler` 被并行活动外部中断（exit 144，waiter 同被杀），干净重跑复现 GREEN — 碰撞非代码问题。
 
 ## ④ 构建前置收敛
 - [ ] 4.1 `_ensureTestPrereqs(haveTc, rebuild, noBuild)` 收敛 4 处重复（xtask_test.z42）

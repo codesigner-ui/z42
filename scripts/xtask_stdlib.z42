@@ -60,7 +60,7 @@ int _buildStdlibCore() {
     //    seed is always present (S4 download wired into the bootstrap). `Z42_STDLIB_
     //    CSHARP_SEED=1` forces the C# path (e.g. the byte-identical oracle lane,
     //    which wants a C#-built z42c reference).
-    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+    string[] members = _compilerMembers(root);
     // replace-csharp Phase C：C#-free warm 路径用绝对 release z42vm（_z42vm() 返回裸名 "z42vm"
     // 不在 PATH → warm 自建会 NotFound）。缺则 cargo 建（幂等）。
     string vm = _builtVm(root, "release");
@@ -146,6 +146,30 @@ string[] _stdlibList(string root) {
     return _vgetListFromFile(root, "src/libraries/z42.workspace.toml", "workspace.default-members");
 }
 
+// z42c 编译器成员列表 — 同样派生自 compiler workspace 的 `default-members`（单一真相源，
+// 对称 _stdlibList）。compiler/test/bench/package/bootstrap-check 都用同一份，避免字面量散落。
+string[] _compilerMembers(string root) {
+    return _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+}
+
+// 组装 alllibs flat 视图：stdlib dist + z42c 7 成员 dist 全部 hard-link 到
+// artifacts/build/z42c/alllibs/<profile>，作为 z42c.driver 编译/运行的单一 Z42_LIBS 查找点
+// （VM 取一个目录、非 colon-list；z42c.driver 的兄弟包与被测 stdlib 须同处一目录）。返回该目录。
+// 三处消费共用：test lib（_testLibCore）/ test compiler units（_testCompilerUnits）/ bench。
+string _assembleAllLibs(string root, string profile) {
+    string flat = Path.Join(root, "artifacts/build/z42c/alllibs/" + profile);
+    Directory.Create(flat);
+    _cleanGlob(flat, "*.zpkg");
+    _linkAll(Path.Join(root, "artifacts/build/libraries/dist/" + profile), flat, "*.zpkg");
+    string[] members = _compilerMembers(root);
+    int i = 0;
+    while (i < members.Length) {
+        _linkAll(Path.Join(root, "artifacts/build/z42c/" + members[i] + "/" + profile + "/dist"), flat, "*.zpkg");
+        i = i + 1;
+    }
+    return flat;
+}
+
 void _cleanGlob(string dir, string pattern) {
     string[] hits = Path.Glob(dir, pattern);
     int i = 0;
@@ -219,7 +243,7 @@ int _buildSdk(string outOpt, bool noBuild) {
 
     string z42cDir = Path.Join(Path.Join(outDir, "programs"), "z42c");
     Directory.Create(z42cDir);
-    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+    string[] members = _compilerMembers(root);
     int i = 0;
     while (i < members.Length) {
         string m = members[i];

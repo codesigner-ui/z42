@@ -36,7 +36,7 @@ int _buildCompiler() {
     if (!File.Exists(Path.Join(stdlibFlat, "z42.core.zpkg"))) {
         int sc = _buildStdlib(); if (sc != 0) { return sc; }   // C#-free（A1 warm 种子路径）
     }
-    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+    string[] members = _compilerMembers(root);
     return _buildCompilerViaZ42c(root, profile, members, vm, stdlibFlat);
 }
 
@@ -109,8 +109,7 @@ int _testCompiler(bool noBuild) {
     string root = _root();
     string profile = "release";
     string buildRoot = Path.Join(root, "artifacts/build/z42c");
-    string[] members = _vgetListFromFile(root,
-        "src/compiler/z42.workspace.toml", "workspace.default-members");
+    string[] members = _compilerMembers(root);
 
     int ok = 0;
     int fail = 0;
@@ -170,7 +169,7 @@ int _testCompilerStdlib() {
     int tc = _ensureCompilerTooling(); if (tc != 0) { return tc; }
     int sc = _buildStdlib(); if (sc != 0) { return sc; }
 
-    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+    string[] members = _compilerMembers(root);
     string vm = _builtVm(root, "release");
     string stdlibFlat = Path.Join(root, "artifacts/build/libraries/dist/" + profile);
     string dogfoodRoot = Path.Join(root, "artifacts/build/z42c/dogfood");
@@ -237,18 +236,8 @@ int _testCompilerStdlib() {
 // 测试单元布局：src/compiler/<member>/tests/<unit>/{<name>.z42.toml + *.z42}。
 // kind=lib（runner 按 [Test] 方法 fork z42vm，不需 Main）；z42.test 自动可用。
 int _testCompilerUnits(string root, string profile, string[] members) {
-    string flat = Path.Join(root, "artifacts/build/z42c/alllibs/" + profile);
-    Directory.Create(flat);
-    _cleanGlob(flat, "*.zpkg");
-    // stdlib（z42.test / z42.core prelude / ...）
-    _linkAll(Path.Join(root, "artifacts/build/libraries/dist/" + profile), flat, "*.zpkg");
-    // z42c 7 包
-    int i = 0;
-    while (i < members.Length) {
-        _linkAll(Path.Join(root, "artifacts/build/z42c/" + members[i] + "/" + profile + "/dist"),
-                 flat, "*.zpkg");
-        i = i + 1;
-    }
+    // stdlib（z42.test / z42.core prelude / ...）+ z42c 7 包 → 单一 Z42_LIBS flat 目录
+    string flat = _assembleAllLibs(root, profile);
 
     string vm     = _builtVm(root, "release");
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
@@ -261,7 +250,7 @@ int _testCompilerUnits(string root, string profile, string[] members) {
 
     int totalFailed = 0;
     int totalUnits = 0;
-    i = 0;
+    int i = 0;
     while (i < members.Length) {
         string testsDir = Path.Join(root, "src/compiler/" + members[i] + "/tests");
         if (Directory.Exists(testsDir)) {

@@ -313,16 +313,7 @@ int _testLibCore(string kind, string[] reqLibsIn, bool noBuild, string filter, s
     // compiles via z42c, not `dotnet z42c.dll`.
     string vm = _builtVm(root, "release");
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
-    string libs = Path.Join(root, "artifacts/build/z42c/alllibs/release");
-    Directory.Create(libs);
-    _cleanGlob(libs, "*.zpkg");
-    _linkAll(Path.Join(root, "artifacts/build/libraries/dist/release"), libs, "*.zpkg");
-    string[] z42cMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
-    int mi = 0;
-    while (mi < z42cMembers.Length) {
-        _linkAll(Path.Join(root, "artifacts/build/z42c/" + z42cMembers[mi] + "/release/dist"), libs, "*.zpkg");
-        mi = mi + 1;
-    }
+    string libs = _assembleAllLibs(root, "release");
     string libsRoot = Path.Join(root, "src/libraries");
     string[] libList;
     if (nReq > 0) {

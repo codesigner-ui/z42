@@ -41,16 +41,7 @@ int _bench(ParseResult r) {
     // deps resolve from the same dir.
     int czc = _buildCompiler(); if (czc != 0) { return czc; }
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
-    string flat = Path.Join(root, "artifacts/build/z42c/alllibs/release");
-    Directory.Create(flat);
-    _cleanGlob(flat, "*.zpkg");
-    _linkAll(libs, flat, "*.zpkg");
-    string[] z42cMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
-    int zmi = 0;
-    while (zmi < z42cMembers.Length) {
-        _linkAll(Path.Join(root, "artifacts/build/z42c/" + z42cMembers[zmi] + "/release/dist"), flat, "*.zpkg");
-        zmi = zmi + 1;
-    }
+    string flat = _assembleAllLibs(root, "release");
     string work = Directory.CreateTempDir("xtask-bench");
 
     string benchmarks = "";

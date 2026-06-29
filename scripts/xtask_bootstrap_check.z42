@@ -23,7 +23,7 @@ using Std.IO;
 
 int _bootstrapCheck(string ridArg) {
     string root = _root();
-    string[] members = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
+    string[] members = _compilerMembers(root);
 
     string rid = ridArg;
     if (rid.Length == 0) { rid = _detectHostRid(); }
