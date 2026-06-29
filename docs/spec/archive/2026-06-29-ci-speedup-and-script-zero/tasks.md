@@ -6,7 +6,11 @@
 
 ## 成果概览
 
-**CI 关键路径 ~47min → ~36min**（`compile-toolchain ~13min → package-host(windows) ~17min → publish-nightly ~3min`）。剩余为自举语言工具链的**固有成本**（z42c+stdlib 自举编译 + 多平台打包组装），已逼近"CI 配置可砍"的下限。
+**CI 关键路径 ~47min → ~35min**。两轮优化：
+1. 缓存根因 + current-sdk 拆出 + 并行 regen + 命名 + script-zero（~47→~36min）。
+2. **package z42c 去重 + `package --no-build`**（c436af40）：package-host 从 windows ~17min / unix ~11min → **windows 6min / unix 4min**（"building z42c via z42c" 计数 = 0）。
+
+**关键路径长杆现已从 package 转移到 `test-host(build-and-test, linux-x64) ~32min`**——= ci-bootstrap(~12min，z42c+stdlib 自举编译) + `test all --no-build`(~20min，regen+vm+cross+stdlib+compiler fixpoint)。publish-nightly 紧跟 test-host 结束起跑，故整体 ~35min。这 32min 是**自举语言"fresh runner 从种子自举全栈 + 跑全量 GREEN 门"的固有地基**，已逼近 CI 配置可砍的下限（详见下方"长杆分析 + 收口决策"）。
 
 ## 已落地（均已推送 + CI 绿）
 
@@ -21,6 +25,11 @@
 - [x] A1 `test --no-build`：build-and-test / vm-jit / stdlib-jit 跳过二次重建。
 - [x] **#5 host package 去 `--target`**：host RID 复用缓存的无-target 构建（`.cargo/config` 无 target-specific rustflags → 字节等价）；本地 dogfood 验证包完整 + z42vm 可跑。
 - [x] CI job 命名统一 `<动作>-<目标>[-<scope>](<host-arch>)`：compile-toolchain / compile-test-assets / test-host / package-host（「编译测试资产」阶段现可见）。
+- [x] **package z42c 去重 + `package --no-build`**（c436af40，验收通过）：
+  - 去重：`_buildRuntimePackage` 删除其冗余的第二次 `_buildCompiler()` 调用——`package release` 走 `_packageDesktop → _buildRuntimePackage`，z42c dist 已由前者建好，后者直接复制即可。
+  - `--no-build`：`package release --no-build` 复用已存在的 z42c+stdlib 产物，跳过重编（CI warm 场景）；缺产物时明确报错而非静默冷编。
+  - **验收**：本地差分 ① `package release` vs ② `package release --no-build` 仅差 1 行（manifest build-date），其余字节一致；CI 实跑（c436af40 run）package-host windows 17→6min / unix 11→4min，"building z42c via z42c" 计数 = 0，整条 run 绿、publish-nightly success。
+  - host-package CI 步骤切 `package release --no-build`（消费 xtask-bootstrap-artifact 已恢复的 z42c+stdlib）。
 
 ### C. script-zero（scripts/ 仅剩 install-z42.sh）
 - [x] `ci-stage-toolchain.sh` → `xtask build stage-toolchain`（字节一致 dogfood 验证）。
@@ -48,9 +57,15 @@
   注意：matrix shard（`test-vm-jit(...) shard N`）一般不单独 require；`publish-nightly` 是合并后发布，**不要** require。
 - **触发条件**：User 决定要不要加仓库治理级分支保护。Claude 无权改仓库设置，按 User 选的清单代设即可。
 
-### D-2: package 流水线并行化（唯一剩下的墙钟杠杆，独立大工程）
-- package-host 的 15min 大头是**非 cargo**：z42c 编 launcher.zpkg + 跨平台 workload 组装 + SDK/runtime 打包 + SHA + Windows 慢文件操作。缓存碰不到。
-- 再降需把 package 步的独立构建/组装并行化，或让 z42c 编译提速——独立 change，**勿与别的混**（release-critical）。
+### D-2: ~~package 流水线并行化~~ ✅ 已解决（c436af40，见上 B 段）
+package-host 的大头实为重复编译 z42c（去重）+ 冷编（`--no-build` 消费 artifact）。优化后 windows 17→6min / unix 11→4min，**package 已不再是关键路径长杆**。
+
+### 长杆分析 + 收口决策（2026-06-30，User 裁决 B）
+package 优化后整体仍 ~35min，因长杆转移到 `test-host(linux-x64) ~32min`。逐项核过可压杠杆：
+
+- **CO-D1「test 腿改消费 toolchain artifact 不自己 bootstrap」对 wall-clock 净负**：test-host 的 ci-bootstrap 现与 toolchain-bootstrap **并行**（都 `needs: changes`，T0 起跑）。改成 `needs: toolchain-bootstrap` + 消费会把 job 启动**串行化**到 toolchain artifact 就绪（~13min）之后 → test-host 反而晚 ~4–6min 完成。即"重复编译"省的是 runner 成本、不是墙钟；它本身就是并行度。已核日志确认 `--no-build` 在 test 步骤生效、Test 阶段无二次编译（"building z42c via z42c" 仅出现在 Bootstrap 的 gen1+gen2 fixpoint，是自举固有成本）。
+- **真能压的杠杆 = 分片 test-host 的 `test all`**（像 test-vm-jit/test-stdlib-jit 那样多机并行取 max）：20min → ~10min，整体 32→~22min。代价：改 CI 矩阵 + 拆 `xtask test` 可分片子命令 + 保证分片覆盖不漏。
+- **决策（User，2026-06-30）：B = 收口不做分片**。32min（12 bootstrap + 20 test）对自举语言综合 GREEN 门是合理地基，分片属收益递减/复杂度递增，暂不投入。该杠杆记 roadmap，需要时再开独立 change。
 
 ### D-3: zpkg-format regen 命令（z42-native，记于 `src/tests/zpkg-format/README.md`）
 ### D-4: `.claude/rules/version-bumping.md` 全量重写（dotnet staleness，已加 banner 标记）
