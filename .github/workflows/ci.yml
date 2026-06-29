@@ -734,30 +734,38 @@ jobs:
           workspaces: src/runtime -> ../../artifacts/build/runtime
           shared-key: host-v2
 
-      - name: Bootstrap from nightly z42c seed
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Hard no-dotnet guard: shadow `dotnet` with a failing stub and put it on PATH
+      # via $GITHUB_PATH so it covers EVERY later step. ubuntu-latest ships dotnet in
+      # the base image, so presence proves nothing — we prove it is never CALLED. The
+      # toolchain is fully z42-self-hosted; dotnet must never be reached.
+      - name: Install no-dotnet guard
         shell: bash
         run: |
-          set -euo pipefail
-          # Download the nightly runtime package: z42vm + libs/ (stdlib) + z42c/ (seed).
-          gh release download nightly -p 'z42-runtime-nightly-linux-x64.tar.gz' -O /tmp/rt.tgz
-          mkdir -p /tmp/rtpkg && tar -C /tmp/rtpkg -xzf /tmp/rt.tgz
-          seed="$PWD/.selfhost-seed"; rm -rf "$seed"; mkdir -p "$seed"
-          if ! ls /tmp/rtpkg/z42c/*.zpkg >/dev/null 2>&1; then
-            echo "::error::nightly runtime package has no z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals)"; exit 1
-          fi
-          cp -f /tmp/rtpkg/z42c/*.zpkg "$seed/"
-          cp -f /tmp/rtpkg/libs/*.zpkg "$seed/"
-          echo "seed: $(ls "$seed"/*.zpkg | wc -l) zpkg (z42c-written compiler + stdlib)"
-          # Hard no-dotnet guard: shadow `dotnet` with a failing stub on PATH so ANY
-          # dotnet invocation aborts the build. (ubuntu-latest ships dotnet in the base
-          # image, so mere presence proves nothing — we prove it's never CALLED. The
-          # toolchain is fully z42-self-hosted; dotnet must never be reached.)
           mkdir -p /tmp/no-dotnet-bin
           printf '#!/usr/bin/env bash\necho "::error::dotnet invoked — the toolchain is self-hosted; dotnet must not be reached" >&2\nexit 97\n' > /tmp/no-dotnet-bin/dotnet
           chmod +x /tmp/no-dotnet-bin/dotnet
-          PATH="/tmp/no-dotnet-bin:$PATH" bash scripts/selfhost-bootstrap.sh "$seed"
+          echo "/tmp/no-dotnet-bin" >> "$GITHUB_PATH"
+
+      # Bootstrap from the prev nightly seed (download nightly → cargo z42vm → seed
+      # z42c builds xtask → xtask builds z42c=gen1 + stdlib) — the SAME action every
+      # bootstrap job uses, now under the no-dotnet guard. This is the boundary check:
+      # if current z42c source uses syntax/format the published nightly lacks, the
+      # seed can't compile it and this fails (transient until publish-nightly republishes).
+      - uses: ./.github/actions/ci-bootstrap
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Self-host fixpoint: rebuild z42c gen1 → gen2 and assert gen1 == gen2
+      # byte-identical (BLID-tolerant) + z42c [Test] units. The closure proof lives in
+      # xtask (_testZ42cSelfHostByteIdentical via `test compiler`), not a duplicate
+      # shell script — selfhost-bootstrap.sh was exactly this logic reimplemented.
+      - name: Self-host fixpoint (xtask test compiler, C#-free)
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$PWD/artifacts/build/runtime/release/z42vm"
+          Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
+            "$vm" artifacts/xtask/xtask.zpkg -- test compiler
 
   # ── z42c dogfood-builds stdlib ─────────────
   # Validates the self-host compiler (z42c) can build the ENTIRE stdlib workspace

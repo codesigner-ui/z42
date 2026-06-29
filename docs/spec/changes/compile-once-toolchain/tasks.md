@@ -148,7 +148,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [ ] 3.6 commit + CI 验证全下游绿 + 关键路径时长下降（目标 ~52→~25-30min）
 
 ## P4：发布门三关进 needs（完整 / 稳定 / 正确）
-- [ ] 4.1 cross-bootstrap（完整关）：`scripts/selfhost-bootstrap.sh` 改造——种子换成"**本地 SDK set 的打包发布形态**"（消费 current-sdk / 本地 `build package` 产物），重跑 S2-S4：编 xtask（验编成功）+ 编 {z42c,stdlib}（逐字节==自带 = {gen2}=={gen3}）
+- [ ] 4.1 cross-bootstrap（完整关）：**新 xtask 命令**——种子换成"**本地 SDK set 的打包发布形态**"（消费 current-sdk / 本地 `build package` 产物），重跑 S2-S4：编 xtask（验编成功）+ 编 {z42c,stdlib}（逐字节==自带 = {gen2}=={gen3}）。注：`selfhost-bootstrap.sh` 已删（其 nightly-种子重建+gen1==gen2 逻辑已是 xtask `build compiler`+`test compiler`，verify-selfhost 直接复用）；cross-bootstrap 是 gen2==gen3 的不同校验，作新命令。
 - [ ] 4.2 正确关：**test-interp / test-jit（+ stdlib/cross-zpkg 行为覆盖）进 `publish-nightly` 的 needs**——三腿本就跑 gen2 工具链(=发布件)，直接进 needs。修"稳定地错也能发"缺口
 - [ ] 4.3 `publish-nightly` needs = package-* + cross-bootstrap + test-interp + test-jit（三关全过才发）
 - [ ] 4.4 commit + CI 验证：① 故意改 z42c codegen 制造 {gen2}≠{gen3} 验稳定关拦截 ② 故意弄挂一个 [Test] 验正确关拦截发布
@@ -159,7 +159,7 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [ ] 5.3 删 `scripts/ci-bootstrap.sh`（逻辑已内联 compile job）
 - [x] 5.4（部分）删 `scripts/check-bootstrap-compat.sh`（已折进 `xtask bootstrap-check`，Stage 2a）。
   > **`scripts/ci-stage-toolchain.sh` 已折进 `xtask build stage-toolchain`**（script-zero；compile-toolchain job 调用，输出与原 .sh 字节一致已本地 dogfood 验证）。`ci-bootstrap.sh`（5.3）的内联仍待做（cold-start 引导，xtask 尚未存在，须内联进 compile job 的 run 块）。
-- [ ] 5.5 **保留 `scripts/install-z42.sh`**（cold-start primer）+ `scripts/selfhost-bootstrap.sh`（已改造为 cross-bootstrap，不删）
+- [x] 5.5 **只保留 `scripts/install-z42.sh`**（cold-start installer）；`selfhost-bootstrap.sh` 已删（逻辑在 xtask，verify-selfhost 用 `ci-bootstrap action + test compiler`）→ scripts/ 实现真 script-zero（仅 installer 例外）
 - [ ] 5.6 commit + CI 全绿
 
 ## 文档同步（贯穿各 P，归档前必完成）

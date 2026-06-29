@@ -45,7 +45,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
    ③ **正确=test-interp/test-jit（+stdlib/cross-zpkg）进 publish-nightly needs**（修"稳定地错也能发"缺口）。
 6. **重命名 + 删冗余 job + 脚本清理**：build-and-test→`test-interp`、vm-jit+stdlib-jit→`test-jit`；评估删
    `compiler-stdlib`；删 `ci-bootstrap.sh`（内联 compile job）+ `ci-stage-toolchain.sh`（折进 xtask）+
-   `check-bootstrap-compat.sh`；**保留 `install-z42.sh` + `selfhost-bootstrap.sh`（已改造）**。
+   `check-bootstrap-compat.sh` + `selfhost-bootstrap.sh`（逻辑已在 xtask）；**只保留 `install-z42.sh`**（cold-start installer）。
 7. **文档**：`testing/bootstrap.md` 随各 Phase 落地更新；同步 self-hosting.md/ci.md。
 
 ## Scope（允许改动的文件）
@@ -60,7 +60,7 @@ dotnet 彻底移除、z42c 自举后（2026-06-26），CI 的自举/测试流程
 | `scripts/xtask_common.z42` | MODIFY | toolchain-dir 解析 helper |
 | `scripts/xtask_package*.z42` | MODIFY | 消费 `--toolchain artifacts/.z42` |
 | `scripts/ci-bootstrap.sh` | DELETE ✅ | 改成 composite action `.github/actions/ci-bootstrap`（忠实搬迁；10 处调用点统一 `uses:`）|
-| `scripts/selfhost-bootstrap.sh` | MODIFY | **改造**成 cross-bootstrap：种子来源换成本地 SDK（不删）|
+| `scripts/selfhost-bootstrap.sh` | DELETE ✅ | 删除——其逻辑(从种子重建+gen1==gen2 不动点)已是 xtask 既有能力(`_buildCompilerZ42` + `_testZ42cSelfHostByteIdentical`)。verify-selfhost 改用 `ci-bootstrap action + xtask test compiler`。未来 cross-bootstrap(gen2==gen3 从本地 SDK)如需则新写命令 |
 | `scripts/ci-stage-toolchain.sh` | DELETE ✅ | 已折进 `xtask build stage-toolchain`（字节一致） |
 | `scripts/check-bootstrap-compat.sh` | DELETE | 边界由 compile job 隐式强制 |
 | `.github/workflows/ci.yml` | MODIFY | compile job + 下游消费 + 重命名 + 删冗余 job |
