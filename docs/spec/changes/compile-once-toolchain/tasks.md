@@ -1,6 +1,7 @@
 # Tasks: compile-once toolchain → 分层流水线（6 阶段）
 
 > 状态：🟡 进行中 | 创建：2026-06-27 | 重构为 6 阶段分层模型 2026-06-28（User 确认）
+> 📌 2026-06-29 一次 CI 提速 /loop 会话推进了本 change 的「CI 去冗余」维度（缓存根因修复 / current-sdk 拆出关键路径 / 并行 regen / ci-bootstrap·ci-stage-toolchain·selfhost-bootstrap 收敛到 xtask·action = script-zero / 并发组+publish-nightly 串行化 / 依赖精简 + 一次 nightly 事故闭环），CI 47→~36min。该批工作单独归档于 `docs/spec/archive/2026-06-29-ci-speedup-and-script-zero/`。本 change 余下 scope（成对分代 gen1/2/3 / 三发布门 / cross-bootstrap）续开，不受影响。
 > 子系统占用：`toolchain`（xtask）+ runtime（仅 stage1 rule c 的 cargo-test gate；build.rs 已改）+ docs
 > 🟢 Decision 2（format 兜底）：第一版不做，延后（见 design.md）。
 
