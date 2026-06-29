@@ -1,0 +1,68 @@
+// Runtime test-module loading for the reflective test runner (retire-test-runner).
+//
+// `ModuleLoader.Load(path)` loads a compiled test module (.zbc / .zpkg) into the
+// live VM — its functions and types become reflectable and `Invoke`-able — and
+// returns its compile-time TIDX entries (`[Test]`/`[Benchmark]`/`[Setup]`/
+// `[Teardown]` methods, with skip / ShouldThrow metadata). The runner then uses
+// `Type.GetType` + `Activator.CreateInstance` + `MethodInfo.Invoke` to run them.
+namespace Std.Test;
+
+using Std;
+
+// One TIDX entry of a loaded test module, in z42-facing form (VM-written slots).
+public class TestEntry {
+    // Fully-qualified method name "<FQClass>.<Method>" (Type.GetType + Invoke).
+    public string Qualified;
+    // 1=Test, 2=Benchmark, 3=Setup, 4=Teardown.
+    public int Kind;
+    // Bit flags: 1=Skipped, 2=Ignored, 4=ShouldThrow.
+    public int Flags;
+    // [Skip(reason)] text; null if none.
+    public string SkipReason;
+    // [Skip(platform)] / [Skip(feature)] gates; null if none.
+    public string SkipPlatform;
+    public string SkipFeature;
+    // [ShouldThrow<E>] expected exception type FQN; null if none.
+    public string ShouldThrow;
+
+    public bool IsTest()      { return this.Kind == 1; }
+    public bool IsBenchmark() { return this.Kind == 2; }
+    public bool IsSetup()     { return this.Kind == 3; }
+    public bool IsTeardown()  { return this.Kind == 4; }
+
+    public bool IsSkipped()   { return (this.Flags & 1) != 0; }
+    public bool IsIgnored()   { return (this.Flags & 2) != 0; }
+    public bool HasShouldThrow() { return (this.Flags & 4) != 0; }
+
+    // Owning class FQN ("<FQClass>"), derived from Qualified (drop last segment).
+    public string DeclaringType() {
+        int i = this.Qualified.Length - 1;
+        while (i >= 0) {
+            if (this.Qualified.Substring(i, 1) == ".") {
+                return this.Qualified.Substring(0, i);
+            }
+            i = i - 1;
+        }
+        return this.Qualified;
+    }
+
+    // Simple method name (last segment of Qualified).
+    public string MethodName() {
+        int i = this.Qualified.Length - 1;
+        while (i >= 0) {
+            if (this.Qualified.Substring(i, 1) == ".") {
+                return this.Qualified.Substring(i + 1, this.Qualified.Length - (i + 1));
+            }
+            i = i - 1;
+        }
+        return this.Qualified;
+    }
+}
+
+public static class ModuleLoader {
+    // Load a compiled test module into the live VM and return its TIDX entries.
+    // Idempotent per module. Throws if the path can't be loaded or no lazy loader
+    // is installed.
+    [Native("__load_module")]
+    public static extern TestEntry[] Load(string path);
+}

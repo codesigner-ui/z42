@@ -1125,6 +1125,44 @@ pub fn builtin_activator_create(ctx: &VmContext, args: &[Value]) -> Result<Value
     Ok(obj)
 }
 
+/// `__load_module(path: str) -> Std.Test.TestEntry[]` — load a compiled test
+/// module at `path` into the live VM (its functions / types become callable +
+/// reflectable) and return its TIDX entries as z42 `Std.Test.TestEntry` objects.
+/// Powers `Std.Test.ModuleLoader.Load` so a z42 test runner can load a compiled
+/// test module and discover + `Invoke` its `[Test]` methods. (retire-test-runner)
+pub fn builtin_load_module(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = match args.first() {
+        Some(Value::Str(s)) => s.to_string(),
+        _ => bail!("ModuleLoader.Load: expected a path string"),
+    };
+    let entries = ctx.load_module_into_vm(&path)?;
+    let mut objs: Vec<Value> = Vec::with_capacity(entries.len());
+    for e in &entries {
+        let obj = alloc_named(
+            ctx,
+            "Std.Test.TestEntry",
+            &[
+                ("Qualified", Value::Str(e.qualified.clone().into())),
+                ("Kind", Value::I64(e.kind as i64)),
+                ("Flags", Value::I64(e.flags as i64)),
+                ("SkipReason", load_module_opt(&e.skip_reason)),
+                ("SkipPlatform", load_module_opt(&e.skip_platform)),
+                ("SkipFeature", load_module_opt(&e.skip_feature)),
+                ("ShouldThrow", load_module_opt(&e.expected_throw)),
+            ],
+        )?;
+        objs.push(obj);
+    }
+    Ok(ctx.heap().alloc_array(objs))
+}
+
+fn load_module_opt(o: &Option<String>) -> Value {
+    match o {
+        Some(s) => Value::Str(s.clone().into()),
+        None => Value::Null,
+    }
+}
+
 #[cfg(test)]
 #[path = "reflection_tests.rs"]
 mod reflection_tests;

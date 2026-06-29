@@ -239,6 +239,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__method_invoke",      reflection::builtin_method_invoke),
     // retire-test-runner: no-arg reflective construction (test-class instantiation).
     ("__activator_create",   reflection::builtin_activator_create),
+    // retire-test-runner: load a compiled test module + return its TIDX entries.
+    ("__load_module",        reflection::builtin_load_module),
     // add-reflection-generic-type-definition: `typeof` now lowers to the Typeof
     // opcode (interp/jit), not a builtin — the former `__typeof` is removed.
 

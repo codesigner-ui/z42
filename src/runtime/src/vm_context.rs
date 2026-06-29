@@ -1163,6 +1163,20 @@ impl VmContext {
     /// review.md D3 Phase 2 (2026-05-27): emits `RuntimeEvent::ModuleLoaded`
     /// for every zpkg the resolver pulled in transitively, so observers
     /// see lazy-load activity (not just boot-time eager loads).
+    /// Load a compiled artifact at `path` into the live registries (functions +
+    /// types become callable / reflectable) and return its TIDX test entries.
+    /// Backs `Std.Test.ModuleLoader.Load` for the reflective test runner.
+    /// Errors if no lazy loader is installed (a bare VM with no dep resolution).
+    pub fn load_module_into_vm(
+        &self, path: &str,
+    ) -> anyhow::Result<Vec<crate::metadata::test_index::LoadedTestEntry>> {
+        let mut state = self.core.lazy_loader.lock();
+        let loader = state.as_mut().ok_or_else(|| {
+            anyhow::anyhow!("LoadModule: no lazy loader installed (cannot register loaded module)")
+        })?;
+        loader.load_module_from_path(path)
+    }
+
     pub fn try_lookup_function(&self, func_name: &str) -> Option<Arc<Function>> {
         let (result, newly_loaded) = {
             let mut state = self.core.lazy_loader.lock();

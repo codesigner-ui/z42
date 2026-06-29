@@ -319,6 +319,27 @@ impl<'a> TidxCursor<'a> {
     }
 }
 
+/// A runtime-loaded test entry, returned by `Std.Test.ModuleLoader.Load` (the
+/// `__load_module` builtin) to a z42 test runner. Flattens a [`TestEntry`] + its
+/// resolved method FQN into a self-contained, z42-facing record so the runner can
+/// discover, classify, and `Invoke` each test reflectively without reaching back
+/// into VM metadata. (retire-test-runner)
+#[derive(Debug, Clone)]
+pub struct LoadedTestEntry {
+    /// Fully-qualified method name (`<FQClass>.<Method>`), for `Type.GetType` +
+    /// `MethodInfo.Invoke`. Empty if `method_id` was out of range.
+    pub qualified: String,
+    /// `TestEntryKind` discriminant (1=Test, 2=Benchmark, 3=Setup, 4=Teardown).
+    pub kind: u8,
+    /// `TestFlags` bits (SKIPPED / IGNORED / SHOULD_THROW).
+    pub flags: u16,
+    pub skip_reason: Option<String>,
+    pub skip_platform: Option<String>,
+    pub skip_feature: Option<String>,
+    /// `[ShouldThrow<E>]` expected exception type FQN, if any.
+    pub expected_throw: Option<String>,
+}
+
 // ── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

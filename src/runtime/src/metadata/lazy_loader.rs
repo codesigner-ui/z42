@@ -35,6 +35,7 @@ use anyhow::Result;
 
 use super::bytecode::{Function, Instruction};
 use super::loader::load_artifact;
+use super::test_index::LoadedTestEntry;
 use super::types::TypeDesc;
 use super::zbc_reader::read_zpkg_meta;
 
@@ -390,6 +391,75 @@ impl LazyLoader {
 
         tracing::debug!("lazy-loaded zpkg `{file_name}` from {path_str}");
         Ok(())
+    }
+
+    /// Load a compiled artifact from an arbitrary **path** (not a declared dep)
+    /// and merge its functions / types / strings into the live registries, then
+    /// return its TIDX test entries (resolved FQN + kind + flags). Powers
+    /// `Std.Test.ModuleLoader.Load` so a z42 test runner can load a compiled test
+    /// module and discover + `Invoke` its `[Test]` methods. Mirrors
+    /// `load_zpkg_file`'s merge (string-pool offset + `remap_const_str` + first-wins
+    /// + inheritance fixup); idempotent per module name. (retire-test-runner)
+    pub fn load_module_from_path(&mut self, path: &str) -> Result<Vec<LoadedTestEntry>> {
+        let mut artifact = load_artifact(path)?;
+        let mod_key = format!("__loaded_path__{}", artifact.module.name);
+
+        // Capture test entries (FQN resolved via functions[method_id]) before the
+        // functions are moved into the table.
+        let mut entries: Vec<LoadedTestEntry> = Vec::with_capacity(artifact.test_index.len());
+        for e in &artifact.test_index {
+            let qualified = artifact
+                .module
+                .functions
+                .get(e.method_id as usize)
+                .map(|f| f.name.clone())
+                .unwrap_or_default();
+            entries.push(LoadedTestEntry {
+                qualified,
+                kind: e.kind as u8,
+                flags: e.flags.bits(),
+                skip_reason: e.skip_reason.clone(),
+                skip_platform: e.skip_platform.clone(),
+                skip_feature: e.skip_feature.clone(),
+                expected_throw: e.expected_throw_type.clone(),
+            });
+        }
+
+        // Idempotent: a re-load of the same module just returns its entries.
+        if self.loaded_zpkgs.contains(&mod_key) {
+            return Ok(entries);
+        }
+        self.loaded_zpkgs.insert(mod_key);
+
+        let offset = self.main_pool_len + self.string_pool.len();
+        self.string_pool.extend(artifact.module.string_pool.iter().cloned());
+
+        for mut fn_ in artifact.module.functions {
+            remap_const_str(&mut fn_, offset);
+            let name = fn_.name.clone();
+            if self.function_table.contains_key(&name) {
+                continue; // first-wins
+            }
+            self.function_table.insert(name, Arc::new(fn_));
+        }
+        artifact.module.type_registry_vec.clear();
+        for (name, desc) in std::mem::take(&mut artifact.module.type_registry) {
+            if self.type_registry.contains_key(&name) {
+                continue;
+            }
+            self.type_registry.insert(name, desc);
+        }
+
+        // Inheritance fixup (subclasses whose base lives in an already-loaded module).
+        let fixup_cap = self.type_registry.len() + 8;
+        for round in 0.. {
+            let n = crate::metadata::loader::try_fixup_inheritance(&mut self.type_registry);
+            if n == 0 || round >= fixup_cap {
+                break;
+            }
+        }
+
+        Ok(entries)
     }
 }
 
