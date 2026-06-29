@@ -33,6 +33,7 @@ fn make_type_desc(name: &str) -> Arc<TypeDesc> {
     Arc::new(TypeDesc {
         name: name.to_string(),
         base_name: None,
+        class_flags: 0,
         fields: Vec::new(),
         field_index: z42::metadata::NameIndex::new(),
         vtable: Vec::new(),
