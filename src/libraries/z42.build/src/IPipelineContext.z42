@@ -1,6 +1,5 @@
 namespace Z42.Build;
 
-using Std.Collections;
 using Z42.Project;
 
 /// 传给每个相位的上下文契约：相位实现只通过本接口与外界交互。
@@ -34,9 +33,9 @@ public interface IPipelineContext {
     // —— 子进程（永久脏）——
     ExecResult Exec(string cmd, string[] args);
 
-    // —— 产物登记 ——
-    void         AddOutput(string kind, string path);
-    List<Output> Outputs();
+    // —— 产物登记（array + 内部 count，与 z42 受限子集惯用法一致；返回定长快照）——
+    void     AddOutput(string kind, string path);
+    Output[] Outputs();
 
     // —— 平台编写原语（KV 用并行 keys/values 数组，受限子集：无泛型 map）——
     string Template(string name);                                   // 解析 workload 模板路径

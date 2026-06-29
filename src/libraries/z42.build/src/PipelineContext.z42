@@ -1,10 +1,13 @@
 namespace Z42.Build;
 
+using Std;
+using Std.IO;
 using Z42.Project;
-using Std.Collections;
 
 // IPipelineContext 的 SDK 具体实现 —— 相位与外界交互的落地（受限 fs / exec / 平台原语 /
-// 产物登记）。⚠️ PARKED / 接口先行：成员为骨架桩，具体逻辑留待实现期。
+// 产物登记）。⚠️ PARKED（无清单，未接编译）。日志 / 受限 fs / 产物登记已落地（纯 Std.IO）；
+// native 原语（Hash/Archive/Sign/Download/ProbeVersion）与平台编写（plist/entitlements/
+// 模板）与 Exec 仍为 extern / stub，待实现期接 toolchain native builtin。
 //
 // 归属（2026-06-23 决策）：**暂放本库（z42.build）** —— 使编排器 z42b / 生成的 driver
 //   可 import 本类构造 ctx。代价：实现 ICompiler 的编译器库会传递依赖到本 impl —— 可接受
@@ -26,25 +29,49 @@ public class PipelineContext : IPipelineContext {
     public Inputs          Inputs      { get; set; }
     public string          WorkloadDir { get; set; }
 
-    // —— 日志 ——
-    public void Log(string msg)  { }   // 实现期：→ Console / 结构化日志
-    public void Warn(string msg) { }
+    // 产物登记缓冲（array + count；Outputs() 返回定长快照）。
+    private Output[] _outputs;
+    private int      _outputCount;
 
-    // —— 能力受限 fs（实现期接 Std.IO；写操作校验落在 Intermediate / Dist 之下）——
-    public bool   Exists(string path)               { return false; }
-    public string ReadText(string path)             { return ""; }
-    public void   WriteText(string path, string content) { }
-    public void   Copy(string from, string to)      { }
-    public void   CopyTree(string from, string to)  { }
-    public void   Mkdir(string path)                { }
-    public string Hash(string path)                 { return ""; }   // 实现期：extern blake3
+    public PipelineContext() {
+        this._outputs = new Output[4];
+        this._outputCount = 0;
+    }
+
+    // —— 日志 ——
+    public void Log(string msg)  { Console.WriteLine(msg); }
+    public void Warn(string msg) { ConsoleError.WriteLine(msg); }
+
+    // —— 能力受限 fs（写操作经 _guardWrite 校验落在 Intermediate / Dist 之下）——
+    public bool   Exists(string path)   { return File.Exists(path) || Directory.Exists(path); }
+    public string ReadText(string path) { return File.ReadAllText(path); }
+    public void   WriteText(string path, string content) { this._guardWrite(path); File.WriteAllText(path, content); }
+    public void   Copy(string from, string to)     { this._guardWrite(to); File.Copy(from, to); }
+    public void   CopyTree(string from, string to) { this._guardWrite(to); Directory.Copy(from, to, true); }
+    public void   Mkdir(string path)               { this._guardWrite(path); Directory.Create(path); }
+    public string Hash(string path)                { return ""; }   // 实现期：extern blake3
 
     // —— 子进程（永久脏）——
-    public ExecResult Exec(string cmd, string[] args) { return new ExecResult(0, "", ""); }
+    public ExecResult Exec(string cmd, string[] args) { return new ExecResult(0, "", ""); }   // 实现期：Std Process
 
     // —— 产物登记 ——
-    public void         AddOutput(string kind, string path) { }
-    public List<Output> Outputs()                           { return new List<Output>(); }
+    public void AddOutput(string kind, string path) {
+        if (this._outputCount == this._outputs.Length) {
+            Output[] b = new Output[this._outputs.Length * 2];
+            int i = 0;
+            while (i < this._outputCount) { b[i] = this._outputs[i]; i = i + 1; }
+            this._outputs = b;
+        }
+        this._outputs[this._outputCount] = new Output(kind, path);
+        this._outputCount = this._outputCount + 1;
+    }
+
+    public Output[] Outputs() {
+        Output[] r = new Output[this._outputCount];
+        int i = 0;
+        while (i < this._outputCount) { r[i] = this._outputs[i]; i = i + 1; }
+        return r;
+    }
 
     // —— 平台编写原语（实现期：模板渲染 / plist / entitlements / 归档 / 签名）——
     public string Template(string name)                                 { return ""; }
@@ -59,4 +86,19 @@ public class PipelineContext : IPipelineContext {
     public void   EnsureRuntimePack(string rid)          { }
     public string ProbeVersion(string probeCmd)          { return ""; }   // extern
     public void   Download(string url, string sha256, string dest) { }    // extern
+
+    // —— 能力边界护栏 ──────────────────────────────────────────────────────────
+    // 写仅允许落 Dirs.Intermediate / Dirs.Dist 之下；越界抛异常（确定性 + 安全护栏）。
+    private void _guardWrite(string path) {
+        if (this.Dirs == null) { return; }   // 未注入 Dirs（如裸测试）→ 不护栏
+        if (PipelineContext._under(path, this.Dirs.Intermediate)) { return; }
+        if (PipelineContext._under(path, this.Dirs.Dist)) { return; }
+        throw new InvalidOperationException(
+            "PipelineContext: write outside Intermediate/Dist is not allowed: " + path);
+    }
+
+    private static bool _under(string path, string baseDir) {
+        if (baseDir.Length == 0) { return false; }
+        return path.StartsWith(baseDir);
+    }
 }
