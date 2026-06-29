@@ -1,0 +1,53 @@
+// 反射调用原语（add-method-invoke-non-generic, 0.3.12）：
+//   Type.GetType(fqn) + MethodInfo.Invoke(obj, object[])（静态/实例/void/异常传播）。
+namespace Demo;
+using Std;
+using Std.IO;
+using Std.Reflection;
+
+class Calc {
+    static int Add(int a, int b) { return a + b; }
+    int Twice(int x) { return x * 2; }
+    static void Noop() { }
+    static int Boom() { throw new InvalidOperationException("boom"); }
+}
+
+MethodInfo find(Type t, string name) {
+    MethodInfo[] ms = t.GetMethods();
+    int i = 0;
+    while (i < ms.Length) {
+        if (ms[i].Name == name) { return ms[i]; }
+        i = i + 1;
+    }
+    return null;
+}
+
+void Main() {
+    // Type.GetType(fqn)
+    Type t = Type.GetType("Demo.Calc");
+    Console.WriteLine(t.Name);
+
+    // 静态方法 Invoke：装箱实参 → object[]
+    MethodInfo add = find(t, "Add");
+    object[] a1 = new object[2]; a1[0] = 2; a1[1] = 3;
+    Console.WriteLine((int)add.Invoke(null, a1));
+
+    // 实例方法 Invoke：obj 作接收者
+    Calc c = new Calc();
+    MethodInfo tw = find(t, "Twice");
+    object[] a2 = new object[1]; a2[0] = 21;
+    Console.WriteLine((int)tw.Invoke(c, a2));
+
+    // void → null
+    MethodInfo np = find(t, "Noop");
+    object r3 = np.Invoke(null, new object[0]);
+    Console.WriteLine(r3 == null);
+
+    // 被调方法 throw → 原异常传播、可捕获
+    MethodInfo bm = find(t, "Boom");
+    try {
+        bm.Invoke(null, new object[0]);
+    } catch (InvalidOperationException e) {
+        Console.WriteLine("caught: " + e.Message);
+    }
+}

@@ -234,6 +234,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__method_custom_attributes", reflection::builtin_method_custom_attributes),
     ("__field_custom_attributes", reflection::builtin_field_custom_attributes),
     ("__param_custom_attributes", reflection::builtin_param_custom_attributes),
+    // add-method-invoke-non-generic (0.3.12): reflective invocation primitives.
+    ("__type_get_type",      reflection::builtin_type_get_type),
+    ("__method_invoke",      reflection::builtin_method_invoke),
     // add-reflection-generic-type-definition: `typeof` now lowers to the Typeof
     // opcode (interp/jit), not a builtin — the former `__typeof` is removed.
 

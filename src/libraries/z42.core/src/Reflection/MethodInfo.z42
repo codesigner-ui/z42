@@ -1,8 +1,9 @@
 namespace Std.Reflection;
 
 // Reflected method. Populated by `Type.GetMethods()` (`__type_methods`).
-// Mirrors C# `System.Reflection.MethodInfo` (read-only subset; no Invoke —
-// that lands with generic instantiation in 0.5.x).
+// Mirrors C# `System.Reflection.MethodInfo`. Non-generic `Invoke` lands 0.3.12
+// (add-method-invoke-non-generic); generic-method Invoke waits on generic
+// instantiation (0.4.x G).
 public class MethodInfo : MemberInfo {
     // Return type, e.g. typeof(int) / typeof(void). Written by the VM.
     public Std.Type ReturnType;
@@ -57,4 +58,13 @@ public class MethodInfo : MemberInfo {
         }
         return null;
     }
+
+    // ── Reflective invocation (add-method-invoke-non-generic, 0.3.12) ───────
+    // Invoke this method: `obj` is the receiver for instance methods (ignored —
+    // pass null — for static methods); `args` map to the parameters in order.
+    // Returns the method's return value (void → null). A `throw` inside the
+    // invoked method propagates with its original type (catchable). Non-generic
+    // only. The VM reads __qualified / IsStatic from this MethodInfo.
+    [Native("__method_invoke")]
+    public extern object Invoke(object obj, object[] args);
 }

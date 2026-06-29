@@ -153,6 +153,12 @@ pub struct VmCore {
     /// Spec C10 — owned byte buffers backing `Value::PinnedView` instances.
     /// Keyed by buffer data pointer so `UnpinPtr` can drop the entry.
     pub(crate) pinned_owned_buffers: Mutex<HashMap<u64, Box<[u8]>>>,
+    /// add-method-invoke-non-generic — carries a z42 exception VALUE out of a
+    /// callback builtin (reflection `MethodInfo.Invoke`) so the ORIGINAL thrown
+    /// exception (preserving its type) propagates to z42 `try/catch`, instead of
+    /// being wrapped into a generic `Std.Exception`. Set right before the builtin
+    /// returns `Err`; `exec_call::builtin` takes it in its error handler.
+    pub(crate) pending_thrown: Mutex<Option<Value>>,
     /// add-std-process (2026-05-13) — live `Std.IO.Process` children
     /// spawned via `__process_spawn`. Keyed by monotonic u64 slot id
     /// that z42 `ProcessHandle` carries; removed (`take_*`) on `wait` /
@@ -522,6 +528,7 @@ impl VmContext {
             #[cfg(feature = "native-interop")]
             native_libs:        Mutex::new(Vec::new()),
             pinned_owned_buffers: Mutex::new(HashMap::new()),
+            pending_thrown:       Mutex::new(None),
             processes:            Mutex::new(HashMap::new()),
             heap:                 Box::new(ArcMagrGC::new()),
             vm_contexts:          Mutex::new(Vec::new()),
@@ -851,6 +858,22 @@ impl VmContext {
     /// tests asserting that UnpinPtr cleaned up.
     pub fn pinned_owned_buffer_count(&self) -> usize {
         self.core.pinned_owned_buffers.lock().len()
+    }
+
+    // ── Pending reflected throw (add-method-invoke-non-generic) ──────────────
+
+    /// Stash a z42 exception value to propagate through a callback builtin's
+    /// error channel (see `pending_thrown`). Set immediately before the builtin
+    /// returns `Err`; consumed once by `take_pending_thrown`.
+    pub fn set_pending_thrown(&self, val: Value) {
+        *self.core.pending_thrown.lock() = Some(val);
+    }
+
+    /// Take (and clear) a pending thrown exception value, if any. Called by
+    /// `exec_call::builtin` in its error handler so the ORIGINAL thrown value
+    /// (with its real type) re-enters z42 exception handling.
+    pub fn take_pending_thrown(&self) -> Option<Value> {
+        self.core.pending_thrown.lock().take()
     }
 
     /// Load a native library and invoke its `<basename>_register` entry point.

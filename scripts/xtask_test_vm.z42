@@ -51,6 +51,16 @@ int _runVmGoldens(string[] modes, int jobs, int shardK, int shardN) {
         return 1;
     }
 
+    // Pin Z42_LIBS to the freshly-built stdlib so spawned golden VMs resolve the
+    // NEW z42.core, not whatever stale Z42_LIBS the xtask apphost inherited (e.g.
+    // an installed .z42/libs). Without this, a golden using a brand-new stdlib
+    // function/extern (add-method-invoke-non-generic: Std.Type.GetType) fails at
+    // run time with "undefined function" against a stale z42.core, even though it
+    // compiled fine. Mirrors the regen step's stdlibDist selection.
+    string tc = Environment.GetEnvironmentVariable("Z42_TOOLCHAIN") ?? "";
+    string goldenLibs = (tc.Length > 0) ? _toolchainLibs(tc) : _libsDir(root);
+    Environment.SetEnvironmentVariable("Z42_LIBS", goldenLibs);
+
     int overallPass = 0;
     int overallFail = 0;
 

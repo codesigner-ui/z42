@@ -1,0 +1,5 @@
+Calc
+5
+42
+true
+caught: boom

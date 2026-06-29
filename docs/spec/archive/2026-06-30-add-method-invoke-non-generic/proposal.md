@@ -48,9 +48,12 @@ boxing（0.3.11）已落地，`object[]` 现可装/传原始值实参 —— Inv
 | `src/runtime/src/corelib/mod.rs` | MODIFY | BUILTINS 注册 `__method_invoke` / `__type_get_type` / `__activator_create` |
 | `src/libraries/z42.core/src/Reflection/MethodInfo.z42` | MODIFY | 加 `[Native("__method_invoke")] public extern object Invoke(object obj, object[] args);` |
 | `src/libraries/z42.core/src/Type.z42` | MODIFY | 加 `[Native("__type_get_type")] public static extern Type GetType(string fqn);` |
-| `src/libraries/z42.core/src/Reflection/Activator.z42` | NEW | `Std.Activator`：`[Native("__activator_create")] public static extern object CreateInstance(Type t);` |
-| `src/runtime/src/corelib/reflection_tests.rs`（或对应）| MODIFY/NEW | Rust 单测：static/instance Invoke + void + 异常传播 + GetType + CreateInstance |
-| `src/tests/reflection/method_invoke/`（golden）| NEW | 端到端：GetType→CreateInstance→Invoke（static + instance + void + 返回值 + 抛异常 catch）|
+| ~~`Activator.z42`~~ | （延后）| Activator.CreateInstance 延后——见 tasks 更正 + Deferred |
+| `src/runtime/src/vm_context.rs` | MODIFY | `pending_thrown` 槽 + set/take 访问器（异常原类型透出）|
+| `src/runtime/src/interp/exec_call.rs` | MODIFY | builtin Err 处理先 take_pending_thrown |
+| `src/runtime/src/jit/helpers/call.rs` | MODIFY | jit_builtin Err 处理先 take_pending_thrown（与 interp 对齐）|
+| `scripts/xtask_test_vm.z42` | MODIFY | **Scope 补充**：golden runner 钉 Z42_LIBS=fresh stdlib（根因修复，见 tasks 更正③）|
+| `src/tests/reflection/method_invoke/`（golden）| NEW | 端到端：GetType→Invoke（static + instance + void + 抛异常 catch；实例用普通 new）|
 | `docs/design/language/reflection.md` | MODIFY | Invoke/GetType/Activator 段（非泛型）+ 移出对应 Deferred |
 | `docs/roadmap.md` | MODIFY | 0.3.12 Method.Invoke 打勾 |
 | `docs/spec/changes/ACTIVE.md` | MODIFY | 登记本变更子系统占用 |

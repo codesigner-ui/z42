@@ -44,6 +44,12 @@ public sealed class Type : MemberInfo {
     // `MemberInfo` — the VM writes it into the inherited field slot when it
     // constructs a Type instance (build_type), same as FieldInfo/MethodInfo.
 
+    // Resolve a Type by fully-qualified name (e.g. "Demo.Point"); null if unknown.
+    // Complements typeof(T) / obj.GetType() for reflection-driven lookup
+    // (add-method-invoke-non-generic, 0.3.12). Static — no receiver.
+    [Native("__type_get_type")]
+    public static extern Type GetType(string fqn);
+
     // Element type of an array type (e.g. `typeof(int[]).GetElementType()` →
     // `typeof(int)`); null for a non-array type.
     [Native("__type_element")]

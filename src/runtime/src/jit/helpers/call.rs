@@ -158,6 +158,14 @@ pub unsafe extern "C" fn jit_builtin(
     match crate::corelib::exec_builtin_by_id(vm, id, &args) {
         Ok(v)  => { frame_ref.regs[dst as usize] = v; 0 }
         Err(e) => {
+            // A callback builtin (reflection `MethodInfo.Invoke`) that ran z42
+            // code which threw stashed the ORIGINAL exception value — propagate
+            // it with its real type, not wrapped into Std.Exception (parity with
+            // interp `exec_call::builtin`).
+            if let Some(thrown) = vm.take_pending_thrown() {
+                set_exception(vm, thrown);
+                return 1;
+            }
             // make-corelib-errors-catchable parity (this path was interp-only;
             // jit_builtin previously set a raw `Value::Str`). Wrap the builtin
             // error in a `Std.Exception` so JIT-compiled code can catch it with

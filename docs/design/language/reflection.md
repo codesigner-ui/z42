@@ -1,7 +1,9 @@
 # 反射（Reflection）
 
 > 状态：MVP 落地（add-reflection-mvp, 2026-06-08）—— 只读元数据检视。
-> 完整版（`Method.Invoke` / `Activator` / `MakeGenericType`）随 generic instantiation 在 0.5.x L3-R 落地。
+> **非泛型 `MethodInfo.Invoke` + `Type.GetType(fqn)` 已落地（add-method-invoke-non-generic, 0.3.12）**
+> —— 见下「反射调用」。泛型方法 `Invoke` / `Activator.CreateInstance` / `MakeGenericType` 随运行期
+> 泛型实例化在 0.4.x G / 0.5.x L3-R 落地。
 
 z42 反射让程序在**运行时只读地检视类型**——字段、方法、基类、泛型实参。API 形态参照 C# `System.Type` / `System.Reflection`。
 
@@ -104,11 +106,41 @@ void Demo() {
 | `Type : MemberInfo` | `Std`（z42.core）| `Name`（继承自 MemberInfo）/ `FullName` / `BaseType` / `IsAbstract` / `IsSealed` / `IsValueType` / `IsRecord` / `IsClass` / `IsInterface` / `IsGenericType` / `IsGenericTypeDefinition` / `IsPrimitive` / `IsArray` / `GetFields()` / `GetMethods()` / `GetMembers()` / `GetProperties()` / `GetGenericArguments()` / `GetGenericTypeDefinition()` / `GetInterfaces()` / `GetInterface(name)` / `IsAssignableFrom(Type)` / `GetElementType()` |
 | `MemberInfo` | `Std.Reflection` | `Name`（`Type` / `FieldInfo` / `MethodInfo` / `PropertyInfo` 的基类）|
 | `FieldInfo : MemberInfo` | `Std.Reflection` | `FieldType : Type` / `IsStatic` / `GetCustomAttributes()` / `GetAttribute(Type)` |
-| `MethodInfo : MemberInfo` | `Std.Reflection` | `ReturnType : Type` / `IsStatic` / `IsVirtual` / `GetParameters()` |
+| `MethodInfo : MemberInfo` | `Std.Reflection` | `ReturnType : Type` / `IsStatic` / `IsVirtual` / `GetParameters()` / **`Invoke(object, object[])`**（0.3.12，非泛型）|
 | `ParameterInfo` | `Std.Reflection` | `Name` / `ParameterType : Type` / `Position` / `GetCustomAttributes()` / `GetAttribute(Type)` |
 | `PropertyInfo : MemberInfo` | `Std.Reflection` | `PropertyType : Type` / `CanRead` / `CanWrite` |
 
 `FieldType` / `ReturnType` / `ParameterType` / `BaseType` 返回的都是 `Type` 对象（不是字符串），与 C# 一致。
+
+`Type` 另有静态 **`Type.GetType(string fqn)`**（0.3.12）：完全限定名 → `Type`（未知返 null），补 `typeof`/`obj.GetType()` 的反向查询。
+
+## 反射调用（add-method-invoke-non-generic, 0.3.12）
+
+非泛型 `MethodInfo.Invoke(object obj, object[] args) → object`：
+
+```z42
+Type t = Type.GetType("Demo.Calc");
+MethodInfo add = /* 从 t.GetMethods() 按名取 */;
+object r = add.Invoke(null, new object[]{2, 3});   // 静态：obj=null；装箱实参进 object[]
+int sum = (int)r;                                  // 5（拆箱返回值）
+
+Calc c = new Calc();
+object r2 = twice.Invoke(c, oneArg);               // 实例：obj=接收者（reg 0）
+```
+
+语义：
+- **静态方法** obj 传 null（忽略）；**实例方法** obj 为接收者。`args`（`object[]`）按序映射形参——
+  依赖装箱（[boxing.md](boxing.md)）：原始实参装入 `object[]`、调用时直接落参数寄存器。
+- **返回值**：方法返回值（`void` → null）；拆箱由调用方 `(T)` 完成。
+- **异常传播**：被调方法的 `throw` 以**原始异常类型**传播，调用方可 `try/catch` 精确匹配
+  （非包装成 `Std.Exception`）。实现：builtin 经 `ctx.pending_thrown` 把原异常值透出，interp
+  （`exec_call::builtin`）与 jit（`jit_builtin`）两路径都消费它。
+- **实参个数不符** → 抛带信息异常。
+- **实现**：`__method_invoke` builtin 复用普通调用的 `exec_function`（同一调用路径，零重复）。
+
+非泛型限制：MethodInfo 不记类型实参；泛型方法 Invoke / `Activator.CreateInstance` / `MakeGenericType`
+待运行期泛型实例化（0.4.x G / 0.5.x）。无参实例化（`Activator.CreateInstance(Type)`）亦延后——
+当前测试/调用方用普通 `new` 构造实例后再反射调用。
 
 ## 实现原理
 

@@ -121,6 +121,12 @@ pub(super) fn builtin(
             Ok(None)
         }
         Err(e) => {
+            // A callback builtin (reflection `MethodInfo.Invoke`) that ran z42
+            // code which threw stashes the ORIGINAL exception value here so it
+            // propagates with its real type, not wrapped into Std.Exception.
+            if let Some(thrown) = ctx.take_pending_thrown() {
+                return Ok(Some(thrown));
+            }
             let msg = e.to_string();
             match crate::exception::make_stdlib_exception(
                 ctx, module, "Std.Exception", msg,

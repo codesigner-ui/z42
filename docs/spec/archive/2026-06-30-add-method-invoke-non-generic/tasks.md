@@ -1,7 +1,24 @@
 # Tasks: 反射调用原语（Method.Invoke / Type.GetType / Activator.CreateInstance，非泛型）
 
-> 状态：🟡 DRAFT（待 User 审批 + 6.5 gate）| 创建：2026-06-29
+> 状态：🟢 已完成 | 创建：2026-06-29 | 完成：2026-06-30
 > 里程碑：0.3.12 | 前置：boxing 0.3.11 ✅（ea2ba2a0）
+
+## 进度概览
+- [x] 阶段 1: 异常传播核实 — D3 路径定为 ctx.pending_thrown（builtin 透出原异常值，interp exec_call::builtin + jit jit_builtin 两路径消费）
+- [x] 阶段 2: Type.GetType + ~~Activator.CreateInstance~~（Activator 延后，见 proposal 更正）
+- [x] 阶段 3: MethodInfo.Invoke（__method_invoke builtin，复用 exec_function）
+- [x] 阶段 4: 测试 — golden src/tests/reflection/method_invoke（static/instance/void/throw-catch）
+- [x] 阶段 5: 文档 — reflection.md + roadmap
+- [x] 阶段 6: GREEN — interp 190/0（含 method_invoke）+ jit method_invoke 直验通过
+
+> **实证更正**：①Activator.CreateInstance **延后**（obj_new 是指令处理器不便复用 + ctor 命名约定，
+> 风险高；实例方法 Invoke 用普通 new 建实例即可测）——见 Deferred add-method-invoke-future-activator。
+> ②**异常传播**走 ctx.pending_thrown：builtin 遇 Thrown 存原异常值 + bail，exec_call::builtin（interp）
+> 与 jit_builtin（jit）的 Err 处理都先 take_pending_thrown 透出原类型（否则被包成 Std.Exception）。
+> ③**Scope 补充（root-cause 修复）**：golden runner `_runVmGoldens` 此前不设 Z42_LIBS，继承 xtask
+> apphost 的陈旧 Z42_LIBS（如 .z42/libs）→ 用新 stdlib 函数（Std.Type.GetType）的 golden 运行期报
+> "undefined function"。修：`scripts/xtask_test_vm.z42` 把 Z42_LIBS 钉到 fresh `_libsDir(root)`。
+> 这是 boxing 没暴露（未加新 stdlib 函数）的既有 harness 隐患，由本变更触发。
 > 子系统：runtime（reflection builtin）+ stdlib（z42.core API）。开工前查 ACTIVE.md 登记（全空闲才开）。
 
 ## 进度概览

@@ -16,6 +16,7 @@
 //!     method's `Function` via `ctx.try_lookup_function` — no persisted
 //!     per-type method table, no wire-format change.
 
+use crate::interp::{exec_function, ExecOutcome};
 use crate::metadata::{well_known_names, NativeData, TypeDesc, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
@@ -969,6 +970,100 @@ fn class_flag_set(args: &[Value], bit: u8) -> bool {
     type_handle(args)
         .map(|td| td.class_flags & bit != 0)
         .unwrap_or(false)
+}
+
+// ── Reflective invocation (add-method-invoke-non-generic, 0.3.12) ────────────
+
+/// Read a named slot from any ScriptObject `Value` (e.g. a `MethodInfo`'s hidden
+/// `__qualified` / `IsStatic`). `Null` if not an object or no such field.
+fn read_obj_slot(v: &Value, field: &str) -> Value {
+    if let Value::Object(rc) = v {
+        if let Some(i) = rc.type_desc().field_index.get(field).copied() {
+            return rc.borrow().slots.get(i).cloned().unwrap_or(Value::Null);
+        }
+    }
+    Value::Null
+}
+
+/// `__type_get_type(fqn: str) -> Type` — FQN string → `Std.Type` (null if unknown).
+/// Thin wrapper over `make_type_from_name` (main registry + lazy loader + synthetic).
+pub fn builtin_type_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    match args.first() {
+        Some(Value::Str(s)) => Ok(make_type_from_name(ctx, s)),
+        _ => Ok(Value::Null),
+    }
+}
+
+/// `__method_invoke(method: MethodInfo, obj: object, args: object[]) -> object`.
+/// Reflectively invokes the method named by the MethodInfo's hidden `__qualified`:
+/// instance methods take `obj` as receiver (reg 0); static methods ignore it.
+/// `args` (an `object[]`) maps to the remaining parameters in order. Returns the
+/// method's return value (`void` → null). A `throw` inside the invoked method is
+/// propagated with its ORIGINAL type via `ctx.set_pending_thrown` (consumed by
+/// `exec_call::builtin`), so callers can `try/catch` the real exception.
+pub fn builtin_method_invoke(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let mi = args.first().cloned().unwrap_or(Value::Null);
+    let this_obj = args.get(1).cloned().unwrap_or(Value::Null);
+    let args_arr = args.get(2).cloned().unwrap_or(Value::Null);
+
+    let qualified = match read_obj_slot(&mi, "__qualified") {
+        Value::Str(s) => s.to_string(),
+        _ => bail!("MethodInfo.Invoke: receiver is not a MethodInfo (no __qualified)"),
+    };
+    let is_static = matches!(read_obj_slot(&mi, "IsStatic"), Value::Bool(true));
+
+    // Assemble call args: instance receiver first (reg 0), then the object[] elements.
+    let mut call_args: Vec<Value> = Vec::new();
+    if !is_static {
+        call_args.push(this_obj);
+    }
+    if let Value::Array(rc) = &args_arr {
+        for e in rc.borrow().iter() {
+            call_args.push(e.clone());
+        }
+    }
+
+    // Resolve the Function (main module first, then lazy loader) and execute.
+    let module_arc = ctx
+        .core
+        .module
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("MethodInfo.Invoke: VmCore.module is None"))?
+        .clone();
+    let module = module_arc.as_ref();
+
+    let outcome = match module.func_index.get(&qualified) {
+        Some(&idx) => {
+            let f = &module.functions[idx];
+            invoke_arity_check(&qualified, f.param_count, call_args.len())?;
+            exec_function(ctx, module, f, &call_args)?
+        }
+        None => {
+            let f = ctx.try_lookup_function(&qualified).ok_or_else(|| {
+                anyhow::anyhow!("MethodInfo.Invoke: function `{qualified}` not found")
+            })?;
+            invoke_arity_check(&qualified, f.param_count, call_args.len())?;
+            exec_function(ctx, module, f.as_ref(), &call_args)?
+        }
+    };
+
+    match outcome {
+        ExecOutcome::Returned(Some(v)) => Ok(v),
+        ExecOutcome::Returned(None) => Ok(Value::Null),
+        ExecOutcome::Thrown(val) => {
+            // Propagate the ORIGINAL exception value (preserving its type) through
+            // the builtin error channel; exec_call::builtin re-raises it.
+            ctx.set_pending_thrown(val);
+            bail!("__z42_reflected_throw__")
+        }
+    }
+}
+
+fn invoke_arity_check(qualified: &str, expected: usize, got: usize) -> Result<()> {
+    if expected != got {
+        bail!("MethodInfo.Invoke: `{qualified}` expects {expected} argument(s) (incl. receiver), got {got}");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
