@@ -717,7 +717,7 @@ add-z42-json 加 JsonValue 类时与 TomlValue / Dictionary 多处 method 名共
 - **NudTable**（null denotation）：从哪个 token **开始** 表达式 —— 字面量、前缀运算符、`(`、`new`、lambda 等
 - **LedTable**（left denotation）：在已有表达式后接什么 token —— 二元运算符、`.`（member）、`[`（index）、`(`（call）、`?:`、`switch`、postfix `++`/`--`
 
-**优先级**（binding power）：见 `.claude/rules/compiler-csharp.md` 的 Pratt 表。
+**优先级**（binding power）：见 `.claude/rules/compiler-z42c.md` 的 Pratt 表。
 
 ### Z42Type record 结构 equality（2026-05-03 fix-z42type-structural-equality）
 
@@ -1190,7 +1190,7 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
 - `docs/design/compiler/compilation.md` — 构建流程（manifest → zpkg 的用户视角）
 - `docs/design/runtime/zbc.md` — `.zbc` 二进制格式
 - `docs/design/language/namespace-using.md` — namespace / using 的语言规则
-- `.claude/rules/compiler-csharp.md` — C# 编译器开发规范（代码风格 + AST / Parser / Lexer 约定）
+- `.claude/rules/compiler-z42c.md` — z42c 编译器开发规范（子包结构 + Lexer / Parser / AST 约定）
 
 ---
 

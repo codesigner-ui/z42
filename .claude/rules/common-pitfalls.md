@@ -1,8 +1,8 @@
 # 跨语言共同陷阱
 
-> 适用于 **C# 编译器 + Rust VM + bash 脚本**所有代码路径。
-> 这些规则是"曾经因此出过 bug、且与具体语言无关"的横切约束。
-> 语言专属约定见 [compiler-csharp.md](compiler-csharp.md) / [runtime-rust.md](runtime-rust.md)。
+> 适用于 **z42c 编译器（z42）+ Rust VM + bash 脚本**所有代码路径。
+> 这些规则是"曾经因此出过 bug、且与具体语言无关"的横切约束（含 C# 编译器时代的历史案例）。
+> 语言专属约定见 [compiler-z42c.md](compiler-z42c.md) / [runtime-rust.md](runtime-rust.md)。
 
 ---
 
@@ -108,8 +108,8 @@ let cache: BTreeMap<String, Value> = ...;  // 迭代时按 key 字母序
 
 新规则进 `common-pitfalls.md` 要满足**全部**三条：
 
-1. 这个坑可以在 C# / Rust / bash 任一种语言里出现（不是某语言独有 idiom）
+1. 这个坑可以在 z42 / Rust / bash 任一种语言里出现（不是某语言独有 idiom）
 2. 至少出过一次实际 bug（不是预防性脑补）
 3. 修复方式是"模式而非具体 API"（"避免 X 类型行为"，不是"换用 Y 库"）
 
-否则该规则属于 [compiler-csharp.md](compiler-csharp.md) / [runtime-rust.md](runtime-rust.md) / 具体设计 doc。
+否则该规则属于 [compiler-z42c.md](compiler-z42c.md) / [runtime-rust.md](runtime-rust.md) / 具体设计 doc。
