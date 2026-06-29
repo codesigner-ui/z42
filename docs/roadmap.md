@@ -103,7 +103,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.3.8 | emit（ZbcWriter/ZpkgWriter → byte-identical .zbc/.zpkg）| | |
 | 0.3.9 | ✅ 归档 port-z42c-self-compile（G22 全绿）+ runtime-dynamic-load-call 归档 ‖ **✅ z42c 编译全 22 stdlib 包 byte-identical**（z42c 可完整替代 C# 编译器；commit 36485ae4，2026-06-19）| | |
 | 0.3.10 | byte-identical CI gate 全 7 子系统 7 日零飘移 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
-| 0.3.11 | **Boxing 机制**：auto-boxing（prim→Object）+ box/unbox IR 指令 + 编译器隐式转换规则（spec-first，lang/ir/vm 三层）| | |
+| 0.3.11 | **Boxing 机制**（方案 A 类型系统层）：prim→object 隐式装箱（Value 已是 tagged union → codegen no-op，零分配）+ object→prim 受检拆箱（复用 Convert）。实证：编译器侧（GS6 赋值）已存在，整改动 = 运行期 Bool 拆箱恒等 + golden + 文档。**无 box/unbox IR、无格式 bump**。见 [`design/language/boxing.md`](design/language/boxing.md) | 🟢 实现完成（add-boxing-conversions，待归档）| |
 | 0.3.12 | **反射完整化**：Method.Invoke（非泛型）‖ IsEnum（enum 作类型实体 spec 前置）‖ 嵌套泛型 GetGenericArguments ‖ 接口成员枚举 | | |
 | 0.3.13 | **test-runner 删除**：z42.test 加 TestRunner/BenchRunner（反射驱动 [Test]/[Benchmark] 发现）+ z42b `test`/`bench` verb + 退役 Rust binary（同替两者）‖ **CI 三平台模拟器**：WASM(Playwright) / iOS Simulator(`xcodebuild -destination`) / Android(emulator-runner+KVM) → JUnit → GitHub Checks（stdlib ‖ toolchain 双锁并行）| | |
 | 0.3.14 | **workload B1**（命令发现：launcher 扫目录 → Std.Cli 树合并）+ **B2**（workload 包格式 + `z42 workload install/list/remove`）| | |
@@ -461,6 +461,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | `port-android-emulator-run-to-z42` | AndroidBackend.RunTests 当前桥接 `test.sh`（emulator AVD boot/poll/kill）；完整 z42 化 + JUnit 转换 | CI 稳定后 |
 | `ios-simulator-test` | IosBackend.RunTests 当前 `swift test`（macOS host slice）；加 iOS Simulator `xcodebuild test -destination` 执行 + JUnit | CI 接入时 |
 | `retire-platform-build-test-sh` | 三平台 z42 管线 CI-proven 后，删 `platforms/*/{build,test}.sh`（migrate-scripts-to-z42 节奏）| CI-proven 后 |
+| `add-boxing-future-enum-precise` | enum 当前 I64 表示，装箱丢类型精度（GetType→Int32，`(MyEnum)o` 与 `(int)o` 不可区分）；精确 enum 装箱需 enum-as-type-entity（独立 tag/带-tag 装箱）。正文见 [`design/language/boxing.md`](design/language/boxing.md#deferred--future-work) | enum 作独立类型实体时 |
 
 ### Backlog 项实施流程
 

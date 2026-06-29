@@ -283,6 +283,10 @@ pub fn convert_value(v: Value, to_tag: u8) -> Result<Value> {
         (Value::Str(_),    T_STR)    => return Ok(v),
         (Value::Array(_),  T_ARRAY)  => return Ok(v),
         (Value::Object(_), T_OBJECT) => return Ok(v),
+        // Unbox of a boxed bool: `(bool)o` where o holds a Bool. Bool has no
+        // numeric conversion arm (bool↔numeric is rejected at TypeCheck), so an
+        // identity match here is the only valid bool unbox path. (add-boxing-conversions)
+        (Value::Bool(_),   T_BOOL)   => return Ok(v),
         // Object-to-Array cast (e.g. `(byte[])obj_elem`): tag is T_ARRAY
         // when destination is an array reference type. Already handled above.
         // Null → any reference target.

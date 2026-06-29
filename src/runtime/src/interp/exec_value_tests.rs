@@ -179,3 +179,33 @@ fn target_bool_rejected_for_f64() {
     let err = convert_value(Value::F64(1.0), T_BOOL);
     assert!(err.is_err());
 }
+
+// ── Boxing: unbox of boxed primitives (add-boxing-conversions) ──────────────
+
+#[test]
+fn unbox_bool_identity() {
+    // `(bool)o` where o boxes a bool: bool has no numeric arm (bool↔numeric is
+    // rejected), so an identity match is the only valid unbox path. Previously
+    // fell through to the defensive InvalidCastException bail (bug).
+    let r = convert_value(Value::Bool(true), T_BOOL).unwrap();
+    assert!(matches!(r, Value::Bool(true)));
+}
+
+#[test]
+fn unbox_int_via_convert_path() {
+    // `(int)o` where o boxes an int → convert path (all z42 ints are I64).
+    let r = convert_value(Value::I64(5), T_I32).unwrap();
+    assert!(matches!(r, Value::I64(5)));
+}
+
+#[test]
+fn unbox_char_identity() {
+    let r = convert_value(Value::Char('x'), T_CHAR).unwrap();
+    assert!(matches!(r, Value::Char('x')));
+}
+
+#[test]
+fn unbox_mismatch_str_to_bool_throws() {
+    // `(bool)o` where o boxes a string → InvalidCastException.
+    assert!(convert_value(Value::Str("hi".into()), T_BOOL).is_err());
+}

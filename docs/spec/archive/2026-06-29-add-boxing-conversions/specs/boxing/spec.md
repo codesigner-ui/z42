@@ -34,31 +34,29 @@
 
 #### Scenario: 类型不符拆箱抛异常
 - **WHEN** `object o = "hi"; int x = (int)o;`
-- **THEN** 运行期抛 `InvalidCastException`
+- **THEN** 运行期抛 `InvalidCastException`（消息含目标 tag）
+- **注（实证）**：当前经运行期 `Convert` 的 `bail!` 产生，是**终止性 VM 异常、不可被 try/catch
+  捕获**——与所有 Convert 失败一致。让 Convert 错误可捕获是独立的既有问题，不在本变更 scope。
 
 #### Scenario: null 拆箱抛异常
 - **WHEN** `object o = null; int x = (int)o;`
-- **THEN** 运行期抛 `InvalidCastException`
+- **THEN** 运行期抛 `InvalidCastException`（同上，不可捕获）
 
-### Requirement: 重载决议装箱最低优先级
-
-存在更具体的非装箱候选时不选装箱重载。优先级：精确匹配 > 数值加宽 > 装箱。
-
-#### Scenario: 精确优于装箱
-- **WHEN** 重载 `f(int)` 与 `f(object)` 并存，调用 `f(5)`
-- **THEN** 选 `f(int)`（装箱候选仅在无非装箱候选时入选）
-
-#### Scenario: 仅 object 重载时装箱入选
-- **WHEN** 仅 `f(object)` 存在，调用 `f(5)`
-- **THEN** 选 `f(object)`（装箱）
+> **重载决议（N/A，实证移除）**：z42 重载是 **arity-only**（`_overloadKey = name+"$"+argCount`），
+> **不支持同名同 arity 的类型重载**，故不存在 `f(int)` 与 `f(object)` 并存——"装箱最低优先级"
+> 需求不适用，本变更不涉及重载决议。
 
 ## MODIFIED Requirements
 
-### Requirement: object 赋值兼容性
+### Requirement: object 赋值兼容性（实证：大部已存在）
 
-**Before:** 原始类型不可赋给 `object`（或仅显式 cast）；`object o = 5;` 报类型错误。
-**After:** 原始类型经装箱转换隐式可赋给 `object`。引用类型（class/record/array）赋给 object
-保持既有引用上转语义不变（它们已是 `Value::Object/Array` 带 TypeDesc，装箱=恒等，本就成立）。
+**实证更正**：prim→object 隐式可赋值**已存在**（GS6，`TypeChecker.z42:1118`「任何类型可赋给
+object」）；`(T)object` 拆箱 cast 已走 `BoundConvert`→`Convert`。引用类型（class/record/array）
+赋 object 也本就成立（已是 `Value::Object/Array` 带 TypeDesc，装箱=恒等）。
+
+**本变更的实际 delta** = 运行期 `Convert` 的 **Bool 拆箱恒等**（`(Value::Bool(_), T_BOOL)`）——此前
+bool 无数值 arm 误落 `InvalidCastException` bail。补此一处后 prim↔object 全类型往返成立。
+**z42c.semantics 零改动**（端到端实证：未动编译器即编过全部装箱/拆箱用例）。
 
 ## IR Mapping
 
@@ -69,13 +67,13 @@
 
 无新 opcode、无 zbc/zpkg 格式 bump。
 
-## Pipeline Steps
+## Pipeline Steps（实证：仅 VM interp 一处改动）
 
-- [ ] Lexer：无（复用现有赋值/cast 语法）
-- [ ] Parser / AST：无
-- [ ] TypeChecker：装箱可赋值规则 + object→prim 拆箱合法性 + 重载决议装箱最低优先级
-- [ ] IR Codegen：装箱 no-op；拆箱 emit 现有 `Convert`
-- [ ] VM interp：`Convert` 的 Object→全部原始目标 + null/tag 不符抛 `InvalidCastException`（核实/补缺）
+- [x] Lexer：无（复用现有赋值/cast 语法）
+- [x] Parser / AST：无
+- [x] TypeChecker：**零改动**（GS6 prim→object 已可赋值；`(T)object` 已走 BoundConvert；重载 arity-only → 优先级 N/A）
+- [x] IR Codegen：**零改动**（装箱已 no-op；拆箱已 emit `Convert`）
+- [x] VM interp：`Convert` 补 **Bool 拆箱恒等**（唯一改动）；int/long/char/f64 拆箱本就工作；null/tag 不符已抛 `InvalidCastException`
 
 ## 边界（非健全性问题，已知且对齐 deferred）
 

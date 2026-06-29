@@ -126,7 +126,7 @@ tag; source type is read at runtime from the source `Value` variant.
 
 **Identity casts** (e.g. `(int)int_val`) are elided by Codegen and don't emit `Convert` — register flows through unchanged.
 
-**Object / Unknown source**: Codegen still emits `Convert`; VM resolves at runtime based on dynamic `Value` variant. Preserves the existing stdlib `(long)object` pattern.
+**Object / Unknown source (unbox)**: Codegen still emits `Convert`; VM resolves at runtime based on dynamic `Value` variant. Preserves the existing stdlib `(long)object` pattern. This is the **unboxing** path for `object → primitive` (see [boxing.md](../language/boxing.md)): numeric/char targets convert from the boxed `I64/F64/Char`; **`bool` unboxes via an identity match** (`(Value::Bool, T_BOOL)`) since `bool` has no numeric arm; a tag mismatch or `Null` source throws `InvalidCastException`. Boxing (`primitive → object`) emits no IR — the tagged `Value` flows through unchanged.
 
 ### Control Flow
 ```

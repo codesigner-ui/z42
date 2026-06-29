@@ -39,18 +39,23 @@
 
 ## Scope（允许改动的文件）
 
+> **实证更正（2026-06-29）**：编译器侧（prim→object 赋值 GS6、`(T)object` 拆箱、object[] 元素装箱）
+> **已全部存在，零改动**。实际改动收窄为：运行期 Bool 拆箱恒等 + golden + 单测 + 文档。
+> 原列的 TypeChecker.z42 / Z42Type.z42 / ExprEmitter.z42 降级为**只读核实**（未改）。
+
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `src/compiler/z42c.semantics/src/TypeChecker.z42` | MODIFY | prim→object 装箱可赋值；object→prim 受检拆箱合法性；重载决议装箱最低优先级 |
-| `src/compiler/z42c.semantics/src/Z42Type.z42` | MODIFY | object 顶类型 assignable 判定纳入装箱转换（若 assignability 逻辑在此）|
-| `src/compiler/z42c.semantics/src/ExprEmitter.z42` | MODIFY | 装箱 = no-op（原值流过）；拆箱 = emit 现有 Convert |
-| `src/runtime/src/interp/exec_convert.rs`（或 Convert 所在）| MODIFY | 确保 Object→全部原始目标 + tag 不符/null 抛 InvalidCastException（补缺）|
-| `docs/design/language/boxing.md` | NEW | 装箱/拆箱长期规范（语义、边界、重载、enum 边界）|
-| `docs/design/language/language-overview.md` | MODIFY | object 顶类型 + 装箱转换简述 |
-| `docs/design/runtime/ir.md` | MODIFY | Convert 的 Object→prim 受检拆箱语义补全说明 |
+| `src/runtime/src/interp/exec_value.rs` | MODIFY | `convert_value` ref-identity 块加 `(Value::Bool(_), T_BOOL)` 恒等（唯一代码改动）|
+| `src/runtime/src/interp/exec_value_tests.rs` | MODIFY | 拆箱单测：bool 恒等 / int convert / char 恒等 / str→bool 不符抛 |
+| `src/tests/types/box_unbox/source.z42` + `expected_output.txt` | NEW | golden：int/bool/char/object[] 装拆箱往返 |
+| `docs/design/language/boxing.md` | NEW | 装箱/拆箱长期规范（语义、边界、enum 边界、不可捕获说明）|
+| `docs/design/runtime/ir.md` | MODIFY | Convert 的 Object→prim 受检拆箱语义（含 Bool 恒等）补全说明 |
 | `docs/roadmap.md` | MODIFY | 0.3.11 装箱机制条目打勾 + Deferred Backlog（enum 精确装箱）|
-| `src/tests/run/box_unbox/`（golden）| NEW | 装箱/拆箱端到端：成功 + InvalidCast + null + object[] 元素 |
-| `src/compiler/z42c.semantics/tests/...` | NEW | TypeChecker 单测：装箱可赋值 / 重载优先 / 非法拆箱拒绝 |
+
+**只读核实（未改，确认已支持）**：
+- `src/compiler/z42c.semantics/src/TypeChecker.z42` — GS6:1118 prim→object 已可赋值；`(T)x`→BoundConvert
+- `src/compiler/z42c.semantics/src/Z42Type.z42` — object 类型表示
+- `src/compiler/z42c.semantics/src/ExprEmitter.z42` — 装箱 no-op / 拆箱 emit Convert
 
 **只读引用**：
 - `docs/design/runtime/ir.md` §Numeric Cast — 现有 Convert 语义（Object 源运行期解析）
