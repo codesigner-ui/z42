@@ -323,11 +323,16 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # OWN cache key (not the shared host-v2): the package step builds z42 as
+      # cdylib + staticlib + z42-compression + apphost on top of bin/rlib. host-v2
+      # is saved by compile-toolchain (bin/rlib only), so sharing it meant those
+      # extra crate-types were never cached and recompiled cold every run (~6-8 min
+      # on Windows). A dedicated key caches the FULL package build → warm reuse.
       - name: Cache Rust deps (Swatinem)
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src/runtime -> ../../artifacts/build/runtime
-          shared-key: host-v2
+          shared-key: package-host-v2
 
       - uses: ./.github/actions/xtask-bootstrap-artifact
 
