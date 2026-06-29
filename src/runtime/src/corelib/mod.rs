@@ -237,6 +237,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // add-method-invoke-non-generic (0.3.12): reflective invocation primitives.
     ("__type_get_type",      reflection::builtin_type_get_type),
     ("__method_invoke",      reflection::builtin_method_invoke),
+    // retire-test-runner: no-arg reflective construction (test-class instantiation).
+    ("__activator_create",   reflection::builtin_activator_create),
     // add-reflection-generic-type-definition: `typeof` now lowers to the Typeof
     // opcode (interp/jit), not a builtin — the former `__typeof` is removed.
 

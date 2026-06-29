@@ -1,0 +1,28 @@
+// 反射构造（retire-test-runner 前置）：Activator.CreateInstance(Type) 无参反射 new
+// （运行无参 ctor）+ 对反射创建的实例做 MethodInfo.Invoke。
+namespace Demo;
+using Std;
+using Std.IO;
+using Std.Reflection;
+
+class Counter {
+    int n;
+    Counter() { this.n = 10; }
+    int Bump(int by) { this.n = this.n + by; return this.n; }
+}
+
+MethodInfo find(Type t, string name) {
+    MethodInfo[] ms = t.GetMethods();
+    int i = 0;
+    while (i < ms.Length) { if (ms[i].Name == name) { return ms[i]; } i = i + 1; }
+    return null;
+}
+
+void Main() {
+    Type t = typeof(Counter);
+    object inst = Activator.CreateInstance(t);   // 反射 new → ctor 设 n=10
+    Console.WriteLine(inst != null);
+    MethodInfo bump = find(t, "Bump");
+    object[] a = new object[1]; a[0] = 5;
+    Console.WriteLine((int)bump.Invoke(inst, a));   // 10+5=15
+}

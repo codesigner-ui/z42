@@ -138,9 +138,17 @@ object r2 = twice.Invoke(c, oneArg);               // 实例：obj=接收者（r
 - **实参个数不符** → 抛带信息异常。
 - **实现**：`__method_invoke` builtin 复用普通调用的 `exec_function`（同一调用路径，零重复）。
 
-非泛型限制：MethodInfo 不记类型实参；泛型方法 Invoke / `Activator.CreateInstance` / `MakeGenericType`
-待运行期泛型实例化（0.4.x G / 0.5.x）。无参实例化（`Activator.CreateInstance(Type)`）亦延后——
-当前测试/调用方用普通 `new` 构造实例后再反射调用。
+**反射构造**：`Activator.CreateInstance(Type t) → object`（`Std.Reflection.Activator`，非泛型无参）——
+反射 `new`：按 `<FQClass>.<SimpleName>`（含 `$0`）找无参 ctor 并执行（无显式 ctor 则默认字段分配即构造），
+ctor `throw` 以原类型传播。供反射测试运行器实例化测试类。
+
+```z42
+object inst = Activator.CreateInstance(typeof(Counter));   // 反射 new（跑无参 ctor）
+object r = bump.Invoke(inst, args);                        // 再反射调用其方法
+```
+
+非泛型限制：MethodInfo 不记类型实参；泛型方法 Invoke / `Activator.CreateInstance<T>` / `MakeGenericType`
++ **有参 `Activator.CreateInstance(Type, args)`**（构造重载决议）待运行期泛型实例化（0.4.x G / 0.5.x）。
 
 ## 实现原理
 

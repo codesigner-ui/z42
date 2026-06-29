@@ -1,0 +1,13 @@
+namespace Std.Reflection;
+
+// Reflective object construction. Mirrors C# `System.Activator` (no-arg subset).
+// Non-generic, no-arg only (test-class instantiation for the reflective test
+// runner). Parameterised CreateInstance + CreateInstance<T> are deferred until
+// runtime generic instantiation (0.4.x G).
+public static class Activator {
+    // Create an instance of `t` via its no-arg constructor (or default-field
+    // allocation if the type has no explicit ctor). A ctor `throw` propagates
+    // with its original exception type.
+    [Native("__activator_create")]
+    public static extern object CreateInstance(Std.Type t);
+}

@@ -1066,6 +1066,65 @@ fn invoke_arity_check(qualified: &str, expected: usize, got: usize) -> Result<()
     Ok(())
 }
 
+/// `__activator_create(type: Type) -> object` — no-arg reflective construction.
+/// Mirrors the interpreter's `ObjNew`: alloc with per-field defaults, then run the
+/// no-arg ctor (`<Class>` bare or `<Class>$0` overload-mangled) if one exists. A
+/// ctor `throw` propagates with its original type via `ctx.pending_thrown`. Only
+/// no-arg construction (test-class instantiation for the reflective test runner);
+/// parameterised CreateInstance is deferred.
+pub fn builtin_activator_create(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let td = match type_handle(args) {
+        Some(td) => td,
+        None => bail!("Activator.CreateInstance: type has no runtime handle (primitive/array/synthetic?)"),
+    };
+    let class_name = td.name.clone();
+    let slots: Vec<Value> = td
+        .fields
+        .iter()
+        .map(|f| crate::metadata::default_value_for(&f.type_tag))
+        .collect();
+    let obj = ctx.heap().alloc_object(td.clone(), slots, NativeData::None);
+    if matches!(obj, Value::Null) {
+        bail!("Activator.CreateInstance: allocation failed for `{class_name}`");
+    }
+
+    let module_arc = ctx
+        .core
+        .module
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Activator.CreateInstance: VmCore.module is None"))?
+        .clone();
+    let module = module_arc.as_ref();
+
+    // No-arg ctor function name = "<FQClass>.<SimpleName>" (ctors are named like
+    // the class, same scheme as methods: Demo.Counter.Counter), with "$0" when the
+    // ctor is overload-mangled. A class with no explicit ctor has neither → the
+    // default-field alloc IS construction.
+    let simple = class_name.rsplit('.').next().unwrap_or(class_name.as_str());
+    let cand_bare = format!("{class_name}.{simple}");
+    let cand_zero = format!("{class_name}.{simple}$0");
+    let mut i = 0;
+    while i < 2 {
+        let cand = if i == 0 { cand_bare.as_str() } else { cand_zero.as_str() };
+        i += 1;
+        let outcome = match module.func_index.get(cand) {
+            Some(&idx) => Some(exec_function(ctx, module, &module.functions[idx], &[obj.clone()])?),
+            None => match ctx.try_lookup_function(cand) {
+                Some(f) => Some(exec_function(ctx, module, f.as_ref(), &[obj.clone()])?),
+                None => None,
+            },
+        };
+        if let Some(o) = outcome {
+            if let ExecOutcome::Thrown(val) = o {
+                ctx.set_pending_thrown(val);
+                bail!("__z42_reflected_throw__");
+            }
+            break; // ran the first matching ctor
+        }
+    }
+    Ok(obj)
+}
+
 #[cfg(test)]
 #[path = "reflection_tests.rs"]
 mod reflection_tests;

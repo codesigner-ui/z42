@@ -464,7 +464,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | `retire-platform-build-test-sh` | 三平台 z42 管线 CI-proven 后，删 `platforms/*/{build,test}.sh`（migrate-scripts-to-z42 节奏）| CI-proven 后 |
 | `add-boxing-future-enum-precise` | enum 当前 I64 表示，装箱丢类型精度（GetType→Int32，`(MyEnum)o` 与 `(int)o` 不可区分）；精确 enum 装箱需 enum-as-type-entity（独立 tag/带-tag 装箱）。正文见 [`design/language/boxing.md`](design/language/boxing.md#deferred--future-work) | enum 作独立类型实体时 |
 | `add-method-invoke-future-generic` | 泛型方法 `Invoke` / `MakeGenericType` / `Activator.CreateInstance<T>`，需运行期泛型实例化。正文见 [`design/language/reflection.md`](design/language/reflection.md) | 0.4.x G 流泛型实例化后 |
-| `add-method-invoke-future-activator` | 无参 `Activator.CreateInstance(Type)`（反射构造实例）+ 有参重载决议构造。当前调用方用普通 `new` 构造后再反射调用 | retire-test-runner 需反射实例化时 |
+| `add-method-invoke-future-activator` | ~~无参 `Activator.CreateInstance(Type)`~~ ✅ 已落地；剩**有参** `CreateInstance(Type, args)`（构造重载决议）+ 泛型 `CreateInstance<T>` 待 0.4.x G | 有反射有参构造需求时 |
 
 ### Backlog 项实施流程
 
