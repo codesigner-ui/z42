@@ -21,6 +21,8 @@
 | 文件 | 段 | 职责 |
 |------|----|------|
 | `src/ManifestLoader.z42` | — | TOML → 模型 加载器：`Load`/`ParseText`（单项目）、`LoadWorkspace`/`ParseWorkspaceText`（workspace）；解析全段含 `[profile.*]`/`[[exe]]`/`[platform.*]` |
+| `src/SourceDiscovery.z42` | — | `[sources].include` glob → 绝对路径列表（递归/单层，排除 dist/.cache，去重+Ordinal 排序）|
+| `src/PathTemplate.z42` | — | 路径模板展开（`${project_name}`/`${profile}`/`${output_dir}` 等）+ `TemplateContext` |
 | `src/ProjectManifest.z42` | 根 | 聚合各段的完整清单（单项目） |
 | `src/ProjectInfo.z42` | `[project]` | name / version / kind / entry / pack |
 | `src/Sources.z42` | `[sources]` | include / exclude glob（array + count） |
@@ -38,6 +40,8 @@
 ## 入口点
 - `ManifestLoader.Load(path)` / `ManifestLoader.ParseText(text)` —— 单项目清单加载
 - `ManifestLoader.LoadWorkspace(path)` / `ParseWorkspaceText(text)` —— workspace 清单加载
+- `SourceDiscovery.Discover(projectDir, includes, count)` —— 源文件 glob 发现
+- `PathTemplate.Expand(template, ctx)` —— 路径模板展开
 - `ProjectManifest` —— 单项目清单根模型（含 `PlatformSet Platform`）
 - `WorkspaceManifest` —— workspace 根清单模型
 
