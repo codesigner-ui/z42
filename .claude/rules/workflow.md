@@ -208,15 +208,15 @@ docs/spec/changes/<change-name>/
 
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `src/path/to/Foo.cs`     | NEW    | 新增文件 |
-| `src/path/to/Bar.cs`     | MODIFY | 修改 X 字段 / Y 方法 |
-| `src/path/to/Old.cs`     | DELETE | 删除（pre-1.0 直接删，不留兼容） |
+| `src/path/to/Foo.z42`    | NEW    | 新增文件 |
+| `src/path/to/Bar.z42`    | MODIFY | 修改 X 字段 / Y 方法 |
+| `src/path/to/Old.z42`    | DELETE | 删除（pre-1.0 直接删，不留兼容） |
 | `docs/design/foo.md`     | MODIFY | 同步规范 |
-| `tests/FooTests.cs`      | NEW    | 新测试 |
+| `src/path/to/tests/foo/source.z42` | NEW | 新测试 |
 
 **只读引用**（理解上下文必须读，但不修改；不计入并行冲突）：
 
-- `src/path/to/Existing.cs` — 用于理解 X 行为
+- `src/path/to/Existing.z42` — 用于理解 X 行为
 - `docs/design/related.md` — 参考 Y 规则
 
 **变更类型枚举**：`NEW` / `MODIFY` / `DELETE` / `RENAME`（rename 同时占用旧路径 DELETE + 新路径 NEW）。
@@ -336,7 +336,7 @@ docs/spec/changes/<change-name>/
 
 ## 阶段 2: 核心实现（按 pipeline 顺序）
 - [ ] 2.1 Lexer/Token（如有）
-- [ ] 2.2 Parser/AST 节点（sealed record）
+- [ ] 2.2 Parser/AST 节点
 - [ ] 2.3 TypeChecker
 - [ ] 2.4 IR Codegen
 - [ ] 2.5 VM interp（interp 全绿前不碰 JIT）
@@ -345,7 +345,7 @@ docs/spec/changes/<change-name>/
 
 ## 阶段 3: 验证
 - [ ] 3.1 cargo build (z42vm) —— 无编译错误（z42c + stdlib 由 xtask test 用 z42c 自建）
-- [ ] 3.2 z42 xtask.zpkg test compiler —— z42c 自举全绿（替代旧 dotnet test）
+- [ ] 3.2 z42 xtask.zpkg test compiler —— z42c 自举全绿
 - [ ] 3.3 z42 xtask.zpkg test vm —— 全绿
 - [ ] 3.4 spec scenarios 逐条覆盖确认
 - [ ] 3.5 docs/design/ 文档同步（新语法 / IR / VM 行为）
@@ -486,7 +486,7 @@ iteration 期可用 `--scope=runtime|compiler|stdlib|auto` 缩窄 scope 跳过
 
 ```bash
 # 1. 编译验证（无编译错误）—— z42vm（Rust VM）。z42c（编译器）+ stdlib 由 xtask 在下面的
-#    test stage 内用 z42c 自建（C#-free，dotnet 已彻底移除 2026-06-26）
+#    test stage 内用 z42c 自建
 cargo build --manifest-path src/runtime/Cargo.toml --release
 
 # 2. VM goldens（interp；JIT 由 CI vm-jit-consistency 专腿覆盖，见 split-interp-jit）
@@ -504,8 +504,8 @@ z42 xtask.zpkg test compiler
 
 > **不要漏跑 cross-zpkg / lib / compiler**。historic regression：cross-zpkg
 > subclass catch bug 之所以一直没被发现，就是 3 / 4 不在默认 GREEN 路径里 —— 每次
-> spec 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化。编译器正确性
-> 现由 stage 5（z42c 自举）保证，不再有 C# `dotnet test`。
+> spec 验证都漏跑。该 lesson 现在以 `z42 xtask.zpkg test` 形式固化；编译器正确性
+> 由 stage 5（z42c 自举）保证。
 
 打包发行验证：发行版变更（z42 xtask.zpkg build package / 跨平台 / 嵌入接口）追加跑
 `z42 xtask.zpkg test dist`（要求先跑 `z42 xtask.zpkg build package release`
@@ -532,13 +532,13 @@ z42 xtask.zpkg test compiler
 - ✅ z42 xtask.zpkg test vm: M/M（GREEN gate `test all` 跑 interp；JIT 由 CI vm-jit-consistency 专腿 / 本地 `test vm jit` 覆盖）
 - ✅ z42 xtask.zpkg test cross-zpkg: K/K
 - ✅ z42 xtask.zpkg test lib: 22/22 lib
-- ✅ z42 xtask.zpkg test compiler: 7/7 zpkg + units（z42c 自举，替代旧 C# `dotnet test`）
+- ✅ z42 xtask.zpkg test compiler: 7/7 zpkg + units（z42c 自举）
 - （可选）✅ z42 xtask.zpkg test dist: P/P
 
 ### Spec 覆盖（若有 spec）
 | Scenario | 实现位置 | 验证方式 | 状态 |
 |----------|---------|---------|------|
-| [场景名] | File.cs:行号 | [单元/golden/端到端] | ✅ |
+| [场景名] | File.z42:行号 | [单元/golden/端到端] | ✅ |
 
 ### Tasks 完成度：N/N ✅
 
@@ -672,7 +672,7 @@ tasks.md 顶部：
 | refactor | 确保已有测试仍覆盖（不新增测试即可，但不得删除测试） |
 
 **测试位置：**
-- C# 编译器：`src/compiler/z42.Tests/` 下对应测试类
+- z42c 编译器：`src/compiler/<member>/tests/<name>/`（如 `z42c.semantics/tests/`、`z42c.syntax/tests/`）
 - Rust VM：`src/tests/<category>/<name>/`（VM e2e）或 `src/runtime/src/*_tests.rs`（Rust 单测）；stdlib-bound 用例放 `src/libraries/<lib>/tests/<name>/`
 - 跨语言端到端：golden test（source.z42 + expected_output.txt）
 
@@ -693,7 +693,7 @@ tasks.md 顶部：
 - **验证未全绿时 commit / push**
   - 🔴 **任何测试失败都不得进入 commit**
   - 包括 pre-existing 失败：发现后必须修复，或新建单独 issue + 说明
-  - 验证命令必须完整运行：`cargo build && z42 xtask.zpkg test`（C#-free 全 stage gate）
+  - 验证命令必须完整运行：`cargo build && z42 xtask.zpkg test`（全 stage gate）
   - 全绿的定义：所有编译无错，所有测试 100% 通过
 
 - **顺手修复 Scope 外问题**

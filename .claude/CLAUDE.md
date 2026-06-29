@@ -47,9 +47,9 @@ examples/       # .z42 示例源文件
 
 ## 代码风格
 
-**C#**：C# 12+ 特性；AST 节点用 `sealed record`；错误用异常（`ParseException`）；命名空间 `Z42.Compiler.*`
+**z42c（编译器）**：用 z42 写（`src/compiler/z42c.*`）；新代码一律 z42、不退回 C#；具体风格参照 [`src/compiler/README.md`](../src/compiler/README.md) 与 [`docs/design/compiler/compiler-architecture.md`](../docs/design/compiler/compiler-architecture.md)
 
-**Rust**：`anyhow::Result` + `thiserror`；非测试代码不用 `unwrap()`；公开类型加 `#[derive(Debug)]`
+**Rust（VM）**：`anyhow::Result` + `thiserror`；非测试代码不用 `unwrap()`；公开类型加 `#[derive(Debug)]`
 
 ## 代码组织（必须遵守）
 
@@ -77,7 +77,7 @@ examples/       # .z42 示例源文件
 
 ## 注意事项
 
-- 自举完成前，不把编译器代码改写成 z42
+- 编译器已自举为 z42（`src/compiler/z42c.*`）；编译器代码只用 z42 写，不退回 C#
 - M4（解释器）全绿前，不填充 JIT/AOT 实现
 - L2/L3 特性（Result、Trait、ADT、泛型、Lambda、async 等）不在 L1 阶段引入到规范或代码中
 

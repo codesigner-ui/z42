@@ -15,8 +15,8 @@ paths:
 ```
 src/                          ← 第 1 层，不需要（已有根 CLAUDE.md）
 src/compiler/                 ← 第 2 层 ✓ 需要 README
-src/compiler/z42.Compiler/    ← 第 3 层 ✓ 需要 README
-src/compiler/z42.Compiler/Codegen/  ← 第 4 层 ✗ 不自动加 README
+src/compiler/z42c.semantics/  ← 第 3 层 ✓ 需要 README
+src/compiler/z42c.semantics/src/  ← 第 4 层 ✗ 不自动加 README
 ```
 
 第 3 层的 README 应在"核心文件"或"子目录"表中覆盖其子目录的职责，不依赖子目录的 README。
@@ -32,7 +32,7 @@ src/compiler/z42.Compiler/Codegen/  ← 第 4 层 ✗ 不自动加 README
 ## 核心文件
 | 文件 | 职责 |
 |------|------|
-| `foo.rs` / `Foo.cs` | [一句话] |
+| `foo.rs` / `Foo.z42` | [一句话] |
 
 ## 入口点
 [主要对外暴露的类型/函数/模块]
@@ -72,9 +72,9 @@ src/compiler/z42.Compiler/Codegen/  ← 第 4 层 ✗ 不自动加 README
 | 类型 | 软限制（建议拆分）| 硬限制（必须拆分）|
 |------|-----------------|-----------------|
 | Rust `.rs` 文件 | 300 行 | 500 行 |
-| C# `.cs` 文件 | 300 行 | 500 行 |
+| z42 `.z42` 文件 | 300 行 | 500 行 |
 
-> 测试文件（`*_tests.rs`、`*Tests.cs`）不计入限制，但单个测试文件超过 600 行时也应按功能拆分。
+> 测试文件（`*_tests.rs`、`tests/<name>/` 下的 `.z42`）不计入限制，但单个测试文件超过 600 行时也应按功能拆分。
 
 ### 函数 / 方法行数
 
@@ -90,17 +90,13 @@ src/compiler/z42.Compiler/Codegen/  ← 第 4 层 ✗ 不自动加 README
 | 类型 | 硬限制 |
 |------|--------|
 | Rust `impl` 块 | 200 行（超出拆分为多个 impl 块或子模块） |
-| C# `class` / `record` | 200 行（超出提取辅助类型） |
+| z42 类型（class / struct / record） | 200 行（超出提取辅助类型） |
 
-> **partial class 累计计入**：C# `partial class` / `partial struct` 的多个分部
-> 文件按"类型整体"判定 200 行硬限——把所有 `partial X` 文件中归属同一类型的
-> 行（除 using / namespace / `partial class X { ... }` 包裹之外的成员体积）
-> 累加。这条规则防止有人把"类型超 200 行"通过拆分散落到多个 partial 来绕过。
+> **类型拆多文件时累计计入**：若某语言支持把一个类型拆到多个文件（如 partial），
+> 按"类型整体"判定 200 行硬限——把归属同一类型的成员体积（除模块 / 命名空间 / 类壳
+> 包裹之外的部分）累加，防止"类型超 200 行"被散落到多文件来绕过。
 >
-> 计算方式：`grep -c "^[[:space:]]*\(public\|private\|internal\|protected\|static\|sealed\|virtual\)" Type.*.cs` 给个粗略下限；精确计算把所有
-> `Type.*.cs` 的有效行（去掉头部 using/namespace/类壳）相加。
->
-> 单文件 500 行硬限仍独立适用——partial 拆分主要解决"文件超限"，**不**解决
+> 单文件 500 行硬限仍独立适用——多文件拆分主要解决"文件超限"，**不**解决
 > "类型超限"。两条限制分别约束。
 
 ### 执行方式

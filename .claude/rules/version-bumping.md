@@ -1,7 +1,7 @@
 ---
 paths:
-  - "src/compiler/z42.IR/BinaryFormat/**"
-  - "src/compiler/z42.Project/**"
+  - "src/compiler/z42c.ir/src/BinaryFormat/**"
+  - "src/compiler/z42c.project/src/**"
   - "src/runtime/src/metadata/**"
   - "docs/design/runtime/zbc.md"
   - "docs/design/runtime/zpkg.md"

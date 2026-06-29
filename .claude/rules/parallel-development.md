@@ -15,14 +15,13 @@
 
 ## 子系统划分
 
-复用已有的 `test --scope` 心智模型（`runtime|compiler|stdlib`），补三个：
+复用已有的 `test --scope` 心智模型（`runtime|compiler|stdlib`），补两个：
 
 | 子系统 | 范围 |
 |--------|------|
-| `compiler` | `src/compiler/`（C# bootstrap 编译器） |
+| `compiler` | `src/compiler/`（z42c 自举编译器源码，用 z42 写） |
 | `runtime` | `src/runtime/`（Rust VM：interp / jit / aot / gc） |
 | `stdlib` | `src/libraries/`（.z42 标准库） |
-| `z42c` | `src/compiler/`（编译器自举源码） |
 | `toolchain` | `src/toolchain/` + xtask dispatch |
 | `docs` | `docs/` —— **不进互斥锁**，见下 |
 
@@ -33,7 +32,7 @@
 ## 三条配套规则
 
 1. **跨子系统 change 占用全部相关锁**
-   一个 change 若动 `z42c` + `compiler`（如自举脚手架要改 C# pipeline），就同时占两把锁；任一被占 → 整个 change 排队。这正是"隔离流偷改共享基础设施"被自动拦下的地方。
+   一个 change 若动 `compiler` + `runtime`（如 zbc/zpkg 格式变更要同时改 z42c writer 和 Rust reader），就同时占两把锁；任一被占 → 整个 change 排队。这正是"隔离流偷改共享基础设施"被自动拦下的地方。
 
 2. **docs 不上锁**
    `docs/` 人人要碰，整体上锁会把所有 change 串死。docs 沿用 [workflow.md 阶段 3](workflow.md) 已有细则处理：**两个 change 改同一 markdown 不同段 = 冲突 → 串行**；改不同文档 → 不冲突。
@@ -48,7 +47,7 @@
 **它会过度串行化同一热子系统内的改动，哪怕两个 change 文件其实不重叠。** 接受它，因为：
 
 - 同子系统内"看似不重叠实则微妙耦合"恰恰是返工高发区（尤其 `runtime` 的 GC/JIT/safepoint 边界），粗锁在这里是优点不是缺点。
-- roadmap 想要的 **A‖B‖C 并行依然成立**：A=`stdlib`、B=`z42c`、C=`runtime` 是不同子系统，照样放行。本约定只串行"同子系统"的活，不碰真正想要的跨流并行。
+- roadmap 想要的 **A‖B‖C 并行依然成立**：A=`stdlib`、B=`compiler`、C=`runtime` 是不同子系统，照样放行。本约定只串行"同子系统"的活，不碰真正想要的跨流并行。
 
 ---
 
