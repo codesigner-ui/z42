@@ -106,6 +106,7 @@ SubcommandRouter _cliRoot() {
     ArgParser pkg = new ArgParser("xtask package", "assemble a full SDK package");
     pkg.AddOption("rid", "", "target RID (default: host)", "");
     pkg.AddOption("variant", "", "package variant suffix", "");
+    pkg.AddFlag("no-build", "", "assemble from existing z42c+stdlib artifacts (skip their rebuild; for CI warm)");
     pkg.AddOptionalPositional("profile", "release|debug (default release)");
     root.Add("package", "assemble a full SDK package", pkg);
 

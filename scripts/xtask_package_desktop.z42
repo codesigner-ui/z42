@@ -12,20 +12,28 @@ using Std.IO;
 
 // ── desktop SDK pipeline ────────────────────────────────────────────────────
 
-int _packageDesktop(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
+int _packageDesktop(string root, string pkgDir, string rid, string version, string profile, string hostRid, bool noBuild) {
     string cargoTarget = _cargoTargetFor(rid);   // "" for host → reuse warm build dir
     bool rel = (profile == "release");
 
-    // [1/5] z42c self-host compiler (C#-free, z42c-built) → programs/z42c/.
-    // replace-csharp Phase C: the shipped compiler is z42c-built (runs on z42vm),
-    // NOT dotnet-published C#. The 7 z42c.* seed zpkgs are colocated in
-    // programs/z42c/ so the VM resolves the driver's 6 siblings next to the payload
-    // (support-colocated-zpkg-deps); stdlib resolves via libs/. The `bin/z42c`
-    // entry point is produced in [2c] as an apphost trampoline (the apphost stub
-    // is built there). _buildCompiler builds the host z42vm + stdlib + z42c seed,
-    // all C#-free (self-seeded; cold CI provisions a seed via nightly download).
-    Console.WriteLine("[1/5] z42c (z42c-built seed, C#-free)");
-    int c = _buildCompiler(); if (c != 0) { return c; }
+    // [1/5] z42c self-host compiler seed (7 zpkg) → programs/z42c/. The shipped
+    // compiler runs on z42vm; the 7 z42c.* seed zpkgs are colocated so the VM
+    // resolves the driver's 6 siblings next to the payload (stdlib via libs/). The
+    // `bin/z42c` entry is the apphost trampoline produced in [2c].
+    // _buildCompiler builds host z42vm + stdlib + z42c seed (self-seeded). --no-build
+    // SKIPS that rebuild and reuses what the CI bootstrap already produced (warm) —
+    // it only verifies the z42c seed is present, then the steps below assemble it.
+    Console.WriteLine("[1/5] z42c seed");
+    int c = 0;
+    if (!noBuild) {
+        c = _buildCompiler(); if (c != 0) { return c; }
+    } else {
+        string drv = Path.Join(root, "artifacts/build/z42c/z42c.driver/release/dist/z42c.driver.zpkg");
+        if (!File.Exists(drv) || File.GetSize(drv) <= 0L) {
+            ConsoleError.WriteLine("error: --no-build but no z42c seed at " + drv + " (bootstrap first)");
+            return 1;
+        }
+    }
     string z42cDir = Path.Join(pkgDir, "programs/z42c");
     Directory.Create(z42cDir);
     string[] z42cSeedMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");
@@ -193,14 +201,15 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
     Directory.Copy(Path.Join(sdkPkgDir, "libs"),   Path.Join(pkgDir, "libs"),   true);
     Directory.Copy(Path.Join(sdkPkgDir, "native"), Path.Join(pkgDir, "native"), true);
 
-    // z42c-written compiler seed (z42c.* 7 zpkg) → z42c/ (replace-csharp S4):
-    // the C#-free bootstrap seed. With z42vm + libs/ (stdlib), this runtime package
-    // is a complete self-host seed — the ci-bootstrap action uses it to rebuild
-    // stdlib + z42c + xtask from source (verify-selfhost then runs the gen1==gen2
-    // fixpoint via `xtask test compiler`). RID-independent z42
-    // artifacts (same bytes every platform); built here via the C# driver (the only
-    // C# touch, upstream — downstream consumers rebuild z42c without C#).
-    int zc = _buildCompiler(); if (zc != 0) { return zc; }
+    // z42c compiler seed (7 zpkg) → z42c/: the self-host bootstrap seed. With z42vm +
+    // libs/ (stdlib) this runtime package is a complete seed — the ci-bootstrap action
+    // uses it to rebuild stdlib + z42c + xtask from source (verify-selfhost then runs
+    // the gen1==gen2 fixpoint via `xtask test compiler`). RID-independent (same bytes
+    // every platform). REUSE the artifacts _packageDesktop's [1/5] already built —
+    // _buildCompiler is NOT called here: the desktop pipeline runs
+    // _packageDesktop → _buildRuntimePackage in order (xtask_package.z42), so the
+    // canonical z42c dist is guaranteed present. (Was a 2nd full ~5 min z42c self-build
+    // per package run — dedup-z42c-double-build.)
     string z42cSeed = Path.Join(pkgDir, "z42c");
     Directory.Create(z42cSeed);
     string[] z42cMembers = _vgetListFromFile(root, "src/compiler/z42.workspace.toml", "workspace.default-members");

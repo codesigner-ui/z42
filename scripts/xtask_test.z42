@@ -102,7 +102,7 @@ int _testDist(ParseResult r) {
     }
     // Ensure a host release package exists (build it if absent).
     if (!_hasReleasePkg(root)) {
-        c = _buildPackageCore("release", "", ""); if (c != 0) { return c; }
+        c = _buildPackageCore("release", "", "", false); if (c != 0) { return c; }
     }
     return _testDistRun(r.GetPositional(0));
 }

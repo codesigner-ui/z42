@@ -350,8 +350,13 @@ jobs:
             cp "$PWD"/artifacts/build/runtime/release/*.dll "$PWD/.ci-runner/" 2>/dev/null || true
             runner="$PWD/.ci-runner/$(basename "$vm")"
           fi
+          # --no-build: xtask-bootstrap-artifact already restored z42c + stdlib (the
+          # toolchain artifact); skip rebuilding them (~10 min on Windows: the [1/5]
+          # z42c self-build + the former 2nd self-build in the runtime pack). The
+          # package's own cargo native libs (z42vm/cdylib/staticlib/apphost) + launcher
+          # still build. Verified locally byte-identical to a full build (mod build-date).
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$PWD/artifacts/build/libraries/dist/release" \
-            "$runner" artifacts/xtask/xtask.zpkg -- package release
+            "$runner" artifacts/xtask/xtask.zpkg -- package release --no-build
 
       - name: Verify package manifest + native artifacts
         shell: bash

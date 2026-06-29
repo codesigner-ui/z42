@@ -15,12 +15,16 @@ int _buildPackage(ParseResult r) {
     string profile = "release";          // xtask defaults release (package.sh default is debug)
     if (prof == "debug" || prof == "Debug") { profile = "debug"; }
     else if (prof == "release" || prof == "Release") { profile = "release"; }
-    return _buildPackageCore(profile, r.GetOption("rid"), r.GetOption("variant"));
+    return _buildPackageCore(profile, r.GetOption("rid"), r.GetOption("variant"), r.GetFlag("no-build"));
 }
 
 // Core packaging by explicit (profile, rid, variant) — callable without a
 // ParseResult (e.g. from `test dist` which needs a host release package).
-int _buildPackageCore(string profile, string rid, string variant) {
+// noBuild: skip the z42c+stdlib rebuild and assemble from existing canonical
+// artifacts (CI warm: the bootstrap already built them). Cargo native libs
+// (z42vm/cdylib/staticlib/apphost) + launcher.zpkg still build — they're package-
+// specific and not produced by the bootstrap.
+int _buildPackageCore(string profile, string rid, string variant, bool noBuild) {
     string root = _root();
     string hostRid = _detectHostRid();
     if (rid.Length == 0) { rid = hostRid; }
@@ -42,7 +46,7 @@ int _buildPackageCore(string profile, string rid, string variant) {
 
     int c;
     if (category == "desktop") {
-        c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid);
+        c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid, noBuild);
         if (c != 0) { return c; }
         c = _buildRuntimePackage(root, pkgDir, rid, version, profile);
         if (c != 0) { return c; }
