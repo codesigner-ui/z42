@@ -13,7 +13,7 @@ using Std.IO;
 // ── desktop SDK pipeline ────────────────────────────────────────────────────
 
 int _packageDesktop(string root, string pkgDir, string rid, string version, string profile, string hostRid) {
-    string cargoTarget = _ridToCargo(rid);
+    string cargoTarget = _cargoTargetFor(rid);   // "" for host → reuse warm build dir
     bool rel = (profile == "release");
 
     // [1/5] z42c self-host compiler (C#-free, z42c-built) → programs/z42c/.
@@ -42,7 +42,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _cargoRustc(rel, cargoTarget, "staticlib");
     _cargoRustc(rel, cargoTarget, "cdylib");
-    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
+    string cargoOut = _cargoOutFor(root, rid, profile);
     _copyIfExists(Path.Join(cargoOut, "z42vm"), Path.Join(pkgDir, "bin/z42vm"));
     _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "bin/z42vm.exe"));
     Console.WriteLine("      ✓ bin/z42vm");
@@ -128,7 +128,6 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
 // runtime pack — desktop reuses the host runtime (`z42 install <ver>`). The apphost
 // binary is cargo-built by _packageDesktop's z42-apphost crate build; it lands here, not in SDK bin/.
 int _buildDesktopWorkload(string root, string rid, string version, string profile) {
-    string cargoTarget = _ridToCargo(rid);
     bool rel = (profile == "release");
     bool isWin = rid.StartsWith("windows-");
     string srcExe = isWin ? "apphost.exe" : "apphost";
@@ -139,7 +138,7 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
     if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
     Directory.Create(pkgDir);
 
-    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
+    string cargoOut = _cargoOutFor(root, rid, profile);
     string stub = Path.Join(cargoOut, srcExe);
     if (!File.Exists(stub)) {
         ConsoleError.WriteLine("error: apphost stub not built at " + stub + "; run the z42-apphost crate cargo build first");
@@ -179,7 +178,6 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
 // _packageDesktop just assembled — single byte source → SDK and runtime pack stay
 // byte-identical, and no native libs are re-collected/re-globbed here.
 int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string version, string profile) {
-    string cargoTarget = _ridToCargo(rid);
     string pkgName = "z42-runtime-" + version + "-" + rid + (profile == "release" ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Runtime package: " + pkgName);
@@ -187,7 +185,7 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
     Directory.Create(pkgDir);
 
     // z42vm at root (matches runtimes/<ver>/ layout)
-    string cargoOut = Path.Join(root, "artifacts/build/runtime/" + cargoTarget + "/" + profile);
+    string cargoOut = _cargoOutFor(root, rid, profile);
     _copyIfExists(Path.Join(cargoOut, "z42vm"),     Path.Join(pkgDir, "z42vm"));
     _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "z42vm.exe"));
     _makeExe(Path.Join(pkgDir, "z42vm"));

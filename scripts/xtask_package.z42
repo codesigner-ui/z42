@@ -118,11 +118,30 @@ string _versionsGet(string root) {
 
 // ── cargo wrappers ──────────────────────────────────────────────────────────
 
+// compile-once host reuse: when building for the HOST rid, pass an EMPTY target so
+// cargo reuses the default host build dir (artifacts/build/runtime/<profile>) that
+// ci-bootstrap / xtask-bootstrap-artifact already warmed (z42vm + cranelift + deps
+// compiled, Swatinem-cached) instead of recompiling everything under a redundant
+// --target <host-triple> tree. Cross RIDs (ios/android/wasm) keep their triple.
+string _cargoTargetFor(string rid) {
+    return (rid == _detectHostRid()) ? "" : _ridToCargo(rid);
+}
+
+// The cargo output dir matching _cargoTargetFor: <profile> for host (no triple),
+// <triple>/<profile> for cross. All three desktop package functions read from here.
+string _cargoOutFor(string root, string rid, string profile) {
+    string t = _cargoTargetFor(rid);
+    string sub = (t.Length == 0) ? profile : (t + "/" + profile);
+    return Path.Join(root, Path.Join("artifacts/build/runtime", sub));
+}
+
 int _cargo(bool rel, string verb, string manifest, string target, string pkg) {
     Process p = new Process("cargo").Arg(verb);
     if (rel) { p = p.Arg("--release"); }
     if (pkg.Length > 0) { p = p.Arg("-p").Arg(pkg); }
-    p = p.Arg("--manifest-path").Arg(manifest).Arg("--target").Arg(target).Arg("--quiet");
+    p = p.Arg("--manifest-path").Arg(manifest);
+    if (target.Length > 0) { p = p.Arg("--target").Arg(target); }   // host: no --target → reuse warm build
+    p = p.Arg("--quiet");
     return _exec(p);
 }
 
@@ -131,7 +150,9 @@ void _cargoRustc(bool rel, string target, string crateType) {
     Process p = new Process("cargo").Arg("rustc");
     if (rel) { p = p.Arg("--release"); }
     p = p.Arg("--lib").Arg("--crate-type=" + crateType)
-        .Arg("--manifest-path").Arg(_runtimeManifest()).Arg("--target").Arg(target).Arg("--quiet");
+        .Arg("--manifest-path").Arg(_runtimeManifest());
+    if (target.Length > 0) { p = p.Arg("--target").Arg(target); }
+    p = p.Arg("--quiet");
     _exec(p);
 }
 
