@@ -104,7 +104,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.3.9 | ✅ 归档 port-z42c-self-compile（G22 全绿）+ runtime-dynamic-load-call 归档 ‖ **✅ z42c 编译全 22 stdlib 包 byte-identical**（z42c 可完整替代 C# 编译器；commit 36485ae4，2026-06-19）| | |
 | 0.3.10 | byte-identical CI gate 全 7 子系统 7 日零飘移 + compile-perf gate（median ≤3× / P99 ≤5×）启用 | | |
 | 0.3.11 | **Boxing 机制**（方案 A 类型系统层）：prim→object 隐式装箱（Value 已是 tagged union → codegen no-op，零分配）+ object→prim 受检拆箱（复用 Convert）。实证：编译器侧（GS6 赋值）已存在，整改动 = 运行期 Bool 拆箱恒等 + golden + 文档。**无 box/unbox IR、无格式 bump**。见 [`design/language/boxing.md`](design/language/boxing.md) | 🟢 实现完成（add-boxing-conversions，待归档）| |
-| 0.3.12 | **反射完整化**：Method.Invoke（非泛型）‖ IsEnum（enum 作类型实体 spec 前置）‖ 嵌套泛型 GetGenericArguments ‖ 接口成员枚举 | | |
+| 0.3.12 | **反射完整化**：~~Method.Invoke（非泛型）~~ ✅ + ~~Type.GetType(fqn)~~ ✅（add-method-invoke-non-generic；builtin 复用 exec_function，异常原类型传播 interp+jit；Activator 无参延后）‖ IsEnum（enum 作类型实体 spec 前置）‖ 嵌套泛型 GetGenericArguments ‖ 接口成员枚举 | 🟡 Invoke/GetType 完成；余项待 | |
 | 0.3.13 | **test-runner 删除**：z42.test 加 TestRunner/BenchRunner（反射驱动 [Test]/[Benchmark] 发现）+ z42b `test`/`bench` verb + 退役 Rust binary（同替两者）‖ **CI 三平台模拟器**：WASM(Playwright) / iOS Simulator(`xcodebuild -destination`) / Android(emulator-runner+KVM) → JUnit → GitHub Checks（stdlib ‖ toolchain 双锁并行）| | |
 | 0.3.14 | **workload B1**（命令发现：launcher 扫目录 → Std.Cli 树合并）+ **B2**（workload 包格式 + `z42 workload install/list/remove`）| | |
 | 0.3.15 | **REPL capstone**（z42 原生：变量 / 表达式 / 类型声明 / 实例化 + 跨 line scope）| | |
@@ -348,6 +348,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 闭包档 C send 派生 | 与 concurrency 实施一起做 | [language/closure.md](design/language/closure.md) |
 | Static abstract iter 2+ | 类型级访问（`T.Zero` / `T.Parse(s)`）| [language/static-abstract-interface.md](design/language/static-abstract-interface.md) |
 | `params T[]` + `params object[]` 重载 | 可变参数关键字；typed overload 无 boxing，object[] fallback 处理混类型；自举完成后实施，object[] 另需 L2 object 类型 | [language/language-overview.md](design/language/language-overview.md#params-future-impl-params-关键字完整实现) |
+| compile-once 正式模型 (CO-D1..D4) | test 腿全消费 current-sdk / 成对分代 gen1-3 / 三发布门+cross-bootstrap / 本地分阶段命令 —— 经实测低性价比（多为 compute 非墙钟），按需新开 change（如 format-bump 安全要 CO-D2）| [archive/2026-06-30-compile-once-toolchain/tasks.md](spec/archive/2026-06-30-compile-once-toolchain/tasks.md) Deferred 段 |
 | z42vm JIT cdylib 拆分 | 把 cranelift JIT 拆成可 dlopen 的 `libz42_jit.dylib`（z42vm 6M→~3.5M）；ROI 低（拆 ~3M / 整包 ~70M，中高工作量）2026-06-21 暂缓 | [toolchain/runtime-workload-distribution.md](design/toolchain/runtime-workload-distribution.md#deferred--待-spec-细化) |
 | 组件化运行时 | libz42 基座 + interp/jit/aot/gc/debug 组件；static/dynlink/dlopen 三粒度 + 切换语义；嵌入按需链接 | [runtime/componentized-runtime.md](design/runtime/componentized-runtime.md) |
 | 分层执行 | interp/JIT 各自内部分层 + OSR/deopt + 低层回收 + 引用诊断 + hot-reload 共用基建 | [runtime/tiered-execution.md](design/runtime/tiered-execution.md) |
@@ -462,6 +463,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | `ios-simulator-test` | IosBackend.RunTests 当前 `swift test`（macOS host slice）；加 iOS Simulator `xcodebuild test -destination` 执行 + JUnit | CI 接入时 |
 | `retire-platform-build-test-sh` | 三平台 z42 管线 CI-proven 后，删 `platforms/*/{build,test}.sh`（migrate-scripts-to-z42 节奏）| CI-proven 后 |
 | `add-boxing-future-enum-precise` | enum 当前 I64 表示，装箱丢类型精度（GetType→Int32，`(MyEnum)o` 与 `(int)o` 不可区分）；精确 enum 装箱需 enum-as-type-entity（独立 tag/带-tag 装箱）。正文见 [`design/language/boxing.md`](design/language/boxing.md#deferred--future-work) | enum 作独立类型实体时 |
+| `add-method-invoke-future-generic` | 泛型方法 `Invoke` / `MakeGenericType` / `Activator.CreateInstance<T>`，需运行期泛型实例化。正文见 [`design/language/reflection.md`](design/language/reflection.md) | 0.4.x G 流泛型实例化后 |
+| `add-method-invoke-future-activator` | 无参 `Activator.CreateInstance(Type)`（反射构造实例）+ 有参重载决议构造。当前调用方用普通 `new` 构造后再反射调用 | retire-test-runner 需反射实例化时 |
 
 ### Backlog 项实施流程
 

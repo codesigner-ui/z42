@@ -1,6 +1,17 @@
 # Tasks: compile-once toolchain → 分层流水线（6 阶段）
 
-> 状态：🟡 进行中 | 创建：2026-06-27 | 重构为 6 阶段分层模型 2026-06-28（User 确认）
+> 状态：🟢 已完成（再scope归档）| 创建：2026-06-27 | 归档：2026-06-30
+>
+> **再scope归档说明（2026-06-30，User 裁决）**：本 change 的**高价值目标已全部达成**——
+> CI 缓存根因修复、current-sdk 拆出关键路径、并行 regen、package z42c 去重 + `--no-build`、
+> script-zero（脚本全收敛到 xtask/composite action）、并发组+publish-nightly 串行化——
+> CI 关键路径 ~47→~36min（含 package `--no-build` 后预计再降 ~10min）。这批已落地工作单独
+> 归档于 [`2026-06-29-ci-speedup-and-script-zero`](../../archive/2026-06-29-ci-speedup-and-script-zero/)。
+>
+> **剩余的「正式分层模型」（成对分代 gen1/2/3 / test 腿全消费迁移 / 三发布门 / cross-bootstrap /
+> 本地分阶段命令）经实测评估为低性价比**（全消费迁移只省 compute 不改墙钟——test 腿被 compile-toolchain
+> gate 住反而更晚；发布门是形式正确性，build-and-test 已 gate 正确性），**移入下方 Deferred 段**，
+> 未来真有需要（如 format-bump 安全要成对分代、或要本地镜像 CI 分阶段）时新开聚焦 change。**故归档。**
 > 📌 2026-06-29 一次 CI 提速 /loop 会话推进了本 change 的「CI 去冗余」维度（缓存根因修复 / current-sdk 拆出关键路径 / 并行 regen / ci-bootstrap·ci-stage-toolchain·selfhost-bootstrap 收敛到 xtask·action = script-zero / 并发组+publish-nightly 串行化 / 依赖精简 + 一次 nightly 事故闭环），CI 47→~36min。该批工作单独归档于 `docs/spec/archive/2026-06-29-ci-speedup-and-script-zero/`。本 change 余下 scope（成对分代 gen1/2/3 / 三发布门 / cross-bootstrap）续开，不受影响。
 > 子系统占用：`toolchain`（xtask）+ runtime（仅 stage1 rule c 的 cargo-test gate；build.rs 已改）+ docs
 > 🟢 Decision 2（format 兜底）：第一版不做，延后（见 design.md）。
@@ -175,6 +186,34 @@ CI"的前提——没有 shell 中间层，CI 步骤即 `xtask <stage>`。
 - [ ] V.3 P3：下游全绿 + 时长下降
 - [ ] V.4 P4：cross-bootstrap 绿 + 进 publish needs（本地 SDK 当种子能重建）
 - [ ] V.5 P5：重命名/删 job/删脚本后全 CI 绿
+
+## Deferred（再scope归档移入，2026-06-30 — 低性价比，未来按需新开 change）
+
+> 上面迭代清单里所有未勾 `[ ]` 任务归入此 Deferred。高价值的 CI 去冗余已落地（见头部说明 +
+> `2026-06-29-ci-speedup-and-script-zero` 归档）；以下是「正式分层模型」的剩余部分，经实测为低性价比。
+
+### CO-D1: test 腿全消费 current-sdk artifact（原 3.1–3.6 / 5.d/5.e）
+- **触发原因**：test-host/vm-jit/stdlib-jit 仍各自 ci-bootstrap（下载 nightly→建 z42c+stdlib），未消费 compile-toolchain 的 current-sdk。
+- **为何 deferred**：实测**只省 compute、不改墙钟**——这些 test 腿当前与 compile-toolchain 并行（T0 启动）；改消费要 `needs: compile-toolchain/compile-test-assets`，反而**晚 ~13–22min 启动**。墙钟目标下不划算。
+- **触发条件**：若要大幅削减 CI 总 runner 用量（成本）而非墙钟，再做。
+- **当前 workaround**：各腿已用 `--no-build`（跳二次重建）+ Swatinem 缓存，redundancy 已部分缓解。
+
+### CO-D2: 成对分代 gen1/gen2/gen3 + 条件不动点门（原 2.3 / V.2 / Decision 5/6）
+- **触发原因**：发布的 {z42c,stdlib} 应是 gen2（当前格式）；format-bump 轮需成对分代保证发布件可跑。
+- **为何 deferred**：当前无 format bump 在途；现有 verify-selfhost 的 gen1==gen2 不动点已覆盖稳态。
+- **触发条件**：下次 zbc/zpkg format minor bump（届时旧格式被 strict-pin 拒，需成对分代发布）。
+
+### CO-D3: 三发布门进 publish-nightly needs + cross-bootstrap（原 4.1–4.4 / V.4）
+- **触发原因**：形式上"完整/稳定/正确"三关进 publish needs；cross-bootstrap 从本地 SDK 验 {gen2}=={gen3}。
+- **为何 deferred**：build-and-test（在 publish needs 里）已 gate 正确性；vm-jit/stdlib-jit 故意不进 needs（防 format-bump 轮死锁，见约束4）。低紧迫。
+- **触发条件**：要形式化"稳定地错也能发"的闭合保证时。
+
+### CO-D4: xtask 分阶段命令 + test 编排器（原 LA / 5c / 4b）
+- **触发原因**：本地按阶段跑 = 镜像 CI（`build sdk` / `build test-assets` / `test --no-build` 编排）。
+- **为何 deferred**：开发体验改进，非 CI 时间；现有 `xtask test` 一把梭 + 各 `--no-build` 子命令够用。
+- **触发条件**：开发者需在本地精确复现 CI 分阶段行为时。
+
+> roadmap.md「Deferred Backlog Index」已加索引行指向本段。
 
 ## 备注
 - Decision 2（format 兜底）第一版不做（已裁决）；全程仅占 `toolchain` 子系统（不含 runtime）。
