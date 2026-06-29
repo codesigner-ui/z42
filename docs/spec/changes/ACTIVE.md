@@ -22,6 +22,7 @@
 | `add-workload-command-dispatch` | toolchain + stdlib（z42.cli）—— 🟡 SPEC READY，可立即实施（无前置）；**不持锁**，开工前重新登记 |
 | `wire-z42b-host-build` | stdlib（z42.project/z42.build）+ z42c（Z42cCompiler）+ toolchain（z42b 登记 + launcher）—— 🟡 SPEC DRAFT，接入 PARKED 的 z42b → `z42 new`/`z42 build` 端到端；前置 toolchain 锁释放 + extract-compile-pipeline-api；**不持锁**，开工前重新登记。PARKED 代码已就位（08e840d5/5020b0d5/c1d068d2/98cebedd）|
 | ~~add-boxing-conversions~~ | runtime —— ✅ 已归档 2026-06-29（装箱 prim↔object 方案 A：实证编译器侧已支持（GS6），整改动 = 运行期 Bool 拆箱恒等 + golden + 文档；z42c.semantics 零改动；vm interp 189/0 含 box_unbox。Method.Invoke 0.3.12 前置达成）|
+| `add-method-invoke-non-generic` | runtime（reflection builtin）+ stdlib（z42.core API）—— 🟡 SPEC DRAFT，反射调用原语 Method.Invoke / Type.GetType / Activator.CreateInstance（非泛型，0.3.12）；前置 boxing ✅；glue exec_function/make_type_from_name/ObjNew；**不持锁**，开工前重新登记 |
 | ~~restructure-publish-output-dirs~~ | compiler —— ✅ 已归档 2026-06-19 |
 | ~~scaffold-z42c-selfhost~~ | z42c + compiler —— ✅ 已归档 2026-06-19（骨架完成；实现通过 port-z42c-* 系列）|
 | ~~port-z42c-core~~ | z42c + toolchain —— ✅ 已归档 2026-06-07（见 spec/archive/2026-06-07-port-z42c-core）|
