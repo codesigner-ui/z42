@@ -340,6 +340,30 @@ int _testCompilerUnits(string root, string profile, string[] members) {
 // 自检程序用 div-by-zero oracle：算术/比较/分支全对 → ok=1 → 100/1 干净退出 0；
 // 任一字节编码错 → ok=0 → DivideByZeroException → 非零退出。负向用例验证 oracle 本身有效
 //（防"VM 不管对错都退 0"的假绿）。功能性验证（非 byte-identical——DBUG 阻塞见 zbc-writer tasks）。
+// 表驱动 e2e oracle 用例（z42c --emit-zbc → z42vm 跑 → div-by-zero oracle 验算术/比较/分支）。
+// emitLibs 解析编译期依赖（z42c.* + stdlib，通常 = flat）；runLibs 解析运行期 stdlib（stdlib-only
+// 用例用 libraries/dist/release，含 z42c 链的用 flat）。expectTrap=true 为负向用例（程序必然
+// div-zero，须非零退出，验 oracle 本身有效）。返回 0=通过 / 1=失败（已打印 ✓/✗）。
+int _e2eOracle(string vm, string driverZpkg, string e2eDir, string emitLibs, string runLibs,
+               string name, bool expectTrap, string source) {
+    string src = Path.Join(e2eDir, name + ".z42");
+    File.WriteAllText(src, source);
+    string zbc = Path.Join(e2eDir, name + ".zbc");
+    int rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(src).Arg(zbc)
+        .Env("Z42_LIBS", emitLibs).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
+    if (rc != 0) { Console.WriteLine("  ✗ " + name + " emit failed (" + rc.ToString() + ")"); return 1; }
+    rc = new Process(vm).Arg(zbc).Arg("Main")
+        .Env("Z42_LIBS", runLibs).Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
+    if (expectTrap) {
+        if (rc == 0) { Console.WriteLine("  ✗ " + name + ".zbc exited 0 — oracle invalid (VM should trap)"); return 1; }
+        Console.WriteLine("  ✓ " + name + ".zbc: trapped as expected (oracle valid)");
+        return 0;
+    }
+    if (rc != 0) { Console.WriteLine("  ✗ " + name + ".zbc trapped on z42vm (exit " + rc.ToString() + ") — miscomputation"); return 1; }
+    Console.WriteLine("  ✓ " + name + ".zbc: computed correctly, clean exit");
+    return 0;
+}
+
 int _testCompilerE2e(string root, string vm, string flat) {
     Console.WriteLine("");
     Console.WriteLine("── z42c e2e: self-compiled .zbc runs on z42vm ──");
@@ -347,9 +371,12 @@ int _testCompilerE2e(string root, string vm, string flat) {
     string e2eDir = Path.Join(root, "artifacts/build/z42c/e2e");
     Directory.Create(e2eDir);
 
+    string libsRel = Path.Join(root, "artifacts/build/libraries/dist/release");
+    int rc = 0;
+
     // 正向：自检程序（const/mul/add/le/eq/copy/div + while 回边 + if 嵌套 = ZW-1A/1B 全 opcode）
-    string okSrc = Path.Join(e2eDir, "selfcheck.z42");
-    File.WriteAllText(okSrc, "int Main() {\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, flat, "selfcheck", false,
+        "int Main() {\n"
         + "    int x = 6 * 7;\n"
         + "    int sum = 0;\n"
         + "    int i = 1;\n"
@@ -357,19 +384,11 @@ int _testCompilerE2e(string root, string vm, string flat) {
         + "    int ok = 0;\n"
         + "    if (x == 42) { if (sum == 15) { ok = 1; } }\n"
         + "    return 100 / ok;\n"
-        + "}\n");
-    string okZbc = Path.Join(e2eDir, "selfcheck.zbc");
-    int rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(okSrc).Arg(okZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed (" + rc.ToString() + ")"); return 1; }
-    rc = new Process(vm).Arg(okZbc).Arg("Main")
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ self-check zbc trapped on z42vm (exit " + rc.ToString() + ") — miscomputation"); return 1; }
-    Console.WriteLine("  ✓ selfcheck.zbc: computed correctly, clean exit");
+        + "}\n") != 0) { return 1; }
 
     // 正向 #2（ZW-1C/1D）：自由调用 + 对象/字段（new/vcall/field_get·set）+ 字符串（const.str/concat/eq）
-    string callSrc = Path.Join(e2eDir, "callcheck.z42");
-    File.WriteAllText(callSrc, "int Twice(int a) { return a + a; }\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, flat, "callcheck", false,
+        "int Twice(int a) { return a + a; }\n"
         + "class Counter { int v; int Bump(int d) { v = v + d; return v; } }\n"
         + "int Main() {\n"
         + "    var c = new Counter();\n"
@@ -380,19 +399,11 @@ int _testCompilerE2e(string root, string vm, string flat) {
         + "    int ok = 0;\n"
         + "    if (x == 42) { if (s == \"hi\") { ok = 1; } }\n"
         + "    return 100 / ok;\n"
-        + "}\n");
-    string callZbc = Path.Join(e2eDir, "callcheck.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(callSrc).Arg(callZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed on callcheck (" + rc.ToString() + ")"); return 1; }
-    rc = new Process(vm).Arg(callZbc).Arg("Main")
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ callcheck.zbc trapped on z42vm (exit " + rc.ToString() + ") — call/object/string miscomputation"); return 1; }
-    Console.WriteLine("  ✓ callcheck.zbc: calls/objects/fields/strings computed correctly");
+        + "}\n") != 0) { return 1; }
 
     // 正向 #3（ZW-1E）：浮点字面量（IEEE754 bits）+ is/as + 继承（TYPE base 链）
-    string typeSrc = Path.Join(e2eDir, "typecheck.z42");
-    File.WriteAllText(typeSrc, "class A { }\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, flat, "typecheck", false,
+        "class A { }\n"
         + "class B : A { }\n"
         + "int Main() {\n"
         + "    double d = 1.5;\n"
@@ -406,52 +417,25 @@ int _testCompilerE2e(string root, string vm, string flat) {
         + "    int good = 0;\n"
         + "    if (ok == 3) { good = 1; }\n"
         + "    return 100 / good;\n"
-        + "}\n");
-    string typeZbc = Path.Join(e2eDir, "typecheck.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(typeSrc).Arg(typeZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed on typecheck (" + rc.ToString() + ")"); return 1; }
-    rc = new Process(vm).Arg(typeZbc).Arg("Main")
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ typecheck.zbc trapped on z42vm (exit " + rc.ToString() + ") — float/is·as/inheritance miscomputation"); return 1; }
-    Console.WriteLine("  ✓ typecheck.zbc: floats/is·as/inheritance computed correctly");
+        + "}\n") != 0) { return 1; }
 
     // 负向（oracle 有效性）：必然 div-zero 的程序必须非零退出
-    string badSrc = Path.Join(e2eDir, "divzero.z42");
-    File.WriteAllText(badSrc, "int Main() { int z = 0; return 1 / z; }\n");
-    string badZbc = Path.Join(e2eDir, "divzero.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(badSrc).Arg(badZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ z42c --emit-zbc failed on divzero (" + rc.ToString() + ")"); return 1; }
-    rc = new Process(vm).Arg(badZbc).Arg("Main")
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
-    if (rc == 0) { Console.WriteLine("  ✗ divzero.zbc exited 0 — oracle invalid (VM should trap)"); return 1; }
-    Console.WriteLine("  ✓ divzero.zbc: trapped as expected (oracle valid)");
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, flat, "divzero", true,
+        "int Main() { int z = 0; return 1 / z; }\n") != 0) { return 1; }
 
-    // byte-compare（add-z42c-source-spans）：同源经 z42c 与 C# 编译 → 逐字节 diff。
-    // 这是 self-hosting 对账 gate 的 .zbc 段（含 DBUG 行表——span 链全程参与）。
     // charcheck（port-z42c-char）：char 字面量/比较 + div-zero oracle
-    string charSrc = Path.Join(e2eDir, "charcheck.z42");
-    File.WriteAllText(charSrc, "int Main() {\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, libsRel, "charcheck", false,
+        "int Main() {\n"
         + "    char a = 'A';\n"
         + "    char d = '.';\n"
         + "    int ok = 0;\n"
         + "    if (a == 'A') { if (a != d) { if (d < a) { ok = 1; } } }\n"
         + "    return 100 / ok;\n"
-        + "}\n");
-    string charZbc = Path.Join(e2eDir, "charcheck.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(charSrc).Arg(charZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ charcheck emit failed"); return 1; }
-    rc = new Process(vm).Arg(charZbc).Arg("Main")
-        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
-        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ charcheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
-    Console.WriteLine("  ✓ charcheck.zbc: char literals/compare computed correctly");
+        + "}\n") != 0) { return 1; }
 
     // trycheck（port-z42c-try）：本地异常类 + throw/catch/finally + oracle
-    string trySrc = Path.Join(e2eDir, "trycheck.z42");
-    File.WriteAllText(trySrc, "class Exception { public string Message; }\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, libsRel, "trycheck", false,
+        "class Exception { public string Message; }\n"
         + "class MyErr : Exception { }\n"
         + "\n"
         + "int Main() {\n"
@@ -467,20 +451,11 @@ int _testCompilerE2e(string root, string vm, string flat) {
         + "    int total = 0;\n"
         + "    if (ok == 1) { if (fin == 1) { total = 1; } }\n"
         + "    return 100 / total;\n"
-        + "}\n");
-    string tryZbc = Path.Join(e2eDir, "trycheck.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(trySrc).Arg(tryZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ trycheck emit failed"); return 1; }
-    rc = new Process(vm).Arg(tryZbc).Arg("Main")
-        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
-        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ trycheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
-    Console.WriteLine("  ✓ trycheck.zbc: throw/catch/finally computed correctly");
+        + "}\n") != 0) { return 1; }
 
     // ifacecheck（port-z42c-interface）：接口声明/实现/接口参数分派 + oracle
-    string ifaceSrc = Path.Join(e2eDir, "ifacecheck.z42");
-    File.WriteAllText(ifaceSrc, "interface IShape {\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, libsRel, "ifacecheck", false,
+        "interface IShape {\n"
         + "    int Area();\n"
         + "}\n\n"
         + "class Box : IShape {\n"
@@ -499,20 +474,11 @@ int _testCompilerE2e(string root, string vm, string flat) {
         + "    int ok = 0;\n"
         + "    if (Compute(s) == 42) { ok = 1; }\n"
         + "    return 100 / ok;\n"
-        + "}\n");
-    string ifaceZbc = Path.Join(e2eDir, "ifacecheck.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(ifaceSrc).Arg(ifaceZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ ifacecheck emit failed"); return 1; }
-    rc = new Process(vm).Arg(ifaceZbc).Arg("Main")
-        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
-        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ ifacecheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
-    Console.WriteLine("  ✓ ifacecheck.zbc: interface dispatch computed correctly");
+        + "}\n") != 0) { return 1; }
 
     // sacheck（port-z42c-statics-arrays）：静态类常量（__static_init__）+ 数组创建/下标/Length + oracle
-    string saSrc = Path.Join(e2eDir, "sacheck.z42");
-    File.WriteAllText(saSrc, "static class Sev {\n"
+    if (_e2eOracle(vm, driverZpkg, e2eDir, flat, libsRel, "sacheck", false,
+        "static class Sev {\n"
         + "    public static int Warn = 1;\n"
         + "    public static int Error = 2;\n"
         + "}\n\n"
@@ -523,16 +489,7 @@ int _testCompilerE2e(string root, string vm, string flat) {
         + "    int ok = 0;\n"
         + "    if (xs[0] + xs[1] == 42) { if (xs.Length == 3) { if (Sev.Warn == 1) { ok = 1; } } }\n"
         + "    return 100 / ok;\n"
-        + "}\n");
-    string saZbc = Path.Join(e2eDir, "sacheck.zbc");
-    rc = new Process(vm).Arg(driverZpkg).Arg("--").Arg("--emit-zbc").Arg(saSrc).Arg(saZbc)
-        .Env("Z42_LIBS", flat).Stdout(Stdio.Null()).Stderr(Stdio.Inherit()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ sacheck emit failed"); return 1; }
-    rc = new Process(vm).Arg(saZbc).Arg("Main")
-        .Env("Z42_LIBS", Path.Join(root, "artifacts/build/libraries/dist/release"))
-        .Stdout(Stdio.Null()).Stderr(Stdio.Null()).Run().ExitCode;
-    if (rc != 0) { Console.WriteLine("  ✗ sacheck.zbc: oracle tripped (exit " + rc.ToString() + ")"); return 1; }
-    Console.WriteLine("  ✓ sacheck.zbc: statics + arrays computed correctly");
+        + "}\n") != 0) { return 1; }
 
     // replace-csharp Phase C：删 per-construct byte-compare-vs-C#（C# 已删，无 oracle）。
     // 功能正确性由上方 div-by-zero e2e oracle（selfcheck/callcheck/typecheck/...）保证；
