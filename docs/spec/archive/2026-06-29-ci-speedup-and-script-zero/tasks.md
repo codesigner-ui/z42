@@ -58,3 +58,4 @@
 ## 备注
 - 本会话工作横跨 `compile-once-toolchain` change 的「CI 去冗余」维度；该 change 余下 scope（成对分代 / 三发布门 / cross-bootstrap）续开，不在本需求内。
 - 全部改动均独立 commit + 推送 + CI 绿验证（cold 路径以 workflow_dispatch 验证）。
+- 归档后做了一轮"问题扫描"并清零 2 个遗留：① `gc_cycle_bench` 缺 `class_flags` 字段（预存 rot，CI 不编故静默腐烂；补字段，本地 `cargo build --benches` 全过，commit 17be4fbc）；② `testing/bootstrap.md` §6 stale（写 selfhost-bootstrap "待改造"，实已删；改为当前状态，commit e6dd69ad）。无其它真问题。
