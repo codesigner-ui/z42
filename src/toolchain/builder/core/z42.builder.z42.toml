@@ -9,8 +9,9 @@
 # in-process compiler API (ICompiler / PackageCompiler) — wired in by
 # `wire-z42b-host-build`. Hence `include` lists only the test-host sources, and
 # the deps are the runner + CLI, NOT z42.build / z42.project.
-# (The earlier Z42.Project ↔ z42c.project namespace collision is resolved:
-# z42.project now declares `Z42.Build.Project`.)
+# (z42.project 已改 namespace `Z42.Build.Project`，但仍暂不入 build：其类与 z42c.project
+# 同名，同 flat libs 会按文件名 first-wins 串味、炸 z42c 自举——见 z42.workspace.toml 注释。
+# 等 wire-z42b-host-build 让 z42c 改引用本库、删 z42c.project 后再启用。)
 [project]
 name    = "z42.builder"
 version = "0.1.0"
