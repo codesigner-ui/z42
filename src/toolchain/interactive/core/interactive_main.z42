@@ -1,0 +1,18 @@
+// z42i —— z42 interactive REPL 入口（scaffold）。
+//
+// SCOPE（scaffold）：仅入口占位，打印 "planned" 后退出。真正的 REPL（读取片段 →
+// 调编译器 API 编译 → VM 求值 → 打印结果）是 0.3.x capstone，设计见
+// docs/design/toolchain/repl.md。前置：extract-compile-pipeline-api（把编译编排
+// 下沉为可复用 API）。本包未登记进 workspace / xtask / CI，惰性占位。
+namespace Z42Interactive;
+
+using Std;
+using Std.IO;
+
+void Main() {
+    Console.WriteLine("z42i — z42 interactive REPL");
+    ConsoleError.WriteLine("z42i: the interactive REPL is not yet implemented "
+        + "(scaffold; see src/toolchain/interactive/README.md and "
+        + "docs/design/toolchain/repl.md)");
+    Environment.Exit(1);
+}

@@ -1,0 +1,34 @@
+# toolchain/interactive — z42 交互式 REPL（`z42i`）
+
+## 职责
+
+z42 的交互式 read-eval-print loop：读取源码片段 → 调编译器 API 即时编译 →
+VM 求值 → 打印结果，维持跨输入的会话状态（已声明的变量 / 类型 / import）。
+
+与 z42d 不同，`z42i` **不是 muxer**——它本身就是一个交互入口，无子命令。
+launcher 命令分发：`z42 repl` → `z42i`（裸 `z42` 无参是否进 REPL 待定）。
+
+```
+src/toolchain/interactive/core/*.z42  →  z42.interactive.zpkg  →  apphost z42i
+```
+
+## 核心文件（`core/`，scaffold）
+
+| 文件 | 职责 |
+|------|------|
+| `core/interactive_main.z42` | REPL 入口（当前仅打印 "planned" 后退出）|
+| `core/z42.interactive.z42.toml` | 包清单（exe / pack / apphost）|
+
+## 依赖关系
+
+- **前置**：`extract-compile-pipeline-api`——REPL 需要把「编译一段源 → 拿到可执行 zpkg/IR」
+  下沉为可复用的进程内 API（`CompileResult` / `PackageCompiler`），而非 fork z42c 子进程。
+- 依赖 `runtime/`（在同一 VM 实例中增量执行片段、保留会话状态）、`compiler/`（增量编译）。
+- 被 launcher 命令分发调用。
+
+## 状态
+
+🔴 **骨架占位**。仅入口 + 本 README，**未登记 workspace / xtask / CI**，惰性占位。
+
+REPL 是 0.3.x capstone，设计见 [`docs/design/toolchain/repl.md`](../../../docs/design/toolchain/repl.md)；
+推进时点见 `docs/roadmap.md`。

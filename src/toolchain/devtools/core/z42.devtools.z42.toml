@@ -1,0 +1,41 @@
+# z42d — developer toolchain (muxer apphost). Compiled to z42.devtools.zpkg
+# (Exe-mode). Single Std.Cli nested router fronting the source-/dev-facing tools
+# `fmt` / `doc` / `dbg` / `prof` / `lint`. Mirrors z42b (builder): one exe, one
+# router, launcher forwards `z42 fmt` → `z42d fmt`.
+#
+# SCOPE (scaffold): command face only. Every subcommand prints "planned" — the
+# real engines land per roadmap (fmt 0.2.4→0.4.x, doc 0.4.6, prof 0.4.4,
+# lint 0.7.x, dbg/DAP 0.8.x). NOT registered in z42.workspace.toml / xtask / CI
+# yet — inert until each tool is implemented (same posture as the PARKED
+# builder). See README.md.
+[project]
+name    = "z42.devtools"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42Devtools.Main"
+pack    = true
+
+[sources]
+include = ["devtools_cli.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"   # String / core
+"z42.io"   = "0.1.0"   # Console / Environment
+"z42.cli"  = "0.1.0"   # Std.Cli nested router + ArgParser
+
+[build]
+# Mirror builder/launcher: emit z42.devtools.zpkg into the shared artifacts tree
+# (artifacts/build/toolchain/devtools). From this toml's dir
+# (src/toolchain/devtools/core) up 4 levels to repo root.
+dist_dir = "../../../../artifacts/build/toolchain/devtools"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
+
+# apphost-as-config: publishes a native desktop apphost `./z42d` at the repo root
+# (dev convenience, same as ./xtask / ./z42b). Gate stays off the build until the
+# package is registered. From this toml's dir up 4 levels to repo root.
+[platform.desktop]
+apphost     = true
+publish_dir = "../../../.."

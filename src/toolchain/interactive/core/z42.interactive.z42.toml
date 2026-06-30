@@ -1,0 +1,36 @@
+# z42i — z42 interactive REPL (apphost). Compiled to z42.interactive.zpkg
+# (Exe-mode). A single interactive entry (read-eval-print loop), NOT a muxer —
+# unlike z42d it has no subcommands. Launcher forwards `z42 repl` (or bare `z42`
+# with no args, TBD) → z42i.
+#
+# SCOPE (scaffold): entry point only — prints "planned" and exits. The real REPL
+# (compile-snippet → VM eval → print) is the 0.3.x capstone (see
+# docs/design/toolchain/repl.md). NOT registered in z42.workspace.toml / xtask /
+# CI yet — inert placeholder. See README.md.
+[project]
+name    = "z42.interactive"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42Interactive.Main"
+pack    = true
+
+[sources]
+include = ["interactive_main.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"   # String / core
+"z42.io"   = "0.1.0"   # Console / Environment
+
+[build]
+# From this toml's dir (src/toolchain/interactive/core) up 4 levels to repo root.
+dist_dir = "../../../../artifacts/build/toolchain/interactive"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
+
+# apphost-as-config: publishes a native desktop apphost `./z42i` at the repo root.
+# Gate stays off the build until the package is registered.
+[platform.desktop]
+apphost     = true
+publish_dir = "../../../.."
