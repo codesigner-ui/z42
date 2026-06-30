@@ -18,7 +18,7 @@
 
 | change | 子系统（待逐个确认） |
 |--------|---------------------|
-| `retire-test-runner` | stdlib（z42.test）+ toolchain（builder）—— 🟡 SPEC READY，实施等待 boxing(0.3.11) + Method.Invoke(0.3.12)；命令宿主 z42c→z42b（2026-06-25，z42c 退出 scope）+ bench 拉入；**不持锁**，开工前重新登记 |
+| ~~retire-test-runner~~ | stdlib + toolchain + runtime —— ✅ 已归档 2026-06-30（删 Rust z42-test-runner，z42b 反射 runner 接管：`__invoke_static` 按 FQN 跑 free-function 测试 + `__load_module` 注册 import_namespaces 候选/force-load 依赖闭包/重跑 init_static_fields；z42b=test/bench host（builder_cli+builder_test）；xtask test stdlib/compiler 改 spawn z42b。CI 全平台绿含 Windows+JIT，272/272 + 自举 7/7。build/publish/export 编排留 wire-z42b-host-build。附带命名空间 z42.project→`Z42.Build.Project`：解 z42c.project 冲突的方向，但同名类跨 zpkg first-wins 串味，故暂不入 build，待 wire-z42b-host-build 让 z42c 改引用本库、删 z42c.project） |
 | `add-workload-command-dispatch` | toolchain + stdlib（z42.cli）—— 🟡 SPEC READY，可立即实施（无前置）；**不持锁**，开工前重新登记 |
 | `wire-z42b-host-build` | stdlib（z42.project/z42.build）+ compiler（Z42cCompiler）+ toolchain（z42b 登记 + launcher）—— 🟡 SPEC DRAFT，接入 PARKED 的 z42b → `z42 new`/`z42 build` 端到端；前置 toolchain 锁释放 + extract-compile-pipeline-api；**不持锁**，开工前重新登记。PARKED 代码已就位（08e840d5/5020b0d5/c1d068d2/98cebedd）|
 | ~~add-boxing-conversions~~ | runtime —— ✅ 已归档 2026-06-29（装箱 prim↔object 方案 A：实证编译器侧已支持（GS6），整改动 = 运行期 Bool 拆箱恒等 + golden + 文档；z42c.semantics 零改动；vm interp 189/0 含 box_unbox。Method.Invoke 0.3.12 前置达成）|
