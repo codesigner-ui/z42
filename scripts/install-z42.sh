@@ -323,8 +323,13 @@ say "Extracting..."
 mkdir -p "$TMP/pkg"
 tar -xzf "$TMP/$ASSET" -C "$TMP/pkg"
 
+# Restore the executable bit (GitHub Actions artifact upload/download strips it).
+# Generic over the whole bin/ + the root launcher(s) so new tools (z42b, z42d,
+# z42i, …) need no edits here — bin/ holds only executables in every package.
 _restore_exec() {
-  local b; for b in "$@"; do [ -f "$b" ] && chmod +x "$b" 2>/dev/null || true; done
+  local d="$1" f
+  for f in "$d/z42" "$d/z42.exe"; do [ -f "$f" ] && chmod +x "$f" 2>/dev/null || true; done
+  [ -d "$d/bin" ] && chmod +x "$d"/bin/* 2>/dev/null || true
 }
 
 if [ $SYSTEM_INSTALL -eq 1 ]; then
@@ -339,10 +344,7 @@ if [ $SYSTEM_INSTALL -eq 1 ]; then
   # -version reinstall; a new tag re-extracts. (Multi-version support deferred.)
   rm -rf "$DEST"; mkdir -p "$DEST"
   cp -R "$TMP/pkg"/. "$DEST"/
-  # GitHub Actions artifact upload/download strips the executable bit.
-  _restore_exec "$DEST/z42" "$DEST/z42.exe" \
-                "$DEST/bin/z42vm" "$DEST/bin/z42vm.exe" \
-                "$DEST/bin/z42c" "$DEST/bin/z42c.exe"
+  _restore_exec "$DEST"
   echo "$WANT" > "$STAMP"
   say_ok "Installed  ${bold}$VER${normal} / $RID  →  $DEST  (managed)"
 
@@ -366,8 +368,7 @@ else
   # ── Portable install ─────────────────────────────────────────────────────
   rm -rf "$DEST"; mkdir -p "$DEST"
   cp -R "$TMP/pkg"/. "$DEST"/
-  # GitHub Actions artifact upload/download strips the executable bit.
-  _restore_exec "$DEST/z42" "$DEST/bin/z42" "$DEST/bin/z42vm" "$DEST/bin/z42c"
+  _restore_exec "$DEST"
   echo "$WANT" > "$STAMP"
 
   ENTRY="$DEST/z42"; [ -f "$ENTRY" ] || ENTRY="$DEST/bin/z42"
