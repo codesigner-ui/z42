@@ -18,9 +18,14 @@
 - [x] ① compiler e2e 表驱动（单文件，碰撞面最小）— `test compiler` GREEN（exit 0；e2e 8/8 + 不动点 7/7）
 - [x] ② `_compilerMembers` accessor（收敛 10 处字面量）— 与③合并提交
 - [x] ③ `_assembleAllLibs` flat 视图抽取（compiler/test/bench 3 处）— GREEN
-- [ ] ⑤ `_sortedStrings`/`_splitWords` 移到 xtask_common（无调用方改动）
-- [ ] ④ `_ensureTestPrereqs` 构建前置收敛 + 命名统一
+- [x] ⑤ `_sortedStrings`/`_splitWords` 移到 xtask_common（无调用方改动）— GREEN
+- [x] ④ 抽 `_regenForTest` + `_buildDebugVmAndCompression`（收敛 testVmCore/testAll 重复）— GREEN（双否定 rebuild/noBuild 改名刻意不做：churn 高价值低）
 - [ ] ⑥ 文件拆分（xtask_test_lib / compiler build·test）——碰撞最大，放最后/视情况
+
+## ④⑤ 验证 + 环境插曲
+- [x] `test vm interp` GREEN：build-stdlib 22/0 + regen 202/0 + goldens 191/0
+- [x] `test compiler` GREEN：7/7 zpkg + 17 units + e2e + 不动点 7/7（覆盖 _sortedStrings）
+- 插曲：首跑 test vm regen 202/202 全崩 → 诊断为**陈旧 debug z42vm 缺 `__activator_create`**（并行 reflection change dff252e2 新加的 builtin），非 ④⑤。User 授权清理 6 个陈年僵尸进程（PID 7514 周六起卡 build）+ cargo 重建 debug vm → 重跑全绿。一度误诊「skew 种子」实为 hard-link 同 inode + 错误 Z42_LIBS 隔离兄弟包的假象。
 
 ## ① compiler e2e 表驱动 ✅
 - [x] 1.1 抽 `_e2eOracle(vm, driver, e2eDir, emitLibs, runLibs, name, expectTrap, source)`，8 个 oracle 用例（selfcheck/callcheck/typecheck/divzero/charcheck/trycheck/ifacecheck/sacheck）退化为数据调用（xtask_compiler.z42）

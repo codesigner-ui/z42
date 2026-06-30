@@ -91,6 +91,57 @@ string _join(string[] a, int from) {
     return s;
 }
 
+// ── string / collection helpers (shared across modules) ─────────────────────
+
+/// String sort using an O(n²) selection sort — fine for n ≤ ~64 test
+/// entries; avoids depending on a Std.Collections sort that the host
+/// xtask may or may not pull in.
+string[] _sortedStrings(string[] src) {
+    int n = src.Length;
+    string[] arr = new string[n];
+    int i = 0;
+    while (i < n) { arr[i] = src[i]; i = i + 1; }
+    i = 0;
+    while (i < n) {
+        int minIdx = i;
+        int j = i + 1;
+        while (j < n) {
+            if (arr[j].CompareTo(arr[minIdx]) < 0) { minIdx = j; }
+            j = j + 1;
+        }
+        if (minIdx != i) {
+            string tmp = arr[i]; arr[i] = arr[minIdx]; arr[minIdx] = tmp;
+        }
+        i = i + 1;
+    }
+    return arr;
+}
+
+// Split a string on ASCII whitespace (space / tab / newline), dropping empties.
+string[] _splitWords(string s) {
+    string[] result = new string[4];
+    int n = 0;
+    int i = 0;
+    while (i < s.Length) {
+        while (i < s.Length
+            && (s.CharAt(i) == ' ' || s.CharAt(i) == '\t' || s.CharAt(i) == '\n')) {
+            i = i + 1;
+        }
+        if (i >= s.Length) break;
+        int start = i;
+        while (i < s.Length
+            && s.CharAt(i) != ' ' && s.CharAt(i) != '\t' && s.CharAt(i) != '\n') {
+            i = i + 1;
+        }
+        result = _append(result, n, s.Substring(start, i - start));
+        n = n + 1;
+    }
+    string[] tight = new string[n];
+    int t = 0;
+    while (t < n) { tight[t] = result[t]; t = t + 1; }
+    return tight;
+}
+
 // ── toolchain selector (--toolchain <dir>) ───────────────────────────────────
 
 // The active toolchain dir in `.z42` layout (libs/ + programs/z42c/*.zpkg + bin/),

@@ -21,25 +21,34 @@ int _testVm(ParseResult r) {
     return _testVmCore(modes, !r.GetFlag("no-rebuild"), r.GetFlag("no-build"), r.GetOption("jobs"), r.GetOption("shard"));
 }
 
+// regen goldens for a test stage: --toolchain active OR --no-build set → z42c+stdlib
+// already present, only regen the golden .zbc (_regenGolden, --toolchain-aware);
+// else full _regenCore (rebuild stdlib + runtime + goldens). Shared: _testVmCore + _testAll.
+int _regenForTest(bool haveTc, bool noBuild) {
+    return (haveTc || noBuild) ? _regenGolden() : _regenCore(false, true);
+}
+
+// cargo-build the DEBUG z42vm + z42-compression cdylib — the runtime the VM golden
+// runner resolves (artifacts/build/runtime/debug/z42vm; JIT dlopens the compressor).
+// Shared: _testVmCore + _testAll.
+int _buildDebugVmAndCompression() {
+    int cd = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg(_runtimeManifest()));
+    if (cd != 0) { return cd; }
+    return _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
+}
+
 int _testVmCore(string modes, bool rebuild, bool noBuild, string jobs, string shard) {
     if (jobs.Length == 0) { jobs = "1"; }
-    // --toolchain (compile-once P3): the toolchain supplies z42c + stdlib + z42vm,
-    // so compile goldens with it directly (_regenGolden is --toolchain-aware) and
-    // skip the build-tree stdlib/runtime/compression cargo builds entirely.
-    // --no-build (compile-once A1): the CI bootstrap already built z42c+stdlib —
-    // regen goldens only (_regenGolden), skip the redundant z42c+stdlib rebuild.
+    // --toolchain (compile-once P3) / --no-build (compile-once A1): consume an
+    // already-built z42c+stdlib → regen goldens only; else full rebuild.
     bool haveTc = _toolchainDir(_root()).Length > 0;
     if (rebuild) {
-        int c = (haveTc || noBuild) ? _regenGolden() : _regenCore(false, true);
+        int c = _regenForTest(haveTc, noBuild);
         if (c != 0) { return c; }
     }
     if (!haveTc) {
-        int cd = _exec(new Process("cargo").Arg("build").Arg("-q")
-            .Arg("--manifest-path").Arg(_runtimeManifest()));
-        if (cd != 0) { return cd; }
-        int cc = _exec(new Process("cargo").Arg("build").Arg("-q")
-            .Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml"));
-        if (cc != 0) { return cc; }
+        int cb = _buildDebugVmAndCompression();
+        if (cb != 0) { return cb; }
     }
     // modes is a space-separated token string (e.g. "interp jit"); split to the
     // string[] _runVmGoldens expects. jobs parses to int (default 1 on garbage).
@@ -150,12 +159,10 @@ int _testAll(bool noBuild) {
     // build-wave redundancy (~12-15 min/leg) — `xtask test all` locally still does
     // the full build by default (noBuild=false).
     bool haveTc = _toolchainDir(_root()).Length > 0;
-    int c;
-    if (haveTc || noBuild) { c = _regenGolden(); } else { c = _regenCore(false, true); }
+    int c = _regenForTest(haveTc, noBuild);
     if (c != 0) { return c; }
-    // extra tooling the test stages need
-    c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg(_runtimeManifest())); if (c != 0) { return c; }            // debug z42vm
-    c = _exec(new Process("cargo").Arg("build").Arg("-q").Arg("--manifest-path").Arg("src/runtime/crates/z42-compression/Cargo.toml")); if (c != 0) { return c; }
+    // extra tooling the test stages need: debug z42vm + compression cdylib + test-runner
+    c = _buildDebugVmAndCompression(); if (c != 0) { return c; }
     c = _exec(_cargoRelease().Arg("-q").Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml")); if (c != 0) { return c; }
     // replace-csharp Phase C：删除 dotnet build/test stage——z42c 编译器正确性由 stage「compiler」
     // （自举不动点 gen1==gen2 + units）保证，golden 编译已全程 z42c（_regenGolden）。GREEN gate C#-free。
@@ -414,29 +421,7 @@ class DepBundle {
     public int Count { get; set; }
 }
 
-/// String sort using an O(n²) selection sort — fine for n ≤ ~64 test
-/// entries; avoids depending on a Std.Collections sort that the host
-/// xtask may or may not pull in.
-string[] _sortedStrings(string[] src) {
-    int n = src.Length;
-    string[] arr = new string[n];
-    int i = 0;
-    while (i < n) { arr[i] = src[i]; i = i + 1; }
-    i = 0;
-    while (i < n) {
-        int minIdx = i;
-        int j = i + 1;
-        while (j < n) {
-            if (arr[j].CompareTo(arr[minIdx]) < 0) { minIdx = j; }
-            j = j + 1;
-        }
-        if (minIdx != i) {
-            string tmp = arr[i]; arr[i] = arr[minIdx]; arr[minIdx] = tmp;
-        }
-        i = i + 1;
-    }
-    return arr;
-}
+// _sortedStrings moved to xtask_common.z42 (shared string/collection helpers).
 
 /// Discover test units in `testsDir`. Single-file convention: a top-level
 /// `*.z42` file becomes one unit. Dir-mode convention (Phase 3.1.1):

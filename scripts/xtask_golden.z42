@@ -219,30 +219,7 @@ string _firstLine(string s) {
     return s.Substring(0, i);
 }
 
-string[] _splitWords(string s) {
-    // Split on ASCII whitespace.
-    string[] result = new string[4];
-    int n = 0;
-    int i = 0;
-    while (i < s.Length) {
-        while (i < s.Length
-            && (s.CharAt(i) == ' ' || s.CharAt(i) == '\t' || s.CharAt(i) == '\n')) {
-            i = i + 1;
-        }
-        if (i >= s.Length) break;
-        int start = i;
-        while (i < s.Length
-            && s.CharAt(i) != ' ' && s.CharAt(i) != '\t' && s.CharAt(i) != '\n') {
-            i = i + 1;
-        }
-        result = _append(result, n, s.Substring(start, i - start));
-        n = n + 1;
-    }
-    string[] tight = new string[n];
-    int t = 0;
-    while (t < n) { tight[t] = result[t]; t = t + 1; }
-    return tight;
-}
+// _splitWords moved to xtask_common.z42 (shared string/collection helpers).
 
 string _stripTrailingNewlines(string s) {
     int end = s.Length;
