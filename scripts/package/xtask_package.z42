@@ -106,14 +106,6 @@ string _ridToCargo(string rid) {
     return "";
 }
 
-string _ridToDotnet(string rid) {
-    if (rid == "macos-arm64") { return "osx-arm64"; }
-    if (rid == "linux-arm64") { return "linux-arm64"; }
-    if (rid == "linux-x64")   { return "linux-x64"; }
-    if (rid == "windows-x64") { return "win-x64"; }
-    return "";
-}
-
 // Read versions.toml [project].version with native Std.Toml (was python3).
 string _versionsGet(string root) {
     // shared reader (xtask_versions.z42); "" when versions.toml is absent.
