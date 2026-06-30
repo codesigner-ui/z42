@@ -574,7 +574,8 @@ public static class ExportedTypeExtractor {
                 MethodDecl smd = smem as MethodDecl;
                 if (ExportedTypeExtractor._hasWord(smd.Mods, "static")) {
                     string smkey = smd.Name + "$" + smd.ParamCount.ToString();
-                    if (!ct.Methods.ContainsKey(smkey)) { smkey = smd.Name; }
+                    if (smd.RegKey != "") { smkey = smd.RegKey; }                       // type-based 重载：注册键
+                    else if (!ct.Methods.ContainsKey(smkey)) { smkey = smd.Name; }
                     MethodSymbol sms = ct.Methods.Get(smkey) as MethodSymbol;
                     if (sms != null && ExportedTypeExtractor._indexOf(seenStatic, seenStaticCount, smkey) < 0) {
                         if (seenStaticCount == seenStatic.Length) {

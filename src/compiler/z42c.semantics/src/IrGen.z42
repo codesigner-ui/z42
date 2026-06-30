@@ -154,7 +154,8 @@ public sealed class IrGen {
                             // GS3：重载方法键为 Name$arity，unique 方法为 bare name（镜像 C# EmitMethod 逻辑）。
                             // 先算 methKey，HasBody 和 extern 两路都需要（对齐 C# IrGen.Functions.cs:EmitMethod）。
                             string methKey = md.Name + "$" + md.ParamCount.ToString();
-                            if (owner == null || !owner.Methods.ContainsKey(methKey)) { methKey = md.Name; }
+                            if (md.RegKey != "") { methKey = md.RegKey; }                                  // type-based 重载：注册键
+                            else if (owner == null || !owner.Methods.ContainsKey(methKey)) { methKey = md.Name; }
                             string irName = this._q(this._classIrShortName(c)) + "." + methKey;   // IR/包内名（FQ，arity-mangle 时 Name$N）
                             if (md.HasBody) {              // G11：ctor 也发 `<qualClass>.<Class>` 函数（md.Name=类名，ret void，实例）
                                 string key = ownerKey + "." + methKey;    // SemanticModel 键（arity-mangle 时 ownerKey=Name$N）

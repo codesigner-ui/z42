@@ -1322,6 +1322,10 @@ public sealed class Parser {
                 // add-parameter-attribute-reflection：参数前置 `[Attr(...)]`（在 ref/type 之前）。
                 AttrList pattrs = null;
                 if (this._peek().Kind == TokenKind.LBracket) { pattrs = this._parseAttributes(); }
+                // add-params-varargs：`params` 修饰（在类型前）。末参约束（E0206）在循环外统一检查。
+                bool isParams = false;
+                Span paramsTok = this._peek().Span;
+                if (this._peek().Kind == TokenKind.Params) { this._advance(); isParams = true; }
                 bool isRef = false;
                 if (this._peek().Kind == TokenKind.Ref || this._peek().Kind == TokenKind.Out || this._peek().Kind == TokenKind.In) { this._advance(); isRef = true; }
                 TypeExpr pt = this._parseType();
@@ -1335,14 +1339,27 @@ public sealed class Parser {
                 }
                 Param prm = new Param(pt, pn, pt.Span);
                 prm.IsRef = isRef;
+                prm.IsParams = isParams;
                 if (pattrs != null) { prm.Attrs = pattrs.Items; prm.AttrCount = pattrs.Count; }
                 if (this._peek().Kind == TokenKind.Eq) {   // GS1：默认参数值 `int x = expr`
                     this._advance();
                     prm.Default = this._parseExpr(0);
                 }
+                if (isParams) {
+                    // params 类型必须是数组 T[]（E0207）
+                    if (!(pt is ArrayType)) { this._diags.Error(DiagnosticCodes.ParamsNotArray, "'params' parameter type must be an array 'T[]'", pt.Span); }
+                    // params 不得与 ref/out 或默认值同现（E0208）
+                    if (isRef || prm.Default != null) { this._diags.Error(DiagnosticCodes.ParamsModifierConflict, "'params' cannot combine with 'ref'/'out' or a default value", paramsTok); }
+                }
                 ps[pc] = prm; pc = pc + 1;
                 if (this._peek().Kind == TokenKind.Comma) { this._advance(); } else { break; }
             }
+        }
+        // params 必须是最后一个参数（E0206）：任何标记 IsParams 但不在末位的报错。
+        int pk = 0;
+        while (pk < pc - 1) {
+            if (ps[pk].IsParams) { this._diags.Error(DiagnosticCodes.ParamsNotLast, "'params' must be the last parameter", ps[pk].Span); }
+            pk = pk + 1;
         }
         this._expect(TokenKind.RParen, ")");
         return new ParamList(ps, pc, sp);

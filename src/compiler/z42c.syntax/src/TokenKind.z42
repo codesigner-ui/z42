@@ -66,4 +66,5 @@ public static class TokenKind {
     public static int Underscore = 143; public static int Newline = 144; public static int Eof = 145;
     public static int Error_Unknown = 146;
     public static int QuestionDot = 147;   // ?. 空条件成员访问
+    public static int Params = 148;        // params 变长参数修饰（add-params-varargs）
 }

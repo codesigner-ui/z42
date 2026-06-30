@@ -15,6 +15,9 @@ public static class DiagnosticCodes {
     public static string UnexpectedEof       = "E0203";
     public static string MissingReturnType   = "E0204";
     public static string AmbiguousExpression = "E0205";
+    public static string ParamsNotLast          = "E0206";  // params 非末参（add-params-varargs）
+    public static string ParamsNotArray         = "E0207";  // params 类型非 T[]
+    public static string ParamsModifierConflict = "E0208";  // params 与 ref/out/默认值同现
 
     // Feature gates
     public static string FeatureDisabled     = "E0301";
@@ -37,6 +40,7 @@ public static class DiagnosticCodes {
     public static string InvalidCatchType         = "E0420";
     public static string InvalidDefaultType       = "E0421";
     public static string GenericFuncConstraintViolation = "E0422";
+    public static string AmbiguousOverload        = "E0425";   // 重载歧义（add-type-based-overloads）
     public static string InvalidFuncConstraint    = "E0423";
     public static string IllegalCast              = "E0424";
 

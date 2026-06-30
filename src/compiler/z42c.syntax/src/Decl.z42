@@ -10,10 +10,11 @@ public sealed class Param {
     public TypeExpr Type;
     public string   Name;
     public bool     IsRef;     // ref/out 修饰（调用方传地址，VM 处理间接；callee 寄存器类型不变）
+    public bool     IsParams;  // params 变长参数修饰（add-params-varargs）；仅末参合法，类型须 T[]。默认 false → 现有签名不变
     public Expr     Default;   // GS1：可选参数默认值（`int x = 5`）；无默认值 = null。镜像 C# Param.Default。
     public Attr[]   Attrs;     // add-parameter-attribute-reflection：参数前置 attribute（默认空）
     public int      AttrCount;
-    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; this.IsRef = false; this.Default = null; this.Attrs = new Attr[0]; this.AttrCount = 0; }
+    public Param(TypeExpr type, string name, Span span) { this.Span = span; this.Type = type; this.Name = name; this.IsRef = false; this.IsParams = false; this.Default = null; this.Attrs = new Attr[0]; this.AttrCount = 0; }
     // Dump 不含 Default（镜像 C# AstDumper.VisitParam：仅 `Param {mod}{name} {span}`，不输出默认值）→ 无默认值参数 Dump 不变。
     public string Dump() { return this.Type.Dump() + " " + this.Name; }
 }
@@ -124,6 +125,8 @@ public sealed class MethodDecl : Decl {
     public Expr[]        BaseArgs;    // `: base(args)` / `: this(args)` 调用实参（isCtor 时有意义；无 init 时 null/Count=0）
     public int           BaseArgCount;
     public bool          IsThisInit;  // true → init 是 `: this(args)`（ctor 委托同类）；false → `: base(args)`
+    public string        RegKey;      // add-type-based-overloads：注册键（Methods 映射键 = body 键 = IR 名）。
+                                       // SymbolCollector 收集时填（bare/Name$arity/Name$arity$typesig）；"" = 未填（回落旧逻辑）。
     public MethodDecl(string mods, bool isFree, bool isCtor, TypeExpr retType, string name,
                       TypeParamList typeParams, WhereClause[] wheres, int whereCount,
                       Param[] ps, int pc, bool hasBody, Stmt body, Expr[] baseArgs, int baseArgCount,
@@ -132,6 +135,7 @@ public sealed class MethodDecl : Decl {
         this.TypeParams = typeParams; this.Wheres = wheres; this.WhereCount = whereCount;
         this.Params = ps; this.ParamCount = pc; this.HasBody = hasBody; this.Body = body;
         this.BaseArgs = baseArgs; this.BaseArgCount = baseArgCount; this.IsThisInit = isThisInit;
+        this.RegKey = "";
     }
     public override string Dump() {
         string head = this.IsCtor ? "ctor" : (this.IsFree ? "func" : "method");

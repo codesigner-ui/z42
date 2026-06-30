@@ -400,6 +400,8 @@ public sealed class SymbolCollector {
         StrMap seenSt     = new StrMap();   // 静态方法首次见
         StrMap ovldInst   = new StrMap();   // 实例方法重载（>1 arity）
         StrMap ovldSt     = new StrMap();   // 静态方法重载
+        // add-type-based-overloads：同 (name,arity) ≥2 重载检测（type-based）。键 name$arity，值 "1"=见过 / "2"=重复。
+        StrMap arityDup   = new StrMap();
         int pi = 0;
         while (pi < c.MemberCount) {
             Decl pmem = this._unwrap(c.Members[pi]);
@@ -413,6 +415,9 @@ public sealed class SymbolCollector {
                     if (seenInst.ContainsKey(pmd.Name)) { ovldInst.Put(pmd.Name, "1"); }
                     else { seenInst.Put(pmd.Name, "1"); }
                 }
+                string ak = pmd.Name + "$" + pmd.ParamCount.ToString();
+                if (arityDup.ContainsKey(ak)) { arityDup.Put(ak, "2"); }   // ≥2 → type-based 重载
+                else { arityDup.Put(ak, "1"); }
             }
             pi = pi + 1;
         }
@@ -478,10 +483,23 @@ public sealed class SymbolCollector {
                 MethodDecl md = mem as MethodDecl;
                 // ctor（G11）也收集为方法（名=类名，ret void）：使 TypeChecker 能绑其体、IrGen 能发 `<Class>.<Class>` 函数。
                 // GS3：重载方法注册 Name$arity；unique 方法 bare name（镜像 C# SymbolCollector.Classes.cs regName 逻辑）。
+                // add-type-based-overloads：同 (name,arity) ≥2（type-based 重载）→ Name$arity$typesig 消歧。
                 bool mst = this._hasWord(md.Mods, "static");
                 bool isOvld = mst ? ovldSt.ContainsKey(md.Name) : ovldInst.ContainsKey(md.Name);
-                string regName = isOvld ? md.Name + "$" + md.ParamCount.ToString() : md.Name;
-                ct.Methods.Put(regName, this._methodSymbol(table, md, c.Name, tp, tpc));
+                MethodSymbol msym = this._methodSymbol(table, md, c.Name, tp, tpc);
+                string aritK = md.Name + "$" + md.ParamCount.ToString();
+                string regName = md.Name;
+                // add-type-based-overloads：type-mangle 仅限**静态**方法。静态调用编译期决议 → emit 精确签名键 → 安全。
+                // 实例方法经 VCall 按未 mangle/`$arity` 名派发（虚/泛型/原始接收者；VM primitive route 仅认 .M / .M$arity）
+                // → type-mangle 会断派发，故实例同 arity 重载保持 arity-only（沿旧行为 collide first-wins；如 String.Equals）。
+                if (mst && arityDup.ContainsKey(aritK) && arityDup.Get(aritK) == "2") {
+                    regName = OverloadResolver.MangleKey(md.Name, msym.Signature.ParamTypes, msym.Signature.ParamCount);
+                } else if (isOvld) {
+                    regName = aritK;
+                }
+                msym.RegKey = regName;
+                md.RegKey = regName;          // 单一真相源：body 绑定 / IrGen 复用此键（type-based 重载消歧）
+                ct.Methods.Put(regName, msym);
             }
             j = j + 1;
         }
@@ -498,6 +516,8 @@ public sealed class SymbolCollector {
         Z42Type ret = table.ResolveTypeP(md.RetType, all, allc);
         if (md.IsCtor) { ret = new Z42VoidType(); }   // 构造器返回 void（RetType 是占位空名）
         var sig = new Z42FuncType(ps, md.ParamCount, ret);
+        // add-params-varargs：末参标记 params → 记录变长起点（parser 已保证仅末参合法）。
+        if (md.ParamCount > 0 && md.Params[md.ParamCount - 1].IsParams) { sig.ParamsFrom = md.ParamCount - 1; }
         return new MethodSymbol(md.Name, this._vis(md.Mods), sig, this._hasWord(md.Mods, "static"), containing, true, md);
     }
 

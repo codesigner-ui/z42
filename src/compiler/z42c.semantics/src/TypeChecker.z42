@@ -160,7 +160,8 @@ public sealed class TypeChecker {
                 MethodDecl md = im.Methods[j] as MethodDecl;
                 if (md.HasBody) {
                     string mkey = md.Name + "$" + md.ParamCount.ToString();
-                    if (!ct.Methods.ContainsKey(mkey)) { mkey = md.Name; }
+                    if (md.RegKey != "") { mkey = md.RegKey; }                       // type-based 重载：用注册键
+                    else if (!ct.Methods.ContainsKey(mkey)) { mkey = md.Name; }
                     MethodSymbol ms = ct.Methods.Get(mkey) as MethodSymbol;
                     int mtpc = md.TypeParams.Count;
                     string[] allParams = this._mergeParams(new string[0], 0, md.TypeParams.Names, mtpc);
@@ -207,8 +208,10 @@ public sealed class TypeChecker {
                 MethodDecl md = mem as MethodDecl;
                 if (md.HasBody) {                       // G11：ctor（IsCtor）也绑体——ms 已收集（名=类名，ret void），this+字段入 scope
                     // GS3：重载方法以 Name$arity 键存于 ct.Methods；先试 Name$arity，再 bare name（镜像 C# regName 逻辑）。
+                    // add-type-based-overloads：type-based 重载用注册键（md.RegKey）。
                     string mkey = md.Name + "$" + md.ParamCount.ToString();
-                    if (!ct.Methods.ContainsKey(mkey)) { mkey = md.Name; }
+                    if (md.RegKey != "") { mkey = md.RegKey; }
+                    else if (!ct.Methods.ContainsKey(mkey)) { mkey = md.Name; }
                     MethodSymbol ms = ct.Methods.Get(mkey) as MethodSymbol;
                     // 活跃类型形参 = 类的 + 方法自身的（2A-2）。
                     int mtpc = md.TypeParams.Count;
@@ -1166,10 +1169,9 @@ public sealed class TypeChecker {
                 string cls = env.CurrentClass();
                 if (env.Symbols.HasClass(cls)) {
                     Z42ClassType sct = env.Symbols.GetClass(cls);
-                    string smkey = this._overloadKey(env.Symbols, sct, id.Name, call.ArgCount);
-                    MethodSymbol sms = this._findMethod(env.Symbols, sct, smkey);
+                    MethodSymbol sms = this._resolveOverload(env.Symbols, sct, id.Name, args, call.ArgCount, call.Span);
                     if (sms != null && sms.IsStatic) {
-                        return new BoundCall("static", false, null, cls, smkey, args, call.ArgCount, sms.Signature.Ret, call.Span);
+                        return new BoundCall("static", false, null, cls, sms.RegKey, args, call.ArgCount, sms.Signature.Ret, call.Span);
                     }
                 }
             }
@@ -1212,11 +1214,10 @@ public sealed class TypeChecker {
             IdentExpr tid = mem.Target as IdentExpr;
             if (env.LookupVar(tid.Name) == null && env.Symbols.HasClass(tid.Name)) {
                 Z42ClassType ct = env.Symbols.GetClass(tid.Name);
-                string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
-                MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
+                MethodSymbol ms = this._resolveOverload(env.Symbols, ct, mem.Name, args, argCount, sp);
                 if (ms != null) {
                     BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env, sp);
-                    return new BoundCall("static", false, null, ct.Name(), mkey, fa, fa.Length, ms.Signature.Ret, sp);
+                    return new BoundCall("static", false, null, ct.Name(), ms.RegKey, fa, fa.Length, ms.Signature.Ret, sp);
                 }
                 this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                     "no static method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
@@ -1246,11 +1247,10 @@ public sealed class TypeChecker {
         Z42Type rt = recv.Type();
         if (rt is Z42ClassType) {
             Z42ClassType ct = rt as Z42ClassType;
-            string mkey = this._overloadKey(env.Symbols, ct, mem.Name, argCount);
-            MethodSymbol ms = this._findMethod(env.Symbols, ct, mkey);
+            MethodSymbol ms = this._resolveOverload(env.Symbols, ct, mem.Name, args, argCount, sp);
             if (ms != null) {
                 BoundExpr[] fa = this._withDefaults(ms, args, rawArgs, argCount, env, sp);
-                return new BoundCall("instance", true, recv, ct.Name(), mkey, fa, fa.Length, ms.Signature.Ret, sp);
+                return new BoundCall("instance", true, recv, ct.Name(), ms.RegKey, fa, fa.Length, ms.Signature.Ret, sp);
             }
             this._diags.Error(DiagnosticCodes.UndefinedSymbol,
                 "no method `" + mem.Name + "` on `" + ct.Name() + "`", sp);
@@ -1272,13 +1272,12 @@ public sealed class TypeChecker {
         // GS6: 泛型实例化类型（LinkedList<T>.Next() 等）→ 查 Def 类方法，返回类型泛型参数松绑 Unknown。
         if (rt is Z42InstantiatedType) {
             Z42ClassType itDef2 = (rt as Z42InstantiatedType).Def;
-            string itmkey = this._overloadKey(env.Symbols, itDef2, mem.Name, argCount);
-            MethodSymbol itms = this._findMethod(env.Symbols, itDef2, itmkey);
+            MethodSymbol itms = this._resolveOverload(env.Symbols, itDef2, mem.Name, args, argCount, sp);
             if (itms != null) {
                 Z42Type itRet = itms.Signature.Ret;
                 if (itRet is Z42GenericParamType) { itRet = new Z42UnknownType(); }
                 BoundExpr[] fa = this._withDefaults(itms, args, rawArgs, argCount, env, sp);
-                return new BoundCall("instance", true, recv, itDef2.Name(), itmkey, fa, fa.Length, itRet, sp);
+                return new BoundCall("instance", true, recv, itDef2.Name(), itms.RegKey, fa, fa.Length, itRet, sp);
             }
             return new BoundCall("instance", true, recv, itDef2.Name(), mem.Name, args, argCount, new Z42UnknownType(), sp);
         }
@@ -1598,6 +1597,77 @@ public sealed class TypeChecker {
             }
         }
         return null;
+    }
+
+    // add-type-based-overloads：按实参类型解析重载调用，返回选中 MethodSymbol（含 RegKey）。
+    // 行为保持：单 arity 候选 → 直选（不做类型 applicability，镜像旧 arity-only）；同 arity ≥2 → 类型决议。
+    // null = 无匹配（调用方走原 undefined/no-method 诊断）或歧义（已报 E0425）。
+    private MethodSymbol _resolveOverload(SymbolTable symbols, Z42ClassType ct, string name,
+                                          BoundExpr[] args, int argCount, Span sp) {
+        MethodSymbol[] all = this._collectOverloads(symbols, ct, name);
+        if (all.Length == 0) { return null; }
+        // 按 arity 过滤
+        MethodSymbol[] byArity = new MethodSymbol[all.Length];
+        int na = 0;
+        int i = 0;
+        while (i < all.Length) {
+            if (all[i].Signature.ParamCount == argCount) { byArity[na] = all[i]; na = na + 1; }
+            i = i + 1;
+        }
+        // 无 arity 匹配但全类只有一个同名方法 → 返回它（镜像旧 _overloadKey 的 bare 兜底：忽略 arity，
+        // 如 `Int32.ToString(cp)` 静态形式调用实例 arity-0 ToString，接收者作首参）。
+        if (na == 0) {
+            if (all.Length == 1) { return all[0]; }
+            return null;
+        }
+        if (na == 1) { return byArity[0]; }   // 单 arity 候选 → 行为保持
+        // 同 arity ≥2 → type-based 决议
+        Z42Type[] argTypes = new Z42Type[argCount];
+        int k = 0;
+        while (k < argCount) { argTypes[k] = args[k].Type(); k = k + 1; }
+        OverloadResult res = OverloadResolver.Resolve(byArity, na, argTypes, argCount);
+        if (res.IsResolved()) { return res.Method; }
+        if (res.IsAmbiguous()) {
+            this._diags.Error(DiagnosticCodes.AmbiguousOverload,
+                "ambiguous call to overloaded `" + name + "`; add an explicit cast to disambiguate", sp);
+        }
+        return null;
+    }
+
+    // 沿 base 链聚合所有源名为 name 的方法，按 RegKey 去重（most-derived 优先 → override 取派生，
+    // 不同签名重载全留）。镜像 _findMethod 的 base/Object 行走。
+    private MethodSymbol[] _collectOverloads(SymbolTable symbols, Z42ClassType ct, string name) {
+        StrMap seen = new StrMap();
+        MethodSymbol[] acc = new MethodSymbol[8];
+        int n = 0;
+        Z42ClassType cur = ct;
+        bool more = true;
+        while (more) {
+            MethodSymbol[] here = cur.OverloadsOf(name);
+            int i = 0;
+            while (i < here.Length) {
+                if (!seen.ContainsKey(here[i].RegKey)) {
+                    seen.Put(here[i].RegKey, "1");
+                    if (n == acc.Length) {
+                        MethodSymbol[] b = new MethodSymbol[acc.Length * 2];
+                        int q = 0; while (q < n) { b[q] = acc[q]; q = q + 1; }
+                        acc = b;
+                    }
+                    acc[n] = here[i]; n = n + 1;
+                }
+                i = i + 1;
+            }
+            if (!cur.HasBase) {
+                if (cur.Name() != "Object" && symbols.HasClass("Object")) { cur = symbols.GetClass("Object"); }
+                else { more = false; }
+            } else {
+                Z42ClassType b = symbols.GetClass(cur.BaseName);
+                if (b == null) { more = false; } else { cur = b; }
+            }
+        }
+        MethodSymbol[] r = new MethodSymbol[n];
+        int z = 0; while (z < n) { r[z] = acc[z]; z = z + 1; }
+        return r;
     }
 
 }

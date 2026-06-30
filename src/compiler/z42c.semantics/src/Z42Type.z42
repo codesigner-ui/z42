@@ -117,6 +117,25 @@ public sealed class Z42ClassType : Z42Type {
         this.InterfaceNames[this.InterfaceCount] = name;
         this.InterfaceCount = this.InterfaceCount + 1;
     }
+    // add-type-based-overloads：本类中所有源名为 name 的方法符号（重载候选枚举；不走 base 链——调用方按需 base walk）。
+    public MethodSymbol[] OverloadsOf(string name) {
+        string[] keys = this.Methods.Keys();
+        MethodSymbol[] tmp = new MethodSymbol[keys.Length];
+        int n = 0;
+        int i = 0;
+        while (i < keys.Length) {
+            object v = this.Methods.Get(keys[i]);
+            if (v is MethodSymbol) {
+                MethodSymbol ms = v as MethodSymbol;
+                if (ms.Name == name) { tmp[n] = ms; n = n + 1; }
+            }
+            i = i + 1;
+        }
+        MethodSymbol[] r = new MethodSymbol[n];
+        int k = 0;
+        while (k < n) { r[k] = tmp[k]; k = k + 1; }
+        return r;
+    }
     public override string Name() { return this._name; }
     // IR 名：arity-mangled 时返回 Name$N（镜像 C# Z42ClassType.IrName）。
     public string IrName() {
@@ -147,8 +166,10 @@ public sealed class Z42FuncType : Z42Type {
     public Z42Type[] ParamTypes;
     public int       ParamCount;
     public Z42Type   Ret;
+    public int       ParamsFrom;   // add-params-varargs：变长形参 0-based 索引（= ParamCount-1）；-1 = 非变长。
+                                   // 构造后由 SymbolCollector / ImportedSymbolLoader 设置；不入 Dump（默认 -1 → 现有签名 Dump 不变）。
     public Z42FuncType(Z42Type[] paramTypes, int paramCount, Z42Type ret) {
-        this.ParamTypes = paramTypes; this.ParamCount = paramCount; this.Ret = ret;
+        this.ParamTypes = paramTypes; this.ParamCount = paramCount; this.Ret = ret; this.ParamsFrom = 0 - 1;
     }
     // C# TypeToString 镜像（TSIG/SIGS 串字节实证）：void 返回 → "Action[<p,…>]"；否则 "Func<p,…,ret>"（", " 分隔）。
     public override string Name() {

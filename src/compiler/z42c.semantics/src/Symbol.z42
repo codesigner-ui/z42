@@ -13,10 +13,14 @@ public sealed class MethodSymbol {
     public string      ContainingTypeName;   // 两阶段：收集时填类名（fixup 简化为名字回指）
     public bool        HasDecl;
     public MethodDecl  Decl;                  // syntax AST（绑定体时用；imported 时 null）
+    public string      RegKey;                // add-type-based-overloads：注册键（= Methods 映射键 = IR 名 =
+                                              // BoundCall 目标名）。bare Name / Name$arity / Name$arity$typesig。
+                                              // 默认 = Name；注册方按冲突上下文覆写。
     public MethodSymbol(string name, string visibility, Z42FuncType sig, bool isStatic,
                         string containingTypeName, bool hasDecl, MethodDecl decl) {
         this.Name = name; this.Visibility = visibility; this.Signature = sig; this.IsStatic = isStatic;
         this.ContainingTypeName = containingTypeName; this.HasDecl = hasDecl; this.Decl = decl;
+        this.RegKey = name;
     }
     public string Dump() { return "(method " + this.Name + " " + this.Signature.Dump() + ")"; }
 }
