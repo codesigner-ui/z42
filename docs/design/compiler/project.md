@@ -1303,13 +1303,28 @@ title = "My App"   # optional: HTML &lt;title&gt;（默认 = project name）
 [platform.desktop]
 apphost     = true   # GATE：唯有 apphost = true，`z42 publish <toml> --rid <desktop-rid>` 才产 apphost。
                      # 缺省 / false → publish 报 "not configured to publish a desktop apphost" 并退出。
-publish_dir = ".."   # 仅输出位置（apphost exe 输出目录，相对 toml 所在目录，同 [build].output_dir 基准）。
-                     # 不再充当 gate；缺省 = 项目目录。exe 名 = [project].name；--output 可覆盖。
+publish_dir = ".."   # 仅输出位置（部署根，相对 toml 所在目录，同 [build].output_dir 基准）。
+                     # 不再充当 gate；缺省 = 项目目录。--output 可覆盖。
+# 部署布局（可选，add-package-layout-config）：apphost 二进制与 payload zpkg 在
+# 部署根（publish_dir）下的相对路径。缺省 → 扁平：apphost = publish_dir/<name>，
+# payload 原地内嵌（不复制）。
+bin     = "bin/myapp"                 # apphost 二进制落点（相对部署根）
+payload = "programs/myapp/myapp.zpkg" # payload zpkg 落点；publish 把已编译 zpkg 复制到此
 ```
 
 桌面平台的输出是 **apphost**（per-app 原生可执行）：`z42 publish <toml> --rid <desktop-rid>` 在
-`apphost = true` 时，读 `publish_dir`（位置）+ 从 `[build]`/`[project]` 推出已编译 zpkg，patch 原生 apphost
+`apphost = true` 时，读 `publish_dir`（部署根）+ 从 `[build]`/`[project]` 推出已编译 zpkg，patch 原生 apphost
 stub 产出 exe。与 ios/android/wasm export 对称——apphost 不是独立命令。
+
+> **部署布局 `bin` / `payload`（add-package-layout-config）**：apphost 应用天生两部分——原生启动器
+> 二进制 + payload zpkg。两个可选字段把它们放到部署根下的**完整相对路径**：
+> - `bin`：apphost 二进制路径（如 `bin/myapp`；不写则 `<name>` 落部署根，保持旧扁平行为）。
+> - `payload`：payload zpkg 路径（如 `programs/myapp/myapp.zpkg`）。设了 → publish 把已编译 zpkg
+>   **复制**到此处，使部署子树自洽；不设 → 原地内嵌已编译 zpkg（不复制）。
+>
+> apphost 内嵌的 payload 相对路径（从 `bin` 目录到 `payload`）由 publish **自动计算**，用户不手算。
+> 这是面向用户的通用旋钮——用户发布自己的 app 与 z42 SDK 内部布置 z42c/z42b/z42d **共用同一套字段**。
+> 解析见 `z42.project` 的 `DesktopConfig.Bin` / `.Payload`；消费见 `launcher_export.z42` 的 `_cmdPublishDesktop`。
 
 > **gate 与位置分离（2026-06-30）**：旧逻辑用「`publish_dir` 是否存在」充当「是否产 apphost」的开关，
 > 把"输出目录"与"是否启用"耦合在一个键上。现拆分——`apphost = true` 是唯一 gate，`publish_dir` 退化为

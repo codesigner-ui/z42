@@ -171,8 +171,10 @@ string _requireDesktopApphost(string cmd, string rid) {
 }
 
 // publish: produce the RELEASE platform deployable. `--rid`'s category selects the
-// platform (default host). desktop → native apphost exe (the only impl); other
-// platforms → B5. Unified across platforms (was per-platform `publish <plat>`).
+// platform (default host). desktop → forwarded to z42b, which owns the publish verb
+// (move-publish-to-z42b). The launcher resolves the installed desktop workload
+// apphost stub and passes it via Z42_APPHOST_TEMPLATE (Decision 3.5); z42b gates
+// `apphost = true` + bin/payload layout + build-if-needed. other platforms → B5.
 void _cmdPublish(ParseResult r) {
     string rid = r.GetOption("rid");
     if (rid.Length == 0) { rid = _hostRid(); }
@@ -181,48 +183,30 @@ void _cmdPublish(ParseResult r) {
         Environment.Exit(2); return;
     }
     string cat = _ridCategory(rid);
-    if (cat == "desktop") { _cmdPublishDesktop(r, rid); return; }
-    if (cat.Length > 0) {
-        ConsoleError.WriteLine("z42 publish: " + cat + " deployable not yet implemented (B5) — only desktop (apphost) is supported.");
+    if (cat != "desktop") {
+        if (cat.Length > 0) {
+            ConsoleError.WriteLine("z42 publish: " + cat + " deployable not yet implemented (B5) — only desktop (apphost) is supported.");
+        } else {
+            ConsoleError.WriteLine("z42 publish: unknown platform for rid '" + rid + "'");
+        }
         Environment.Exit(2); return;
     }
-    ConsoleError.WriteLine("z42 publish: unknown platform for rid '" + rid + "'");
-    Environment.Exit(2);
+    // desktop: resolve the apphost stub (launcher owns installed-workload resolution),
+    // forward to z42b with --rid + Z42_APPHOST_TEMPLATE. "" stub → z42b reports the
+    // "install the desktop workload" hint after its apphost-gate check.
+    string stub = _desktopApphostStub(rid);
+    string[] fargv = _publishForwardArgv(r.GetPositional(0), rid, r.GetOption("output"));
+    Environment.Exit(_forwardZ42bEnv(fargv, "Z42_APPHOST_TEMPLATE", stub));
 }
 
-// desktop apphost publish for `rid` (cross-output: rid may differ from host). Emits
-// publish_dir/<name>[.exe]; the exe embeds the zpkg path relative to itself.
-void _cmdPublishDesktop(ParseResult r, string rid) {
-    string tomlPath = r.GetPositional(0);
-    if (!_expCheckToml("desktop", tomlPath)) { return; }
-    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
-    string projName = _expTomlStr(toml, "project", "name", "");
-    if (projName.Length == 0) {
-        ConsoleError.WriteLine("z42 publish: [project].name missing in " + tomlPath);
-        Environment.Exit(1); return;
-    }
-    // apphost-gate (gate-apphost-on-config): only `[platform.desktop] apphost = true`
-    // makes publish emit an apphost. publish_dir / --output are output LOCATION only
-    // (no longer the gate); they default to the project dir when unset.
-    if (!_platformBool(toml, "desktop", "apphost", false)) {
-        ConsoleError.WriteLine("z42 publish: " + tomlPath + " is not configured to publish a desktop apphost — "
-            + "add `apphost = true` under [platform.desktop]");
-        Environment.Exit(2); return;
-    }
-    string publishDir = r.GetOption("output");
-    if (publishDir.Length == 0) { publishDir = _platformStr(toml, "desktop", "publish_dir", ""); }
-    if (publishDir.Length == 0) { publishDir = "."; }   // default: project dir (location only)
-    string zpkgSrc = _desktopResolveZpkg("publish", tomlPath, toml, projName);
-    string outName = rid.StartsWith("windows-") ? (projName + ".exe") : projName;
-    string projDir = Path.GetDirectoryName(tomlPath);
-    string outPath = (projDir.Length > 0) ? Path.Join(Path.Join(projDir, publishDir), outName)
-                                          : Path.Join(publishDir, outName);
-    string stub = _requireDesktopApphost("publish", rid);
-    string outDir = Path.GetDirectoryName(outPath);
-    if (outDir.Length > 0) { Directory.Create(outDir); }
-    Console.WriteLine("z42 publish (" + rid + ") → " + outPath);
-    Apphost.Produce(zpkgSrc, outPath, stub, rid);
-    Console.WriteLine("✅ apphost ready: " + outPath);
+// Reconstruct the z42b argv: `publish <toml> --rid <rid> [--output <out>]`.
+string[] _publishForwardArgv(string tomlPath, string rid, string output) {
+    bool hasOut = output.Length > 0;
+    int n = 4 + (hasOut ? 2 : 0);
+    string[] a = new string[n];
+    a[0] = "publish"; a[1] = tomlPath; a[2] = "--rid"; a[3] = rid;
+    if (hasOut) { a[4] = "--output"; a[5] = output; }
+    return a;
 }
 
 // export: generate a native IDE project. `--rid`'s category selects the platform.
@@ -341,19 +325,6 @@ string _platformStr(TomlValue root, string platform, string key, string dflt) {
     TomlValue v = p.Get(key);
     if (v.IsString()) { return v.AsString(); }
     if (v.IsLong())   { return v.AsLong().ToString(); }
-    return dflt;
-}
-
-// Read a bool key under [platform.<platform>] (e.g. `apphost = true`). Missing /
-// non-bool → dflt. Used to gate `publish desktop` on [platform.desktop] apphost.
-bool _platformBool(TomlValue root, string platform, string key, bool dflt) {
-    if (!root.ContainsKey("platform")) { return dflt; }
-    TomlValue pt = root.Get("platform");
-    if (!pt.IsTable() || !pt.ContainsKey(platform)) { return dflt; }
-    TomlValue p = pt.Get(platform);
-    if (!p.IsTable() || !p.ContainsKey(key)) { return dflt; }
-    TomlValue v = p.Get(key);
-    if (v.IsBool()) { return v.AsBool(); }
     return dflt;
 }
 

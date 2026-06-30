@@ -46,8 +46,10 @@ SubcommandRouter _builderRoot() {
     build.AddOptionalPositional("project", "<project.z42.toml>");
     root.Add("build", "compile to a platform-agnostic app.zpkg", build);
 
-    ArgParser pub = new ArgParser("z42b publish", "produce a release deployable (pending wire-z42b-host-build)");
+    ArgParser pub = new ArgParser("z42b publish", "produce a release deployable (desktop apphost)");
     pub.AddOptionalPositional("project", "<project.z42.toml>");
+    pub.AddOption("rid", "", "target RID (desktop; run via `z42 publish` to default to host)", "");
+    pub.AddOption("output", "", "output dir (overrides [platform.desktop].publish_dir)", "");
     root.Add("publish", "produce a release deployable", pub);
 
     ArgParser exp = new ArgParser("z42b export", "generate a native IDE project (pending wire-z42b-host-build)");
@@ -116,7 +118,8 @@ int _dispatchBuilder(CommandResolution res) {
         ConsoleError.WriteLine("z42b run: host bytecode run is served by the launcher (z42 run <app.zpkg>)");
         return 2;
     }
-    // new / build / publish / export — pending wire-z42b-host-build.
+    if (top == "publish") { return _cmdPublishZ42b(r); }   // move-publish-to-z42b
+    // new / build / export — pending wire-z42b-host-build.
     ConsoleError.WriteLine("z42b " + top + ": pending wire-z42b-host-build "
         + "(needs the in-process compiler API; not yet wired)");
     return 1;

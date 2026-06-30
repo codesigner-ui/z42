@@ -8,11 +8,18 @@ public sealed class DesktopConfig {
     public string Icon;
     public bool   HasBundleId;
     public string BundleId;     // macOS .app
+    // 部署布局（用户面通用旋钮，add-package-layout-config）：apphost 二进制与 payload
+    // zpkg 在部署/包根下的**完整相对路径**。空字符串 = 未设 → 由消费方（publish）按约定
+    // 推导（bin = "bin/<name>"，payload = "programs/<name>/<name>.zpkg"）。apphost 内嵌
+    // 的 payload 路径 = 从 Bin 所在目录到 Payload 的相对路径，由 publish 计算（用户不手算）。
+    public string Bin;          // apphost 二进制路径，如 "bin/z42d" / "z42"（落根）
+    public string Payload;      // payload zpkg 路径，如 "programs/z42d/z42.devtools.zpkg"
     public DesktopConfig(bool apphost, string publishDir, bool hasIcon, string icon,
-                         bool hasBundleId, string bundleId) {
+                         bool hasBundleId, string bundleId, string bin, string payload) {
         this.Apphost = apphost;
         this.PublishDir = publishDir;
         this.HasIcon = hasIcon; this.Icon = icon;
         this.HasBundleId = hasBundleId; this.BundleId = bundleId;
+        this.Bin = bin; this.Payload = payload;
     }
 }

@@ -1,0 +1,136 @@
+// z42b apphost patcher (move-publish-to-z42b) — INLINED so z42b's dependency set
+// stays within stdlib. z42b doubles as the reflective test-runner, which the
+// `stdlib [Test]` build stage compiles with ONLY stdlib in Z42_LIBS — it cannot see
+// the `z42.workload.desktop` package that owns Apphost.Produce. Depending on that
+// workload made z42b fail to build there (E0401: undefined Apphost). Inlining the
+// patcher (≈ xtask's own `_produceApphost`, by the same precedent) keeps z42b on
+// core/io/cli/test/toml — all stdlib.
+//
+// ⚠ MAGIC must stay in sync with the Rust stub at
+//   src/toolchain/workload/desktop/platform/apphost/src/main.rs
+// and its sibling copies (z42.workload.desktop Apphost.PatchBytes, xtask
+// _produceApphost). The placeholder is a 32-byte MAGIC + 992-byte payload (1024).
+namespace Z42Builder;
+
+using Std;
+using Std.IO;
+
+// Produce a native apphost exe at `outPath` from stub `tmpl`, embedding `app`'s path
+// RELATIVE to outPath's dir (relocatable). chmod +x; macOS → ad-hoc re-sign. Returns
+// 0 on success, non-zero on error (message to stderr).
+int _pubProduceApphost(string app, string outPath, string tmpl, string rid) {
+    if (!File.Exists(app)) {
+        ConsoleError.WriteLine("z42b publish: app zpkg not found: " + app);
+        return 1;
+    }
+    if (tmpl.Length == 0 || !File.Exists(tmpl)) {
+        ConsoleError.WriteLine("z42b publish: apphost stub not found: " + tmpl);
+        return 1;
+    }
+    string embed = _pubRelPath(Path.GetDirectoryName(outPath), app);
+    byte[] buf = File.ReadAllBytes(tmpl);
+    byte[] magic = _pubAsciiBytes("z42-apphost-target-v1-MAGIC-0001");
+    int at = _pubByteIndexOf(buf, magic);
+    if (at < 0) { ConsoleError.WriteLine("z42b publish: MAGIC missing in stub " + tmpl); return 1; }
+    int payloadStart = at + magic.Length;
+    int payloadLen = 1024 - magic.Length;   // 992-byte payload region
+    if (payloadStart + payloadLen > buf.Length) { ConsoleError.WriteLine("z42b publish: stub truncated"); return 1; }
+    byte[] nameBytes = _pubAsciiBytes(embed);
+    if (nameBytes.Length + 1 > payloadLen) { ConsoleError.WriteLine("z42b publish: payload path too long: " + embed); return 1; }
+    // Overwrite the whole payload: name bytes, then NUL + zero fill.
+    int k = 0;
+    while (k < payloadLen) {
+        if (k < nameBytes.Length) { buf[payloadStart + k] = nameBytes[k]; }
+        else { buf[payloadStart + k] = (byte)0; }
+        k = k + 1;
+    }
+    File.WriteAllBytes(outPath, buf);
+    File.MakeExecutable(outPath);
+    // A macOS apphost MUST be re-signed after patching (the kernel rejects the now-
+    // stale ad-hoc signature). codesign is macOS-only → require a mac host.
+    if (rid.StartsWith("macos-")) {
+        if (!Platform.IsMacOS()) {
+            ConsoleError.WriteLine("z42b publish: a macOS target (" + rid + ") must be produced on a macOS host (codesign).");
+            return 1;
+        }
+        ProcessResult cs = new Process("codesign").Arg("-s").Arg("-").Arg("-f").Arg(outPath).Stderr(Stdio.Inherit()).Run();
+        if (cs.ExitCode != 0) { ConsoleError.WriteLine("z42b publish: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + ")"); return 1; }
+    }
+    return 0;
+}
+
+byte[] _pubAsciiBytes(string s) {
+    byte[] b = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) { b[i] = (byte)s.CharAt(i); i = i + 1; }
+    return b;
+}
+
+int _pubByteIndexOf(byte[] hay, byte[] needle) {
+    if (needle.Length == 0 || needle.Length > hay.Length) { return -1; }
+    int limit = hay.Length - needle.Length;
+    int i = 0;
+    while (i <= limit) {
+        int j = 0;
+        bool match = true;
+        while (j < needle.Length) {
+            if (hay[i + j] != needle[j]) { match = false; break; }
+            j = j + 1;
+        }
+        if (match) { return i; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// `toPath` relative to dir `fromDir` (resolved via cwd; common prefix stripped).
+// Mirrors the workload Apphost._relPath so the embedded path is identical.
+string _pubRelPath(string fromDir, string toPath) {
+    string cwd = Environment.GetCurrentDirectory();
+    string fromAbs = (fromDir.Length == 0) ? cwd : (Path.IsRooted(fromDir) ? fromDir : Path.Join(cwd, fromDir));
+    string toAbs = Path.IsRooted(toPath) ? toPath : Path.Join(cwd, toPath);
+    string[] f = _pubSplitSlash(fromAbs);
+    string[] t = _pubSplitSlash(toAbs);
+    int common = 0;
+    while (common < f.Length && common < t.Length && f[common] == t[common]) { common = common + 1; }
+    string rel = "";
+    int up = f.Length - common;
+    int k = 0;
+    while (k < up) { rel = rel + "../"; k = k + 1; }
+    int j = common;
+    while (j < t.Length) {
+        rel = rel + t[j];
+        if (j + 1 < t.Length) { rel = rel + "/"; }
+        j = j + 1;
+    }
+    return rel;
+}
+
+string[] _pubSplitSlash(string s) {
+    string[] buf = new string[s.Length + 1];
+    int n = 0;
+    int start = 0;
+    int i = 0;
+    while (i <= s.Length) {
+        bool sep = (i < s.Length) && (s.Substring(i, 1) == "/");
+        if (i == s.Length || sep) {
+            if (i > start) {
+                string seg = s.Substring(start, i - start);
+                if (seg == ".") {
+                    // current dir — skip
+                } else if (seg == "..") {
+                    if (n > 0 && buf[n - 1] != "..") { n = n - 1; }
+                    else { buf[n] = seg; n = n + 1; }
+                } else {
+                    buf[n] = seg; n = n + 1;
+                }
+            }
+            start = i + 1;
+        }
+        i = i + 1;
+    }
+    string[] tight = new string[n];
+    int j = 0;
+    while (j < n) { tight[j] = buf[j]; j = j + 1; }
+    return tight;
+}

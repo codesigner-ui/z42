@@ -1,0 +1,221 @@
+// z42b publish — desktop apphost publish (moved from launcher_export.z42 by
+// move-publish-to-z42b). z42b owns the deploy verb; the launcher only forwards
+// `z42 publish` here (mirroring test/bench), pre-resolving the desktop workload
+// apphost stub and passing it via `Z42_APPHOST_TEMPLATE` (Decision 3.5) so this
+// module needs NO installed-runtime/workload resolution.
+//
+// Layout: `[platform.desktop]` `bin`/`payload` place the apphost binary + payload
+// zpkg at explicit relative paths under the deploy root (add-package-layout-config);
+// unset → legacy flat (apphost at root/<name>, embed built zpkg in place).
+//
+// build-if-needed (move-publish-to-z42b stage 3): if the expected zpkg is missing,
+// `_pubEnsureBuilt` compiles it via z42c, then publish produces the apphost — so
+// `z42 publish` alone does build+deploy. When the zpkg already exists (xtask
+// assembly path), no compile runs and bytes stay controlled. Stage 1 ships the
+// resolve-or-error form; stage 3 adds the z42c spawn.
+namespace Z42Builder;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+// apphost patching is inlined in builder_apphost.z42 (_pubProduceApphost) so z42b
+// stays on stdlib-only deps and still builds in the test-runner context. NOT
+// `using Z42.Workload.Desktop` (that workload isn't in Z42_LIBS there).
+
+// Entry from builder_cli dispatch (`z42b publish <toml> [--rid <rid>] [--output <dir>]`).
+int _cmdPublishZ42b(ParseResult r) {
+    string rid = r.GetOption("rid");
+    if (rid.Length == 0) {
+        ConsoleError.WriteLine("z42b publish: --rid required (run via `z42 publish` to default to host)");
+        return 2;
+    }
+    if (_pubRidCategory(rid) != "desktop") {
+        ConsoleError.WriteLine("z42b publish: " + _pubRidCategory(rid)
+            + " deployable not yet implemented (B5) — only desktop (apphost) is supported.");
+        return 2;
+    }
+    return _pubDesktop(r, rid);
+}
+
+// desktop apphost publish for `rid`. Emits <root>/<bin> (apphost) + optional
+// <root>/<payload> (copied zpkg); the apphost embeds the zpkg path relative to itself.
+int _pubDesktop(ParseResult r, string rid) {
+    string tomlPath = r.GetPositional(0);
+    if (tomlPath.Length == 0 || !tomlPath.EndsWith(".toml")) {
+        ConsoleError.WriteLine("usage: z42b publish <project.z42.toml> [--rid <rid>] [--output <dir>]");
+        return 2;
+    }
+    if (!File.Exists(tomlPath)) {
+        ConsoleError.WriteLine("z42b publish: not found: " + tomlPath);
+        return 1;
+    }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
+    string projName = _pubTomlStr(toml, "project", "name", "");
+    if (projName.Length == 0) {
+        ConsoleError.WriteLine("z42b publish: [project].name missing in " + tomlPath);
+        return 1;
+    }
+    // apphost-gate (gate-apphost-on-config): only `[platform.desktop] apphost = true`
+    // makes publish emit an apphost. publish_dir / --output are output LOCATION only.
+    if (!_pubPlatformBool(toml, "desktop", "apphost", false)) {
+        ConsoleError.WriteLine("z42b publish: " + tomlPath + " is not configured to publish a desktop apphost — "
+            + "add `apphost = true` under [platform.desktop]");
+        return 2;
+    }
+
+    // apphost stub: resolved by the launcher (which owns installed-workload resolution)
+    // and passed via Z42_APPHOST_TEMPLATE (Decision 3.5). No runtime resolution here.
+    string stub = Environment.GetEnvironmentVariable("Z42_APPHOST_TEMPLATE") ?? "";
+    if (stub.Length == 0 || !File.Exists(stub)) {
+        ConsoleError.WriteLine("z42b publish: desktop apphost not available (the apphost ships with the desktop workload).");
+        ConsoleError.WriteLine("       run: z42 workload install desktop");
+        ConsoleError.WriteLine("       (publish via `z42 publish` so the launcher resolves the installed workload apphost.)");
+        return 1;
+    }
+
+    string publishDir = r.GetOption("output");
+    if (publishDir.Length == 0) { publishDir = _pubPlatformStr(toml, "desktop", "publish_dir", ""); }
+    if (publishDir.Length == 0) { publishDir = "."; }   // default: project dir (location only)
+    bool isWin = rid.StartsWith("windows-");
+    string projDir = Path.GetDirectoryName(tomlPath);
+    // `root` = the deploy root that bin/payload are relative to.
+    string root = (projDir.Length > 0) ? Path.Join(projDir, publishDir) : publishDir;
+
+    // build-if-needed: ensure the expected zpkg exists (compile via z42c if missing).
+    string zpkgSrc = _pubEnsureBuilt(tomlPath, toml, projName);
+    if (zpkgSrc.Length == 0) { return 1; }   // ensure failed (compile error / still missing)
+
+    // deploy layout (add-package-layout-config): optional bin/payload.
+    string binRel     = _pubPlatformStr(toml, "desktop", "bin", "");
+    string payloadRel = _pubPlatformStr(toml, "desktop", "payload", "");
+
+    string outPath;
+    if (binRel.Length > 0) {
+        outPath = Path.Join(root, binRel);
+        if (isWin && !outPath.EndsWith(".exe")) { outPath = outPath + ".exe"; }
+    } else {
+        outPath = Path.Join(root, isWin ? (projName + ".exe") : projName);
+    }
+
+    // payload zpkg: if set, copy the built zpkg into the layout so the subtree is
+    // self-contained; Apphost.Produce embeds it relative to outPath. If unset, embed
+    // the built zpkg in place (no copy) — preserves legacy behavior.
+    string appZpkg = zpkgSrc;
+    if (payloadRel.Length > 0) {
+        appZpkg = Path.Join(root, payloadRel);
+        string payloadDir = Path.GetDirectoryName(appZpkg);
+        if (payloadDir.Length > 0) { Directory.Create(payloadDir); }
+        File.Copy(zpkgSrc, appZpkg);
+    }
+
+    string outDir = Path.GetDirectoryName(outPath);
+    if (outDir.Length > 0) { Directory.Create(outDir); }
+    Console.WriteLine("z42 publish (" + rid + ") → " + outPath);
+    int prc = _pubProduceApphost(appZpkg, outPath, stub, rid);
+    if (prc != 0) { return prc; }
+    Console.WriteLine("✅ apphost ready: " + outPath);
+    return 0;
+}
+
+// ── helpers (minimal toml/path set, mirrored from launcher; Decision 4) ─────────
+
+// rid → platform category (desktop / ios / android / wasm); "" if unknown.
+string _pubRidCategory(string rid) {
+    if (rid.StartsWith("macos-") || rid.StartsWith("linux-") || rid.StartsWith("windows-")) { return "desktop"; }
+    if (rid.StartsWith("ios-") || rid.StartsWith("iossim-")) { return "ios"; }
+    if (rid.StartsWith("android-")) { return "android"; }
+    if (rid == "browser-wasm") { return "wasm"; }
+    return "";
+}
+
+// Read root.[section].[key] as a string (string and long values).
+string _pubTomlStr(TomlValue root, string section, string key, string dflt) {
+    if (!root.ContainsKey(section)) { return dflt; }
+    TomlValue s = root.Get(section);
+    if (!s.IsTable() || !s.ContainsKey(key)) { return dflt; }
+    TomlValue v = s.Get(key);
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    return dflt;
+}
+
+// Read root.platform.[platform].[key] as a string.
+string _pubPlatformStr(TomlValue root, string platform, string key, string dflt) {
+    if (!root.ContainsKey("platform")) { return dflt; }
+    TomlValue pt = root.Get("platform");
+    if (!pt.IsTable() || !pt.ContainsKey(platform)) { return dflt; }
+    TomlValue p = pt.Get(platform);
+    if (!p.IsTable() || !p.ContainsKey(key)) { return dflt; }
+    TomlValue v = p.Get(key);
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    return dflt;
+}
+
+// Read a bool key under [platform.<platform>] (e.g. `apphost = true`).
+bool _pubPlatformBool(TomlValue root, string platform, string key, bool dflt) {
+    if (!root.ContainsKey("platform")) { return dflt; }
+    TomlValue pt = root.Get("platform");
+    if (!pt.IsTable() || !pt.ContainsKey(platform)) { return dflt; }
+    TomlValue p = pt.Get(platform);
+    if (!p.IsTable() || !p.ContainsKey(key)) { return dflt; }
+    TomlValue v = p.Get(key);
+    if (v.IsBool()) { return v.AsBool(); }
+    return dflt;
+}
+
+// Ensure the expected zpkg exists, returning its path ("" on failure). build-if-needed
+// (move-publish-to-z42b): if the zpkg is missing, compile it via z42c, then re-check
+// — so `z42 publish` alone does build+deploy. When the zpkg already exists (the xtask
+// assembly path), NO compile runs and the bytes stay controlled by the caller. If
+// z42c can't be located, degrade to a build-first hint (the pre-build-if-needed form).
+string _pubEnsureBuilt(string tomlPath, TomlValue toml, string projName) {
+    string zpkgSrc = _pubResolveZpkg(tomlPath, toml, projName);
+    if (File.Exists(zpkgSrc)) { return zpkgSrc; }
+
+    string z42c = _pubFindZ42c();
+    if (z42c.Length == 0) {
+        ConsoleError.WriteLine("z42b publish: built zpkg not found: " + zpkgSrc
+            + "  (build it first: z42 build " + tomlPath + ")");
+        return "";
+    }
+    Console.WriteLine("z42b publish: zpkg not built — compiling via z42c first…");
+    ProcessResult pr = new Process(z42c).Arg("build").Arg(tomlPath).Arg("--release")
+        .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run();
+    if (pr.ExitCode != 0) {
+        ConsoleError.WriteLine("z42b publish: z42c build failed (rc=" + pr.ExitCode.ToString() + ")");
+        return "";
+    }
+    if (!File.Exists(zpkgSrc)) {
+        ConsoleError.WriteLine("z42b publish: zpkg still missing after build: " + zpkgSrc);
+        return "";
+    }
+    return zpkgSrc;
+}
+
+// Locate the SDK's `bin/z42c` apphost from Z42_PORTABLE_VM (<home>/bin/z42vm →
+// <home>/bin/z42c). "" if not resolvable (then publish degrades to a build-first
+// hint). The apphost colocates the driver's siblings + resolves stdlib itself.
+string _pubFindZ42c() {
+    string vm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (vm.Length == 0) { return ""; }
+    string home = Path.GetDirectoryName(Path.GetDirectoryName(vm));   // <home>/bin/z42vm → <home>
+    if (home.Length == 0) { return ""; }
+    string z42c = Path.Join(home, "bin/z42c");
+    if (!File.Exists(z42c)) { z42c = z42c + ".exe"; }
+    if (!File.Exists(z42c)) { return ""; }
+    return z42c;
+}
+
+// Resolve the built zpkg via the same dist_dir logic as the launcher used.
+string _pubResolveZpkg(string tomlPath, TomlValue toml, string name) {
+    string projDir = Path.GetDirectoryName(tomlPath);
+    string outDir  = _pubTomlStr(toml, "build", "output_dir", "");
+    string distDir = _pubTomlStr(toml, "build", "dist_dir", "");
+    string distRel;
+    if (distDir.Length > 0) { distRel = distDir.Replace("${output_dir}", outDir); }
+    else if (outDir.Length > 0) { distRel = Path.Join(outDir, "dist"); }
+    else { distRel = "dist"; }
+    string base = (projDir.Length > 0) ? Path.Join(projDir, distRel) : distRel;
+    return Path.Join(base, name + ".zpkg");
+}

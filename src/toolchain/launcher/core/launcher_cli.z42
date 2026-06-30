@@ -39,6 +39,11 @@ void _runLauncher(string[] argv) {
         Environment.Exit(_forwardZ42b(argv));
         return;
     }
+    // `build` = compile → forward to z42c (the compiler). move-publish-to-z42b.
+    if (c0 == "build") {
+        Environment.Exit(_forwardZ42c(argv));
+        return;
+    }
 
     SubcommandRouter root = _launcherRoot();
     CommandResolution res;
@@ -63,7 +68,11 @@ void _runLauncher(string[] argv) {
 // SDK's bundled runtime, inheriting stdio + exit code. z42b is an SDK toolchain
 // component co-located with the launcher (programs/z42b/), so it resolves via the
 // portable bundle the apphost pinned (Z42_PORTABLE_VM/_LIBS + _home() = SDK root).
-int _forwardZ42b(string[] argv) {
+int _forwardZ42b(string[] argv) { return _forwardZ42bEnv(argv, "", ""); }
+
+// Forward to z42b with one optional extra env var (e.g. publish passes the
+// pre-resolved apphost stub via Z42_APPHOST_TEMPLATE — Decision 3.5).
+int _forwardZ42bEnv(string[] argv, string extraKey, string extraVal) {
     string vm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
     if (vm.Length == 0) {
         ConsoleError.WriteLine("z42: cannot locate the bundled runtime (Z42_PORTABLE_VM unset) to run z42b");
@@ -81,6 +90,26 @@ int _forwardZ42b(string[] argv) {
     int i = 0;
     while (i < argv.Length) { proc = proc.Arg(argv[i]); i = i + 1; }
     proc = proc.Env("Z42_LIBS", libs);
+    if (extraKey.Length > 0) { proc = proc.Env(extraKey, extraVal); }
+    return proc.Run().ExitCode;
+}
+
+// Forward `build` to z42c (the compiler). Runs the SDK's `bin/z42c` apphost, which
+// colocates the driver's siblings (programs/z42c/) + resolves stdlib (libs/), so no
+// manual vm/Z42_LIBS wiring is needed. argv starts with "build". move-publish-to-z42b.
+int _forwardZ42c(string[] argv) {
+    string home = _home();
+    string z42c = Path.Join(home, "bin/z42c");
+    if (!File.Exists(z42c)) { z42c = z42c + ".exe"; }
+    if (!File.Exists(z42c)) {
+        ConsoleError.WriteLine("z42: z42c not found at " + Path.Join(home, "bin/z42c")
+            + " — reinstall the SDK (bin/z42c missing)");
+        return 2;
+    }
+    Process proc = new Process(z42c)
+        .Stdin(Stdio.Inherit()).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit());
+    int i = 0;
+    while (i < argv.Length) { proc = proc.Arg(argv[i]); i = i + 1; }
     return proc.Run().ExitCode;
 }
 
@@ -102,6 +131,11 @@ SubcommandRouter _launcherRoot() {
     cleanP.AllowExtras();
     cleanP.AddOptionalPositional("dir", "target dir (default: current dir)");
     root.Add("clean", "remove build artifacts (z42b)", cleanP);
+    // build = compile, forwarded raw to z42c (move-publish-to-z42b). Registered for help.
+    ArgParser buildP = new ArgParser("z42 build", "compile a project to a zpkg (forwarded to z42c)");
+    buildP.AllowExtras();
+    buildP.AddOptionalPositional("project", "<project.z42.toml>");
+    root.Add("build", "compile a project (z42c)", buildP);
 
     root.Add("info", "show Z42_HOME / default / counts",
         new ArgParser("z42 info", "show Z42_HOME / default / counts"));

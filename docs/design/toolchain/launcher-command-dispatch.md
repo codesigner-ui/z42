@@ -2,6 +2,22 @@
 
 > ⚠️ **前瞻设计草案（未实施）**。为把 `z42` 从"固定几条内建命令的 muxer"演进成可扩展命令分发器（new/build/publish/test/workload/平台打包…）铺路。落地开 spec。
 
+## 已实施的当前路由（move-publish-to-z42b, 2026-07-01）
+
+下面是**当前真实**的命令归属（baked 进 `launcher_cli.z42`，非上述前瞻发现机制）：
+
+| 命令 | launcher 行为 | 实现 owner |
+|------|--------------|-----------|
+| `z42 build` | 转发 `bin/z42c` apphost（`_forwardZ42c`） | **z42c**（编译器） |
+| `z42 test` / `bench` / `clean` | 转发 `programs/z42b/z42.builder.zpkg`（`_forwardZ42b`） | **z42b** |
+| `z42 publish` | 解析 rid + 预解析 desktop workload apphost stub → 经 `Z42_APPHOST_TEMPLATE` env 转发 z42b（`_forwardZ42bEnv`） | **z42b**（`builder_publish.z42`） |
+| `z42 export ios/android/wasm` | launcher 直接处理（`launcher_export.z42`） | launcher（workload 库） |
+| `z42 run` / `install` / `list` / … | launcher 直接处理 | launcher |
+
+- **build = 编译 → z42c**；**publish = 部署编排 → z42b**；launcher 是 muxer + runtime 解析。
+- **publish 自带编译（build-if-needed）**：z42b publish 若发现期望 zpkg 不存在，先经 z42c 现编再产 apphost → `z42 publish` 一步完成 build+deploy。zpkg 已在（如 xtask 组装路径）则跳过编译，字节由调用方控。
+- **apphost stub 解析留 launcher**（它管已装 runtime/workload），经 `Z42_APPHOST_TEMPLATE` 传 z42b，故 z42b 的 publish **不含任何 runtime/workload 解析**，也**不依赖 z42.project/z42.build**（不触发自举串味）。
+
 ## 问题
 
 `z42` 要分发越来越多命令：创建项目、编译、导出平台工程、打包发布、下载 workload/runtime…… 全 baked 进 launcher 会让它臃肿、与编译器/平台发布节奏强耦合、且每加一个平台就要重编 launcher。需要一套"目录发现 + 命令行注册"并存的机制。

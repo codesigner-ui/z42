@@ -203,11 +203,14 @@ public static class ManifestLoader {
         string publishDir = "";
         bool hasIcon = false; string icon = "";
         bool hasBundleId = false; string bundleId = "";
+        string bin = ""; string payload = "";
         if (d.ContainsKey("apphost"))     { apphost = d.Get("apphost").AsBool(); }
         if (d.ContainsKey("publish_dir")) { publishDir = d.Get("publish_dir").AsString(); }
         if (d.ContainsKey("icon"))        { icon = d.Get("icon").AsString(); hasIcon = true; }
         if (d.ContainsKey("bundle_id"))   { bundleId = d.Get("bundle_id").AsString(); hasBundleId = true; }
-        return new DesktopConfig(apphost, publishDir, hasIcon, icon, hasBundleId, bundleId);
+        if (d.ContainsKey("bin"))         { bin = d.Get("bin").AsString(); }
+        if (d.ContainsKey("payload"))     { payload = d.Get("payload").AsString(); }
+        return new DesktopConfig(apphost, publishDir, hasIcon, icon, hasBundleId, bundleId, bin, payload);
     }
 
     private static iOSConfig _parseIOS(TomlValue d) {
