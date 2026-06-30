@@ -31,6 +31,14 @@ void _runLauncher(string[] argv) {
         if (_argvHas(rest, "--rid")) { _cmdRunDeploy(rest); return; }
         _cmdRun(rest); return;
     }
+    // Dev commands forward verbatim to z42b (the build/test/bench orchestrator):
+    // z42b owns test / bench / clean (+ future new / build). The launcher owns the
+    // command face + runtime resolution; z42b parses the sub-args. Raw passthrough
+    // (the `--` / flag tails can't go through a strict ArgParser), mirroring `run`.
+    if (c0 == "test" || c0 == "bench" || c0 == "clean") {
+        Environment.Exit(_forwardZ42b(argv));
+        return;
+    }
 
     SubcommandRouter root = _launcherRoot();
     CommandResolution res;
@@ -50,8 +58,50 @@ void _runLauncher(string[] argv) {
     _dispatchLauncher(res);
 }
 
+// Forward a dev command (test / bench / clean — z42b's verbs) to the z42b
+// orchestrator: run `z42vm <programs/z42b/z42.builder.zpkg> -- <argv...>` on the
+// SDK's bundled runtime, inheriting stdio + exit code. z42b is an SDK toolchain
+// component co-located with the launcher (programs/z42b/), so it resolves via the
+// portable bundle the apphost pinned (Z42_PORTABLE_VM/_LIBS + _home() = SDK root).
+int _forwardZ42b(string[] argv) {
+    string vm = Environment.GetEnvironmentVariable("Z42_PORTABLE_VM") ?? "";
+    if (vm.Length == 0) {
+        ConsoleError.WriteLine("z42: cannot locate the bundled runtime (Z42_PORTABLE_VM unset) to run z42b");
+        return 2;
+    }
+    string home = _home();   // portable mode → SDK package root
+    string builder = Path.Join(home, "programs/z42b/z42.builder.zpkg");
+    if (!File.Exists(builder)) {
+        ConsoleError.WriteLine("z42: z42b not found at " + builder + " — reinstall the SDK (programs/z42b/ missing)");
+        return 2;
+    }
+    string libs = Environment.GetEnvironmentVariable("Z42_PORTABLE_LIBS") ?? Path.Join(home, "libs");
+    Process proc = new Process(vm).Arg(builder).Arg("--")
+        .Stdin(Stdio.Inherit()).Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit());
+    int i = 0;
+    while (i < argv.Length) { proc = proc.Arg(argv[i]); i = i + 1; }
+    proc = proc.Env("Z42_LIBS", libs);
+    return proc.Run().ExitCode;
+}
+
 SubcommandRouter _launcherRoot() {
     SubcommandRouter root = new SubcommandRouter("z42", "launcher for the z42 runtime");
+
+    // Dev commands handled by z42b (forwarded raw in _runLauncher before Resolve);
+    // registered here so top-level `z42 -h` lists them. Their own flags/help come
+    // from z42b (`z42 test -h` → z42b's help).
+    ArgParser testP = new ArgParser("z42 test", "run a compiled module's [Test] (forwarded to z42b)");
+    testP.AllowExtras();
+    testP.AddOptionalPositional("target", "<file.zbc|file.zpkg>");
+    root.Add("test", "run [Test] in a compiled module (z42b)", testP);
+    ArgParser benchP = new ArgParser("z42 bench", "run a compiled module's [Benchmark] (forwarded to z42b)");
+    benchP.AllowExtras();
+    benchP.AddOptionalPositional("target", "<file.zbc|file.zpkg>");
+    root.Add("bench", "run [Benchmark] in a compiled module (z42b)", benchP);
+    ArgParser cleanP = new ArgParser("z42 clean", "remove <dir>/{dist,cache} build artifacts (forwarded to z42b)");
+    cleanP.AllowExtras();
+    cleanP.AddOptionalPositional("dir", "target dir (default: current dir)");
+    root.Add("clean", "remove build artifacts (z42b)", cleanP);
 
     root.Add("info", "show Z42_HOME / default / counts",
         new ArgParser("z42 info", "show Z42_HOME / default / counts"));
