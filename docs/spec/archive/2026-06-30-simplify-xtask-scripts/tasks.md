@@ -1,7 +1,15 @@
 # Tasks: 简化 xtask 脚本（去重 + 收敛重复模式）
 
-> 状态：🟡 进行中 | 创建：2026-06-30
+> 状态：🟢 已完成 | 创建：2026-06-30 | 完成：2026-06-30
 > 类型：refactor（不改外部行为，纯内部组织）
+
+## 成果汇总（commit）
+- ① `01116d1f` compiler e2e 表驱动（去重 ~150 行）
+- ②③ `d65d56a5` `_compilerMembers`（10 处字面量收敛）+ `_assembleAllLibs`（flat 视图 3 处去重）
+- ④⑤ `9987a42c` `_regenForTest`/`_buildDebugVmAndCompression` 收敛 + `_sortedStrings`/`_splitWords` 归位 common
+- ⑥ `4a603e5e` 拆 xtask_test_lib.z42（test.z42 740→211）+ xtask_compiler_e2e.z42（compiler.z42 735→465）
+
+全程逐文件 surgical 提交，与并行 reflection/test-runner/pipeline change 零污染（一次索引竞态、一次陈旧 debug vm 假崩，均化解）。
 
 **变更说明：** xtask 脚本内部去重——表驱动 compiler e2e、抽公共 accessor/组装器、把通用 util 归位。
 **原因：** compiler/test 两个大文件（789/764 行）内部存在大量复制粘贴；helper（`_assembleDriverHome`/`_stdlibMembers`）已存在但只局部采用，对称缺口（`_compilerMembers`）导致同一字面量重复 9 处。
