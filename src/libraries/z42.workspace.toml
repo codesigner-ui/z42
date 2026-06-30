@@ -24,6 +24,8 @@ members = ["*"]
 #   z42.io         → (needs z42.time for Std.Process.Timeout/TimeSpan)
 #   z42.json       → (needs z42.text for StringBuilder)
 #   z42.test       → (needs z42.io for Bencher.Std.IO.Console)
+#   z42.project    → (needs z42.io + z42.toml; namespace Z42.Build.Project — 项目/清单层)
+#   z42.build      → (needs z42.project; namespace Z42.Build — 管线/编译器抽象层)
 default-members = [
     "z42.core",
     "z42.collections",
@@ -47,6 +49,8 @@ default-members = [
     "z42.net",
     "z42.numerics",
     "z42.test",
+    "z42.project",
+    "z42.build",
 ]
 
 [workspace.project]

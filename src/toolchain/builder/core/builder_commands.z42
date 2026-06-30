@@ -14,7 +14,7 @@ using Std;
 using Std.IO;
 using Std.Cli;
 using Z42.Build;
-using Z42.Project;
+using Z42.Build.Project;
 
 // ── build / publish / export：共用 _runVerb（仅 Mode 不同）──────────────────────
 

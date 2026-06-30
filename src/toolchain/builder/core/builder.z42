@@ -18,7 +18,7 @@ namespace Z42Builder;
 using Std;
 using Std.IO;
 using Z42.Build;
-using Z42.Project;
+using Z42.Build.Project;
 
 // 编排入口：命令层解析出 manifest + target + sourceDir 后调本函数。
 // 按项目是否带自定义 build/ 选路径。

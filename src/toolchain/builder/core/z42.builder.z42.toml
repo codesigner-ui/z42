@@ -5,11 +5,12 @@
 #
 # SCOPE (retire-test-runner): test/bench only. The build/publish/export/new
 # orchestration verbs live in the PARKED builder.z42 / builder_commands.z42 /
-# builder_new.z42 (they import Z42.Build / Z42.Project, whose `Z42.Project`
-# namespace collides with the compiler-internal z42c.project in a shared
-# Z42_LIBS) — they are wired in by `wire-z42b-host-build`, which resolves that
-# collision. Hence `include` lists only the test-host sources, and the deps are
-# the runner + CLI, NOT z42.project / z42.build.
+# builder_new.z42 (they import Z42.Build / Z42.Build.Project) and need the
+# in-process compiler API (ICompiler / PackageCompiler) — wired in by
+# `wire-z42b-host-build`. Hence `include` lists only the test-host sources, and
+# the deps are the runner + CLI, NOT z42.build / z42.project.
+# (The earlier Z42.Project ↔ z42c.project namespace collision is resolved:
+# z42.project now declares `Z42.Build.Project`.)
 [project]
 name    = "z42.builder"
 version = "0.1.0"
