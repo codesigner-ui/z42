@@ -1,0 +1,43 @@
+# z42b — reflective [Test]/[Benchmark] host. Compiled to z42.builder.zpkg
+# (Exe-mode). xtask spawns it via z42vm to run a compiled test/bench artifact
+# (replacing the retired Rust z42-test-runner); the launcher can also forward
+# `z42 test`/`z42 bench` here.
+#
+# SCOPE (retire-test-runner): test/bench only. The build/publish/export/new
+# orchestration verbs live in the PARKED builder.z42 / builder_commands.z42 /
+# builder_new.z42 (they import Z42.Build / Z42.Project, whose `Z42.Project`
+# namespace collides with the compiler-internal z42c.project in a shared
+# Z42_LIBS) — they are wired in by `wire-z42b-host-build`, which resolves that
+# collision. Hence `include` lists only the test-host sources, and the deps are
+# the runner + CLI, NOT z42.project / z42.build.
+[project]
+name    = "z42.builder"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Z42Builder.Main"
+pack    = true
+
+[sources]
+include = ["builder_cli.z42", "builder_test.z42"]
+
+[dependencies]
+"z42.core" = "0.1.0"   # String / core
+"z42.io"   = "0.1.0"   # Console / File / Directory / Path / Platform / Process
+"z42.cli"  = "0.1.0"   # Std.Cli nested router + ArgParser
+"z42.test" = "0.1.0"   # Std.Test.Runner.RunModule — reflective [Test]/[Benchmark] runner
+
+[build]
+# Mirror launcher: emit z42.builder.zpkg into the shared artifacts tree
+# (artifacts/build/toolchain/builder), parallel to src/toolchain/builder.
+# From this toml's dir (src/toolchain/builder/core) up 4 levels to repo root.
+dist_dir = "../../../../artifacts/build/toolchain/builder"
+
+[profile.release]
+mode     = "interp"
+optimize = 2
+
+# apphost-as-config: this binary publishes a native desktop apphost.
+#   apphost = true  → gate（无此则 `z42 publish desktop` 不产 apphost）。
+#   publish_dir 缺省 = 项目目录（仅输出位置，非 gate）。
+[platform.desktop]
+apphost = true

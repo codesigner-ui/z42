@@ -199,13 +199,15 @@ public static class ManifestLoader {
     }
 
     private static DesktopConfig _parseDesktop(TomlValue d) {
+        bool apphost = false;
         string publishDir = "";
         bool hasIcon = false; string icon = "";
         bool hasBundleId = false; string bundleId = "";
+        if (d.ContainsKey("apphost"))     { apphost = d.Get("apphost").AsBool(); }
         if (d.ContainsKey("publish_dir")) { publishDir = d.Get("publish_dir").AsString(); }
         if (d.ContainsKey("icon"))        { icon = d.Get("icon").AsString(); hasIcon = true; }
         if (d.ContainsKey("bundle_id"))   { bundleId = d.Get("bundle_id").AsString(); hasBundleId = true; }
-        return new DesktopConfig(publishDir, hasIcon, icon, hasBundleId, bundleId);
+        return new DesktopConfig(apphost, publishDir, hasIcon, icon, hasBundleId, bundleId);
     }
 
     private static iOSConfig _parseIOS(TomlValue d) {

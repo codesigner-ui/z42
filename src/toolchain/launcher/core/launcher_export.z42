@@ -201,13 +201,17 @@ void _cmdPublishDesktop(ParseResult r, string rid) {
         ConsoleError.WriteLine("z42 publish: [project].name missing in " + tomlPath);
         Environment.Exit(1); return;
     }
-    string publishDir = r.GetOption("output");
-    if (publishDir.Length == 0) { publishDir = _platformStr(toml, "desktop", "publish_dir", ""); }
-    if (publishDir.Length == 0) {
-        ConsoleError.WriteLine("z42 publish: publish_dir required — add [platform.desktop] publish_dir in "
-            + tomlPath + " or pass --output");
+    // apphost-gate (gate-apphost-on-config): only `[platform.desktop] apphost = true`
+    // makes publish emit an apphost. publish_dir / --output are output LOCATION only
+    // (no longer the gate); they default to the project dir when unset.
+    if (!_platformBool(toml, "desktop", "apphost", false)) {
+        ConsoleError.WriteLine("z42 publish: " + tomlPath + " is not configured to publish a desktop apphost — "
+            + "add `apphost = true` under [platform.desktop]");
         Environment.Exit(2); return;
     }
+    string publishDir = r.GetOption("output");
+    if (publishDir.Length == 0) { publishDir = _platformStr(toml, "desktop", "publish_dir", ""); }
+    if (publishDir.Length == 0) { publishDir = "."; }   // default: project dir (location only)
     string zpkgSrc = _desktopResolveZpkg("publish", tomlPath, toml, projName);
     string outName = rid.StartsWith("windows-") ? (projName + ".exe") : projName;
     string projDir = Path.GetDirectoryName(tomlPath);
@@ -337,6 +341,19 @@ string _platformStr(TomlValue root, string platform, string key, string dflt) {
     TomlValue v = p.Get(key);
     if (v.IsString()) { return v.AsString(); }
     if (v.IsLong())   { return v.AsLong().ToString(); }
+    return dflt;
+}
+
+// Read a bool key under [platform.<platform>] (e.g. `apphost = true`). Missing /
+// non-bool → dflt. Used to gate `publish desktop` on [platform.desktop] apphost.
+bool _platformBool(TomlValue root, string platform, string key, bool dflt) {
+    if (!root.ContainsKey("platform")) { return dflt; }
+    TomlValue pt = root.Get("platform");
+    if (!pt.IsTable() || !pt.ContainsKey(platform)) { return dflt; }
+    TomlValue p = pt.Get(platform);
+    if (!p.IsTable() || !p.ContainsKey(key)) { return dflt; }
+    TomlValue v = p.Get(key);
+    if (v.IsBool()) { return v.AsBool(); }
     return dflt;
 }
 

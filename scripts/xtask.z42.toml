@@ -36,8 +36,11 @@ optimize = 2
 
 # apphost-as-config (2026-06-17): `z42 publish desktop scripts/xtask.z42.toml`
 # reads [platform.desktop] and emits a native `./xtask` apphost that runs the
-# built xtask.zpkg directly. publish_dir is project-dir-relative (like
-# output_dir); ".." = the repo root (this toml lives in scripts/). z42c does
-# NOT consume this section — it's read by the desktop export patcher only.
+# built xtask.zpkg directly. z42c does NOT consume this section — it's read by
+# the desktop export patcher only.
+#   apphost = true  → the gate: only then does publish emit an apphost.
+#   publish_dir     → output LOCATION only (project-dir-relative; ".." = repo root,
+#                     this toml lives in scripts/). Not the gate.
 [platform.desktop]
+apphost     = true
 publish_dir = ".."

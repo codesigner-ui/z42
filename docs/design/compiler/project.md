@@ -1295,15 +1295,24 @@ target_sdk   = 34                   # optional: targetSdk（默认 34 = Android 
 title = "My App"   # optional: HTML &lt;title&gt;（默认 = project name）
 ```
 
-### `[platform.desktop]`（apphost-as-config, 2026-06-17）
+### `[platform.desktop]`（apphost-as-config, 2026-06-17；apphost gate 显式化 2026-06-30）
 
 ```toml
 [platform.desktop]
-publish_dir = ".."   # apphost exe 输出目录（相对 toml 所在目录，同 [build].output_dir 基准）
-                     # exe 名 = [project].name；--output 可覆盖
+apphost     = true   # GATE：唯有 apphost = true，`z42 publish <toml> --rid <desktop-rid>` 才产 apphost。
+                     # 缺省 / false → publish 报 "not configured to publish a desktop apphost" 并退出。
+publish_dir = ".."   # 仅输出位置（apphost exe 输出目录，相对 toml 所在目录，同 [build].output_dir 基准）。
+                     # 不再充当 gate；缺省 = 项目目录。exe 名 = [project].name；--output 可覆盖。
 ```
 
-桌面平台的输出是 **apphost**（per-app 原生可执行）：`z42 publish desktop <toml>` 读 `publish_dir` + 从 `[build]`/`[project]` 推出已编译 zpkg，patch 原生 apphost stub 产出 exe。与 ios/android/wasm export 对称——apphost 不是独立命令。机制详见 [launcher.md](../runtime/launcher.md) apphost 段。
+桌面平台的输出是 **apphost**（per-app 原生可执行）：`z42 publish <toml> --rid <desktop-rid>` 在
+`apphost = true` 时，读 `publish_dir`（位置）+ 从 `[build]`/`[project]` 推出已编译 zpkg，patch 原生 apphost
+stub 产出 exe。与 ios/android/wasm export 对称——apphost 不是独立命令。
+
+> **gate 与位置分离（2026-06-30）**：旧逻辑用「`publish_dir` 是否存在」充当「是否产 apphost」的开关，
+> 把"输出目录"与"是否启用"耦合在一个键上。现拆分——`apphost = true` 是唯一 gate，`publish_dir` 退化为
+> 纯输出位置。解析见 `z42.project` 的 `DesktopConfig.Apphost`；gate 实现见 `launcher_export.z42`
+> 的 `_cmdPublishDesktop`。机制详见 [launcher.md](../runtime/launcher.md) apphost 段。
 
 ### CLI 覆盖
 

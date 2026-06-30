@@ -2,13 +2,15 @@ namespace Z42.Project;
 
 /// `[platform.desktop]` 段。固定字段。
 public sealed class DesktopConfig {
-    public string PublishDir;
+    public bool   Apphost;      // apphost = true → `z42 publish desktop` 才产 apphost（gate）
+    public string PublishDir;   // 输出目录（仅位置，不再充当 gate）
     public bool   HasIcon;
     public string Icon;
     public bool   HasBundleId;
     public string BundleId;     // macOS .app
-    public DesktopConfig(string publishDir, bool hasIcon, string icon,
+    public DesktopConfig(bool apphost, string publishDir, bool hasIcon, string icon,
                          bool hasBundleId, string bundleId) {
+        this.Apphost = apphost;
         this.PublishDir = publishDir;
         this.HasIcon = hasIcon; this.Icon = icon;
         this.HasBundleId = hasBundleId; this.BundleId = bundleId;
