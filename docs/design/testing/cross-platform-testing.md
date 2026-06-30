@@ -411,7 +411,7 @@ jobs:
 
 上文（Phase 4/5）原计划三平台各自在自己的 `build.sh` / `test.sh` 里跑测试。实践中
 这导致三套各自为政的 bash，且"编 fixture + 收 stdlib"在三处重复（最易漂移）。
-2026-06-15 统一到**接口驱动的 z42 框架**（`scripts/xtask_test_platform.z42` + 三个
+2026-06-15 统一到**接口驱动的 z42 框架**（`scripts/test/xtask_test_platform.z42` + 三个
 backend 文件），三步可单独调用、共享逻辑只写一份。
 
 ### 三阶段（每步可单独跑，亦可串联）

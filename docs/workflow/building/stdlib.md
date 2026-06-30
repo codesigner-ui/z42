@@ -18,7 +18,7 @@
 ./xtask test dist               # 用打包发行版 z42c 编译并验证（package 后测试用）
 ```
 
-`build stdlib` 的逻辑现已 fold 进 xtask（`scripts/xtask_stdlib.z42`），一条命令做两件事：
+`build stdlib` 的逻辑现已 fold 进 xtask（`scripts/build/xtask_stdlib.z42`），一条命令做两件事：
 (1) `z42c build --workspace --release` 编译 22 个 lib；(2) hard-link 成扁平视图
 `artifacts/build/libraries/dist/release/`（VM 单目录加载点）。不写 namespace 索引——VM
 与嵌入宿主都读各 zpkg 的 `NSPC` section 认领 namespace。核心编译步骤等价于：

@@ -82,7 +82,7 @@ z42c.driver 实现了自己的 `build --workspace`（`Main._buildWorkspace` + `z
 
 ### z42c 构建 stdlib（replace-csharp-compiler S3：✅ 生产接管已落地 2026-06-22）
 
-**S3 目标（已达成）**：`xtask build stdlib` 的产出端从 C# 换成 z42c。`_buildStdlibCore`（`scripts/xtask_stdlib.z42`）现序列为：**① C# 种子（`_csharpBuildStdlibSeed`，z42c.driver 运行期依赖）→ ② build z42c（C# driver 编 7 包）→ ③ run-libs 组装（C#-种子 stdlib + z42c 7 包，copy）→ ④ z42c 重编 stdlib（z42vm `--mode interp` 跑 z42c.driver.zpkg `build --workspace --release`，M2 per-member 覆盖 canonical 布局）→ ⑤ verify + flat view**。`_testCompilerStdlib`（S2.1）改调 `_csharpBuildStdlibSeed`（只要 C# 种子，不触发递归全接管）。
+**S3 目标（已达成）**：`xtask build stdlib` 的产出端从 C# 换成 z42c。`_buildStdlibCore`（`scripts/build/xtask_stdlib.z42`）现序列为：**① C# 种子（`_csharpBuildStdlibSeed`，z42c.driver 运行期依赖）→ ② build z42c（C# driver 编 7 包）→ ③ run-libs 组装（C#-种子 stdlib + z42c 7 包，copy）→ ④ z42c 重编 stdlib（z42vm `--mode interp` 跑 z42c.driver.zpkg `build --workspace --release`，M2 per-member 覆盖 canonical 布局）→ ⑤ verify + flat view**。`_testCompilerStdlib`（S2.1）改调 `_csharpBuildStdlibSeed`（只要 C# 种子，不触发递归全接管）。
 
 **full GREEN gate 全绿（z42c-built stdlib）**：C# 1571/1571（含 sidecar+multicast）+ vm goldens interp 169/jit 165 + cross-zpkg 2 + **stdlib 272/272（z42c-built）** + compiler 7/7 byte-identical + 17 z42c units + e2e。
 

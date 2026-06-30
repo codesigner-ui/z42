@@ -12,7 +12,7 @@
 
 直接服务于 **z42 build-driver 自举**：原先 shell out 到
 `python3 -c 'import tomllib; ...'` 的 `scripts/_lib/versions.sh` 已迁移成纯 z42
-——xtask 的共享读取器 `scripts/xtask_versions.z42` 用 `Std.Toml` 读
+——xtask 的共享读取器 `scripts/common/xtask_versions.z42` 用 `Std.Toml` 读
 `versions.toml` / `*.z42.toml`。
 
 ## 架构
@@ -171,7 +171,7 @@ round-trip 不再重排 → git-diff 友好。实现仅一处：`TomlWriter.Orde
 
 ## 与 build-driver 的交接
 
-已落地：`scripts/_lib/versions.sh` 已被 xtask 的 `scripts/xtask_versions.z42` 取代，
+已落地：`scripts/_lib/versions.sh` 已被 xtask 的 `scripts/common/xtask_versions.z42` 取代，
 形如：
 
 ```z42

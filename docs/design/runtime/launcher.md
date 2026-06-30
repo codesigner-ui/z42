@@ -244,7 +244,7 @@ native apphost stub（`src/toolchain/workload/desktop/platform/apphost`，z42-ap
 patch 同一段占位符的逻辑有**两个调用方**：
 
 1. **用户 app**：`z42 publish desktop <project.toml>` —— desktop **workload** 包的 `apphost.z42`（`Z42.Workload.Desktop.Apphost.PatchBytes`）。
-2. **SDK 自己的 apphost**（现在的 `z42`，将来的 `bin/z42c`）：在 **`xtask package`** 里产出 —— xtask **内联**了一份精简 patcher（`scripts/xtask_package_desktop.z42` 的 `_produceApphost`，复刻 `PatchBytes`）。
+2. **SDK 自己的 apphost**（现在的 `z42`，将来的 `bin/z42c`）：在 **`xtask package`** 里产出 —— xtask **内联**了一份精简 patcher（`scripts/package/xtask_package_desktop.z42` 的 `_produceApphost`，复刻 `PatchBytes`）。
 
 **为什么 xtask 内联、不复用 workload 的 patcher**：xtask 的依赖只有 `z42.core/io/...`，**不依赖 workload 包**——而 workload 包**正是同一次 `xtask package` 在产出的东西**（`_buildDesktopWorkload`）。让 xtask 依赖 workload 会构成循环（用还没造好的 workload 去造 SDK），用上一次发布的旧 workload 又会版本/ABI 错位。发布走 from-source（CI `xtask-bootstrap-source`），那条链里根本没有"下载的 workload"可用。故内联打破循环。
 
