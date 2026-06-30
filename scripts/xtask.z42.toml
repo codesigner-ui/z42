@@ -10,13 +10,10 @@ pack    = true
 [sources]
 include = ["**/*.z42"]
 
-[dependencies]
-"z42.core"  = "0.1.0"   # String / Console
-"z42.io"    = "0.1.0"   # Environment / Process / File / Directory / Path
-"z42.toml"  = "0.1.0"   # versions.toml read (xtask_package)
-"z42.json"  = "0.1.0"   # hyperfine result merge (xtask_bench)
-"z42.regex" = "0.1.0"   # using-audit heuristics (xtask_audit)
-"z42.cli"   = "0.1.0"   # Std.Cli nested router + ArgParser (command parsing)
+# No [dependencies] block: xtask is always run with a complete Z42_LIBS (the SDK
+# libs dir / the build-tree alllibs), and z42c resolves every `using Std.*`
+# (Cli/IO/Toml/Json/Regex; z42.core is prelude) from there — the explicit list was
+# redundant for this dev tool. (Library/SDK projects still declare deps explicitly.)
 
 [build]
 # xtask is the build DRIVER, so its output lives at artifacts/xtask — NOT under
