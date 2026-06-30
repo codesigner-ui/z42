@@ -110,6 +110,18 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     string z42cExe = Path.Join(pkgDir, isWin ? "bin/z42c.exe" : "bin/z42c");
     c = _produceApphost(apphostStub, z42cExe, "../programs/z42c/z42c.driver.zpkg", rid); if (c != 0) { return c; }
     Console.WriteLine("      ✓ bin/z42c (apphost → programs/z42c/z42c.driver.zpkg)");
+    // bin/z42b = apphost trampoline → programs/z42b/z42.builder.zpkg (z42b: reflective
+    // [Test]/[Benchmark] runner host; deps z42.test/.core/.io/.cli resolve from libs/).
+    // Mirrors bin/z42c + programs/z42c/ layout. The launcher forwards `z42 test`/`z42 bench`
+    // here; z42b is also directly invocable as `bin/z42b test <artifact>`.
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/builder/core/z42.builder.z42.toml");
+    if (c != 0) { return c; }
+    string pbDir = Path.Join(pkgDir, "programs/z42b");
+    Directory.Create(pbDir);
+    File.Copy(Path.Join(root, "artifacts/build/toolchain/builder/z42.builder.zpkg"), Path.Join(pbDir, "z42.builder.zpkg"));
+    string z42bExe = Path.Join(pkgDir, isWin ? "bin/z42b.exe" : "bin/z42b");
+    c = _produceApphost(apphostStub, z42bExe, "../programs/z42b/z42.builder.zpkg", rid); if (c != 0) { return c; }
+    Console.WriteLine("      ✓ programs/z42b/z42.builder.zpkg + bin/z42b (apphost → programs/z42b/z42.builder.zpkg)");
     Console.WriteLine("      ✓ z42 (apphost, package root)");
 
     // [3/7] C ABI headers
