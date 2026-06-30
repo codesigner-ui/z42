@@ -36,17 +36,10 @@ int _execIn(Process p, string wd) {
         .Run().ExitCode;
 }
 
-// Run a shell command at the repo root (git toplevel), inheriting stdio.
-// Legacy path — delegates to bash. Native handlers use _exec instead.
-int _sh(string cmd) {
-    string full = "cd \"$(git rev-parse --show-toplevel)\" && " + cmd;
-    ProcessResult r = new Process("bash")
-        .Arg("-c").Arg(full)
-        .Stdout(Stdio.Inherit())
-        .Stderr(Stdio.Inherit())
-        .Run();
-    return r.ExitCode;
-}
+// (_sh removed 2026-06-30: the generic shell-string passthrough is gone — its
+// last caller, `run`, is now a native Process spawn. The few remaining bash
+// invocations elsewhere run SPECIFIC committed .sh scripts (install-z42.sh
+// cold-start primer / platform test.sh harnesses), not arbitrary shell.)
 
 // Make xtask's z42vm visible to the child C# Driver (`dotnet -- run/build`),
 // whose FindVm() locates z42vm via (1) Z42VM env, (2) artifacts/build/runtime/...,

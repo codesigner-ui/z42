@@ -35,9 +35,22 @@ void Main() {
 
 // Forwards `<app.zpkg|script.z42> [-- args]` verbatim to `z42 run`. Raw
 // passthrough (intercepted in _runCli before Resolve) — the launcher itself
-// handles the `--` app-args tail.
+// handles the `--` app-args tail. Native spawn (each argv element a separate
+// Arg → no shell re-splitting, so app args with spaces survive); _exec runs it
+// at the repo root with inherited stdio.
 int _run(string[] argv) {
-    return _sh("z42 run " + _join(argv, 1));
+    Process p = new Process("z42").Arg("run");
+    int i = 1;
+    while (i < argv.Length) { p = p.Arg(argv[i]); i = i + 1; }
+    // spawn-failure (z42 not on PATH) throws — surface it gracefully (bash used to
+    // return 127 here), rather than crashing with an uncaught exception.
+    try {
+        return _exec(p);
+    } catch (Exception e) {
+        ConsoleError.WriteLine("error: could not launch `z42 run` — is the z42 launcher on PATH? ("
+            + e.Message + ")");
+        return 127;
+    }
 }
 
 // ── build ─────────────────────────────────────────────────────────────────
