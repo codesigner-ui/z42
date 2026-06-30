@@ -147,6 +147,51 @@ public sealed class TypeChecker {
         return (" " + mods + " ").IndexOf(" " + w + " ") >= 0;
     }
 
+    // add-type-based-overloads 根因修复：SymbolCollector 用 first-wins `ct.Methods.Put(regName, ...)` 注册方法——
+    // 同 (name,arity) ≥2 的静态重载若 Canon 归一后撞出同一个 mangled RegKey（如 f(int) vs f(i32)，或
+    // f(string) vs f(string?)），后者会静默覆盖前者，方法体无声丢失、零诊断。这里在绑体前对每个静态
+    // (name,arity) 重载组重放同一遍 mangle，键碰撞即报错——把"静默丢方法"变成编译错误。
+    // 范围仅静态：实例方法 type-mangle 未启用（VCall 仍按未 mangle/`$arity` 名派发，arity-only 碰撞
+    // 是已知、暂接受的现状——如 String.Equals(object)/Equals(string)，见 D1），故不在此处检查。
+    private void _checkDuplicateStaticOverloads(ClassDecl c) {
+        StrMap seenArity = new StrMap();   // name$arity → 首次见
+        StrMap dupArity  = new StrMap();   // name$arity → 该 arity ≥2 个静态方法
+        int i = 0;
+        while (i < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[i]);
+            if (mem is MethodDecl) {
+                MethodDecl md = mem as MethodDecl;
+                if (this._hasWordTc(md.Mods, "static")) {
+                    string ak = md.Name + "$" + md.ParamCount.ToString();
+                    if (seenArity.ContainsKey(ak)) { dupArity.Put(ak, "1"); }
+                    else { seenArity.Put(ak, "1"); }
+                }
+            }
+            i = i + 1;
+        }
+        StrMap seenKey = new StrMap();
+        i = 0;
+        while (i < c.MemberCount) {
+            Decl mem = this._unwrap(c.Members[i]);
+            if (mem is MethodDecl) {
+                MethodDecl md = mem as MethodDecl;
+                if (this._hasWordTc(md.Mods, "static")) {
+                    string ak = md.Name + "$" + md.ParamCount.ToString();
+                    if (dupArity.ContainsKey(ak)) {
+                        if (seenKey.ContainsKey(md.RegKey)) {
+                            this._diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                                "duplicate overload `" + md.Name + "` — parameter types are identical once " +
+                                "aliases (e.g. int/i32) and nullability are normalized", md.Span);
+                        } else {
+                            seenKey.Put(md.RegKey, "1");
+                        }
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
     // impl-block 方法体绑定（port-z42c-impl-block 2b，镜像 _bindClass 的 MethodDecl 分支）：
     // 方法 this=target、target 字段入 scope；body 键 `<target>.<mkey>`（IrGen 2c 同键发函数）。
     private void _bindImpl(SemanticModel model, SymbolTable symbols, ImplDecl im) {
@@ -194,6 +239,7 @@ public sealed class TypeChecker {
         string ctKey = c.Name;
         if (c.TypeParams.Count > 0) { string mk = c.Name + "$" + c.TypeParams.Count.ToString(); if (symbols.HasClass(mk)) { ctKey = mk; } }
         Z42ClassType ct = symbols.GetClass(ctKey);
+        this._checkDuplicateStaticOverloads(c);
         int j = 0;
         while (j < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[j]);

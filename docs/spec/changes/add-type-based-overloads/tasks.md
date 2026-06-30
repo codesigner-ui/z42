@@ -70,3 +70,20 @@
 ## 备注
 - 完成后解锁 `add-params-varargs` 阶段 4（重载决议复用本变更，见 design D6）。
 - v1 不做 int→long→double 隐式数值 better-conversion 排序（并列即报歧义）；完整表入 Deferred。
+- **2026-07-01 根因修复（fix，User 要求系统复查序列化方案）**：`SymbolCollector._fillClass` 的
+  `ct.Methods.Put(regName, msym)` 对静态同 (name,arity) 重载是 first-wins 静默覆盖——若两个签名
+  `Canon` 归一后撞出同一个 mangled 键（如 `F(int)` vs `F(i32)`，或 `G(string)` vs `G(string?)`），
+  后者方法体被无声丢弃、零诊断。修复：`TypeChecker._bindClass` 新增 `_checkDuplicateStaticOverloads`，
+  绑体前对每个静态 (name,arity)≥2 重载组重放一遍 (name,arity) 预扫 + mangled 键碰撞检测，碰撞即报
+  `E0408 DuplicateDeclaration`（复用既有未用诊断码）。范围严格限 `static`——实例方法 type-mangle
+  未启用（VCall 仍按未 mangle/`$arity` 名派发），`String.Equals(object?)`/`Equals(string)` 这类
+  arity-only 碰撞是已知、已接受、留给"实例方法 type-based 重载"扩展处理，不在此处误报。
+  设计层面同时确认并裁定：**不支持 nullable-only / alias-only 重载**（视为重复声明而非合法重载），
+  不为此改键/mangle 方案。
+  顺带订正 `design.md` D2/D5 的文档/代码不一致：原文写 `ImportedSymbolLoader` 对 imported 方法"按
+  TSIG 参数 TypeName 重算签名键"，但实际实现是 `sym.RegKey = m.Name` **verbatim 读回**（不重算）——
+  已更正文档措辞 + 补充"为何重算危险"的理由（`_hybridTypeName` 与 `Canon(Name())` 两套类型名生成
+  逻辑不保证逐字符一致，重算可能产出与定义点不同的键，派发断裂）。
+  新增单测 3 个（`z42c.semantics/tests/typecheck/typecheck_tests.z42`）：alias 碰撞报错 / nullable
+  碰撞报错 / 真正不同类型不误报。验证：`./xtask test compiler` 全绿（73 typecheck 单测含新 3 个
+  + 7/7 self-host byte-identical 不动点 + e2e 全过）。

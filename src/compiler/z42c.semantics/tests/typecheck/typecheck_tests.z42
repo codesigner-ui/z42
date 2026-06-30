@@ -556,3 +556,27 @@ void test_int_literal_decimal_over_range_is_long() {
     Assert.Equal("(block (return (lit-int 2147483648 :long)))", SemanticDump.DumpBody(src, "C.M"));
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── 重复重载签名（add-type-based-overloads 根因修复）──────────────────────
+// 静态同 (name,arity) 重载经 Canon 归一后撞出同一 mangled RegKey，此前被 SymbolCollector
+// first-wins 静默吞掉第二个方法体、零诊断；现报 E0408 duplicate declaration。
+[Test]
+void test_error_duplicate_overload_type_alias_collision() {
+    // int 与 i32 是同一基本类型的两种拼写（Z42Type.Canon 归一）→ 签名键碰撞
+    string src = "class C { static void F(int a) { } static void F(i32 a) { } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_duplicate_overload_nullable_collision() {
+    // Canon 剥 nullable 后 string 与 string? 同键 → 签名键碰撞
+    string src = "class C { static void G(string a) { } static void G(string? a) { } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_distinct_static_overloads_no_duplicate_error() {
+    // 真正不同的形参类型（int vs string）不应被误判为重复
+    string src = "class C { static void H(int a) { } static void H(string a) { } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
