@@ -20,7 +20,14 @@
 - [x] ③ `_assembleAllLibs` flat 视图抽取（compiler/test/bench 3 处）— GREEN
 - [x] ⑤ `_sortedStrings`/`_splitWords` 移到 xtask_common（无调用方改动）— GREEN
 - [x] ④ 抽 `_regenForTest` + `_buildDebugVmAndCompression`（收敛 testVmCore/testAll 重复）— GREEN（双否定 rebuild/noBuild 改名刻意不做：churn 高价值低）
-- [ ] ⑥ 文件拆分（xtask_test_lib / compiler build·test）——碰撞最大，放最后/视情况
+- [x] ⑥ 文件拆分：⑥A xtask_test_lib.z42（test.z42 740→211）+ ⑥B xtask_compiler_e2e.z42（compiler.z42 735→465，过 500 限）
+
+## ⑥ 文件拆分
+- [x] 6A.1 抽 stdlib [Test] harness（_libUnitCount/_shardLibs/_testLib/_testLibCore/TestUnit/DepBundle/_discoverTestUnits/_dirHasTestMethods/_harvestParentDeps/_appendDeps/_runUnitsBatched/_compilePrep/_renderSyntheticManifest）→ xtask_test_lib.z42；_parseShard 留原文件（_testVmCore 共用）
+- [x] 6A.2 toml [sources] + 段注释更新；`test stdlib z42.math` GREEN（13/13）
+- [x] 6B.1 抽 e2e oracle 块（_e2eOracle + _testCompilerE2e，自包含）→ xtask_compiler_e2e.z42
+- [x] 6B.2 toml [sources]；rebuild clean；`test compiler` 验证（见下）
+- 备注：xtask_test_lib.z42 538 行略超 500——harness 是高耦合单一系统，进一步拆会割裂；接受。
 
 ## ④⑤ 验证 + 环境插曲
 - [x] `test vm interp` GREEN：build-stdlib 22/0 + regen 202/0 + goldens 191/0
