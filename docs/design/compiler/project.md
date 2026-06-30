@@ -937,10 +937,12 @@ z42c new -p hello --kind exe          # 加 exe member（apps/hello/，src 含 H
 z42c init                             # 把当前单 manifest 升级为 workspace
 z42c fmt                              # 格式化所有 *.z42.toml（Tomlyn round-trip）
 
-z42c clean                            # 清空 <workspace>/dist/ + <workspace>/.cache/
-z42c clean -p foo                     # 仅清 foo 的产物 + cache 子目录
-z42c clean --no-workspace             # 强制单工程模式清理
+z42b clean                            # 删当前目录 dist/ + cache/（clean 已从 z42c 移到 z42b）
+z42b clean <dir>                      # 删 <dir>/dist + <dir>/cache
 ```
+
+> **clean 归 z42b**：z42c 是纯编译器（只 build / --emit-zbc / --dump-*）；产物生命周期
+> （clean）与 test / bench 一样归编排器 z42b。`z42b clean [<dir>]` 删 `<dir>/{dist,cache}`。
 
 `z42c new --workspace` 默认布局：
 

@@ -70,7 +70,36 @@ SubcommandRouter _builderRoot() {
     bench.AddOption("filter", "", "benchmark name substring filter (reserved)", "");
     root.Add("bench", "run [Benchmark] in a compiled module", bench);
 
+    // clean — remove a project's build artifacts (moved out of z42c: the compiler
+    // only compiles; artifact lifecycle belongs to the orchestrator z42b).
+    ArgParser clean = new ArgParser("z42b clean", "remove <dir>/{dist,cache} build artifacts");
+    clean.AddOptionalPositional("dir", "target dir (default: current dir)");
+    root.Add("clean", "remove build artifacts (<dir>/{dist,cache})", clean);
+
     return root;
+}
+
+// `z42b clean [<dir>]` — delete <dir>/dist and <dir>/cache (default CWD). Pure
+// file lifecycle, no compiler involvement (ported from z42c, which is now
+// compile-only). Mirrors the former `z42c clean`.
+int _cmdClean(ParseResult r) {
+    string dir = r.GetPositional(0);
+    if (dir.Length == 0) { dir = "."; }
+    int removed = 0;
+    string[] subs = new string[2];
+    subs[0] = Path.Join(dir, "dist");
+    subs[1] = Path.Join(dir, "cache");
+    int i = 0;
+    while (i < subs.Length) {
+        if (Directory.Exists(subs[i])) {
+            Directory.Delete(subs[i], true);
+            Console.WriteLine("removed " + subs[i]);
+            removed = removed + 1;
+        }
+        i = i + 1;
+    }
+    if (removed == 0) { Console.WriteLine("clean: nothing to remove under " + dir); }
+    return 0;
 }
 
 // ── dispatch ──────────────────────────────────────────────────────────────
@@ -82,6 +111,7 @@ int _dispatchBuilder(CommandResolution res) {
     string top = p[0];
     if (top == "test")  { return _cmdTest(r); }
     if (top == "bench") { return _cmdBench(r); }
+    if (top == "clean") { return _cmdClean(r); }
     if (top == "run") {
         ConsoleError.WriteLine("z42b run: host bytecode run is served by the launcher (z42 run <app.zpkg>)");
         return 2;

@@ -45,11 +45,6 @@ void Main() {
         Environment.Exit(_build(file, isRelease, outputDir, new string[0], 0));
         return;
     }
-    if (cmd == "clean") {
-        string target = (argv.Length >= 2 && !file.StartsWith("--")) ? file : ".";
-        Environment.Exit(_clean(target));
-        return;
-    }
     if (cmd == "--emit-zbc") {
         if (argv.Length < 3) {
             ConsoleError.WriteLine("z42c: --emit-zbc requires <file.z42> <out.zbc>");
@@ -336,25 +331,6 @@ string _findWorkspaceToml(string startDir) {
     return "";
 }
 
-// `z42c clean [<dir>]`：删 <dir>/dist 与 <dir>/cache 产物子树（默认 CWD）。
-int _clean(string dir) {
-    int removed = 0;
-    string[] subs = new string[2];
-    subs[0] = Path.Join(dir, "dist");
-    subs[1] = Path.Join(dir, "cache");
-    int i = 0;
-    while (i < subs.Length) {
-        if (Directory.Exists(subs[i])) {
-            Directory.Delete(subs[i], true);
-            Console.WriteLine("removed " + subs[i]);
-            removed = removed + 1;
-        }
-        i = i + 1;
-    }
-    if (removed == 0) { Console.WriteLine("clean: nothing to remove under " + dir); }
-    return 0;
-}
-
 void _usage() {
     Console.WriteLine("z42c (self-host) 0.1.0 — bootstrap (lex/parse/typecheck front-end)");
     Console.WriteLine("usage:");
@@ -366,6 +342,5 @@ void _usage() {
     Console.WriteLine("  z42c build         <project.z42.toml>  build packed .zpkg -> dist/");
     Console.WriteLine("  z42c build --workspace [--output-dir <d>] build all members (topo order);");
     Console.WriteLine("                                          omit --output-dir for per-member layout");
-    Console.WriteLine("  z42c clean         [<dir>]             remove <dir>/{dist,cache}");
-    Console.WriteLine("  (test / bench are run by z42b, not z42c — the compiler only compiles)");
+    Console.WriteLine("  (clean / test / bench are run by z42b, not z42c — the compiler only compiles)");
 }
