@@ -263,11 +263,4 @@ int _javaMajor(string vtext) {
     return 0;
 }
 
-string _repeat(string s, int n) {
-    string acc = "";
-    int i = 0;
-    while (i < n) { acc = acc + s; i = i + 1; }
-    return acc;
-}
-
 byte[] _bytesOf(string s) { return Utf8.GetBytes(s); }

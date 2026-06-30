@@ -195,18 +195,6 @@ void _linkAll(string srcDir, string flatDir, string pattern) {
     }
 }
 
-string[] _concat3(string[] a, string[] b, string[] c) {
-    string[] acc = new string[a.Length + b.Length + c.Length];
-    int idx = 0;
-    int i = 0;
-    while (i < a.Length) { acc[idx] = a[i]; idx = idx + 1; i = i + 1; }
-    i = 0;
-    while (i < b.Length) { acc[idx] = b[i]; idx = idx + 1; i = i + 1; }
-    i = 0;
-    while (i < c.Length) { acc[idx] = c[i]; idx = idx + 1; i = i + 1; }
-    return acc;
-}
-
 // ── build sdk (compile-once P1.3) ────────────────────────────────────────────
 
 // `build sdk [--out <dir>]` — assemble the current toolchain into a `.z42` layout

@@ -66,24 +66,6 @@ string _z42vm() {
     return vmname;
 }
 
-// ── argv helpers ─────────────────────────────────────────────────────────────
-
-string _at(string[] a, int i) {
-    if (i < a.Length) { return a[i]; }
-    return "";
-}
-
-string _join(string[] a, int from) {
-    string s = "";
-    int i = from;
-    while (i < a.Length) {
-        if (s.Length > 0) { s = s + " "; }
-        s = s + a[i];
-        i = i + 1;
-    }
-    return s;
-}
-
 // ── string / collection helpers (shared across modules) ─────────────────────
 
 /// String sort using an O(n²) selection sort — fine for n ≤ ~64 test
@@ -175,13 +157,6 @@ string _activeVm(string root, string profile) {
     string tc = _toolchainDir(root);
     if (tc.Length > 0) { return _toolchainVm(tc); }
     return _builtVm(root, profile);
-}
-
-// the z42c.driver.zpkg inside a `.z42` toolchain: <dir>/programs/z42c/z42c.driver.zpkg
-// (Path.Join is 2-arg — nest. The 6 sibling z42c.* live alongside it.)
-string _toolchainDriver(string tcDir) {
-    string progs = Path.Join(tcDir, "programs");
-    return Path.Join(Path.Join(progs, "z42c"), "z42c.driver.zpkg");
 }
 
 // ── artifact paths (absolute, repo-root-relative) ────────────────────────────
