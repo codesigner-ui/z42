@@ -365,7 +365,7 @@ data:    UTF-8 字节流（紧密排列，无 NUL 分隔）
 
 编译时收集的测试元数据。仅当模块含至少一个 `[Test]` / `[Benchmark]` /
 `[Setup]` / `[Teardown]` / `[Ignore]` / `[Skip]` 注解的函数时由
-`ZbcWriter.BuildTidxSection` 写入；缺失等价于"无测试"。`z42-test-runner` (R3)
+`ZbcWriter.BuildTidxSection` 写入；缺失等价于"无测试"。z42b runner（Std.Test.Runner，R3）
 读这里发现测试，**不再**扫整个 method table。
 
 字段 little-endian 固定宽度（与其他 sections 一致）。

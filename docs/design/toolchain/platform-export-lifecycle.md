@@ -153,7 +153,7 @@ z42 test    <plat> [--device sim|emulator|hw]   # host + 平台上两面跑 [Tes
 
 | 运行面 | 命令 | 用途 | 机制 |
 |---|---|---|---|
-| **host**（默认、快）| `z42 test` | 内循环 / CI 主门 | z42-test-runner 在 host VM 跑 `[Test]`（已有）|
+| **host**（默认、快）| `z42 test` | 内循环 / CI 主门 | z42b 在 host VM 跑 [Test]（z42.builder.zpkg 经 z42vm）|
 | **平台上**（慢、真）| `z42 test ios --device sim` | 抓平台专属行为（PAL/fs、native interop、ABI、真机差异）| 导出 test-harness 版平台工程（入口跑 test-runner over 捆绑 `[Test]` zpkg）→ build+装+起 sim/emulator/device → 回收 TAP |
 
 `[Test]` 用例**只写一份**，host 跑得快、平台上跑得真，无 per-platform 测试代码。类比 XCTest 包装 / Android instrumented test，payload 换成"test-runner 跑在嵌入 VM 上"。

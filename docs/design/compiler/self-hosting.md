@@ -143,7 +143,7 @@ Z42_PORTABLE_VM=<z42vm> Z42_LIBS=<flat 含 z42c.*+z42.*> z42vm z42c.driver.zpkg
 
 测试单元布局：`src/compiler/<member>/tests/<unit>/{<name>.z42.toml(kind=lib) + *.z42}`。
 `xtask test compiler` = build 7 子包 smoke + 组装 flat 目录 + 逐单元 `z42c build <toml>
---release`（Z42_LIBS=flat）+ `z42-test-runner <zpkg>`（Z42_PORTABLE_VM + Z42_LIBS=flat）。
+--release`（Z42_LIBS=flat）+ z42b（z42.builder.zpkg，Z42_LIBS=flat）经 z42vm 运行。
 `z42.test` 是 stdlib 自动可用（**不**在 toml 声明，避免 WS013）。z42c-selfhost 仍为
 opt-in soak，不入默认 GREEN gate。
 

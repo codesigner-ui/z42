@@ -21,7 +21,7 @@
 |--|---------------------------|------------------------------|
 | 粒度 | 单个操作（`String.Replace` / `SortedSet.Add` / `JsonValue.Parse`），ns 级 | 整程序 wall-clock（VM 启动 + stdlib 加载 + 执行），ms 级 |
 | 用途 | 把回归**定位到具体函数**；守护 stdlib 热路径；量化单操作优化 | 捕获**全管线**回归（启动开销 / dispatch / 整体吞吐）|
-| 运行 | `z42-test-runner <lib-tests.zbc> --filter bench_ --format json`（本地/按需）| `just bench-e2e`（本地 + CI）|
+| 运行 | `z42 xtask.zpkg bench stdlib <lib>`（本地/按需）| `just bench-e2e`（本地 + CI）|
 | CI | **不进 CI** — ns 量级对共享 runner 噪声过敏感，假阳性多 | ✅ informational diff（粗粒度，噪声可容忍）|
 
 > **为何 micro 不进 CI**：与 Rust criterion / C# BDN 两个微基准 tier 一致 ——
@@ -30,14 +30,14 @@
 
 ### 运行 micro-benchmarks（本地）
 
-各 lib 的 `tests/*_bench.z42` 里的 `[Benchmark]` 方法由 test-runner 派发。
+各 lib 的 `bench/*_bench.z42` 里的 `[Benchmark]` 方法由 z42b（z42.builder.zpkg）派发。
 单独跑某个 lib 的基准（不跑其它 [Test]）：
 
 ```bash
 # 1. 编译某 lib 的 bench 测试到 .zbc（test 工具链自动做；或手动 z42c --emit zbc）
-# 2. 只跑 benchmark 方法，输出结构化 stats：
-z42-test-runner <lib-tests.zbc> --filter bench_ --format json
-#   → 每个 [Benchmark] 一条记录，含 bench_stats { label, min_ns, median_ns, max_ns, samples }
+# 2. 只跑 benchmark 方法（[Benchmark] 自带 Bencher 采样 + printSummary）：
+z42 xtask.zpkg bench stdlib <lib>
+#   → 每个 [Benchmark] 由 z42b 经 z42vm 运行，自报 warmup/samples/min/median/max
 ```
 
 `bench_stats` 来自 `Bencher.printSummary(label)`，全模式（in-process /

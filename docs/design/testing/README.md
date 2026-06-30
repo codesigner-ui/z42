@@ -1,21 +1,21 @@
 # design/testing/
 
-z42 测试基础设施：测试框架（z42.test）、测试运行器（z42-test-runner）、跨平台测试。
+z42 测试基础设施：测试框架（z42.test）、测试运行器（z42b = z42.builder.zpkg）、跨平台测试。
 
 ## 职责
 
 - 描述测试 attribute 体系（`[Test] [Benchmark] [Setup] [Teardown] [Skip] [Ignore] [ShouldThrow<E>]`）
 - 描述编译期测试发现机制（TIDX section）
-- 描述 z42-test-runner 工具（subprocess / 多格式输出 / filter / changed-only）
+- 描述 runner（现为 z42b：`Std.Test.Runner` 反射执行，经 z42vm 运行；取代了 Rust z42-test-runner）
 - 描述跨平台测试调度
 
 ## 核心文件
 
 | 文件 | 职责 |
 |------|------|
-| [`testing.md`](testing.md) | R 系列测试基础设施：单机框架、attribute 校验、Std.Test.Assert / Bencher |
-| [`test-runner-bootstrap.md`](test-runner-bootstrap.md) | z42-test-runner 工具实现：subprocess 模式、format / filter、changed-only 路由 |
-| [`cross-platform-testing.md`](cross-platform-testing.md) | 同一 .zbc 多平台运行 + runner-as-library + 平台 Skip 机制 |
+| [`testing.md`](testing.md) | R 系列测试基础设施：单机框架、attribute 校验、Std.Test.Assert / Bencher；runner = z42b（顶部说明） |
+| [`test-runner-bootstrap.md`](test-runner-bootstrap.md) | Rust→z42 runner 迁移（✅ 已落地 retire-test-runner）的历史决策记录 |
+| [`cross-platform-testing.md`](cross-platform-testing.md) | 同一 .zbc 多平台运行 + 平台 Skip 机制（runner-as-Rust-library 部分已被 z42b 取代） |
 
 ## 入口点
 

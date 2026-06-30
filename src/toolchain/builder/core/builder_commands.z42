@@ -77,16 +77,8 @@ int _cmdRun(ParseResult r) {
     return 1;
 }
 
-// ── test / bench：待 retire-test-runner（前置 boxing 0.3.11 + Method.Invoke 0.3.12）──────
-
-int _cmdTest(ParseResult r) {
-    // 实现见 retire-test-runner spec：build → z42.test.TestRunner（反射发现 [Test] + Invoke）→ 报告。
-    ConsoleError.WriteLine("z42b test: pending retire-test-runner (needs reflection Method.Invoke, 0.3.12)");
-    return 1;
-}
-
-int _cmdBench(ParseResult r) {
-    // 实现见 retire-test-runner spec：build → z42.test.BenchRunner（发现 [Benchmark] + Bencher）→ stats。
-    ConsoleError.WriteLine("z42b bench: pending retire-test-runner (needs reflection Method.Invoke, 0.3.12)");
-    return 1;
-}
+// ── test / bench：待 retire-test-runner 完整接入（PARKED 编排路径）──────
+//
+// 已编译 .zbc/.zpkg 的直跑实现见 builder_test.z42（_cmdTest/_cmdBench，反射式
+// Std.Test.Runner.RunModule，retire-test-runner 已落地）。这里的 toml→build→test
+// 编排路径依赖 ICompiler，属 wire-z42b-host-build，故本文件保持 PARKED。

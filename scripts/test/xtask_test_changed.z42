@@ -241,9 +241,10 @@ _MapResult _mapFile(string f) {
     if (f.StartsWith("src/compiler/")) {
         return _mapCmds(new string[]{ "xtask test compiler", "xtask test vm" });
     }
-    // Toolchain.
+    // Toolchain (incl. z42b — the z42.builder test/bench host). A toolchain change
+    // can affect how [Test]/[Benchmark] units run, so sweep the stdlib suite.
     if (f.StartsWith("src/toolchain/")) {
-        return _mapCmds(new string[]{ "cargo test --manifest-path src/toolchain/test-runner/Cargo.toml", "xtask test lib" });
+        return _mapCmds(new string[]{ "xtask test lib" });
     }
 
     // All xtask CLI source is now ONE compiled xtask.zpkg (test-vm / regen / cross /

@@ -1059,6 +1059,53 @@ pub fn builtin_method_invoke(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     }
 }
 
+/// `__invoke_static(fqn: str) -> object` — invoke a free / static function by its
+/// fully-qualified name with NO arguments (no receiver). This is the path the
+/// reflective test runner uses for `[Test]` / `[Benchmark]` / `[Setup]` /
+/// `[Teardown]` methods, which the compiler emits as zero-arg free functions
+/// (`<Namespace>.<func>`) — not class instance methods. A `throw` inside the
+/// invoked function is propagated with its ORIGINAL type via
+/// `ctx.set_pending_thrown` (consumed by `exec_call::builtin` / `jit_builtin`),
+/// so the runner can `try/catch` the real exception. Returns the function's
+/// return value (`void` → null).
+pub fn builtin_invoke_static(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let qualified = match args.first() {
+        Some(Value::Str(s)) => s.to_string(),
+        _ => bail!("__invoke_static: expected a fully-qualified function name string"),
+    };
+    let module_arc = ctx
+        .core
+        .module
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("__invoke_static: VmCore.module is None"))?
+        .clone();
+    let module = module_arc.as_ref();
+
+    let outcome = match module.func_index.get(&qualified) {
+        Some(&idx) => {
+            let f = &module.functions[idx];
+            invoke_arity_check(&qualified, f.param_count, 0)?;
+            exec_function(ctx, module, f, &[])?
+        }
+        None => {
+            let f = ctx.try_lookup_function(&qualified).ok_or_else(|| {
+                anyhow::anyhow!("__invoke_static: function `{qualified}` not found")
+            })?;
+            invoke_arity_check(&qualified, f.param_count, 0)?;
+            exec_function(ctx, module, f.as_ref(), &[])?
+        }
+    };
+
+    match outcome {
+        ExecOutcome::Returned(Some(v)) => Ok(v),
+        ExecOutcome::Returned(None) => Ok(Value::Null),
+        ExecOutcome::Thrown(val) => {
+            ctx.set_pending_thrown(val);
+            bail!("__z42_reflected_throw__")
+        }
+    }
+}
+
 fn invoke_arity_check(qualified: &str, expected: usize, got: usize) -> Result<()> {
     if expected != got {
         bail!("MethodInfo.Invoke: `{qualified}` expects {expected} argument(s) (incl. receiver), got {got}");
@@ -1136,6 +1183,15 @@ pub fn builtin_load_module(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         _ => bail!("ModuleLoader.Load: expected a path string"),
     };
     let entries = ctx.load_module_into_vm(&path)?;
+    // Run static-field initializers for the freshly-loaded test module + its
+    // dependency closure: their `*.__static_init__` functions weren't present
+    // when the VM ran its startup static-init pass (the module is loaded now,
+    // mid-run), so e.g. `Std.Math.Pi` would read Null. Re-running init is
+    // idempotent for value-init statics; `__load_module` runs once per artifact
+    // (before any test executes), so this clears no meaningful test state.
+    if let Some(m) = ctx.module().cloned() {
+        crate::interp::init_static_fields(ctx, &m)?;
+    }
     let mut objs: Vec<Value> = Vec::with_capacity(entries.len());
     for e in &entries {
         let obj = alloc_named(

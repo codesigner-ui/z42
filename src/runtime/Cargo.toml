@@ -29,7 +29,7 @@ path = "src/main.rs"
 [lib]
 name = "z42"
 path = "src/lib.rs"
-# 默认 rlib only —— Rust 内 path/git 依赖（z42-test-runner / z42-host crate 引用）。
+# 默认 rlib only —— Rust 内 path 依赖（z42-host crate 引用）。
 # C 嵌入用的 cdylib / staticlib 在分发 package 步骤通过额外的 cargo build 命令产出
 # （package.sh），避免主 build 流程出现 cdylib/staticlib/rlib 三套 metadata 冲突。
 # 来自 redesign-artifact-layout (2026-05-12)

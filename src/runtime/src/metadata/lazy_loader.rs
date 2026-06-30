@@ -425,6 +425,60 @@ impl LazyLoader {
             });
         }
 
+        // Register the loaded module's dependencies as lazy-loader candidates so
+        // cross-zpkg calls FROM the test module — including virtual (instance-
+        // method) dispatch into a dep like z42.collections — resolve. A bare
+        // `--emit-zbc` test unit carries NO `dependencies` list (only a packed
+        // zpkg does), so we must ALSO resolve the test's `import_namespaces`
+        // (its `using` clauses, e.g. `Std.Collections`) to candidate zpkgs.
+        // Mirrors the dedicated test-runner bootstrap's `build_declared_candidates`
+        // (which covered both); without the namespace path a test calling
+        // `SortedSet.Add` (a dep's instance method) hits "VCall not found".
+        if !self.search_dirs.is_empty() {
+            let dirs = self.search_dirs.clone();
+            for dep in &artifact.dependencies {
+                if self.loaded_zpkgs.contains(&dep.file)
+                    || self.declared_zpkgs.contains_key(&dep.file)
+                {
+                    continue;
+                }
+                match ZpkgCandidate::build_in_dirs(&dirs, &dep.file) {
+                    Ok(cand) => {
+                        self.declared_zpkgs.insert(dep.file.clone(), cand);
+                    }
+                    Err(e) => tracing::warn!(
+                        "ModuleLoader: cannot read dep zpkg meta `{}`: {e}", dep.file
+                    ),
+                }
+            }
+            // Namespace-derived candidates (covers bare-zbc test units with no
+            // `dependencies` list). Resolve each `using` namespace to the zpkg(s)
+            // declaring it, across all search dirs.
+            for ns in &artifact.import_namespaces {
+                let zpkg_paths = match super::loader::resolve_namespace(ns, &[], &dirs) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                for zpkg_path in zpkg_paths {
+                    let Some(file) = zpkg_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(str::to_owned)
+                    else {
+                        continue;
+                    };
+                    if self.loaded_zpkgs.contains(&file)
+                        || self.declared_zpkgs.contains_key(&file)
+                    {
+                        continue;
+                    }
+                    if let Ok(cand) = ZpkgCandidate::build_in_dirs(&dirs, &file) {
+                        self.declared_zpkgs.insert(file, cand);
+                    }
+                }
+            }
+        }
+
         // Idempotent: a re-load of the same module just returns its entries.
         if self.loaded_zpkgs.contains(&mod_key) {
             return Ok(entries);
@@ -449,6 +503,15 @@ impl LazyLoader {
             }
             self.type_registry.insert(name, desc);
         }
+
+        // Eagerly load the test module's full declared-dependency closure
+        // (functions + types + vtables). Lazy on-demand resolution suffices for
+        // static calls, but virtual (instance-method) dispatch into a dep —
+        // `set.Add(x)` on a `Std.Collections.SortedSet` — needs the dep's
+        // TypeDesc *and* its method bodies present up front. Force-loading the
+        // closure here matches the dedicated test-runner bootstrap's effect
+        // (its candidates were resolved before any test ran).
+        self.force_load_all_declared();
 
         // Inheritance fixup (subclasses whose base lives in an already-loaded module).
         let fixup_cap = self.type_registry.len() + 8;

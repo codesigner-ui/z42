@@ -1,32 +1,33 @@
 namespace Z42.Build;
 
-// 常量集合。用 const string 而非 enum，规避 L1 enum 限制；同时这些值需与
+// 常量集合。用 public static string 而非 enum，规避 L1 enum 限制；同时这些值需与
 // RID 前缀 / z42.toml mode / CLI 字面量直接比较，字符串更省转换。
+// （z42c 自举编译器暂不支持 const 成员的跨文件静态解析 → 统一用 static 字段，同 FileMode。）
 
 /// 目标平台族（由 RID 前缀归类）。
 public static class TargetFamily {
-    public const string Desktop = "desktop";
-    public const string iOS     = "ios";
-    public const string Android = "android";
-    public const string Wasm    = "wasm";
+    public static string Desktop = "desktop";
+    public static string iOS     = "ios";
+    public static string Android = "android";
+    public static string Wasm    = "wasm";
 }
 
 /// 构建模式：export 跑到 GenerateProject 停；publish 跑到 Package。
 public static class BuildMode {
-    public const string Export  = "export";
-    public const string Publish = "publish";
+    public static string Export  = "export";
+    public static string Publish = "publish";
 }
 
 /// 八相位名（封闭、线性，z42.build 独占；workload / 项目不得新增或改序）。
 /// head：Resolve→Preflight→Compile→Trim→Assets。tail：Configure→Project→NativeBuild→Package。
 public static class Phase {
-    public const string Resolve         = "resolve";
-    public const string Preflight       = "preflight";
-    public const string Compile         = "compile";
-    public const string Trim            = "trim";
-    public const string Assets          = "assets";
-    public const string Configure       = "configure";
-    public const string GenerateProject = "project";
-    public const string NativeBuild     = "nativebuild";
-    public const string Package         = "package";
+    public static string Resolve         = "resolve";
+    public static string Preflight       = "preflight";
+    public static string Compile         = "compile";
+    public static string Trim            = "trim";
+    public static string Assets          = "assets";
+    public static string Configure       = "configure";
+    public static string GenerateProject = "project";
+    public static string NativeBuild     = "nativebuild";
+    public static string Package         = "package";
 }

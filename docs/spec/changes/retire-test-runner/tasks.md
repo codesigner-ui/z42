@@ -1,10 +1,20 @@
 # Tasks: 退役 z42-test-runner
 
-> 状态：🟡 进行中（等待前置） | 创建：2026-06-19
-> **前置**：boxing 机制（0.3.11）+ 非泛型 Method.Invoke（0.3.12）
-> **子系统**：stdlib（z42.test）+ toolchain（builder）（实施时逐个锁，按阶段）
-> **修订（2026-06-25）**：命令宿主 z42c → **z42b（builder）**；z42c 退出 scope；bench 拉入
-> （Rust runner 同跑两者，删除须同时替）。决策见 build-orchestrator.md。
+> 状态：🟢 主体完成（test/bench host 已替 + Rust runner 已删）| 创建：2026-06-19 | 完成：2026-06-30
+> **前置**：boxing（0.3.11 ✅）+ 非泛型 Method.Invoke（0.3.12 ✅）
+> **子系统**：stdlib（z42.test）+ toolchain（builder）+ runtime（__invoke_static + __load_module 依赖闭包/静态初始化）
+> **修订（2026-06-25）**：命令宿主 z42c → **z42b（builder）**；z42c 退出 scope；bench 拉入。
+> **实施记（2026-06-30）**：z42b 定为 **test/bench host only**——stdlib `z42.project` 与编译器
+> `z42c.project` 共用 `namespace Z42.Project`，在共享 Z42_LIBS 下冲突会炸 z42c compile，故
+> build/publish/export/new 编排（import Z42.Build/Z42.Project）留 PARKED，归 wire-z42b-host-build
+> （须先解命名空间冲突）。z42.project/z42.build 暂不入 build。
+> **运行器实现**：runner = `Std.Test.Runner.RunModule`（z42.test 库）；free-function 测试经新
+> builtin `__invoke_static` 按 FQN 调用；`__load_module` 注册测试模块 import_namespaces 候选 +
+> force-load 依赖闭包 + 重跑 init_static_fields（否则跨包 VCall / dep 静态字段 Null）。
+> **验证**：test stdlib 272/272（22 lib，2615 PASS/0 FAIL/2 SKIP）+ test compiler 17/17 units +
+> 7/7 自举不动点，均经 z42b。TAP/JUnit/JSON/--filter 富格式列 Deferred（z42b 只 pretty+退出码）。
+> **结构化输出格式（Deferred）**：原 Rust runner 的 TAP/JUnit/JSON formatter + `--filter`/`--list`/
+> `--platform` 未在 z42b 复刻；xtask 按退出码聚合，CI 不需富格式。需要时按独立变更补 z42 侧 formatter。
 
 ## 进度概览
 

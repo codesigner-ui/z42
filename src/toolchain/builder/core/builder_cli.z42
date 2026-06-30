@@ -1,21 +1,22 @@
-// z42b CLI 路由（PARKED）—— 对照 launcher_cli.z42 的 Std.Cli 模式。
+// z42b CLI 路由 —— Std.Cli 嵌套 router（对照 launcher_cli.z42）。
 //
-// launcher 把 new/build/publish/export/run/test/bench 透传给 z42b；本层用 Std.Cli 嵌套
-// router 解析（每层 -h 自动生成）+ dispatch。**命令处理实现在** builder_commands.z42
-// （build/publish/export/run/test/bench）与 builder_new.z42（new）；编排核心在 builder.z42。
-// 动词语义裁决见 platform-export-lifecycle.md：
-//   new     脚手架新工程（z42.toml + src 模板：exe/lib/test）
-//   build   平台无关 app.zpkg（不选 workload；tail 全 no-op）
-//   publish 一路到 Package（可分发件；--rid 选平台）
-//   export  到 GenerateProject 停（IDE 工程；仅 ios/android）
-//   run     双形态：<app.zpkg> 跑字节码（归 launcher）/ <toml> --rid 跑平台部署形态
-//   test    host + 平台上跑 [Test]（--plat/--device）—— 取代 Rust test-runner
-//   bench   跑 [Benchmark]（Bencher）—— 与 test 同批取代 Rust runner（retire-test-runner）
+// SCOPE（retire-test-runner）：本编译单元只接 **test / bench** 反射式运行器
+// （取代 Rust z42-test-runner）。new / build / publish / export / run 的编排实现
+// 依赖 Z42.Build / Z42.Project（其 `Z42.Project` 命名空间与编译器内部 z42c.project
+// 在共享 Z42_LIBS 下冲突），属 wire-z42b-host-build —— 这里先登记命令面并给出
+// "pending" 提示，待该变更接入 PARKED 的 builder.z42 / builder_commands.z42 /
+// builder_new.z42。test/bench 处理见 builder_test.z42。
 namespace Z42Builder;
 
 using Std;
 using Std.IO;
 using Std.Cli;
+
+// exe 入口。standalone（`z42vm z42.builder.zbc -- <verb> ...`）与 launcher 透传
+// （`z42 <verb> ...`）都经 Environment.GetCommandLineArgs() 拿到动词起的 argv。
+void Main() {
+    Environment.Exit(_runBuilder(Environment.GetCommandLineArgs()));
+}
 
 // 入口：launcher 透传的 argv（已去掉 `z42` 前缀的动词起）。
 int _runBuilder(string[] argv) {
@@ -36,56 +37,38 @@ int _runBuilder(string[] argv) {
 SubcommandRouter _builderRoot() {
     SubcommandRouter root = new SubcommandRouter("z42b", "z42 build orchestrator");
 
-    ArgParser newP = new ArgParser("z42b new", "scaffold a new project (z42.toml + src template)");
+    // new / build / publish / export / run — 命令面登记，编排待 wire-z42b-host-build。
+    ArgParser newP = new ArgParser("z42b new", "scaffold a new project (pending wire-z42b-host-build)");
     newP.AddOptionalPositional("name", "project name (kebab-case)");
-    newP.AddFlag("lib", "", "library project (default: exe)");
-    newP.AddFlag("test", "", "test project ([Test] template + z42.test dep)");
-    newP.AddOption("path", "", "target directory (default: ./<name>)", "");
     root.Add("new", "scaffold a new project", newP);
 
-    ArgParser build = new ArgParser("z42b build", "compile to a platform-agnostic app.zpkg");
-    build.AddOptionalPositional("project", "<project.z42.toml> (default ./z42.toml)");
-    build.AddOption("rid", "", "target RID (default: host)", "");
-    build.AddOption("output", "", "output dir", "");
-    build.AddFlag("release", "", "release profile");
-    build.AddFlag("strip-symbols", "", "strip debug symbols → .zsym sidecar");
+    ArgParser build = new ArgParser("z42b build", "compile to app.zpkg (pending wire-z42b-host-build)");
+    build.AddOptionalPositional("project", "<project.z42.toml>");
     root.Add("build", "compile to a platform-agnostic app.zpkg", build);
 
-    ArgParser pub = new ArgParser("z42b publish", "produce a release deployable (--rid selects platform)");
+    ArgParser pub = new ArgParser("z42b publish", "produce a release deployable (pending wire-z42b-host-build)");
     pub.AddOptionalPositional("project", "<project.z42.toml>");
-    pub.AddOption("rid", "", "target RID (e.g. macos-arm64 / ios-arm64)", "");
-    pub.AddOption("output", "", "output dir (overrides [platform.*].publish_dir)", "");
-    pub.AddFlag("release", "", "release profile");
     root.Add("publish", "produce a release deployable", pub);
 
-    ArgParser exp = new ArgParser("z42b export", "generate a native IDE project (ios/android)");
+    ArgParser exp = new ArgParser("z42b export", "generate a native IDE project (pending wire-z42b-host-build)");
     exp.AddOptionalPositional("project", "<project.z42.toml>");
-    exp.AddOption("rid", "", "target RID (ios-arm64 / android-arm64)", "");
-    exp.AddOption("output", "", "output directory", "");
     root.Add("export", "generate a native IDE project", exp);
 
-    ArgParser runP = new ArgParser("z42b run", "run app.zpkg (host) or platform deploy form (--rid)");
+    ArgParser runP = new ArgParser("z42b run", "run app.zpkg on host (served by the launcher)");
     runP.AllowExtras();
     runP.AddOptionalPositional("target", "<app.zpkg> | <project.z42.toml> [-- args]");
-    runP.AddOption("rid", "", "deploy form RID (omit → run zpkg on host vm)", "");
     root.Add("run", "run app.zpkg or platform deploy form", runP);
 
-    ArgParser test = new ArgParser("z42b test", "run [Test] on host and/or platform");
-    test.AddOptionalPositional("target", "<file.zbc|file.z42.toml> (omit → ./z42.toml)");
-    test.AddOption("filter", "", "test name substring filter", "");
-    test.AddOption("format", "", "pretty | json (default: pretty TTY / json pipe)", "");
-    test.AddFlag("list", "", "list test names, don't run");
-    test.AddOption("plat", "", "<ios|android|wasm> on-device face (omit → host)", "");
-    test.AddOption("device", "", "sim | emulator | hw (with --plat)", "");
-    root.Add("test", "run [Test] on host and/or platform", test);
+    // test / bench — 反射式运行器（functional；取代 Rust z42-test-runner）。
+    ArgParser test = new ArgParser("z42b test", "run a compiled module's [Test] methods");
+    test.AddOptionalPositional("target", "<file.zbc|file.zpkg>");
+    test.AddOption("filter", "", "test name substring filter (reserved)", "");
+    root.Add("test", "run [Test] in a compiled module", test);
 
-    ArgParser bench = new ArgParser("z42b bench", "run [Benchmark] via Bencher (warmup/samples/stats)");
-    bench.AddOptionalPositional("target", "<file.zbc|file.z42.toml>");
-    bench.AddOption("filter", "", "benchmark name substring filter", "");
-    bench.AddOption("format", "", "pretty | json", "");
-    bench.AddFlag("diff", "", "compare vs baseline, fail on >threshold regression");
-    bench.AddOption("baseline", "", "baseline ref (default: bench-baselines branch)", "");
-    root.Add("bench", "run [Benchmark] via Bencher", bench);
+    ArgParser bench = new ArgParser("z42b bench", "run a compiled module's [Benchmark] methods");
+    bench.AddOptionalPositional("target", "<file.zbc|file.zpkg>");
+    bench.AddOption("filter", "", "benchmark name substring filter (reserved)", "");
+    root.Add("bench", "run [Benchmark] in a compiled module", bench);
 
     return root;
 }
@@ -97,13 +80,14 @@ int _dispatchBuilder(CommandResolution res) {
     if (p.Length == 0) { return 0; }
     ParseResult r = res.Result();
     string top = p[0];
-    // 处理实现在 builder_commands.z42（build/publish/export/run/test/bench）+ builder_new.z42（new）。
-    if (top == "new")     { return _cmdNew(r); }
-    if (top == "build")   { return _cmdBuild(r); }
-    if (top == "publish") { return _cmdPublish(r); }
-    if (top == "export")  { return _cmdExport(r); }
-    if (top == "run")     { return _cmdRun(r); }
-    if (top == "test")    { return _cmdTest(r); }
-    if (top == "bench")   { return _cmdBench(r); }
-    return 0;
+    if (top == "test")  { return _cmdTest(r); }
+    if (top == "bench") { return _cmdBench(r); }
+    if (top == "run") {
+        ConsoleError.WriteLine("z42b run: host bytecode run is served by the launcher (z42 run <app.zpkg>)");
+        return 2;
+    }
+    // new / build / publish / export — pending wire-z42b-host-build.
+    ConsoleError.WriteLine("z42b " + top + ": pending wire-z42b-host-build "
+        + "(needs the in-process compiler API; not yet wired)");
+    return 1;
 }

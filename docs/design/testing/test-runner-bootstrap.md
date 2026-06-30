@@ -1,6 +1,9 @@
 # test-runner 自举迁移路径
 
-> 状态：**Forward-Looking Design**（2026-05-10 起记录）。短期内（Phase 1-5 跨平台测试落地内）不实施；本文跟踪"Rust runner → z42 runner"的分阶段迁移可行性 + 前置条件。
+> 状态：**✅ 已落地**（retire-test-runner，2026-06-30）。本文跟踪的"Rust runner → z42
+> runner"迁移已完成：runner 现为用 z42 写的 `Std.Test.Runner`（z42.test 库），由
+> `z42.builder.zpkg`（z42b）承载、经 `z42vm` 运行；Rust `src/toolchain/test-runner/`
+> 已删除。当前架构见 [testing.md](testing.md) 顶部说明。下文保留为迁移决策的历史记录。
 
 z42 的长期目标是自举（compiler 用 z42 重写）。test-runner 是 toolchain 中相对独立的一块 —— 没有编译器那么深的 IR / TypeChecker 依赖，但确实需要一些 runtime introspection 能力。本文回答："runner 全 z42 化什么时候/怎么做？"
 

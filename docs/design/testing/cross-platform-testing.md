@@ -1,5 +1,11 @@
 # Cross-Platform 测试架构
 
+> **更新（retire-test-runner，2026-06-30）**：本文多处把 runner 描述为 Rust **library**
+> （`src/toolchain/test-runner/src/lib.rs`，各平台绑库不 fork）。该 Rust runner 已删除——
+> host 上 runner 现为 z42b（`z42.builder.zpkg` 经 `z42vm`，见 [testing.md](testing.md)）。
+> 平台侧（wasm/iOS/Android）on-device 测试承载形态待 wire-z42b-host-build 阶段重新设计；
+> 下文的 runner-as-Rust-library 部分按此理解。
+>
 > 状态：Design Draft（2026-05-09）。落地分散到 [rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/)（lib API） + [add-platform-wasm](../../spec/archive/2026-05-12-add-platform-wasm/) / [add-platform-android](../../spec/archive/2026-05-12-add-platform-android/) / [add-platform-ios](../../spec/archive/2026-05-12-add-platform-ios/) 各自的 Testing 子段。
 >
 > 本文是 [cross-platform.md](../runtime/cross-platform.md)（VM build 矩阵）与 [testing.md](testing.md)（测试框架架构）的桥接：**同一份测试集如何在 host / wasm / iOS / Android 一致地跑，并把失败精确报告回 CI**。

@@ -75,20 +75,16 @@ int _buildCompilerViaZ42c(string root, string profile, string[] members, string 
     return 0;
 }
 
-// 防 zpkg 版本 skew 假失败（2026-06-10）：z42c 测试单元先被 C# driver 编成 zpkg，
-// 再交 z42-test-runner 的 *in-process VM*（链 libz42）运行。三者写/读的 zpkg 格式版本
-// 必须一致。完整 `xtask test` 在跑前重建 stdlib+runtime+test-runner+driver，但
-// `test compiler` 原本只检查 runner 存在、从不重建 —— 一旦某并行变更 bump 了 zpkg
-// 格式（如 add-attribute-reflection-methods 把 minor 撞到 0.13），停在旧版的 test-runner
-// 会在加载期把每个 unit 全判 "cannot read zpkg metadata"（空输出＝假失败）。
-// 故此处显式重建 runtime(z42vm+libz42) + test-runner + driver。cached 时近 no-op，
-// 仅当真有源码改动才付构建代价 —— 正是需要它的时刻。
+// 防 zpkg 版本 skew 假失败（2026-06-10）：z42c 测试单元先被 z42c 编成 zpkg，再交
+// z42b（z42.builder.zpkg）在 z42vm 上加载运行。两端写/读的 zpkg 格式版本必须一致。
+// 完整 `xtask test` 在跑前重建 stdlib+runtime+driver+z42b，但 `test compiler` 原本
+// 只检查工具存在、从不重建 —— 一旦某并行变更 bump 了 zpkg 格式（如把 minor 撞到
+// 0.13），停在旧版的 z42vm 会在加载期把每个 unit 全判 "cannot read zpkg metadata"
+// （空输出＝假失败）。故此处显式重建 runtime(z42vm)。z42b 由 _testCompilerUnits 自身
+// 用当前 z42c 重建（cached 时近 no-op），格式始终随当前源码。
 int _ensureCompilerTooling() {
-    Console.WriteLine("  ensuring tooling fresh (z42vm + z42-test-runner; release; C#-free)");
-    int c = _buildRuntime();   // z42vm + libz42（in-process VM 的实现）
-    if (c != 0) { return c; }
-    // replace-csharp Phase C：不再 dotnet build C# driver——_buildCompiler 已 C#-free（种子自建）。
-    return _exec(_cargoRelease().Arg("--manifest-path").Arg("src/toolchain/test-runner/Cargo.toml"));
+    Console.WriteLine("  ensuring tooling fresh (z42vm; release; C#-free)");
+    return _buildRuntime();   // z42vm（z42b 运行所需的当前格式 reader）
 }
 
 // smoke: build + assert each z42c.<sub>.zpkg product exists & is non-empty.
@@ -241,10 +237,16 @@ int _testCompilerUnits(string root, string profile, string[] members) {
 
     string vm     = _builtVm(root, "release");
     string driverZpkg = Path.Join(root, "artifacts/build/z42c/z42c.driver/" + profile + "/dist/z42c.driver.zpkg");
-    string runner = _builtBin(root, "release", "z42-test-runner");
-    if (!File.Exists(runner)) {
-        ConsoleError.WriteLine("error: z42-test-runner not found at " + runner
-            + " (cargo build --release --manifest-path src/toolchain/test-runner/Cargo.toml)");
+    // retire-test-runner: z42c [Test] units run through z42b (z42.builder.zpkg)
+    // via z42vm, replacing the deleted Rust z42-test-runner. Build it here (deps
+    // resolve from `flat`); incremental/cached when already current.
+    string builderZpkg = Path.Join(root, "artifacts/build/toolchain/builder/z42.builder.zpkg");
+    int bc = _exec(new Process(vm).Arg(driverZpkg).Arg("--mode").Arg("interp")
+        .Arg("--").Arg("build").Arg("src/toolchain/builder/core/z42.builder.z42.toml").Arg("--release")
+        .Env("Z42_LIBS", flat).WorkingDirectory(root));
+    if (bc != 0) { return bc; }
+    if (!File.Exists(builderZpkg)) {
+        ConsoleError.WriteLine("error: z42.builder.zpkg not found at " + builderZpkg);
         return 2;
     }
 
@@ -300,9 +302,9 @@ int _testCompilerUnits(string root, string profile, string[] members) {
                 // zpkgs had no TIDX → runner exit 3, no discovery.)
                 int j = 0;
                 while (j < zps.Length) {
-                    int rc = new Process(runner)
-                        .Arg(zps[j])
-                        .Env("Z42_PORTABLE_VM", vm)
+                    int rc = new Process(vm)
+                        .Arg("--mode").Arg("interp").Arg(builderZpkg)
+                        .Arg("--").Arg("test").Arg(zps[j])
                         .Env("Z42_LIBS", flat)
                         .Stdout(Stdio.Inherit()).Stderr(Stdio.Inherit()).Run().ExitCode;
                     if (rc != 0) { totalFailed = totalFailed + 1; }
@@ -387,16 +389,6 @@ int _testSelfHostByteIdentical(string root, string vm, string flat, string[] mem
     }
     Console.WriteLine("✅ z42c self-host 不动点: " + ok.ToString() + "/" + members.Length.ToString() + " packages gen1==gen2 (C#-free)");
     return 0;
-}
-
-bool _bytesEqual(byte[] a, byte[] b) {
-    if (a.Length != b.Length) { return false; }
-    int i = 0;
-    while (i < a.Length) {
-        if (a[i] != b[i]) { return false; }
-        i = i + 1;
-    }
-    return true;
 }
 
 // Compare zpkg files section-by-section, ignoring BLID (deferred in z42c).

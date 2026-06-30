@@ -698,13 +698,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # warm toolchain; xtask runs this shard's stdlib [Test] units under
-          # JIT (subprocess fork z42vm --mode jit). --shard splits the libs balanced by
-          # unit count across 4 machines; --jobs 4 parallelizes within the shard.
+          # warm toolchain; xtask runs this shard's stdlib [Test] units under JIT
+          # (z42b — z42.builder.zpkg — run via z42vm --mode jit; the runner and the
+          # loaded tests both execute under JIT). --shard splits the libs balanced
+          # by unit count across 4 machines; --jobs 4 parallelizes within the shard.
           # ci-bootstrap already built z42c+stdlib+z42vm, so --no-build skips that
-          # redundant rebuild; the one piece it doesn't build is z42-test-runner —
-          # build it here (cheap, cargo-cached) so --no-build's guard is satisfied.
-          cargo build --locked --release --manifest-path src/toolchain/test-runner/Cargo.toml
+          # redundant rebuild; xtask itself builds z42b (a cheap z42c incremental).
           vm="$PWD/artifacts/build/runtime/release/z42vm"
           libs="$PWD/artifacts/build/libraries/dist/release"
           Z42_PORTABLE_VM="$vm" Z42_LIBS="$libs" "$vm" artifacts/xtask/xtask.zpkg -- test stdlib --mode jit --no-build --shard ${{ matrix.shard }}/4 --jobs 4

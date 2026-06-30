@@ -27,20 +27,20 @@ public class Pipeline {
         string mode = ctx.Target.Mode;
 
         // —— head：z42.build 拥有，平台无关 ——
-        Resolve(ctx);
-        Workload.Preflight(ctx);                              // 早跑，fail-fast
+        this.Resolve(ctx);
+        this.Workload.Preflight(ctx);                         // 早跑，fail-fast
 
-        Hooks.BeforeCompile(ctx);  Compile(ctx);  Hooks.AfterCompile(ctx);
-        Hooks.BeforeTrim(ctx);     Trim(ctx);     Hooks.AfterTrim(ctx);
-        Hooks.BeforeAssets(ctx);   Assets(ctx);   Hooks.AfterAssets(ctx);
+        this.Hooks.BeforeCompile(ctx);  this.Compile(ctx);  this.Hooks.AfterCompile(ctx);
+        this.Hooks.BeforeTrim(ctx);     this.Trim(ctx);     this.Hooks.AfterTrim(ctx);
+        this.Hooks.BeforeAssets(ctx);   this.Assets(ctx);   this.Hooks.AfterAssets(ctx);
 
         // —— tail：workload 拥有，虚分发沿 项目→workload→基类 继承链 ——
-        Workload.Configure(ctx);
-        Workload.GenerateProject(ctx);
+        this.Workload.Configure(ctx);
+        this.Workload.GenerateProject(ctx);
         if (mode == BuildMode.Export) { return 0; }           // export 停点
 
-        Workload.NativeBuild(ctx);
-        Workload.Package(ctx);
+        this.Workload.NativeBuild(ctx);
+        this.Workload.Package(ctx);
         return 0;
     }
 

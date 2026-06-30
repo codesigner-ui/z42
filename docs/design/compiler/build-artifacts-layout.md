@@ -35,7 +35,7 @@ The split is the conventional **intermediate / output / vendored** model
 | `src/`                     | `artifacts/build/`                          | contents |
 |----------------------------|---------------------------------------------|----------|
 | `src/compiler/`            | `build/compiler/`                           | dotnet `bin`/`obj` for `z42c` |
-| `src/runtime/`             | `build/runtime/<cargo-target>/<profile>/`   | cargo target: `z42vm`, `libz42.*`, the `z42` trampoline, `z42-test-runner` |
+| `src/runtime/`             | `build/runtime/<cargo-target>/<profile>/`   | cargo target: `z42vm`, `libz42.*`, the `z42` trampoline |
 | `src/libraries/<lib>/`     | `build/libraries/<lib>/<profile>/`          | **per-lib** compile, private to the build (`dist/<lib>.zpkg` + `cache/`) |
 | (aggregate copy-out)       | `build/libraries/dist/<profile>/`           | flat single-dir view of **all** stdlib `.zpkg` — the `Z42_LIBS` lookup target |
 | `src/toolchain/launcher/`  | `build/toolchain/launcher/`                 | `z42.launcher.zpkg` (toml `dist_dir`) + `home/` (dev `$Z42_HOME`) |

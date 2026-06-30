@@ -241,6 +241,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__activator_create",   reflection::builtin_activator_create),
     // retire-test-runner: load a compiled test module + return its TIDX entries.
     ("__load_module",        reflection::builtin_load_module),
+    // retire-test-runner: invoke a free/static [Test]/[Benchmark] function by FQN
+    // (zero-arg) — stdlib tests are free functions, not class instance methods.
+    ("__invoke_static",      reflection::builtin_invoke_static),
     // add-reflection-generic-type-definition: `typeof` now lowers to the Typeof
     // opcode (interp/jit), not a builtin — the former `__typeof` is removed.
 

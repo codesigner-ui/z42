@@ -1,0 +1,39 @@
+// z42b test / bench — reflective [Test]/[Benchmark] runner (retire-test-runner).
+//
+// Replaces the Rust z42-test-runner. A compiled test/bench module (.zbc / .zpkg)
+// is loaded into the live VM by Std.Test.ModuleLoader and its TIDX
+// [Test] / [Benchmark] free functions are run by reflection via
+// Std.Test.Runner.RunModule, which exits 0 (all passed) / 1 (any failure).
+//
+// Execution mode (interp / jit) is inherited from the z42vm hosting this program
+// (`z42vm --mode <mode> z42.builder.zbc -- test <artifact>`): the loaded test
+// functions execute under the same VM and mode.
+namespace Z42Builder;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+using Std.Test;
+
+int _cmdTest(ParseResult r)  { return _runModule(r, "test"); }
+int _cmdBench(ParseResult r) { return _runModule(r, "bench"); }
+
+// Resolve the target → RunModule. RunModule runs both [Test] and [Benchmark]
+// (mirroring the retired Rust runner), so test / bench share this path — a
+// compiled artifact contains only the relevant category of entries. Building
+// from a .z42.toml first (compile-then-test) needs the in-process compiler and
+// is pending wire-z42b-host-build; here we accept an already-compiled artifact
+// (which is exactly how xtask drives it).
+int _runModule(ParseResult r, string verb) {
+    string target = r.GetPositional(0);
+    if (target.Length == 0) {
+        ConsoleError.WriteLine("z42b " + verb + ": missing <file.zbc|file.zpkg>");
+        return 2;
+    }
+    if (target.EndsWith(".zbc") || target.EndsWith(".zpkg")) {
+        return Runner.RunModule(target);
+    }
+    ConsoleError.WriteLine("z42b " + verb + ": building from " + target
+        + " is pending wire-z42b-host-build; pass a compiled .zbc/.zpkg");
+    return 2;
+}

@@ -1,5 +1,16 @@
 # z42 测试框架（Testing）
 
+> **运行器现为 z42b（retire-test-runner，2026-06-30）**：`[Test]`/`[Benchmark]` 由
+> 用 z42 自身写的 `Std.Test.Runner`（z42.test 库）执行，承载于 `z42.builder.zpkg`
+> （z42b），经 `z42vm` 运行——取代了原 Rust `z42-test-runner`（`src/toolchain/
+> test-runner/` 已删）。发现走 `Std.Test.ModuleLoader.Load`（加载进活 VM + 返回 TIDX），
+> 执行走 `__invoke_static` 按 FQN 调用 free-function 测试，退出码即结果。
+>
+> 本文下方涉及 **Rust runner 专属的 CLI / 多格式输出（TAP / JUnit / JSON、`--filter`
+> / `--list` / `--platform`）** 的小节描述的是被取代的实现：z42b 当前只产 pretty 文本 +
+> 退出码（xtask 按退出码聚合），结构化格式列为后续工作。skip 平台/特性判定逻辑同样
+> 移到 z42 侧（`Std.Test.Runner._skipApplies`）。
+
 ## 设计目标
 
 参 Rust libtest / Go testing / xUnit 的成熟模式，让 z42 提供：
@@ -29,21 +40,34 @@
         ↑ load_artifact 读 TIDX                       ↳ Test/Skip/Setup/...
         ↓                                              ↳ Assert.* / TestIO.*
                                                        ↳ Bencher.iter
-   z42-test-runner (R3) ────────────────────────────►
-       ↳ 遍历 test_index
-       ↳ Setup → 测试体 → Teardown
-       ↳ catch TestFailure / SkipSignal
-       ↳ TAP / JSON / pretty 输出
+   z42b（z42.builder.zpkg，反射式 runner）──────────►
+       ↳ Std.Test.ModuleLoader.Load(artifact) → 加载进活 VM + 返回 TIDX 条目
+       ↳ Std.Test.Runner.RunModule：遍历条目
+       ↳ 同命名空间 [Setup] → 反射调用 [Test]/[Benchmark] free function → [Teardown]
+       ↳ catch TestFailure / SkipSignal；[ShouldThrow<E>] 链匹配
+       ↳ pretty 输出 + 退出码（0=全过 / 1=有失败）
 ```
+
+> **runner 即 z42b**（retire-test-runner）：测试运行器是用 z42 自身写的
+> `Std.Test.Runner`，由 `z42.builder.zpkg`（z42b）承载、经 `z42vm` 运行——取代了原
+> 先用 Rust 写的 `z42-test-runner`。它用反射（`Std.Test.ModuleLoader.Load` +
+> `__invoke_static` 按 FQN 调用 free function）发现并执行 `[Test]`/`[Benchmark]`，
+> 退出码即结果。执行模式（interp / jit）由承载 z42b 的 `z42vm --mode <mode>` 决定：
+> runner 与被加载的测试函数在同一 VM、同一模式下执行（jit 覆盖即 `z42vm --mode jit`
+> 运行 z42b，无需 per-test fork）。
 
 R1 已落地 (commits ea54554 / bb2df98 / 5180d21)：编译时发现 + 6 个 attribute (`[Test]` / `[Benchmark]` / `[Setup]` / `[Teardown]` / `[Ignore]` / `[Skip]`) + zbc TIDX v=2 section。
 
 **待落地**：
 
 - **R2** — z42.test 库扩展（Assert API + TestIO.captureStdout + Bencher.iter + native helpers）
-- **R3** — z42-test-runner 工具（TAP/JSON/pretty 输出 + Setup-Teardown 调度 + Bencher 执行）
+- **R3** — runner（现为 z42b：`Std.Test.Runner` + pretty 输出 + Setup-Teardown 调度 + Bencher 执行）
 - **R4** — 编译期 attribute 校验（Z0911-Z0915）含 `[ShouldThrow<E>]` + `[TestCase(args)]`
 - **R5** — stdlib 各库 `tests/` 补本地原生测试（不大规模迁移现有 golden）
+
+> **TAP / JUnit / JSON 输出与 `--filter` 等富格式**是原 Rust runner 的能力；z42b 当前
+> 只产 pretty 文本 + 退出码（xtask 按退出码聚合即可）。结构化输出格式列为后续工作
+> （见 retire-test-runner 归档的 Deferred）。
 
 ---
 
@@ -848,13 +872,13 @@ Z42_TEST_PLATFORM=ios z42-test-runner suite.zbc
 
 #### 实施 (implementation)
 
-- 核心模块：[`src/toolchain/test-runner/src/skip_eval.rs`](../../../src/toolchain/test-runner/src/skip_eval.rs)
-  纯函数 `decide_skip(test, env) -> Option<String>`，三条执行路径
+- 核心逻辑：`Std.Test.Runner._skipApplies(entry)`（[`src/libraries/z42.test/src/Runner.z42`](../../../src/libraries/z42.test/src/Runner.z42)）
+  —— 无条件 skip / `[Skip(platform:)]` 按 host OS / `[Skip(feature:)]` 保守跳过（原 Rust `skip_eval.rs` 已删）
   （`runner.rs` in-process / `exec.rs` subprocess / `parallel.rs` parallel-subprocess）
   共享同一决策权威
-- 单元测试矩阵：[`src/toolchain/test-runner/src/skip_eval_tests.rs`](../../../src/toolchain/test-runner/src/skip_eval_tests.rs)
-  18 用例覆盖 design.md "Testing Strategy" 表 1-14 + unknown-feature 行
-  为 + `SkipEnv::detect` smoke
+- 覆盖：z42.test `tests/skip_platform_demo.z42` 端到端验证平台/特性 skip 判定
+  （原 Rust `skip_eval_tests.rs` 18 用例矩阵已随 runner 删除；判定逻辑现在
+  `Std.Test.Runner._skipApplies`）
 - E2E demo：[`src/libraries/z42.test/tests/skip_platform_demo.z42`](../../../src/libraries/z42.test/tests/skip_platform_demo.z42)
   9 用例（7 platform + 1 永不匹配 + 1 unknown feature）— 由 stdlib test
   wave 跑过验证 end-to-end 行为
@@ -953,13 +977,11 @@ not ok 3 - MyTests.test_arithmetic
 
 #### 实施 (implementation)
 
-- 核心 helper：[`src/toolchain/test-runner/src/runner.rs`](../../../src/toolchain/test-runner/src/runner.rs)
-  `format_failure_with_stack(val, module) -> FailureDetails` + `first_user_frame(stack) -> Option<String>` + `is_framework_frame(func_name) -> bool`
+- 核心逻辑：`Std.Test.Runner._runOne`（[`src/libraries/z42.test/src/Runner.z42`](../../../src/libraries/z42.test/src/Runner.z42)）catch 异常 → `ex.Message` / `ex.GetType().FullName`；栈轨迹由 z42vm 经 `ctx.pending_thrown` 原样透出（原 Rust `runner.rs` 已删）
 - 数据通道：`Outcome::Failed { reason, location, stack_trace }` →
   `TestResult { reason, failure_location, stack_trace }` →
   pretty / tap / json formatter
-- 单元测试：[`src/toolchain/test-runner/src/runner_tests.rs`](../../../src/toolchain/test-runner/src/runner_tests.rs)
-  12 用例覆盖 `first_user_frame` + `is_framework_frame` 全部分支（empty
+- 覆盖：z42.test `tests/failure_location_demo.z42` 端到端验证失败位置 + 栈轨迹（原 Rust `runner_tests.rs` 已删）（empty
   input / all-framework / mixed / col-suffix-stripping / no-parens-locus /
   line-only fallback / unicode paths / malformed line skip）
 - TAP / JSON formatter 测试：`format/tap.rs::tap_format_with_location_and_stack_includes_new_fields`

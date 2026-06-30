@@ -51,7 +51,7 @@ bootstrap」。
 | `test` | **每次 commit / 归档前必跑** | 下面各 stage | 串联全部 GREEN 验证 |
 | `test vm [interp\|jit]` | 跑 VM 端到端 golden（最常用） | `cargo build` + regen 产物 | interp / jit 通过率 |
 | `test cross-zpkg` | 跨包路径 / 元数据相关变更 | `cargo build` + z42c | target/ext/main 三方协作通过率 |
-| `test stdlib [lib]` | stdlib 源 / 编译器变动 | `build stdlib` + `z42-test-runner` | 各 stdlib lib 的 `[Test]` 通过率 |
+| `test stdlib [lib]` | stdlib 源 / 编译器变动 | `build stdlib` + z42b（z42.builder.zpkg） | 各 stdlib lib 的 `[Test]` 通过率 |
 | `test compiler` | z42c 编译器变动 | z42c 自建 | 7/7 自举不动点（gen1==gen2）+ [Test] units + e2e |
 | `test dist` | 验证打包后发行版能独立工作 | `build package` 产物 | packaged z42c+z42vm 跑 golden 通过率 |
 | `test changed [base]` | 增量自测（按改动文件挑 stage） | 上述各命令（in-process 调度） | 仅跑受影响的 stage |
@@ -67,8 +67,8 @@ bootstrap」。
 test ──► _testAll
   │  ① regen 构建波 (一次)                _regenForTest → _regenCore
   │       └ build stdlib + z42c + cargo release z42vm + golden .zbc
-  │  ② 额外工具链                         _buildDebugVmAndCompression + test-runner
-  │       └ cargo debug z42vm + z42-compression cdylib + z42-test-runner
+  │  ② 额外工具链                         _buildDebugVmAndCompression
+  │       └ cargo debug z42vm + z42-compression cdylib（runner = z42b，由各 stage 自建）
   ├─► stage VM goldens (interp)          _testVmCore   → test/xtask_test_vm.z42
   ├─► stage cross-zpkg                   _testCrossZpkgCore → test/xtask_test_cross.z42
   ├─► stage stdlib [Test]                _testLibCore  → test/xtask_test_lib.z42
