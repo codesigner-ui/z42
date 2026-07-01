@@ -1228,7 +1228,11 @@ public sealed class TypeChecker {
                     Z42ClassType sct = env.Symbols.GetClass(cls);
                     MethodSymbol sms = this._resolveOverload(env.Symbols, sct, id.Name, args, call.ArgCount, call.Span);
                     if (sms != null && sms.IsStatic) {
-                        return new BoundCall("static", false, null, cls, sms.RegKey, args, call.ArgCount, sms.Signature.Ret, call.Span);
+                        // add-params-varargs：本路径（同类无限定静态调用）不经 _withDefaults，
+                        // 但仍须为选中的 params 重载打包 trailing 实参，否则 codegen 收到未打包实参形状。
+                        BoundExpr[] fa = args;
+                        if (sms.Signature.ParamsFrom >= 0) { fa = this._withParamsExpansion(sms, args, call.ArgCount, call.Span); }
+                        return new BoundCall("static", false, null, cls, sms.RegKey, fa, fa.Length, sms.Signature.Ret, call.Span);
                     }
                 }
             }
@@ -1565,6 +1569,11 @@ public sealed class TypeChecker {
     // 多为类型零值 false/0/null，故与声明默认一致，如 MulticastAction.Invoke 的
     // continueOnException=false）。否则原样返回已绑定实参。
     private BoundExpr[] _withDefaults(MethodSymbol ms, BoundExpr[] args, Expr[] rawArgs, int rawArgCount, TypeEnv env, Span sp) {
+        // add-params-varargs：选中的方法带 params 形参 → 走独立的打包路径（既非默认参数填充，
+        // 也不复用 _adaptArgs 的命名实参匹配；_resolveOverload/_resolveParamsOverload 已选定 ms）。
+        if (ms.Signature != null && ms.Signature.ParamsFrom >= 0) {
+            return this._withParamsExpansion(ms, args, rawArgCount, sp);
+        }
         if (ms.HasDecl && ms.Decl != null && rawArgCount < ms.Decl.ParamCount) {
             BoundExpr[] ad = this._adaptArgs(ms.Decl, rawArgs, rawArgCount, env);
             if (ad != null) { return ad; }
@@ -1582,6 +1591,29 @@ public sealed class TypeChecker {
             return filled;
         }
         return args;
+    }
+
+    // add-params-varargs D1/D4：params 形参实参打包。normal form（恰 ParamsFrom+1 个实参，末位已是
+    // 目标数组类型，_resolveParamsOverload 已核验）原样透传；否则 expanded form —— trailing 实参
+    // （可能 0 个）打包成 BoundArrayLit 插入 ParamsFrom 槽（object[] 装箱在 codegen 是 no-op，见 design.md）。
+    private BoundExpr[] _withParamsExpansion(MethodSymbol ms, BoundExpr[] args, int rawArgCount, Span sp) {
+        Z42FuncType sig = ms.Signature;
+        int pf = sig.ParamsFrom;
+        Z42ArrayType at = sig.ParamTypes[pf] as Z42ArrayType;
+        Z42Type elem = at.Elem;
+        if (rawArgCount == sig.ParamCount && args[pf].Type().IsAssignableTo(at)) {
+            return args;
+        }
+        int packCount = rawArgCount - pf;
+        BoundExpr[] packed = new BoundExpr[packCount];
+        int i = 0;
+        while (i < packCount) { packed[i] = args[pf + i]; i = i + 1; }
+        BoundExpr arrLit = new BoundArrayLit(packed, packCount, elem.Name(), new Z42ArrayType(elem), sp);
+        BoundExpr[] finalArgs = new BoundExpr[sig.ParamCount];
+        int k = 0;
+        while (k < pf) { finalArgs[k] = args[k]; k = k + 1; }
+        finalArgs[pf] = arrLit;
+        return finalArgs;
     }
 
     private BoundExpr[] _adaptArgs(MethodDecl md, Expr[] callArgs, int callArgCount, TypeEnv env) {
@@ -1656,25 +1688,31 @@ public sealed class TypeChecker {
         return null;
     }
 
-    // add-type-based-overloads：按实参类型解析重载调用，返回选中 MethodSymbol（含 RegKey）。
+    // add-type-based-overloads + add-params-varargs：按实参类型解析重载调用，返回选中 MethodSymbol（含 RegKey）。
     // 行为保持：单 arity 候选 → 直选（不做类型 applicability，镜像旧 arity-only）；同 arity ≥2 → 类型决议。
+    // D4：非 params 精确 arity 重载恒优先于任何 params 候选 —— byArity 只收 ParamsFrom<0 的候选，
+    // 无该类匹配（na==0）时才落到 _resolveParamsOverload。
     // null = 无匹配（调用方走原 undefined/no-method 诊断）或歧义（已报 E0425）。
     private MethodSymbol _resolveOverload(SymbolTable symbols, Z42ClassType ct, string name,
                                           BoundExpr[] args, int argCount, Span sp) {
         MethodSymbol[] all = this._collectOverloads(symbols, ct, name);
         if (all.Length == 0) { return null; }
-        // 按 arity 过滤
+        // 按 arity 过滤（仅非 params 候选）
         MethodSymbol[] byArity = new MethodSymbol[all.Length];
         int na = 0;
         int i = 0;
         while (i < all.Length) {
-            if (all[i].Signature.ParamCount == argCount) { byArity[na] = all[i]; na = na + 1; }
+            if (all[i].Signature.ParamsFrom < 0 && all[i].Signature.ParamCount == argCount) {
+                byArity[na] = all[i]; na = na + 1;
+            }
             i = i + 1;
         }
-        // 无 arity 匹配但全类只有一个同名方法 → 返回它（镜像旧 _overloadKey 的 bare 兜底：忽略 arity，
-        // 如 `Int32.ToString(cp)` 静态形式调用实例 arity-0 ToString，接收者作首参）。
         if (na == 0) {
-            if (all.Length == 1) { return all[0]; }
+            MethodSymbol viaParams = this._resolveParamsOverload(all, args, argCount, sp, symbols);
+            if (viaParams != null) { return viaParams; }
+            // 无 arity 匹配但全类只有一个同名非 params 方法 → 返回它（镜像旧 _overloadKey 的 bare 兜底：
+            // 忽略 arity，如 `Int32.ToString(cp)` 静态形式调用实例 arity-0 ToString，接收者作首参）。
+            if (all.Length == 1 && all[0].Signature.ParamsFrom < 0) { return all[0]; }
             return null;
         }
         if (na == 1) { return byArity[0]; }   // 单 arity 候选 → 行为保持
@@ -1687,6 +1725,75 @@ public sealed class TypeChecker {
         if (res.IsAmbiguous()) {
             this._diags.Error(DiagnosticCodes.AmbiguousOverload,
                 "ambiguous call to overloaded `" + name + "`; add an explicit cast to disambiguate", sp);
+        }
+        return null;
+    }
+
+    // add-params-varargs D4：params 重载决议（仅当无非 params 精确 arity 匹配时调用）。
+    // 优先级：normal form（恰 ParamsFrom+1 个实参、末位已是目标数组类型，直接透传不打包）>
+    // expanded form 最具体 element type（非 object 胜 object；每层内部 >1 候选 → 歧义）。
+    // 返回 null = 无 params 候选可用（调用方落回旧 bare 兜底或 undefined 诊断）。
+    private MethodSymbol _resolveParamsOverload(MethodSymbol[] all, BoundExpr[] args, int argCount, Span sp, SymbolTable symbols) {
+        MethodSymbol[] cand = new MethodSymbol[all.Length];
+        int nc = 0;
+        int i = 0;
+        while (i < all.Length) {
+            Z42FuncType sig = all[i].Signature;
+            if (sig.ParamsFrom >= 0 && argCount >= sig.ParamsFrom) { cand[nc] = all[i]; nc = nc + 1; }
+            i = i + 1;
+        }
+        if (nc == 0) { return null; }
+        // normal form
+        MethodSymbol[] normalCand = new MethodSymbol[nc];
+        int nn = 0;
+        i = 0;
+        while (i < nc) {
+            Z42FuncType sig = cand[i].Signature;
+            if (argCount == sig.ParamCount && args[sig.ParamsFrom].Type().IsAssignableTo(sig.ParamTypes[sig.ParamsFrom])) {
+                normalCand[nn] = cand[i]; nn = nn + 1;
+            }
+            i = i + 1;
+        }
+        if (nn == 1) { return normalCand[0]; }
+        if (nn > 1) {
+            this._diags.Error(DiagnosticCodes.AmbiguousOverload,
+                "ambiguous call to overloaded params method; add an explicit cast to disambiguate", sp);
+            return null;
+        }
+        // expanded form：非 object element type 胜 object（更具体优先）
+        MethodSymbol[] specific = new MethodSymbol[nc];
+        int ns = 0;
+        MethodSymbol[] objectTier = new MethodSymbol[nc];
+        int no = 0;
+        i = 0;
+        while (i < nc) {
+            Z42FuncType sig = cand[i].Signature;
+            Z42ArrayType at = sig.ParamTypes[sig.ParamsFrom] as Z42ArrayType;
+            if (at != null) {
+                bool ok = true;
+                int t = sig.ParamsFrom;
+                while (t < argCount) {
+                    if (!this._isAssignable(args[t].Type(), at.Elem, symbols)) { ok = false; }
+                    t = t + 1;
+                }
+                if (ok) {
+                    if (at.Elem.Name() == "object") { objectTier[no] = cand[i]; no = no + 1; }
+                    else { specific[ns] = cand[i]; ns = ns + 1; }
+                }
+            }
+            i = i + 1;
+        }
+        if (ns == 1) { return specific[0]; }
+        if (ns > 1) {
+            this._diags.Error(DiagnosticCodes.AmbiguousOverload,
+                "ambiguous call to overloaded params method; add an explicit cast to disambiguate", sp);
+            return null;
+        }
+        if (no == 1) { return objectTier[0]; }
+        if (no > 1) {
+            this._diags.Error(DiagnosticCodes.AmbiguousOverload,
+                "ambiguous call to overloaded params method; add an explicit cast to disambiguate", sp);
+            return null;
         }
         return null;
     }

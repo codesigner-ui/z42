@@ -1,15 +1,14 @@
 # Tasks: `params` 变长参数
 
-> 状态：🟡 SPEC READY（实施待 compiler 锁释放）| 创建：2026-06-29 | 类型：lang（完整流程）
-> 子系统占用：`compiler`（src/compiler/；原 z42c 子系统已并入 compiler）—— **当前不持锁**，
-> extract-compile-pipeline-api 持有中；开工前查 ACTIVE.md 重新登记。
+> 状态：🟡 进行中（阶段 1-3 已落地；阶段 4 起实施）| 创建：2026-06-29 | 类型：lang（完整流程）
+> 子系统占用：`compiler`（src/compiler/；原 z42c 子系统已并入 compiler）—— **2026-07-01 已登记持锁**。
 > 前置：boxing 0.3.11 ✅ + 自举 ✅。分阶段纪律见 design D5（本变更只落"支持"，stdlib use 归 follow-up）。
 
 ## 进度概览
-- [ ] 阶段 1: Lexer + AST（`params` token / `Param.IsParams`）
-- [ ] 阶段 2: Parser（识别 + 约束校验）
-- [ ] 阶段 3: 签名载体（`Z42FuncType.ParamsFrom` + SymbolCollector）
-- [ ] 阶段 4: TypeChecker（expanded 绑定 + normal/expanded 重载决议）
+- [x] 阶段 1: Lexer + AST（`params` token / `Param.IsParams`）（随 add-type-based-overloads 附带落地，commit e924236c，inert）
+- [x] 阶段 2: Parser（识别 + 约束校验）（同上，e924236c）
+- [x] 阶段 3: 签名载体（`Z42FuncType.ParamsFrom` + SymbolCollector）（同上，e924236c）
+- [x] 阶段 4: TypeChecker（expanded 绑定 + normal/expanded 重载决议）
 - [ ] 阶段 5: 跨包 TSIG（ExportedTypes + Writer/Reader + minor bump + Imported 回填）
 - [ ] 阶段 6: 测试（golden + cross-zpkg + z42c 单元）
 - [ ] 阶段 7: 验证（GREEN + bootstrap-check 不动点）
@@ -17,25 +16,37 @@
 - [ ] 阶段 9: 后续 stdlib API 迁移到 params（⚠️ 独立 follow-up change，晚一个 nightly；非本变更）
 
 ## 阶段 1: Lexer + AST
-- [ ] 1.1 `TokenKind.z42` 加 `Params`
-- [ ] 1.2 `Lexer.z42` `_initKeywords` 加 `_kw("params", TokenKind.Params)`
-- [ ] 1.3 `Decl.z42` `Param` 加 `bool IsParams`（构造默认 false；Dump 不变——无 params 时输出不漂移）
+- [x] 1.1 `TokenKind.z42` 加 `Params`（e924236c）
+- [x] 1.2 `Lexer.z42` `_initKeywords` 加 `_kw("params", TokenKind.Params)`（e924236c）
+- [x] 1.3 `Decl.z42` `Param` 加 `bool IsParams`（构造默认 false；Dump 不变——无 params 时输出不漂移）（e924236c）
 
 ## 阶段 2: Parser
-- [ ] 2.1 `_parseParamList` 在形参起始识别 `params` 修饰 → 置 `Param.IsParams=true`
-- [ ] 2.2 约束校验：非末参 → `E_PARAMS_NOT_LAST`；非数组类型 → `E_PARAMS_NOT_ARRAY`；
-      与 `ref`/`out`/默认值同现 → `E_PARAMS_MODIFIER_CONFLICT`
+- [x] 2.1 `_parseParamList` 在形参起始识别 `params` 修饰 → 置 `Param.IsParams=true`（e924236c，Parser.z42:1326-1342）
+- [x] 2.2 约束校验：非末参 → `E0206`（`ParamsNotLast`）；非数组类型 → `E0207`（`ParamsNotArray`）；
+      与 `ref`/`out`/默认值同现 → `E0208`（`ParamsModifierConflict`）（e924236c，Parser.z42:1358-1361 + DiagnosticCodes.z42:18-20）
 
 ## 阶段 3: 签名载体
-- [ ] 3.1 `Z42Type.z42` `Z42FuncType` 加 `int ParamsFrom`（-1=无），构造/Dump 兼容
-- [ ] 3.2 `SymbolCollector.z42` 建签名时从末参 `IsParams` 填 `ParamsFrom`
+- [x] 3.1 `Z42Type.z42` `Z42FuncType` 加 `int ParamsFrom`（-1=无），构造/Dump 兼容（e924236c）
+- [x] 3.2 `SymbolCollector.z42` 建签名时从末参 `IsParams` 填 `ParamsFrom`（e924236c，SymbolCollector.z42:630）
 
 ## 阶段 4: TypeChecker
-- [ ] 4.1 `_bindCall` 重载候选：标注每候选 normal/expanded 适配性 + element-type 具体度评分
-- [ ] 4.2 expanded-form 绑定（仿 `_withDefaults`）：trailing args → `BoundArrayLit`（element type；
+- [x] 4.1 `_bindCall` 重载候选：标注每候选 normal/expanded 适配性 + element-type 具体度评分
+      （`TypeChecker.z42` 新增 `_resolveParamsOverload`：过滤 `ParamsFrom>=0 && argCount>=ParamsFrom`，
+      normal-form 精确匹配优先，expanded-form 按 element 是否为 `object` 分 specific/object 两档）
+- [x] 4.2 expanded-form 绑定（仿 `_withDefaults`）：trailing args → `BoundArrayLit`（element type；
       object[] 时各实参 box 上转）插到 `ParamsFrom` 槽
-- [ ] 4.3 normal-form 判定：单 `T[]` 实参精确匹配 params 形参 → 直绑不打包
-- [ ] 4.4 决议优先级：非 params 精确 arity > normal form > expanded(更具体 element) > expanded(object[])
+      （新增 `_withParamsExpansion`；object[] boxing 确认是 codegen 零新增——`BoundArrayLit` 复用既有
+      `ArrayNewLitInstr` 路径，见 `ExprEmitter.z42:101-114`）
+- [x] 4.3 normal-form 判定：单 `T[]` 实参精确匹配 params 形参 → 直绑不打包
+      （`_withParamsExpansion` 中 `rawArgCount==sig.ParamCount && args[pf].Type().IsAssignableTo(at)` 直接
+      透传 `args`，不构造 `BoundArrayLit`）
+- [x] 4.4 决议优先级：非 params 精确 arity > normal form > expanded(更具体 element) > expanded(object[])
+      （`_resolveOverload` 的 `byArity` 过滤排除 params 候选，保证非 params 精确 arity 优先；
+      零匹配时才落到 `_resolveParamsOverload`，其内部先试 normal-form 唯一匹配，再试 expanded-form
+      specific 档，最后落 object[] 档）
+      验证：`./xtask test compiler` 全绿——79+5+10+3 单元测试通过、17 `[Test]` 单元通过、e2e 全过、
+      **自举不动点 7/7 包 gen1==gen2**（TypeChecker.z42 的编辑未引入字节漂移/回归；params 逻辑本身
+      因 D5 纪律尚无调用点触达，功能正确性待阶段 6.5 专项单元测试覆盖）
 
 ## 阶段 5: 跨包 TSIG
 - [ ] 5.1 `ExportedTypes.z42` `ExportedFuncZ` / `ExportedMethodZ` 加 `int ParamsFrom`
@@ -50,7 +61,11 @@
 - [ ] 6.2 golden `src/tests/run/params_varargs_normal/`
 - [ ] 6.3 golden `src/tests/run/params_object_mixed/`
 - [ ] 6.4 cross-zpkg `src/tests/cross-zpkg/params_cross_pkg/`
-- [ ] 6.5 z42c 单元：parser 约束报错 + 重载决议（normal/expanded/string[]-vs-object[]）
+- [~] 6.5 z42c 单元：parser 约束报错 + 重载决议（normal/expanded/string[]-vs-object[]）
+      重载决议部分已随阶段 4 落地：`z42c.semantics/tests/typecheck/typecheck_params_tests.z42`
+      （7 用例：expanded 打包 / normal 透传 / 空 trailing / 非 params 精确 arity 优先 /
+      自由函数 expanded / object[] 混类型 / expanded 歧义报 E0425），`xtask test compiler` 全绿。
+      parser 约束报错（E0206/E0207/E0208）单测仍缺，留待本阶段收尾时补（z42c.syntax/tests/decl 或 parser）。
 - [ ] 6.6 `examples/params_varargs.z42`
 
 ## 阶段 7: 验证

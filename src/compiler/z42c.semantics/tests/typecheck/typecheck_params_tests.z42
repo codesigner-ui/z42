@@ -1,0 +1,82 @@
+// z42c.semantics TypeChecker 单测：add-params-varargs 阶段 4 —— params 变长参数重载决议
+// + expanded/normal-form 绑定（design.md D1/D4）。语法/签名载体（阶段 1-3）已在别处覆盖，
+// 本文件只测 TypeChecker 新增的 _withParamsExpansion / _resolveParamsOverload。
+namespace Z42cSemanticsTypeCheckParamsTests;
+
+using Std;
+using Std.Test;
+using Z42.Semantics;
+
+[Test]
+void test_params_expanded_form_packs_trailing_args() {
+    // 无同名重载、trailing 实参个数 != 1 → expanded form：打包成 BoundArrayLit 插入 ParamsFrom 槽。
+    string src = "class C { public static int Sum(params int[] xs) { return 0; } " +
+                 "int Call3() { return Sum(1, 2, 3); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    Assert.Equal("(block (return (call-static C Sum (array-lit int 3 :int[]) :int)))",
+                 SemanticDump.DumpBody(src, "C.Call3"));
+}
+
+[Test]
+void test_params_normal_form_passes_array_directly() {
+    // 单实参且已是目标数组类型（int[]）→ normal form：直绑透传，不构造 array-lit。
+    string src = "class C { public static int Sum(params int[] xs) { return 0; } " +
+                 "int CallArr(int[] a) { return Sum(a); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    Assert.Equal("(block (return (call-static C Sum (ident a :int[]) :int)))",
+                 SemanticDump.DumpBody(src, "C.CallArr"));
+}
+
+[Test]
+void test_params_zero_trailing_args_packs_empty_array() {
+    // trailing 实参为 0 个（恰调用到 ParamsFrom 位置就没有更多实参）→ 打包空数组，不报错。
+    string src = "class C { public static int Sum(params int[] xs) { return 0; } " +
+                 "int Call0() { return Sum(); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    Assert.Equal("(block (return (call-static C Sum (array-lit int 0 :int[]) :int)))",
+                 SemanticDump.DumpBody(src, "C.Call0"));
+}
+
+[Test]
+void test_params_non_params_exact_arity_overload_wins() {
+    // D4 优先级 #1：非 params 精确 arity 重载恒优先于 params 候选，即便 params 候选也能接受该 arity。
+    string src = "class C { public static int F(int a, int b) { return a + b; } " +
+                 "public static int F(params int[] xs) { return 0; } " +
+                 "int Call2() { return F(1, 2); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    // F(int,int) 被选中（未打包成 array-lit），RegKey 因重载 mangle 为 F$2。
+    Assert.Equal("(block (return (call-static C F$2 (lit-int 1 :int) (lit-int 2 :int) :int)))",
+                 SemanticDump.DumpBody(src, "C.Call2"));
+}
+
+[Test]
+void test_params_free_function_expanded_form() {
+    // 自由函数（非重载、_withDefaults 直接短路到 _withParamsExpansion）同样支持 expanded form。
+    string src = "int Sum(params int[] xs) { return 0; } int Main() { return Sum(1, 2, 3); }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    Assert.Equal("(block (return (call Sum (array-lit int 3 :int[]) :int)))",
+                 SemanticDump.DumpBody(src, "Main"));
+}
+
+[Test]
+void test_params_object_array_accepts_mixed_element_types() {
+    // params object[] 接受异构实参类型（int + string）；boxing 在 codegen 是 no-op（design.md D1），
+    // TypeChecker 层只需确认零错误 + 正确打包个数/元素类型名。
+    string src = "class C { public static void Log(params object[] xs) { } " +
+                 "void Call() { Log(1, \"hi\"); } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    Assert.Equal("(block (expr (call-static C Log (array-lit object 2 :object[]) :void)))",
+                 SemanticDump.DumpBody(src, "C.Call"));
+}
+
+[Test]
+void test_params_expanded_form_ambiguous_element_type_reports_error() {
+    // 两个 params 重载（int[] / double[]）对给定实参（int 字面量）同为"非 object"具体档 →
+    // expanded form 内部歧义，须报 E0425（AmbiguousOverload）。级联诊断细节（同名解析失败后调用点
+    // 兜底再报一次 undefined）非本变更引入——_resolveOverload 对任意歧义分支皆有此行为，
+    // 故只断言"至少报了一条错误"而非精确条数。
+    string src = "class C { public static int A(params int[] xs) { return 0; } " +
+                 "public static int A(params double[] xs) { return 0; } " +
+                 "int Call() { return A(1, 2); } }";
+    Assert.True(SemanticDump.ErrorCount(src) >= 1);
+}
