@@ -433,6 +433,10 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | ~~`compiler-future-vcall-base-class-fallback`~~ ✅ | 已修复 (2026-05-26) — 三处协同修复：IrGen.Classes.cs `.base` 元数据用 QualifyClassName；FunctionEmitter.cs base ctor IR 名从 SemanticModel 推导；exec_vcall.rs lazy walk 对深层 base 用 ctx.try_lookup_type() | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-vcall-base-class-fallback-已修复-2026-05-26) |
 | `slim-terminator-future` | 装箱 `Terminator` 的 String label（per-block，非热数组，收益低于 Instruction）| [runtime/ir.md](design/runtime/ir.md#deferred--future-work) |
 | `slim-instruction-stringid` (E2.P3) | `String → StringId` intern 收敛，进一步缩小 payload struct（正交 slim-instruction-enum 之后）| [runtime/ir.md](design/runtime/ir.md#deferred--future-work) |
+| `self-hosting-future-indexed-zpkg` | z42c 自举重写未实现 indexed/FILE（增量编译 cache）zpkg 模式；当前管线无消费方，`zbc_reader.rs` 显式 bail | [compiler/self-hosting.md](design/compiler/self-hosting.md#self-hosting-future-indexed-zpkg) |
+| `self-hosting-future-single-vm-bootstrap-gap` | `_buildCompiler()` / CI `ci-bootstrap` 用新鲜（新 minor strict-pin）VM 直接跑旧格式种子，zpkg/zbc minor bump 必炸；缺"旧 VM 跑 Gen1 driver"两代自举步骤 | [compiler/self-hosting.md](design/compiler/self-hosting.md#self-hosting-future-single-vm-bootstrap-gap) |
+| `self-hosting-future-attributesynth-cross-pkg-resolution` | `AttributeSynth.z42` 手工两代自举下 8 处 `E0401 unknown type in 'new'`（AST 类跨包动态解析失败）；疑似 `e924236c` 遗留、被 bootstrap-gap 一直掩盖未暴露 | [compiler/self-hosting.md](design/compiler/self-hosting.md#self-hosting-future-attributesynth-cross-pkg-resolution) |
+| `packaging-future-artifact-naming` | `packages.toml` 的 `[package.*].artifact` 模板未被 xtask 消费，包目录命名仍是既有硬编码拼接（与模板字面值不一致）；改成真读字段会变更包目录名（外部可见），Phase 1 不做 | [add-package-layout-config/design.md](../spec/changes/add-package-layout-config/design.md#packaging-future-artifact-naming-xtask-真正读-packagestoml-的-artifact-字段驱动包命名)（归档后迁 `toolchain/packaging.md`）|
 
 ### 代码内临时绕过（in-code stopgaps，待正解）
 

@@ -53,8 +53,8 @@
 - `packages.toml` schema（Phase 1）：
   ```toml
   [package.sdk]
-  artifact = "z42-{rid}"
-  include  = ["z42vm", "native", "stdlib", "z42c", "launcher", "z42b"]
+  artifact = "z42-sdk-{version}-{rid}"
+  include  = ["z42vm", "native", "stdlib", "z42c", "launcher", "z42b", "devtools", "interactive"]
   manifest = "auto"     # [contents] 仍按组装后树自动 glob（现状机制不变）
 
   [package.runtime]
@@ -64,6 +64,7 @@
 - `include` 名解析：apphost 类名（launcher/z42c/z42b/z42d）→ 该组件 publish 暂存子树（z42c 的暂存子树已含 6 个兄弟库，见 Decision 4）；稳定名（z42vm/native/stdlib）→ 固定 staging handler 的产物。runtime 包不 include z42vm/z42c——两者都是 host 平台工具，runtime 包可能跨 host 使用（如 android runtime 装在 Windows/macOS host 上），塞单一 host 平台意义的二进制没有意义；z42c 自举种子改由 SDK 包的 `programs/z42c/` 提供（见 self-hosting.md）。
 - byte-identical：sdk 与 runtime 引用同一 `stdlib`/`native` 暂存源 → 同字节，现有 reuse-from-sdk 特例删除。
 - 暂存根：`artifacts/publish/<comp>/`（Decision 6 已转正，非 Phase 1 暂定）。
+- `artifact` 字段本 Phase **不被 xtask 消费**（2026-07-01 确认，见 tasks.md 4.3）：`xtask_package.z42` 的包目录/artifact 命名仍是既有硬编码字符串拼接，与 `artifact` 模板的字面值无强绑定关系（`_buildRuntimePackage`/`_buildDesktopWorkload` 碰巧一致，sdk 分支的 `_buildPackageCore` 则不一致）。改成真正读 `artifact` 字段驱动命名 = 外部可见行为变化（包目录名变了），与本变更"纯重构、产物字节一致"的硬验收方向冲突，Deferred（见 packaging-future-artifact-naming）。
 
 ## Testing Strategy
 
@@ -83,3 +84,9 @@
 - **来源**：探索期讨论
 - **触发原因**：Phase 1 用显式 include（一处全看清）；selector（组件 toml 声明 `packages=[...]`，中央只写规则）可做到「加组件零中央编辑」，但牺牲可见性
 - **触发条件**：apphost 数量多到显式 include 维护成本显现时
+
+### packaging-future-artifact-naming: xtask 真正读 packages.toml 的 artifact 字段驱动包命名
+- **来源**：任务 4.3 实施期发现（2026-07-01），`packages.toml` 的 `[package.*].artifact` 模板与 `xtask_package.z42`/`xtask_package_desktop.z42` 实际硬编码的包目录名字符串拼接不一致（sdk 分支尤其对不上：无 "sdk"、多 profile 后缀）
+- **触发原因**：Phase 1 User 裁决不改命名——命名是外部可见行为，且与本变更"纯重构、产物字节一致"的硬验收方向冲突；`artifact` 字段本 Phase 停留在声明性文档层面
+- **前置依赖**：无（随时可做，是纯字符串拼接换成读 toml + `{version}`/`{rid}` 占位符展开）
+- **触发条件**：需要统一/规范化发行包命名规则时（如需要 sdk 包目录名带上 "sdk" 字样）；届时需同步检查 CI/release 脚本对旧包名格式的依赖
