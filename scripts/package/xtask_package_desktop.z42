@@ -45,23 +45,14 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     }
     Console.WriteLine("      ✓ programs/z42c/ (z42c.* seed zpkgs, C#-free)");
 
-    // [2/7] z42vm + libz42.* via cargo build --target + staticlib/cdylib
-    Console.WriteLine("[2/5] z42vm + libz42 (cargo " + cargoTarget + ", " + profile + ")");
-    c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
-    _cargoRustc(rel, cargoTarget, "staticlib");
-    _cargoRustc(rel, cargoTarget, "cdylib");
+    // [2/5] z42vm + libz42.* + z42-compression (cargo " + cargoTarget + ", " + profile + ")
+    // staged to artifacts/publish/{z42vm,native}/ (packages.toml Decision 6),
+    // not written into pkgDir directly — the final [assemble] step below merges
+    // every staged component into pkgDir in one place.
+    Console.WriteLine("[2/5] z42vm + libz42 + z42-compression (cargo " + cargoTarget + ", " + profile + ")");
+    c = _pkgBuildAndStageRuntime(root, rid, profile); if (c != 0) { return c; }
     string cargoOut = _cargoOutFor(root, rid, profile);
-    _copyIfExists(Path.Join(cargoOut, "z42vm"), Path.Join(pkgDir, "bin/z42vm"));
-    _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "bin/z42vm.exe"));
-    Console.WriteLine("      ✓ bin/z42vm");
-    _copyNativeLibs(cargoOut, pkgDir);
-    Console.WriteLine("      ✓ native/ (libz42.* / z42.*)");
-
-    // [2b/7] z42-compression cdylib + staticlib
-    Console.WriteLine("[2b/5] z42-compression (cargo " + cargoTarget + ", " + profile + ")");
-    c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, "z42-compression"); if (c != 0) { return c; }
-    _copyNativeLibs(cargoOut, pkgDir);
-    Console.WriteLine("      ✓ native/libz42_compression.*");
+    Console.WriteLine("      ✓ staged z42vm/ + native/ (libz42.* / z42.* / libz42_compression.*)");
 
     // [2c/5] z42 launcher (apphost → programs/launcher/launcher.zpkg) + workloads,
     // then z42/z42c/z42b published via `z42b publish` (move-desktop-packaging-to-publish,
@@ -75,7 +66,6 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // as the publish template (Z42_APPHOST_TEMPLATE) for `z42`/`z42c`/`z42b` below.
     // Lands at cargoOut/apphost (shared target dir).
     c = _cargo(rel, "build", "src/toolchain/workload/desktop/platform/apphost/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
-    _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     // apphost stub is NOT shipped in the SDK anymore (Decision 9 full gating):
     // it is delivered by the desktop workload (z42-workload-<v>-desktop-<rid>),
     // installed via `z42 workload install desktop`. See _buildDesktopWorkload.
@@ -107,35 +97,45 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     bool isWin = rid.StartsWith("windows-");
     string apphostStub = Path.Join(cargoOut, isWin ? "apphost.exe" : "apphost");
     string z42bZpkg = Path.Join(root, "artifacts/build/toolchain/builder/z42.builder.zpkg");
+    // Each `z42b publish` call now targets that component's own staging dir
+    // (artifacts/publish/<comp>/, packages.toml Decision 6) instead of pkgDir
+    // directly — the final [assemble] step merges all of them into pkgDir.
     // `z42` = apphost stub patched to run programs/launcher/launcher.zpkg (bin/payload
     // from z42.launcher.z42.toml's [platform.desktop]).
-    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/launcher/core/z42.launcher.z42.toml", rid, pkgDir);
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/launcher/core/z42.launcher.z42.toml", rid, _pkgStageDir(root, "launcher"));
     if (c != 0) { return c; }
-    Console.WriteLine("      ✓ z42 (apphost) + programs/launcher/launcher.zpkg");
+    Console.WriteLine("      ✓ staged launcher/ (z42 apphost + programs/launcher/launcher.zpkg)");
     // bin/z42c = apphost trampoline → programs/z42c/z42c.driver.zpkg (z42c-built,
     // C#-free). publish's dependency-bundling colocates the 6 z42c.* siblings
     // already built above (_buildCompiler) into programs/z42c/ alongside it — the
     // VM resolves them colocated and resolves stdlib via libs/.
-    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/compiler/z42c.driver/z42c.driver.z42.toml", rid, pkgDir);
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/compiler/z42c.driver/z42c.driver.z42.toml", rid, _pkgStageDir(root, "z42c"));
     if (c != 0) { return c; }
-    Console.WriteLine("      ✓ bin/z42c (apphost → programs/z42c/z42c.driver.zpkg + siblings)");
+    Console.WriteLine("      ✓ staged z42c/ (bin/z42c apphost + programs/z42c/z42c.driver.zpkg + siblings)");
     // bin/z42b = apphost trampoline → programs/z42b/z42.builder.zpkg (z42b: reflective
     // [Test]/[Benchmark] runner host; deps z42.test/.core/.io/.cli resolve from libs/).
     // z42b publishes itself here (the just-built zpkg is already on disk, so this
     // is deploy-only — no recompile).
-    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/builder/core/z42.builder.z42.toml", rid, pkgDir);
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/builder/core/z42.builder.z42.toml", rid, _pkgStageDir(root, "z42b"));
     if (c != 0) { return c; }
-    Console.WriteLine("      ✓ bin/z42b (apphost → programs/z42b/z42.builder.zpkg)");
-    Console.WriteLine("      ✓ z42 (apphost, package root)");
+    Console.WriteLine("      ✓ staged z42b/ (bin/z42b apphost + programs/z42b/z42.builder.zpkg)");
 
-    // [3/7] C ABI headers
-    Console.WriteLine("[3/5] C ABI headers");
-    File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(pkgDir, "native/include/z42_abi.h"));
-    File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(pkgDir, "native/include/z42_host.h"));
+    // stdlib zpkg + zsym — staged to artifacts/publish/stdlib/libs/.
+    Console.WriteLine("      staging stdlib zpkg + zsym");
+    c = _pkgStageStdlib(root); if (c != 0) { return c; }
+    Console.WriteLine("      ✓ staged stdlib/");
 
-    // [4/7] stdlib zpkg + zsym
-    Console.WriteLine("[4/5] stdlib zpkg + zsym");
-    c = _pkgCopyLibs(libs, pkgDir); if (c != 0) { return c; }
+    // [assemble] merge every `sdk`-included component's staged subtree into
+    // pkgDir (packages.toml `[package.sdk].include`; design.md Decision 6). This
+    // is the only place pkgDir gets its bin/native/libs/programs content from —
+    // everything above stages, nothing above writes pkgDir directly except the
+    // [1/5] bootstrap seed (which the z42c component's staged output overwrites
+    // with identical bytes).
+    Console.WriteLine("[assemble] sdk package from staged components");
+    _PackagesConfig cfg = _pkgcfgLoad(root);
+    c = _pkgAssembleFromStaging(cfg, root, "sdk", pkgDir);
+    if (c != 0) { return c; }
+    Console.WriteLine("      ✓ pkgDir assembled from artifacts/publish/{z42vm,native,stdlib,z42c,launcher,z42b}");
 
     // [5/5] manifest.toml
     Console.WriteLine("[5/5] manifest.toml");
@@ -205,16 +205,20 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
 // are copied verbatim from the SDK package that _packageDesktop just assembled
 // — single byte source → SDK and runtime pack stay byte-identical, and no
 // native libs are re-collected/re-globbed here.
-int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string version, string profile) {
+int _buildRuntimePackage(string root, string rid, string version, string profile) {
     string pkgName = "z42-runtime-" + version + "-" + rid + (profile == "release" ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
     Console.WriteLine("Runtime package: " + pkgName);
     if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
     Directory.Create(pkgDir);
 
-    // libs/ + native/ (embed libs + include/ headers) copied verbatim from the SDK.
-    Directory.Copy(Path.Join(sdkPkgDir, "libs"),   Path.Join(pkgDir, "libs"),   true);
-    Directory.Copy(Path.Join(sdkPkgDir, "native"), Path.Join(pkgDir, "native"), true);
+    // libs/ + native/ (embed libs + include/ headers) merged from the same
+    // staging root _packageDesktop just populated (packages.toml
+    // `[package.runtime].include = ["native", "stdlib"]`) — no longer a
+    // copy-from-the-SDK special case (design.md Decision 6).
+    _PackagesConfig cfg = _pkgcfgLoad(root);
+    int c = _pkgAssembleFromStaging(cfg, root, "runtime", pkgDir);
+    if (c != 0) { return c; }
 
     Console.WriteLine("  ✓ runtime package (native/ + libs): " + pkgDir);
     return 0;

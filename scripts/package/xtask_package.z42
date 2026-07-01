@@ -48,7 +48,7 @@ int _buildPackageCore(string profile, string rid, string variant, bool noBuild) 
     if (category == "desktop") {
         c = _packageDesktop(root, pkgDir, rid, version, profile, hostRid, noBuild);
         if (c != 0) { return c; }
-        c = _buildRuntimePackage(root, pkgDir, rid, version, profile);
+        c = _buildRuntimePackage(root, rid, version, profile);
         if (c != 0) { return c; }
         // desktop workload (apphost stub) — separate from SDK (Decision 9 full gating)
         c = _buildDesktopWorkload(root, rid, version, profile);

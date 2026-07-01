@@ -215,6 +215,8 @@ SubcommandRouter _testRouter() {
         new ArgParser("xtask test packages-config", "packages.toml parse + include resolution"));
     t.Add("packages-staging", "z42vm/native/stdlib staging handler self-check",
         new ArgParser("xtask test packages-staging", "fixed-kind staging handlers"));
+    t.Add("packages-assemble", "packages.toml assembly engine self-check",
+        new ArgParser("xtask test packages-assemble", "merge staged components + copy order + error path"));
     ArgParser changed = new ArgParser("xtask test changed", "only changed-area tests");
     changed.AddFlag("dry-run", "", "print the plan, don't run");
     changed.AddOptionalPositional("base", "git base ref (default: HEAD)");
@@ -357,6 +359,7 @@ int _dispatchTest(string[] p, ParseResult r) {
     if (sub == "compiler-stdlib") { return _testCompilerStdlib(); }
     if (sub == "packages-config") { return _testPackagesConfig(); }
     if (sub == "packages-staging") { return _testPackagesStaging(); }
+    if (sub == "packages-assemble") { return _testPackagesAssemble(); }
     if (sub == "changed")      { return _testChanged(r); }
     if (sub == "platform") {
         string plat = p.Length > 2 ? p[2] : "";
