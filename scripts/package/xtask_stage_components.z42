@@ -1,0 +1,85 @@
+// xtask — fixed-kind staging handlers: z42vm / native / stdlib
+// (add-package-layout-config, 阶段 3.3).
+//
+// Each handler stages its component into the canonical staging root
+// artifacts/publish/<comp>/, shaped exactly like that component's `dest` in
+// packages.toml (design.md Decision 6): a later assembler (4.1b) can copy
+// stagingRoot/<comp>/** straight into a package tree without knowing how the
+// component was produced. Reuses _copyNativeLibs/_pkgCopyLibs (xtask_package.z42)
+// unmodified — both already write relative to a "pkgDir"-shaped root, and a
+// staging directory plays that role for a single component.
+//
+// apphost-kind components (launcher/z42c/z42b) are NOT handled here — they
+// stage themselves via `z42b publish` (builder_publish.z42), which already
+// writes a self-describing bin/payload subtree; no separate handler needed.
+// apphost-stub (also kind=cargo-bin, but per-RID `dest` + a different project)
+// is the desktop workload's own concern (_buildDesktopWorkload) and out of
+// scope for this task.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+// artifacts/publish/ — the staging root all fixed-kind components publish into.
+string _pubStagingRoot(string root) {
+    return Path.Join(root, "artifacts/publish");
+}
+
+// artifacts/publish/<comp>/ — one component's staging directory. Reset on
+// every call: staging handlers are idempotent producers, not additive.
+string _pkgStageDir(string root, string compName) {
+    string dir = Path.Join(_pubStagingRoot(root), compName);
+    if (Directory.Exists(dir)) { Directory.Delete(dir, true); }
+    Directory.Create(dir);
+    return dir;
+}
+
+// [component.z42vm] kind=cargo-bin, dest="bin/z42vm" — stages
+// artifacts/publish/z42vm/bin/z42vm(.exe) from an already-built cargoOut
+// (see _pkgBuildAndStageRuntime — z42vm and native share one cargo build).
+string _pkgStageZ42vm(string root, string cargoOut) {
+    string dir = _pkgStageDir(root, "z42vm");
+    Directory.Create(Path.Join(dir, "bin"));
+    _copyIfExists(Path.Join(cargoOut, "z42vm"), Path.Join(dir, "bin/z42vm"));
+    _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(dir, "bin/z42vm.exe"));
+    _makeExe(Path.Join(dir, "bin/z42vm"));
+    return dir;
+}
+
+// [component.native] kind=cargo-native, dest="native/" — stages
+// artifacts/publish/native/native/ (libz42.* / libz42_compression.* + the C
+// ABI headers) from the same cargoOut.
+string _pkgStageNative(string root, string cargoOut) {
+    string dir = _pkgStageDir(root, "native");
+    Directory.Create(Path.Join(dir, "native/include"));
+    _copyNativeLibs(cargoOut, dir);
+    File.Copy(Path.Join(root, "src/runtime/include/z42_abi.h"), Path.Join(dir, "native/include/z42_abi.h"));
+    File.Copy(Path.Join(root, "src/runtime/include/z42_host.h"), Path.Join(dir, "native/include/z42_host.h"));
+    return dir;
+}
+
+// [component.stdlib] kind=stdlib-glob, dest="libs/" — stages
+// artifacts/publish/stdlib/libs/ (every built stdlib *.zpkg + *.zsym).
+int _pkgStageStdlib(string root) {
+    string dir = _pkgStageDir(root, "stdlib");
+    Directory.Create(Path.Join(dir, "libs"));
+    return _pkgCopyLibs(_libsDir(root), dir);
+}
+
+// Builds src/runtime once for (rid, profile) and stages both z42vm + native
+// from the shared cargoOut — mirrors _packageDesktop's [2/5]+[2b/5] cargo
+// steps, but writes to the staging root instead of directly into a pkgDir.
+int _pkgBuildAndStageRuntime(string root, string rid, string profile) {
+    bool rel = (profile == "release");
+    string cargoTarget = _cargoTargetFor(rid);
+    int c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, "");
+    if (c != 0) { return c; }
+    _cargoRustc(rel, cargoTarget, "staticlib");
+    _cargoRustc(rel, cargoTarget, "cdylib");
+    c = _cargo(rel, "build", "src/runtime/Cargo.toml", cargoTarget, "z42-compression");
+    if (c != 0) { return c; }
+    string cargoOut = _cargoOutFor(root, rid, profile);
+    _pkgStageZ42vm(root, cargoOut);
+    _pkgStageNative(root, cargoOut);
+    return 0;
+}

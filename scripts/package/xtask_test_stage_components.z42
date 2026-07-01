@@ -1,0 +1,69 @@
+// xtask — staging handler self-check (add-package-layout-config, 阶段 3.3).
+//
+// Same rationale as xtask_test_packages_config.z42: xtask is an exe, so the
+// [Test]-attribute reflection runner can't see it — this is a plain
+// throw-on-mismatch self-check wired into `test`, not [Test]-discovered.
+//
+// Exercises _pkgStageZ42vm/_pkgStageNative/_pkgStageStdlib against a
+// throwaway fake cargoOut (these handlers only copy — they never invoke
+// cargo themselves, so no real build is needed to test them) plus the
+// repo's real, already-built stdlib dist for the stdlib handler.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+void _stgAssert(string what, bool cond) {
+    if (!cond) { throw new Exception("packages-staging: " + what + ": failed"); }
+}
+
+int _testPackagesStaging() {
+    string root = _root();
+    string fakeCargoOut = Path.Join(root, "artifacts/tmp/stage-test-cargo");
+    if (Directory.Exists(fakeCargoOut)) { Directory.Delete(fakeCargoOut, true); }
+    Directory.Create(fakeCargoOut);
+    File.WriteAllText(Path.Join(fakeCargoOut, "z42vm"), "fake-z42vm-binary");
+    File.WriteAllText(Path.Join(fakeCargoOut, "libz42.a"), "fake-static-lib");
+    File.WriteAllText(Path.Join(fakeCargoOut, "libz42_compression.a"), "fake-compression-lib");
+    File.WriteAllText(Path.Join(fakeCargoOut, "libz42_platform_ios.a"), "must-be-excluded");
+
+    // z42vm: bin/z42vm staged at the exact dest packages.toml declares, content
+    // matches the source (a real copy, not a placeholder).
+    string vmDir = _pkgStageZ42vm(root, fakeCargoOut);
+    _stgAssert("z42vm dir suffix", vmDir.EndsWith("artifacts/publish/z42vm"));
+    string vmBin = Path.Join(vmDir, "bin/z42vm");
+    _stgAssert("bin/z42vm exists", File.Exists(vmBin));
+    _stgAssert("bin/z42vm content", File.ReadAllText(vmBin) == "fake-z42vm-binary");
+
+    // native: native/libz42.a + native/libz42_compression.a staged, mobile
+    // facade excluded (_copyNativeLibs' existing filter), headers copied from
+    // the real src/runtime/include/.
+    string nativeDir = _pkgStageNative(root, fakeCargoOut);
+    _stgAssert("native/libz42.a exists", File.Exists(Path.Join(nativeDir, "native/libz42.a")));
+    _stgAssert("native/libz42_compression.a exists", File.Exists(Path.Join(nativeDir, "native/libz42_compression.a")));
+    _stgAssert("mobile facade excluded", !File.Exists(Path.Join(nativeDir, "native/libz42_platform_ios.a")));
+    _stgAssert("native/include/z42_abi.h exists", File.Exists(Path.Join(nativeDir, "native/include/z42_abi.h")));
+    _stgAssert("native/include/z42_host.h exists", File.Exists(Path.Join(nativeDir, "native/include/z42_host.h")));
+
+    // stdlib: reuses the repo's real built dist — at least one zpkg lands at
+    // the declared libs/ dest.
+    int c = _pkgStageStdlib(root);
+    _stgAssert("stdlib stage ok", c == 0);
+    string stdlibDir = Path.Join(_pubStagingRoot(root), "stdlib");
+    bool anyZpkg = false;
+    foreach (var f in Directory.Enumerate(Path.Join(stdlibDir, "libs"))) {
+        if (f.EndsWith(".zpkg")) { anyZpkg = true; }
+    }
+    _stgAssert("stdlib libs/ has zpkg", anyZpkg);
+
+    // _pkgStageDir resets rather than accumulates: a stale file from a prior
+    // run must not survive a second stage call for the same component.
+    File.WriteAllText(Path.Join(vmDir, "stale-marker.txt"), "should not survive");
+    _pkgStageZ42vm(root, fakeCargoOut);
+    _stgAssert("stage dir reset (no stale marker)", !File.Exists(Path.Join(vmDir, "stale-marker.txt")));
+
+    Directory.Delete(fakeCargoOut, true);
+    Directory.Delete(_pubStagingRoot(root), true);
+    Console.WriteLine("packages-staging: PASS (z42vm/native/stdlib staging handlers)");
+    return 0;
+}
