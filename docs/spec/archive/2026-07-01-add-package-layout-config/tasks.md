@@ -1,6 +1,6 @@
 # Tasks: 配置驱动的发行包布局
 
-> 状态：🟡 进行中（实施）| 创建：2026-06-30 | 子系统：toolchain（+ stdlib z42.project）
+> 状态：🟢 已完成（含已知缺口，见备注）| 创建：2026-06-30 | 完成：2026-07-01 | 子系统：toolchain（+ stdlib z42.project）
 
 ## 实施顺序（User 裁决 2026-06-30）
 递进、风险后置：**① 支持 apphost bin/payload 配置（不动 xtask）→ ② 让 xtask 用该配置发布
@@ -8,21 +8,21 @@
 
 ## 进度概览
 - [x] 阶段 1: 部署布局声明（组件 toml `bin`/`payload` + z42.project 模型 + publish 消费）— ① 完成
-- [ ] 阶段 2: publish 输出布局子树 — ① 已含（_cmdPublishDesktop 支持 bin/payload，向后兼容）
-- [ ] 阶段 3: packages.toml + xtask 组装引擎 — ③
-- [ ] 阶段 4: 迁移 desktop SDK + runtime 打包到配置驱动 — ②（让 xtask 用配置）→ ④（重构）
-- [ ] 阶段 5: 验证（产物字节一致）+ 文档
+- [x] 阶段 2: publish 输出布局子树 — ① 已含（_cmdPublishDesktop 支持 bin/payload，向后兼容）
+- [x] 阶段 3: packages.toml + xtask 组装引擎 — ③
+- [x] 阶段 4: 迁移 desktop SDK + runtime 打包到配置驱动 — ②（让 xtask 用配置）→ ④（重构）
+- [x] 阶段 5: 验证（产物字节一致）+ 文档 —— 文档四项（5.5-5.8）已完成；端到端字节一致验证（5.1-5.4）受环境阻断，User 裁决归档、转入 Deferred 追踪（见备注 + `packaging-future-byte-identical-verification`）
 
 ## 阶段 1: 部署布局声明（① 完成 2026-06-30）
 - [x] 1.1 `DesktopConfig.z42` 增 `bin` / `payload` 可选完整路径字段（空 = 约定默认，由消费方推导）
 - [x] 1.2 `ManifestLoader.z42` 解析 `bin` / `payload`
-- [ ] 1.3 单元测试：bin/payload 解析 + publish 子树行为（待 ② 接入后随 e2e 覆盖）
-- [ ] 1.4 给 launcher/z42c.driver/builder 三个 toml 写显式布局（镜像现状）— 归 ②
+- [x] 1.3 单元测试：bin/payload 解析 + publish 子树行为（由阶段 3.4a `test packages-config` + 阶段 4 e2e 覆盖）
+- [x] 1.4 给 launcher/z42c.driver/builder 三个 toml 写显式布局（镜像现状）— 由 3.3a 落地
 
 ## 阶段 2: publish 输出布局子树（① 完成核心 2026-06-30）
 - [x] 2.1 `_cmdPublishDesktop` 扩展：`payload` 设则把已编译 zpkg 复制到 `root/payload`、apphost 落 `root/bin`；未设走 legacy 扁平（向后兼容，现有包零回归——package 重建验证）
 - [x] 2.2 apphost 内嵌相对路径复用 `Apphost.Produce` 已有的 `_relPath(dir(bin), payload)` 自动计算（无需新写）
-- [ ] 2.3 e2e：单组件 publish 产出自洽子树（待 ② / dist 测试覆盖）
+- [x] 2.3 e2e：单组件 publish 产出自洽子树（由 3.3a `z42b publish` 独立验证 + 4.1a 覆盖）
 - [x] 2.4 用户面文档 `docs/design/compiler/project.md` `[platform.desktop]` 补 bin/payload
 
 ## 阶段 3: packages.toml + 组装引擎（2026-07-01 修订：z42c-seed 不再是固定 staging handler）
@@ -55,14 +55,14 @@
 - [x] 4.4 registered devtools/interactive into packages.toml（2026-07-01 User 裁决推翻本文件原"独立变更"备注，见下）。`z42.devtools.z42.toml`/`z42.interactive.z42.toml` 补 `[platform.desktop] bin`/`payload`（`bin/z42d`+`programs/devtools/z42.devtools.zpkg`、`bin/z42i`+`programs/interactive/z42.interactive.zpkg`，镜像 z42b 布局）；两者的 "NOT registered.../gate stays off" 注释改为"已注册，仍是占位实现"。`packages.toml` 新增 `[component.devtools]`/`[component.interactive]`（kind=apphost）+ `sdk.include` 追加 `"devtools"`、`"interactive"`（6→8 项）。`_packageDesktop` 追加两组 `_z42cBuildToml`+`_z42bPublish`（同 launcher/z42b 套路，落 `_pkgStageDir(root, "devtools"/"interactive")`）。`xtask_test_packages_config.z42` 更新断言（component count 7→9、sdk.include 6→8、新增 devtools/interactive kind/project 断言）。两个 README 状态段同步"已打包，占位实现"。**验证**：`.z42/bin/z42c build scripts/xtask.z42.toml --release` 0 错误；`test packages-config` → PASS(3 packages, 9 components)；`test packages-staging`/`test packages-assemble` 复跑仍 PASS（无回归）。同一 pre-existing 环境阻断（4.1b 备注所述 zpkg minor 22 vs 0.23）下用 devtools/builder 两个 toml 分别独立跑 `z42c build` 交叉验证：两者报同一个 `undefined function Z42.Project.ManifestLoader.Load` 错误，确认是环境阻断而非本任务引入的回归。
 
 ## 阶段 5: 验证 + 文档
-- [ ] 5.1 sdk 包树逐文件/逐字节 == 改造前（`_pkgSha256Check` + 目录 diff；纯重构不改产物）
-- [ ] 5.2 runtime 包同上
-- [ ] 5.3 `z42 xtask.zpkg test`（全 stage）全绿
-- [ ] 5.4 `z42 xtask.zpkg test dist`（发行包验证）全绿
-- [ ] 5.5 NEW `docs/design/toolchain/packaging.md`（实现原理：暂存布局、packages.toml schema、producer 边界、Deferred）
-- [ ] 5.6 `docs/design/compiler/project.md` 增 `[platform.desktop] bin`/`payload` 用户面说明
-- [ ] 5.7 `src/toolchain/README.md` 指向 packaging.md + packages.toml
-- [ ] 5.8 spec scenarios 逐条覆盖确认
+- [x] 5.1 sdk 包树逐文件/逐字节 == 改造前 → **Deferred `packaging-future-byte-identical-verification`**（zpkg minor 22↔0.23 环境阻断，roadmap:442 已索引）
+- [x] 5.2 runtime 包同上 → **Deferred**（同 5.1）
+- [x] 5.3 `z42 xtask.zpkg test`（全 stage）全绿 → **Deferred**（同 5.1 环境阻断；重构逻辑经单元 `test packages-*` + 部分 e2e 独立验证）
+- [x] 5.4 `z42 xtask.zpkg test dist`（发行包验证）全绿 → **Deferred**（同 5.1）
+- [x] 5.5 NEW `docs/design/toolchain/packaging.md`（实现原理：暂存布局、packages.toml schema、producer 边界、Deferred）
+- [x] 5.6 `docs/design/compiler/project.md` 增 `[platform.desktop] bin`/`payload` 用户面说明
+- [x] 5.7 `src/toolchain/README.md` 指向 packaging.md + packages.toml
+- [x] 5.8 spec scenarios 逐条覆盖确认（重构 = 声明化，行为不变；scenarios 由 `test packages-config`/`-staging`/`-assemble` 三自检覆盖）
 
 ## 备注
 - Phase 1 不动 mobile（ios/android/wasm）打包 → Deferred packaging-future-mobile。
