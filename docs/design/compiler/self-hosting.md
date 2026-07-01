@@ -320,10 +320,4 @@ z42c 达到 golden 编译 parity（编通全部 ~333 golden，含 reflection/clo
 - **触发条件**：任何后续 zpkg/zbc minor version bump（下一次改动 zbc/zpkg wire format 时会立刻复现）。
 - **当前 workaround**：本次 add-params-varargs 的验证改为手工两代自举（用 `/private/tmp/nightly-seed/` 遗留旧种子 + `.z42/bin/z42vm` 旧 VM 手动分步 build）证明 Option A（`ExportedMethodZ`/`ExportedFuncZ` 的 `ParamsFrom` 改为累加式而非新增必填构造参数）本身不会破坏自举链；`_buildCompiler()`/CI 的结构性两代自举缺口本身未修，留给独立的 `fix` 变更处理。
 
-### self-hosting-future-attributesynth-cross-pkg-resolution
-
-- **来源**：add-params-varargs（2026-07-01，手工两代自举验证 Option A 修复时发现）
-- **触发原因**：手工两代自举重建（旧 VM + 旧种子编译当前源码）验证 Option A 修复后，下一个构建阶段 `z42c.semantics` 报 8 处 `E0401: unknown type in 'new'`（`CompilationUnit`/`NamedType`/`ObjNewExpr`/`ReturnStmt`/`BlockStmt`/`TypeParamList`/`MethodDecl`），全部位于 `src/compiler/z42c.semantics/src/AttributeSynth.z42`（54 行、128-135 行）——该文件完全未被 add-params-varargs 触及（`git diff --stat` 确认），说明是与本变更正交的既有问题，很可能源自更早的 `e924236c`（"z42c type-based 方法重载决议"）在跨包动态符号解析场景下引入、但因 Problem 1（自举链一直被 zpkg-bump 卡住、从未真正跑通"旧种子编译当前源码"路径）而始终未被暴露。
-- **前置依赖**：先解除 `self-hosting-future-single-vm-bootstrap-gap`（否则本问题无法用真实两代自举流程稳定复现/调试），再定位 `AttributeSynth.z42` 里这些 AST 类（`z42c.syntax` 导出）为何在旧种子动态解析时报"unknown type"——初步怀疑与 `e924236c` 引入的 type-based overload mangling 或跨包符号索引有关，尚未深入排查。
-- **触发条件**：下一次需要从真实旧种子（而非当前构建时用的同代产物）完整自举 `z42c.semantics` 时（例如下一次 zpkg/zbc minor bump 的验证，或专门排查此问题的独立 `fix` 变更）。
-- **当前 workaround**：无——本次未深入排查，仅记录现象；日常 `z42 xtask.zpkg test compiler` 走的是同代构建路径（未触发此问题），不受影响。
+> **已排查排除（2026-07-02）**：此前记录的 `self-hosting-future-attributesynth-cross-pkg-resolution`（`AttributeSynth.z42` 手工两代自举下 8 处 `E0401 unknown type in 'new'`）经复现排查确认是**手工构建脚本的假阳性**，非编译器缺陷——根因是 `z42c build --output-dir <dir>` 直接写到传入目录、不会自动建 `dist/` 子目录；此前的手工脚本误假设有嵌套 `dist/`，导致 `z42c.core.zpkg`/`z42c.ir.zpkg` 未真正复制进 runlibs，下一步跨包 `new` 解析自然报 unknown type。用显式校验 `.zpkg` 是否落地的脚本重跑同一路径（旧 VM + 旧种子编译当前源码），`z42c.semantics`（含 `AttributeSynth.z42`）零错误构建成功。该条目已移除。
