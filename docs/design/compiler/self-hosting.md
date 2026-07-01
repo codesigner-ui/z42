@@ -243,7 +243,7 @@ xtask 绝不能依赖本提交新加的语法/stdlib API。
 4. fresh z42c 编 xtask.zpkg。
 5. 不动点检查：rebuilt z42c == 种子（cmp + 16B BLID 尾容差）。
 
-**种子分发**：runtime package（`z42-runtime-<ver>-<rid>`）加 `z42c/`（z42c-written z42c.* 7 zpkg，`_buildRuntimePackage`）。该包 = z42vm + libs(stdlib) + native + z42c/ 种子 = 完整 C#-free 种子。CI job `bootstrap-no-csharp (linux-x64)`：**无 setup-dotnet**（dotnet 缺席 = 结构性无 C#）→ `gh release download nightly z42-runtime-nightly-<rid>.tar.gz` → 组装 seed → 跑脚本。
+**种子分发**（2026-07-01 修订）：种子随 **SDK package**（`z42-sdk-<ver>-<rid>`）的 `programs/z42c/`（z42c-written z42c.* 7 zpkg，apphost 布局，`_packageDesktop`）分发，而非 runtime package——z42c 是 host 平台工具，runtime package 定位为纯嵌入式运行时（`native/` + `libs/`，见 `_buildRuntimePackage`），可能被跨 host 使用（如 android runtime 装在 Windows/macOS host 上），塞一个单一 host 平台意义的 z42c 没有意义。CI job `bootstrap-no-csharp (linux-x64)`：**无 setup-dotnet**（dotnet 缺席 = 结构性无 C#）→ `gh release download nightly z42-sdk-nightly-<rid>.tar.gz` → 取 `programs/z42c/*.zpkg` + `libs/*.zpkg` 组装 seed → 跑脚本。
 
 **鸡蛋滚动**：种子由 source-bootstrapped publish-nightly（用 C# 造）产 —— S4 期允许（C# 造种子，下游重建不用 C#）。新 nightly 携 z42c/ 前，bootstrap-no-csharp 在旧 nightly transient 失败（明确 error）→ publish-nightly republish 后自愈。S5 删 C# 后 publish-nightly 自身改用前夜种子（自持闭环，S5 收尾）；生产 `xtask build stdlib`（flip `_buildStdlibCore`）的 C# 种子步亦移交 S5 脱 C#。
 

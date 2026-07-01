@@ -1,0 +1,103 @@
+# packages.toml — 发行包内容清单（add-package-layout-config，DRAFT）
+#
+# 产出（publish）与组装（packages.toml）严格分层：组件各自产出到暂存根
+# artifacts/publish/<comp>/，各包（sdk / runtime / workload-desktop）再从暂存根
+# 拷贝组装自己的目录树。include 解析器只知道"去暂存根拷贝"，不知道"怎么产出"
+# （apphost project 路径、Z42_APPHOST_TEMPLATE 等产出细节全部封在 publish 一步）。
+#
+# 组件分两类，纯按"谁控制它的构建"区分：
+#   ① z42 组件（launcher / z42c / z42b，未来 z42d / z42i）：自带
+#      [platform.desktop] bin/payload，统一走 `z42 publish` 产出。这套 bin/payload
+#      是**用户面**机制——任何人发布自己的 app 用的是同一套配置，z42c/z42b 只是
+#      恰好也用它打包自己，不享有特殊待遇。z42c.driver 依赖的 6 个非 driver 兄弟库
+#      （core/ir/syntax/project/semantics/pipeline）是它的项目依赖（workspace 内
+#      本地包，非 stdlib），`z42 publish` 会自动解析拷到同一落点
+#      （programs/z42c/），因此**不单独登记组件**，include 里只写一次 "z42c"。
+#
+#   ② 固定 staging handler 组件：不经 `z42 publish`，由 xtask 各自一个固定
+#      handler 产出到暂存根，但同样逐个登记（名字→kind→落点），不留"隐形"
+#      组件——cargo bin 类（z42vm / apphost-stub）产出单个二进制；native 是
+#      cargo-native（libz42.* 静态/动态库 + headers，多文件但来源单一：同一个
+#      cargo 工作区一次 build 产出，登记成本不比单文件高）；stdlib 是 zpkg
+#      glob（加库会变，需要显式声明落点）。
+#
+# dest 与 artifact 一样支持 {version}/{rid} 占位符展开（apphost-stub 需要，因为
+# 它的落点按 RID 变化，如 apphost-{rid}）。
+#
+# 每个组件的包内落点都是固定的（component 注册表里的 dest，或 apphost 自带的
+# bin/payload），不支持逐包覆盖——z42vm 只出现在 sdk 里（bin/z42vm），没有第二个
+# 落点需要覆盖，因此本文件不设 per-package dest override 机制；未来如果真的需要
+# （比如同一组件在两个包里落点不同），再加这个能力，不预先设计。
+#
+# 加/减一个包内组件 = 改下面 include 一行；xtask 打包代码不动。
+# 加一个新组件（如 z42d）= 它自己 toml 写 bin/payload + 在这里 include 加 "z42d"。
+#
+# {version} / {rid} 由 xtask 在组装时按目标展开。manifest = "auto" 表示 [contents]
+# 段仍按组装后的目录树自动 glob（保持现状机制不变）。include 顺序只影响拷贝顺序，
+# 不影响构建顺序（构建顺序由各组件自己的依赖图拓扑推导，见 design.md Decision 5）。
+
+# ── 桌面 SDK：完整开发包 ─────────────────────────────────────────────
+[package.sdk]
+artifact = "z42-sdk-{version}-{rid}"
+include  = ["z42vm", "native", "stdlib", "z42c", "launcher", "z42b"]
+manifest = "auto"
+
+# ── 可嵌入运行时：只含 native + stdlib，纯粹给嵌入场景用（2026-07-01 修订）。
+#    z42c / z42vm 都是 host 平台工具，不属于「运行时」定位——同一份 runtime 包
+#    还会被跨 host 使用（如 android runtime 在 Windows/macOS host 上安装），
+#    塞一个只有单一 host 平台意义的 z42c 没有意义，与 ios/android/wasm 的
+#    runtime 包（同样不含 z42c/z42vm CLI）保持形态一致。自举种子改由 SDK 包
+#    的 programs/z42c/ 提供（见 docs/design/compiler/self-hosting.md）────
+[package.runtime]
+artifact = "z42-runtime-{version}-{rid}"
+include  = ["native", "stdlib"]
+manifest = "auto"
+
+# ── 桌面 workload：仅 apphost stub（per-RID）────────────────────────────
+[package.workload-desktop]
+artifact = "z42-workload-{version}-desktop-{rid}"
+include  = ["apphost-stub"]
+manifest = "workload-desktop"   # RID-agnostic 固定模板（见 _buildDesktopWorkload）
+
+# ════════════════════════════════════════════════════════════════════
+# 组件注册表：名字 → 怎么产 + 落点。新增一类产物（新 kind）才需要改这张表的"形状"；
+# 新增一个具体组件（如 z42d）只追加一段，不改已有段。
+# ════════════════════════════════════════════════════════════════════
+
+# ① z42 组件（自带 [platform.desktop] bin/payload，统一经 `z42 publish` 产出）
+[component.launcher]
+kind = "apphost"
+project = "src/toolchain/launcher/core/z42.launcher.z42.toml"
+# → z42（根）+ programs/launcher/launcher.zpkg
+
+[component.z42b]
+kind = "apphost"
+project = "src/toolchain/builder/core/z42.builder.z42.toml"
+# → bin/z42b + programs/z42b/z42.builder.zpkg
+
+[component.z42c]
+kind = "apphost"
+project = "src/compiler/z42c.driver/z42c.driver.z42.toml"
+# → bin/z42c + programs/z42c/z42c.driver.zpkg
+#   + 它的 6 个非 stdlib 项目依赖（z42c.core/ir/syntax/project/semantics/pipeline）
+#     由 `z42 publish` 自动解析拷贝到 programs/z42c/ 同目录。
+
+# ② 固定 staging handler 组件（非 z42-toml 驱动，xtask 各自一个固定函数产出）
+[component.z42vm]
+kind = "cargo-bin"
+project = "src/runtime/Cargo.toml"
+dest = "bin/z42vm"
+
+[component.apphost-stub]
+kind = "cargo-bin"
+project = "src/toolchain/workload/desktop/platform/apphost/Cargo.toml"
+dest = "apphost-{rid}"   # per-RID；workload-desktop 每个 RID 各产一个，CI 再合并
+
+[component.native]
+kind = "cargo-native"    # libz42.{a,so,dylib,lib} + libz42_compression.* + z42_abi.h/z42_host.h
+project = "src/runtime/Cargo.toml"
+dest = "native/"
+
+[component.stdlib]
+kind = "stdlib-glob"     # 全部 stdlib *.zpkg + *.zsym（自动发现，加库无需改这里）
+dest = "libs/"

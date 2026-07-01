@@ -194,13 +194,17 @@ int _buildDesktopWorkload(string root, string rid, string version, string profil
 
 // ── launcher artifact ────────────────────────────────────────────────────────
 // ── runtime artifact ─────────────────────────────────────────────────────────
-// Layout matches $Z42_HOME/runtimes/<ver>/ — extract-and-move with no path
-// transformation. Contains: z42vm + native/ (embed libs + C ABI headers) + libs/.
-// Used by `z42 install <ver>`. native/ makes it a COMPLETE embeddable runtime
-// (parity with the mobile runtime packs): a desktop embedder needs only this pack,
-// not the full SDK. libs/ + native/ are copied verbatim from the SDK package that
-// _packageDesktop just assembled — single byte source → SDK and runtime pack stay
-// byte-identical, and no native libs are re-collected/re-globbed here.
+// Pure embeddable runtime: native/ (embed libs + C ABI headers) + libs/ (stdlib
+// zpkg) — NO z42c, NO z42vm CLI (2026-07-01 revision). Both are host-platform
+// tooling, not part of "runtime": a runtime pack may run on a DIFFERENT host
+// than it targets (e.g. the android runtime pack is installed from a Windows or
+// macOS host), so a single-host-platform z42c binary inside it has no meaning —
+// this now matches the ios/android/wasm runtime packs, which never carried
+// z42c/z42vm either. The self-host bootstrap seed moved to the SDK package's
+// programs/z42c/ (see docs/design/compiler/self-hosting.md). libs/ + native/
+// are copied verbatim from the SDK package that _packageDesktop just assembled
+// — single byte source → SDK and runtime pack stay byte-identical, and no
+// native libs are re-collected/re-globbed here.
 int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string version, string profile) {
     string pkgName = "z42-runtime-" + version + "-" + rid + (profile == "release" ? "" : "-" + profile);
     string pkgDir = Path.Join(_packagesDir(root), pkgName);
@@ -208,34 +212,11 @@ int _buildRuntimePackage(string root, string sdkPkgDir, string rid, string versi
     if (Directory.Exists(pkgDir)) { Directory.Delete(pkgDir, true); }
     Directory.Create(pkgDir);
 
-    // z42vm at root (matches runtimes/<ver>/ layout)
-    string cargoOut = _cargoOutFor(root, rid, profile);
-    _copyIfExists(Path.Join(cargoOut, "z42vm"),     Path.Join(pkgDir, "z42vm"));
-    _copyIfExists(Path.Join(cargoOut, "z42vm.exe"), Path.Join(pkgDir, "z42vm.exe"));
-    _makeExe(Path.Join(pkgDir, "z42vm"));
     // libs/ + native/ (embed libs + include/ headers) copied verbatim from the SDK.
     Directory.Copy(Path.Join(sdkPkgDir, "libs"),   Path.Join(pkgDir, "libs"),   true);
     Directory.Copy(Path.Join(sdkPkgDir, "native"), Path.Join(pkgDir, "native"), true);
 
-    // z42c compiler seed (7 zpkg) → z42c/: the self-host bootstrap seed. With z42vm +
-    // libs/ (stdlib) this runtime package is a complete seed — the ci-bootstrap action
-    // uses it to rebuild stdlib + z42c + xtask from source (verify-selfhost then runs
-    // the gen1==gen2 fixpoint via `xtask test compiler`). RID-independent (same bytes
-    // every platform). REUSE the artifacts _packageDesktop's [1/5] already built —
-    // _buildCompiler is NOT called here: the desktop pipeline runs
-    // _packageDesktop → _buildRuntimePackage in order (xtask_package.z42), so the
-    // canonical z42c dist is guaranteed present. (Was a 2nd full ~5 min z42c self-build
-    // per package run — dedup-z42c-double-build.)
-    string z42cSeed = Path.Join(pkgDir, "z42c");
-    Directory.Create(z42cSeed);
-    string[] z42cMembers = _compilerMembers(root);
-    int zi = 0;
-    while (zi < z42cMembers.Length) {
-        string sp = Path.Join(root, "artifacts/build/z42c/" + z42cMembers[zi] + "/" + profile + "/dist/" + z42cMembers[zi] + ".zpkg");
-        _copyIfExists(sp, Path.Join(z42cSeed, z42cMembers[zi] + ".zpkg"));
-        zi = zi + 1;
-    }
-    Console.WriteLine("  ✓ runtime package (z42vm + native/ + libs + z42c/ seed): " + pkgDir);
+    Console.WriteLine("  ✓ runtime package (native/ + libs): " + pkgDir);
     return 0;
 }
 

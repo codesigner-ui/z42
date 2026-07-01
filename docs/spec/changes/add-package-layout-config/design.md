@@ -42,6 +42,12 @@
 **问题**：launcher zpkg 依赖 `z42.workload.desktop` 先进 Z42_LIBS。
 **决定**：publish/build 阶段按各 `z42.toml` 的 `[dependencies]` 拓扑排序产 zpkg（xtask 自举 build 已有此能力）。packages.toml 的 `include` 顺序**只影响拷贝顺序、不影响构建顺序**，避免顺序 bug。
 
+### Decision 6：z42 组件先 publish 到暂存根，各包从暂存根拷贝——不是各包各自直接 publish（2026-07-01 确认）
+**问题**：`z42c` 这类被 `sdk`/`runtime` 两个包同时 `include` 的组件，装配时怎么做？4.1a 实施期先斩后奏走了「每个包各自直接 `z42b publish --output <包目录>`」的捷径（省了暂存层，验证 3 个 apphost publish 链路本身可行）——但这与本节原定的暂存根架构不一致，需要在推进 3.2/3.3 组装引擎前明确哪个是最终形态。
+**选项**：A — 每个需要该组件的包各自直接对组件 toml 跑一次 `z42b publish`（利用 build-if-needed 幂等，省去暂存层，但产出与组装是同一步、拷贝逻辑分散在各包各跑一次 publish 里）；B — 组件先 `z42b publish` 到统一暂存根 `artifacts/publish/<comp>/`，`sdk`/`runtime` 两个包各自从这个暂存根拷贝一份进包目录（产出与组装严格分层，`include` 解析永远只是「读一个目录树、拷贝」，不知道 publish 怎么跑）。
+**决定**：选 B。暂存根路径确认为 `artifacts/publish/<comp>/`（不再是 Phase 1 暂定，转正）。理由：① 与 Decision 1 的「① 部署布局 / ② 发行组装」两层分离精神一致——xtask 的 `include` 解析器不应该知道"怎么 publish"，只应该知道"去哪拷"；直接 publish 会让每个 `[package.*]` 都重新携带一份"如何产出组件"的知识（apphost toml 路径、`Z42_APPHOST_TEMPLATE` 等），与 packages.toml 的组装-only 定位冲突。② byte-identical 硬验收更直接——sdk 与 runtime 从同一份已 publish 好的暂存子树逐字节拷贝，天然保证一致；直接 publish 两次虽然理论幂等，但仍是两次独立的产出动作，byte-identical 靠"信任 publish 无副作用"而非"物理上同一份文件"。③ 为将来 selector 式配置（packages-future-selector）铺路：组件只管把自己 publish 好，包配置只管选，两者解耦。
+**代价**（已知晓、接受）：多一层暂存目录 + 一次额外拷贝；xtask 需要新写"从暂存根合并进包目录"的逻辑（当前完全不存在，3.2/3.3 的范围）。4.1a 现在的"直接 publish 进 pkgDir"实现是过渡态，4.1b 落地暂存根架构后需要改为"publish 进暂存根 + xtask 从暂存根拷贝"，`_packageDesktop` 的 `_z42bPublish` 调用点届时会相应调整（不是推倒重来——`_z42bPublish` 本身只是换一个 `--output` 目标，从 `pkgDir` 改成 `artifacts/publish/<comp>/`，再加一步 `_copyIfExists` 式的目录拷贝）。
+
 ## Implementation Notes
 
 - `packages.toml` schema（Phase 1）：
@@ -53,11 +59,11 @@
 
   [package.runtime]
   artifact = "z42-runtime-{version}-{rid}"
-  include  = ["z42vm", "native", "stdlib", "z42c"]
+  include  = ["native", "stdlib"]   # 纯嵌入式运行时，不含 z42c/z42vm（host 专属工具，2026-07-01 修订）
   ```
-- `include` 名解析：apphost 类名（launcher/z42c/z42b/z42d）→ 该组件 publish 暂存子树（z42c 的暂存子树已含 6 个兄弟库，见 Decision 4）；稳定名（z42vm/native/stdlib）→ 固定 staging handler 的产物。
+- `include` 名解析：apphost 类名（launcher/z42c/z42b/z42d）→ 该组件 publish 暂存子树（z42c 的暂存子树已含 6 个兄弟库，见 Decision 4）；稳定名（z42vm/native/stdlib）→ 固定 staging handler 的产物。runtime 包不 include z42vm/z42c——两者都是 host 平台工具，runtime 包可能跨 host 使用（如 android runtime 装在 Windows/macOS host 上），塞单一 host 平台意义的二进制没有意义；z42c 自举种子改由 SDK 包的 `programs/z42c/` 提供（见 self-hosting.md）。
 - byte-identical：sdk 与 runtime 引用同一 `stdlib`/`native` 暂存源 → 同字节，现有 reuse-from-sdk 特例删除。
-- 暂存根：`artifacts/publish/<comp>/`（Phase 1 暂定）。
+- 暂存根：`artifacts/publish/<comp>/`（Decision 6 已转正，非 Phase 1 暂定）。
 
 ## Testing Strategy
 

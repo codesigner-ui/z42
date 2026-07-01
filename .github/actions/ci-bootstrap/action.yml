@@ -2,9 +2,11 @@ name: ci-bootstrap
 description: >
   Self-hosted CI bootstrap into the STANDARD artifact locations that later steps
   (test all / package release / upload) expect. Seeds from the PREVIOUS published
-  nightly's z42c compiler: prev-nightly z42c seed → builds current xtask → xtask
-  builds current z42c (warm self-build) + stdlib (flat dist + index). z42vm
-  (cargo-built Rust) is the only engine. Needs gh (auth'd via gh-token) + cargo + rust.
+  nightly SDK's z42c compiler (programs/z42c/, host tooling — the runtime package
+  no longer carries a z42c seed, 2026-07-01): prev-nightly z42c seed → builds
+  current xtask → xtask builds current z42c (warm self-build) + stdlib (flat dist
+  + index). z42vm (cargo-built Rust) is the only engine. Needs gh (auth'd via
+  gh-token) + cargo + rust.
 inputs:
   rid:
     description: "runtime ID (macos-arm64 / linux-x64 / linux-arm64 / windows-x64); empty = auto-detect host"
@@ -57,8 +59,13 @@ runs:
         cargo build --locked --release --manifest-path src/runtime/Cargo.toml --bin z42vm
         vm="$ROOT/artifacts/build/runtime/release/z42vm"; [ -f "$vm.exe" ] && vm="$vm.exe"
 
-        # ── 1. download prev nightly → seed (z42c-written compiler + stdlib) ─────────
-        echo "── [1/5] download nightly seed ($RID) ──"
+        # ── 1. download prev nightly SDK → seed (z42c-written compiler + stdlib) ────
+        # The seed lives in the SDK nightly's programs/z42c/ (host tooling), NOT the
+        # runtime nightly — the runtime package is a pure embeddable pack (native +
+        # stdlib only, no z42c/z42vm, 2026-07-01) since it may be installed on a
+        # DIFFERENT host than it targets (e.g. android runtime on a Windows/macOS
+        # host), where a single-host-platform z42c binary would be meaningless.
+        echo "── [1/5] download nightly SDK seed ($RID) ──"
         work="$(mktemp -d)"
         # Retry the download: publish-nightly republishes the `nightly` release with a
         # `gh release delete` → `gh release create` (a brief window where the release does
@@ -66,22 +73,22 @@ runs:
         # run N+1's build-and-test download) can hit that window. Retry to ride it out.
         dl_ok=0
         for attempt in 1 2 3 4 5 6 7 8 9 10; do
-          if gh release download nightly -p "z42-runtime-nightly-${RID}.${EXT}" -O "$work/rt.${EXT}" 2>"$work/dlerr"; then
+          if gh release download nightly -p "z42-sdk-nightly-${RID}.${EXT}" -O "$work/sdk.${EXT}" 2>"$work/dlerr"; then
             dl_ok=1; break
           fi
           echo "   download attempt $attempt failed ($(head -1 "$work/dlerr")) — likely a publish-nightly delete→recreate window; retry in 15s…"
-          rm -f "$work/rt.${EXT}"
+          rm -f "$work/sdk.${EXT}"
           sleep 15
         done
         if [ "$dl_ok" != 1 ]; then echo "::error::nightly download failed after 10 attempts:"; cat "$work/dlerr"; exit 1; fi
-        mkdir -p "$work/rtpkg"
-        if [ "$EXT" = zip ]; then unzip -q "$work/rt.${EXT}" -d "$work/rtpkg"; else tar -C "$work/rtpkg" -xzf "$work/rt.${EXT}"; fi
-        if ! ls "$work/rtpkg/z42c/"*.zpkg >/dev/null 2>&1; then
-          echo "::error::nightly runtime package has no z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals on the next run)"; exit 1
+        mkdir -p "$work/sdkpkg"
+        if [ "$EXT" = zip ]; then unzip -q "$work/sdk.${EXT}" -d "$work/sdkpkg"; else tar -C "$work/sdkpkg" -xzf "$work/sdk.${EXT}"; fi
+        if ! ls "$work/sdkpkg/programs/z42c/"*.zpkg >/dev/null 2>&1; then
+          echo "::error::nightly SDK package has no programs/z42c/ seed yet — needs a publish-nightly republish carrying the z42c-written seed (self-heals on the next run)"; exit 1
         fi
         seed="$ROOT/.ci-seed"; rm -rf "$seed"; mkdir -p "$seed"
-        cp -f "$work/rtpkg/z42c/"*.zpkg "$seed/"
-        cp -f "$work/rtpkg/libs/"*.zpkg "$seed/"
+        cp -f "$work/sdkpkg/programs/z42c/"*.zpkg "$seed/"
+        cp -f "$work/sdkpkg/libs/"*.zpkg "$seed/"
         echo "   seed: $(ls "$seed"/*.zpkg | wc -l | tr -d ' ') zpkg @ $seed"
 
         # Prime the STANDARD locations so xtask's warm self-build + `using Std.*` resolve:

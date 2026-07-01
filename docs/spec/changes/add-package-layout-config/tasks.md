@@ -50,7 +50,7 @@
   **均无 `.zsym` 侧车文件**（zsym-removal 生效），三个 apphost 经 `Z42_PORTABLE_VM` 均可正常运行（`--version`/`--help`
   输出正常，exit 0）。`./xtask test compiler` 全绿（unit 17/17 + e2e + 自举不动点 7/7 gen1==gen2）。
 - [ ] 4.1b 按 sdk.include 选组件 → 合并暂存子树 + staging 产物（依赖 3.2/3.3 packages.toml 组装引擎，未开始）
-- [ ] 4.2 `_buildRuntimePackage` 改为「按 runtime.include 组装」，删 reuse-from-sdk 特例
+- [ ] 4.2 `_buildRuntimePackage` 改为「按 runtime.include 组装」，删 reuse-from-sdk 特例。**运行时包内容范围已裁定**（2026-07-01 User 裁决）：runtime 包定位为纯嵌入式运行时（`native/` + `libs/`），不含 z42c/z42vm——两者是 host 平台工具，而 runtime 包可能跨 host 使用（如 android runtime 装在 Windows/macOS host 上），塞单一 host 平台意义的二进制没有意义，与 ios/android/wasm 的 runtime 包形态一致。`_buildRuntimePackage` 已提前落这条（移除 z42vm 拷贝块 + z42c 七成员种子拷贝块，仅保留 native/libs 从 sdkPkgDir 的 reuse-copy），`packages.toml` 的 `[package.runtime] include` 同步改为 `["native", "stdlib"]`。自举种子改由 SDK 包的 `programs/z42c/`（apphost 布局）提供，`.github/actions/ci-bootstrap/action.yml` + `scripts/build/xtask_bootstrap_check.z42` 均已切换下载源（`z42-sdk-nightly-<rid>` 替代 `z42-runtime-nightly-<rid>`）+ 路径（`programs/z42c/*.zpkg` 替代扁平 `z42c/*.zpkg`）；`docs/design/compiler/self-hosting.md` 种子分发段同步更新。**剩余**：把 reuse-from-sdk 特例换成真正的「按 runtime.include 组装」（依赖 3.2/3.3/4.1b 的暂存根组装引擎）
 - [ ] 4.3 打包分发 `xtask_package.z42` 接 packages.toml
 
 ## 阶段 5: 验证 + 文档
