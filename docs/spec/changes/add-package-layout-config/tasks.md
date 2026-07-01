@@ -33,7 +33,23 @@
 - [ ] 3.4 单元测试：packages.toml 解析 + include 解析 + 依赖闭包解析
 
 ## 阶段 4: 迁移 desktop SDK + runtime
-- [ ] 4.1 `_packageDesktop` 改为「按 sdk.include 选组件 → 合并暂存子树 + staging 产物」，删 apphost 三步舞硬编码
+- [x] 4.1a `_packageDesktop` 的 z42/z42c/z42b 三处手工 `File.Copy` + 内联 `_produceApphost` 拼装，改为三次 `z42b publish`
+  调用（新增 `_z42bPublish` helper）；xtask 自带的 `_asciiBytes`/`_byteIndexOf`/`_produceApphost` 已删（唯一实现收敛到
+  `builder_publish.z42` 的 `_pubProduceApphost`）。[1/5] z42c seed 的手工 copy 循环**保留**——它是 z42b 自身可执行
+  之前的自举前置（z42cDir 需先被 colocate 好，`_z42cBuildToml` 才能编 workload/launcher/builder 三个 toml），
+  与 bootstrap-seed.md 的鸡蛋问题同构，不属于本任务可消的范围。`z42b publish z42c.driver.z42.toml` 之后仍会
+  幂等重拷（`std::fs::copy` 覆盖式写），非新增文件。**编译验证**：`scripts/xtask.z42.toml` 全量编译通过（含新
+  `_z42bPublish`）；`builder_publish.z42`（含 zsym-removal 改动）独立编译 `z42.builder.z42.toml` 用仓库自建
+  `z42c.driver.zpkg`（colocated 7 兄弟 + `z42vm --mode interp`，与 `_z42cBuildToml` 真实路径一致）编译通过，0 错误。
+  之前用 `.z42/bin/z42c`（旧 nightly 种子，2026-06-28）ad-hoc 验证时误报 `E0401: undefined: Runner`——根因是种子
+  太旧、读不全当前 zbc/zpkg 格式新增的 `Runner`/`ModuleLoader`/`TestEntry` 类（`strings` 扫两份 `z42.test.zpkg`
+  证实：pristine nightly 完全没有这三个类的符号，而仓库自建 stdlib 有），是验证方法本身的问题（bootstrap-seed.md
+  同类鸡蛋问题在诊断工具选型上的翻版），非 `builder_test.z42` 或本次改动的真实 bug。**运行时验证**（改用仓库自建
+  z42vm + z42.builder.zpkg + Z42_APPHOST_TEMPLATE）：`z42b publish` 分别跑 z42c.driver / launcher / z42.builder 三个
+  toml → `bin/z42c`+`programs/z42c/`(6 兄弟)、根 `z42`+`programs/launcher/`、`bin/z42b`+`programs/z42b/` 布局均正确，
+  **均无 `.zsym` 侧车文件**（zsym-removal 生效），三个 apphost 经 `Z42_PORTABLE_VM` 均可正常运行（`--version`/`--help`
+  输出正常，exit 0）。`./xtask test compiler` 全绿（unit 17/17 + e2e + 自举不动点 7/7 gen1==gen2）。
+- [ ] 4.1b 按 sdk.include 选组件 → 合并暂存子树 + staging 产物（依赖 3.2/3.3 packages.toml 组装引擎，未开始）
 - [ ] 4.2 `_buildRuntimePackage` 改为「按 runtime.include 组装」，删 reuse-from-sdk 特例
 - [ ] 4.3 打包分发 `xtask_package.z42` 接 packages.toml
 

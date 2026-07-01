@@ -379,7 +379,15 @@ string[] _pubProjectDepNames(string tomlPath, TomlValue toml) {
 }
 
 // build-if-needed each workspace-sibling dependency of `tomlPath`, then copy its
-// zpkg (+ .zsym sidecar if present) into `payloadDir`. 0 on success.
+// zpkg into `payloadDir`. 0 on success.
+//
+// .zsym sidecars are intentionally NOT bundled here (User decision 2026-07-01,
+// add-package-layout-config task ④): the desktop SDK's programs/z42c/ tree has
+// never shipped debug-symbol sidecars for the driver's siblings, and this bundler
+// backs xtask's byte/file-identical packaging refactor — adding new files would
+// break that hard acceptance bar. Offline symbolication of the SDK's own bundled
+// z42c.* is not a served use case today; revisit as a deliberate opt-in if that
+// changes.
 int _pubBundleProjectDeps(string tomlPath, TomlValue toml, string payloadDir) {
     string wsRoot = _pubFindWorkspaceRoot(tomlPath);
     string[] depNames = _pubProjectDepNames(tomlPath, toml);
@@ -391,8 +399,6 @@ int _pubBundleProjectDeps(string tomlPath, TomlValue toml, string payloadDir) {
         string depZpkg = _pubEnsureBuilt(depTomlPath, depToml, depName);
         if (depZpkg.Length == 0) { return 1; }
         File.Copy(depZpkg, Path.Join(payloadDir, depName + ".zpkg"));
-        string depSym = Path.Join(Path.GetDirectoryName(depZpkg), depName + ".zsym");
-        if (File.Exists(depSym)) { File.Copy(depSym, Path.Join(payloadDir, depName + ".zsym")); }
         i = i + 1;
     }
     return 0;

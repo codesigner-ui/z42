@@ -63,13 +63,17 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _copyNativeLibs(cargoOut, pkgDir);
     Console.WriteLine("      ✓ native/libz42_compression.*");
 
-    // [2c/5] z42 launcher (apphost → programs/launcher/launcher.zpkg) + workloads.
-    // unify-launcher-apphost (2026-06-21): the launcher trampoline crate is gone.
-    // `z42` is now the per-app apphost stub, patched to run the launcher core at
-    // `programs/launcher/launcher.zpkg` (produced at the end of this block).
+    // [2c/5] z42 launcher (apphost → programs/launcher/launcher.zpkg) + workloads,
+    // then z42/z42c/z42b published via `z42b publish` (move-desktop-packaging-to-publish,
+    // add-package-layout-config task ④): each component's `[platform.desktop]
+    // bin`/`payload` (declared in its own toml) drives placement, and z42c.driver's
+    // 6 workspace-sibling zpkgs are colocated into programs/z42c/ by publish's
+    // dependency-bundling — replacing xtask's own copy+inline-apphost-patcher
+    // dance with the single implementation in builder_publish.z42.
     Console.WriteLine("[2c/5] z42 launcher (apphost + launcher.zpkg)");
     // apphost stub (z42-apphost crate) — used both by the desktop workload and
-    // to produce `z42` below. Lands at cargoOut/apphost (shared target dir).
+    // as the publish template (Z42_APPHOST_TEMPLATE) for `z42`/`z42c`/`z42b` below.
+    // Lands at cargoOut/apphost (shared target dir).
     c = _cargo(rel, "build", "src/toolchain/workload/desktop/platform/apphost/Cargo.toml", cargoTarget, ""); if (c != 0) { return c; }
     _makeExe(Path.Join(pkgDir, "bin/z42vm"));
     // apphost stub is NOT shipped in the SDK anymore (Decision 9 full gating):
@@ -94,34 +98,34 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     if (c != 0) { return c; }
     c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/launcher/core/z42.launcher.z42.toml");
     if (c != 0) { return c; }
-    // launcher.zpkg → programs/launcher/ (the `z42` apphost's payload location).
-    bool isWin = rid.StartsWith("windows-");
-    string plDir = Path.Join(pkgDir, "programs/launcher");
-    Directory.Create(plDir);
-    File.Copy(Path.Join(root, "artifacts/build/toolchain/launcher/z42.launcher.zpkg"), Path.Join(plDir, "launcher.zpkg"));
-    Console.WriteLine("      ✓ programs/launcher/launcher.zpkg");
-    // Produce `z42` = apphost stub patched to run programs/launcher/launcher.zpkg.
-    string apphostStub = Path.Join(cargoOut, isWin ? "apphost.exe" : "apphost");
-    string z42Out = Path.Join(pkgDir, isWin ? "z42.exe" : "z42");
-    c = _produceApphost(apphostStub, z42Out, "programs/launcher/launcher.zpkg", rid); if (c != 0) { return c; }
-    // bin/z42c = apphost trampoline → programs/z42c/z42c.driver.zpkg (z42c-built,
-    // C#-free). Relative payload path from bin/ is ../programs/z42c/...; the VM
-    // resolves the 6 z42c siblings colocated in programs/z42c/ and stdlib via libs/.
-    string z42cExe = Path.Join(pkgDir, isWin ? "bin/z42c.exe" : "bin/z42c");
-    c = _produceApphost(apphostStub, z42cExe, "../programs/z42c/z42c.driver.zpkg", rid); if (c != 0) { return c; }
-    Console.WriteLine("      ✓ bin/z42c (apphost → programs/z42c/z42c.driver.zpkg)");
-    // bin/z42b = apphost trampoline → programs/z42b/z42.builder.zpkg (z42b: reflective
-    // [Test]/[Benchmark] runner host; deps z42.test/.core/.io/.cli resolve from libs/).
-    // Mirrors bin/z42c + programs/z42c/ layout. The launcher forwards `z42 test`/`z42 bench`
-    // here; z42b is also directly invocable as `bin/z42b test <artifact>`.
+    // z42b itself must be compiled before it can be invoked to publish anything
+    // (bootstrap order — z42b is stdlib-only, so this mirrors the workload/launcher
+    // builds above, not a cross-dependency on programs/z42c/ colocation).
     c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/builder/core/z42.builder.z42.toml");
     if (c != 0) { return c; }
-    string pbDir = Path.Join(pkgDir, "programs/z42b");
-    Directory.Create(pbDir);
-    File.Copy(Path.Join(root, "artifacts/build/toolchain/builder/z42.builder.zpkg"), Path.Join(pbDir, "z42.builder.zpkg"));
-    string z42bExe = Path.Join(pkgDir, isWin ? "bin/z42b.exe" : "bin/z42b");
-    c = _produceApphost(apphostStub, z42bExe, "../programs/z42b/z42.builder.zpkg", rid); if (c != 0) { return c; }
-    Console.WriteLine("      ✓ programs/z42b/z42.builder.zpkg + bin/z42b (apphost → programs/z42b/z42.builder.zpkg)");
+
+    bool isWin = rid.StartsWith("windows-");
+    string apphostStub = Path.Join(cargoOut, isWin ? "apphost.exe" : "apphost");
+    string z42bZpkg = Path.Join(root, "artifacts/build/toolchain/builder/z42.builder.zpkg");
+    // `z42` = apphost stub patched to run programs/launcher/launcher.zpkg (bin/payload
+    // from z42.launcher.z42.toml's [platform.desktop]).
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/launcher/core/z42.launcher.z42.toml", rid, pkgDir);
+    if (c != 0) { return c; }
+    Console.WriteLine("      ✓ z42 (apphost) + programs/launcher/launcher.zpkg");
+    // bin/z42c = apphost trampoline → programs/z42c/z42c.driver.zpkg (z42c-built,
+    // C#-free). publish's dependency-bundling colocates the 6 z42c.* siblings
+    // already built above (_buildCompiler) into programs/z42c/ alongside it — the
+    // VM resolves them colocated and resolves stdlib via libs/.
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/compiler/z42c.driver/z42c.driver.z42.toml", rid, pkgDir);
+    if (c != 0) { return c; }
+    Console.WriteLine("      ✓ bin/z42c (apphost → programs/z42c/z42c.driver.zpkg + siblings)");
+    // bin/z42b = apphost trampoline → programs/z42b/z42.builder.zpkg (z42b: reflective
+    // [Test]/[Benchmark] runner host; deps z42.test/.core/.io/.cli resolve from libs/).
+    // z42b publishes itself here (the just-built zpkg is already on disk, so this
+    // is deploy-only — no recompile).
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/builder/core/z42.builder.z42.toml", rid, pkgDir);
+    if (c != 0) { return c; }
+    Console.WriteLine("      ✓ bin/z42b (apphost → programs/z42b/z42.builder.zpkg)");
     Console.WriteLine("      ✓ z42 (apphost, package root)");
 
     // [3/7] C ABI headers
@@ -294,36 +298,12 @@ string _quotedExisting(string dir, string a, string b) {
     return acc;
 }
 
-// ── inline apphost patcher (internal SDK packaging) ─────────────────────────
-// Produces the SDK's own apphosts (currently `z42`) by patching the per-app
-// apphost stub. Replicates Z42.Workload.Desktop.Apphost.PatchBytes; inlined
-// (not shared) per decision — internal dev tooling, keep it simple.
-// ⚠ MAGIC must stay in sync with the Rust stub at
-//   src/toolchain/workload/desktop/platform/apphost/src/main.rs.
-
-byte[] _asciiBytes(string s) {
-    byte[] b = new byte[s.Length];
-    int i = 0;
-    while (i < s.Length) { b[i] = (byte)s.CharAt(i); i = i + 1; }
-    return b;
-}
-
-int _byteIndexOf(byte[] hay, byte[] needle) {
-    if (needle.Length == 0 || needle.Length > hay.Length) { return -1; }
-    int limit = hay.Length - needle.Length;
-    int i = 0;
-    while (i <= limit) {
-        int j = 0;
-        bool match = true;
-        while (j < needle.Length) {
-            if (hay[i + j] != needle[j]) { match = false; break; }
-            j = j + 1;
-        }
-        if (match) { return i; }
-        i = i + 1;
-    }
-    return -1;
-}
+// ── z42c / z42b invocation (internal SDK packaging) ─────────────────────────
+// Apphost patching itself is NOT inlined here anymore (move-desktop-packaging-
+// to-publish, add-package-layout-config task ④) — `_z42bPublish` below delegates
+// to the single implementation in builder_publish.z42 (`_pubProduceApphost`),
+// the same one `z42b publish` uses standalone. Keeping only one copy avoids the
+// former "⚠ MAGIC must stay in sync with the Rust stub in N places" risk.
 
 // Build one z42 package toml with z42c (z42vm + colocated z42c.driver.zpkg),
 // replacing the former `dotnet run z42.Driver -- build` (replace-csharp Phase C).
@@ -337,41 +317,16 @@ int _z42cBuildToml(string vm, string z42cDir, string libs, string toml) {
         .Env("Z42_LIBS", libs));
 }
 
-// Produce an apphost exe at `outPath` from stub `tmpl`, embedding payload path
-// `embed` (relative to outPath's dir, so `<exe_dir>/<embed>` finds the zpkg).
-// chmod +x; ad-hoc codesign on a macOS target (must run on a macOS host).
-int _produceApphost(string tmpl, string outPath, string embed, string targetRid) {
-    if (!File.Exists(tmpl)) {
-        ConsoleError.WriteLine("apphost: stub not found: " + tmpl);
-        return 1;
-    }
-    byte[] buf = File.ReadAllBytes(tmpl);
-    byte[] magic = _asciiBytes("z42-apphost-target-v1-MAGIC-0001");
-    int at = _byteIndexOf(buf, magic);
-    if (at < 0) { ConsoleError.WriteLine("apphost: MAGIC missing in stub " + tmpl); return 1; }
-    int payloadStart = at + magic.Length;
-    int payloadLen = 1024 - magic.Length;   // 992-byte payload region
-    if (payloadStart + payloadLen > buf.Length) { ConsoleError.WriteLine("apphost: stub truncated"); return 1; }
-    byte[] nameBytes = _asciiBytes(embed);
-    if (nameBytes.Length + 1 > payloadLen) { ConsoleError.WriteLine("apphost: payload path too long: " + embed); return 1; }
-    // Overwrite the whole payload: name bytes, then NUL + zero fill.
-    int k = 0;
-    while (k < payloadLen) {
-        if (k < nameBytes.Length) { buf[payloadStart + k] = nameBytes[k]; }
-        else { buf[payloadStart + k] = (byte)0; }
-        k = k + 1;
-    }
-    File.WriteAllBytes(outPath, buf);
-    File.MakeExecutable(outPath);
-    // A macOS apphost MUST be re-signed after patching (the kernel rejects the
-    // now-stale ad-hoc signature). codesign is macOS-only → require a mac host.
-    if (targetRid.StartsWith("macos-")) {
-        if (!Platform.IsMacOS()) {
-            ConsoleError.WriteLine("apphost: a macOS target (" + targetRid + ") must be produced on a macOS host (codesign).");
-            return 1;
-        }
-        ProcessResult cs = new Process("codesign").Arg("-s").Arg("-").Arg("-f").Arg(outPath).Stderr(Stdio.Inherit()).Run();
-        if (cs.ExitCode != 0) { ConsoleError.WriteLine("apphost: ad-hoc codesign failed (rc=" + cs.ExitCode.ToString() + ")"); return 1; }
-    }
-    return 0;
+// Publish `toml`'s desktop apphost into `outputDir` via an already-built
+// `z42bZpkg` (z42.builder.zpkg) — `vm z42bZpkg -- publish <toml> --rid <rid>
+// --output <outputDir>`. `libs` resolves z42b's own stdlib deps; `apphostStub`
+// is forwarded as Z42_APPHOST_TEMPLATE (the raw, unpatched apphost binary that
+// z42b's publish command patches — mirrors the launcher's Z42_APPHOST_TEMPLATE
+// forwarding for `z42 publish`, Decision 3.5).
+int _z42bPublish(string vm, string z42bZpkg, string libs, string apphostStub, string toml, string rid, string outputDir) {
+    return _exec(new Process(vm)
+        .Arg(z42bZpkg).Arg("--mode").Arg("interp")
+        .Arg("--").Arg("publish").Arg(toml).Arg("--rid").Arg(rid).Arg("--output").Arg(outputDir)
+        .Env("Z42_LIBS", libs)
+        .Env("Z42_APPHOST_TEMPLATE", apphostStub));
 }
