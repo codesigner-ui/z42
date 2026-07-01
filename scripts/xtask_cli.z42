@@ -211,6 +211,8 @@ SubcommandRouter _testRouter() {
         new ArgParser("xtask test compiler", "z42c fixpoint"));
     t.Add("compiler-stdlib", "z42c dogfood-builds stdlib + functional check",
         new ArgParser("xtask test compiler-stdlib", "z42c builds stdlib"));
+    t.Add("packages-config", "packages.toml parser self-check",
+        new ArgParser("xtask test packages-config", "packages.toml parse + include resolution"));
     ArgParser changed = new ArgParser("xtask test changed", "only changed-area tests");
     changed.AddFlag("dry-run", "", "print the plan, don't run");
     changed.AddOptionalPositional("base", "git base ref (default: HEAD)");
@@ -351,6 +353,7 @@ int _dispatchTest(string[] p, ParseResult r) {
     if (sub == "dist")         { return _testDist(r); }
     if (sub == "compiler") { return _testCompiler(false); }   // C#-free 自举不动点（C# test compiler 已删）
     if (sub == "compiler-stdlib") { return _testCompilerStdlib(); }
+    if (sub == "packages-config") { return _testPackagesConfig(); }
     if (sub == "changed")      { return _testChanged(r); }
     if (sub == "platform") {
         string plat = p.Length > 2 ? p[2] : "";

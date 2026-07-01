@@ -1,0 +1,89 @@
+// xtask — packages.toml parser self-check (add-package-layout-config, 阶段 3.4).
+//
+// xtask is an exe (scripts/xtask.z42.toml kind="exe"), not a stdlib zpkg — the
+// [Test]-attribute reflection runner (`z42 xtask.zpkg test stdlib`) only discovers
+// stdlib library members, so it cannot see this module. Mirrors the existing
+// `test compiler`/`test compiler-stdlib` precedent: a plain functional self-check
+// command living in xtask itself, asserting via throw-on-mismatch rather than
+// [Test]-attribute discovery.
+namespace Z42Xtask;
+
+using Std;
+using Std.IO;
+
+void _pkgAssertEq(string what, string expected, string got) {
+    if (expected != got) {
+        throw new Exception("packages-config: " + what + ": expected \"" + expected + "\" got \"" + got + "\"");
+    }
+}
+
+void _pkgAssertLen(string what, int expected, int got) {
+    if (expected != got) {
+        throw new Exception("packages-config: " + what + ": expected len " + expected.ToString() + " got " + got.ToString());
+    }
+}
+
+void _pkgAssertThrows(string what, string packageName, bool findPackage) {
+    _PackagesConfig cfg = _pkgcfgLoad(_root());
+    bool threw = false;
+    try {
+        if (findPackage) { _pkgcfgFindPackage(cfg, packageName); }
+        else { _pkgcfgFindComponent(cfg, packageName); }
+    } catch (Exception e) { threw = true; }
+    if (!threw) {
+        throw new Exception("packages-config: " + what + ": expected throw, none raised");
+    }
+}
+
+// `test packages-config` — parses the real scripts/packages.toml and asserts the
+// shape callers rely on. Doubles as a regression guard for the 2026-07-01 ruling
+// that the runtime package is a pure embeddable runtime (native + stdlib only,
+// no z42c/z42vm — both host-only tooling; see design.md Decision 4/6).
+int _testPackagesConfig() {
+    string root = _root();
+    _PackagesConfig cfg = _pkgcfgLoad(root);
+
+    _pkgAssertLen("package count", 3, cfg.packages.Length);
+    _pkgAssertLen("component count", 7, cfg.components.Length);
+
+    _PkgPackage sdk = _pkgcfgFindPackage(cfg, "sdk");
+    _pkgAssertEq("sdk.artifact", "z42-sdk-{version}-{rid}", sdk.artifact);
+    _pkgAssertEq("sdk.manifest", "auto", sdk.manifest);
+    _pkgAssertLen("sdk.include", 6, sdk.include.Length);
+
+    _PkgComponent[] sdkComps = _pkgcfgResolveInclude(cfg, "sdk");
+    _pkgAssertLen("sdk resolved components", 6, sdkComps.Length);
+    _pkgAssertEq("sdk.include[0].name", "z42vm", sdkComps[0].name);
+    _pkgAssertEq("sdk.include[0].kind", "cargo-bin", sdkComps[0].kind);
+
+    // Regression guard: runtime is a pure embeddable runtime — native + stdlib
+    // only, never z42c/z42vm (host-only tooling; 2026-07-01 ruling).
+    _PkgPackage runtime = _pkgcfgFindPackage(cfg, "runtime");
+    _pkgAssertLen("runtime.include", 2, runtime.include.Length);
+    _PkgComponent[] runtimeComps = _pkgcfgResolveInclude(cfg, "runtime");
+    _pkgAssertEq("runtime.include[0]", "native", runtimeComps[0].name);
+    _pkgAssertEq("runtime.include[1]", "stdlib", runtimeComps[1].name);
+    int i = 0;
+    while (i < runtimeComps.Length) {
+        if (runtimeComps[i].name == "z42c" || runtimeComps[i].name == "z42vm") {
+            throw new Exception("packages-config: runtime package must not include " + runtimeComps[i].name);
+        }
+        i = i + 1;
+    }
+
+    // Component kind-dependent optional fields: apphost carries no `dest`;
+    // stdlib-glob carries no `project`.
+    _PkgComponent z42c = _pkgcfgFindComponent(cfg, "z42c");
+    _pkgAssertEq("z42c.kind", "apphost", z42c.kind);
+    _pkgAssertEq("z42c.dest (unset)", "", z42c.dest);
+    _PkgComponent stdlib = _pkgcfgFindComponent(cfg, "stdlib");
+    _pkgAssertEq("stdlib.kind", "stdlib-glob", stdlib.kind);
+    _pkgAssertEq("stdlib.project (unset)", "", stdlib.project);
+    _pkgAssertEq("stdlib.dest", "libs/", stdlib.dest);
+
+    _pkgAssertThrows("unknown package throws", "no-such-package", true);
+    _pkgAssertThrows("unknown component throws", "no-such-component", false);
+
+    Console.WriteLine("packages-config: PASS (" + cfg.packages.Length.ToString() + " packages, " + cfg.components.Length.ToString() + " components)");
+    return 0;
+}
