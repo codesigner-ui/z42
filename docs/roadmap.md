@@ -125,7 +125,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 
 | 子版本 | P（perf：Pv VM 侧 ‖ Pc 编译器侧）| B（bench）| S（syntax）| L（lib）| G（泛型前置）|
 |:--:|------|------|------|------|------|
-| 0.4.0 | Pv0 perf 基线刻画（量化已落地的 4-slot IC / JIT I64 特化）| B1 `z42.bench` 包 + B2 `z42b bench` GA | `params` 变长参数 | L1 stdlib 模块审计 spec | G0 泛型实例化设计 spec |
+| 0.4.0 | Pv0 perf 基线刻画（量化已落地的 4-slot IC / JIT I64 特化）| B1 `z42.bench` 包 + B2 `z42b bench` GA | `params` 变长参数 ✅（add-params-varargs，2026-07-01）| L1 stdlib 模块审计 spec | G0 泛型实例化设计 spec |
 | 0.4.1 | Pv1 quickening + 超指令 ‖ Pc1 激活 IrPassManager（const-fold/DCE）| B5 perf 库 baseline 铺面 | `init` + 表达式体属性 | L2 `JsonReader`（合 add-json-streaming-reader）| G1 运行期泛型实例化 |
 | 0.4.2 | **Pv2 JIT 直接 emit 拆箱 + F64 特化（招牌）** ‖ Pc2 intrinsic 表 + devirt pass | B3 e2e 硬门禁 | 索引器 `this[i]` | L2 `JsonSerializer` 非泛型（`[JsonProperty]`）| G2 泛型方法 Invoke + `MakeGenericType` |
 | 0.4.3 | Pv3 Frame 寄存器 HashMap→Vec ‖ Pc3 大类拆分 + BindCall D-11 收尾 | B4 PR 自动评论 diff | 命名实参 | **L2 `Deserialize<T>` 泛型 serde（招牌）** | G3 `Activator.CreateInstance<T>` |
@@ -347,7 +347,6 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 闭包档 B 完整版 | 单态化 + 泛型形参标注（当前仅 alias 子集）| [language/closure.md](design/language/closure.md) |
 | 闭包档 C send 派生 | 与 concurrency 实施一起做 | [language/closure.md](design/language/closure.md) |
 | Static abstract iter 2+ | 类型级访问（`T.Zero` / `T.Parse(s)`）| [language/static-abstract-interface.md](design/language/static-abstract-interface.md) |
-| `params T[]` + `params object[]` 重载 | 可变参数关键字；typed overload 无 boxing，object[] fallback 处理混类型；自举完成后实施，object[] 另需 L2 object 类型 | [language/language-overview.md](design/language/language-overview.md#params-future-impl-params-关键字完整实现) |
 | compile-once 正式模型 (CO-D1..D4) | test 腿全消费 current-sdk / 成对分代 gen1-3 / 三发布门+cross-bootstrap / 本地分阶段命令 —— 经实测低性价比（多为 compute 非墙钟），按需新开 change（如 format-bump 安全要 CO-D2）| [archive/2026-06-30-compile-once-toolchain/tasks.md](spec/archive/2026-06-30-compile-once-toolchain/tasks.md) Deferred 段 |
 | z42vm JIT cdylib 拆分 | 把 cranelift JIT 拆成可 dlopen 的 `libz42_jit.dylib`（z42vm 6M→~3.5M）；ROI 低（拆 ~3M / 整包 ~70M，中高工作量）2026-06-21 暂缓 | [toolchain/runtime-workload-distribution.md](design/toolchain/runtime-workload-distribution.md#deferred--待-spec-细化) |
 | 组件化运行时 | libz42 基座 + interp/jit/aot/gc/debug 组件；static/dynlink/dlopen 三粒度 + 切换语义；嵌入按需链接 | [runtime/componentized-runtime.md](design/runtime/componentized-runtime.md) |

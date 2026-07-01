@@ -189,6 +189,17 @@ and `Map` VM values, not by real class instances. The compiler emits `builtin` d
 their instance methods (e.g. `list.Add(x)` → `builtin "__list_add"`) because `v_call` cannot
 dispatch on non-object values.
 
+**`params` variadic arguments** (`add-params-varargs`) — no new IR instruction and no new
+zbc opcode; the VM is entirely unaware of `params`. It is a pure frontend lowering in the
+compiler's Codegen stage: an *expanded-form* call site (`Sum(1, 2, 3)` against
+`int Sum(params int[] values)`) is emitted as an array literal built from the trailing
+arguments (`new int[3]` + per-element stores) followed by an ordinary `call`/`call.virt`
+with that array as the last argument — identical to a hand-written
+`Sum(new int[] { 1, 2, 3 })` *normal-form* call. Cross-package calls resolve
+normal/expanded form using a `paramsFrom` marker carried in the callee's TSIG record
+(see [zpkg.md](zpkg.md)); this only affects which parameter the compiler treats as the
+trailing array when deciding how to lower a call, not IR/zbc semantics.
+
 JSON wire format:
 ```json
 {"op": "call",    "dst": 2, "func": "z42.io.Console.WriteLine", "args": [1]}

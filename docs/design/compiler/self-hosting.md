@@ -303,3 +303,27 @@ z42c 达到 golden 编译 parity（编通全部 ~333 golden，含 reflection/clo
 - **前置依赖**：给 `Z42FuncType` 加 `MinArgCount` 字段 + 所有构造点透传 + `ImportedSymbolLoader` 从 TSIG 读回。
 - **触发条件**：stdlib/用户码出现「子类继承其它包默认参数方法并 re-export」且该方法被第三包省略默认实参调用时（当前 stdlib 未触发，full gate 绿）。
 - **当前 workaround**：此类继承方法在 TSIG 中标全必填；调用方需显式传全部实参（或在定义类直接覆写）。
+
+### self-hosting-future-indexed-zpkg
+
+- **来源**：add-params-varargs 5.6（2026-07-01 regen zpkg-format fixture 时发现代码级延后未记录）
+- **触发原因**：`z42c.project` 的 `ZpkgWriter.z42`/`ZpkgReader.z42` 自举重写时未实现 indexed/FILE（增量编译 cache）模式（源码内联注释"延后：indexed/FILE"/"indexed 不在消费面"已如此声明，但从未补记到 design doc）；当前 `z42c.pipeline`（`WorkspaceBuild.z42`/`PipelineSkeleton.z42`）没有任何路径读写 indexed zpkg，Rust `zbc_reader.rs` 对 indexed zpkg 也是显式 `bail!`（"indexed zpkg cannot be loaded directly by the VM"）。
+- **前置依赖**：出现真实增量编译 cache 需求时，先设计消费方（谁在什么时机读/写 indexed zpkg、cache 失效策略），再实现 `ZpkgWriterZ.WriteIndexed` + `ZpkgReader` 对称读。
+- **触发条件**：增量编译成为性能瓶颈、需要 cache 机制时。
+- **当前 workaround**：`z42c build` 永远走 packed 全量输出；`src/tests/zpkg-format/indexed-minimal/` fixture 保留 C# 时代旧字节基线（`minor=22`），随 add-params-varargs 的 zpkg minor 0.23 bump **不跟随 regen**——该 fixture 当前无法用 z42c 生成，其余 3 个 zpkg-format fixture 已 regen 到 0.23。
+
+### self-hosting-future-single-vm-bootstrap-gap
+
+- **来源**：add-params-varargs（2026-07-01，zpkg minor 0.22→0.23 bump 实测触发）
+- **触发原因**：`scripts/build/xtask_compiler.z42:_buildCompiler()` 与 CI `.github/actions/ci-bootstrap/action.yml` 共享同一结构缺陷——都先用**当前源码**新鲜 `cargo build` 出一个 strict-pin 到**新** zpkg/zbc minor 的 z42vm，再立即用这个新 VM 去跑**旧格式**的种子 driver（本地：`artifacts/build/z42c/...z42c.driver.zpkg`；CI：下载的上一个 nightly SDK 种子）。zpkg/zbc 是 strict-pin（无兼容回退），新 VM 天然读不了旧种子 → `zpkg minor 22 not supported (writer is at 0.23)`。`version-bumping.md` "bump 与 xtask↔nightly bootstrap 循环" 段落记载的"自愈设计"（`build-and-test` 全源码 bootstrap，不依赖 download-bootstrap）看来从未在**完全 C#-free**（C# 种子已于 2026-06-26 移除）的条件下针对一次真实 zpkg minor bump 做过验证——本次 bump 是 C# 移除后第一次触发的 minor bump。
+- **前置依赖**：需要真正的两代自举：Gen1（旧 VM + 旧种子编译当前源码 → 产出仍是旧格式容器，但内含新逻辑字节码）→ Gen2（旧 VM 运行 Gen1 产出的 driver，其内部执行的正是新 writer 逻辑 → 产出真正的新格式输出）→ 之后再切到新鲜 VM 消费 Gen2 起的产物。当前脚本/CI 都跳过了"旧 VM 运行 Gen1 driver"这一中间步骤，直接对旧种子用新 VM。
+- **触发条件**：任何后续 zpkg/zbc minor version bump（下一次改动 zbc/zpkg wire format 时会立刻复现）。
+- **当前 workaround**：本次 add-params-varargs 的验证改为手工两代自举（用 `/private/tmp/nightly-seed/` 遗留旧种子 + `.z42/bin/z42vm` 旧 VM 手动分步 build）证明 Option A（`ExportedMethodZ`/`ExportedFuncZ` 的 `ParamsFrom` 改为累加式而非新增必填构造参数）本身不会破坏自举链；`_buildCompiler()`/CI 的结构性两代自举缺口本身未修，留给独立的 `fix` 变更处理。
+
+### self-hosting-future-attributesynth-cross-pkg-resolution
+
+- **来源**：add-params-varargs（2026-07-01，手工两代自举验证 Option A 修复时发现）
+- **触发原因**：手工两代自举重建（旧 VM + 旧种子编译当前源码）验证 Option A 修复后，下一个构建阶段 `z42c.semantics` 报 8 处 `E0401: unknown type in 'new'`（`CompilationUnit`/`NamedType`/`ObjNewExpr`/`ReturnStmt`/`BlockStmt`/`TypeParamList`/`MethodDecl`），全部位于 `src/compiler/z42c.semantics/src/AttributeSynth.z42`（54 行、128-135 行）——该文件完全未被 add-params-varargs 触及（`git diff --stat` 确认），说明是与本变更正交的既有问题，很可能源自更早的 `e924236c`（"z42c type-based 方法重载决议"）在跨包动态符号解析场景下引入、但因 Problem 1（自举链一直被 zpkg-bump 卡住、从未真正跑通"旧种子编译当前源码"路径）而始终未被暴露。
+- **前置依赖**：先解除 `self-hosting-future-single-vm-bootstrap-gap`（否则本问题无法用真实两代自举流程稳定复现/调试），再定位 `AttributeSynth.z42` 里这些 AST 类（`z42c.syntax` 导出）为何在旧种子动态解析时报"unknown type"——初步怀疑与 `e924236c` 引入的 type-based overload mangling 或跨包符号索引有关，尚未深入排查。
+- **触发条件**：下一次需要从真实旧种子（而非当前构建时用的同代产物）完整自举 `z42c.semantics` 时（例如下一次 zpkg/zbc minor bump 的验证，或专门排查此问题的独立 `fix` 变更）。
+- **当前 workaround**：无——本次未深入排查，仅记录现象；日常 `z42 xtask.zpkg test compiler` 走的是同代构建路径（未触发此问题），不受影响。

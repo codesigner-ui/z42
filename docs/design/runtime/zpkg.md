@@ -185,7 +185,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 
 **Strict-pin 政策**：reader 仅接受 `major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor`。pre-1.0 z42 阶段不为旧 zpkg minor 提供兼容；每次 minor bump = 所有现存 zpkg artifacts 必须 regen（`./xtask build stdlib`）。
 
-- **当前版本**：`major=0, minor=10`（详见下方 Minor changelog）
+- **当前版本**：`major=0, minor=23`（详见下方 Minor changelog）
 - **触发 minor bump** 的事项：新增 section id / 已定义 section 字段语义变化 / **任意 zbc minor bump（强耦合）**
 - **触发 major bump** 的事项（迄今未发生）：改 magic / 改 16B header layout / 改 section directory 12B 条目格式 / 弃用 packed 或 indexed 模式之一
 - **zbc inner 与 zpkg outer minor 强耦合**：zbc minor 任意 bump → zpkg minor 必须同步 +1。历史唯一例外是 zbc 1.4 → 1.5（漏 bump），freeze-zpkg-v0 通过 0.5 → 0.6 catch-up 修正。
@@ -216,6 +216,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.20 | 2026-06-16 | [add-reflection-generic-type-definition](../../spec/changes/add-reflection-generic-type-definition/) | inner zbc 1.18（新 `Typeof` opcode `0x73` 携结构化 generic instantiation args）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 | 0.21 | 2026-06-16 | [add-reflection-interface-class-predicates](../../spec/changes/add-reflection-interface-class-predicates/) | inner zbc 1.19（interface emit 最小 TYPE 条目；class_flags bit4 = interface）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
 | 0.22 | 2026-06-16 | [add-reflection-assignable-from](../../spec/changes/add-reflection-assignable-from/) | inner zbc 1.20（TYPE section 接口块存 FQ 名）。zpkg outer 无新字段，纯 minor bump 跟随 zbc 强耦合规则 |
+| 0.23 | 2026-07-01 | [add-params-varargs](../../spec/changes/add-params-varargs/) | zpkg-only（inner zbc 不变）：TSIG 段每条 method/function 记录在既有 `paramCount: u8` 之后追加 `paramsFrom: u8`（0-based 变长形参索引；`0xFF` = 无变长形参），承载跨包 `params T[]` 签名信息 |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 

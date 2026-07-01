@@ -1,0 +1,11 @@
+[project]
+name    = "demo.paramsext"
+version = "0.1.0"
+kind    = "lib"
+pack    = true        # required for cross-zpkg TSIG-based reference compilation
+
+[sources]
+include = ["src/**/*.z42"]
+
+[dependencies]
+"demo.paramsbase" = "0.1.0"

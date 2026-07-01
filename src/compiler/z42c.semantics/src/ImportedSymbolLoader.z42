@@ -141,6 +141,7 @@ public static class ImportedSymbolLoader {
                         int j = 0;
                         while (j < fz.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, fz.Params[j].TypeName); j = j + 1; }
                         var sig = new Z42FuncType(ps, fz.ParamCount, ImportedSymbolLoader._resolve(r, fz.ReturnType));
+                        sig.ParamsFrom = fz.ParamsFrom;
                         r.Functions.Put(fz.Name, new MethodSymbol(fz.Name, "public", sig, false, "", false, null));
                     }
                     f = f + 1;
@@ -183,6 +184,7 @@ public static class ImportedSymbolLoader {
                 int j = 0;
                 while (j < me.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, me.Params[j].TypeName); j = j + 1; }
                 var sig = new Z42FuncType(ps, me.ParamCount, ImportedSymbolLoader._resolve(r, me.ReturnType));
+                sig.ParamsFrom = me.ParamsFrom;
                 var sym = new MethodSymbol(me.Name, me.Visibility, sig, me.IsStatic, ct.Name(), false, null);
                 ct.Methods.Put(me.Name, sym);
                 if (!me.IsStatic) { ct.AddOwnMethod(me.Name, me.IsVirtual, me.IsAbstract); }
@@ -228,6 +230,7 @@ public static class ImportedSymbolLoader {
                 int j = 0;
                 while (j < m.ParamCount) { ps[j] = ImportedSymbolLoader._resolve(r, m.Params[j].TypeName, tps, tpc); j = j + 1; }
                 var sig = new Z42FuncType(ps, m.ParamCount, ImportedSymbolLoader._resolve(r, m.ReturnType, tps, tpc));
+                sig.ParamsFrom = m.ParamsFrom;
                 // z42c 既有约定：静态/实例同进 Methods（IsStatic 标真值）——D3
                 // add-type-based-overloads：symbol.Name = 源名（首个 $ 前），RegKey = 完整注册键
                 //   → OverloadsOf(源名) 跨包候选枚举一致（同本地）；调用方决议返回 RegKey 派发。

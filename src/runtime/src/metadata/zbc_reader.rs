@@ -111,7 +111,10 @@ pub const ZPKG_VERSION_MAJOR: u16 = 0;
 // with inner zbc 1.19 (interfaces emit minimal TYPE entry; class_flags bit4).
 // 2026-06-16 add-reflection-assignable-from: bumped to 0.22, coupled with inner
 // zbc 1.20 (TYPE-section interface block stores FQ names).
-pub const ZPKG_VERSION_MINOR: u16 = 22;
+// 2026-07-01 add-params-varargs: bumped to 0.23 (zpkg-only; inner zbc unchanged).
+// TSIG method/function records gain a trailing paramsFrom byte (0xFF = none)
+// right after the existing paramCount byte, before the per-parameter entries.
+pub const ZPKG_VERSION_MINOR: u16 = 23;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 

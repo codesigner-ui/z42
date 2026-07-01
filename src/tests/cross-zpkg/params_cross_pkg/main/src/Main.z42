@@ -1,0 +1,16 @@
+namespace Demo.ParamsApp;
+
+using Std.IO;        // Console（z42.io；strict-using-resolution：仅 z42.core 隐式 prelude）
+using Demo.ParamsBase;
+using Demo.ParamsExt;
+
+// Exercises params TSIG propagation across two package hops:
+// - Calc.Sum(1, 2, 3): main -> target directly, expanded form resolved
+//   against target's cross-zpkg params signature.
+// - Wrap.SumViaExt(4, 5, 6): main -> ext -> target, verifying the ext
+//   package's own forwarding call (itself resolved against target's
+//   cross-zpkg params signature) still works when re-exposed to main.
+void Main() {
+    Console.WriteLine(Calc.Sum(1, 2, 3));
+    Console.WriteLine(Wrap.SumViaExt(4, 5, 6));
+}

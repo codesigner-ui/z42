@@ -1,11 +1,11 @@
 {
   "header": {
     "major": 0,
-    "minor": 22,
+    "minor": 23,
     "flags": [
       "Packed"
     ],
-    "section_count": 7
+    "section_count": 9
   },
   "sections": [
     "META",
@@ -14,7 +14,9 @@
     "EXPT",
     "DEPS",
     "SIGS",
-    "MODS"
+    "MODS",
+    "TSIG",
+    "IMPL"
   ],
   "package": {
     "name": "demo.multi",
@@ -26,8 +28,8 @@
   "is_sym_only": false,
   "has_blid": false,
   "has_mdbg": false,
-  "has_tsig": false,
-  "has_impl": false,
+  "has_tsig": true,
+  "has_impl": true,
   "has_sigs": true,
   "has_mods": true,
   "has_file": false

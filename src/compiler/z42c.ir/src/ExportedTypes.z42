@@ -18,12 +18,18 @@ public sealed class ExportedMethodZ {
     public int              MinArgCount;
     public ExportedParamZ[] Params;
     public int              ParamCount;
+    public int              ParamsFrom;   // add-params-varargs：变长形参索引（0-based，= ParamCount-1）；-1 = 非变长。
+    // add-params-varargs：ParamsFrom 保持累加式（构造函数元数不变）——ZpkgReader._method
+    // 是自举编译器自身 TSIG 读取机制的调用点，旧种子（未含 ParamsFrom）冻结编译的调用约定
+    // 不能被新增必填形参打破，否则自举链上旧种子读新格式 zpkg 时动态解析会 ABI 不匹配崩溃
+    // （undefined register）。默认 -1（非变长），需要非默认值时构造后单独赋值。
     public ExportedMethodZ(string name, string returnType, string visibility,
                            bool isStatic, bool isVirtual, bool isAbstract, int minArgCount,
                            ExportedParamZ[] params_, int paramCount) {
         this.Name = name; this.ReturnType = returnType; this.Visibility = visibility;
         this.IsStatic = isStatic; this.IsVirtual = isVirtual; this.IsAbstract = isAbstract;
         this.MinArgCount = minArgCount; this.Params = params_; this.ParamCount = paramCount;
+        this.ParamsFrom = 0 - 1;
     }
 }
 
@@ -89,10 +95,12 @@ public sealed class ExportedFuncZ {
     public int              MinArgCount;
     public ExportedParamZ[] Params;
     public int              ParamCount;
+    public int              ParamsFrom;   // add-params-varargs：变长形参索引（0-based，= ParamCount-1）；-1 = 非变长。
+    // add-params-varargs：ParamsFrom 保持累加式，理由同 ExportedMethodZ（见其注释）。
     public ExportedFuncZ(string name, string returnType, int minArgCount,
                          ExportedParamZ[] params_, int paramCount) {
         this.Name = name; this.ReturnType = returnType; this.MinArgCount = minArgCount;
-        this.Params = params_; this.ParamCount = paramCount;
+        this.Params = params_; this.ParamCount = paramCount; this.ParamsFrom = 0 - 1;
     }
 }
 

@@ -59,10 +59,18 @@ public sealed class ZpkgInfo {
 
 public static class ZpkgReader {
 
-    // 解析 header/目录/META/STRS（其余段惰性按需）。非 packed / 坏 magic → null（调用方静默跳过）。
+    // 解析 header/目录/META/STRS（其余段惰性按需）。非 packed / 坏 magic / 版本不匹配 → null（调用方静默跳过）。
     public static ZpkgInfo Open(byte[] data) {
         if (data.Length < 16) { return null; }
         if ((int)data[0] != 90 || (int)data[1] != 80 || (int)data[2] != 75 || (int)data[3] != 0) { return null; }   // "ZPK\0"
+        // strict-pin（add-params-varargs 5.4）：跨包扫描（DepScan.ScanDirs）会把 libsDirs 下所有
+        // z42.*.zpkg 当数据盲读——版本不匹配的包（如 minor bump 前构建的旧 stdlib）其 TSIG/SIGS
+        // 字节布局已变，不校验直接按新布局解析会读出垃圾偏移量甚至越界崩溃。此处比照 Rust
+        // zbc_reader 的 strict-pin 原则，major/minor 任一不符即视为不可读，与坏 magic 同等静默跳过。
+        var vc = new ZpkgCursor(data, 4);
+        int major = vc.U16();
+        int minor = vc.U16();
+        if (major != ZpkgWriterZ.Major || minor != ZpkgWriterZ.Minor) { return null; }
         var c = new ZpkgCursor(data, 8);
         int flags = c.U16();
         int secCount = c.U16();
@@ -287,6 +295,7 @@ public static class ZpkgReader {
                 string ret = z.Pool[c.U32()];
                 int minArg = c.U16();
                 int pc = c.U8();
+                int paramsFrom = ZpkgReader._paramsFromInt(c.U8());
                 ExportedParamZ[] ps = new ExportedParamZ[pc];
                 int x = 0;
                 while (x < pc) {
@@ -298,7 +307,9 @@ public static class ZpkgReader {
                 x = 0;
                 while (x < tpc2) { c.U32(); x = x + 1; }
                 ZpkgReader._skipTpConstraints(c);
-                funcs[ii] = new ExportedFuncZ(fn2, ret, minArg, ps, pc);
+                ExportedFuncZ ef = new ExportedFuncZ(fn2, ret, minArg, ps, pc);
+                ef.ParamsFrom = paramsFrom;
+                funcs[ii] = ef;
                 ii = ii + 1;
             }
             // delegates（跳过）
@@ -367,6 +378,7 @@ public static class ZpkgReader {
         int flags = c.U8();
         int minArg = c.U16();
         int pc = c.U8();
+        int paramsFrom = ZpkgReader._paramsFromInt(c.U8());
         ExportedParamZ[] ps = new ExportedParamZ[pc];
         int i = 0;
         while (i < pc) {
@@ -374,9 +386,17 @@ public static class ZpkgReader {
             ps[i] = new ExportedParamZ(pn, z.Pool[c.U32()]);
             i = i + 1;
         }
-        return new ExportedMethodZ(name, ret, vis,
+        ExportedMethodZ em = new ExportedMethodZ(name, ret, vis,
                                    (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0,
                                    minArg, ps, pc);
+        em.ParamsFrom = paramsFrom;
+        return em;
+    }
+
+    // add-params-varargs：TSIG 字节 0xFF（255）哨兵 ↔ in-memory -1（design D2）。
+    private static int _paramsFromInt(int paramsFromByte) {
+        if (paramsFromByte == 255) { return 0 - 1; }
+        return paramsFromByte;
     }
 
     private static void _skipConstraintBundle(ZpkgCursor c) {

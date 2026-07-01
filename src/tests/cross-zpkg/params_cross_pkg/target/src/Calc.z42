@@ -1,0 +1,14 @@
+namespace Demo.ParamsBase;
+
+// Target package: exposes a static params method. Cross-zpkg consumers
+// resolve the call via TSIG's paramsFrom byte (design.md D1), not via
+// re-reading source — this is what params_cross_pkg exercises end-to-end.
+public class Calc {
+    public static int Sum(params int[] xs) {
+        int total = 0;
+        for (int i = 0; i < xs.Length; i = i + 1) {
+            total = total + xs[i];
+        }
+        return total;
+    }
+}

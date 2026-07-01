@@ -1142,6 +1142,13 @@ public sealed class TypeChecker {
             Z42ClassType wct = env.Symbols.GetClass(wrapper);
             FieldSymbol wfs = this._findField(env.Symbols, wct, m.Name);
             if (wfs != null) { return new BoundMember(target, m.Name, wfs.FieldType, m.Span); }
+            // 属性 getter 派发（镜像上面 Z42ClassType 分支）：wrapper 类的 extern 属性
+            // （如 String.ByteLength）注册为 get_<Name> 方法而非字段，须同样查 getter
+            // 才能拿到真实返回类型；否则误判 "member access on non-class" 或松绑 Unknown。
+            MethodSymbol wgetter = this._findMethod(env.Symbols, wct, "get_" + m.Name);
+            if (wgetter != null && wgetter.Signature != null) {
+                return new BoundCall("instance", true, target, tt.Name(), "get_" + m.Name, new BoundExpr[0], 0, wgetter.Signature.Ret, m.Span);
+            }
             return new BoundMember(target, m.Name, new Z42UnknownType(), m.Span);
         }
         this._diags.Error(DiagnosticCodes.TypeMismatch,

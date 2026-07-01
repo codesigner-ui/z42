@@ -50,9 +50,9 @@ z42 目前没有变长参数。`Path.Join` 等"多段同类型 / 混类型实参
 | `docs/design/runtime/ir.md` | MODIFY | 注明 params 为前端 lowering、VM 不感知 |
 | `docs/spec/changes/ACTIVE.md` | MODIFY | 登记/释放子系统占用 |
 | `examples/params_varargs.z42` | NEW | 示例（normal + expanded + object[]） |
-| `src/tests/run/params_varargs_expanded/` | NEW | golden：expanded form 端到端 |
-| `src/tests/run/params_varargs_normal/` | NEW | golden：normal form 直传 |
-| `src/tests/run/params_object_mixed/` | NEW | golden：`params object[]` 混类型 + box |
+| `src/tests/params/params_varargs_expanded.z42` | NEW | golden：expanded form 端到端 |
+| `src/tests/params/params_varargs_normal.z42` | NEW | golden：normal form 直传 |
+| `src/tests/params/params_object_mixed.z42` | NEW | golden：`params object[]` 混类型 + box |
 | `src/tests/cross-zpkg/params_cross_pkg/` | NEW | 跨 zpkg：被调方 params 经 TSIG 标记，调用方 expanded |
 
 **只读引用**（理解上下文，不修改）：

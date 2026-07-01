@@ -281,12 +281,14 @@ Draw("blue", filled: true);                // 混合：color 位置 + filled 具
 // Draw("red", color: "blue");             // 错误 Z1004：第 1 个参数被位置+具名重复指定
 // Draw(width: 2);                         // 错误 Z1005：required 参数 color 未提供
 
-// 可变参数
+// 可变参数（详见 5.0.5）
 int Sum(params int[] values) {
     int total = 0;
     foreach (var v in values) total += v;
     return total;
 }
+Sum(1, 2, 3);           // expanded form：散列实参自动打包为 int[]
+Sum(new int[] { 1, 2 }); // normal form：直接传数组
 
 // 多返回值：tuple（推荐）
 (bool ok, int v) TryParse(string s) {
@@ -342,6 +344,30 @@ class Vec {
 
 **virtual / override**：override 方法的形参类型必须与被覆盖的虚方法完全一致（C# 子集语义）；无论
 基类是否声明了其它同 arity 的重载，子类的 override 都会正确复用基类对应重载的虚函数表槽位。
+
+### 5.0.5 变长参数（`params`）
+
+`params` 关键字放在方法/函数最后一个参数前，标记该参数接受**变长实参**；参数类型必须是 `T[]`（数组）：
+
+```z42
+// typed overload —— 无 boxing，同构参数最优性能
+public static string Join(string sep, params string[] parts) { ... }
+
+// object overload —— 混类型参数（借助 boxing）
+public static void Describe(params object[] args) { ... }
+```
+
+**调用形态**（二选一，由实参形状决定，编译期静态决议）：
+- **Expanded form**：`Join(",", "a", "b", "c")` —— 散列实参在调用点由编译器隐式打包为 `new string[] { "a", "b", "c" }`
+- **Normal form**：`Join(",", new string[] { "a", "b" })` —— 直接传一个数组，跳过打包
+
+**重载决议**（对齐 C# 语义）：
+1. Normal form（单个 `T[]` 实参且类型精确匹配）优先于 expanded form
+2. 两个 `params` 重载均以 expanded form 适用时，element type 更具体的胜出：`params string[]` 优于 `params object[]`（string 精确匹配，无需装箱）
+3. 调用方实参类型混杂（如 `f(1, "x")`）：不满足 `params string[]` 的 expanded 适用性，fallback 到 `params object[]`（逐参数装箱）
+4. 允许 `params` 参数前有普通定参（如 `Join(string sep, params string[] parts)`），定参部分按普通规则参与决议
+
+**IR / 跨包**：纯编译器前端 lowering，**零新 IR 指令、VM 不感知 `params`**——expanded form 在 Codegen 阶段展开为 `new T[n]` + 逐元素存入 + 既有 `Call`/`VCall`/`CallIndirect` 指令。跨 zpkg 调用时，`params` 信息（携带哪个形参 + 元素类型）作为 TSIG 的一部分序列化，供导入方在本地重新做 normal/expanded 决议。
 
 ### 5.1 局部函数（嵌套函数声明，C# 7+）
 
@@ -727,48 +753,6 @@ function z42.io.Console.WriteLine(param_count=1) -> void
 public static void Log(string msg) => Console.WriteLine(msg);
 // 等价于 { Console.WriteLine(msg); }
 ```
-
----
-
-## Deferred / Future Work
-
-### params-future-impl: `params` 关键字完整实现
-
-- **来源**：设计讨论 2026-06-19；`Path.Join` 多参数需求触发
-- **触发原因**：自举完成前不实施；`params object[]` 还依赖 `object` 基类型（L2+ 特性，需 boxing 机制）
-- **前置依赖**：
-  1. 自举完成（bootstrap C# 编译器→z42c）
-  2. `params object[]` 重载额外依赖：`object` 类型引入（L2）
-- **触发条件**：自举完成后，需要 `Path.Join(params string[])` / `Console.Write(string, params object[])` 等 API 时
-- **当前 workaround**：多段路径用嵌套 `Path.Join(Path.Join(a, b), c)`；3-arg / 4-arg 显式重载作为过渡
-
-**设计摘要**（等实施时直接从这里转 spec）：
-
-语法：`params` 关键字放在最后一个参数前，参数类型必须是 `T[]`。
-
-```z42
-// typed overload — 无 boxing，同构参数最优性能
-public static string Join(params string[] parts) { ... }
-
-// object overload — 混类型参数（需 object 类型支持，L2+）
-public static void Write(string fmt, params object[] args) { ... }
-```
-
-**重载决议**（对齐 C# 语义）：
-- Normal form（单个 `T[]` 参数直传）优先于 expanded form（展开为散列参数）
-- 两个 params 重载均在 expanded form 时，element type 更具体的胜出：`params string[]` 优于 `params object[]`（string 精确匹配）
-- 调用方传混合类型（如 `f(1, "x")`）：`params string[]` 不适用，fallthrough 到 `params object[]`
-
-**IR 策略：纯编译器前端 lowering，零新 IR 指令**：
-- `Path.Join(a, b, c)` → 编译器 emit `new string[3]` + ARRAY_STORE × 3 + CALL（单 `string[]` 参数）
-- `Path.Join(arr)` → 直接 normal form 调用，不产生额外数组
-- VM / IR 层不感知 `params`，仅 TypeChecker + Codegen 处理
-
-**Pipeline 改动**：
-1. Lexer：新 token `params`
-2. Parser/AST：`ParameterNode.IsParams: bool`
-3. TypeChecker：末尾参数约束校验；调用时 arity ≥ required 参数数；element type 推断；重载决议 normal/expanded form
-4. Codegen：expanded form 调用点 → 隐式打包 `new T[] { args... }`
 
 ---
 

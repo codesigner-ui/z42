@@ -10,10 +10,10 @@
 |---------|------|
 | `packed-minimal/`     | 单 class 单模块；packed mode 基础形态（META + STRS + NSPC + EXPT + DEPS + SIGS + MODS）|
 | `packed-multi-module/`| 多 .z42 → 同一 zpkg；MODS 多条目 + 共享 STRS pool |
-| `indexed-minimal/`    | 增量编译 cache form；FILE section 替代 MODS |
+| `indexed-minimal/`    | 增量编译 cache form；FILE section 替代 MODS。**冻结**：z42c 自举重写未实现 indexed/FILE writer/reader（当前管线无消费方），该 fixture 保留 C# 时代 `minor=22` 旧字节、不随后续 minor bump regen，见 [self-hosting-future-indexed-zpkg](../../design/compiler/self-hosting.md#self-hosting-future-indexed-zpkg) |
 | `sym-only-sidecar/`   | `FlagSymOnly` set；只含 META + STRS + MDBG + BLID（sym-only sidecar 形态）|
 
-> Phase 0 不覆盖 `with-tsig` —— 需要 `ExportedModules` 设置非空，必须走 PackageCompiler.BuildTarget 完整 pipeline。留 follow-up。
+> `packed-minimal` / `packed-multi-module` 只要 zpkg 内有 ≥1 个模块即触发 TSIG + IMPL section emit（`ZpkgWriterZ._buildSectionList`：`ExportedCount > 0` → secCount=9），故这两个 fixture 已天然覆盖 TSIG/IMPL 布局，不再需要单独的 `with-tsig` fixture。
 
 ## 核心文件
 | 文件 | 职责 |
@@ -41,5 +41,5 @@
 
 ## 依赖关系
 
-- 上游：`z42 xtask.zpkg build stdlib` 产出（`artifacts/build/libraries/dist/release/*.zpkg`）—— fixture compile 需要 stdlib 解析 namespace
+- 上游：`z42c build`（自举编译器，`src/compiler/z42c.driver`）产出各 fixture 的 `source.zpkg`
 - 下游：`FormatGoldenTests` harness + `FormatInvariantTests`

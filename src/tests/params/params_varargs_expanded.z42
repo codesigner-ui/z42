@@ -1,0 +1,17 @@
+// add-params-varargs：expanded form —— 调用方 trailing 实参被 TypeChecker 打包成
+// BoundArrayLit 插入 params 形参槽（design.md D1/D4），VM 看到的只是普通数组字面量 + CALL。
+namespace Demo;
+
+int Sum(params int[] xs) {
+    int total = 0;
+    for (int i = 0; i < xs.Length; i = i + 1) {
+        total = total + xs[i];
+    }
+    return total;
+}
+
+void Main() {
+    Assert.Equal(6, Sum(1, 2, 3));
+    Assert.Equal(0, Sum());
+    Assert.Equal(1, Sum(1));
+}

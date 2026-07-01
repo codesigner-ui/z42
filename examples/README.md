@@ -36,6 +36,7 @@ Tier 2 Rust 版本。
 | `string_members.z42` | `string.Length` / `string.IsEmpty`（M7 stdlib 成员演示） | ✅ Phase 1 可跑 |
 | `exceptions.z42` | `try / catch / throw` 异常处理（Phase 2 将替换为 `Result<T, E>` + `?`） | ✅ Phase 1 可跑 |
 | `generics.z42` | 泛型类、Lambda、委托、LINQ 风格 | 🚧 设计目标；泛型基础已落地（L3-G1/G3a/G4h），完整跑通需 L3 收尾 |
+| `params_varargs.z42` | `params` 变长参数：normal/expanded 调用形态 + `params object[]` 混类型装箱 | 🚧 parser/typechecker 单测已覆盖等价形态；端到端执行待 driver 下次自举 |
 
 > ✅ = 当前编译器/VM 可端到端执行；🚧 = 部分特性可用，整体待完善。
 >

@@ -34,7 +34,8 @@ public sealed class ZpkgSectionList {
 public static class ZpkgWriterZ {
     // 版本（须与 C# ZpkgWriter.VersionMajor/Minor 一致；strict-pin。bump 同步见 version-bumping.md 第 5 步）。
     public static int Major = 0;
-    public static int Minor = 22;   // 2026-06-16 add-reflection-assignable-from：随内嵌 zbc 1.20 联动（接口块存 FQ 名）
+    public static int Minor = 23;   // 2026-07-01 add-params-varargs：TSIG 方法/函数记录加 paramsFrom 字节（0xFF=无）
+
 
     // 主 zpkg（不含 BLID/sidecar）。debug 单包 / 测试用；release strip 走 WritePackedWithSidecar。
     public static ByteWriter WritePacked(ZpkgFileZ zpkg, bool isRelease) {
@@ -439,6 +440,7 @@ public static class ZpkgWriterZ {
                 w.WriteU32(pool.Idx(fz.ReturnType));
                 w.WriteU16(fz.MinArgCount);
                 w.WriteU8(fz.ParamCount);
+                w.WriteU8(ZpkgWriterZ._paramsFromByte(fz.ParamsFrom));
                 int i = 0;
                 while (i < fz.ParamCount) {
                     w.WriteU32(pool.Idx(fz.Params[i].Name)); w.WriteU32(pool.Idx(fz.Params[i].TypeName));
@@ -483,11 +485,18 @@ public static class ZpkgWriterZ {
         w.WriteU8(flags);
         w.WriteU16(m.MinArgCount);
         w.WriteU8(m.ParamCount);
+        w.WriteU8(ZpkgWriterZ._paramsFromByte(m.ParamsFrom));
         int i = 0;
         while (i < m.ParamCount) {
             w.WriteU32(pool.Idx(m.Params[i].Name)); w.WriteU32(pool.Idx(m.Params[i].TypeName));
             i = i + 1;
         }
+    }
+
+    // add-params-varargs：paramsFrom in-memory 用 -1 表无变长形参；TSIG 字节用 0xFF（255）哨兵（design D2）。
+    private static int _paramsFromByte(int paramsFrom) {
+        if (paramsFrom < 0) { return 255; }
+        return paramsFrom;
     }
 
     // IMPL 段（L3-Impl2 跨 zpkg `impl Trait for Type`；布局 1:1 C# BuildImplSection）

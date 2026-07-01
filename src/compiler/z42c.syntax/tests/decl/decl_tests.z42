@@ -6,11 +6,28 @@ namespace Z42cSyntaxDeclTests;
 using Std;
 using Std.Test;
 using Z42.Syntax;
+using Z42.Core;
 
 string parseUnit(string src) {
     var p = new Parser(src, "t.z42");
     var u = p.ParseCompilationUnit();
     return u.Dump();
+}
+
+// add-params-varargs 阶段 6.5：`params` 约束校验诊断（E0206/E0207/E0208）。
+// 返回逗号拼接的诊断 code 序列（空串=无诊断），便于用 Assert.Equal 精确断言条数+顺序。
+string parseErrorCodes(string src) {
+    var p = new Parser(src, "t.z42");
+    p.ParseCompilationUnit();
+    var diags = p.Diagnostics();
+    string codes = "";
+    int i = 0;
+    while (i < diags.Count()) {
+        if (codes != "") { codes = codes + ","; }
+        codes = codes + diags.Get(i).Code;
+        i = i + 1;
+    }
+    return codes;
 }
 
 [Test]
@@ -210,4 +227,38 @@ void test_attribute_named_args() {
     // 命名参数 k=v → AssignExpr Dump
     Assert.Equal("(unit (attr [Native (= lib \"m\")] (class C)))",
                  parseUnit("[Native(lib=\"m\")] class C {}"));
+}
+
+[Test]
+void test_params_not_last_error() {
+    // params 修饰的形参不在末位 → E0206（ParamsNotLast）
+    Assert.Equal(DiagnosticCodes.ParamsNotLast,
+                 parseErrorCodes("class C { void F(params int[] xs, int y) {} }"));
+}
+
+[Test]
+void test_params_not_array_error() {
+    // params 形参类型非 T[] → E0207（ParamsNotArray）
+    Assert.Equal(DiagnosticCodes.ParamsNotArray,
+                 parseErrorCodes("class C { void F(params int xs) {} }"));
+}
+
+[Test]
+void test_params_modifier_conflict_with_ref_error() {
+    // params 与 ref 同现 → E0208（ParamsModifierConflict）
+    Assert.Equal(DiagnosticCodes.ParamsModifierConflict,
+                 parseErrorCodes("class C { void F(params ref int[] xs) {} }"));
+}
+
+[Test]
+void test_params_modifier_conflict_with_default_error() {
+    // params 与默认值同现 → E0208（ParamsModifierConflict）
+    Assert.Equal(DiagnosticCodes.ParamsModifierConflict,
+                 parseErrorCodes("class C { void F(params int[] xs = null) {} }"));
+}
+
+[Test]
+void test_params_valid_no_error() {
+    // 合法形态（非末 params 之前的普通参数 + 末位 params T[]）→ 无诊断
+    Assert.Equal("", parseErrorCodes("class C { void F(int a, params int[] xs) {} }"));
 }

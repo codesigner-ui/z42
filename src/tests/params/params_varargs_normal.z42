@@ -1,0 +1,22 @@
+// add-params-varargs：normal form —— 单个实参已是目标数组类型（int[]）时直接透传，
+// 不额外打包成新数组字面量（design.md D4 #1：normal form 优先于 expanded 单元素包裹）。
+namespace Demo;
+
+int Sum(params int[] xs) {
+    int total = 0;
+    for (int i = 0; i < xs.Length; i = i + 1) {
+        total = total + xs[i];
+    }
+    return total;
+}
+
+void Main() {
+    int[] arr = new int[3];
+    arr[0] = 10;
+    arr[1] = 20;
+    arr[2] = 30;
+    Assert.Equal(60, Sum(arr));
+
+    // 同一重载的 expanded form 调用形式仍并存可用
+    Assert.Equal(6, Sum(1, 2, 3));
+}

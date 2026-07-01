@@ -1,0 +1,14 @@
+// add-params-varargs：params object[] —— 混类型实参装箱（boxing 是类型系统层 no-op，
+// Value 本就带 tag，design.md D1）；验证打包个数 + 各元素按原类型拆箱回读。
+namespace Demo;
+
+object[] Capture(params object[] xs) {
+    return xs;
+}
+
+void Main() {
+    object[] a = Capture(1, "hi");
+    Assert.Equal(2, a.Length);
+    Assert.Equal(1, (int)a[0]);
+    Assert.Equal("hi", (string)a[1]);
+}

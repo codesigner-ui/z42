@@ -1,0 +1,12 @@
+namespace Demo.ParamsExt;
+
+using Demo.ParamsBase;
+
+// Ext package: forwards to target's params method using expanded form.
+// This exercises TypeChecker's params-packing logic against a params
+// signature resolved from another zpkg's TSIG (not local AST).
+public class Wrap {
+    public static int SumViaExt(int a, int b, int c) {
+        return Calc.Sum(a, b, c);
+    }
+}
