@@ -15,7 +15,7 @@
 | 目录级"这个目录有啥/怎么测" | 子目录 README | 各 `src/**/README.md` |
 
 三类文档的完整职责边界、以及"知识如何从变更沉淀进本书"的治理规则，见
-[`.claude/rules/doc-system.md`](../../../.claude/rules/doc-system.md)。
+[`docs/agent/rules/doc-system.md`](../../agent/rules/doc-system.md)。
 
 ## 核心约定：知识从变更「上浮」进本书
 

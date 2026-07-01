@@ -2,8 +2,8 @@
 
 > z42 全仓文档的**顶层地图 + 治理规则 + 本次重构的决策记录与待办**。
 > 任何"这该写哪份文档 / 为什么这么分"的疑问，先查这里。
-> （2026-07-01～02 文档体系重构确立；配套骨架见 `docs/book/`。本文件当前暂居
-> `.claude/rules/`，随规范迁移一并搬到 `docs/agent/rules/`——见第五节。）
+> （2026-07-01～02 文档体系重构确立；配套骨架见 [`../../book/`](../../book/)。本文件是
+> `docs/agent/rules/` 的首份规范；其余规范仍在 `.claude/rules/`，待迁——见第五节。）
 
 ---
 
@@ -39,7 +39,7 @@ CLAUDE.md / AGENTS.md  【瘦入口】让任意大模型 import 上面的文件 
 附：**操作手册**（`docs/workflow/`，怎么操作的命令）独立于以上四类。
 
 **SoT 铁律**：每条知识只有一个权威位置，其他地方只能链接，不得复制。发现同一事实两处各写一份
-→ 按[规范冲突检测](../CLAUDE.md)停下，留一处、另一处改链接。
+→ 按[规范冲突检测](../../../.claude/CLAUDE.md)停下，留一处、另一处改链接。
 
 ## 三、关键决策记录
 
@@ -52,11 +52,11 @@ CLAUDE.md / AGENTS.md  【瘦入口】让任意大模型 import 上面的文件 
 | **D5** | book 用 **mdBook**（纯 markdown，`mdbook serve` 可渲染发布） | 与 Rust 技术栈一致，无额外负担 |
 | **D6** | 开发规范**模型中立**，居 `docs/agent/rules/`；`CLAUDE.md`/`AGENTS.md` 仅瘦入口指进去，**最后一步**才配 | 文档为所有大模型设计，不硬绑 Claude 专属机制 |
 | **D7** | `docs/spec/archive/`（590 历史目录）**暂留**，book 全面覆盖后单独清理 | 死历史 git 已留痕，不阻塞当前 |
-| **D8** | 目录 README **5 段制**：职责 / 功能索引 / 如何测试验证 / 关联文档 / 核心文件 | 人不读源码，靠 README 快速 review（模板见 [code-organization.md](code-organization.md)） |
+| **D8** | 目录 README **5 段制**：职责 / 功能索引 / 如何测试验证 / 关联文档 / 核心文件 | 人不读源码，靠 README 快速 review（模板见 [code-organization.md](../../../.claude/rules/code-organization.md)） |
 
 ## 四、知识「上浮」规则（本体系不过时的保证）
 
-**每个 change 归档（[workflow.md 阶段 9](workflow.md)）时，凡改变了语言/编译器/VM/stdlib 的对外
+**每个 change 归档（[workflow.md 阶段 9](../../../.claude/rules/workflow.md)）时，凡改变了语言/编译器/VM/stdlib 的对外
 行为或内部机制，其知识必须上浮进 `docs/book/` 对应章节——然后变更目录随后可删（git 留痕）。**
 
 以前 design（知识）与 spec（变更）并列，知识散落在数百个历史 change 里没人捞 → design 过时、
@@ -69,7 +69,8 @@ archive 堆到 590。用"上浮"把知识收敛到 book 单一权威，是 desig
 - [ ] **book 内容迁移**：旧 `docs/design/` 93 篇 → book。覆盖度追踪器 = `docs/book/src/*/README.md`
       各"迁移状态表"（⬜待迁 / 🟡迁移中 / ✅已迁）。迁移期新知识**直接写 book**。
 - [ ] **规范迁移**：`.claude/rules/*` → `docs/agent/rules/*`——去 Claude 化措辞（主语改"大模型/AI"）、
-      把 Claude 专属 `paths:` frontmatter 剥离到瘦入口。**先不搬，等结构理清后统一做**。
+      把 Claude 专属 `paths:` frontmatter 剥离到瘦入口。本文件（doc-system）已先行迁入；
+      其余（workflow / philosophy / commit-log / code-organization…）**待结构理清后统一搬**。
 - [ ] **清理**：某部分全部 ✅ → 删对应旧 `docs/design/<dir>/`；design 清空后删目录；archive 单独清（D7）。
 - [ ] **最后配瘦入口**：`CLAUDE.md`（Claude Code，可含 @import/paths 特性）+ `AGENTS.md`
       （通用）指向 `docs/agent/rules/` 与 `docs/book/`。**此步放在最后**（等弄好再让模型导入）。

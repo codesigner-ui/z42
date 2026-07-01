@@ -1,7 +1,10 @@
 # .claude/rules/ — 开发规范总入口
 
 AI 与协作者干活的行为规范（文档四类中的**③ 开发规范**，见
-[doc-system.md](doc-system.md)）。分四组：
+[doc-system.md](../../docs/agent/rules/doc-system.md)）。分四组：
+
+> 迁移中：本组规范正逐步搬往 `docs/agent/rules/`（模型中立）。`doc-system.md` 已迁，
+> 见 [`docs/agent/rules/doc-system.md`](../../docs/agent/rules/doc-system.md) 第五节。
 
 ## 流程主线（怎么推进一次变更）
 
@@ -17,7 +20,7 @@ AI 与协作者干活的行为规范（文档四类中的**③ 开发规范**，
 |------|--------|
 | [code-organization.md](code-organization.md) | 目录 README 模板（5 段）、文件/函数/类型行数限制 |
 | [commit-log.md](commit-log.md) | 提交信息格式 `type(scope): 描述` |
-| [doc-system.md](doc-system.md) | 文档体系总纲：四类文档职责、SoT、知识上浮、迁移期约定 |
+| [doc-system.md](../../docs/agent/rules/doc-system.md) 📍docs/agent/rules/ | 文档体系总纲：四类文档职责、SoT、知识上浮、迁移期约定 |
 | [version-bumping.md](version-bumping.md) | zbc / zpkg 格式 version bump checklist |
 
 ## 语言专属（各技术栈的坑与约定）
