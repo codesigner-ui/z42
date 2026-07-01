@@ -1,0 +1,17 @@
+# z42 知识库（mdBook）
+#
+# 本地渲染：cargo install mdbook 后，在本目录跑  mdbook serve --open
+# 本 book 是 z42 语言 / 编译器 / VM / 标准库的【系统化长期知识库·唯一 SoT】。
+# 与 docs/design/（旧·逐步迁入）、docs/spec/（变更工作区）职责区分见
+# .claude/rules/doc-system.md。
+
+[book]
+title = "z42 语言与实现"
+authors = ["z42"]
+language = "zh"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+smart-punctuation = true
