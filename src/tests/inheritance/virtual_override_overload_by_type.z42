@@ -1,0 +1,37 @@
+// Test: add-type-based-overloads 阶段 8 —— virtual/override 同 arity 重载安全共存（D7）。
+// Base 声明两个同 arity 的 virtual 重载 Handle(int)/Handle(string)；Derived 只 override
+// 其中一个（Handle(int)）。override 与被覆盖方法签名一致 → Canon 归一后 mangled 键一致 →
+// vtable slot 正确复用；虚派发结果应与实参静态类型匹配的重载一致（Handle(int) 走 override，
+// Handle(string) 仍走 Base 实现）。
+namespace Demo;
+
+class Base {
+    virtual string Handle(int n) {
+        return $"base-int:{n}";
+    }
+    virtual string Handle(string s) {
+        return $"base-str:{s}";
+    }
+}
+
+class Derived : Base {
+    override string Handle(int n) {
+        return $"derived-int:{n}";
+    }
+}
+
+string CallInt(Base b, int n) {
+    return b.Handle(n);
+}
+string CallStr(Base b, string s) {
+    return b.Handle(s);
+}
+
+void Main() {
+    var d = new Derived();
+    Assert.Equal("derived-int:5", CallInt(d, 5));
+    Assert.Equal("base-str:hi", CallStr(d, "hi"));
+
+    Base b2 = new Base();
+    Assert.Equal("base-int:9", CallInt(b2, 9));
+}

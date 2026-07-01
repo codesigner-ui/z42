@@ -1,0 +1,42 @@
+// Test: add-type-based-overloads 阶段 8 —— 实例方法 type-based 重载扩展端到端。
+// ① Vec2 声明两个同 arity 的 `operator +`（op_Add(Vec2,Vec2) / op_Add(Vec2,int)）——
+//    验证 8.1a：_bindBinary 迁移到 _resolveOverload 后按实参类型正确派发（旧
+//    arity-only _overloadKey 会查不到 mangled 注册键，派发失败）。
+// ② Vec2 声明两个同 arity 的普通实例方法 `Describe(int)` / `Describe(string)`——
+//    验证 D7：实例方法同 arity 重载经 type-mangled 键共存，按实参类型正确选中。
+namespace Demo;
+
+class Vec2 {
+    int x;
+    int y;
+    Vec2(int a, int b) { this.x = a; this.y = b; }
+
+    public static Vec2 operator +(Vec2 a, Vec2 b) {
+        return new Vec2(a.x + b.x, a.y + b.y);
+    }
+    public static Vec2 operator +(Vec2 a, int s) {
+        return new Vec2(a.x + s, a.y + s);
+    }
+
+    string Describe(int n) {
+        return $"int:{n}";
+    }
+    string Describe(string s) {
+        return $"str:{s}";
+    }
+}
+
+void Main() {
+    var a = new Vec2(1, 2);
+    var b = new Vec2(10, 20);
+
+    var sum     = a + b;   // op_Add(Vec2,Vec2)
+    var shifted = a + 5;   // op_Add(Vec2,int) — 同 arity，第二参类型不同
+    Assert.Equal(11, sum.x);
+    Assert.Equal(22, sum.y);
+    Assert.Equal(6, shifted.x);
+    Assert.Equal(7, shifted.y);
+
+    Assert.Equal("int:42", a.Describe(42));
+    Assert.Equal("str:hi", a.Describe("hi"));
+}

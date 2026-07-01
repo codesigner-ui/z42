@@ -148,21 +148,23 @@ public sealed class TypeChecker {
     }
 
     // add-type-based-overloads 根因修复：SymbolCollector 用 first-wins `ct.Methods.Put(regName, ...)` 注册方法——
-    // 同 (name,arity) ≥2 的静态重载若 Canon 归一后撞出同一个 mangled RegKey（如 f(int) vs f(i32)，或
-    // f(string) vs f(string?)），后者会静默覆盖前者，方法体无声丢失、零诊断。这里在绑体前对每个静态
+    // 同 (name,arity) ≥2 的重载若 Canon 归一后撞出同一个 mangled RegKey（如 f(int) vs f(i32)，或
+    // f(string) vs f(string?)），后者会静默覆盖前者，方法体无声丢失、零诊断。这里在绑体前对每个
     // (name,arity) 重载组重放同一遍 mangle，键碰撞即报错——把"静默丢方法"变成编译错误。
-    // 范围仅静态：实例方法 type-mangle 未启用（VCall 仍按未 mangle/`$arity` 名派发，arity-only 碰撞
-    // 是已知、暂接受的现状——如 String.Equals(object)/Equals(string)，见 D1），故不在此处检查。
+    // D7（2026-07-01）：泛化覆盖静态 + 实例方法（原仅静态）。协议豁免名单内的名字
+    // （ToString/Equals/GetHashCode/GetType/get_Item/set_Item）不参与 mangle（SymbolCollector 同款
+    // 判定），继续维持 first-wins 静默覆盖的现状（如 String.Equals(object)/Equals(string)），
+    // 不在此处误报——用同一份 `SymbolCollector.IsProtocolExempt` 跳过，单一豁免名单来源。
     private void _checkDuplicateStaticOverloads(ClassDecl c) {
-        StrMap seenArity = new StrMap();   // name$arity → 首次见
-        StrMap dupArity  = new StrMap();   // name$arity → 该 arity ≥2 个静态方法
+        StrMap seenArity = new StrMap();   // (static|inst)$name$arity → 首次见
+        StrMap dupArity  = new StrMap();   // 同键 → 该 arity ≥2 个方法
         int i = 0;
         while (i < c.MemberCount) {
             Decl mem = this._unwrap(c.Members[i]);
             if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
-                if (this._hasWordTc(md.Mods, "static")) {
-                    string ak = md.Name + "$" + md.ParamCount.ToString();
+                if (!SymbolCollector.IsProtocolExempt(md.Name)) {
+                    string ak = this._dupCheckKey(md);
                     if (seenArity.ContainsKey(ak)) { dupArity.Put(ak, "1"); }
                     else { seenArity.Put(ak, "1"); }
                 }
@@ -175,8 +177,8 @@ public sealed class TypeChecker {
             Decl mem = this._unwrap(c.Members[i]);
             if (mem is MethodDecl) {
                 MethodDecl md = mem as MethodDecl;
-                if (this._hasWordTc(md.Mods, "static")) {
-                    string ak = md.Name + "$" + md.ParamCount.ToString();
+                if (!SymbolCollector.IsProtocolExempt(md.Name)) {
+                    string ak = this._dupCheckKey(md);
                     if (dupArity.ContainsKey(ak)) {
                         if (seenKey.ContainsKey(md.RegKey)) {
                             this._diags.Error(DiagnosticCodes.DuplicateDeclaration,
@@ -190,6 +192,13 @@ public sealed class TypeChecker {
             }
             i = i + 1;
         }
+    }
+
+    // 重复检测的 arity 预扫键：static/instance 分桶前缀，避免同名静态与实例方法（本就非法，见别处检测）
+    // 在这里被误判为同一组重载。
+    private string _dupCheckKey(MethodDecl md) {
+        string bucket = this._hasWordTc(md.Mods, "static") ? "s$" : "i$";
+        return bucket + md.Name + "$" + md.ParamCount.ToString();
     }
 
     // impl-block 方法体绑定（port-z42c-impl-block 2b，镜像 _bindClass 的 MethodDecl 分支）：
@@ -984,15 +993,17 @@ public sealed class TypeChecker {
         }
         // L3 运算符重载：左操作数为 class/struct（Z42ClassType）且有静态 op_X(2 参) →
         // 派发为 Class.op_X(a, b) 静态调用（镜像 C# TryBindOperatorCall）。原始数值对走下方表。
+        // add-type-based-overloads 8.1a：迁移到 _resolveOverload（type-mangled 决议），修复同 arity
+        // 多重载操作符（如 op_Add(Vec,Vec) 与 op_Add(Vec,int)）此前走旧 arity-only _overloadKey
+        // 查不到 mangled 键、派发失败的遗留空洞（op_X 是静态方法，本就该走与其余 23 处一致的决议）。
         string opMethod = this._operatorMethodNameTc(bin.Op);
         if (opMethod != "" && lt is Z42ClassType) {
             Z42ClassType lct = lt as Z42ClassType;
-            string opKey = this._overloadKey(env.Symbols, lct, opMethod, 2);
-            MethodSymbol opMs = this._findMethod(env.Symbols, lct, opKey);
+            BoundExpr[] opArgs = new BoundExpr[2];
+            opArgs[0] = left; opArgs[1] = right;
+            MethodSymbol opMs = this._resolveOverload(env.Symbols, lct, opMethod, opArgs, 2, bin.Span);
             if (opMs != null) {
-                BoundExpr[] opArgs = new BoundExpr[2];
-                opArgs[0] = left; opArgs[1] = right;
-                return new BoundCall("static", false, null, lct.Name(), opKey, opArgs, 2, opMs.Signature.Ret, bin.Span);
+                return new BoundCall("static", false, null, lct.Name(), opMs.RegKey, opArgs, 2, opMs.Signature.Ret, bin.Span);
             }
         }
         BinaryRule rule = BinaryTypeTable.Lookup(bin.Op);

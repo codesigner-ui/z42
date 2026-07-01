@@ -1185,6 +1185,149 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
 
 ---
 
+## 方法重载决议：type-based mangling + 协议豁免名单（add-type-based-overloads，2026-07-01）
+
+### 背景
+
+z42c 早期方法身份只按 `Name$arity` 编码（arity-only）。两个同名同 arity 但形参类型不同的
+方法（如 `F(int)` 与 `F(string)`）注册到同一个键，`SymbolCollector` 的 `ct.Methods.Put`
+first-wins 语义下后者方法体被静默丢弃、零诊断——`z42.test/Assert` 的 5 组 `long`/`double`
+重载曾因此静默失效。本节记录最终修复后的机制。
+
+### 签名键派生（`OverloadResolver.MangleKey`）
+
+方法注册键三档，**只有第三档改名**（前两档 byte-identical 于本变更前）：
+
+| 档位 | 触发条件 | 注册键 |
+|------|---------|--------|
+| 唯一方法 | 同名只有 1 个 | `Name`（不变） |
+| arity-distinct 重载 | 同名多个但 arity 不同 | `Name$arity`（不变） |
+| **同 (name,arity) ≥ 2 重载** | 同名同 arity 出现 ≥2 次 | `Name$arity$T1$T2...`（Ti = 每个形参类型的签名键片段） |
+
+`OverloadResolver.MangleKey(name, paramTypes[], paramCount)`（`OverloadResolver.z42:30`）派生第三档键；
+每个形参类型片段由 `TypeKey` 产出：`Z42Type.Canon(t.Name())` 归一（基本类型别名 `int→i32`
+等 + 剥 `?` nullable 后缀）后剥空白（泛型名含 `", "`）。**Canon 归一是关键**——`F(int)` 与
+`F(i32)`、`G(string)` 与 `G(string?)` 归一后是同一个键，视为重复声明而非合法重载
+（见下"重复重载检测"）。
+
+**跨包一致性**：TSIG 每个方法记录本就携带每参数 `TypeName`，`ImportedSymbolLoader` 从 imported
+TSIG 用同一个 `MangleKey` 重算注册键 → 跨 zpkg 调用方无需额外元数据、无 zbc/zpkg 格式 bump。
+但**不对 imported 方法的 `RegKey` 做重算覆盖**——`sym.RegKey = m.Name` verbatim 读回定义点写入的
+键，因为 `_hybridTypeName` 与 `Canon(Name())` 两套类型名生成逻辑不保证逐字符一致，重算可能产出
+与定义点不同的键、派发断裂（见 `ImportedSymbolLoader.z42`）。
+
+### 决议算法（`OverloadResolver.Resolve`）
+
+调用点候选集（同名所有重载，沿 base 链聚合）经三步择优：
+
+1. **适用性**（`_applicable`）：arity 匹配 + 每个实参可赋值到对应形参（含子类→基类 /
+   prim→object 装箱 / 接口实现）
+2. **最具体**（`_betterThan` 偏序）：每个位置不差、至少一处严格更优的候选胜出；
+   精确类型匹配 > 加宽/装箱；v1 不做 `int→long→double` 完整隐式数值转换排序表，
+   多个加宽候选并列即报歧义（`AmbiguousOverload`），用户显式 cast 消歧
+3. **零 / 一 / 多**：零适用 → no-match 诊断；恰一个"支配所有其它候选" → 选中；
+   零个或多个"支配所有" → 歧义诊断
+
+`TypeChecker._resolveOverload`（`TypeChecker.z42:1651`）包装候选枚举 + `OverloadResolver.Resolve`
+调用 + 诊断落地，是 24 处调用点（静态/实例/自由函数/原始类型接收者/泛型实例化/操作符）的统一入口。
+遗留的 `_overloadKey`/`_findMethod`（纯 arity 键查找，`TypeChecker.z42:1625`）在个别调用点仍存在，
+**新调用点一律走 `_resolveOverload`**，历史调用点迁移视具体场景独立评估（如 `_bindBinary` 已于
+2026-07-01 完成迁移，见下）。
+
+### 实例方法扩展 + 协议豁免名单（2026-07-01）
+
+静态方法落地 type-mangle 后，用户要求扩展到**实例方法**。核心约束：VM `exec_vcall.rs` 的
+`vtable_index` 对**部分方法名做字面量硬编码查找**（不查经决议后的 mangled 键），若这些名字被
+mangle 掉，VM 侧查找必然落空。逐名核实约束来源（不是笼统"协议方法都不能 mangle"）：
+
+| 方法名 | 约束来源 | 证据 |
+|--------|---------|------|
+| `ToString` | **VM 硬编码**：Rust 侧对该名字做字面量 `vtable_index.get("ToString")` | `well_known_names.rs:69`（`METHOD_TO_STRING`）、`dispatch.rs:90`、`jit/helpers/value.rs:134` |
+| `Equals` / `GetHashCode` / `GetType` | **非 VM 硬编码**——编译器侧 `DependencyIndex._isProtocol` 因每个类都从 `Object` 继承这三者，若参与跨包裸名索引会造成全局碰撞，故排除出 cross-package 依赖索引 | `DependencyIndex.z42:126`（`_isProtocol`） |
+| `get_Item` / `set_Item` | **TypeChecker 自身硬编码**：用字面量字符串 `ct.Methods.ContainsKey("get_Item")` 查找，绕开 `_resolveOverload`/`_overloadKey`；VM 侧亦有对应硬编码 | `TypeChecker.z42:621-622, 745-749, 911-916` |
+
+**`op_*`（操作符）不在豁免名单内**——它们本就是**静态**方法（`_bindBinary` 构造
+`BoundCall("static", ...)`），与本节"实例方法 VM 裸名派发"约束无关，天然已被既有静态
+mangle 规则覆盖，不需要额外豁免。
+
+最终协议豁免名单固定为 `SymbolCollector.IsProtocolExempt`（`SymbolCollector.z42:396`）：
+
+```z42
+public static bool IsProtocolExempt(string name) {
+    return name == "ToString" || name == "Equals" || name == "GetHashCode" || name == "GetType"
+        || name == "get_Item" || name == "set_Item";
+}
+```
+
+`_fillClass` 的实例方法注册分支（`SymbolCollector.z42:507`）：
+
+```z42
+bool wantMangle = arityDup.ContainsKey(aritK) && arityDup.Get(aritK) == "2"
+    && (mst || !SymbolCollector.IsProtocolExempt(md.Name));
+```
+
+即：静态方法（`mst`）无条件按 `(name,arity)≥2` mangle；实例方法额外要求不在豁免名单内。
+豁免名单内的方法沿用现状 arity-only 注册（first-wins，不引入新行为——`String.Equals(object?)` /
+`Equals(string)` 这类碰撞是已知、已接受的历史行为，不在此处修）。
+
+**virtual/override 安全性（`_passFixupOverrides` 修复，2026-07-01 阶段 8）**：`_fillClass` 的
+`wantMangle` 判定只看**当前类自身**的 `arityDup`——若 Base 声明两个同 arity 的 virtual 重载
+（如 `Handle(int)`/`Handle(string)`）会各自 mangle 出 `Handle$1$i32`/`Handle$1$string`；但
+Derived 若只 `override` 其中一个，Derived 本地该 arity 只出现 1 次（`arityDup=1`）→ 不满足
+mangle 条件 → 注册成裸名 `Handle`。VM 侧 vtable 合并（`TypeDesc::derive_simple_method_name` /
+`merge_with_base`，`loader.rs`）按 `simple_name` **字符串裸匹配** slot——两端键不一致时，
+Derived 的 override 会落进一个**新**槽位，Base 的 `Handle$1$i32` 槽位原样保留，虚派发仍打到
+Base 实现，override 语义失效。"签名一致 ⟹ mangled 键自然一致"这一假设**不成立**——mangle 与否
+取决于本地 arity 出现次数，不是签名本身的函数。
+
+修复：`SymbolCollector._passFixupOverrides`（`SymbolCollector.z42`，`_passMembers` 之后、
+`_passImpls` 之前跑，`CollectAll` 路径额外要求所有 CU 的 `_passMembers` 全部跑完才能跑，因为跨
+CU 场景不保证 base 类先于 derived 类被处理）对每个带 `override` 修饰符的方法，调用
+`_findVirtualOrigin` 沿 base 链上溯 AST `Decl.Mods`（而非依赖 `baseCt.Methods` 是否已被本 pass
+修正，从而与跨 CU 处理顺序无关），找到该虚方法**最初**（非 override）声明所在层的 `RegKey`
+作为权威键，把 override 方法的 `RegKey` 就地改写为该键（`MethodSymbol.RegKey` 可变字段）。
+imported 基类方法无 AST `Decl`（`HasDecl=false`）视为上溯终点。改写后 `ct.Methods` 中旧的裸键
+条目会残留（`StrMap` 无 `Remove`），但两键指向同一个（已改写 RegKey 的）`MethodSymbol` 对象，
+下游 `_collectOverloads` 按 `RegKey` 去重会自然合并，不产生重复候选。
+
+**VM 零改动**：`vtable_index` 的 key 派生自 z42c 写入 zpkg 的 qualified 函数名
+（`TypeDesc::derive_simple_method_name`），是否 mangle 完全由 z42c 端的协议豁免名单决定，
+Rust 侧逻辑不变——唯一约束是 z42c 永不能把豁免名单内的名字 mangle 掉。
+
+### 重复重载检测（`TypeChecker._checkDuplicateStaticOverloads`）
+
+`SymbolCollector` 的 `Put` 是 first-wins：两个签名若 `Canon` 归一后撞出同一个 mangled 键
+（如 `F(int)` vs `F(i32)`，或 `G(string)` vs `G(string?)`），后者方法体会被无声覆盖。
+`TypeChecker._bindClass` 在绑体前调用 `_checkDuplicateStaticOverloads`（`TypeChecker.z42`）
+重放一遍碰撞检测，命中即报 `E0408 DuplicateDeclaration`：
+
+- 静态方法与实例方法分桶检测（`_dupCheckKey` 用 `s$`/`i$` 前缀区分，同名静态+实例方法本就不
+  共享注册表，不应互相误判）
+- 协议豁免名单内的方法名（`SymbolCollector.IsProtocolExempt`）跳过检测——它们本就不参与
+  mangle，多个同 arity 声明是已接受的 first-wins 行为，不是新引入的 bug
+- **设计裁定**：不支持 nullable-only / alias-only "重载"（视为重复声明而非合法重载），不为
+  兼容这种写法改 mangle 方案
+
+### `_bindBinary` 迁移到 `_resolveOverload`（2026-07-01，独立 bug 修复）
+
+调研实例方法扩展时发现：`_bindBinary`（`TypeChecker.z42`，处理 `a + b` 等二元运算符重载分派）
+仍用静态重载那一期遗留的旧 `_overloadKey`/`_findMethod`（纯 arity 键查找），未跟随其余 23 处
+调用点迁移到 `_resolveOverload`。`op_*` 方法本身早已因静态 mangle 规则获得 mangled 注册键，
+但 `_bindBinary` 用 arity-only 键去查，查不到 → 同 arity 多重载操作符（如 `op_Add(Vec,Vec)`
+与 `op_Add(Vec,int)`）派发失败。已迁移：
+
+```z42
+MethodSymbol opMs = this._resolveOverload(env.Symbols, lct, opMethod, opArgs, 2, bin.Span);
+if (opMs != null) {
+    return new BoundCall("static", false, null, lct.Name(), opMs.RegKey, opArgs, 2, opMs.Signature.Ret, bin.Span);
+}
+```
+
+测试：`src/tests/operators/operator_overload_multi_arity.z42`（端到端）+
+`Z42cSemanticsTypeCheckTests.test_operator_overload_multi_arity_dispatch_selects_correct_overload`（单元）。
+
+---
+
 ## 延伸阅读
 
 - `docs/design/compiler/compilation.md` — 构建流程（manifest → zpkg 的用户视角）
@@ -1198,18 +1341,19 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
 
 > 索引也存于 [docs/roadmap.md](../../roadmap.md) "Deferred Backlog Index"。
 
-### compiler-future-typed-overload-resolution
+### ~~compiler-future-typed-overload-resolution~~ ✅ 已修复 (2026-07-01)
 
-- **来源**：投放 stdlib 期间反复触发的同名同元 ctor 冲突（StringWriter 早期 `Write(char)` / `Write(string)`、JSON/TOML/YAML `Parse(string)` / `Parse(Stream)`、BinaryReader `(byte[])` / `(Stream)`、BinaryWriter `(int)` / `(Stream)`）。每次撞到都用 rename / static factory workaround 绕过；2026-05-24 一次性探索修复后认定需要更深改造，作为单独 spec 处理。
-- **触发原因**：当前 `SymbolCollector.Classes.cs:230-264` 的 method/ctor 命名 mangling 用 `{Name}${Params.Count}` 编码——同名同 arity 的两个签名（哪怕参数类型完全不同）都注册成 `Name$arity`，后写者直接 overwrite `methods[]` dict，只有 ONE 候选活下来。继而上层 `ResolveCtorName` 想做类型 best-match 也无候选可选——整条 overload-by-type 链条要从最底层 mangling 推上去。
-- **触发条件**：第三方 stdlib / 用户代码反复表达"我就想要两个同元不同类型 ctor"且因此需要 mengling rename → 写 spec 把方案沉淀；或者实施大型 stdlib 项目（z42.net 多模式 socket 等）发现 factory naming 噪声明显。
-- **修复方案概要**：
-  1. mangling 改用类型编码键（如 `BinaryReader$1$ArrU8` / `BinaryReader$1$Stream`，参数类型 stable 文本签名）
-  2. IR codegen / call site emit 用新键
-  3. zpkg metadata export / 读取端同步
-  4. resolver token lookup 同步
-  5. 顶上加 `ResolveCtorName` / `ResolveMethodCall` 类型 best-match 逻辑（已有原型代码草稿，见 commit `cd82803e` 之前的探索分支）
-- **当前 workaround**：stdlib 撞到的类用 static factory 命名（`BinaryReader.OverStream` / `JsonValue.ParseStream` / `StringWriter` 不暴露 `Write(char)` 等）。每个 workaround 都在源文件 docstring 标注 "z42 overload-resolution quirk" + 指向本条 Deferred。
+**已修复**：`add-type-based-overloads` 变更落地 type-based mangling（`OverloadResolver.MangleKey` +
+`Resolve`）+ 实例方法协议豁免名单，机制详见本文件"[方法重载决议：type-based mangling + 协议豁免名单](#方法重载决议type-based-mangling--协议豁免名单add-type-based-overloads2026-07-01)"一节。
+`BinaryReader(byte[])`/`BinaryReader(Stream)` 一类同名同 arity 不同类型的构造器/方法此前需要靠
+static factory 改名 workaround，现可直接声明为重载、按实参类型正确决议。
+
+**原始描述**（历史存档）：投放 stdlib 期间反复触发的同名同元 ctor 冲突（StringWriter 早期
+`Write(char)` / `Write(string)`、JSON/TOML/YAML `Parse(string)` / `Parse(Stream)`、
+BinaryReader `(byte[])` / `(Stream)`、BinaryWriter `(int)` / `(Stream)`）。当时 C# bootstrap
+编译器的 `SymbolCollector.Classes.cs:230-264` 用 `{Name}${Params.Count}` 编码 method/ctor
+键，同名同 arity 不同类型的签名会撞键、后写者覆盖前者，只剩一个候选存活——2026-05-24 探索后
+认定需要独立 spec 处理，2026-07-01 由 z42c 自举后的 `add-type-based-overloads` 变更彻底解决。
 
 ### ~~compiler-future-vcall-base-class-fallback~~ ✅ 已修复 (2026-05-26)
 

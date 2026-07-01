@@ -312,6 +312,37 @@ var d = Norm(in someVec);
 
 > **过渡期注意**：编译期对 `ref` / `out` / `in` 的所有验证已生效（修饰符一致 / lvalue / DA / 4 交互规则 / overload）。运行时 callee 修改尚未传回 caller —— 见 `parameter-modifiers.md` "Runtime Implementation"。需要"修改调用方变量"语义时优先用 tuple 多返回值。
 
+### 5.0 方法重载决议（type-based，对齐 C# 子集）
+
+同名方法允许 **arity 相同、形参类型不同**（此前仅按 arity 区分，同 arity 的重载会静默丢失其中一个）：
+
+```z42
+static void Handle(int n) { ... }
+static void Handle(string s) { ... }   // 与上面同 arity（1），按类型区分，合法重载
+
+class Vec {
+    public static Vec operator +(Vec a, Vec b) { ... }
+    public static Vec operator +(Vec a, int scalar) { ... }   // 同 arity 操作符重载同样合法
+}
+```
+
+**决议算法**（调用点按实参类型在候选集里择优）：
+1. **适用性**：实参数量匹配 arity，且每个实参类型可赋值到对应形参类型（含子类→基类、原始类型→`object` 装箱、接口实现）
+2. **最具体优先**：精确类型匹配优于加宽/装箱匹配；候选 A 若在每个参数位置都不差于候选 B、且至少一处更精确，则 A 胜出
+3. 适用集为空 → 编译错误（无匹配重载）；无法分出唯一最优（多个加宽候选并列）→ 编译错误（歧义重载，要求显式 cast 消歧）
+
+**v1 收窄**：不做 `int→long→double` 等隐式数值加宽的完整优先级排序——多个数值加宽候选并列即报歧义。
+
+**不视为合法重载**：仅 nullable 或类型别名不同的"重载"（如 `F(string)` 与 `F(string?)`，或 `F(int)` 与
+`F(i32)`）会被当作重复声明报错，而不是两个不同的重载——这两种情况类型归一后是同一个类型。
+
+**实例方法**同样支持 type-based 重载，但以下 6 个方法名固定按 arity 区分（不参与类型区分，同 arity 的
+第二个声明仍会静默覆盖第一个，与协议方法的历史行为一致）：`ToString`、`Equals`、`GetHashCode`、
+`GetType`、`get_Item`、`set_Item`。
+
+**virtual / override**：override 方法的形参类型必须与被覆盖的虚方法完全一致（C# 子集语义）；无论
+基类是否声明了其它同 arity 的重载，子类的 override 都会正确复用基类对应重载的虚函数表槽位。
+
 ### 5.1 局部函数（嵌套函数声明，C# 7+）
 
 ```z42

@@ -50,6 +50,38 @@
 - **WHEN** 本变更前后读写 zpkg
 - **THEN** zbc/zpkg 版本号不变；现有无同 arity 重载的 zpkg 字节不漂移
 
+### Requirement: 实例方法同 arity 重载共存（2026-07-01 追加）
+
+#### Scenario: 普通实例方法同 arity 多重载注册不冲突
+- **WHEN** 类声明 `void Log(int x)` 与 `void Log(string s)`（均为实例方法）
+- **THEN** 两者均注册（type-mangled 键），互不覆盖；按实参类型正确解析调用
+
+#### Scenario: 协议方法永不 mangle
+- **WHEN** 类型上存在 `Equals(object?)` 与 `Equals(string)` 两个同 arity 实例方法
+  （`Equals` 属协议豁免名单）
+- **THEN** 不参与 type-mangle，沿用现状 arity-only 注册（first-wins，不引入新行为）；
+  **不**报 `E0408 DuplicateDeclaration`（与静态/非豁免实例方法的重复键检测区分）
+
+#### Scenario: 索引器豁免（不含操作符，2026-07-01 订正）
+- **WHEN** 类型定义 `get_Item`/`set_Item`
+- **THEN** 不参与 mangle，行为与本变更前一致（TypeChecker 对这两个名字用字面量字符串查找，
+  mangle 会导致查找落空）
+
+#### Scenario: 操作符走静态重载决议，不需要豁免（2026-07-01 新增）
+- **WHEN** 类型定义 2 个同 arity 的操作符方法（如 `op_Add(Vec,Vec)` 与 `op_Add(Vec,int)`）
+- **THEN** 二者作为静态方法参与既有的静态 type-mangle + 决议（非本次 D7 实例扩展的豁免范围）；
+  `_bindBinary` 通过 `_resolveOverload` 按实参类型选中正确重载并派发成功
+
+#### Scenario: virtual override 安全共存
+- **WHEN** 基类声明 `virtual void Handle(int x)` 与 `virtual void Handle(string s)`
+  （同 arity 重载，非豁免），子类各自 `override` 一个
+- **THEN** override 与被覆盖方法因签名一致而 mangle 为同一键，vtable slot 正确复用，
+  虚派发结果与签名匹配的重载一致
+
+#### Scenario: VM 零改动
+- **WHEN** 本变更扩展到实例方法前后
+- **THEN** `src/runtime/` 任何文件不变更；mangle 与否完全由 z42c 端协议豁免名单决定
+
 ## MODIFIED Requirements
 
 ### Requirement: 方法重载决议（从 arity-only 升级）

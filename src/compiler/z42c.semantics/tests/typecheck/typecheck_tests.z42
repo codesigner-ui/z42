@@ -580,3 +580,58 @@ void test_distinct_static_overloads_no_duplicate_error() {
     string src = "class C { static void H(int a) { } static void H(string a) { } }";
     Assert.Equal(0, SemanticDump.ErrorCount(src));
 }
+
+// ── 实例方法 type-based 重载扩展（add-type-based-overloads D7，阶段 8）────────
+// 豁免名单外的实例方法同样做碰撞检测；豁免名单内（协议方法）不检测、不误报；
+// 操作符（op_*）走既有静态决议路径（8.1a：_bindBinary 迁移到 _resolveOverload）。
+[Test]
+void test_error_duplicate_instance_overload_type_alias_collision() {
+    // int 与 i32 同一基本类型两种拼写 → 实例方法签名键碰撞，豁免名单外须报错
+    string src = "class C { void F(int a) { } void F(i32 a) { } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_error_duplicate_instance_overload_nullable_collision() {
+    // Canon 剥 nullable 后 string 与 string? 同键 → 实例方法签名键碰撞
+    string src = "class C { void G(string a) { } void G(string? a) { } }";
+    Assert.Equal(1, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_distinct_instance_overloads_no_duplicate_error() {
+    // 真正不同的形参类型（int vs string）不应被误判为重复
+    string src = "class C { void H(int a) { } void H(string a) { } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_protocol_exempt_equals_no_duplicate_error() {
+    // Equals 属协议豁免名单（DependencyIndex._isProtocol 排除，非 VM 硬编码）——
+    // 即使同 arity 不同类型也不参与 mangle、不做碰撞检测（沿用 first-wins 现状，不引入新行为）
+    string src = "class C { bool Equals(object o) { return false; } bool Equals(string s) { return true; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_protocol_exempt_get_item_no_duplicate_error() {
+    // get_Item 属协议豁免名单（TypeChecker 自身用字面量字符串查找，mangle 会致查找落空）
+    string src = "class C { int get_Item(int i) { return i; } int get_Item(string s) { return 0; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+}
+
+[Test]
+void test_operator_overload_multi_arity_dispatch_selects_correct_overload() {
+    // 验证 8.1a：_bindBinary 迁移到 _resolveOverload 前，同 arity 多重载操作符
+    // （op_Add(Vec,Vec) 与 op_Add(Vec,int)）因旧 _overloadKey 只产生 arity-only 键
+    // （查不到 mangled 注册键）而派发失败；迁移后应正确按实参类型选中对应重载。
+    string src = "class Vec { public static Vec operator +(Vec a, Vec b) { return a; } " +
+                 "public static Vec operator +(Vec a, int b) { return a; } } " +
+                 "class C { Vec AddVV(Vec a, Vec b) { return a + b; } " +
+                 "Vec AddVI(Vec a, int b) { return a + b; } }";
+    Assert.Equal(0, SemanticDump.ErrorCount(src));
+    Assert.Equal("(block (return (call-static Vec op_Add$2$Vec$Vec (ident a :Vec) (ident b :Vec) :Vec)))",
+                 SemanticDump.DumpBody(src, "C.AddVV"));
+    Assert.Equal("(block (return (call-static Vec op_Add$2$Vec$i32 (ident a :Vec) (ident b :int) :Vec)))",
+                 SemanticDump.DumpBody(src, "C.AddVI"));
+}

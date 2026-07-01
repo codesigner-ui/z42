@@ -21,6 +21,7 @@ public sealed class SymbolCollector {
         this._seedObjectStub(t);   // imported Type 已入表后；GetType 返回真实 Type 类（链式 getter 分派）
         this._passDelegates(t, cu);
         this._passMembers(t, cu);
+        this._passFixupOverrides(t, cu);   // add-type-based-overloads D7：override 同 arity 重载 regKey 对齐（阶段 8 修复）
         this._passImpls(t, cu);   // port-z42c-impl-block：deps 路径同样须并 impl 方法入 target.Methods，
                                   // 否则 _bindImpl 的 ms=null → "this" 不入 env → `this.field` 绑成 undefined → emit const.null
         this._passInheritFields(t, cu);
@@ -120,6 +121,10 @@ public sealed class SymbolCollector {
         while (c < cuCount) { this._passDelegates(table, cus[c]); c = c + 1; }
         c = 0;
         while (c < cuCount) { this._passMembers(table, cus[c]); c = c + 1; }
+        // add-type-based-overloads D7（阶段 8 修复）：override 方法 regKey 对齐——必须在所有 CU 的
+        // _passMembers 全部跑完后再做（跨 CU base/derived 声明序不保证 base 先行，见 _findVirtualOrigin）。
+        c = 0;
+        while (c < cuCount) { this._passFixupOverrides(table, cus[c]); c = c + 1; }
         // impl-block merge (port-z42c-impl-block)：成员收集后，把 `impl Trait for Target`
         // 的方法并入 target.Methods + Trait 并入 target.InterfaceNames（target 可本地或
         // imported；_mergeImports 已 seed）。镜像 C# SymbolCollector.CollectImpls。
@@ -168,6 +173,7 @@ public sealed class SymbolCollector {
         this._passClassStubs(table, cu);
         this._passDelegates(table, cu);
         this._passMembers(table, cu);
+        this._passFixupOverrides(table, cu);   // add-type-based-overloads D7：override regKey 对齐（阶段 8 修复）
         this._passImpls(table, cu);   // port-z42c-impl-block
         this._passInheritFields(table, cu);
         return table;
@@ -210,6 +216,96 @@ public sealed class SymbolCollector {
             }
             i = i + 1;
         }
+    }
+
+    // add-type-based-overloads D7（阶段 8 修复，2026-07-01）：override 方法 regKey 对齐。
+    //
+    // 根因：_fillClass 的 mangle 决策（wantMangle）只看**当前类自身**的 arityDup——若 Base 声明两个
+    // 同 arity 重载（如 Handle(int)/Handle(string)）会 mangle 出 Handle$1$i32/Handle$1$string；但
+    // Derived 若只 override 其中一个，Derived 本地只有一个 Handle（arityDup=1）→ 不 mangle → 注册成裸
+    // 名 "Handle"。VM 侧 vtable 合并（TypeDesc::derive_simple_method_name / merge_with_base）按 regKey
+    // 字符串裸匹配 slot——两端 regKey 不一致 ⟹ Derived 的 override 落进一个**新**槽位，Base 的
+    // Handle$1$i32 槽位原样保留 ⟹ 虚派发仍打到 Base 实现（override 语义失效）。
+    //
+    // 修复：override 方法必须复用"最初声明该虚方法"的那层（非 override 的 virtual 声明，或 imported
+    // 基类——无 AST Decl 视为终点）所采用的 regKey，而非依本地 arityDup 独立决策。走 AST Decl.Mods 逐层
+    // 上溯（而非依赖 baseCt.Methods 是否已被本 pass 修正），使结果与 _fillClass 的跨 CU 处理顺序无关。
+    private void _passFixupOverrides(SymbolTable table, CompilationUnit cu) {
+        int i = 0;
+        while (i < cu.DeclCount) {
+            Decl d = this._unwrap(cu.Decls[i]);
+            if (d is ClassDecl) {
+                ClassDecl c = d as ClassDecl;
+                if (c.Kind == "class" || c.Kind == "struct" || c.Kind == "record") {
+                    string ctKey = c.Name;
+                    if (c.TypeParams.Count > 0) { string mk = c.Name + "$" + c.TypeParams.Count.ToString(); if (table.Classes.ContainsKey(mk)) { ctKey = mk; } }
+                    Z42ClassType ct = table.Classes.Get(ctKey) as Z42ClassType;
+                    if (ct != null && ct.HasBase) {
+                        int j = 0;
+                        while (j < c.MemberCount) {
+                            Decl mem = this._unwrap(c.Members[j]);
+                            if (mem is MethodDecl) {
+                                MethodDecl md = mem as MethodDecl;
+                                if (this._hasWord(md.Mods, "override")) {
+                                    MethodSymbol localSym = ct.Methods.Get(md.RegKey) as MethodSymbol;
+                                    if (localSym != null) {
+                                        MethodSymbol origin = this._findVirtualOrigin(table, ct,
+                                            localSym.Name, localSym.Signature.ParamTypes, localSym.Signature.ParamCount);
+                                        if (origin != null && origin.RegKey != md.RegKey) {
+                                            localSym.RegKey = origin.RegKey;
+                                            md.RegKey = origin.RegKey;
+                                            ct.Methods.Put(origin.RegKey, localSym);   // 旧裸键留存亦无害——
+                                            // OverloadsOf 按 Name 收集，_collectOverloads 再按 RegKey 去重，
+                                            // 两键指向同一（已改写 RegKey 的）对象时天然合并为一个候选。
+                                        }
+                                    }
+                                }
+                            }
+                            j = j + 1;
+                        }
+                    }
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    // 沿 base 链逐层上溯，找到（name, paramTypes）对应虚方法**最初**（非 override）声明所在层的
+    // MethodSymbol，返回其 RegKey 作为权威键。imported 基类方法无 AST Decl（HasDecl=false）→ 视为终点
+    // （其 RegKey 即该 imported 包编译时已定案的键，无需也无法继续上溯）。全链找不到匹配 → 返回 null
+    // （不改写，保留 _fillClass 的本地决策——理论上不应发生，`override` 必然对应某个虚方法声明）。
+    private MethodSymbol _findVirtualOrigin(SymbolTable table, Z42ClassType ct, string name, Z42Type[] paramTypes, int paramCount) {
+        string wantCanon = OverloadResolver.MangleKey(name, paramTypes, paramCount);
+        Z42ClassType cur = ct;
+        MethodSymbol lastMatch = null;
+        bool more = cur.HasBase && cur.BaseName != "" && table.Classes.ContainsKey(cur.BaseName);
+        while (more) {
+            Z42ClassType baseCt = table.Classes.Get(cur.BaseName) as Z42ClassType;
+            if (baseCt == null) {
+                more = false;
+            } else {
+                MethodSymbol matchHere = null;
+                string[] keys = baseCt.Methods.Keys();
+                int k = 0;
+                while (k < keys.Length) {
+                    MethodSymbol sym = baseCt.Methods.Get(keys[k]) as MethodSymbol;
+                    if (sym != null && sym.Name == name) {
+                        string symCanon = OverloadResolver.MangleKey(sym.Name, sym.Signature.ParamTypes, sym.Signature.ParamCount);
+                        if (symCanon == wantCanon) { matchHere = sym; }
+                    }
+                    k = k + 1;
+                }
+                if (matchHere != null) {
+                    lastMatch = matchHere;
+                    bool matchIsOverride = matchHere.HasDecl && matchHere.Decl != null && this._hasWord(matchHere.Decl.Mods, "override");
+                    if (!matchIsOverride) { more = false; }
+                    else { cur = baseCt; more = cur.HasBase && cur.BaseName != "" && table.Classes.ContainsKey(cur.BaseName); }
+                } else {
+                    cur = baseCt; more = cur.HasBase && cur.BaseName != "" && table.Classes.ContainsKey(cur.BaseName);
+                }
+            }
+        }
+        return lastMatch;
     }
 
     // Pass A-1：枚举类型 + 成员常量（先于类 stub——成员类型解析可能用到枚举）。
@@ -387,6 +483,17 @@ public sealed class SymbolCollector {
         }
     }
 
+    // add-type-based-overloads D7：实例方法协议豁免名单——这些名字被 Rust VM / TypeChecker 自身按
+    // 裸字符串字面量硬编码查找（见 design.md D7 逐名核实表），mangle 会断查找，永不参与实例 mangle。
+    // ToString=VM dispatch.rs/jit value.rs 硬编码；Equals/GetHashCode/GetType=DependencyIndex._isProtocol
+    // 因 Object 全员继承排除跨包裸名索引；get_Item/set_Item=TypeChecker 自身字面量查找。
+    // 不含 op_*：操作符是静态方法，走既有静态 mangle 规则，不受此名单约束（见 D7 2026-07-01 订正）。
+    // public：TypeChecker._checkDuplicateStaticOverloads 泛化后同样需要跳过这批名字（单一豁免名单来源）。
+    public static bool IsProtocolExempt(string name) {
+        return name == "ToString" || name == "Equals" || name == "GetHashCode" || name == "GetType"
+            || name == "get_Item" || name == "set_Item";
+    }
+
     private void _fillClass(SymbolTable table, ClassDecl c) {
         // Arity-mangle：泛型类若已以 Name$N 键注册，优先取该 CT（镜像 C# TryGetClassFor）。
         string ctKey = c.Name;
@@ -489,10 +596,13 @@ public sealed class SymbolCollector {
                 MethodSymbol msym = this._methodSymbol(table, md, c.Name, tp, tpc);
                 string aritK = md.Name + "$" + md.ParamCount.ToString();
                 string regName = md.Name;
-                // add-type-based-overloads：type-mangle 仅限**静态**方法。静态调用编译期决议 → emit 精确签名键 → 安全。
-                // 实例方法经 VCall 按未 mangle/`$arity` 名派发（虚/泛型/原始接收者；VM primitive route 仅认 .M / .M$arity）
-                // → type-mangle 会断派发，故实例同 arity 重载保持 arity-only（沿旧行为 collide first-wins；如 String.Equals）。
-                if (mst && arityDup.ContainsKey(aritK) && arityDup.Get(aritK) == "2") {
+                // add-type-based-overloads：静态方法 type-mangle 无条件启用（编译期决议 → emit 精确签名键 → 安全）。
+                // D7（2026-07-01）：实例方法同样启用 mangle，但协议豁免名单内的名字（ToString/Equals/
+                // GetHashCode/GetType/get_Item/set_Item）永不 mangle——它们被 VM/TypeChecker 按裸字符串
+                // 字面量硬编码查找，mangle 会断查找（见 _isProtocolExempt 注释 + design.md D7）。
+                bool wantMangle = arityDup.ContainsKey(aritK) && arityDup.Get(aritK) == "2"
+                    && (mst || !SymbolCollector.IsProtocolExempt(md.Name));
+                if (wantMangle) {
                     regName = OverloadResolver.MangleKey(md.Name, msym.Signature.ParamTypes, msym.Signature.ParamCount);
                 } else if (isOvld) {
                     regName = aritK;
