@@ -106,6 +106,14 @@ int _pubDesktop(ParseResult r, string rid) {
         string payloadDir = Path.GetDirectoryName(appZpkg);
         if (payloadDir.Length > 0) { Directory.Create(payloadDir); }
         File.Copy(zpkgSrc, appZpkg);
+
+        // add-package-layout-config (2026-07-01): colocate this component's
+        // non-stdlib workspace-sibling dependencies (e.g. z42c.driver's 6 z42c.*
+        // libs) into the same payload dir — publish emits a self-contained
+        // subtree, not just the single entry zpkg. Generic: any z42 app that
+        // depends on a sibling project in its workspace gets this for free.
+        int dc = _pubBundleProjectDeps(tomlPath, toml, payloadDir);
+        if (dc != 0) { return dc; }
     }
 
     string outDir = Path.GetDirectoryName(outPath);
@@ -208,14 +216,184 @@ string _pubFindZ42c() {
 }
 
 // Resolve the built zpkg via the same dist_dir logic as the launcher used.
+// Workspace members that omit their own [build] section (the common case —
+// see z42c.core/z42c.semantics/... tomls) inherit `[workspace.build] output_dir`
+// from the enclosing z42.workspace.toml instead of falling back to a
+// project-relative "dist/" (which does not match where `z42c build --workspace`
+// actually writes the zpkg — add-package-layout-config dependency bundling
+// exposed this: bundling failed to locate z42c.semantics's zpkg without it).
 string _pubResolveZpkg(string tomlPath, TomlValue toml, string name) {
     string projDir = Path.GetDirectoryName(tomlPath);
     string outDir  = _pubTomlStr(toml, "build", "output_dir", "");
     string distDir = _pubTomlStr(toml, "build", "dist_dir", "");
+    if (outDir.Length == 0 && distDir.Length == 0) {
+        string wsRoot = _pubFindWorkspaceRoot(tomlPath);
+        if (wsRoot.Length > 0) {
+            string wsOutDir = _pubWorkspaceOutputDir(wsRoot, name);
+            if (wsOutDir.Length > 0) {
+                return Path.Join(Path.Join(wsRoot, wsOutDir), "dist/" + name + ".zpkg");
+            }
+        }
+    }
     string distRel;
     if (distDir.Length > 0) { distRel = distDir.Replace("${output_dir}", outDir); }
     else if (outDir.Length > 0) { distRel = Path.Join(outDir, "dist"); }
     else { distRel = "dist"; }
     string base = (projDir.Length > 0) ? Path.Join(projDir, distRel) : distRel;
     return Path.Join(base, name + ".zpkg");
+}
+
+// `[workspace.build] output_dir` template resolved for `name` at profile
+// "release" (mirrors _pubEnsureBuilt's hardcoded `z42c build --release`).
+// "" if the workspace declares no such template.
+string _pubWorkspaceOutputDir(string wsRoot, string name) {
+    string wsToml = Path.Join(wsRoot, "z42.workspace.toml");
+    if (!File.Exists(wsToml)) { return ""; }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(wsToml));
+    if (!toml.ContainsKey("workspace")) { return ""; }
+    TomlValue ws = toml.Get("workspace");
+    if (!ws.IsTable() || !ws.ContainsKey("build")) { return ""; }
+    TomlValue wb = ws.Get("build");
+    if (!wb.IsTable() || !wb.ContainsKey("output_dir")) { return ""; }
+    TomlValue v = wb.Get("output_dir");
+    if (!v.IsString()) { return ""; }
+    string tmpl = v.AsString();
+    tmpl = tmpl.Replace("${project_name}", name);
+    tmpl = tmpl.Replace("${profile}", "release");
+    return tmpl;
+}
+
+// ── project-kind (workspace-sibling) dependency bundling (add-package-layout-config) ──
+//
+// z42.toml `[dependencies]` mixes stdlib deps ("z42.io") and, inside a workspace,
+// sibling project deps ("z42c.core") using identical syntax. There is no `Kind`
+// field distinguishing them (confirmed: DepScan / DepEntry have none). We derive
+// "is this a project dep" by cross-referencing against the enclosing workspace's
+// `z42.workspace.toml` `default-members` list — the same source `_compilerMembers`
+// (xtask) already reads. z42b must stay stdlib-only (test-runner build context),
+// so this is hand-rolled TOML walking, NOT a dependency on z42c.project/pipeline.
+
+// Walk up from `tomlPath`'s directory looking for a sibling `z42.workspace.toml`.
+// "" if this project isn't inside a workspace (all its deps are then stdlib).
+string _pubFindWorkspaceRoot(string tomlPath) {
+    string dir = Path.GetDirectoryName(tomlPath);
+    while (dir.Length > 0) {
+        if (File.Exists(Path.Join(dir, "z42.workspace.toml"))) { return dir; }
+        string parent = Path.GetDirectoryName(dir);
+        if (parent.Length == 0 || parent == dir) { return ""; }
+        dir = parent;
+    }
+    return "";
+}
+
+// `[workspace] default-members` list from `<wsRoot>/z42.workspace.toml`.
+string[] _pubWorkspaceMembers(string wsRoot) {
+    string wsToml = Path.Join(wsRoot, "z42.workspace.toml");
+    if (!File.Exists(wsToml)) { return new string[0]; }
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(wsToml));
+    if (!toml.ContainsKey("workspace")) { return new string[0]; }
+    TomlValue ws = toml.Get("workspace");
+    if (!ws.IsTable() || !ws.ContainsKey("default-members")) { return new string[0]; }
+    TomlValue arr = ws.Get("default-members");
+    string[] xs = new string[arr.Count()];
+    int i = 0;
+    while (i < arr.Count()) {
+        TomlValue v = arr.At(i);
+        xs[i] = v.IsString() ? v.AsString() : "";
+        i = i + 1;
+    }
+    return xs;
+}
+
+// This project's own `[dependencies]` key names ("" if the section is missing).
+string[] _pubDepNames(TomlValue toml) {
+    if (!toml.ContainsKey("dependencies")) { return new string[0]; }
+    TomlValue deps = toml.Get("dependencies");
+    if (!deps.IsTable()) { return new string[0]; }
+    return deps.Keys();
+}
+
+bool _pubContains(string[] xs, int count, string v) {
+    int i = 0;
+    while (i < count) {
+        if (xs[i] == v) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Member dir/toml convention: `<wsRoot>/<name>/<name>.z42.toml` (mirrors the
+// convention xtask's `_compilerMembers` callers already assume).
+string _pubMemberTomlPath(string wsRoot, string name) {
+    return Path.Join(Path.Join(wsRoot, name), name + ".z42.toml");
+}
+
+// Transitive closure of `tomlPath`'s workspace-sibling (non-stdlib) dependency
+// names — BFS over `[dependencies]` restricted to names that resolve to a
+// workspace member. Empty if not inside a workspace or no such deps.
+string[] _pubProjectDepNames(string tomlPath, TomlValue toml) {
+    string wsRoot = _pubFindWorkspaceRoot(tomlPath);
+    if (wsRoot.Length == 0) { return new string[0]; }
+    string[] members = _pubWorkspaceMembers(wsRoot);
+    if (members.Length == 0) { return new string[0]; }
+    string ownName = _pubTomlStr(toml, "project", "name", "");
+
+    string[] closure = new string[members.Length];
+    int closureCount = 0;
+    string[] queue = new string[members.Length];
+    int qTail = 0;
+
+    string[] seed = _pubDepNames(toml);
+    int si = 0;
+    while (si < seed.Length) {
+        string d = seed[si];
+        if (d != ownName && _pubContains(members, members.Length, d) && !_pubContains(closure, closureCount, d)) {
+            queue[qTail] = d; qTail = qTail + 1;
+            closure[closureCount] = d; closureCount = closureCount + 1;
+        }
+        si = si + 1;
+    }
+
+    int qHead = 0;
+    while (qHead < qTail) {
+        string name = queue[qHead]; qHead = qHead + 1;
+        string memberToml = _pubMemberTomlPath(wsRoot, name);
+        if (!File.Exists(memberToml)) { continue; }
+        TomlValue mt = TomlValue.Parse(File.ReadAllText(memberToml));
+        string[] mdeps = _pubDepNames(mt);
+        int mi = 0;
+        while (mi < mdeps.Length) {
+            string d = mdeps[mi];
+            if (d != ownName && _pubContains(members, members.Length, d) && !_pubContains(closure, closureCount, d)) {
+                queue[qTail] = d; qTail = qTail + 1;
+                closure[closureCount] = d; closureCount = closureCount + 1;
+            }
+            mi = mi + 1;
+        }
+    }
+
+    string[] result = new string[closureCount];
+    int ri = 0;
+    while (ri < closureCount) { result[ri] = closure[ri]; ri = ri + 1; }
+    return result;
+}
+
+// build-if-needed each workspace-sibling dependency of `tomlPath`, then copy its
+// zpkg (+ .zsym sidecar if present) into `payloadDir`. 0 on success.
+int _pubBundleProjectDeps(string tomlPath, TomlValue toml, string payloadDir) {
+    string wsRoot = _pubFindWorkspaceRoot(tomlPath);
+    string[] depNames = _pubProjectDepNames(tomlPath, toml);
+    int i = 0;
+    while (i < depNames.Length) {
+        string depName = depNames[i];
+        string depTomlPath = _pubMemberTomlPath(wsRoot, depName);
+        TomlValue depToml = TomlValue.Parse(File.ReadAllText(depTomlPath));
+        string depZpkg = _pubEnsureBuilt(depTomlPath, depToml, depName);
+        if (depZpkg.Length == 0) { return 1; }
+        File.Copy(depZpkg, Path.Join(payloadDir, depName + ".zpkg"));
+        string depSym = Path.Join(Path.GetDirectoryName(depZpkg), depName + ".zsym");
+        if (File.Exists(depSym)) { File.Copy(depSym, Path.Join(payloadDir, depName + ".zsym")); }
+        i = i + 1;
+    }
+    return 0;
 }

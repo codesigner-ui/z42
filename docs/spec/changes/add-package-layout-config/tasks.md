@@ -25,11 +25,12 @@
 - [ ] 2.3 e2e：单组件 publish 产出自洽子树（待 ② / dist 测试覆盖）
 - [x] 2.4 用户面文档 `docs/design/compiler/project.md` `[platform.desktop]` 补 bin/payload
 
-## 阶段 3: packages.toml + 组装引擎
-- [ ] 3.1 NEW `scripts/package/packages.toml`：sdk + runtime 两个包的 include 列表
+## 阶段 3: packages.toml + 组装引擎（2026-07-01 修订：z42c-seed 不再是固定 staging handler）
+- [x] 3.1 NEW `scripts/package/packages.toml`：sdk + runtime 两个包的 include 列表（DRAFT，z42c 只一个条目，6 兄弟库靠 publish 自动依赖打包）
 - [ ] 3.2 NEW `scripts/package/xtask_packages_config.z42`：解析 packages.toml + include 名解析
-- [ ] 3.3 稳定 staging handler：z42vm / native / stdlib / z42c-seed（复用现有 _copyNativeLibs / _pkgCopyLibs / _compilerMembers）
-- [ ] 3.4 单元测试：packages.toml 解析 + include 解析
+- [ ] 3.3 稳定 staging handler：z42vm / native / stdlib（复用现有 _copyNativeLibs / _pkgCopyLibs）——**z42c 七成员不在此列**，改由 `builder_publish.z42` 的依赖自动打包覆盖（见 3.3a）
+- [x] 3.3a `builder_publish.z42` 新增 workspace 项目依赖发现 + build-if-needed + 拷贝到同一 payload 目录（发布 z42c.driver 时自动带出 6 个兄弟库）；launcher/z42c.driver/z42.builder 三个 toml 补 `[platform.desktop] bin`/`payload`（阶段 1.4 一并做）。**独立验证通过**（2026-07-01）：`z42b publish src/compiler/z42c.driver/z42c.driver.z42.toml --rid macos-arm64 --output <tmp>` 产出 `bin/z42c` + `programs/z42c/`（driver + 6 兄弟 zpkg/zsym），apphost 经 `Z42_PORTABLE_VM` 可正常运行（`z42c --version` 输出正常）。过程中顺带修复 `_pubResolveZpkg` 未处理 workspace 成员 `[workspace.build] output_dir` 模板继承的 bug（workspace 成员 toml 通常无自己的 `[build]` 段，之前会算出错误路径——被 z42c.driver 目录下一份陈旧 gitignored dist 产物意外掩盖，z42c.semantics 无同类陈旧产物才暴露）。
+- [ ] 3.4 单元测试：packages.toml 解析 + include 解析 + 依赖闭包解析
 
 ## 阶段 4: 迁移 desktop SDK + runtime
 - [ ] 4.1 `_packageDesktop` 改为「按 sdk.include 选组件 → 合并暂存子树 + staging 产物」，删 apphost 三步舞硬编码

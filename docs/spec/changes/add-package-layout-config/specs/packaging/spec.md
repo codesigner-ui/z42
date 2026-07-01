@@ -25,8 +25,8 @@
 ### Requirement: packages.toml 声明发行包组装
 
 #### Scenario: 按 include 选取组件合并
-- **WHEN** `packages.toml` 的 `[package.sdk] include = ["z42vm","native","stdlib","z42c-seed","launcher","z42c","z42b"]`
-- **THEN** xtask 打包把这些名字解析到各自暂存子树/staging 产物，合并拷入包根，emit manifest
+- **WHEN** `packages.toml` 的 `[package.sdk] include = ["z42vm","native","stdlib","launcher","z42c","z42b"]`
+- **THEN** xtask 打包把这些名字解析到各自暂存子树/staging 产物，合并拷入包根，emit manifest；`"z42c"` 对应 `z42c.driver` 的 publish 子树，其 6 个 workspace 兄弟库由 publish 自动依赖打包带出（见 Decision 4），无需单独 include 条目
 
 #### Scenario: 加 apphost 仅改配置
 - **WHEN** 给 sdk 增加 z42d

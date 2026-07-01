@@ -33,9 +33,10 @@
 **选项**：A — 扩 `_cmdPublishDesktop`：除产 apphost 外，把 payload zpkg 也放到 `payload` 目录、apphost 放到 `bin`，整体落 `--output <staging>/<comp>/`。B — publish 不变（只产 apphost），xtask staging 自己摆 zpkg。
 **决定**：选 A。理由：① 用户面一致——用户 `z42 publish` 一条命令就拿到可部署的自洽子树，不是半成品；② 单一真相——布局逻辑只在 publish 一处，xtask 打包退化为纯 `include → 拷子树`，无布局知识。代价：`_cmdPublishDesktop` 从「产一个二进制」升级为「产一个子树」，但这本就是 publish 该有的语义。
 
-### Decision 4: 稳定 staging 产物保留为固定 step（不强行配置化）
+### Decision 4: 稳定 staging 产物保留为固定 step；z42c 七成员靠 publish 自动依赖打包（不设 z42c-seed 特例）（2026-07-01 修订）
 **问题**：cargo bin（z42vm）、cargo native（libz42.*）、stdlib glob、z42c 七成员——也要塞进 packages.toml？
-**决定**：不。这些产物的产生方式**不随「加 apphost」而变**，是不变的 staging step。packages.toml 的 `include` 用稳定名引用它们（`"z42vm"`/`"native"`/`"stdlib"`/`"z42c-seed"`），xtask 各有一个固定 staging handler。诚实承诺：**加常规 apphost = 纯配置（组件 toml + packages.toml 一行）；加一种全新产物类型 = 偶尔加一个 staging handler**，非字面 100% 永不碰代码。
+**决定**：cargo/native/stdlib 三类仍是不变的固定 staging step，`include` 用稳定名引用（`"z42vm"`/`"native"`/`"stdlib"`），xtask 各有一个固定 staging handler。**z42c 七成员不再是第四个固定 staging handler**——`z42c.driver` 的 6 个非 driver 兄弟库是它在 workspace 内的**项目依赖**（区别于 stdlib 依赖，写法相同但语义不同），`z42 publish` 发布一个 apphost 时，自动解析该组件 `[dependencies]` 中命中当前 workspace 成员的条目（按 `z42.workspace.toml` `default-members` + 同名目录约定识别、递归取传递闭包），build-if-needed 后与主 zpkg 一起落到同一个 `payload` 目录。因此 packages.toml 里 z42c 不需要单独的 "z42c-seed" 条目，`include` 里只写一次 `"z42c"`，6 个兄弟库随它自动带出——这是**通用行为**（任何 z42 app 依赖本地 workspace 库都适用），不是 z42c 专属逻辑。诚实承诺：**加常规 apphost（含带项目内依赖的）= 纯配置（组件 toml + packages.toml 一行）；加一种全新产物类型（cargo/native/stdlib 之外）= 偶尔加一个 staging handler**。
+实现位置：`builder_publish.z42` 新增 workspace 成员发现（`_pubFindWorkspaceRoot` 沿 tomlPath 向上找 `z42.workspace.toml` + 读 `default-members`）+ 依赖闭包解析（比对当前组件 `[dependencies]` key 与成员名，BFS 取传递闭包）+ 逐个复用既有 `_pubEnsureBuilt`（build-if-needed）后拷进 payload 目录。z42b 只依赖 stdlib 的既有约束不变——这段逻辑只用 `Std.Toml` 手写 TOML 遍历，不 import `z42c.project`/`z42c.pipeline`。
 
 ### Decision 5: 构建顺序从依赖图推导，不靠 include/layout 顺序
 **问题**：launcher zpkg 依赖 `z42.workload.desktop` 先进 Z42_LIBS。
@@ -47,14 +48,14 @@
   ```toml
   [package.sdk]
   artifact = "z42-{rid}"
-  include  = ["z42vm", "native", "stdlib", "z42c-seed", "launcher", "z42c", "z42b"]
+  include  = ["z42vm", "native", "stdlib", "z42c", "launcher", "z42b"]
   manifest = "auto"     # [contents] 仍按组装后树自动 glob（现状机制不变）
 
   [package.runtime]
   artifact = "z42-runtime-{version}-{rid}"
-  include  = ["z42vm", "native", "stdlib", "z42c-seed"]
+  include  = ["z42vm", "native", "stdlib", "z42c"]
   ```
-- `include` 名解析：apphost 类名（launcher/z42c/z42b/z42d）→ 该组件 publish 暂存子树；稳定名（z42vm/native/stdlib/z42c-seed）→ 固定 staging handler 的产物。
+- `include` 名解析：apphost 类名（launcher/z42c/z42b/z42d）→ 该组件 publish 暂存子树（z42c 的暂存子树已含 6 个兄弟库，见 Decision 4）；稳定名（z42vm/native/stdlib）→ 固定 staging handler 的产物。
 - byte-identical：sdk 与 runtime 引用同一 `stdlib`/`native` 暂存源 → 同字节，现有 reuse-from-sdk 特例删除。
 - 暂存根：`artifacts/publish/<comp>/`（Phase 1 暂定）。
 
