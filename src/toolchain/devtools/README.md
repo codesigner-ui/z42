@@ -52,7 +52,9 @@ src/toolchain/devtools/core/*.z42  →  z42.devtools.zpkg  →  apphost z42d
 
 ## 状态
 
-🔴 **骨架占位**。仅命令面登记 + 本 README，**未登记 workspace / xtask / CI**，
-惰性占位不影响任何现有构建（同 PARKED 的 [builder](../builder/) 占位）。
+🟡 **骨架占位，已打包**。命令面 + apphost bin/payload 均已就位，`z42.devtools.z42.toml`
+已登记进 [`scripts/packages.toml`](../../../scripts/packages.toml)（`[component.devtools]`，
+2026-07-01 User 裁决），随 SDK 包一起发行——但每个子命令目前仍只打印 "planned" 并
+`return 1`，尚无一个真正实现。
 
 落地走 spec-first（架构性 + 多工具分期），各工具按 `docs/roadmap.md` 时点推进。

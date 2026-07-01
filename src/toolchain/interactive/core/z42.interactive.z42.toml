@@ -5,8 +5,10 @@
 #
 # SCOPE (scaffold): entry point only — prints "planned" and exits. The real REPL
 # (compile-snippet → VM eval → print) is the 0.3.x capstone (see
-# docs/design/toolchain/repl.md). NOT registered in z42.workspace.toml / xtask /
-# CI yet — inert placeholder. See README.md.
+# docs/design/toolchain/repl.md), blocked on extract-compile-pipeline-api.
+# Registered in packages.toml ([component.interactive], 2026-07-01) and shipped
+# in the SDK package as a placeholder binary — still just prints "planned" and
+# exits until the REPL lands. See README.md.
 [project]
 name    = "z42.interactive"
 version = "0.1.0"
@@ -30,7 +32,9 @@ mode     = "interp"
 optimize = 2
 
 # apphost-as-config: publishes a native desktop apphost `./z42i` at the repo root.
-# Gate stays off the build until the package is registered.
+# bin/payload mirrors z42b's SDK package layout (add-package-layout-config).
 [platform.desktop]
 apphost     = true
 publish_dir = "../../../.."
+bin         = "bin/z42i"
+payload     = "programs/interactive/z42.interactive.zpkg"

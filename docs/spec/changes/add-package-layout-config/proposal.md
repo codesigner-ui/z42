@@ -68,18 +68,28 @@ payload = "programs/z42d/"    # payload zpkg(+兄弟依赖)落哪
 | `docs/design/toolchain/packaging.md` | NEW | 实现原理：暂存布局约定、packages.toml schema、producer 边界、与 publish/build 的关系 |
 | `src/toolchain/README.md` | MODIFY | 指向 packaging.md + packages.toml |
 | `scripts/package/tests/packages-config/` | NEW | packages.toml 解析 + include 解析的单元测试（z42c.* 不适用，放 script 级 dogfood 或 xtask 自测） |
+| `src/toolchain/devtools/core/z42.devtools.z42.toml` | MODIFY | 补 `bin`/`payload` 显式布局 + 登记进 `packages.toml`（2026-07-01 User 裁决扩展 Scope，见下）|
+| `src/toolchain/interactive/core/z42.interactive.z42.toml` | MODIFY | 同上 |
+| `src/toolchain/devtools/README.md` | MODIFY | 状态段同步"已打包"（子命令仍未实现）|
+| `src/toolchain/interactive/README.md` | MODIFY | 同上 |
 
 **只读引用**：
 - `scripts/build/xtask_stdlib.z42` — 理解 `_compilerMembers` / `_libsDir` / 暂存源路径
-- `src/toolchain/builder/core/z42.builder.z42.toml`、`devtools/`、`interactive/`、`launcher/` 的 toml — 理解组件声明形态
+- `src/toolchain/builder/core/z42.builder.z42.toml`、`launcher/` 的 toml — 理解组件声明形态
 - `docs/spec/archive/2026-06-30-gate-apphost-on-config/` — apphost gate 的既有约定
 
 ## Out of Scope
 
 - mobile（ios/android/wasm）包改造 → Deferred（见 packaging.md）
-- 把 z42d / z42i 真正登记进 build/workspace（它们现是惰性占位；登记是独立变更，登记后只需 `include` 加名）
 - packages.toml 自动从组件 toml 反向发现（全 selector 模式）→ Deferred（Phase 1 用显式 include，简单可见）
 - CI release 编排（`xtask_release.z42` / release-index.json）不变
+
+### Scope 扩展记录（2026-07-01）
+
+原定「把 z42d / z42i 真正登记进 build/workspace 是独立变更」（见 tasks.md 备注）被 User
+显式裁决推翻：User 要求现在就把 devtools/interactive 注册进 `packages.toml` 并打进 SDK
+包，接受两者仍是纯占位（子命令/入口只打印 "planned"）的现状。已据此把上面两个 toml +
+两个 README 纳入本变更 Scope（原只读引用升级为 MODIFY）。
 
 ## Open Questions
 

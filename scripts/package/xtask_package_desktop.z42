@@ -93,6 +93,14 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     // builds above, not a cross-dependency on programs/z42c/ colocation).
     c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/builder/core/z42.builder.z42.toml");
     if (c != 0) { return c; }
+    // devtools (z42d) / interactive (z42i): scaffold placeholders registered in
+    // packages.toml (2026-07-01, User decision) — every subcommand/entry still
+    // just prints "planned", but they build + publish through the same path as
+    // launcher/z42b so the SDK layout is ready once each tool is implemented.
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/devtools/core/z42.devtools.z42.toml");
+    if (c != 0) { return c; }
+    c = _z42cBuildToml(hostVm, z42cDir, libs, "src/toolchain/interactive/core/z42.interactive.z42.toml");
+    if (c != 0) { return c; }
 
     bool isWin = rid.StartsWith("windows-");
     string apphostStub = Path.Join(cargoOut, isWin ? "apphost.exe" : "apphost");
@@ -119,6 +127,16 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/builder/core/z42.builder.z42.toml", rid, _pkgStageDir(root, "z42b"));
     if (c != 0) { return c; }
     Console.WriteLine("      ✓ staged z42b/ (bin/z42b apphost + programs/z42b/z42.builder.zpkg)");
+    // bin/z42d = apphost trampoline → programs/devtools/z42.devtools.zpkg
+    // (scaffold — every subcommand still prints "planned").
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/devtools/core/z42.devtools.z42.toml", rid, _pkgStageDir(root, "devtools"));
+    if (c != 0) { return c; }
+    Console.WriteLine("      ✓ staged devtools/ (bin/z42d apphost + programs/devtools/z42.devtools.zpkg, scaffold)");
+    // bin/z42i = apphost trampoline → programs/interactive/z42.interactive.zpkg
+    // (scaffold — entry prints "planned" and exits).
+    c = _z42bPublish(hostVm, z42bZpkg, libs, apphostStub, "src/toolchain/interactive/core/z42.interactive.z42.toml", rid, _pkgStageDir(root, "interactive"));
+    if (c != 0) { return c; }
+    Console.WriteLine("      ✓ staged interactive/ (bin/z42i apphost + programs/interactive/z42.interactive.zpkg, scaffold)");
 
     // stdlib zpkg + zsym — staged to artifacts/publish/stdlib/libs/.
     Console.WriteLine("      staging stdlib zpkg + zsym");
@@ -135,7 +153,7 @@ int _packageDesktop(string root, string pkgDir, string rid, string version, stri
     _PackagesConfig cfg = _pkgcfgLoad(root);
     c = _pkgAssembleFromStaging(cfg, root, "sdk", pkgDir);
     if (c != 0) { return c; }
-    Console.WriteLine("      ✓ pkgDir assembled from artifacts/publish/{z42vm,native,stdlib,z42c,launcher,z42b}");
+    Console.WriteLine("      ✓ pkgDir assembled from artifacts/publish/{z42vm,native,stdlib,z42c,launcher,z42b,devtools,interactive}");
 
     // [5/5] manifest.toml
     Console.WriteLine("[5/5] manifest.toml");
